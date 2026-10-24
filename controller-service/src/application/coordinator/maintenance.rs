@@ -48,6 +48,7 @@ fn verify_local_quiescence<H: ControllerHost>(
     if !reclaimed.contains(&candidate.sandbox)
         || candidate.release.is_none()
         || !local_routes_drained(inner, candidate.sandbox)
+        || inner.active_sandboxes.contains(&candidate.sandbox)
     {
         return Err(WorkerTransportError::ReplyLost);
     }
@@ -157,6 +158,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
     /// Missing complete policy, shared storage, invalid checkpoints or uncertain
     /// commits abort the pass.
     pub fn maintain(&self) -> Result<MaintenanceReport, ApplicationError> {
+        self.maintain_lifecycle_materials()?;
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let now = u64::try_from(self.clock.now_ms()?).map_err(|_| ApplicationError::Busy)?;
         maintain_locked(&mut inner, now)

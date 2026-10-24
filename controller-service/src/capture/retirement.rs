@@ -103,13 +103,24 @@ impl CaptureMaterialRetirementRequest {
 
 /// The journal will construct this only after persisting the exact plan and
 /// discharging every original writer/reader/backing-file responsibility.
-/// No constructor is exposed yet: the retirement decision remains unfinished.
+/// Only the journal may construct it after the original plan commit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaterialRetirementPermit {
     work_binding: ContentDigest,
     plan_binding: ContentDigest,
 }
 impl MaterialRetirementPermit {
+    #[cfg(feature = "durable")]
+    pub(crate) const fn after_plan_commit(
+        work_binding: ContentDigest,
+        plan_binding: ContentDigest,
+    ) -> Self {
+        Self {
+            work_binding,
+            plan_binding,
+        }
+    }
+
     #[must_use]
     pub const fn work_binding(&self) -> ContentDigest {
         self.work_binding

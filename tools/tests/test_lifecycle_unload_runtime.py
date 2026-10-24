@@ -452,7 +452,7 @@ class SourceRowsTests(unittest.TestCase):
         anchor=dict(original='work')
         key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
         record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
-            observation=None,capture=None,restore=None)
+            observation=None,capture=None,restore=None,retirement=None)
         encoded=json.dumps(record,separators=(',',':')).encode()
         self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
             (encoded,self.hashlib.sha256(encoded).digest(),key))
@@ -460,6 +460,18 @@ class SourceRowsTests(unittest.TestCase):
         self.conn.execute('UPDATE controller_source_work_records SET work_key=? WHERE id=1',(bytes(32),))
         with self.assertRaises(ValueError):
             runtime.checked_source_records(self.conn,self.host,self.deadline)
+
+    def test_missing_mandatory_retirement_field_is_not_an_old_layout_fallback(self):
+        anchor=dict(original='work')
+        key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
+        record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
+            observation=None,capture=None,restore=None)
+        encoded=json.dumps(record,separators=(',',':')).encode()
+        self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
+            (encoded,self.hashlib.sha256(encoded).digest(),key))
+        with self.assertRaises(ValueError):
+            runtime.checked_source_records(self.conn,self.host,self.deadline)
+
 
 class ActivationGateProtocolTests(unittest.TestCase):
     def test_configuration_rejects_invalid_bounds_before_stopping_host(self):
@@ -606,3 +618,61 @@ class ActivationGateProtocolTests(unittest.TestCase):
                         self.assertTrue(control.is_dir())
                 finally:
                     gate.close_restore_gate()
+
+class MaterialSettlementBindingTests(unittest.TestCase):
+    def record(self,state='retiring'):
+        full=dict(pause={},compatibility={},state_bytes=4096,memory_bytes=8192,disk_bytes=16384,
+            api_timeout_ms=1000,worker_timeout_ms=2000)
+        anchor=dict(local=dict(sandbox=1,owner=2),native=dict(generation=3))
+        requirement=dict(work_binding=[7]*32)
+        capture=dict(full=full,action=None,worker=None,completed=None,
+            reserved_material_bytes=2*(4096+8192+16384)+2*262144+65536)
+        original=[1,3,full,requirement,None,None,None]
+        digest=lambda value:list(runtime.hashlib.sha256(value).digest())
+        work=digest(json.dumps(original,ensure_ascii=False,separators=(',',':')).encode())
+        raw=list(b'controlled original physical-port plan')
+        plan=dict(bytes=raw,work_binding=work,plan_binding=digest(bytes(raw)),
+            quiescence=dict(sandbox=1,owner=2,epoch=4,operation=5,workspace=6,
+                worker_drained='Confirmed',data_connections_drained='Confirmed',
+                host_resources_reclaimed='Confirmed',external_pins_released='Confirmed'))
+        retirement=dict(state=state,plan=plan)
+        if state=='settled':
+            retirement['settlement']=dict(work_binding=work,plan_binding=plan['plan_binding'],
+                released_material_bytes=capture['reserved_material_bytes'])
+        return dict(work=dict(anchor=anchor,requirement=requirement),observation=None,
+            capture=capture,restore=dict(material_use=False),retirement=retirement)
+
+    def test_retiring_remains_fully_charged_and_only_bound_settlement_is_zero(self):
+        retiring=self.record()
+        self.assertEqual(runtime.material_source_charge(retiring),retiring['capture']['reserved_material_bytes'])
+        self.assertEqual(runtime.material_source_charge(self.record('settled')),0)
+        original=self.record();original['retirement']=None;original['restore']['material_use']=True
+        self.assertEqual(runtime.material_source_charge(original),original['capture']['reserved_material_bytes'])
+
+    def test_unknown_missing_partial_or_forged_settlement_is_rejected(self):
+        import copy
+        original=self.record('settled')
+        mutations=[]
+        for name in ('retirement','capture','restore'):
+            changed=copy.deepcopy(original);del changed[name];mutations.append(changed)
+        for name in ('plan','settlement','state'):
+            changed=copy.deepcopy(original);del changed['retirement'][name];mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['state']='unknown';mutations.append(changed)
+        for name in ('work_binding','plan_binding','released_material_bytes'):
+            changed=copy.deepcopy(original)
+            changed['retirement']['settlement'][name]=0 if name=='released_material_bytes' else [0]*32
+            mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['bytes'][0]^=1;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['capture']['full']['disk_bytes']+=1;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['restore']['material_use']=True;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['quiescence']['worker_drained']='Unconfirmed';mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['quiescence']['sandbox']+=1;mutations.append(changed)
+        for changed in mutations:
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                runtime.material_source_charge(changed)
+
+    def test_retirement_never_creates_a_free_missing_or_zero_capture(self):
+        for capture in (None,dict(reserved_material_bytes=0)):
+            record=self.record('settled');record['capture']=capture
+            with self.subTest(capture=capture),self.assertRaises(ValueError):
+                runtime.material_source_charge(record)

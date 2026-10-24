@@ -130,6 +130,9 @@ pub(super) fn destroy_cleaned(
     if super::source_work::retains_session(connection, &intent.request.binding.session)? {
         return Ok(false);
     }
+    if super::native_retirement::cleaned(&inbox.sessions[s], world)? {
+        return Ok(true);
+    }
     let Some(local) = state.local else {
         return Ok(true);
     };

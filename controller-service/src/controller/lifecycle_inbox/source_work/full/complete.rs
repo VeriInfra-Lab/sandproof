@@ -55,5 +55,6 @@ pub(in crate::controller) fn save_receipt<E: HostEvidence>(
     } else if capture.completed != Some(manifest) || capture.material_bytes != Some(bytes) {
         return Err(JournalError::InvalidHostEvidence);
     }
+    super::end::validate_record(record)?;
     save(connection, &sources)
 }

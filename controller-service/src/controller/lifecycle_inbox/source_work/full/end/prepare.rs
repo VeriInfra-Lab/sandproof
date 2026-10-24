@@ -15,9 +15,9 @@ pub(in crate::controller) fn permits_input(
     input: &CaptureInput,
 ) -> Result<bool, JournalError> {
     let (identity, supplied) = match input {
-        // The terminal SQL producer is not connected in this batch. Native
-        // type support cannot bypass the saved original observation contract.
-        CaptureInput::RetireTerminatedCapture(_) => return Ok(false),
+        CaptureInput::RetireTerminatedCapture(coverage) => {
+            return super::super::drain::permits_input(connection, world, coverage);
+        }
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,

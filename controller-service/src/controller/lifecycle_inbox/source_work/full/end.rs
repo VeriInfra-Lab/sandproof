@@ -12,6 +12,19 @@ pub(super) mod prepare;
 
 const END_RECORD_BYTES: usize = 16_384;
 
+pub(super) fn material_writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalError> {
+    let Some(capture) = &record.capture else {
+        return Ok(true);
+    };
+    validate_record(record)?;
+    // NeverReleased requires no SQL-authorized worker; WorkerEnded requires
+    // the exact saved provider result plus actual original worker exit.
+    match &capture.end {
+        Some(CaptureEndRecord::Terminated { .. }) => super::drain::writer_closed(record),
+        other => Ok(other.is_some()),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum CaptureEndRecord {
@@ -21,6 +34,11 @@ pub(super) enum CaptureEndRecord {
     },
     WorkerEnded {
         observation: Box<CaptureRequestEndObservation>,
+    },
+    Terminated {
+        stop: core::StopCoverage,
+        observation: Box<crate::capture::TerminatedCaptureObservation>,
+        prior: Option<super::drain::PriorCaptureEnd>,
     },
 }
 
@@ -62,6 +80,12 @@ pub(super) fn validate_record(record: &SourceWorkRecord) -> Result<(), JournalEr
                 && !(capture.completed.is_some()
                     && matches!(observation.outcome, CaptureRequestEndOutcome::NoRequest))
         }
+        CaptureEndRecord::Terminated {
+            stop, observation, ..
+        } => {
+            super::drain::validate_record(record, *stop, observation)?;
+            true
+        }
     };
     if !matches {
         return Err(JournalError::CorruptStore);
@@ -80,6 +104,7 @@ fn receipt(
     };
     validate_record(record)?;
     let typed_end = match end {
+        CaptureEndRecord::Terminated { .. } => return Ok(None),
         CaptureEndRecord::NeverReleased { seal_action, .. } => {
             core::capture::CaptureWorkEnd::NeverReleased {
                 seal: seal_action
@@ -107,7 +132,16 @@ fn receipt(
     }))
 }
 
-fn seal_end(
+pub(super) fn continuation_allowed(record: &SourceWorkRecord) -> bool {
+    record.capture.as_ref().is_some_and(|capture| {
+        matches!(
+            capture.end,
+            Some(CaptureEndRecord::NeverReleased { .. } | CaptureEndRecord::WorkerEnded { .. })
+        )
+    })
+}
+
+pub(super) fn seal_end(
     record: &SourceWorkRecord,
     action: &sandproof_protocol::WorkAction<core::EffectId>,
 ) -> Result<core::capture::CaptureSealEnd, JournalError> {

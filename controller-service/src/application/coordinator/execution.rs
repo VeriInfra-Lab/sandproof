@@ -266,6 +266,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         self.reconcile_current_actions(sandbox, host.as_ref())?;
         self.prepare_original_continue_if_ended(sandbox, host.as_ref())?;
         for _ in 0..128 {
+            self.observe_capture_ends(sandbox, host.as_ref())?;
             // The failed Pause can have no reserved snapshot. Publish its exact
             // acknowledged continuation before the ordinary Pause scheduler
             // considers reserving one on the already closed plan.

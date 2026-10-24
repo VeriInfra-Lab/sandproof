@@ -116,6 +116,8 @@ pub(super) struct Session {
     /// This is not the latest accepted/confirmed version or a global key floor.
     #[serde(deserialize_with = "required_option")]
     pub compacted_sdk_through: Option<u64>,
+    #[serde(deserialize_with = "required_option")]
+    pub native_retirement: Option<super::native_retirement::NativeRetirementReceipt>,
 }
 
 /// Same original per-position retirement frontier and one complete recent
@@ -328,6 +330,7 @@ impl Inbox {
     }
 
     fn validate_session_shape(&self, index: usize, session: &Session) -> Result<(), JournalError> {
+        super::native_retirement::validate_saved(session)?;
         if session.entries.is_empty()
             || session.retention.slot == 0
             || session.retention.slot > self.config.max_sessions
@@ -609,6 +612,7 @@ impl Inbox {
             confirmed_terminal: None,
             confirmed_renewal: None,
             compacted_sdk_through: None,
+            native_retirement: None,
         });
         Ok((self.sessions.len() - 1, 0))
     }

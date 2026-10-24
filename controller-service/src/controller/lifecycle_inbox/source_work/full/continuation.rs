@@ -343,6 +343,7 @@ impl ControllerJournal {
             &world,
         )?;
         if current != request.identity()
+            || !super::end::continuation_allowed(record)
             || work(record, &world)?.as_ref() != Some(request)
             || !stored_action(&tx, action)?
             || !core::capture::continuation::continuation_activation_pending(

@@ -3,6 +3,7 @@
 mod access;
 pub(in crate::controller) mod audit;
 mod codec;
+pub(in crate::controller) mod native_retirement;
 mod renewal;
 mod renewal_confirmation;
 mod validation;
@@ -35,7 +36,7 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 use sha2::{Digest, Sha256};
-pub use source_work::{SourceWork, SourceWorkRecord};
+pub use source_work::{MaterialRetirementQuestion, SourceWork, SourceWorkRecord};
 
 #[cfg(test)]
 thread_local! {

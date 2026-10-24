@@ -60,6 +60,11 @@ pub type SourceProbe = Box<
 
 #[derive(Default)]
 pub struct State {
+    pub capture_request_end:
+        Option<sandproof_controller_service::capture::CaptureRequestEndObservation>,
+    pub capture_request_end_observations: usize,
+    pub terminal_drain_gate: Option<(u64, u64)>,
+    pub terminal_drain_observations: usize,
     pub full_proposal_error: Option<ApplicationError>,
     pub source_probe: Option<SourceProbe>,
     pub source_calls: usize,
@@ -153,6 +158,32 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    fn observe_lifecycle_capture_request_end(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        _source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        _worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> Option<sandproof_controller_service::capture::CaptureRequestEndObservation> {
+        let mut state = self.0.lock().unwrap();
+        state.capture_request_end_observations += 1;
+        state.capture_request_end.clone()
+    }
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        work: &sandproof_controller_service::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::TerminatedCaptureObservation> {
+        let mut state = self.0.lock().unwrap();
+        state.terminal_drain_observations += 1;
+        let (device, inode) = state.terminal_drain_gate?;
+        // Explicit controlled physical-boundary facts, never a real gate test.
+        Some(sandproof_controller_service::capture::TerminatedCaptureObservation::StoppedAndDrained{
+            work_binding:work.binding_digest().ok()?,full_work_binding:work.full().binding_digest().ok()?,
+            seal_action:work.seal_action().clone(),stop_action:work.stop_action().clone(),
+            source:work.source().source.clone(),worker:work.worker().cloned(),host_slot:work.host_slot(),
+            helper_gate_device:device,helper_gate_inode:inode,
+        })
+    }
     fn observe_lifecycle_original_continue(
         &self,
         action: &WorkAction<core::EffectId>,

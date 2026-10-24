@@ -22,6 +22,29 @@ pub struct TerminatedCaptureWorkRequest {
     host_slot: HostSlotContext,
 }
 impl TerminatedCaptureWorkRequest {
+    /// Only the original journal may construct a question after matching its
+    /// saved source, worker, successful terminal Stop and occupied host slot.
+    #[cfg(feature = "durable")]
+    pub(crate) fn from_source(
+        identity: OriginalContinueIdentity,
+        seal_action: WorkAction<core::EffectId>,
+        full: FullCaptureWorkRequest,
+        source: SourceObservationRequirement,
+        worker: Option<CaptureWorkerBinding>,
+        terminal: (WorkAction<core::EffectId>, core::StopCoverage),
+        host_slot: HostSlotContext,
+    ) -> Self {
+        Self {
+            identity,
+            seal_action,
+            full,
+            source,
+            worker,
+            stop_action: terminal.0,
+            stop: terminal.1,
+            host_slot,
+        }
+    }
     #[must_use]
     pub const fn identity(&self) -> OriginalContinueIdentity {
         self.identity
