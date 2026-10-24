@@ -340,7 +340,7 @@ pub(in crate::controller) fn validate(
         return Ok(());
     };
     let inbox =
-        super::super::codec::crate::controller::diagnose_stage("source.load", load(connection))?
+        crate::controller::diagnose_stage("source.inbox", super::super::codec::load(connection))?
             .ok_or(JournalError::CorruptStore)?;
     if sources.node != inbox.config.node || sources.max_sessions != inbox.config.max_sessions {
         return Err(JournalError::CorruptStore);
