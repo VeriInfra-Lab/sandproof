@@ -4,7 +4,7 @@ use super::{ControllerJournal, JournalError, codec, core, key, set_end};
 use crate::controller::{admission, lifecycle_inbox, storage, transaction::WorldTransaction};
 use crate::{
     CrashInjector, CrashPoint,
-    capture::{CaptureApiEndObservation, OriginalContinueWorkRequest},
+    capture::{CaptureRequestEndObservation, OriginalContinueWorkRequest},
 };
 use core::capture::{CaptureInput, OriginalContinueIdentity};
 use sandproof_protocol::lifecycle::AuthenticatedCenterContext;
@@ -120,7 +120,7 @@ impl ControllerJournal {
     /// Close the original Full launch and prepare the same VM's continuation
     /// in the original source/native transaction. `None` means no Full worker
     /// was ever granted its SQL launch permit; an authorized worker requires
-    /// its complete API-end and actual exit observation. No execute permit is
+    /// its explicit request-end and actual exit observation. No execute permit is
     /// returned, and all material obligations remain held.
     /// # Errors
     /// Wrong current source/end, expiry, terminal state or native uncertainty
@@ -129,7 +129,7 @@ impl ControllerJournal {
         &mut self,
         source: &SourceWork,
         context: &AuthenticatedCenterContext,
-        api_end: Option<CaptureApiEndObservation>,
+        request_end: Option<CaptureRequestEndObservation>,
         now_ms: i64,
         crashes: &mut impl CrashInjector,
     ) -> Result<OriginalContinueWorkRequest, JournalError> {
@@ -147,7 +147,7 @@ impl ControllerJournal {
         if key(record) != Some(identity.key) {
             return Err(JournalError::Conflict);
         }
-        let end_receipt = set_end(record, api_end)?;
+        let end_receipt = set_end(record, request_end)?;
         // Saving the canonical question first lets the original storage profile
         // compare this exact input to SQL. Both saves roll back on any rejection.
         super::super::save(&tx, &sources)?;

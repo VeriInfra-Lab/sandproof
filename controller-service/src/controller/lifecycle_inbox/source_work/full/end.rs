@@ -1,7 +1,7 @@
 //! Save original writer/API facts without declaring capture success, resolving
 //! a commit, releasing material, publishing Running or granting an execution.
 use super::{CaptureWork, JournalError, SourceWorkRecord, codec, core, key};
-use crate::{ControllerJournal, CrashInjector, CrashPoint, capture::CaptureApiEndObservation};
+use crate::{ControllerJournal, CrashInjector, CrashPoint, capture::{CaptureRequestEndObservation, CaptureRequestEndOutcome}};
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, ContentDigest};
 use serde::{Deserialize, Serialize};
 
@@ -16,8 +16,8 @@ pub(super) enum CaptureEndRecord {
         full_work_binding: ContentDigest,
         seal_action: Option<Box<sandproof_protocol::WorkAction<core::EffectId>>>,
     },
-    Returned {
-        observation: Box<CaptureApiEndObservation>,
+    WorkerEnded {
+        observation: Box<CaptureRequestEndObservation>,
     },
 }
 
@@ -52,10 +52,11 @@ pub(super) fn validate_record(record: &SourceWorkRecord) -> Result<(), JournalEr
                 && *full_work_binding == capture.full.binding_digest()?
                 && seal_action.as_deref() == capture.action.as_ref()
         }
-        CaptureEndRecord::Returned { observation } => {
+        CaptureEndRecord::WorkerEnded { observation } => {
             let action = capture.action.as_ref().ok_or(JournalError::CorruptStore)?;
             let worker = capture.worker.as_ref().ok_or(JournalError::CorruptStore)?;
             observation.matches(action, &capture.full, record.work.requirement(), worker)?
+                && !(capture.completed.is_some() && matches!(observation.outcome,CaptureRequestEndOutcome::NoRequest))
         }
     };
     if !matches {
@@ -83,9 +84,13 @@ fn receipt(
                     .transpose()?,
             }
         }
-        CaptureEndRecord::Returned { observation } => core::capture::CaptureWorkEnd::Returned {
-            seal: seal_end(record, &observation.action)?,
-        },
+        CaptureEndRecord::WorkerEnded { observation } => {
+            let seal=seal_end(record,&observation.action)?;
+            match observation.outcome {
+                CaptureRequestEndOutcome::NoRequest => core::capture::CaptureWorkEnd::NoRequest { seal },
+                CaptureRequestEndOutcome::Returned { .. } => core::capture::CaptureWorkEnd::Returned { seal },
+            }
+        }
     };
     Ok(Some(core::capture::CaptureWorkEndReceipt {
         work_binding: *capture.full.binding_digest()?.as_bytes(),
@@ -226,15 +231,15 @@ impl ControllerJournal {
         Ok(work)
     }
 
-    /// Save an original complete API-end and actual writer-exit observation.
+    /// Save an explicit original request-end and actual writer-exit observation.
     /// The physical provider's truth remains the approved dependency contract.
     /// # Errors
     /// Missing/changed action, Full, source, worker or status refuses the fact.
-    pub fn record_lifecycle_capture_api_end(
+    pub fn record_lifecycle_capture_request_end(
         &mut self,
         source: &super::super::SourceWork,
         context: &AuthenticatedCenterContext,
-        observation: CaptureApiEndObservation,
+        observation: CaptureRequestEndObservation,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
         self.save_capture_end(source, context, Some(observation), crashes)
@@ -257,7 +262,7 @@ impl ControllerJournal {
         &mut self,
         source: &super::super::SourceWork,
         context: &AuthenticatedCenterContext,
-        observation: Option<CaptureApiEndObservation>,
+        observation: Option<CaptureRequestEndObservation>,
         crashes: &mut impl CrashInjector,
     ) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
         let tx = crate::controller::transaction::WorldTransaction::begin(
@@ -296,7 +301,7 @@ impl ControllerJournal {
 
 fn set_end(
     record: &mut SourceWorkRecord,
-    observation: Option<CaptureApiEndObservation>,
+    observation: Option<CaptureRequestEndObservation>,
 ) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
     let capture = record
         .capture
@@ -314,7 +319,10 @@ fn set_end(
         if !observation.matches(action, &capture.full, record.work.requirement(), worker)? {
             return Err(JournalError::InvalidHostEvidence);
         }
-        CaptureEndRecord::Returned {
+        if capture.completed.is_some() && matches!(observation.outcome,CaptureRequestEndOutcome::NoRequest) {
+            return Err(JournalError::InvalidHostEvidence);
+        }
+        CaptureEndRecord::WorkerEnded {
             observation: Box::new(observation),
         }
     } else {

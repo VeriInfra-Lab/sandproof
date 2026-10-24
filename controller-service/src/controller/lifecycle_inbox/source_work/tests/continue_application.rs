@@ -265,9 +265,9 @@ fn save_failed_worker_end(journal:&mut ControllerJournal,source:&SourceWorkRecor
                 .unwrap()
                 .unwrap();
             let mut end = actual_api_end(&saved);
-            end.http_status = 500;
+            end.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 500 };
             journal
-                .record_lifecycle_capture_api_end(
+                .record_lifecycle_capture_request_end(
                     &source.work,
                     &v3::context(),
                     end,
