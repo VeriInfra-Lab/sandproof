@@ -49,6 +49,16 @@ class RejectionBodyTests(unittest.TestCase):
         socket.sendall.assert_called_once_with(b'm')
         socket.recv.assert_called_once_with(1)
 
+    def test_sync_close_after_first_offer_does_not_invent_a_tail(self):
+        events, socket, settled = [], control(), threading.Event()
+        body = gated_sync(chunks, socket, events, True, 'original-request', settled=settled)
+        self.assertEqual(next(body), WIRE[:1])
+        body.close()
+        self.assertEqual(events, ['message'])
+        self.assertTrue(settled.is_set())
+        socket.sendall.assert_not_called()
+        socket.recv.assert_not_called()
+
     def test_sync_full_message_keeps_original_bytes_and_one_gate(self):
         events, socket = [], control()
         self.assertEqual(list(gated_sync(chunks, socket, events, False, 'original-request')), [WIRE])
@@ -103,6 +113,17 @@ class AsyncRejectionBodyTests(unittest.IsolatedAsyncioTestCase):
         await body.aclose()  # No anext() after the final offered chunk.
         self.assertEqual(events, ['message', 'waiting', 'released', 'tail'])
         self.assertEqual(await asyncio.wait_for(asyncio.get_running_loop().sock_recv(self.peer, 1), 5), b'm')
+
+    async def test_async_close_after_first_offer_does_not_invent_a_tail(self):
+        events, settled = [], asyncio.Event()
+        body = gated_async(async_chunks, self.control, events, True,
+                           'original-request', settled=settled)
+        self.assertEqual(await anext(body), WIRE[:1])
+        await body.aclose()
+        self.assertEqual(events, ['message'])
+        self.assertTrue(settled.is_set())
+        with self.assertRaises(BlockingIOError):
+            self.peer.recv(1)
 
     async def test_async_full_message_keeps_original_bytes_and_one_gate(self):
         events = []
