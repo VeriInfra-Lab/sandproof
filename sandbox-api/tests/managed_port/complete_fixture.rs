@@ -15,6 +15,11 @@ pub(super) fn maintenance() -> MaintenanceConfig {
     value.retention_ms = 60_000;
     let capacity = value.capacity.as_mut().unwrap();
     capacity.max_live_sandboxes = 64;
+    // Four live/retained objects reserve 4 * 4_943_872 SQL bytes under the
+    // current create/pause/kill graph. 16 MiB cannot hold this component trace;
+    // 24 MiB fits without changing the original DB/WAL/SHM/scratch provision.
+    // Its database-page lower bound is 535_625_728 bytes, below the same 512 MiB.
+    capacity.max_sql_bytes = 24 * 1024 * 1024;
     value
 }
 
