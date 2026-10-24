@@ -356,7 +356,12 @@ impl CenterState {
                                     .len()
                                     .checked_sub(2)
                                     .and_then(|index| sandbox.operations().get(index))
-                                    .is_some_and(|previous| previous.unloaded().and_then(|o| o.outcome.unloaded()).is_some()))
+                                    .is_some_and(|previous| {
+                                        previous
+                                            .unloaded()
+                                            .and_then(|o| o.outcome.unloaded())
+                                            .is_some()
+                                    }))
                         {
                             held.instances = 0;
                             held.cpu = 0;

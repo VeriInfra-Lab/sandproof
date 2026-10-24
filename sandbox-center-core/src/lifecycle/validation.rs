@@ -224,29 +224,40 @@ impl CenterState {
             return false;
         }
         if let Some(observation) = op.unloaded.as_ref() {
-            let Some(previous) = position.checked_sub(1).and_then(|i| session.operations.get(i)) else {
+            let Some(previous) = position
+                .checked_sub(1)
+                .and_then(|i| session.operations.get(i))
+            else {
                 return false;
             };
-            let Some(prior) = previous.running() else { return false; };
-            let Some(accepted) = op.acceptance_time.sampled_at_ms() else { return false; };
+            let Some(prior) = previous.running() else {
+                return false;
+            };
+            let Some(accepted) = op.acceptance_time.sampled_at_ms() else {
+                return false;
+            };
             if !observation.matches_request(&op.intent) || op.running.is_some() {
                 return false;
             }
             let valid = match &observation.outcome {
                 sandproof_protocol::lifecycle::UnloadOutcome::Pending => false,
                 sandproof_protocol::lifecycle::UnloadOutcome::Unloaded { facts } => {
-                    facts.started_at_ms == prior.started_at_ms && facts.end_at_ms == prior.end_at_ms
+                    facts.started_at_ms == prior.started_at_ms
+                        && facts.end_at_ms == prior.end_at_ms
                         && facts.max_end_at_ms == prior.max_end_at_ms
                         && facts.startup_deadline_ms == prior.startup_deadline_ms
                 }
                 sandproof_protocol::lifecycle::UnloadOutcome::OriginalContinued { facts } => {
-                    facts.started_at_ms == prior.started_at_ms && facts.end_at_ms == prior.end_at_ms
+                    facts.started_at_ms == prior.started_at_ms
+                        && facts.end_at_ms == prior.end_at_ms
                         && facts.max_end_at_ms == prior.max_end_at_ms
                         && facts.startup_deadline_ms == prior.startup_deadline_ms
                         && facts.observed_at_ms >= accepted
                 }
             };
-            if !valid { return false; }
+            if !valid {
+                return false;
+            }
         }
         if position != 0 && op.create_refusal.is_some() {
             return false;
@@ -320,8 +331,7 @@ impl CenterState {
         request.binding.expected == ExpectedSession::Version(*expected_version)
             && named == &request.binding.session
             && *extend_only == *actual_extend
-            && Some(*incarnation)
-                == previous.running_incarnation()
+            && Some(*incarnation) == previous.running_incarnation()
             && *timeout_secs > 0
             && super::normalized_renewal_end(accepted_at_ms, *timeout_secs, prior.max_end_at_ms)
                 == end
@@ -365,8 +375,7 @@ impl CenterState {
                     && named == &request.binding.session
                     && previous.running().is_some()
                     && op.previous_effective_end_at_ms.is_none()
-                    && Some(*source_incarnation)
-                        == previous.running_incarnation()
+                    && Some(*source_incarnation) == previous.running_incarnation()
                     && super::resume::next_capture(history) == Ok(*capture)
                     && op.acceptance_time.sampled_at_ms().is_some()
                     && op.running.is_none()
@@ -377,7 +386,10 @@ impl CenterState {
                 expected_version,
                 ..
             } => {
-                let Some(source) = previous.unloaded.as_ref().and_then(|o| o.outcome.unloaded())
+                let Some(source) = previous
+                    .unloaded
+                    .as_ref()
+                    .and_then(|o| o.outcome.unloaded())
                 else {
                     return false;
                 };

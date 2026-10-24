@@ -32,19 +32,26 @@ impl CenterState {
             };
         }
         let prior = session.last_running().ok_or(DecisionError::Invalid)?;
-        let accepted = current.acceptance_time.sampled_at_ms().ok_or(DecisionError::Invalid)?;
+        let accepted = current
+            .acceptance_time
+            .sampled_at_ms()
+            .ok_or(DecisionError::Invalid)?;
         let valid_lifetime = match &observation.outcome {
             UnloadOutcome::Pending => false,
-            UnloadOutcome::Unloaded { facts } => facts.started_at_ms == prior.started_at_ms
-                && facts.end_at_ms == prior.end_at_ms
-                && facts.max_end_at_ms == prior.max_end_at_ms
-                && facts.startup_deadline_ms == prior.startup_deadline_ms,
-            UnloadOutcome::OriginalContinued { facts } => facts.started_at_ms == prior.started_at_ms
-                && facts.end_at_ms == prior.end_at_ms
-                && facts.max_end_at_ms == prior.max_end_at_ms
-                && facts.startup_deadline_ms == prior.startup_deadline_ms
-                && facts.observed_at_ms >= accepted
-                && facts.observed_at_ms <= now_ms,
+            UnloadOutcome::Unloaded { facts } => {
+                facts.started_at_ms == prior.started_at_ms
+                    && facts.end_at_ms == prior.end_at_ms
+                    && facts.max_end_at_ms == prior.max_end_at_ms
+                    && facts.startup_deadline_ms == prior.startup_deadline_ms
+            }
+            UnloadOutcome::OriginalContinued { facts } => {
+                facts.started_at_ms == prior.started_at_ms
+                    && facts.end_at_ms == prior.end_at_ms
+                    && facts.max_end_at_ms == prior.max_end_at_ms
+                    && facts.startup_deadline_ms == prior.startup_deadline_ms
+                    && facts.observed_at_ms >= accepted
+                    && facts.observed_at_ms <= now_ms
+            }
         };
         if !valid_lifetime || now_ms < accepted || now_ms >= prior.end_at_ms {
             return Err(DecisionError::Stale);
