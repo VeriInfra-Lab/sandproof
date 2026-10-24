@@ -114,7 +114,10 @@ fn host_budget_retains_management_and_destroy_capacity() {
         ("/inbox/max_operations_per_session", json!(9)),
         ("/native/maintenance/max_operations_per_sandbox", json!(0)),
         ("/native/maintenance/max_operations_per_sandbox", json!(7)),
-        ("/native/maintenance/max_operations_per_sandbox", json!(u64::MAX)),
+        (
+            "/native/maintenance/max_operations_per_sandbox",
+            json!(u64::MAX),
+        ),
         ("/inbox/max_profile_bytes", json!(0)),
         ("/inbox/max_manifest_bytes", json!(262_145)),
         ("/internal/request_timeout_ms", json!(0)),

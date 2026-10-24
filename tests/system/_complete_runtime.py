@@ -46,13 +46,18 @@ def maintenance_profile(*,slots,inbox_sessions,checkpoint_tail_inputs):
     base=1+slots+2
     checkpoint=power((base+6+c*(records+references+2))*scalar
         +c*copies*policy_bytes+r*(scalar+input_bytes+64))
-    rows=max(4096,power(c*sql_rows+10+slots+r))
+    source_rows=c*(n-2)
+    rows=max(4096,power(c*sql_rows+10+slots+r+source_rows+1))
     value_bytes=16*MIB;receipt_bytes=16384
     lease=(attempts+logical)*(input_bytes+scalar)+3*attempts*receipt_bytes \
         +4*input_bytes+3*65536+sql_rows*scalar
-    # Two original singleton rows (Inbox and SourceWork) each keep their
-    # declared SQL value reservation; scalar/config/global rows are separate.
-    fixed=2*value_bytes+(r+slots+32)*scalar
+    # Actual shared producer limits: options=4096, profile=65536,
+    # manifest=262144, raw work/configuration=65536 each. Format23 keeps one
+    # bounded SourceWork per row, not one growing global 16 MiB blob.
+    inbox=c*(4*4096+n*8192+2*262144+65536+4*8192)+8192
+    source_record=65536+4*65536+8192+131072+4*16384+4096+8192
+    sources=8192+source_rows*source_record+48+source_rows*80
+    fixed=inbox+48+sources+(r+slots+32)*scalar
     sql_bytes=power(fixed+c*lease)
     tail_bytes=4*MIB;page=4096
     minimum_database=8*(sql_bytes+2*checkpoint+2*tail_bytes) \

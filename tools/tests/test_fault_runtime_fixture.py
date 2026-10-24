@@ -38,7 +38,7 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             image.write_bytes(b"controlled-image")
             firecracker.write_bytes(b"controlled-runtime")
             values = dict(namespace="1234567890abcdef", database=str(root / "db/controller.db"),
-                node_state_dir=str(root / "state"), chroot_base=str(root / "jails"),
+                node_state_dir=str(root / "state"), chroot_base=str(root / "p/v"),
                 jailer="/approved/jailer", firecracker=str(firecracker), kernel=str(kernel),
                 rootfs=str(image), uid_base=3200000, vcpu_count=1, memory_mib=256,
                 file_policy_digest=1, max_active_global=2, max_active_per_tenant=1,
