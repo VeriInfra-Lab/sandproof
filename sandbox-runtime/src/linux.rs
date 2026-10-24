@@ -1972,7 +1972,7 @@ mod tests {
             runtime.observe_private_network(&id),
             Err(RuntimeError::IdentityMismatch("guest guard rules"))
         ));
-        runtime.cleanup_private_network(&id).unwrap();
+        runtime.cleanup_private_network_with_gate(&id, None).unwrap();
     }
 
     #[test]
