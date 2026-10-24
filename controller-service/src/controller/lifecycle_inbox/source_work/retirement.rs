@@ -453,7 +453,9 @@ pub(in crate::controller) fn validate_terminal_sources(
     sandbox: core::SandboxId,
 ) -> Result<Vec<SourceWorkRecord>, JournalError> {
     validate_terminal_cleanup(world, sandbox).map_err(|_| JournalError::UnresolvedAction)?;
-    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    let Some(sources) = codec::load(connection)? else {
+        return Ok(Vec::new());
+    };
     let mut expected = Vec::new();
     for record in sources
         .records
