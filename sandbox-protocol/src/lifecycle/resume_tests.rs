@@ -226,3 +226,92 @@ fn renewed_resume_uses_the_same_execution_and_original_total_lifetime() {
     };
     assert!(!changed_start.matches_resumed_renewal(&original, &renewed, &source));
 }
+
+#[test]
+fn renewal_signed_lifetime_boundaries_preserve_observation_and_source_checks() {
+    let original = original();
+    for (end_at_ms, expected) in [
+        (i64::MIN, false),
+        (-1, false),
+        (0, false),
+        (1, true),
+        (i64::MAX, true),
+    ] {
+        let mut renewed = original.clone();
+        renewed.request.operation = LifecycleOperation::Renew {
+            incarnation: 2.try_into().unwrap(),
+            end_at_ms,
+            extend_only: false,
+        };
+        renewed.request.binding.expected = ExpectedSession::Version(3);
+        renewed.request.binding.key.sequence = 4.try_into().unwrap();
+        renewed.accepted_version = 4;
+        let end = if end_at_ms < 0 {
+            1
+        } else {
+            u64::try_from(end_at_ms).unwrap()
+        };
+        let facts = CurrentReadyFacts {
+            started_at_ms: 0,
+            startup_deadline_ms: 0,
+            observed_at_ms: 0,
+            end_at_ms: end,
+            max_end_at_ms: u64::MAX,
+        };
+        let source = UnloadedFacts {
+            source_incarnation: 1.try_into().unwrap(),
+            capture: 1.try_into().unwrap(),
+            manifest_digest: ContentDigest::from_sha256([7; 32]),
+            material_bytes: 3000,
+            started_at_ms: 0,
+            end_at_ms: 1,
+            max_end_at_ms: u64::MAX,
+            startup_deadline_ms: 0,
+        };
+        let view = ResumeObservation {
+            request: original.clone(),
+            current_request: renewed.clone(),
+            readiness: CurrentResumeReadiness::Observed {
+                facts: facts.clone(),
+            },
+        };
+        assert_eq!(view.matches_request(&original), expected, "end={end_at_ms}");
+        assert_eq!(
+            facts.matches_resumed_renewal(&original, &renewed, &source),
+            expected,
+            "end={end_at_ms}"
+        );
+        let expired = CurrentReadyFacts {
+            observed_at_ms: end,
+            ..facts
+        };
+        assert!(!expired.matches_resumed_renewal(&original, &renewed, &source));
+    }
+}
+
+#[test]
+fn renewal_conversion_stays_inside_the_observed_branch() {
+    let original = original();
+    let mut current = original.clone();
+    current.request.binding.expected = ExpectedSession::Version(3);
+    current.request.binding.key.sequence = 4.try_into().unwrap();
+    current.accepted_version = 4;
+    current.request.operation = LifecycleOperation::Renew {
+        incarnation: 2.try_into().unwrap(),
+        end_at_ms: -1,
+        extend_only: true,
+    };
+    let mut view = ResumeObservation {
+        request: original.clone(),
+        current_request: current,
+        readiness: CurrentResumeReadiness::Pending,
+    };
+    // Pending reports no executable lifetime; preserve the original order.
+    assert!(view.matches_request(&original));
+    view.readiness = CurrentResumeReadiness::Observed { facts: ready() };
+    assert!(!view.matches_request(&original));
+    if let LifecycleOperation::Renew { end_at_ms, .. } = &mut view.current_request.request.operation {
+        *end_at_ms = 0;
+    }
+    assert!(view.matches_request(&original));
+}

@@ -37,7 +37,7 @@ impl ResumeObservation {
                 original.request.operation,
                 LifecycleOperation::Resume { .. }
             )
-            || original.request.validate(&binding.node).is_err()
+            || !matches!(original.request.validate(&binding.node), Ok(()))
             || original.center.deployment != binding.node.deployment_id
             || original.accepted_version == 0
             || original.accepted_version_for_request() != Some(original.accepted_version)
@@ -48,11 +48,7 @@ impl ResumeObservation {
             || current.session != binding.session
             || current.key.owner != binding.key.owner
             || current.key.deployment != binding.key.deployment
-            || self
-                .current_request
-                .request
-                .validate(&binding.node)
-                .is_err()
+            || !matches!(self.current_request.request.validate(&binding.node), Ok(()))
             || self.current_request.accepted_version_for_request()
                 != Some(self.current_request.accepted_version)
         {
@@ -75,15 +71,24 @@ impl ResumeObservation {
                     && current.key != binding.key
                     && incarnation == target_incarnation
                     && match &self.readiness {
-                        CurrentResumeReadiness::Observed { facts } => u64::try_from(end_at_ms)
-                            .is_ok_and(|end| {
+                        CurrentResumeReadiness::Observed { facts } => {
+                            if end_at_ms < 0 {
+                                false
+                            } else {
+                                // Nonnegative i64 values fit exactly in u64.
+                                #[allow(
+                                    clippy::cast_sign_loss,
+                                    reason = "negative lifetime rejected above"
+                                )]
+                                let end = end_at_ms as u64;
                                 current_facts(facts)
                                     && if extend_only {
                                         facts.end_at_ms >= end
                                     } else {
                                         facts.end_at_ms == end
                                     }
-                            }),
+                            }
+                        }
                         CurrentResumeReadiness::NotCurrent => false,
                         _ => true,
                     };
@@ -170,9 +175,15 @@ impl CurrentReadyFacts {
         else {
             return false;
         };
-        let Ok(end) = u64::try_from(end_at_ms) else {
+        if end_at_ms < 0 {
             return false;
-        };
+        }
+        // Nonnegative i64 values fit exactly in u64.
+        #[allow(
+            clippy::cast_sign_loss,
+            reason = "negative lifetime rejected above"
+        )]
+        let end = end_at_ms as u64;
         self.matches_resume_source(original, source)
             && incarnation == target_incarnation
             && current_facts(self)
