@@ -247,6 +247,10 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(center['metadata_budget']['max_certificate_bytes'], fixture.CERTIFICATE_BYTES)
         self.assertEqual(center['redis']['max_block_bytes'], fixture.BLOCK_BYTES)
         self.assertEqual(center['redis']['memory_bytes'], fixture.REDIS_MEMORY_BYTES)
+        self.assertEqual(set(center['bounds']), {'max_nodes', 'max_templates_per_node',
+            'max_sandboxes', 'operations_per_sandbox', 'max_options_bytes',
+            'result_retention_ms', 'platform'})
+        self.assertEqual(center['bounds']['result_retention_ms'], 300_000)
         self.assertEqual(hosts[0]['inbox']['max_operations_per_session'], 8)
         self.assertEqual(hosts[0]['inbox']['center'],dict(deployment=center['deployment_id'],center=center['center_id']))
         self.assertIsNone(hosts[0]['inbox']['host_epoch'])

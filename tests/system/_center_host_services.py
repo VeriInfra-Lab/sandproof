@@ -35,6 +35,8 @@ REDIS_MEMORY_BYTES = 128 * 1024**2
 CERTIFICATE_BYTES = 1024**2
 OPTIONS_BYTES = 4096
 OPERATIONS = 4
+# Center terminal-result retention; independent of Host/build/Guest retention.
+RESULT_RETENTION_MS = 300_000
 HOST_FAULT_VARIABLES = frozenset({
     'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION', 'SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION',
     'SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT', 'SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX',
@@ -221,7 +223,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
             stream_timeout_ms=900000),
         bounds=dict(max_nodes=len(nodes), max_templates_per_node=max(host['template_cache']['max_entries'] for host in hosts),
             max_sandboxes=max_records, operations_per_sandbox=OPERATIONS,
-            max_options_bytes=OPTIONS_BYTES, platform=platform),
+            max_options_bytes=OPTIONS_BYTES, result_retention_ms=RESULT_RETENTION_MS, platform=platform),
         tenants=[dict(tenant=str(value['tenant']),limit=copy.deepcopy(tenant)) for value in credentials], nodes=nodes,
         template_registry=copy.deepcopy(registry), metadata_budget=dict(max_certificate_bytes=CERTIFICATE_BYTES),
         private_builds=copy.deepcopy(private_builds),
