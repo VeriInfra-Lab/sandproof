@@ -124,8 +124,8 @@ fn actual_ready_keeps_original_lifetime_and_next_capture_uses_new_incarnation() 
         .unwrap()
         .unloaded()
         .unwrap()
-        .unloaded
-        .as_ref()
+        .outcome
+        .unloaded()
         .unwrap();
     let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else {
         unreachable!()
@@ -215,8 +215,8 @@ fn renewal_observes_the_resumed_origin_after_the_old_deadline() {
         .unwrap()
         .unloaded()
         .unwrap()
-        .unloaded
-        .as_ref()
+        .outcome
+        .unloaded()
         .unwrap();
     let mut observation = ready(&intent);
     let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else {

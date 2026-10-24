@@ -85,7 +85,7 @@ pub(super) fn renewed_facts_match(
         .checked_sub(1)
         .and_then(|i| history.get(i))
         .and_then(|op| op.unloaded.as_ref())
-        .and_then(|o| o.unloaded.as_ref())
+        .and_then(|o| o.outcome.unloaded())
         .is_some_and(|source| facts.matches_resumed_renewal(origin, current, source))
 }
 
@@ -105,7 +105,7 @@ impl CenterState {
         let source = prior
             .unloaded
             .as_ref()
-            .and_then(|o| o.unloaded.as_ref())
+            .and_then(|o| o.outcome.unloaded())
             .ok_or(DecisionError::Conflict)?;
         if now_ms
             < prior
@@ -246,6 +246,6 @@ pub(super) fn resume_source(
         .get(prior)?
         .unloaded
         .as_ref()?
-        .unloaded
-        .as_ref()
+        .outcome
+        .unloaded()
 }
