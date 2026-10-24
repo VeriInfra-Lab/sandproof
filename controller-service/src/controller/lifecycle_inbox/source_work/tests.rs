@@ -18,6 +18,7 @@ fn config() -> SourceObservationConfig {
         max_executable_bytes: 1024 * 1024,
         max_kernel_bytes: 1024 * 1024,
         max_disk_bytes: 1024 * 1024,
+        max_material_bytes: 64 * 1024 * 1024 * 1024,
     }
 }
 fn unload() -> AcceptedLifecycleIntent {
@@ -316,7 +317,7 @@ fn accepted_source_work_replay_and_restart_keep_one_question_and_raw_result() {
             .sandbox_record(sandbox_controller_core::SandboxId(1))
             .unwrap()
             .phase,
-        sandbox_controller_core::Phase::Running
+        sandbox_controller_sandbox_controller_core::Phase::Running
     );
 }
 
@@ -678,6 +679,170 @@ fn source_capacity_rejection_leaves_no_partial_inbox_or_source_table() {
                     |r| r.get::<_, bool>(0)
                 )
                 .unwrap()
+        );
+    }
+}
+
+fn observed_for_full(journal: &mut ControllerJournal) -> SourceWorkRecord {
+    let record = prepare(journal);
+    journal
+        .save_source_observation::<Evidence>(
+            &record.work,
+            &v3::context(),
+            observation(record.work.requirement()),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap()
+}
+fn full_request(record: &SourceWorkRecord) -> crate::capture::FullCaptureWorkRequest {
+    use sandproof_protocol::lifecycle::{ContentDigest, VmCompatibility, WritableDrive};
+    crate::capture::FullCaptureWorkRequest {
+        pause: record.work.pause_request().unwrap(),
+        compatibility: VmCompatibility {
+            snapshot_format: 1,
+            tool: ContentDigest::from_sha256([1; 32]),
+            cpu: ContentDigest::from_sha256([2; 32]),
+            devices: ContentDigest::from_sha256([3; 32]),
+            image_configuration: ContentDigest::from_sha256([4; 32]),
+            writable_drives: vec![WritableDrive {
+                drive_id: "rootfs".try_into().unwrap(),
+                jail_relative_path: "rootfs.ext4".into(),
+            }],
+        },
+        state_bytes: 4096,
+        memory_bytes: 4096,
+        disk_bytes: 4096,
+        api_timeout_ms: 1000,
+        worker_timeout_ms: 1000,
+    }
+}
+#[test]
+fn full_budget_refusal_precedes_pause_and_does_not_leave_half_reservation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = observed_for_full(&mut journal);
+    let before = journal.world().unwrap();
+    let mut full = full_request(&record);
+    full.state_bytes = config().max_material_bytes;
+    assert!(matches!(
+        journal.admit_lifecycle_full_capture::<Evidence>(
+            &record.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash
+        ),
+        Err(JournalError::MaintenanceCapacity)
+    ));
+    assert_eq!(journal.world().unwrap(), before);
+    assert!(
+        journal
+            .lifecycle_capture_record(record.work.anchor.local.sandbox)
+            .unwrap()
+            .unwrap()
+            .full_capture()
+            .is_none()
+    );
+}
+#[test]
+fn full_original_request_replay_keeps_one_pause_and_one_material_reservation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let record = observed_for_full(&mut journal);
+    let full = full_request(&record);
+    let accepted = journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &record.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let before = journal.world().unwrap();
+    assert_eq!(
+        journal
+            .admit_lifecycle_full_capture::<Evidence>(
+                &record.work,
+                &v3::context(),
+                &full,
+                10,
+                &mut NeverCrash
+            )
+            .unwrap(),
+        accepted
+    );
+    assert_eq!(journal.world().unwrap(), before);
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal
+            .lifecycle_capture_record(record.work.anchor.local.sandbox)
+            .unwrap(),
+        Some(accepted)
+    );
+    assert_eq!(journal.world().unwrap(), before);
+}
+#[test]
+fn full_rejects_changed_source_before_any_pause() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = observed_for_full(&mut journal);
+    let before = journal.world().unwrap();
+    let mut full = full_request(&record);
+    full.pause.source.start_time_ticks += 1;
+    assert!(matches!(
+        journal.admit_lifecycle_full_capture::<Evidence>(
+            &record.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash
+        ),
+        Err(JournalError::Conflict)
+    ));
+    assert_eq!(journal.world().unwrap(), before);
+}
+#[test]
+fn full_pause_commit_reply_loss_preserves_exact_durable_or_uncommitted_outcome() {
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, _) = ready(&path);
+        let record = observed_for_full(&mut journal);
+        let full = full_request(&record);
+        transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.admit_lifecycle_full_capture::<Evidence>(
+                &record.work,
+                &v3::context(),
+                &full,
+                10,
+                &mut NeverCrash
+            ),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+        let journal = v3::open(&path);
+        let captured = journal
+            .lifecycle_capture_record(record.work.anchor.local.sandbox)
+            .unwrap()
+            .unwrap();
+        assert_eq!(captured.full_capture().is_some(), durable);
+        assert_eq!(
+            journal
+                .world()
+                .unwrap()
+                .sandbox_record(record.work.anchor.local.sandbox)
+                .unwrap()
+                .phase,
+            if durable {
+                sandbox_controller_core::Phase::Pausing
+            } else {
+                sandbox_controller_core::Phase::Running
+            }
         );
     }
 }

@@ -197,12 +197,34 @@ fn apply_slot(world: &World, input: SlotInput) -> Result<World, MaintenanceRejec
             let record = world
                 .sandbox_record(binding.sandbox)
                 .ok_or(MaintenanceReject::ResourceMismatch)?;
-            if record.owner != binding.owner
-                || !record.terminal
-                || record.phase != Phase::Destroyed
-                || record.desired != Authority::Closed
-                || record.effective != Authority::Closed
-            {
+            let terminal = record.terminal
+                && record.phase == Phase::Destroyed
+                && record.desired == Authority::Closed
+                && record.effective == Authority::Closed;
+            let unloaded = !record.terminal
+                && record.phase == Phase::Paused
+                && record.durable_snapshot.is_some_and(|source| {
+                    let authority = Authority::Paused {
+                        sandbox: binding.sandbox,
+                        source,
+                    };
+                    record.desired == authority
+                        && record.effective == authority
+                        && record.current_operation.is_some_and(|operation| {
+                            world
+                                .operation_plan(crate::OperationKey {
+                                    sandbox: binding.sandbox,
+                                    operation: operation.id,
+                                })
+                                .is_some_and(|plan| {
+                                    plan.target_snapshot == Some(source)
+                                        && plan.capture.is_some_and(
+                                            crate::capture::CaptureHandoff::may_stop_original,
+                                        )
+                                })
+                        })
+                });
+            if record.owner != binding.owner || !(terminal || unloaded) {
                 return Err(MaintenanceReject::ResourcesNotReclaimed);
             }
             if world.vm_record(binding.vm).is_some_and(|vm| {

@@ -841,6 +841,9 @@ impl ControllerJournal {
             {
                 continue;
             }
+            if !lifecycle_inbox::source_work::full::claim(&transaction, &world, &action)? {
+                continue;
+            }
             crashes.hit(CrashPoint::BeforeDispatchClaim)?;
             storage::apply(&transaction, &self.namespace, input)?;
             transaction.execute("UPDATE outbox SET dispatch_state='dispatched' WHERE id=?1 AND dispatch_state='ready'", [id])?;
@@ -895,6 +898,12 @@ impl ControllerJournal {
         }
         let capacity = capacity::config(&transaction)?.ok_or(JournalError::UnsupportedStore)?;
         let serialized = checkpoint::encode_limited(receipt, capacity.max_receipt_bytes)?;
+        lifecycle_inbox::source_work::full::save_receipt(
+            &transaction,
+            &transaction.world(),
+            &action,
+            receipt,
+        )?;
         let next = apply_outcome(&transaction, &self.namespace, &action, receipt, id)?;
         let before_receipt = capacity::cursors(&transaction)?;
         let receipt_sequence = allocators::next_sql(&transaction, allocators::SqlId::Receipt)?;

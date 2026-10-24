@@ -256,6 +256,12 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         }
         return WorkflowStep::PublishRunning;
     }
+    if record.phase == Phase::Pausing && operation.kind == OperationKind::Pause {
+        return pause_step(world, sandbox, record, plan);
+    }
+    if record.phase == Phase::Paused {
+        return cleanup(world, sandbox, record.generation);
+    }
     if record.phase == Phase::Running {
         return WorkflowStep::Complete;
     }
@@ -372,4 +378,74 @@ fn retire_next(world: &World, sandbox: SandboxId) -> Option<WorkflowStep> {
         index += 1;
     }
     result
+}
+
+fn pause_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    plan: &crate::OperationPlan,
+) -> WorkflowStep {
+    let key = plan.key;
+    let Some(source) = plan.target_snapshot else {
+        return apply(ControllerInput::Scheduler(
+            SchedulerInput::ReservePauseSnapshot(key),
+        ));
+    };
+    let Some(vm) = plan.vm else {
+        return WorkflowStep::Blocked;
+    };
+    let Some(physical) = world.vm_record(vm) else {
+        return WorkflowStep::Blocked;
+    };
+    let seal = Command::SealSnapshot {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        workspace: record.workspace,
+        snapshot: source.snapshot,
+        manifest: source.manifest,
+    };
+    if !scheduled(world, &seal) {
+        if physical.status != VmStatus::Frozen || unresolved(world, sandbox) {
+            return WorkflowStep::Blocked;
+        }
+        return apply(ControllerInput::Scheduler(SchedulerInput::SealSnapshot(
+            sandbox,
+            source.snapshot,
+            source.manifest,
+        )));
+    }
+    if !crate::effect::effect_succeeded_check(world, &seal) {
+        return WorkflowStep::Blocked;
+    }
+    let commit = Command::CommitSnapshot {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        snapshot: source.snapshot,
+        manifest: source.manifest,
+    };
+    if !scheduled(world, &commit) {
+        return apply(ControllerInput::Scheduler(SchedulerInput::CommitSnapshot(
+            sandbox,
+            source.snapshot,
+        )));
+    }
+    if !crate::effect::effect_succeeded_check(world, &commit) {
+        return WorkflowStep::Blocked;
+    }
+    let stop = Command::StopVm {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+    };
+    if !crate::effect::effect_succeeded_check(world, &stop) {
+        return WorkflowStep::Blocked;
+    }
+    apply(ControllerInput::Publication(PublicationInput::Paused(
+        sandbox, source,
+    )))
 }

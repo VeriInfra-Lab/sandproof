@@ -146,8 +146,16 @@ pub(in crate::controller) fn validate(
     if sources.node != inbox.config.node || sources.max_sessions != inbox.config.max_sessions {
         return Err(JournalError::CorruptStore);
     }
+    let reserved = sources.records.iter().try_fold(0_u64, |sum, r| {
+        sum.checked_add(r.capture.as_ref().map_or(0, |c| c.reserved_material_bytes))
+            .ok_or(JournalError::CorruptStore)
+    })?;
+    if reserved > sources.config.max_material_bytes {
+        return Err(JournalError::CorruptStore);
+    }
     for (index, record) in sources.records.iter().enumerate() {
         super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
+        super::full::validate_record(record, world)?;
         if sources.records[..index].iter().any(|old| {
             old.work.request().request.binding.session
                 == record.work.request().request.binding.session

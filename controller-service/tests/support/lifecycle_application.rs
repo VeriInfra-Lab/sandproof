@@ -102,6 +102,7 @@ pub fn source_limits() -> sandproof_controller_service::capture::SourceObservati
         max_executable_bytes: 1024 * 1024,
         max_kernel_bytes: 1024 * 1024,
         max_disk_bytes: 1024 * 1024,
+        max_material_bytes: 64 * 1024 * 1024 * 1024,
     }
 }
 

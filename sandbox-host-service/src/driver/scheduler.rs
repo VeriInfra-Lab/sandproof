@@ -9,6 +9,7 @@ use tokio::{sync::watch, task::JoinSet};
 enum Candidate {
     Create(AcceptedLifecycleIntent),
     Renew(AcceptedLifecycleIntent),
+    Unload(AcceptedLifecycleIntent),
     Native(sandbox_controller_core::SandboxId, bool),
 }
 
@@ -42,6 +43,16 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                     .map_err(|_| ApplicationError::OutcomeUnknown)?
                 {
                     result.push(Candidate::Renew(intent));
+                }
+                for intent in app
+                    .lifecycle_pending_unloads(&node)
+                    .map_err(|_| ApplicationError::OutcomeUnknown)?
+                {
+                    let state = app.lifecycle_work_state_for_recorded(&intent, &node)?;
+                    if let Some(local) = state.local {
+                        covered.insert(local.sandbox);
+                    }
+                    result.push(Candidate::Unload(intent));
                 }
                 for (sandbox, terminal) in app.pending_workflows()? {
                     if !covered.contains(&sandbox) {
@@ -94,6 +105,9 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                                 verification.as_deref(),
                             )
                             .map(|_| true)
+                        }
+                        Candidate::Unload(intent) => {
+                            app.advance_recorded_lifecycle_unload(&intent, &config.node)
                         }
                         Candidate::Native(sandbox, _) => app.advance_current_workflow(sandbox),
                         Candidate::Renew(intent) => app

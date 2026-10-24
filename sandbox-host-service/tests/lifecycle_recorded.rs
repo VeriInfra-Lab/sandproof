@@ -108,6 +108,7 @@ fn application(
                     max_configuration_bytes: 1024,
                     max_executable_bytes: 67_108_864,
                     max_kernel_bytes: 268_435_456,
+                    max_material_bytes: 64 * 1024 * 1024 * 1024,
                     max_disk_bytes: 2 * 1024 * 1024,
                 },
                 &mut NeverCrash,
