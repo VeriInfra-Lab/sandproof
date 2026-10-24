@@ -238,6 +238,10 @@ fn free_binding(world: &World, binding: HostBinding) -> Result<(), Reject> {
     binding_history(world, binding)?;
     if record(world, binding.sandbox)?.generation > binding.generation {
         released_history(world, binding)
+    } else if crate::maintenance::released_unload_termination_history(world,binding) {
+        // Only a slot already Free reaches this branch. The original release
+        // permit and Releasing validation remain unchanged.
+        Ok(())
     } else {
         released(world, binding)
     }

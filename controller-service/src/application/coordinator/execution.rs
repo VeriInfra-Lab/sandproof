@@ -521,13 +521,19 @@ pub(super) fn local_routes_dropped<H: ControllerHost>(
             .is_none_or(DataLease::routes_dropped)
 }
 
-fn runtime_resources_reclaimed(world: &core::World, sandbox: core::SandboxId) -> bool {
+pub(super) fn runtime_resources_reclaimed(world: &core::World, sandbox: core::SandboxId) -> bool {
     if super::recovery::reclaimed_sandboxes(world).contains(&sandbox) {
         return true;
     }
     let Some(row) = world.sandbox_record(sandbox) else {
         return false;
     };
+    if row.terminal {
+        // Material/snapshot history survives until its separate settled Retire.
+        // The original terminal check still requires exact reclaimed runtime,
+        // closed native uses, a successful fence and no unresolved effects.
+        return core::maintenance::retirement::validate_terminal_cleanup(world,sandbox).is_ok();
+    }
     if row.phase != core::Phase::Paused || row.terminal || row.durable_snapshot.is_none() {
         return false;
     }

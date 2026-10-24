@@ -2,7 +2,7 @@
 //! attestations: durable exact-host release and local drain ownership do.
 use super::ApplicationError;
 use super::{
-    ControllerApplication, ControllerHost, DataLease, Inner, map_journal, reclaimed_sandboxes,
+    ControllerApplication, ControllerHost, DataLease, Inner, map_journal,
     release_reclaimed_slots,
 };
 use super::{FaultContext, FaultRecord, FaultStage};
@@ -80,7 +80,10 @@ pub(super) fn maintain_locked<H: ControllerHost>(
         .expire_retained(now, &mut NeverCrash)
         .map_err(map_journal)?;
     release_reclaimed_slots(inner)?;
-    let reclaimed = reclaimed_sandboxes(&inner.journal.world().map_err(map_journal)?);
+    let world=inner.journal.world().map_err(map_journal)?;
+    let reclaimed=world.sandbox_records().iter().filter_map(|(sandbox,row)|{
+        (row.terminal && super::execution::runtime_resources_reclaimed(&world,*sandbox)).then_some(*sandbox)
+    }).collect::<BTreeSet<_>>();
     let candidates = inner.journal.retirement_candidates().map_err(map_journal)?;
     let mut report = MaintenanceReport {
         expired_results,

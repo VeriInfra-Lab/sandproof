@@ -60,6 +60,10 @@ pub type SourceProbe = Box<
 
 #[derive(Default)]
 pub struct State {
+    pub material_plan: Option<Vec<u8>>,
+    pub material_observation: Option<sandproof_controller_service::capture::MaterialRetirementObservation>,
+    pub material_prepare_calls: usize,
+    pub material_delete_plans: Vec<Vec<u8>>,
     pub capture_request_end:
         Option<sandproof_controller_service::capture::CaptureRequestEndObservation>,
     pub capture_request_end_observations: usize,
@@ -95,6 +99,10 @@ impl WorkEvidence for TestHost {
     type Evidence = workflow::FakeHostEvidence;
 }
 impl WorkExecution for TestHost {
+    fn retire_lifecycle_material(&self,_request:&sandproof_controller_service::capture::CaptureMaterialRetirementRequest,plan:&[u8],_permit:&sandproof_controller_service::capture::MaterialRetirementPermit)->Result<sandproof_controller_service::capture::MaterialRetirementObservation,ApplicationError>{
+        let mut state=self.0.lock().unwrap();state.material_delete_plans.push(plan.to_vec());
+        state.material_observation.clone().ok_or(ApplicationError::Busy)
+    }
     fn propose_lifecycle_full(
         &self,
         _pause: &sandproof_controller_service::capture::PauseWorkRequest,
@@ -158,6 +166,10 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    fn prepare_lifecycle_material_retirement(&self,_request:&sandproof_controller_service::capture::CaptureMaterialRetirementRequest)->Result<Vec<u8>,ApplicationError>{
+        let mut state=self.0.lock().unwrap();state.material_prepare_calls+=1;
+        state.material_plan.clone().ok_or(ApplicationError::Busy)
+    }
     fn observe_lifecycle_capture_request_end(
         &self,
         _action: &WorkAction<core::EffectId>,

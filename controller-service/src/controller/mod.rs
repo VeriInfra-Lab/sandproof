@@ -65,20 +65,6 @@ use std::path::{Path, PathBuf};
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
 
-// Temporary fixed-category test output. Non-test builds return the same
-// result unchanged; neither the error nor any request data is formatted.
-pub(in crate::controller) fn diagnose_stage<T, E>(
-    stage: &'static str,
-    result: Result<T, E>,
-) -> Result<T, E> {
-    #[cfg(test)]
-    if result.is_err() {
-        eprintln!("stage1-fixed-diagnostic: {stage}");
-    }
-    let _ = stage;
-    result
-}
-
 fn terminal_capture_stop_input(world: &core::World, input: &core::ControllerInput) -> bool {
     let core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(sandbox, generation, vm)) =
         input

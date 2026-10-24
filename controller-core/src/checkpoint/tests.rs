@@ -12,6 +12,7 @@ mod continuation;
 mod malformed;
 mod resume;
 mod unload;
+mod released_unload;
 
 const LIMITS: CheckpointLimits = CheckpointLimits {
     max_records: 1000,
