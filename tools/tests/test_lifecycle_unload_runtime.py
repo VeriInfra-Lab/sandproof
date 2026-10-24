@@ -130,9 +130,10 @@ class ScenarioDiagnosticsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             runner=SimpleNamespace(root=root, services=object(), owner_key='API_SECRET',
-                foreign_key='FOREIGN_SECRET', finish=Mock(),measurement_identity=lambda:{})
+                foreign_key='FOREIGN_SECRET', finish=Mock(),measurement_identity=lambda:{},
+                fail_resume_gate=Mock(return_value='original responsibility preserved'),close_restore_gate=Mock())
             error=AssertionError('BODY_SECRET API_SECRET TOKEN_SECRET')
-            args=SimpleNamespace(scenario_timeout=60)
+            args=SimpleNamespace(scenario_timeout=60,scenario='normal',activation_gate_timeout_ms=60000)
             module=SimpleNamespace(prepare=lambda _args:runner)
             with patch.dict(sys.modules, {'lifecycle_unload_runtime':module}), \
                     patch.object(scene, 'check_center_configuration', side_effect=error), \
@@ -458,3 +459,103 @@ class SourceRowsTests(unittest.TestCase):
         self.conn.execute('UPDATE controller_source_work_records SET work_key=? WHERE id=1',(bytes(32),))
         with self.assertRaises(ValueError):
             runtime.checked_source_records(self.conn,self.host,self.deadline)
+
+class ActivationGateProtocolTests(unittest.TestCase):
+    def test_configuration_rejects_invalid_bounds_before_stopping_host(self):
+        gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+        gate.restore_gate=None
+        gate.lease=SimpleNamespace(identity='1'*64)
+        gate.runs={'session':dict(context=dict(binding=dict(generation=1)),local=dict(sandbox=3))}
+        manager=Mock()
+        processes=SimpleNamespace(children={'host-0':manager},stop=Mock())
+        gate.services=SimpleNamespace(native_pools=[dict(namespace='0123456789abcdef')],processes=processes)
+        import time
+        for timeout in (True,999,120001,1.0):
+            with self.subTest(timeout=timeout),self.assertRaises(ValueError):
+                gate.arm_restore_gate('session',time.monotonic()+10,timeout)
+        processes.stop.assert_not_called()
+        manager.poll.assert_not_called()
+
+    def test_ready_and_command_bind_exact_digest_run_and_finite_choice(self):
+        digest='2'*64
+        runtime.validate_gate_ready(dict(schema_version=1,observation_sha256=digest),digest)
+        self.assertEqual(runtime.gate_command('1'*64,digest,'continue')['command'],'continue')
+        for value in (dict(schema_version=True,observation_sha256=digest),
+                dict(schema_version=1,observation_sha256='3'*64),
+                dict(schema_version=1,observation_sha256=digest,token='PRIVATE')):
+            with self.assertRaises(ValueError):runtime.validate_gate_ready(value,digest)
+        for command in ('advance','init','',None):
+            with self.assertRaises(ValueError):runtime.gate_command('1'*64,digest,command)
+
+    def test_atomic_command_publication_never_overwrites_or_accepts_stage(self):
+        import os
+        import stat
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+            self.addCleanup(os.close,descriptor)
+            config=runtime.gate_configuration('1'*64,'sb-0123456789abcdef-3',2,1000)
+            runtime.gate_publish(descriptor,'config.json',config)
+            with self.assertRaises(FileExistsError):runtime.gate_publish(descriptor,'config.json',config)
+            value=runtime.gate_command('1'*64,'2'*64,'continue')
+            runtime.gate_publish(descriptor,'command.json',value)
+            original=(root/'command.json').read_bytes()
+            self.assertEqual(json.loads(original),value)
+            self.assertFalse((root/'command-stage.json').exists())
+            self.assertEqual(stat.S_IMODE((root/'command.json').stat().st_mode),0o600)
+            with self.assertRaises(OSError):runtime.gate_publish(descriptor,'command.json',value)
+            self.assertEqual((root/'command.json').read_bytes(),original)
+            self.assertEqual((root/'command.json').stat().st_nlink,1)
+            with self.assertRaises(ValueError):runtime.gate_publish(descriptor,'ready.json',value)
+
+    def test_cleanup_preserves_gate_until_original_product_and_exit_settle(self):
+        gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+        gate.restore_gate=dict(command='continue',command_sent=True,exit86_observed=False)
+        gate.gc_complete=gate.physical_complete=False
+        gate._gate_files_unchanged=Mock()
+        with self.assertRaises(ValueError):gate.cleanup_restore_gate()
+        gate._gate_files_unchanged.assert_not_called()
+
+    def test_normal_scenario_has_no_gate_files_or_fault_command(self):
+        gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+        gate.restore_gate=None
+        self.assertIsNone(gate.cleanup_restore_gate())
+        self.assertEqual(gate.fail_resume_gate(),'no new gate command; original responsibility preserved')
+        gate.close_restore_gate()
+
+    def test_invalid_e7_deadline_never_prepares_or_starts_services(self):
+        module=SimpleNamespace(prepare=Mock())
+        args=SimpleNamespace(scenario='restore-activation-loss',activation_gate_timeout_ms=999,
+            scenario_timeout=60)
+        with patch.dict(sys.modules,{'lifecycle_unload_runtime':module}),self.assertRaises(ValueError):
+            scene.exercise(args)
+        module.prepare.assert_not_called()
+
+    def test_recovery_requires_exit86_and_restarts_original_host_without_fault_environment(self):
+        import time
+        for code in (0,86):
+            gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+            original=Mock(pid=101)
+            original.wait.return_value=code
+            recovered=Mock(pid=102)
+            processes=SimpleNamespace(children={'host-0':original},
+                bindings={'host-0':dict(config='/protected/host.json',uid=0,gid=0)},
+                start=Mock(return_value=recovered))
+            gate.restore_gate=dict(host=original,observation_sha256='2'*64)
+            gate.release_resume_gate=Mock()
+            gate._gate_files_unchanged=Mock()
+            gate.services=SimpleNamespace(processes=processes,wait_ready=Mock())
+            gate.configs={'host-0':dict(original=True)}
+            receipt=dict(candidate=dict(pid=201,start_time_ticks=3,resource_id='vm-original',boot_id='boot'))
+            with patch.object(runtime,'role_facts',return_value=gate.configs['host-0']), \
+                    patch.object(runtime,'original_process',return_value=True):
+                if code==86:
+                    result=gate.recover_resume_gate(receipt,time.monotonic()+10)
+                    self.assertEqual(result['exit_code'],86)
+                    self.assertFalse(result['public_authorization_proven'])
+                    processes.start.assert_called_once_with('host-0')
+                    self.assertTrue(gate.restore_gate['exit86_observed'])
+                else:
+                    with self.assertRaises(ValueError):gate.recover_resume_gate(receipt,time.monotonic()+10)
+                    processes.start.assert_not_called()
+            gate.release_resume_gate.assert_called_once_with('continue')
