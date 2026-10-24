@@ -4,11 +4,11 @@
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../controller-service/tests/support/lifecycle_application.rs"]
 mod current;
-use current::fixture as local;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use current::fixture as local;
 use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_controller_service::{
     InternalTemplate,
@@ -20,7 +20,9 @@ use sandproof_host_service::{DriverConfig, HostFacade, TemplateSource};
 use sandproof_internal::{DataReceiver, LifecycleReceiver};
 use sandproof_protocol::{
     internal::lifecycle::CreateBinding,
-    lifecycle::{AcceptedLifecycleIntent, ExpectedSession, LifecycleAccessIdentity, LifecycleOperation},
+    lifecycle::{
+        AcceptedLifecycleIntent, ExpectedSession, LifecycleAccessIdentity, LifecycleOperation,
+    },
 };
 use std::{
     path::Path,
@@ -93,7 +95,10 @@ fn application(
     app
 }
 fn access(create: &AcceptedLifecycleIntent) -> LifecycleAccessIdentity {
-    let LifecycleOperation::Create { target_incarnation, .. } = &create.request.operation else {
+    let LifecycleOperation::Create {
+        target_incarnation, ..
+    } = &create.request.operation
+    else {
         panic!("fixture must carry the original Create incarnation")
     };
     LifecycleAccessIdentity {
@@ -114,14 +119,25 @@ async fn authorized_original_secret(
 ) -> String {
     for token in [None, Some("unknown-public-bearer")] {
         assert_eq!(
-            facade.receive_data(identity.clone(), current::context(), request(token)).await.status(),
+            facade
+                .receive_data(identity.clone(), current::context(), request(token))
+                .await
+                .status(),
             StatusCode::BAD_REQUEST
         );
     }
-    let original_secret = state.lock().unwrap().configurations.values().next().unwrap().0.clone();
-    let (permit, bound_secret) = app.lifecycle_data_authorization(
-        identity, &current::context(), DataKind::FileRead
-    ).unwrap();
+    let original_secret = state
+        .lock()
+        .unwrap()
+        .configurations
+        .values()
+        .next()
+        .unwrap()
+        .0
+        .clone();
+    let (permit, bound_secret) = app
+        .lifecycle_data_authorization(identity, &current::context(), DataKind::FileRead)
+        .unwrap();
     assert_eq!(bound_secret, original_secret);
     assert_ne!(bound_secret, "unknown-public-bearer");
     drop(permit);
@@ -143,7 +159,10 @@ async fn reject_foreign_identities(
         // Current full-identity mismatches are NotFound -> 401. A real guest
         // secret cannot authorize a different owner/session/incarnation.
         assert_eq!(
-            facade.receive_data(wrong, current::context(), request(Some(original_secret))).await.status(),
+            facade
+                .receive_data(wrong, current::context(), request(Some(original_secret)))
+                .await
+                .status(),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -160,9 +179,15 @@ async fn revoke_original_identity(
     destroy.request.binding.expected = ExpectedSession::Version(1);
     destroy.request.binding.key.sequence = 2.try_into().unwrap();
     destroy.request.operation = LifecycleOperation::Destroy {};
-    facade.record_lifecycle(destroy, current::context()).await.unwrap();
+    facade
+        .record_lifecycle(destroy, current::context())
+        .await
+        .unwrap();
     assert_eq!(
-        facade.receive_data(identity, current::context(), request(Some(original_secret))).await.status(),
+        facade
+            .receive_data(identity, current::context(), request(Some(original_secret)))
+            .await
+            .status(),
         StatusCode::UNAUTHORIZED
     );
 }
@@ -173,23 +198,43 @@ async fn facade_authorizes_current_original_identity_not_public_keys_or_sdk_bear
     let state = Arc::new(Mutex::new(state()));
     let app = application(&dir.path().join("db"), Arc::clone(&state));
     let facade = HostFacade::new(
-        Arc::clone(&app), limits(),
+        Arc::clone(&app),
+        limits(),
         RequestAdmission::new(RequestAdmissionLimits {
-            max_pending_requests: 9, control_reserve: 1,
-        }).unwrap(),
-    ).unwrap();
+            max_pending_requests: 9,
+            control_reserve: 1,
+        })
+        .unwrap(),
+    )
+    .unwrap();
     let create = current::request();
     let identity = access(&create);
     assert_eq!(
-        facade.receive_data(identity.clone(), current::context(), request(None)).await.status(),
+        facade
+            .receive_data(identity.clone(), current::context(), request(None))
+            .await
+            .status(),
         StatusCode::UNAUTHORIZED
     );
-    assert!(facade.record_lifecycle(create.clone(), current::context()).await.unwrap().matches(&create));
+    assert!(
+        facade
+            .record_lifecycle(create.clone(), current::context())
+            .await
+            .unwrap()
+            .matches(&create)
+    );
     assert_eq!(
-        facade.receive_data(identity.clone(), current::context(), request(None)).await.status(),
+        facade
+            .receive_data(identity.clone(), current::context(), request(None))
+            .await
+            .status(),
         StatusCode::UNAUTHORIZED
     );
-    facade.lifecycle().drive_once(driver(), Arc::new(Templates)).await.unwrap();
+    facade
+        .lifecycle()
+        .drive_once(driver(), Arc::new(Templates))
+        .await
+        .unwrap();
     let before = state.lock().unwrap().actions.len();
     let original_secret = authorized_original_secret(&facade, &app, &state, &identity).await;
     reject_foreign_identities(&facade, &identity, &original_secret).await;
@@ -206,19 +251,40 @@ async fn facade_storage_uncertainty_never_becomes_authorized_or_identity_refusal
     let app = application(&path, Arc::clone(&state));
     let facade = HostFacade::new(app, limits(), Arc::new(RequestAdmission::default())).unwrap();
     let create = current::request();
-    facade.record_lifecycle(create.clone(), current::context()).await.unwrap();
-    facade.lifecycle().drive_once(driver(), Arc::new(Templates)).await.unwrap();
+    facade
+        .record_lifecycle(create.clone(), current::context())
+        .await
+        .unwrap();
+    facade
+        .lifecycle()
+        .drive_once(driver(), Arc::new(Templates))
+        .await
+        .unwrap();
     assert_eq!(
-        facade.receive_data(access(&create), current::context(), request(None)).await.status(),
+        facade
+            .receive_data(access(&create), current::context(), request(None))
+            .await
+            .status(),
         StatusCode::BAD_REQUEST
     );
     let before = state.lock().unwrap().actions.len();
     // An actual foreign SQLite write invalidates the original committed view.
     // The unchanged production authorization path must report unavailable.
     let external = rusqlite::Connection::open(&path).unwrap();
-    assert_eq!(external.execute("UPDATE controller_lifecycle_inbox SET sha256=zeroblob(32) WHERE id=1", []).unwrap(), 1);
     assert_eq!(
-        facade.receive_data(access(&create), current::context(), request(None)).await.status(),
+        external
+            .execute(
+                "UPDATE controller_lifecycle_inbox SET sha256=zeroblob(32) WHERE id=1",
+                []
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        facade
+            .receive_data(access(&create), current::context(), request(None))
+            .await
+            .status(),
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(state.lock().unwrap().actions.len(), before);
@@ -236,15 +302,25 @@ async fn facade_reception_and_all_driver_clones_share_one_actual_work_gate() {
     let app = application(&dir.path().join("db"), state);
     let facade = HostFacade::new(app, limits(), Arc::new(RequestAdmission::default())).unwrap();
     let create = current::request();
-    facade.record_lifecycle(create.clone(), current::context()).await.unwrap();
+    facade
+        .record_lifecycle(create.clone(), current::context())
+        .await
+        .unwrap();
     let first = facade.lifecycle();
     let second = facade.lifecycle();
     let work = tokio::spawn(async move { first.drive_once(driver(), Arc::new(Templates)).await });
-    tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(5)).unwrap()).await.unwrap();
+    tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(5)).unwrap())
+        .await
+        .unwrap();
     // Reception only records durable responsibility; it does not start another
     // physical worker. Competing execution must be refused by the same session.
-    let recorded = facade.clone().record_lifecycle(create.clone(), current::context()).await;
-    let competing = second.advance(create.clone(), Some(local::template()), local::compute()).await;
+    let recorded = facade
+        .clone()
+        .record_lifecycle(create.clone(), current::context())
+        .await;
+    let competing = second
+        .advance(create.clone(), Some(local::template()), local::compute())
+        .await;
     let active = second.active_work();
     release.send(()).unwrap();
     work.await.unwrap().unwrap();
