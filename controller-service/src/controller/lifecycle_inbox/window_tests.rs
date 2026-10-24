@@ -680,14 +680,14 @@ fn unknown_release_pins_native_work_and_native_retirement_preserves_unconfirmed_
         Err(JournalError::UnresolvedAction)
     ));
     assert_native_retirement_preserves_unconfirmed_window(
-        journal, &path, destroy, close, local, position,
+        journal, &path, &destroy, close, local, position,
     );
 }
 
 fn assert_native_retirement_preserves_unconfirmed_window(
     mut journal: ControllerJournal,
     path: &std::path::Path,
-    destroy: AcceptedLifecycleIntent,
+    destroy: &AcceptedLifecycleIntent,
     close: LifecycleWindowClose,
     local: InternalLocalBinding,
     position: crate::HostSlotContext,
@@ -700,8 +700,8 @@ fn assert_native_retirement_preserves_unconfirmed_window(
     assert_eq!(candidates[0].owner, local.owner);
     assert_eq!(candidates[0].operation, core::OperationId(2));
     assert_eq!(candidates[0].release.unwrap().context, position);
-    let original = journal.lifecycle_work_state(&destroy, &context()).unwrap();
-    assert_eq!(original.intent, destroy);
+    let original = journal.lifecycle_work_state(destroy, &context()).unwrap();
+    assert_eq!(&original.intent, destroy);
     assert_eq!(original.local, Some(local));
     assert_eq!(original.local_operation, Some(core::OperationId(2)));
     assert!(original.current && original.terminal);
@@ -738,18 +738,18 @@ fn assert_native_retirement_preserves_unconfirmed_window(
     fixture::refresh_epoch(&mut journal);
     assert_eq!(inbox(&journal), saved);
     assert_eq!(
-        journal.lifecycle_work_state(&destroy, &context()).unwrap(),
+        journal.lifecycle_work_state(destroy, &context()).unwrap(),
         original
     );
     assert_eq!(
         journal
-            .record_lifecycle_intent(&destroy, &context(), &mut NeverCrash)
+            .record_lifecycle_intent(destroy, &context(), &mut NeverCrash)
             .unwrap(),
         original
     );
     assert!(
         journal
-            .lifecycle_destroy_cleaned(&destroy, &context())
+            .lifecycle_destroy_cleaned(destroy, &context())
             .unwrap()
     );
     assert!(matches!(
