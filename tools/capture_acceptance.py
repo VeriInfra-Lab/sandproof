@@ -66,11 +66,11 @@ def bind_settings(profile, pool_roots):
 
 
 def require_capacity(capture, native, slots):
-    """Keep complete old and new bundles in the declared physical envelope.
+    """Check the payload floor for a second capture with live File backing.
 
-    This is a minimum acceptance provision, not a replacement for journal
-    admission or the OS hard quota. Full history/cleanup remains bounded by
-    the original declared project and producer/controller limits.
+    Old bundle + private restored RAM/state + new Full source + new bundle
+    coexist. The operator must additionally reserve metadata, allocation and
+    cleanup slack; this floor does not attest that provision or a kernel quota.
     """
     if type(slots) is not int or slots < 1:
         raise ValueError('original retained-session capacity required')
@@ -78,10 +78,10 @@ def require_capacity(capture, native, slots):
         raise ValueError('capture memory cap cannot undercut the actual VM')
     if capture['disk_copy_bytes'] < Path(native['rootfs']).stat().st_size:
         raise ValueError('capture disk cap cannot undercut the original private disk')
-    bundle = sum(capture[key] for key in ('state_copy_bytes', 'memory_copy_bytes', 'disk_copy_bytes'))
-    minimum = 2 * slots * bundle
-    if minimum > 2**63-1 or capture['material_project']['hard_bytes'] < minimum:
-        raise ValueError('approved project cannot hold retained source and new complete captures')
+    state_memory = capture['state_copy_bytes'] + capture['memory_copy_bytes']
+    minimum = slots * (4 * state_memory + 2 * capture['disk_copy_bytes'])
+    if minimum >= 2**63-1 or capture['material_project']['hard_bytes'] <= minimum:
+        raise ValueError('approved project must exceed capture/restore overlap payload floor')
     return minimum
 
 

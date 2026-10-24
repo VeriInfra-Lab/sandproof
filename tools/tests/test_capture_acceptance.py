@@ -53,11 +53,11 @@ class CaptureAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             disk=Path(directory)/'disk';disk.write_bytes(bytes(4096))
             native=dict(memory_mib=1,rootfs=str(disk))
-            required=4*(32+1024**2+4096)
-            config['material_project']['hard_bytes']=required
+            required=2*(4*(32+1024**2)+2*4096)
+            config['material_project']['hard_bytes']=required+1
             self.assertEqual(capture.require_capacity(config,native,2),required)
             config['material_project']['hard_bytes']-=1
-            with self.assertRaisesRegex(ValueError,'complete captures'):
+            with self.assertRaisesRegex(ValueError,'overlap payload floor'):
                 capture.require_capacity(config,native,2)
             config=profile()['hosts'][0];config['memory_copy_bytes']-=1
             with self.assertRaisesRegex(ValueError,'actual VM'):
