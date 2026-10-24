@@ -459,7 +459,7 @@ fn unknown_continue_then_destroy_is_closed_and_original_stop_can_retire_only_tha
     assert!(world.sandbox_record(id.key.sandbox).is_none());
 }
 
-fn dispatched_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
+fn pending_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
     let world = pause_source(true);
     let id = identity(&world);
     let target = world
@@ -505,6 +505,10 @@ fn dispatched_capture(unknown: bool) -> (World, EffectId, crate::capture::Captur
     } else {
         world
     };
+    (world, seal, end)
+}
+fn dispatched_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
+    let (world, seal, end) = pending_capture(unknown);
     (compensate(&world), seal, end)
 }
 
@@ -634,5 +638,117 @@ fn end_digests_without_exact_seal_coordinates_or_after_destroy_never_retire_work
     assert_eq!(
         world.effect_status(&seal),
         Some(EffectStatus::OutcomeUnknown)
+    );
+}
+
+#[test]
+fn pending_or_rpc_unknown_pause_prepares_via_original_compensation_only_after_valid_end() {
+    for timeout in [false, true] {
+        let (world, seal, coordinates) = pending_capture(true);
+        let id = identity(&world);
+        let world = if timeout {
+            advance(&world, ControllerInput::RpcTimeout(id.key.sandbox))
+        } else {
+            world
+        };
+        let before = world.clone();
+        let invalid = handle_controller(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: receipt(),
+            }),
+        );
+        assert_eq!(
+            invalid,
+            Err(ControllerReject::Capture(CaptureReject::EffectsUnresolved))
+        );
+        assert_eq!(world, before);
+        assert_eq!(
+            world
+                .operation_plan(id.key)
+                .unwrap()
+                .capture
+                .unwrap()
+                .eligibility(),
+            crate::capture::RestoreEligibility::Capturing
+        );
+        let mut end = receipt();
+        end.end = crate::capture::CaptureWorkEnd::NeverReleased {
+            seal: Some(coordinates),
+        };
+        let world = advance(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: end,
+            }),
+        );
+        assert_eq!(
+            world.operation_record(id.key).unwrap().operation.status,
+            OperationStatus::Compensating(FailureKind::Cancelled)
+        );
+        assert_eq!(
+            world.effect_status(&seal),
+            Some(EffectStatus::RetiredByCaptureEnd(end))
+        );
+        assert_eq!(
+            world.sandbox_record(id.key.sandbox).unwrap().effective,
+            Authority::Closed
+        );
+        let activate = effect(&world, id.key.sandbox, |command| {
+            *command == id.activation_command()
+        });
+        let world = finish(&world, activate);
+        let world = advance(
+            &world,
+            ControllerInput::Capture(CaptureInput::PublishOriginalContinued { identity: id }),
+        );
+        assert_eq!(
+            world.operation_record(id.key).unwrap().result,
+            Some(OperationResult::Failed(FailureKind::Cancelled))
+        );
+        assert_eq!(
+            world.sandbox_record(id.key.sandbox).unwrap().phase,
+            Phase::Running
+        );
+    }
+}
+
+#[test]
+fn pending_unknown_commit_cannot_revoke_or_prepare_even_with_end_digests() {
+    let world = unload::commit_planned();
+    let id = identity(&world);
+    let commit = effect(&world, id.key.sandbox, |command| {
+        matches!(command, Command::CommitSnapshot { .. })
+    });
+    let world = advance(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(commit.clone())),
+    );
+    let world = advance(
+        &world,
+        ControllerInput::Effect(EffectInput::Timeout(commit)),
+    );
+    let before = world.clone();
+    assert_eq!(
+        handle_controller(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: receipt()
+            })
+        ),
+        Err(ControllerReject::Capture(CaptureReject::CommitUnresolved))
+    );
+    assert_eq!(world, before);
+    assert_eq!(
+        world
+            .sandbox_record(id.key.sandbox)
+            .unwrap()
+            .current_operation
+            .unwrap()
+            .status,
+        OperationStatus::Pending
     );
 }
