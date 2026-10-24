@@ -156,7 +156,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     DiagnosticFailure::Port(*error),
                 );
             })?;
-        let _projection = sandproof_center_store::DiagnosticScope::step(sandproof_center_store::DiagnosticStep::Projection);
+        let _projection = sandproof_center_store::DiagnosticScope::step(
+            sandproof_center_store::DiagnosticStep::Projection,
+        );
         if phase == SessionPhase::Unloaded {
             return self.query_unloaded(&owner, session);
         }
@@ -262,14 +264,19 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         owner: &sandproof_protocol::TenantId,
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
-        let expiry_scope = sandproof_center_store::DiagnosticScope::step(sandproof_center_store::DiagnosticStep::Expiry);
+        let expiry_scope = sandproof_center_store::DiagnosticScope::step(
+            sandproof_center_store::DiagnosticStep::Expiry,
+        );
         let mut authority = self
             .authority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
-        let now = self.now().inspect_err(|error| diagnostics::emit(
-            DiagnosticStage::LifecycleQueryExpiry, DiagnosticFailure::Port(*error),
-        ))?;
+        let now = self.now().inspect_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::LifecycleQueryExpiry,
+                DiagnosticFailure::Port(*error),
+            )
+        })?;
         crate::AuthorityPort::expire_current(&mut *authority, now)
             .inspect_err(|error| {
                 diagnostics::emit(
@@ -279,7 +286,9 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             })
             .map_err(crate::application::authority_error)?;
         drop(expiry_scope);
-        let _projection = sandproof_center_store::DiagnosticScope::step(sandproof_center_store::DiagnosticStep::Projection);
+        let _projection = sandproof_center_store::DiagnosticScope::step(
+            sandproof_center_store::DiagnosticStep::Projection,
+        );
         authority
             .query_public_lifecycle(owner, session)
             .inspect_err(|error| {

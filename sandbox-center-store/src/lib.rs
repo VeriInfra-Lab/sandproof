@@ -21,9 +21,11 @@ mod writer;
 
 pub use sandproof_protocol::internal::PositiveCounter as Revision;
 #[cfg(unix)]
-pub use store::{Committed, Observed, RedisEndpoint, RedisLedger, StoreConfig};
+pub use store::diagnostics::{
+    DiagnosticContext, DiagnosticFlow, DiagnosticScope, DiagnosticStep, diagnostic_context,
+};
 #[cfg(unix)]
-pub use store::diagnostics::{DiagnosticContext, DiagnosticFlow, DiagnosticScope, DiagnosticStep, diagnostic_context};
+pub use store::{Committed, Observed, RedisEndpoint, RedisLedger, StoreConfig};
 #[cfg(unix)]
 pub use writer::WriterLease;
 

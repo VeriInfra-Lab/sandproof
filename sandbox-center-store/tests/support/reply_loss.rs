@@ -88,9 +88,13 @@ impl ReplyLoss {
                         // until the caller observes its unchanged read timeout.
                         assert_eq!(reply, b":0\r\n");
                         let (ready, changed) = &*worker_release;
-                        let (released, _) = changed.wait_timeout_while(
-                            ready.lock().unwrap(), Duration::from_secs(5), |value| !*value,
-                        ).unwrap();
+                        let (released, _) = changed
+                            .wait_timeout_while(
+                                ready.lock().unwrap(),
+                                Duration::from_secs(5),
+                                |value| !*value,
+                            )
+                            .unwrap();
                         assert!(*released, "test must release the bounded timeout gate");
                         break;
                     }

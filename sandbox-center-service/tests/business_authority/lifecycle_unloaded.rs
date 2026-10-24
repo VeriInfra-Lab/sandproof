@@ -1,7 +1,9 @@
 //! Real Redis persistence with a controlled host result; not a VM-exit test.
 use super::*;
 use sandproof_center_store::authority::AuthorityState;
-use sandproof_protocol::lifecycle::{ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts};
+use sandproof_protocol::lifecycle::{
+    ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts,
+};
 
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
@@ -257,7 +259,16 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
     assert_eq!(completed.current_version, pending.current_version);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.session, pending.session);
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
+    assert!(
+        clock.0.load(Ordering::SeqCst)
+            < completed
+                .unload_outcome
+                .as_ref()
+                .unwrap()
+                .unloaded()
+                .unwrap()
+                .end_at_ms
+    );
 }
 
 #[tokio::test]
@@ -335,9 +346,17 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
             .unwrap(),
         completed
     );
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
+    assert!(
+        clock.0.load(Ordering::SeqCst)
+            < completed
+                .unload_outcome
+                .as_ref()
+                .unwrap()
+                .unloaded()
+                .unwrap()
+                .end_at_ms
+    );
 }
-
 
 #[test]
 fn original_continued_result_restores_running_without_unloaded_material() {
@@ -367,9 +386,17 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     let route = app.resolve_data_route(&detail.envd_access_token).unwrap();
     assert_eq!(route.identity.operation, saved.operation);
     assert_eq!(route.identity.accepted_version, saved.current_version);
-    let LifecycleOperation::Unload { source_incarnation, .. } =
-        &snapshot.lifecycle_session(&"8".try_into().unwrap(), &session)
-            .unwrap().operations().last().unwrap().intent().request.operation
+    let LifecycleOperation::Unload {
+        source_incarnation, ..
+    } = &snapshot
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .operations()
+        .last()
+        .unwrap()
+        .intent()
+        .request
+        .operation
     else {
         unreachable!()
     };
@@ -387,15 +414,25 @@ async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
     let node = authority.snapshot().unwrap().center.nodes()[0].clone();
     let router = sandproof_api::lifecycle::router_with_admission(
         Arc::new(sandproof_center_service::CenterPort::new(app.clone())),
-        vec![sandproof_api::ApiCredential { tenant: "8".into(), secret: "unloaded-query-component-only-key".into() }],
+        vec![sandproof_api::ApiCredential {
+            tenant: "8".into(),
+            secret: "unloaded-query-component-only-key".into(),
+        }],
         Arc::new(sandproof_api::admission::RequestAdmission::default()),
-    ).unwrap();
+    )
+    .unwrap();
     let before = public_query(&router, &session).await;
     assert_eq!(before.0, 200);
     proxy.timeout_after(preceding_writes);
     let failed = public_query(&router, &session).await;
     proxy.release_timeout();
-    assert_eq!(failed, (500, serde_json::json!({"code":500,"message":"Internal Server Error"})));
+    assert_eq!(
+        failed,
+        (
+            500,
+            serde_json::json!({"code":500,"message":"Internal Server Error"})
+        )
+    );
     assert_eq!(public_query(&router, &session).await.0, 500);
     // This is the exact production round, not a test calling recover directly.
     let refreshes = AtomicUsize::new(0);
@@ -405,7 +442,9 @@ async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
     });
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
     assert_eq!(public_query(&router, &session).await, before);
-    app.lifecycle_background_round(|| authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit));
+    app.lifecycle_background_round(|| {
+        authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit)
+    });
     assert_eq!(public_query(&router, &session).await, before);
 }
 
