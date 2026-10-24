@@ -513,19 +513,20 @@ fn dispatched_capture(unknown: bool) -> (World, EffectId, crate::capture::Captur
 }
 
 #[test]
-fn exact_never_released_or_returned_end_retires_only_original_seal_and_keeps_no_snapshot_success() {
-    for returned in [false, true] {
+fn exact_recorded_end_retires_only_original_seal_and_keeps_no_snapshot_success() {
+    for outcome in ["never-released", "no-request", "returned"] {
         for unknown in [false, true] {
             let (_, binding) = live();
             let (world, seal, coordinates) = dispatched_capture(unknown);
             let id = identity(&world);
             let mut end = receipt();
-            end.end = if returned {
-                crate::capture::CaptureWorkEnd::Returned { seal: coordinates }
-            } else {
-                crate::capture::CaptureWorkEnd::NeverReleased {
+            end.end = match outcome {
+                "never-released" => crate::capture::CaptureWorkEnd::NeverReleased {
                     seal: Some(coordinates),
-                }
+                },
+                "no-request" => crate::capture::CaptureWorkEnd::NoRequest { seal: coordinates },
+                "returned" => crate::capture::CaptureWorkEnd::Returned { seal: coordinates },
+                _ => unreachable!(),
             };
             let world = advance(
                 &world,
@@ -750,5 +751,64 @@ fn pending_unknown_commit_cannot_revoke_or_prepare_even_with_end_digests() {
             .unwrap()
             .status,
         OperationStatus::Pending
+    );
+}
+
+#[test]
+fn no_request_uses_the_original_seal_and_cannot_be_replayed_as_a_different_end_kind() {
+    let (world, _, coordinates) = pending_capture(true);
+    let id = identity(&world);
+    let mut no_request = receipt();
+    no_request.end = crate::capture::CaptureWorkEnd::NoRequest { seal: coordinates };
+    let mut changed = no_request;
+    if let crate::capture::CaptureWorkEnd::NoRequest { ref mut seal } = changed.end {
+        seal.attempt += 1;
+    }
+    assert!(
+        handle_controller(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: changed
+            })
+        )
+        .is_err()
+    );
+    assert_eq!(
+        world
+            .operation_plan(id.key)
+            .unwrap()
+            .capture
+            .unwrap()
+            .eligibility(),
+        crate::capture::RestoreEligibility::Capturing
+    );
+    let world = advance(
+        &world,
+        ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+            identity: id,
+            end_receipt: no_request,
+        }),
+    );
+    let same = advance(
+        &world,
+        ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+            identity: id,
+            end_receipt: no_request,
+        }),
+    );
+    assert_eq!(same, world);
+    // Deliberately equal digest bytes cannot erase the saved semantic tag.
+    changed = no_request;
+    changed.end = crate::capture::CaptureWorkEnd::Returned { seal: coordinates };
+    assert_eq!(
+        handle_controller(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: changed
+            })
+        ),
+        Err(ControllerReject::Capture(CaptureReject::ReceiptConflict))
     );
 }
