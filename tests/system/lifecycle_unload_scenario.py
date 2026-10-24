@@ -624,6 +624,11 @@ class PublicUnloadScenario:
 def exercise(args):
     """Only the sibling helper can start/restart or inspect original resources."""
     from lifecycle_unload_runtime import prepare
+    if args.scenario not in ('normal','restore-activation-loss'):
+        raise ValueError('one explicit existing lifecycle scenario required')
+    if args.scenario=='restore-activation-loss' and (type(args.activation_gate_timeout_ms) is not int
+            or not 1000<=args.activation_gate_timeout_ms<=120000):
+        raise ValueError('bounded original activation gate timeout required before preparing services')
     seconds = args.scenario_timeout
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 < seconds <= 3600:
         raise ValueError('explicit finite scenario deadline at most one hour required')
@@ -631,6 +636,7 @@ def exercise(args):
     runtime = prepare(args)
     root = private_path(runtime.root, directory=True)
     report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
+                  scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
     failed = False
@@ -712,10 +718,23 @@ def exercise(args):
         report['cycles']=[]
         for cycle in (1,2):
             report['phase']='public-resume-'+str(cycle)
+            gate_receipt=None
+            if cycle==1 and args.scenario=='restore-activation-loss':
+                report['phase']='arm-original-restore-activation-gate'
+                runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
+            if cycle==1 and args.scenario=='restore-activation-loss':
+                report['phase']='original-restore-activation-gate-read'
+                gate_receipt=runtime.wait_resume_gate(client.session,accepted,
+                    copy.deepcopy(client.witness),deadline)
+                report['activation_gate_observation']=gate_receipt
+                report['phase']='original-activation-manager-lost-receipt'
+                report['activation_gate_recovery']=runtime.recover_resume_gate(gate_receipt,deadline)
             resumed=client.wait_running()
-            physical_running=runtime.record_running(client.session,deadline,resume_acceptance=accepted)
-            continuity=client.assert_resumed_workload(resumed)
+            physical_running=runtime.record_running(client.session,deadline,
+                resume_acceptance=accepted,gate_receipt=gate_receipt)
+            continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
+                physical_running=physical_running)
             client.operation_evidence_completed()
             client.assert_owner_isolation()
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
@@ -764,6 +783,8 @@ def exercise(args):
             'E14':'old execution tokens rejected and new token accepted',
             'other_cases':'not claimed by this normal scenario',
         }
+        if args.scenario=='restore-activation-loss':
+            report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -772,6 +793,11 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
+        try:
+            report['activation_gate_failure_action']=runtime.fail_resume_gate()
+        except BaseException as gate_error:
+            report['activation_gate_failure_action']='unknown-preserved-original-private-gate'
+            report['activation_gate_failure_type']=type(gate_error).__name__
         raise
     finally:
         if client is not None:
@@ -810,6 +836,7 @@ def exercise(args):
             if not failed:
                 raise
         finally:
+            runtime.close_restore_gate()
             report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
             write_once(root / 'lifecycle-unload-report.json', report)
     return report
@@ -820,6 +847,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
+    parser.add_argument('--scenario',choices=('normal','restore-activation-loss'),default='normal')
+    parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
         report = exercise(args)

@@ -40,8 +40,9 @@ def maintenance_profile(*,slots,inbox_sessions,checkpoint_tail_inputs):
     power=lambda value:1<<(value-1).bit_length()
     rounded=lambda value:(value+MIB-1)//MIB*MIB
     c=inbox_sessions;r=128;n=8;scalar=4096;input_bytes=8192
-    # N=8: single_pause_graph * (N-2), plus 2*N*N plan references.
-    records=534;references=932;copies=108;attempts=360;logical=90;sql_rows=1236
+    # N=8: current 16-logical/94-record/142-reference single_pause_graph
+    # times (N-2), plus 2*N*N plan references; includes original Continue.
+    records=564;references=980;copies=108;attempts=384;logical=96;sql_rows=1314
     policy_bytes=input_bytes-scalar
     base=1+slots+2
     checkpoint=power((base+6+c*(records+references+2))*scalar
