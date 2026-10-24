@@ -22,7 +22,7 @@ class InternalFaultRelayTests(unittest.TestCase):
         # sandbox-protocol lifecycle::AcceptedLifecycleIntent/CreateObservation;
         # complete serde fields, no legacy ControlIdentity or host sequence.
         node = dict(deployment_id='exact-test', node_id='host-runtime', node_generation=1)
-        binding = dict(protocol_version=3, node=node, session='sandbox-1',
+        binding = dict(protocol_version=4, node=node, session='sandbox-1',
             key=dict(deployment='exact-test', owner='1', window=4, sequence=1),
             expected={'state': 'absent'})
         create = dict(template_revision='template-1', template_digest=[1]*32,
@@ -110,6 +110,7 @@ class InternalFaultRelayTests(unittest.TestCase):
     def test_observed_requires_full_original_current_and_typed_lifetime(self):
         node, request, response = self.pair()
         mutations = [
+            (('request', 'request', 'binding', 'protocol_version'), 3),
             (('request', 'request', 'binding', 'session'), 'sandbox-2'),
             (('request', 'request', 'operation', 'create', 'options'), list(b'{ }')),
             (('current_request', 'request', 'binding', 'key', 'owner'), '2'),

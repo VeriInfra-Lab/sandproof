@@ -120,7 +120,7 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
         processes.children = {"center": Mock(poll=Mock(return_value=None))}
         services = SimpleNamespace(processes=processes,
             center_config={"deployment_id": "synthetic-deployment"})
-        original = dict(binding=dict(protocol_version=3, session='synthetic-global-id',
+        original = dict(binding=dict(protocol_version=4, session='synthetic-global-id',
             node=dict(deployment_id='synthetic-deployment',node_id='host',node_generation=1),
             key=dict(deployment='synthetic-deployment',owner='1',window=1,sequence=1),
             expected=dict(state='absent')),center=dict(deployment='synthetic-deployment',center='center'),

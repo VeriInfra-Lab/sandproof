@@ -129,7 +129,7 @@ def rows(count=4, phase="Destroyed"):
 def original_center(count=4):
     records = []
     for number in range(count):
-        binding = dict(protocol_version=3, node=dict(deployment_id='domain', node_id='host', node_generation=1),
+        binding = dict(protocol_version=4, node=dict(deployment_id='domain', node_id='host', node_generation=1),
             session='sandbox-'+str(number+1), key=dict(deployment='domain', owner='1', window=1, sequence=number+1),
             expected=dict(state='absent'))
         operation = dict(binding=copy.deepcopy(binding), center=dict(deployment='domain', center='center'),

@@ -65,7 +65,7 @@ fn request() -> AcceptedLifecycleIntent {
         accepted_version: 1,
         request: LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: config.node.clone(),
                 session: "session-a".try_into().unwrap(),
                 key: OperationKey {

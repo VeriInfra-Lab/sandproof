@@ -413,7 +413,7 @@ def node_identity():
 
 
 def audit_fixture():
-    binding = dict(protocol_version=3, node=node_identity(), session='sandbox-7',
+    binding = dict(protocol_version=4, node=node_identity(), session='sandbox-7',
         key=dict(deployment='test-deployment', owner='1', window=7, sequence=9), expected=dict(state='absent'))
     create = dict(binding=binding, accepted_version=1, retention=dict(slot=1, window=1),
         center=dict(deployment='test-deployment', center='center'))
