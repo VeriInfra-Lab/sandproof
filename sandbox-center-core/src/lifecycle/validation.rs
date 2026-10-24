@@ -218,7 +218,9 @@ impl CenterState {
         op: &LifecycleOperationRecord,
         position: usize,
     ) -> bool {
-        if op.resume_state_lost && !super::resume::lost_origin_valid(&session.operations[..=position]) {
+        if op.resume_state_lost
+            && !super::resume::lost_origin_valid(&session.operations[..=position])
+        {
             return false;
         }
         if let Some(observation) = op.unloaded.as_ref() {

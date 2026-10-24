@@ -136,13 +136,17 @@ impl Sandbox {
     /// The latest execution-producing operation. Historical first Create is
     /// retained for original configuration, never substituted for this origin.
     #[must_use]
-    pub fn current_execution_origin(&self) -> Option<&sandproof_protocol::lifecycle::AcceptedLifecycleIntent> {
+    pub fn current_execution_origin(
+        &self,
+    ) -> Option<&sandproof_protocol::lifecycle::AcceptedLifecycleIntent> {
         let mut index = self.operations.len();
         let mut found = None;
         while found.is_none() && index > 0 {
             index -= 1;
-            if matches!(self.operations[index].intent.request.operation,
-                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }) {
+            if matches!(
+                self.operations[index].intent.request.operation,
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+            ) {
                 found = Some(index);
             }
         }
@@ -349,10 +353,9 @@ impl CenterState {
                             || (sandbox.terminating()
                                 && sandbox
                                     .operations()
-                                    .iter()
-                                    .rev()
-                                    .skip(1)
-                                    .next()
+                                    .len()
+                                    .checked_sub(2)
+                                    .and_then(|index| sandbox.operations().get(index))
                                     .is_some_and(|previous| previous.unloaded().is_some()))
                         {
                             held.instances = 0;

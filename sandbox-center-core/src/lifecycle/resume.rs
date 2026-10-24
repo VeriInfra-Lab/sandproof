@@ -36,28 +36,56 @@ pub(super) fn running_incarnation(operation: &LifecycleOperation) -> Option<supe
 }
 
 pub(super) fn lost_origin_valid(history: &[LifecycleOperationRecord]) -> bool {
-    let Some(current) = history.last() else { return false; };
-    if !matches!(current.intent.request.operation, LifecycleOperation::Resume { .. } | LifecycleOperation::Renew { .. }) {
+    let Some(current) = history.last() else {
+        return false;
+    };
+    if !matches!(
+        current.intent.request.operation,
+        LifecycleOperation::Resume { .. } | LifecycleOperation::Renew { .. }
+    ) {
         return false;
     }
-    history.iter().rev().find(|op| matches!(op.intent.request.operation,
-        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }))
-        .is_some_and(|op| matches!(op.intent.request.operation, LifecycleOperation::Resume { .. }))
+    history
+        .iter()
+        .rev()
+        .find(|op| {
+            matches!(
+                op.intent.request.operation,
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+            )
+        })
+        .is_some_and(|op| {
+            matches!(
+                op.intent.request.operation,
+                LifecycleOperation::Resume { .. }
+            )
+        })
 }
 
 pub(super) fn renewed_facts_match(
-    history: &[LifecycleOperationRecord], first: &super::AcceptedLifecycleIntent,
-    current: &super::AcceptedLifecycleIntent, facts: &super::CurrentReadyFacts,
+    history: &[LifecycleOperationRecord],
+    first: &super::AcceptedLifecycleIntent,
+    current: &super::AcceptedLifecycleIntent,
+    facts: &super::CurrentReadyFacts,
 ) -> bool {
-    let index = history.iter().rposition(|op| matches!(op.intent.request.operation,
-        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }));
-    let Some(index) = index else { return false; };
+    let index = history.iter().rposition(|op| {
+        matches!(
+            op.intent.request.operation,
+            LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+        )
+    });
+    let Some(index) = index else {
+        return false;
+    };
     let origin = &history[index].intent;
     if matches!(origin.request.operation, LifecycleOperation::Create { .. }) {
         return facts.matches_renewed(first, current);
     }
-    index.checked_sub(1).and_then(|i| history.get(i))
-        .and_then(|op| op.unloaded.as_ref()).and_then(|o| o.unloaded.as_ref())
+    index
+        .checked_sub(1)
+        .and_then(|i| history.get(i))
+        .and_then(|op| op.unloaded.as_ref())
+        .and_then(|o| o.unloaded.as_ref())
         .is_some_and(|source| facts.matches_resumed_renewal(origin, current, source))
 }
 
@@ -154,7 +182,9 @@ impl CenterState {
         let index = self.index(&binding.key.owner, binding.session.as_protocol_id())?;
         let session = &self.sandboxes[index];
         let current = session.operations.last().ok_or(DecisionError::Invalid)?;
-        let origin = session.current_execution_origin().ok_or(DecisionError::Invalid)?;
+        let origin = session
+            .current_execution_origin()
+            .ok_or(DecisionError::Invalid)?;
         if session.terminating()
             || observation.current_request != current.intent
             || !observation.matches_request(origin)
@@ -170,9 +200,14 @@ impl CenterState {
             CurrentResumeReadiness::StateLost => target.resume_state_lost = true,
             CurrentResumeReadiness::Observed { facts } => {
                 let source = resume_source(session).ok_or(DecisionError::Invalid)?;
-                let matches = if matches!(current.intent.request.operation, LifecycleOperation::Renew { .. }) {
+                let matches = if matches!(
+                    current.intent.request.operation,
+                    LifecycleOperation::Renew { .. }
+                ) {
                     facts.matches_resumed_renewal(origin, &current.intent, source)
-                } else { facts.matches_resumed(origin, source) };
+                } else {
+                    facts.matches_resumed(origin, source)
+                };
                 if current.resume_state_lost || !matches {
                     return Err(DecisionError::Conflict);
                 }
@@ -201,7 +236,10 @@ pub(super) fn resume_source(
     session: &Sandbox,
 ) -> Option<&sandproof_protocol::lifecycle::UnloadedFacts> {
     let origin = session.current_execution_origin()?;
-    let index = session.operations.iter().position(|op| op.intent() == origin)?;
+    let index = session
+        .operations
+        .iter()
+        .position(|op| op.intent() == origin)?;
     let prior = index.checked_sub(1)?;
     session
         .operations

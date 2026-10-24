@@ -763,11 +763,11 @@ impl CenterState {
         let incarnation = match &prior.intent.request.operation {
             LifecycleOperation::Create {
                 target_incarnation, ..
-            } => *target_incarnation,
-            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
-            LifecycleOperation::Resume {
+            }
+            | LifecycleOperation::Resume {
                 target_incarnation, ..
             } => *target_incarnation,
+            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
             _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
             _ => return Err(DecisionError::Conflict),
         };

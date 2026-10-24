@@ -184,11 +184,14 @@ fn confirmed_loss_is_irreversible_and_old_ready_cannot_resurrect_destroy() {
             .is_err()
     );
     let mut destroy = followup(&intent, 4, true);
-    let LifecycleSubmission::Destroy { expected_version, .. } = &mut destroy else { unreachable!() };
+    let LifecycleSubmission::Destroy {
+        expected_version, ..
+    } = &mut destroy
+    else {
+        unreachable!()
+    };
     *expected_version = intent.accepted_version;
-    let (terminating, _) = lost
-        .accept_lifecycle(&owner, &destroy, 0)
-        .unwrap();
+    let (terminating, _) = lost.accept_lifecycle(&owner, &destroy, 0).unwrap();
     assert_eq!(
         terminating.sandboxes()[0].phase(),
         SessionPhase::Terminating
@@ -203,26 +206,57 @@ fn confirmed_loss_is_irreversible_and_old_ready_cannot_resurrect_destroy() {
 fn renewal_observes_the_resumed_origin_after_the_old_deadline() {
     let (before, unload) = source();
     let owner = "1".try_into().unwrap();
-    let (accepted, intent) = before.accept_lifecycle(&owner, &input(&unload), 170).unwrap();
-    let source = before.sandboxes()[0].operations().last().unwrap().unloaded().unwrap().unloaded.as_ref().unwrap();
+    let (accepted, intent) = before
+        .accept_lifecycle(&owner, &input(&unload), 170)
+        .unwrap();
+    let source = before.sandboxes()[0]
+        .operations()
+        .last()
+        .unwrap()
+        .unloaded()
+        .unwrap()
+        .unloaded
+        .as_ref()
+        .unwrap();
     let mut observation = ready(&intent);
-    let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else { unreachable!() };
+    let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else {
+        unreachable!()
+    };
     facts.startup_deadline_ms = source.startup_deadline_ms;
-    let running = accepted.accept_lifecycle_resume_observation(&observation).unwrap();
-    let mut key = intent.request.binding.key.clone(); key.sequence = 4.try_into().unwrap();
+    let running = accepted
+        .accept_lifecycle_resume_observation(&observation)
+        .unwrap();
+    let mut key = intent.request.binding.key.clone();
+    key.sequence = 4.try_into().unwrap();
     let input = LifecycleSubmission::Renew {
-        key, session: intent.request.binding.session.clone(), expected_version: intent.accepted_version,
-        timeout_secs: 1, extend_only: false,
+        key,
+        session: intent.request.binding.session.clone(),
+        expected_version: intent.accepted_version,
+        timeout_secs: 1,
+        extend_only: false,
     };
     let (renewing, renewal) = running.accept_lifecycle(&owner, &input, 185).unwrap();
-    assert_eq!(renewing.sandboxes()[0].current_execution_origin(), Some(&intent));
+    assert_eq!(
+        renewing.sandboxes()[0].current_execution_origin(),
+        Some(&intent)
+    );
     observation.current_request = renewal;
-    let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else { unreachable!() };
+    let CurrentResumeReadiness::Observed { facts } = &mut observation.readiness else {
+        unreachable!()
+    };
     facts.end_at_ms = source.max_end_at_ms;
     facts.observed_at_ms = source.end_at_ms + 1;
-    let renewed = renewing.accept_lifecycle_resume_observation(&observation).unwrap();
+    let renewed = renewing
+        .accept_lifecycle_resume_observation(&observation)
+        .unwrap();
     assert!(renewed.is_valid());
     assert_eq!(renewed.sandboxes()[0].phase(), SessionPhase::Running);
-    assert_eq!(renewed.sandboxes()[0].last_running().unwrap().started_at_ms, source.started_at_ms);
-    assert_eq!(renewed.sandboxes()[0].last_running().unwrap().max_end_at_ms, source.max_end_at_ms);
+    assert_eq!(
+        renewed.sandboxes()[0].last_running().unwrap().started_at_ms,
+        source.started_at_ms
+    );
+    assert_eq!(
+        renewed.sandboxes()[0].last_running().unwrap().max_end_at_ms,
+        source.max_end_at_ms
+    );
 }
