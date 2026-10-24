@@ -24,7 +24,7 @@ fn create_request() -> core::CreateRequest {
 }
 
 fn kill_request() -> core::KillRequest {
-    let core::ControllerInput::Request(core::Request::Kill(request)) = kill(1) else {
+    let core::ControllerInput::Request(core::Request::Kill(request)) = support::kill(1) else {
         unreachable!()
     };
     request
