@@ -115,7 +115,10 @@ impl MaterialRetirementPermit {
         work_binding: ContentDigest,
         plan_binding: ContentDigest,
     ) -> Self {
-        Self { work_binding, plan_binding }
+        Self {
+            work_binding,
+            plan_binding,
+        }
     }
 
     #[must_use]

@@ -30,8 +30,11 @@ pub(super) fn close_material_use(
     record: &mut SourceWorkRecord,
     world: &core::World,
 ) -> Result<(), JournalError> {
-    core::maintenance::retirement::validate_terminal_cleanup(world, record.work.anchor.local.sandbox)
-        .map_err(|_| JournalError::UnresolvedAction)?;
+    core::maintenance::retirement::validate_terminal_cleanup(
+        world,
+        record.work.anchor.local.sandbox,
+    )
+    .map_err(|_| JournalError::UnresolvedAction)?;
     if !super::retirement::has_closed_material_use(record) {
         return Err(JournalError::UnresolvedAction);
     }
