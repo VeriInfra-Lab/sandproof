@@ -178,6 +178,7 @@ pub(super) fn input_sandbox(
             core::capture::CaptureInput::PrepareOriginalContinue { identity, .. }
             | core::capture::CaptureInput::PublishOriginalContinued { identity },
         ) => identity.key.sandbox,
+        I::Capture(core::capture::CaptureInput::RetireTerminatedCapture(coverage)) => coverage.identity.key.sandbox,
         I::Scheduler(S::ReserveStartup(key) | S::ReservePauseSnapshot(key)) => key.sandbox,
         I::Scheduler(
             S::DispatchPrepare(sandbox, ..)
