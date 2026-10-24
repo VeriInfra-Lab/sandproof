@@ -113,7 +113,7 @@ impl HostPort for Host {
         Ok(self.unloaded.lock().unwrap().clone().unwrap_or(
             sandproof_protocol::lifecycle::UnloadObservation {
                 request: intent.clone(),
-                unloaded: None,
+                outcome: sandproof_protocol::lifecycle::UnloadOutcome::Pending,
             },
         ))
     }
