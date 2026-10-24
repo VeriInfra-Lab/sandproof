@@ -309,3 +309,13 @@ fn checkpoint_rejects_duplicate_running_pending_and_mutated_continuation() {
         assert!(!invalid.is_valid(), "{field}");
     }
 }
+
+#[test]
+fn previous_lifecycle_checkpoint_version_is_rejected() {
+    let (image, _) = continued();
+    let mut value = serde_json::to_value(image).unwrap();
+    assert_eq!(value["lifecycle"]["format_version"], 8);
+    value["lifecycle"]["format_version"] = 7.into();
+    let old: CenterState = serde_json::from_value(value).unwrap();
+    assert!(!old.is_valid());
+}

@@ -47,7 +47,7 @@ pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
 pub use unload::{UnloadObservation, UnloadOutcome, UnloadedFacts};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
 pub const UNLOAD_OBSERVATION_PATH: &str = "/internal/lifecycle/unload-observation";

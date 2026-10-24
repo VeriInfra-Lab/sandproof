@@ -189,7 +189,7 @@ impl Sandbox {
         }
         found
     }
-    /// Only a result committed for the actual current Create/Renew can route.
+    /// Only a confirmed result for the current operation can route.
     #[must_use]
     pub fn current_running(&self) -> Option<&CurrentReadyFacts> {
         self.operations.last()?.running()

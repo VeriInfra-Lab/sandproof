@@ -17,7 +17,7 @@ mod validation;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// One supported current format. Missing registration is not a legacy profile.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 7;
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 8;
 
 pub(crate) fn required_option<'de, D, T>(input: D) -> Result<Option<T>, D::Error>
 where

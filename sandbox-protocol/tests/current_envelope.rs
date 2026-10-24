@@ -248,3 +248,11 @@ fn original_continued_does_not_accept_expired_or_unstarted_running_facts() {
         assert!(!observation.matches_request(&request));
     }
 }
+
+#[test]
+fn lifecycle_outcome_contract_rejects_previous_wire_version() {
+    let (mut intent, context) = original();
+    assert_eq!(PROTOCOL_VERSION, 4);
+    intent.request.binding.protocol_version = 3;
+    assert_eq!(intent.validate(&context), Err(AcceptedIntentError::Request(ValidationError::UnsupportedVersion)));
+}
