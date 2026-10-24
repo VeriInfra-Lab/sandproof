@@ -1247,7 +1247,7 @@ mod tests {
             },
         };
         let owner = rustix::process::geteuid().as_raw();
-        runtime.reserve_jail(&id, owner).unwrap();
+        runtime.reserve_jail_for_fixture(&id, owner).unwrap();
         super::super::write_new_record(
             &root.join(".claims").join(&id).join("record.json"),
             &super::super::ProcessRecord {

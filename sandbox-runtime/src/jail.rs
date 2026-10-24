@@ -251,6 +251,24 @@ impl Runtime {
 
     /// Root production callers pass zero; tests use their isolated fixture owner.
     pub(super) fn reserve_jail(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
+        self.reserve_jail_with_writer(id, owner, |path, value| self.write_new_record(path, value))
+    }
+
+    // Controlled current-account fixture only. The real producer below still
+    // captures the original open directory/birth identities and full slot;
+    // root-owned bounded staging is independently exercised by the existing
+    // privileged registration test, never disabled in production.
+    #[cfg(test)]
+    pub(super) fn reserve_jail_for_fixture(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
+        self.reserve_jail_with_writer(id, owner, super::write_new_record)
+    }
+
+    fn reserve_jail_with_writer(
+        &self,
+        id: &str,
+        owner: u32,
+        publish: impl FnOnce(&Path, &JailRecord) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         validate_id(id)?;
         let record_path = self.jail_record_path(id);
         if path_present(&record_path)?
@@ -298,7 +316,7 @@ impl Runtime {
         File::open(parent)?.sync_all()?;
         // If publication fails or the controller dies before it, the directory
         // remains unregistered/unknown. No child can have passed the launch gate.
-        self.write_new_record(&record_path, &record)?;
+        publish(&record_path, &record)?;
         self.require_launch_jail(id, owner)
     }
 
