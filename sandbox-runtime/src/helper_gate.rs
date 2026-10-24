@@ -1221,6 +1221,8 @@ mod tests {
     }
 
     fn stopped_cleanup_fixture(root: &Path, context: &RuntimeHostSlot) -> (Runtime, String) {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
         let id = format!("vm-0123456789abcdef-{}", context.vm);
         let mut directories = fs::DirBuilder::new();
         directories.recursive(true);
