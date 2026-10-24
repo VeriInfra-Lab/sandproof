@@ -378,7 +378,7 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     app.reconcile_once().unwrap();
     let saved = app.query_lifecycle("8", &session).unwrap();
     assert_eq!(saved.phase, PublicSessionPhase::Running);
-    assert_eq!(saved.unload_outcome, Some(expected_outcome));
+    assert_eq!(saved.unload_outcome, Some(expected_outcome.clone()));
     let replay = app.unload_lifecycle("8", &session, &request).unwrap();
     assert_eq!(replay.key, saved.operation);
     assert_eq!(replay.session, session);
@@ -552,7 +552,7 @@ fn continued_query_cannot_overwrite_a_destroy_accepted_during_observation() {
     let destroyed = app
         .destroy_lifecycle(
             "8",
-            &session,
+            session.clone(),
             &PublicDestroyRequest {
                 window: 1.try_into().unwrap(),
                 sequence: 3.try_into().unwrap(),
