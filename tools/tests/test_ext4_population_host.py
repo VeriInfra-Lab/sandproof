@@ -422,13 +422,16 @@ def audit_fixture():
     current['expected'] = dict(state='version', version=1)
     response = dict(request=dict(request=dict(binding=current, operation=dict(kind='destroy')),
         accepted_version=2, center=copy.deepcopy(create['center']), retention=dict(slot=1, window=1)), status='cleaned')
-    first = copy.deepcopy(create) | dict(operation=dict(kind='create', target_incarnation=1), terminal=None)
+    first = copy.deepcopy(create) | dict(operation=dict(kind='create', target_incarnation=1),
+        acceptance_time=dict(kind='sampled', at_ms=1000), running=None,
+        create_refusal=None, terminal=None, unloaded=None)
     last = dict(binding=current, accepted_version=2, center=copy.deepcopy(create['center']), retention=dict(slot=1, window=1),
-        operation=dict(kind='destroy'), terminal=copy.deepcopy(response))
+        operation=dict(kind='destroy'), acceptance_time=dict(kind='unsampled'),
+        running=None, create_refusal=None, terminal=copy.deepcopy(response), unloaded=None)
     local = dict(sandbox=41, owner=23)  # Deliberately not GLOBAL IDs/owner.
     context = dict(position=0, expected_previous=None, binding=dict(sandbox=41, owner=23, vm=77))
     center = dict(schema_version=3, deployment='test-deployment',
-        versions=dict(internal_protocol=2, center_store=8, host_store=20),
+        versions=dict(internal_protocol=2, center_store=9, host_store=21),
         retention_lanes=[dict(node=node_identity(), retention_slot=1, retired_through=0, phase='open', last_retired=None)],
         sandboxes=[dict(create={'binding': binding}, private=True, released=True,
             operations=[first, last], terminal_confirmation=copy.deepcopy(response))])
