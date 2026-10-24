@@ -50,4 +50,4 @@
 
 该切片把值方法与原调用方分开验收：[组件入口和接口责任](../../verification/experiments/capture-handoff/README.md)。公共 `CaptureHandoff/Conditions` 只定义参数化的材料责任保持与撤销后迟到成功安全性质，不依赖具体生成类型；正确 `Values` 与两个真实错误版各在独立导入闭包检查同一性质，正常可接受性另外给出见证。公共根只导入纯条件，组件仍必须检查正确生成体、错误证书、全部实际文件与审计，不能漏验。原 `handle_compensation` 抽取成功只说明工具能生成，不等于其 World/计划身份/持久化对应已经证明；普通 Pause 错走终止补偿的原入口反例也仍需与两个值方法的形式反例区分。
 
-尚需实现独立内部动作 `ContinueOriginalVm`，绑定原 owner/session/incarnation/VM、失败的 capture/operation 与当前撤销/访问 epoch。它继续原运行代，区别于 Unloaded 的新运行代恢复。允许条件为：本次 capture 的资格已持久撤销、提交未知已对账、原捕获工作不能迟到发布、当前未终止，且原 VM 的 c0 backing 使用责任仍在。回执只分原 VM 已观察运行，或失败/未知且保留责任；运行观察本身不开放网关、不发布 Pause 成功。后续唯一 claim、激活前 `MayHaveExecuted`、材料退休与取用的同事务互斥另行接入原账。
+当前继续路径沿原 Pause 计划扩展 `PrepareOriginalContinue` / `PublishOriginalContinued` 输入，复用原 `ActivateVm` 效果；不增加独立 `ContinueOriginalVm` 命令或控制器。输入绑定原操作键、epoch、运行代、VM 与已持久保存的工作结束事实；摘要仅命名该事实，不证明 OS/API 已完成。原效果派发前的持久责任仍是可能执行标记。已冻结的分支要求捕获资格撤销、提交未知已对账、旧 Freeze/Seal/Commit 工作确定结束，之后只继续原 VM；未冻结的确定失败也必须确认没有可能迟到的冻结效果。未知时保留原责任与关闭访问。继续不改变原运行代、寿命、材料使用责任，也不发布 Pause 成功。正式中心与网关如何接收同一失败继续结果见[模块合同](../module-contracts.md#暂停从活状态交接到完整材料)；本地输入与效果实现、服务持久事实、完整授权接线及故障验收分别记录，不以设计代替实现或证明。
