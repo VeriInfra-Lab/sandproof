@@ -269,6 +269,9 @@ class FixtureTests(unittest.TestCase):
             'result_retention_ms', 'platform'})
         self.assertEqual(center['bounds']['result_retention_ms'], 300_000)
         self.assertEqual(hosts[0]['inbox']['max_operations_per_session'], 8)
+        self.assertEqual(center['bounds']['operations_per_sandbox'],8)
+        self.assertEqual(hosts[0]['inbox']['max_operations_per_session'],
+            center['bounds']['operations_per_sandbox'])
         self.assertEqual(hosts[0]['inbox']['center'],dict(deployment=center['deployment_id'],center=center['center_id']))
         self.assertIsNone(hosts[0]['inbox']['host_epoch'])
         self.assertEqual(hosts[0]['source_observation']['max_material_bytes'],hosts[0]['capture']['material_project']['hard_bytes'])

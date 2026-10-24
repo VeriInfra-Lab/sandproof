@@ -34,7 +34,7 @@ BLOCK_BYTES = 16 * 1024**2
 REDIS_MEMORY_BYTES = 128 * 1024**2
 CERTIFICATE_BYTES = 1024**2
 OPTIONS_BYTES = 4096
-OPERATIONS = 4
+OPERATIONS = 8  # Stage1 Create/Unload/Resume/Unload/Resume/Destroy needs at least six.
 # Center terminal-result retention; independent of Host/build/Guest retention.
 RESULT_RETENTION_MS = 300_000
 HOST_FAULT_VARIABLES = frozenset({
@@ -122,8 +122,8 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         native = copy.deepcopy(source)
         policy=native.get('maintenance')
         operations=policy.get('max_operations_per_sandbox') if type(policy) is dict else None
-        if type(operations) is not int or not 8 <= operations < 2**64:
-            raise ValueError('explicit maintenance operation bound must cover the original eight-entry inbox')
+        if type(operations) is not int or not OPERATIONS <= operations < 2**64:
+            raise ValueError('explicit maintenance operation bound must cover the Stage1 inbox')
         native_catalog = native['templates']
         pools = [pool for pool in native['bounded_host']['physical_storage']['pools']
                  if pool['namespace'] == native['namespace']]
@@ -174,7 +174,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         capture = copy.deepcopy(capture_settings[index])
         hosts.append(dict(native=native, inbox=dict(node=node,
             center=dict(deployment=deployment, center=center_id), host_epoch=None,
-            max_sessions=max_records, max_operations_per_session=8,
+            max_sessions=max_records, max_operations_per_session=OPERATIONS,
             max_options_bytes=OPTIONS_BYTES, max_profile_bytes=65536, max_manifest_bytes=262144),
             protected_bootstrap_path=str(Path(tls_root).parent/'host-bootstrap.json'),
             source_observation=dict(max_work_bytes=65536,max_configuration_bytes=65536,
