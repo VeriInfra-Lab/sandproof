@@ -56,6 +56,7 @@ mod recovery;
 mod restore;
 mod source_observation;
 mod source_process;
+mod terminated_capture;
 use decisions::fence_can_advance;
 pub use execution::ExecutionReport;
 pub use readonly::LinuxObservation;
