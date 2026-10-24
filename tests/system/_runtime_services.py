@@ -217,14 +217,6 @@ class RuntimeServices:
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
-        captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
-        retained=job_count+sum(pool['max_active_global'] for pool in pools)
-        for native,capture in zip(pools,captures):
-            pool_root=Path(native['database']).parent.parent
-            parent=Path(capture['layout_parent'])
-            if parent!=pool_root/'p' or parent/'v'!=Path(native['chroot_base']):
-                raise ValueError('capture profile must bind the exact fresh runtime sibling')
-            require_capacity(capture,native,retained)
         ids=identities(args.center_uid,args.center_gid,args.redis_uid,args.redis_gid,
                        uid_base=min(native['uid_base'] for native in pools))
         paths=dict(center=Path(args.center),host=Path(args.host))
@@ -236,6 +228,14 @@ class RuntimeServices:
             raise ValueError('actual service metadata disagrees')
         manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,
             paths={role:str(path) for role,path in paths.items()},versions=versions)
+        captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
+        retained=job_count+sum(pool['max_active_global'] for pool in pools)
+        for native,capture in zip(pools,captures):
+            pool_root=Path(native['database']).parent.parent
+            parent=Path(capture['layout_parent'])
+            if parent!=pool_root/'p' or parent/'v'!=Path(native['chroot_base']):
+                raise ValueError('capture profile must bind the exact fresh runtime sibling')
+            require_capacity(capture,native,retained)
         redis_receipt=check_material(Path(args.redis_material),protected=True)
         hosts=[]
         for native,capture in zip(pools,captures):

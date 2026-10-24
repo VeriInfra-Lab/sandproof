@@ -41,6 +41,7 @@ def service_fixture(root):
         parent.mkdir(mode=0o700)
         for name in ("db", "state", "p", "cgroup"):
             (parent / name).mkdir(mode=0o700)
+        (parent/'p/v').mkdir(mode=0o700)
         settings.update(namespace=namespaces[index], database=str(parent / "db/controller.db"),
                         node_state_dir=str(parent / "state"), chroot_base=str(parent / "p/v"),
                         uid_base=1000 + index * 100,
@@ -555,7 +556,7 @@ class CoordinationProvisioningTests(unittest.TestCase):
 
 class SocketLayoutTests(unittest.TestCase):
     def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
-        root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
+        root = Path("/var/lib/sp-01a0e1bd/bc9161f-0000")
         namespaces = ["0123456789abcdef", "123456789abcdef0"]
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
             validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker")

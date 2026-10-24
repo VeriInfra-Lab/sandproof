@@ -493,6 +493,7 @@ class ProbeProcessTests(unittest.TestCase):
             def status(path, *args, **kwargs):
                 return 'Uid:\t1000\t1000\t1000\t1000\n' if path == Path('/proc/123/status') else original_read(path, *args, **kwargs)
             with patch.object(Path, 'lstat', root_owned), patch.object(Path, 'read_text', status), \
+                    patch.object(runner.os,'geteuid',return_value=0), \
                     patch.object(runner, 'process_start_ticks', return_value=456):
                 report = reports.new_report('sp12-abcdefgh')
                 runner.record_requests(root, services, report)
