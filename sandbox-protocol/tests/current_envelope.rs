@@ -250,6 +250,26 @@ fn unload_outcomes_are_exclusive_and_old_optional_shape_is_rejected() {
             outcome,
         };
         assert!(observation.matches_request(&request));
+        let phase = match &observation.outcome {
+            UnloadOutcome::Pending => sandproof_protocol::lifecycle::PublicSessionPhase::Unloading,
+            UnloadOutcome::Unloaded { .. } => sandproof_protocol::lifecycle::PublicSessionPhase::Unloaded,
+            UnloadOutcome::OriginalContinued { .. } => sandproof_protocol::lifecycle::PublicSessionPhase::Running,
+        };
+        let view = sandproof_protocol::lifecycle::PublicSessionView {
+            session: request.request.binding.session.clone(),
+            operation: request.request.binding.key.clone(),
+            current_version: request.accepted_version,
+            phase,
+            unload_outcome: Some(observation.outcome.clone()),
+            create_refusal: None,
+        };
+        let public = serde_json::to_value(&view).unwrap();
+        assert!(public.get("unloaded").is_none());
+        assert_eq!(serde_json::from_value::<sandproof_protocol::lifecycle::PublicSessionView>(public.clone()).unwrap(), view);
+        let mut old_public = public;
+        old_public.as_object_mut().unwrap().remove("unload_outcome");
+        old_public["unloaded"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<sandproof_protocol::lifecycle::PublicSessionView>(old_public).is_err());
         let encoded = serde_json::to_vec(&observation).unwrap();
         assert_eq!(
             serde_json::from_slice::<UnloadObservation>(&encoded).unwrap(),

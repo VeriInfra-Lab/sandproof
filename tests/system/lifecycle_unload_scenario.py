@@ -344,13 +344,21 @@ class PublicUnloadScenario:
         return self.read_json('GET', self.path(), key=self.owner_key)
 
     def check_view(self, view, acceptance):
-        assert set(view) == {'session', 'operation', 'current_version', 'phase', 'unloaded', 'create_refusal'}
+        assert set(view) == {'session', 'operation', 'current_version', 'phase', 'unload_outcome', 'create_refusal'}
         assert view['session'] == self.session and view['operation'] == acceptance['key']
         assert uint(view['current_version'], positive=True)
         assert view['current_version'] == acceptance['accepted_version']
         assert view['create_refusal'] is None
-        if view['phase'] != 'unloaded':
-            assert view['unloaded'] is None, 'pending phase exposed a completed material result'
+        outcome=view['unload_outcome']
+        if view['phase']=='unloading':
+            assert outcome=={'state':'pending'}, 'pending unload result required'
+        elif view['phase']=='unloaded':
+            assert type(outcome) is dict and set(outcome)=={'state','facts'}
+            assert outcome['state']=='unloaded'
+        elif outcome is not None:
+            assert view['phase']=='running'
+            assert type(outcome) is dict and set(outcome)=={'state','facts'}
+            assert outcome['state']=='original_continued', 'running failed-Unload result required'
         return view
 
     def wait_phase(self, acceptance, *, waiting, complete):
@@ -460,7 +468,7 @@ class PublicUnloadScenario:
         self.step('unloaded-facts')
         self.check_view(view, self.unload_acceptance)
         assert view['phase'] == 'unloaded'
-        facts = view['unloaded']
+        facts = view['unload_outcome']['facts']
         assert type(facts) is dict and set(facts) == FACT_FIELDS
         assert type(independent_facts) is dict and set(independent_facts) == FACT_FIELDS
         assert facts == independent_facts, 'public result differs from original journal/material/lifetime evidence'

@@ -74,7 +74,7 @@ fn unload_requires_completed_fact_and_reopens_original_authorized_result() {
     app.reconcile_once().unwrap();
     let saved = app.query_lifecycle("8", &session).unwrap();
     assert_eq!(saved.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(saved.unloaded, observation.outcome.unloaded().cloned());
+    assert_eq!(saved.unload_outcome, Some(observation.outcome.clone()));
     let replay = app.unload_lifecycle("8", &session, &request).unwrap();
     assert_eq!(replay.key, saved.operation);
     assert_eq!(app.query_lifecycle("9", &session), Err(PortError::NotFound));
@@ -128,7 +128,7 @@ fn late_unload_cannot_replace_destroy_or_expiry() {
         app.reconcile_once().unwrap();
         let view = app.query_lifecycle("8", &session).unwrap();
         assert_eq!(view.phase, PublicSessionPhase::Terminating);
-        assert!(view.unloaded.is_none());
+        assert!(view.unload_outcome.is_none());
     }
 }
 
@@ -176,8 +176,8 @@ async fn assert_unloaded_query_fault(lost_reply: bool) {
     assert_eq!(before.0, 200);
     assert_eq!(before.1["phase"], "unloaded");
     assert_eq!(
-        before.1["unloaded"],
-        serde_json::to_value(&observation.outcome.unloaded().cloned()).unwrap()
+        before.1["unload_outcome"],
+        serde_json::to_value(&observation.outcome).unwrap()
     );
     if lost_reply {
         // Deliver the real reaffirm CAS, then lose only its original reply.
@@ -247,17 +247,17 @@ fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime(
         .unwrap()
         .unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unloaded.is_none());
+    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
     *host.unloaded.lock().unwrap() = Some(observation.clone());
     app.reconcile_once().unwrap();
     release.complete();
     let completed = query.join().unwrap().unwrap();
     assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(completed.unloaded, observation.outcome.unloaded().cloned());
+    assert_eq!(completed.unload_outcome, Some(observation.outcome.clone()));
     assert_eq!(completed.current_version, pending.current_version);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.session, pending.session);
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
+    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
 }
 
 #[tokio::test]
@@ -307,7 +307,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let pending: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(pending.1).unwrap();
     assert_eq!(pending.phase, PublicSessionPhase::Unloading);
-    assert!(pending.unloaded.is_none());
+    assert!(pending.unload_outcome == Some(UnloadOutcome::Pending));
     release_refresh.complete();
     reconcile_seen.recv_timeout(Duration::from_secs(5)).unwrap();
     let revision_before: u64 = fixture.revision().parse().unwrap();
@@ -322,7 +322,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let completed: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(completed.1).unwrap();
     assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
-    assert_eq!(completed.unloaded, observation.outcome.unloaded().cloned());
+    assert_eq!(completed.unload_outcome, Some(observation.outcome.clone()));
     assert_eq!(completed.session, pending.session);
     assert_eq!(completed.operation, pending.operation);
     assert_eq!(completed.current_version, pending.current_version);
@@ -335,7 +335,7 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
             .unwrap(),
         completed
     );
-    assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
+    assert!(clock.0.load(Ordering::SeqCst) < completed.unload_outcome.as_ref().unwrap().unloaded().unwrap().end_at_ms);
 }
 
 
@@ -354,11 +354,12 @@ fn original_continued_result_restores_running_without_unloaded_material() {
         .unwrap()
         .clone();
     observation.outcome = UnloadOutcome::OriginalContinued { facts };
+    let expected_outcome = observation.outcome.clone();
     *host.unloaded.lock().unwrap() = Some(observation);
     app.reconcile_once().unwrap();
     let saved = app.query_lifecycle("8", &session).unwrap();
     assert_eq!(saved.phase, PublicSessionPhase::Running);
-    assert!(saved.unloaded.is_none());
+    assert_eq!(saved.unload_outcome, Some(expected_outcome));
     let replay = app.unload_lifecycle("8", &session, &request).unwrap();
     assert_eq!(replay.key, saved.operation);
     assert_eq!(replay.session, session);

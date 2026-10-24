@@ -181,8 +181,8 @@ def original_unload_operation(audit, acceptance, unloaded):
             or [row['operation']['kind'] for row in operations]!=['create','unload']
             or matches[0]['binding']['session']!=acceptance['session']
             or matches[0]['accepted_version']!=acceptance['accepted_version']
-            or matches[0]['operation']['capture']!=unloaded['unloaded']['capture']
-            or matches[0]['operation']['source_incarnation']!=unloaded['unloaded']['source_incarnation']):
+            or matches[0]['operation']['capture']!=unloaded['unload_outcome']['facts']['capture']
+            or matches[0]['operation']['source_incarnation']!=unloaded['unload_outcome']['facts']['source_incarnation']):
         raise ValueError('duplicate delivery produced a different/additional original operation')
     return dict(session=acceptance['session'],key=acceptance['key'],
         accepted_version=acceptance['accepted_version'],matching_operations=1,

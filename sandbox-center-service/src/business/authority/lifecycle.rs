@@ -11,7 +11,7 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     TenantId,
     lifecycle::{
-        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey,
+        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, LifecycleOperation, OperationKey,
         PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
         PublicSessionView, PublicUnloadRequest, SessionId,
     },
@@ -519,11 +519,13 @@ impl SharedBusinessAuthority {
             operation: current.request.binding.key.clone(),
             current_version: current.accepted_version,
             phase,
-            unloaded: record
+            unload_outcome: record
                 .operations()
                 .last()
                 .and_then(|operation| operation.unloaded())
-                .and_then(|observation| observation.outcome.unloaded().cloned()),
+                .map(|observation| observation.outcome.clone())
+                .or_else(|| matches!(current.request.operation, LifecycleOperation::Unload { .. })
+                    .then_some(sandproof_protocol::lifecycle::UnloadOutcome::Pending)),
             create_refusal: record
                 .operations()
                 .first()
