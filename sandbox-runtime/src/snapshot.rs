@@ -25,7 +25,7 @@ use serde_json::json;
 use std::{
     fmt::Write as _,
     fs::File,
-    io,
+    io::{self, Write as _},
     os::{
         fd::OwnedFd,
         unix::fs::{MetadataExt, PermissionsExt},
@@ -332,8 +332,11 @@ impl Runtime {
             stream: self.api_stream(&paused.original.resource_id, limits.api_timeout)?,
             source: &paused.original.identity,
         };
-        use std::io::Write as _;
-        write!(stream, "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", request.len())?;
+        write!(
+            stream,
+            "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            request.len()
+        )?;
         stream.write_all(&request)?;
         let (status, response) = super::api_response::read_reply(&mut stream)?;
         // Only a complete response on the checked original VMM connection can
