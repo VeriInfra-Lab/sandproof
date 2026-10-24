@@ -12,6 +12,10 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 MUTATIONS = [
+    dict(name='wrapping-manifest-length', source='sandbox-protocol/src/lifecycle/manifest.rs',
+         old='current\n                    .checked_add(length)\n                    .ok_or(ManifestError::LengthOverflow)',
+         new='Ok(current.wrapping_add(length))', profile='manifest',
+         test='lengths_are_positive_and_sum_never_wraps'),
     dict(name='same-incarnation', source='sandbox-protocol/src/lifecycle/request.rs',
          old='target_incarnation.get() <= source_incarnation.get()',
          new='target_incarnation.get() < source_incarnation.get()', profile='request',

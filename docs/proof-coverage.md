@@ -194,6 +194,25 @@ Recorded 回执保留完整原请求及当前/终态数据，不表示 Ready、V
 正常 manifest 见证使用可表示路径 `r`、一个 rootfs drive、state/memory/disk 三个文件各长 1、
 32 字节零摘要；这是合法同步守卫输入，不是可恢复的物理快照。
 
+清单长度增量使用 [独立合同](../SandboxModel/Lifecycle/Protocol/ManifestLengthModel.lean)、
+[实际入口对应](../SandboxModel/Lifecycle/Protocol/ManifestLength.lean)及
+[边界见证](../SandboxModel/Lifecycle/Protocol/ManifestLengthExamples.lean)。源码基于
+`153b2d2b514e1c20e73c5a225c0adb6e950ad7c3`，生产 Rust 行为不变；本批由固定原工具重新抽取
+当前 manifest 根，生成物/源码/模型的精确摘要由局部入口记录，历史冻结不刷新。
+通用成功合同不假定输入合法：任意清单成功返回的 U64 精确等于全部文件长度的自然数和，
+且每个文件非零；因此零长度或总和越界不可能成功。任意循环位置另有错误保留、当前文件
+拒绝与当前加法溢出的局部对应，后两项显式要求该位置真实 `file_length` 的相应结果。
+它们不意味着所有合法 profile/路径/文件集均会接受，也不证明文件存在、摘要正确、冻结、
+持久发布或物理恢复资格。
+
+四个实际清单见证覆盖最大合法总长、溢出、零长度先于当前加法、溢出先于后续零长度。
+私有真实 Rust 错误版改用 wrapping_add，接受 `[U64::MAX, 1, 1]` 并返回 1，反例否定
+同一独立合同。原值/profile/单文件辅助仅拆至
+[ManifestValues](../SandboxModel/Lifecycle/Protocol/ManifestValues.lean)，声明及原循环见证保留。
+新增正确侧 22 项声明含辅助引理和见证，错误侧 2 项；这些数量不是业务覆盖率。
+该批局部检查通过状态以 `replay_formal.py --property manifest-length` 的同源回执和 PR 为准；
+ning 普通/原生错误版检查、共享批次及整套验收未完成时，不认领整套证明通过。
+
 三个真实 Rust 错误版分别允许同代 Resume、只比较操作 key、跳过原 capture 绑定。
 正确版与错误版使用同一个独立 Model 合同，分别给出错误接受见证和合同否定；
 编译/导入失败不能作为反例。第三种修改使原工具生成 loop0/loop1：

@@ -19,12 +19,12 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = ROOT / 'verification/experiments/stage1-protocol'
 LIBRARY = Path('verification/aeneas/stage1-protocol')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
-POSITIVE = ['Model', 'Carriers', 'RequestValues', 'Request', 'LoopWitness',
+POSITIVE = ['Model', 'Carriers', 'RequestValues', 'Request', 'LoopWitness', 'ManifestValues',
             'ManifestWitnesses', 'Manifest']
 NEGATIVE = {
     'same-incarnation': ('NegativeResume', ['Model', 'RequestValues'], 2),
     'key-only-replay': ('NegativeReplay', ['Model', 'RequestValues'], 2),
-    'skip-capture-binding': ('NegativeManifest', ['Model', 'LoopWitness', 'ManifestWitnesses'], 25),
+    'skip-capture-binding': ('NegativeManifest', ['Model', 'LoopWitness', 'ManifestValues', 'ManifestWitnesses'], 25),
 }
 
 

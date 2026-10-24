@@ -404,6 +404,30 @@ fn lengths_are_positive_and_sum_never_wraps() {
 }
 
 #[test]
+fn manifest_length_boundary_and_first_error_are_preserved() {
+    let original = manifest();
+    let mut value = original.clone();
+    value.files[0].length = u64::MAX - 2;
+    value.files[1].length = 1;
+    value.files[2].length = 1;
+    assert_eq!(
+        value.validate(&original.binding, &original.compatibility),
+        Ok(u64::MAX)
+    );
+    value.files[0].length = u64::MAX;
+    value.files[2].length = 0;
+    assert_eq!(
+        value.validate(&original.binding, &original.compatibility),
+        Err(ManifestError::LengthOverflow)
+    );
+    value.files[1].length = 0;
+    assert_eq!(
+        value.validate(&original.binding, &original.compatibility),
+        Err(ManifestError::InvalidLength)
+    );
+}
+
+#[test]
 fn resume_cannot_replace_the_original_capture_operation_key() {
     let value = manifest();
     let mut resume = unload();

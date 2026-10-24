@@ -1,4 +1,4 @@
-"""Local request replay/validation proofs on fresh extractions; not batch acceptance.
+"""Local protocol properties on fresh extractions; not batch acceptance.
 
 Retains the historical component freeze. Each case has an isolated source and
 Lean build directory; both use the same independently stated property.
@@ -19,7 +19,7 @@ import traceback
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path('verification/experiments/stage1-protocol')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
-LIBRARY = Path('verification/aeneas/stage1-protocol/request')
+LIBRARIES = Path('verification/aeneas/stage1-protocol')
 # Preserve the original extractor's source paths, without editing its output.
 VIRTUAL_ROOT = Path('/home/zn/u333-5tuoxof8/std-mutex-source')
 POSITIVE = ['ReplayContract', 'ReplayEquality']
@@ -82,6 +82,89 @@ PROPERTIES['retention'] = dict(kind='stage1-renewal-retention-local-formal',
     negative_audits=['mutant_discards_foreign_center', 'key_only_not_retention'])
 
 
+
+
+MANIFEST_LOOP_AUDITS = ['SandboxModel.Stage1Protocol.ManifestLoop.' + n for n in
+    [
+     'loop_done',
+     'loop_cont',
+     'path_body_first',
+     'add_exact',
+     'path_loop',
+     'path_valid']]
+MANIFEST_VALUE_AUDITS = ['SandboxModel.Stage1Protocol.Manifest.' + n for n in
+    [
+     'bytes_eq_self',
+     'digest_eq_self',
+     'deref_r',
+     'distinct_first',
+     'profile_first_step',
+     'profile_loop',
+     'profile_valid',
+     'profile_eq_self',
+     'literal_owned',
+     'sub_exact',
+     'state_file_length',
+     'memory_file_length',
+     'disk_file_length']]
+MANIFEST_WITNESS_AUDITS = ['SandboxModel.Stage1Protocol.Manifest.' + n for n in
+    [
+     'files_step_0',
+     'files_step_1',
+     'files_step_2',
+     'files_loop']]
+MANIFEST_ENTRY_AUDITS = ['SandboxModel.Stage1Protocol.Manifest.' + n for n in
+    [
+     'unsupported_version_first',
+     'changed_capture_key_first',
+     'normal_manifest_accepted',
+     'original_capture_contract']]
+LENGTH_AUDITS = ['SandboxModel.Stage1Protocol.ManifestLength.' + n for n in
+    [
+     'bind_success',
+     'file_length_success',
+     'scan_unfold',
+     'scan_error',
+     'scan_end',
+     'index_exact',
+     'index_next',
+     'scan_success',
+     'validate_reaches_scan',
+     'validate_lengths',
+     'overflow_never_accepted',
+     'zero_length_never_accepted',
+     'scan_file_error',
+     'scan_overflow']]
+LENGTH_VALUE_AUDITS = ['SandboxModel.Stage1Protocol.ManifestLength.Values.' + n for n in
+    [
+     'state_length',
+     'memory_length',
+     'disk_length',
+     'validate_enters_length_scan']]
+LENGTH_EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.ManifestLength.Examples.' + n for n in
+    [
+     'maximum_total_accepted',
+     'overflow_refused',
+     'zero_precedes_addition',
+     'overflow_precedes_later_zero']]
+MANIFEST_AUDITS = MANIFEST_LOOP_AUDITS + MANIFEST_VALUE_AUDITS + MANIFEST_WITNESS_AUDITS + MANIFEST_ENTRY_AUDITS
+MANIFEST_LENGTH_AUDITS = LENGTH_AUDITS + LENGTH_VALUE_AUDITS + LENGTH_EXAMPLE_AUDITS
+MANIFEST_NEGATIVE_IMPORT_AUDITS = MANIFEST_LOOP_AUDITS + MANIFEST_VALUE_AUDITS + LENGTH_VALUE_AUDITS
+PROPERTIES['manifest-length'] = dict(kind='stage1-manifest-length-local-formal',
+    profile='manifest', mutation='wrapping-manifest-length',
+    positive=['Model', 'LoopWitness', 'ManifestValues', 'ManifestWitnesses', 'Manifest',
+              'ManifestLengthModel', 'ManifestLength', 'ManifestLengthValues', 'ManifestLengthExamples'],
+    negative=['Model', 'LoopWitness', 'ManifestValues', 'ManifestLengthModel', 'ManifestLengthValues'],
+    common_files=['SandboxModel/Foundations/' + name + '.lean' for name in
+                  ['Model', 'IdentifierModel', 'Representation', 'Identifiers', 'ByteArray']] +
+                 ['verification/aeneas/foundations/SandproofFoundations/Funs.lean'],
+    contract='ManifestLengthModel', template='NegativeManifestLength',
+    audits=MANIFEST_AUDITS + MANIFEST_LENGTH_AUDITS,
+    negative_namespace='SandboxModel.Stage1Protocol.ManifestLength.Negative.',
+    negative_import_audits=MANIFEST_NEGATIVE_IMPORT_AUDITS,
+    negative_audits=['mutant_wraps_total', 'wrapping_not_length_contract'])
+
+
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -109,6 +192,8 @@ def snapshot():
 def run(output, property_name='replay'):
     config = PROPERTIES[property_name]
     mutant = config['mutation']
+    profile = config.get('profile', 'request')
+    library = LIBRARIES / profile
     output.mkdir(mode=0o700, parents=True)
     start = time.monotonic()
     record = dict(kind=config['kind'], cases={}, commands=[],
@@ -168,35 +253,45 @@ def run(output, property_name='replay'):
                 '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL_ROOT / 'artifacts/extract-target'),
                 '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
                 '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS',
-                '--', sys.executable, str(HERE / 'extract.py'), '--profile', 'request',
+                '--', sys.executable, str(HERE / 'extract.py'), '--profile', profile,
                 '--output', 'artifacts/extraction'])
             extraction = project / 'artifacts/extraction'
-            generated = extraction / 'request/generated'
+            generated = extraction / profile / 'generated'
             extraction_record = json.loads((extraction / 'result.json').read_text())
             if extraction_record.get('success') is not True:
                 raise ValueError('actual extraction incomplete')
             installed = {}
             for path in generated.rglob('*'):
                 if path.is_file() and '_Template' not in path.name:
-                    relative = LIBRARY / path.relative_to(generated)
+                    relative = library / path.relative_to(generated)
+                    if case == 'correct' and profile == 'manifest' and sha(ROOT / relative) != sha(path):
+                        raise ValueError('fresh manifest generation differs from tracked output: ' + str(relative))
                     shutil.copy2(path, project / relative)
                     installed[str(relative)] = sha(path)
-            shutil.copy2(extraction / 'request/original.llbc', project / LIBRARY / 'original.llbc')
-            installed[str(LIBRARY / 'original.llbc')] = sha(extraction / 'request/original.llbc')
+            raw = extraction / profile / 'original.llbc'
+            if case == 'correct' and profile == 'manifest':
+                sys.path.insert(0, str(ROOT / 'tools'))
+                from check_foundations_extraction import llbc_digest
+                if llbc_digest(json.loads(raw.read_text())) != llbc_digest(
+                        json.loads((ROOT / library / 'original.llbc').read_text())):
+                    raise ValueError('fresh complete manifest IR differs from tracked output')
+            shutil.copy2(raw, project / library / 'original.llbc')
+            installed[str(library / 'original.llbc')] = sha(raw)
             expected_inputs.update(installed)
 
             names = config['positive'] if case == 'correct' else config['negative']
             targets = ['SandboxModel.Lifecycle.Protocol.' + name for name in names]
-            command(project, folder, 'build', ['lake', 'build', 'SandproofStage1Request', *targets])
+            command(project, folder, 'build', ['lake', 'build', 'SandproofStage1' + profile.title(), *targets])
             files = ['SandboxModel/ProofAuditCommand.lean']
             files += config['common_files']
             files += [str(PROOFS / (name + '.lean')) for name in names]
-            files += [str(p.relative_to(project)) for p in sorted((project / LIBRARY).rglob('*.lean'))
+            files += [str(p.relative_to(project)) for p in sorted((project / library).rglob('*.lean'))
                       if '_Template' not in p.name]
             files += ['verification/aeneas/foundations/SandproofFoundations/' + name + '.lean'
                       for name in ['TypesExternal', 'IdentifierLibrary', 'Types', 'FunsExternal']]
-            files += ['verification/aeneas/network/SandproofNetwork/' + name + '.lean'
-                      for name in ['Types', 'FunsExternal']]
+            if profile == 'request':
+                files += ['verification/aeneas/network/SandproofNetwork/' + name + '.lean'
+                          for name in ['Types', 'FunsExternal']]
             if case == 'correct':
                 expected_audits = config['audits']
             else:
@@ -209,7 +304,7 @@ def run(output, property_name='replay'):
                                    config['negative_audits']]
             actual = formal.actual_files(project, files, folder, env, command)
             if sorted(actual['audits']) != sorted(expected_audits):
-                raise ValueError('request property audit inventory differs')
+                raise ValueError('protocol property audit inventory differs')
             for name, digest in expected_inputs.items():
                 if sha(project / name) != digest:
                     raise ValueError('unexpected source/proof/generated change: ' + name)

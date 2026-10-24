@@ -141,3 +141,32 @@ python3 verification/experiments/stage1-protocol/replay_formal.py \
 该模式重抽取正确版和原 `same-incarnation` Rust 变体，逐字节核对两版独立合同，
 检查精确依赖/审计清单和所有实际文件。它继续明确输出原生检查未运行、完整验收未完成，
 不替代 ning 检查、历史组件入口或共享证明批次。
+
+## 清单长度与溢出的局部证明
+
+`ManifestLengthModel` 仅导入生成类型，用自然数总和及逐文件非零定义独立的成功结果合同。
+`ManifestLength` 对任意可表示清单连接真实 `SnapshotManifest::validate`：成功返回值精确等于
+全部长度之和，且每个文件非零。因此含零长度或自然数总和超过 U64 上界的清单不能被接受；
+这些安全结论不要求预先假定 profile、路径或文件形状合法。
+
+循环另证明已有错误原样保留、当前文件拒绝先于加法，以及当前文件检查成功但累加越界时
+返回 `LengthOverflow`，不受后续文件影响。这些一步结论显式带当前真实文件检查的结果，
+不代替任意 profile/路径/磁盘集合的完整接受域证明。四个实际入口见证覆盖最大合法总长、
+溢出、当前零长度先于加法及先前溢出先于后续零长度；前置绑定和一盘 profile 确实通过。
+
+```sh
+python3 verification/experiments/stage1-protocol/replay_formal.py \
+  --property manifest-length --output artifacts/manifest-length-formal
+```
+
+同一入口从正确与私有错误 Rust 重新抽取；`wrapping-manifest-length` 只把原 checked 加法
+替换为 `Ok(current.wrapping_add(length))`。错误版实际接受长度 `[U64::MAX, 1, 1]` 并返回 1，
+两个反例声明由此否定正确版逐字节相同的独立合同。`ManifestValues` 只是从原
+`ManifestWitnesses` 分离未改动的值/profile/单文件辅助证明，供两个视图共同检查；原 23 项
+辅助和 4 项 manifest 结论仍在正确视图内，没有删除旧检查。
+
+正确视图还比较本次生成的 Types/Funs/translation 与仓库版本，并按原规则核对完整 LLBC；
+两版全部实际文件经内核、完整非陈旧服务诊断及准确审计清单检查。长度模式的物理清单包含
+实际导入的 Foundations 值/字符串证明闭包。原生入口登记原 `lengths_are_positive_and_sum_never_wraps`
+断言及新增边界/首错回归；是否实跑以原生回执为准。局部结果继续明确
+`native_checks=not-run`、`full_acceptance=false`，历史冻结和完整验收门槛不变。
