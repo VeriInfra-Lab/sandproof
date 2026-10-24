@@ -98,6 +98,9 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):
                     self.assertEqual(Path(native['chroot_base']), root / str(index) / 'p/v')
+                    # The inert assembly port still supplies the exact native
+                    # directory used by the real same-filesystem preflight.
+                    Path(native['chroot_base']).mkdir(mode=0o700)
                     self.assertFalse({'bind','credentials','internal_build_vms','build_retry_windows'} & native.keys())
                     transfers = native['data_transfer']
                     expected = 4 if index else options.get('runtime_transfers_per_vm', 4)
