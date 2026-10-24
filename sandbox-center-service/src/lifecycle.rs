@@ -156,18 +156,28 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     DiagnosticFailure::Port(*error),
                 );
             })?;
+        self.query_lifecycle_projection(&owner, session, &intent, phase)
+    }
+
+    fn query_lifecycle_projection(
+        &self,
+        owner: &sandproof_protocol::TenantId,
+        session: &SessionId,
+        intent: &AcceptedLifecycleIntent,
+        phase: SessionPhase,
+    ) -> Result<PublicSessionView, PortError> {
         let _projection = sandproof_center_store::DiagnosticScope::step(
             sandproof_center_store::DiagnosticStep::Projection,
         );
         if phase == SessionPhase::Unloaded {
-            return self.query_unloaded(&owner, session);
+            return self.query_unloaded(owner, session);
         }
         if matches!(
             phase,
             SessionPhase::Resuming | SessionPhase::Running | SessionPhase::Renewing
-        ) && self.is_resumed_execution(&intent)?
+        ) && self.is_resumed_execution(intent)?
         {
-            return self.query_resumed(&owner, session, &intent);
+            return self.query_resumed(owner, session, intent);
         }
         if matches!(
             phase,
@@ -179,7 +189,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             // A local Running can already be committed while the center still
             // retains pending Create. Observe that same operation; never issue
             // another create or infer current readiness from saved history.
-            let observation = match self.current_create_observation_attempt(&intent) {
+            let observation = match self.current_create_observation_attempt(intent) {
                 Ok(observation) => Some(observation),
                 Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => {
                     return Err(error);
@@ -205,7 +215,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     )
                     .map_err(crate::application::authority_error)?;
                     return authority
-                        .query_public_lifecycle(&owner, session)
+                        .query_public_lifecycle(owner, session)
                         .inspect_err(|error| {
                             diagnostics::emit(
                                 DiagnosticStage::LifecycleQueryResult,
@@ -228,8 +238,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 // Commit/reaffirm first, then inspect a fresh authority under
                 // the same short lock. A newer unload/termination cannot be
                 // overwritten by the result of the detached observation.
-                let (current, phase) = authority.public_lifecycle_intent(&owner, session)?;
-                if current != intent
+                let (current, phase) = authority.public_lifecycle_intent(owner, session)?;
+                if current != *intent
                     || phase != SessionPhase::Running
                     || self.now()? >= facts.end_at_ms
                 {
@@ -250,7 +260,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         self.authority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?
-            .query_public_lifecycle(&owner, session)
+            .query_public_lifecycle(owner, session)
             .inspect_err(|error| {
                 diagnostics::emit(
                     DiagnosticStage::LifecycleQueryResult,

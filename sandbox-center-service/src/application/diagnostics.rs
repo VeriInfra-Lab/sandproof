@@ -50,18 +50,12 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
     let _ = match failure {
         Failure::Authority(error) => writeln!(
             output,
-            "center_wait unix_ms={unix_ms:?} pid={pid} scope={} flow={:?} step={:?} stage={stage:?} authority={error:?} remaining={}",
-            context.sequence,
-            context.flow,
-            context.step,
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} authority={error:?} remaining={}",
             LIMIT - previous - 1
         ),
         Failure::Port(error) => writeln!(
             output,
-            "center_wait unix_ms={unix_ms:?} pid={pid} scope={} flow={:?} step={:?} stage={stage:?} port={error:?} remaining={}",
-            context.sequence,
-            context.flow,
-            context.step,
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} port={error:?} remaining={}",
             LIMIT - previous - 1
         ),
     };
@@ -72,12 +66,6 @@ pub(crate) fn emit(stage: Stage, failure: Failure) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn without_scope(line: &str) -> String {
-        let (prefix, rest) = line.split_once(" scope=").unwrap();
-        let (scope, suffix) = rest.split_once(" stage=").unwrap();
-        assert!(scope.len() < 100);
-        format!("{prefix} stage={suffix}")
-    }
     #[test]
     fn failure_is_bound_to_the_synchronous_query_stage_without_identity() {
         use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
@@ -93,11 +81,11 @@ mod tests {
         );
         let line = String::from_utf8(bytes).unwrap();
         assert!(line.contains(&format!(
-            "scope={} flow=LifecycleQuery step=Expiry",
+            "c=q{}/e",
             context.sequence
         )));
         assert_eq!(line.lines().count(), 1);
-        assert!(without_scope(line.trim_end()).len() < 220);
+        assert!(line.trim_end().len() < 220);
     }
     #[test]
     fn lifecycle_query_causes_use_only_closed_errors_and_the_same_finite_budget() {
@@ -139,7 +127,7 @@ mod tests {
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);
         assert!(text.contains("stage=AuthoritySnapshot authority=Store(Configuration)"));
         assert!(text.contains("stage=LifecycleQueryExpiry authority=Store(Unavailable)"));
-        assert!(text.lines().all(|line| without_scope(line).len() < 220));
+        assert!(text.lines().all(|line| line.len() < 220));
         assert!(!text.contains("payload") && !text.contains("credential") && !text.contains('/'));
     }
 
@@ -167,7 +155,7 @@ mod tests {
         assert!(
             text.lines()
                 .all(|line| line.contains("authority=RecoveryRequired")
-                    && without_scope(line).len() < 160)
+                    && line.len() < 160)
         );
         assert!(text.ends_with("remaining=0\n"));
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);

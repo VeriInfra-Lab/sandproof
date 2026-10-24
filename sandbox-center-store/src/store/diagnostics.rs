@@ -30,6 +30,17 @@ pub struct DiagnosticContext {
     pub flow: DiagnosticFlow,
     pub step: DiagnosticStep,
 }
+/// Compact fixed codes: q=query, b=background; l=lookup, e=expiry,
+/// p=projection, f=refresh, c=reconcile, t=retire, r=recovery, m=material.
+/// A dash is explicitly uncorrelated (including exhausted sequence numbers).
+impl std::fmt::Display for DiagnosticContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.sequence == 0 || self.flow == DiagnosticFlow::Unscoped { return f.write_str("-"); }
+        let flow = match self.flow { DiagnosticFlow::LifecycleQuery => 'q', DiagnosticFlow::Background => 'b', DiagnosticFlow::Unscoped => '-' };
+        let step = match self.step { DiagnosticStep::Unscoped => '-', DiagnosticStep::Lookup => 'l', DiagnosticStep::Expiry => 'e', DiagnosticStep::Projection => 'p', DiagnosticStep::Refresh => 'f', DiagnosticStep::Reconcile => 'c', DiagnosticStep::Retire => 't', DiagnosticStep::Recovery => 'r', DiagnosticStep::Material => 'm' };
+        write!(f, "{flow}{}/{step}", self.sequence)
+    }
+}
 const UNSCOPED: DiagnosticContext = DiagnosticContext {
     sequence: 0,
     flow: DiagnosticFlow::Unscoped,
@@ -159,10 +170,7 @@ fn record(
     let context = diagnostic_context();
     let _ = writeln!(
         output,
-        "center_store_query unix_ms={unix_ms:?} pid={pid} scope={} flow={:?} step={:?} phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
-        context.sequence,
-        context.flow,
-        context.step,
+        "center_store_query unix_ms={unix_ms:?} pid={pid} c={context} phase={phase:?} failure={failure:?} elapsed_us={} remaining_at_start_us={} remaining={}",
         elapsed.as_micros(),
         budget.as_micros(),
         LIMIT - previous - 1
@@ -265,11 +273,7 @@ mod tests {
         }
         let text = String::from_utf8(bytes).unwrap();
         assert_eq!(text.lines().count(), LIMIT - 1);
-        assert!(text.lines().all(|line| {
-            let (prefix, rest) = line.split_once(" scope=").unwrap();
-            let (scope, suffix) = rest.split_once(" phase=").unwrap();
-            scope.len() < 100 && prefix.len() + " phase=".len() + suffix.len() < 256
-        }));
+        assert!(text.lines().all(|line| line.len() < 256));
         assert!(text.ends_with("remaining=0\n"));
         assert_eq!(count.load(Ordering::Relaxed), LIMIT);
     }
@@ -294,21 +298,16 @@ mod context_tests {
         );
         let line = String::from_utf8(bytes).unwrap();
         assert!(line.contains(&format!(
-            "scope={sequence} flow=LifecycleQuery step=Expiry phase=Cas failure=TransportTimeout"
+            "c=q{sequence}/e phase=Cas failure=TransportTimeout"
         )));
     }
     #[test]
     fn exhausted_sequence_is_explicitly_uncorrelated_and_never_reuses_last_id() {
         let sequence = std::sync::atomic::AtomicU64::new(u64::MAX - 1);
-        assert_eq!(
-            next_context(
-                &sequence,
-                DiagnosticFlow::LifecycleQuery,
-                DiagnosticStep::Lookup
-            )
-            .sequence,
-            u64::MAX
-        );
+        let last = next_context(&sequence, DiagnosticFlow::LifecycleQuery, DiagnosticStep::Lookup);
+        assert_eq!(last.sequence, u64::MAX);
+        assert_eq!(last.to_string(), "q18446744073709551615/l");
+        assert_eq!(last.to_string().len(), 23);
         assert_eq!(
             next_context(
                 &sequence,
