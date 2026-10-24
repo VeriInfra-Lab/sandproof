@@ -2,7 +2,7 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#632](https://github.com/VeriInfra-Lab/sandproof/issues/632)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#632](https://github.com/VeriInfra-Lab/sandproof/issues/632)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 边界与复用
 
@@ -31,7 +31,7 @@ V0 固定本阶段共享身份、数值、事件、表示关系和逐接口依�
 
 | 点 | 第一阶段要验收的内容 | 已有基础与仍缺什么 | 完成判据 |
 |---|---|---|---|
-| T0 来源与证据 | 公开 create/unload/resume/destroy/query 到 Redis、收件、SQLite、VMM、pin/GC 的实际根、回调、资源与 cfg | 已有来源目录/冻结与复用工具；新生命周期根尚不存在，必须随实现加入 | 每个根到真实调用/外部条件/业务提供方可追踪；未启用功能不可达或有修改范围证明；源码、工具、依赖变化失效传播明确 |
+| T0 来源与证据 | 公开 create/unload/resume/destroy/query 到 Redis、收件、SQLite、VMM、pin/GC 的实际根、回调、资源与 cfg | 已有来源目录/冻结与复用工具；首次卸载根已有实现，完整根/闭包登记及当前版本绑定未齐；Resume/GC 根须随实现加入 | 每个根到真实调用/外部条件/业务提供方可追踪；未启用功能不可达或有修改范围证明；源码、工具、依赖变化失效传播明确 |
 | T1 类型、字节和单位 | 身份、运行代、capture、操作窗口/序号、期限、大小、真实摘要；零/耗尽/溢出/非法 UTF-8 | 已有编号/算术和部分 G1/G2；旧 manifest 逻辑编号不能冒充内容摘要 | 每个实际字段有域、单位、完整参数与往返/拒绝对应；不同业务角色不能凭相同 u64 自动互换 |
 | T2 JSON 与输出 | 新生命周期请求/结果/确认、窗口、manifest 和必要授权头 | 已有代表 schema、有界 Writer；新增 schema 及输出接线待做 | 全字段、derive 属性、字节/文本、限额、未知字段和首错有同实现证据；不把 serde 当整个自有 decoder 正确 |
 | T3 容器与循环 | 生命周期验证、工作表、claim/pin/ref 集合、精确清理扫描所需操作 | 有限复制/插入、普通键 BTreeSet insert 已有；contains/迭代/可变借用按真实需要补 | 原顺序/首错/回写/删除与唯一性可复用；无需先完成全部标准库容器 |
@@ -39,7 +39,7 @@ V0 固定本阶段共享身份、数值、事件、表示关系和逐接口依�
 | T5 资源移动与 Drop | pin/worker/FD/VMM 的所有权转交、等待取消、reaper 接管 | 现有持额消息/Child 观察只覆盖部分；新材料使用者需精确规则 | 不提前归还、不丢责任、不重复释放；正常析构、panic、abort、进程死亡分开；持久 pin 由 V5/V6 证明 |
 | T6 异步与共享状态 | 已有 Mutex/RwLock/Condvar/Notify/JoinSet/任务池合同实例；同会话竞争、注销/取 pin 原子性 | Tokio 机械接线为已登记 B 条件；新业务策略归 V4/V5/V8 | 原锁/池/信号/回调完整绑定；正确版通过、提前释放/绕过当前授权错误版被同性质拒绝；不声称 async Rust 自动翻译 |
 | T7 Redis/SQLite/提交 | 原事务/CAS/Lua/参数与未知提交；file publish 与 DB 非原子 | 已有 Redis/SQLite 代表合同；新增 schema、脚本、事务和对账待做 | 已提交/未提交/未知不混淆；原回执/引用和工作同事务；实际 SQL/Lua 业务由 V2/V5 证明 |
-| T8 OS/TLS/Firecracker | 受保护原句柄、短写/sync/rename/删除、进程观察、Full capture、LoadPaused、激活与 File backing | TLS/relay/Metadata 等已有局部结果；open_checked 仍有抽取缺口，snapshot API 未接通 | 精确符号/版本/条件登记，新 S-C1–6 可实测；不能把路径安全、manifest 或 GC 决策整段信任；原句柄路径必须有可实施连接方案 |
+| T8 OS/TLS/Firecracker | 受保护原句柄、短写/sync/rename/删除、进程观察、Full capture、LoadPaused、激活与 File backing | TLS/relay/Metadata 等已有局部结果；open_checked 仍有抽取缺口；Full 捕获已接线，LoadPaused/激活/运行 backing 与回收未闭合 | 精确符号/版本/条件登记，新 S-C1–6 可实测；不能把路径安全、manifest 或 GC 决策整段信任；原句柄路径必须有可实施连接方案 |
 | T9 范围排除 | 浮点与完整来宾兼容算法 | 不进入本阶段 | 本阶段证明根不依赖它；若实际必经，应先报告范围冲突，不能隐式绕过或假设结果 |
 
 原 Guest `file_query::into_text`、完整流/PTY 编解码与无关容器不再是 V0 前置；新 manifest/协议真的使用到的字节处理仍要做。旧 P4 `protected_files::open_checked` 是潜在真实阻断：先选保持 flags/原句柄/错误顺序的小拆分，不能用 Metadata 三个 getter 的证明掩盖路径取得和替换竞态。
