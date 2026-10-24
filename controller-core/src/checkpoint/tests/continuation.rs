@@ -32,6 +32,7 @@ fn receipt() -> CaptureWorkEndReceipt {
     CaptureWorkEndReceipt {
         work_binding: [13; 32],
         end_binding: [17; 32],
+        end: crate::capture::CaptureWorkEnd::NeverReleased { seal: None },
     }
 }
 fn identity(world: &World) -> OriginalContinueIdentity {
@@ -56,7 +57,7 @@ fn compensate(world: &World) -> World {
         })),
     )
 }
-fn failed_pause(frozen: bool) -> World {
+fn pause_source(frozen: bool) -> World {
     let (world, _) = live();
     let world = advance(
         &world,
@@ -73,7 +74,7 @@ fn failed_pause(frozen: bool) -> World {
         |command| matches!(command,Command::InstallFence {epoch,..} if *epoch==id.epoch),
     );
     let world = finish(&world, fence);
-    let world = if frozen {
+    if frozen {
         let world = advance(
             &world,
             ControllerInput::Scheduler(SchedulerInput::ReservePauseSnapshot(id.key)),
@@ -86,8 +87,10 @@ fn failed_pause(frozen: bool) -> World {
         finish(&world, freeze)
     } else {
         world
-    };
-    compensate(&world)
+    }
+}
+fn failed_pause(frozen: bool) -> World {
+    compensate(&pause_source(frozen))
 }
 fn prepare(world: &World) -> World {
     advance(
@@ -454,4 +457,182 @@ fn unknown_continue_then_destroy_is_closed_and_original_stop_can_retire_only_tha
     let world = release(&world, 0, binding);
     let world = retire(&world, id.key.sandbox);
     assert!(world.sandbox_record(id.key.sandbox).is_none());
+}
+
+fn dispatched_capture(unknown: bool) -> (World, EffectId, crate::capture::CaptureSealEnd) {
+    let world = pause_source(true);
+    let id = identity(&world);
+    let target = world
+        .operation_plan(id.key)
+        .unwrap()
+        .target_snapshot
+        .unwrap();
+    let world = advance(
+        &world,
+        ControllerInput::Scheduler(SchedulerInput::SealSnapshot(
+            id.key.sandbox,
+            target.snapshot,
+            target.manifest,
+        )),
+    );
+    let seal = effect(&world, id.key.sandbox, |command| {
+        matches!(command, Command::SealSnapshot { .. })
+    });
+    let Command::SealSnapshot {
+        workspace,
+        snapshot,
+        manifest,
+        ..
+    } = *seal.command()
+    else {
+        unreachable!()
+    };
+    let end = crate::capture::CaptureSealEnd {
+        attempt: seal.attempt,
+        workspace,
+        snapshot,
+        manifest,
+    };
+    let world = advance(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(seal.clone())),
+    );
+    let world = if unknown {
+        advance(
+            &world,
+            ControllerInput::Effect(EffectInput::Timeout(seal.clone())),
+        )
+    } else {
+        world
+    };
+    (compensate(&world), seal, end)
+}
+
+#[test]
+fn exact_never_released_or_returned_end_retires_only_original_seal_and_keeps_no_snapshot_success() {
+    for returned in [false, true] {
+        for unknown in [false, true] {
+            let (_, binding) = live();
+            let (world, seal, coordinates) = dispatched_capture(unknown);
+            let id = identity(&world);
+            let mut end = receipt();
+            end.end = if returned {
+                crate::capture::CaptureWorkEnd::Returned { seal: coordinates }
+            } else {
+                crate::capture::CaptureWorkEnd::NeverReleased {
+                    seal: Some(coordinates),
+                }
+            };
+            let world = advance(
+                &world,
+                ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                    identity: id,
+                    end_receipt: end,
+                }),
+            );
+            assert_eq!(
+                world.effect_status(&seal),
+                Some(EffectStatus::RetiredByCaptureEnd(end))
+            );
+            assert!(!crate::effect::effect_succeeded_check(
+                &world,
+                seal.command()
+            ));
+            assert!(!crate::effect::command_result_present(
+                &world,
+                seal.command()
+            ));
+            assert_eq!(
+                handle_effect_receipt(
+                    &world,
+                    seal.clone(),
+                    EffectOutcome::Failed(FailureKind::Cancelled)
+                ),
+                Err(EffectReject::EffectRetired)
+            );
+            assert_eq!(
+                handle_effect_dispatch(&world, seal.clone()),
+                Err(EffectReject::NotDispatchable)
+            );
+            assert_eq!(
+                handle_effect_timeout(&world, seal.clone()),
+                Err(EffectReject::NotDispatched)
+            );
+            assert!(crate::worker::handle_worker(&world, &seal).is_err());
+            let world = advance(&world, ControllerInput::Runtime(RuntimeInput::Crash));
+            let world = advance(&world, ControllerInput::Runtime(RuntimeInput::Recover));
+            let activate = effect(&world, id.key.sandbox, |command| {
+                *command == id.activation_command()
+            });
+            let world = finish(&world, activate);
+            let world = advance(
+                &world,
+                ControllerInput::Capture(CaptureInput::PublishOriginalContinued { identity: id }),
+            );
+            assert_eq!(
+                world.effect_status(&seal),
+                Some(EffectStatus::RetiredByCaptureEnd(end))
+            );
+            let world = destroy(&world, binding);
+            let world = cleanup(&world, binding);
+            let world = release(&world, 0, binding);
+            let world = retire(&world, id.key.sandbox);
+            assert!(world.sandbox_record(id.key.sandbox).is_none());
+        }
+    }
+}
+
+#[test]
+fn end_digests_without_exact_seal_coordinates_or_after_destroy_never_retire_work() {
+    let (world, seal, coordinates) = dispatched_capture(true);
+    let id = identity(&world);
+    for field in ["missing", "attempt", "workspace", "snapshot", "manifest"] {
+        let mut altered = coordinates;
+        match field {
+            "missing" => {}
+            "attempt" => altered.attempt += 1,
+            "workspace" => altered.workspace.0 += 1,
+            "snapshot" => altered.snapshot.0 += 1,
+            "manifest" => altered.manifest.digest.0 += 1,
+            _ => unreachable!(),
+        }
+        let mut end = receipt();
+        if field != "missing" {
+            end.end = crate::capture::CaptureWorkEnd::NeverReleased {
+                seal: Some(altered),
+            };
+        }
+        assert!(
+            handle_controller(
+                &world,
+                ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                    identity: id,
+                    end_receipt: end
+                })
+            )
+            .is_err(),
+            "accepted {field}"
+        );
+        assert_eq!(
+            world.effect_status(&seal),
+            Some(EffectStatus::OutcomeUnknown)
+        );
+    }
+    let world = begin_destroy(&world);
+    let mut end = receipt();
+    end.end = crate::capture::CaptureWorkEnd::Returned { seal: coordinates };
+    assert_eq!(
+        handle_controller(
+            &world,
+            ControllerInput::Capture(CaptureInput::PrepareOriginalContinue {
+                identity: id,
+                end_receipt: end
+            })
+        ),
+        Err(ControllerReject::Capture(CaptureReject::Terminal))
+    );
+    assert_eq!(
+        world.effect_status(&seal),
+        Some(EffectStatus::OutcomeUnknown)
+    );
 }

@@ -11,7 +11,9 @@
 mod tests;
 
 pub mod continuation;
-pub use continuation::{CaptureInput, CaptureWorkEndReceipt, OriginalContinueIdentity};
+pub use continuation::{
+    CaptureInput, CaptureSealEnd, CaptureWorkEnd, CaptureWorkEndReceipt, OriginalContinueIdentity,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
