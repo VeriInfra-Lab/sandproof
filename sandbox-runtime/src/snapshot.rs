@@ -9,6 +9,8 @@ use super::{
 };
 #[path = "snapshot_api_end.rs"]
 mod api_end;
+#[path = "snapshot_full_wait.rs"]
+pub(crate) mod full_wait;
 use api_end::full_capture_request;
 pub use api_end::{FullCaptureApiContext, FullCaptureApiEnd};
 
@@ -325,13 +327,14 @@ impl Runtime {
         paused.original.root.sync_all()?;
         let request = full_capture_request(directory_key)?;
         let worker = RuntimeProcessIdentity::capture(std::process::id())?;
-        let (status, response) = self.api_reply(
-            &paused.original.resource_id,
-            "PUT",
-            "/snapshot/create",
-            Some(&request),
-            limits.api_timeout,
-        )?;
+        let mut stream = full_wait::OriginalFullStream {
+            stream: self.api_stream(&paused.original.resource_id, limits.api_timeout)?,
+            source: &paused.original.identity,
+        };
+        use std::io::Write as _;
+        write!(stream, "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", request.len())?;
+        stream.write_all(&request)?;
+        let (status, response) = super::api_response::read_reply(&mut stream)?;
         // Only a complete response on the checked original VMM connection can
         // create this marker. Timeouts/short frames cannot reach this point.
         let api_end = FullCaptureApiEnd::returned(
@@ -343,7 +346,7 @@ impl Runtime {
             status,
             &response,
         )?;
-        layout.publish_full_api_end(&api_end)?;
+        layout.publish_full_api_end(&api_end, &paused.original.identity)?;
         if !(200..300).contains(&status) {
             return Err(RuntimeError::Api {
                 status,
