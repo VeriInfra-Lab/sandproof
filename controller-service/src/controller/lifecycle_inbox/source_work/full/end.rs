@@ -12,8 +12,10 @@ pub(super) mod prepare;
 
 const END_RECORD_BYTES: usize = 16_384;
 
-pub(super) fn material_writer_closed(record:&SourceWorkRecord)->Result<bool,JournalError>{
-    let Some(capture)=&record.capture else { return Ok(true) };
+pub(super) fn material_writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalError> {
+    let Some(capture) = &record.capture else {
+        return Ok(true);
+    };
     validate_record(record)?;
     // NeverReleased requires no SQL-authorized worker; WorkerEnded requires
     // the exact saved provider result plus actual original worker exit.
@@ -78,8 +80,10 @@ pub(super) fn validate_record(record: &SourceWorkRecord) -> Result<(), JournalEr
                 && !(capture.completed.is_some()
                     && matches!(observation.outcome, CaptureRequestEndOutcome::NoRequest))
         }
-        CaptureEndRecord::Terminated { stop, observation, .. } => {
-            super::drain::validate_record(record,*stop,observation)?;
+        CaptureEndRecord::Terminated {
+            stop, observation, ..
+        } => {
+            super::drain::validate_record(record, *stop, observation)?;
             true
         }
     };
@@ -128,8 +132,13 @@ fn receipt(
     }))
 }
 
-pub(super) fn continuation_allowed(record:&SourceWorkRecord)->bool{
-    record.capture.as_ref().is_some_and(|capture|matches!(capture.end,Some(CaptureEndRecord::NeverReleased{..}|CaptureEndRecord::WorkerEnded{..})))
+pub(super) fn continuation_allowed(record: &SourceWorkRecord) -> bool {
+    record.capture.as_ref().is_some_and(|capture| {
+        matches!(
+            capture.end,
+            Some(CaptureEndRecord::NeverReleased { .. } | CaptureEndRecord::WorkerEnded { .. })
+        )
+    })
 }
 
 pub(super) fn seal_end(

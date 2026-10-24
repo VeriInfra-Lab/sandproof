@@ -246,7 +246,9 @@ pub(super) fn current(
     super::super::validate::validate_record(record, world)?;
     let id = original_identity(record)?;
     let capture = record.capture.as_ref().ok_or(JournalError::CorruptStore)?;
-    let handoff = world.operation_plan(id.key).and_then(|p|p.capture)
+    let handoff = world
+        .operation_plan(id.key)
+        .and_then(|p| p.capture)
         .ok_or(JournalError::CorruptStore)?;
     // The original Continue receipt may already be referenced by immutable
     // native history. It already closes the writer; never replace that End.
@@ -257,10 +259,18 @@ pub(super) fn current(
         .action
         .as_ref()
         .ok_or(JournalError::UnresolvedAction)?;
-    if capture.completed.is_none() && !matches!(world.effect_status(&seal.command),
-        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown
-            | core::EffectStatus::RetiredByCaptureDrain(_)))
-    { return Err(JournalError::UnresolvedAction); }
+    if capture.completed.is_none()
+        && !matches!(
+            world.effect_status(&seal.command),
+            Some(
+                core::EffectStatus::Dispatched
+                    | core::EffectStatus::OutcomeUnknown
+                    | core::EffectStatus::RetiredByCaptureDrain(_)
+            )
+        )
+    {
+        return Err(JournalError::UnresolvedAction);
+    }
     if seal.identity.owner != identity::owner_id(record.work.anchor.local.owner)?
         || seal.identity.sandbox != identity::sandbox_id(namespace, id.key.sandbox)?
         || seal.identity.operation != identity::operation_id(namespace, id.key)?

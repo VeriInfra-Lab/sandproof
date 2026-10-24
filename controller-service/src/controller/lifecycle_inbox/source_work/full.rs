@@ -29,8 +29,11 @@ pub(super) use validate::validate_record;
 const RECORD_BYTES: usize = 131_072;
 const MAX_FULL: usize = 2;
 
-pub(in crate::controller) fn material_writer_closed(record:&SourceWorkRecord,world:&core::World)->Result<bool,JournalError>{
-    validate_record(record,world)?;
+pub(in crate::controller) fn material_writer_closed(
+    record: &SourceWorkRecord,
+    world: &core::World,
+) -> Result<bool, JournalError> {
+    validate_record(record, world)?;
     end::material_writer_closed(record)
 }
 
@@ -110,7 +113,8 @@ impl SourceWorkRecord {
     pub fn capture_request_end(&self) -> Option<&crate::capture::CaptureRequestEndObservation> {
         match self.capture.as_ref()?.end.as_ref()? {
             end::CaptureEndRecord::WorkerEnded { observation } => Some(observation),
-            end::CaptureEndRecord::NeverReleased { .. } | end::CaptureEndRecord::Terminated { .. } => None,
+            end::CaptureEndRecord::NeverReleased { .. }
+            | end::CaptureEndRecord::Terminated { .. } => None,
         }
     }
     #[must_use]

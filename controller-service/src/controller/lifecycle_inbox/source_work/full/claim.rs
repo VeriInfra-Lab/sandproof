@@ -13,12 +13,22 @@ pub(in crate::controller) fn claim(
     let unfinished = sources.records.iter().any(|record| {
         record.work.anchor.local.sandbox == sandbox
             && record.capture.as_ref().is_some_and(|capture| {
-                capture.action.is_some() && capture.end.is_none()
-                    && (capture.completed.is_none() || !matches!(action.command.command(),core::Command::StopVm { .. }))
+                capture.action.is_some()
+                    && capture.end.is_none()
+                    && (capture.completed.is_none()
+                        || !matches!(action.command.command(), core::Command::StopVm { .. }))
             })
     });
-    let protected = matches!(action.command.command(),core::Command::StopVm { .. } | core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. });
-    if protected && unfinished && !core::capture::drain::terminal_capture_drain_allowed(world,action.command.command()) {
+    let protected = matches!(
+        action.command.command(),
+        core::Command::StopVm { .. }
+            | core::Command::CleanupVm { .. }
+            | core::Command::CleanupSlot { .. }
+    );
+    if protected
+        && unfinished
+        && !core::capture::drain::terminal_capture_drain_allowed(world, action.command.command())
+    {
         // Stop of the exact terminal original source may precede writer drain.
         // Cleanup still requires actual saved end, even after successful Full.
         return Ok(false);

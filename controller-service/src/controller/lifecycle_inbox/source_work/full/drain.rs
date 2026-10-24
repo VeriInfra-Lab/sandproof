@@ -30,18 +30,26 @@ pub(super) enum PriorCaptureEnd {
 fn prior_matches(record: &SourceWorkRecord, prior: &PriorCaptureEnd) -> Result<bool, JournalError> {
     let capture = record.capture.as_ref().ok_or(JournalError::CorruptStore)?;
     Ok(match prior {
-        PriorCaptureEnd::NeverReleased { full_work_binding, seal_action } => {
-            capture.worker.is_none() && capture.completed.is_none()
+        PriorCaptureEnd::NeverReleased {
+            full_work_binding,
+            seal_action,
+        } => {
+            capture.worker.is_none()
+                && capture.completed.is_none()
                 && *full_work_binding == capture.full.binding_digest()?
                 && seal_action.as_deref() == capture.action.as_ref()
         }
         PriorCaptureEnd::WorkerEnded { observation } => {
             observation.matches(
                 capture.action.as_ref().ok_or(JournalError::CorruptStore)?,
-                &capture.full, record.work.requirement(),
+                &capture.full,
+                record.work.requirement(),
                 capture.worker.as_ref().ok_or(JournalError::CorruptStore)?,
             )? && !(capture.completed.is_some()
-                && matches!(observation.outcome, crate::capture::CaptureRequestEndOutcome::NoRequest))
+                && matches!(
+                    observation.outcome,
+                    crate::capture::CaptureRequestEndOutcome::NoRequest
+                ))
         }
     })
 }
@@ -53,18 +61,34 @@ fn terminal_end(
 ) -> Result<CaptureEndRecord, JournalError> {
     let prior = match old {
         None => None,
-        Some(CaptureEndRecord::NeverReleased { full_work_binding, seal_action }) =>
-            Some(PriorCaptureEnd::NeverReleased { full_work_binding:*full_work_binding, seal_action:seal_action.clone() }),
-        Some(CaptureEndRecord::WorkerEnded { observation }) =>
-            Some(PriorCaptureEnd::WorkerEnded { observation:observation.clone() }),
-        Some(saved @ CaptureEndRecord::Terminated { stop:previous_stop, observation:previous, .. }) => {
+        Some(CaptureEndRecord::NeverReleased {
+            full_work_binding,
+            seal_action,
+        }) => Some(PriorCaptureEnd::NeverReleased {
+            full_work_binding: *full_work_binding,
+            seal_action: seal_action.clone(),
+        }),
+        Some(CaptureEndRecord::WorkerEnded { observation }) => Some(PriorCaptureEnd::WorkerEnded {
+            observation: observation.clone(),
+        }),
+        Some(
+            saved @ CaptureEndRecord::Terminated {
+                stop: previous_stop,
+                observation: previous,
+                ..
+            },
+        ) => {
             if *previous_stop != stop || **previous != observation {
                 return Err(JournalError::Conflict);
             }
             return Ok(saved.clone());
         }
     };
-    Ok(CaptureEndRecord::Terminated { stop, observation:Box::new(observation), prior })
+    Ok(CaptureEndRecord::Terminated {
+        stop,
+        observation: Box::new(observation),
+        prior,
+    })
 }
 
 /// Check saved bytes against the original immutable capture question. Physical
@@ -78,8 +102,12 @@ pub(super) fn validate_record(
     if !observation.matches(&work)? {
         return Err(JournalError::CorruptStore);
     }
-    if let Some(CaptureEndRecord::Terminated { prior:Some(prior), .. }) =
-        record.capture.as_ref().and_then(|capture|capture.end.as_ref())
+    if let Some(CaptureEndRecord::Terminated {
+        prior: Some(prior), ..
+    }) = record
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.end.as_ref())
         && !prior_matches(record, prior)?
     {
         return Err(JournalError::CorruptStore);
@@ -91,7 +119,10 @@ pub(super) fn writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalEr
     let Some(capture) = &record.capture else {
         return Ok(false);
     };
-    let Some(CaptureEndRecord::Terminated { stop, observation, .. }) = &capture.end else {
+    let Some(CaptureEndRecord::Terminated {
+        stop, observation, ..
+    }) = &capture.end
+    else {
         return Ok(false);
     };
     validate_record(record, *stop, observation)?;
@@ -100,7 +131,10 @@ pub(super) fn writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalEr
 
 fn coverage(record: &SourceWorkRecord) -> Result<Option<CaptureDrainCoverage>, JournalError> {
     let capture = record.capture.as_ref().ok_or(JournalError::CorruptStore)?;
-    let Some(CaptureEndRecord::Terminated { stop, observation, .. }) = &capture.end else {
+    let Some(CaptureEndRecord::Terminated {
+        stop, observation, ..
+    }) = &capture.end
+    else {
         return Ok(None);
     };
     validate_record(record, *stop, observation)?;
@@ -218,7 +252,11 @@ impl ControllerJournal {
             .capture
             .as_mut()
             .ok_or(JournalError::CorruptStore)?;
-        capture.end = Some(terminal_end(capture.end.as_ref(), work.stop(), observation)?);
+        capture.end = Some(terminal_end(
+            capture.end.as_ref(),
+            work.stop(),
+            observation,
+        )?);
         super::save(&tx, &sources)?;
         if let Some(coverage) = coverage(&sources.records[index])? {
             storage::apply(

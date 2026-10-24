@@ -176,13 +176,19 @@ fn pinned(
     {
         return Ok(true);
     }
-    Ok(!material_retirement_pins_closed(connection,world,sandbox)?)
+    Ok(!material_retirement_pins_closed(
+        connection, world, sandbox,
+    )?)
 }
 
 // Physical material pins only. Historical SourceWork/inbox rows retain
 // metadata until final Retire, and must not create a GC prerequisite cycle.
-pub(in crate::controller) fn material_retirement_pins_closed(connection:&Connection,world:&core::World,sandbox:core::SandboxId)->Result<bool,JournalError>{
-    let namespace=namespace(connection)?;
+pub(in crate::controller) fn material_retirement_pins_closed(
+    connection: &Connection,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<bool, JournalError> {
+    let namespace = namespace(connection)?;
     let id = super::super::identity::sandbox_id(&namespace, sandbox)?;
     let options: Option<Vec<u8>> = connection
         .query_row(
@@ -209,9 +215,7 @@ fn candidate(
     let Some(row) = world.sandbox_record(sandbox) else {
         return Ok(None);
     };
-    if row.phase != core::Phase::Destroyed
-        || pinned(connection, world, sandbox)?
-    {
+    if row.phase != core::Phase::Destroyed || pinned(connection, world, sandbox)? {
         return Ok(None);
     }
     let release = witnesses(connection, world)?.into_iter().find(|witness| {

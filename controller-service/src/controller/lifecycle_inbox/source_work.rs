@@ -122,10 +122,10 @@ fn digest(bytes: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(bytes).into())
 }
 
-pub(in crate::controller) use codec::{charged_bytes, validate};
 pub(in crate::controller) use codec::remove_retired;
-pub(in crate::controller) use retirement::validate_terminal_sources;
+pub(in crate::controller) use codec::{charged_bytes, validate};
 pub use retirement::MaterialRetirementQuestion;
+pub(in crate::controller) use retirement::validate_terminal_sources;
 pub(super) fn initialize(
     connection: &rusqlite::Connection,
     config: SourceObservationConfig,

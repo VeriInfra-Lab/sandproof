@@ -2269,7 +2269,9 @@ fn public_unload_observation_keeps_pending_and_persisted_unloaded_mutually_exclu
     }
 }
 
-pub(super) fn actual_api_end(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
+pub(super) fn actual_api_end(
+    record: &SourceWorkRecord,
+) -> crate::capture::CaptureRequestEndObservation {
     let capture = record.capture.as_ref().unwrap();
     crate::capture::CaptureRequestEndObservation {
         action: capture.action.clone().unwrap(),

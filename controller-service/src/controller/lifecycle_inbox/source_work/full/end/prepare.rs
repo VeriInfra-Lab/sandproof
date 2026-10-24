@@ -15,7 +15,9 @@ pub(in crate::controller) fn permits_input(
     input: &CaptureInput,
 ) -> Result<bool, JournalError> {
     let (identity, supplied) = match input {
-        CaptureInput::RetireTerminatedCapture(coverage) => return super::super::drain::permits_input(connection,world,coverage),
+        CaptureInput::RetireTerminatedCapture(coverage) => {
+            return super::super::drain::permits_input(connection, world, coverage);
+        }
         CaptureInput::PrepareOriginalContinue {
             identity,
             end_receipt,
