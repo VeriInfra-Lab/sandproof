@@ -501,15 +501,15 @@ impl WorkRecovery for NodeHost {
             })
     }
 
-    fn observe_lifecycle_capture_api_end(
+    fn observe_lifecycle_capture_request_end(
         &self,
         action: &WorkAction<core::EffectId>,
         full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
         source: &sandproof_controller_service::capture::SourceObservationRequirement,
         worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
-    ) -> Option<sandproof_controller_service::capture::CaptureApiEndObservation> {
+    ) -> Option<sandproof_controller_service::capture::CaptureRequestEndObservation> {
         self.worker
-            .recover_full_api_end(
+            .recover_full_request_end(
                 self.host_epoch_source.as_ref()?,
                 self.capture_profile.as_ref()?,
                 action,
