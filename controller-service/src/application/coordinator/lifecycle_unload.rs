@@ -263,7 +263,7 @@ fn capture_action_matches(world: &core::World, record: &SourceWorkRecord, action
         }
         core::Command::CleanupSlot { generation, slot, .. } => {
             cleanup_matches(world,key,logical.origin,generation)
-                && world.operation_plan(key).is_some_and(|plan| plan.slot==Some(slot) && plan.close_slots.contains(&slot))
+                && world.operation_plan(key).is_some_and(|plan| plan.close_slots.contains(&slot))
         }
         _=>false,
     }
