@@ -1,7 +1,9 @@
 //! Current lifecycle admission and authorized observations use one authority.
 //! Host I/O never holds the center's shared decision lock.
+use crate::application::diagnostics::{
+    self, Failure as DiagnosticFailure, Stage as DiagnosticStage,
+};
 use crate::application::tenant_id;
-use crate::application::diagnostics::{self, Failure as DiagnosticFailure, Stage as DiagnosticStage};
 use crate::{
     CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
 };
@@ -109,20 +111,33 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryLookup))?
             .public_lifecycle_intent(&owner, session)
-            .inspect_err(|error| diagnostics::emit(DiagnosticStage::LifecycleQueryLookup,
-                DiagnosticFailure::Port(*error)))?;
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryLookup,
+                    DiagnosticFailure::Port(*error),
+                )
+            })?;
         if phase == SessionPhase::Unloaded {
             let mut authority = self
                 .authority
                 .lock()
                 .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
             crate::AuthorityPort::expire_current(&mut *authority, self.now()?)
-                .inspect_err(|error| diagnostics::emit(DiagnosticStage::LifecycleQueryExpiry,
-                    DiagnosticFailure::Authority(*error)))
+                .inspect_err(|error| {
+                    diagnostics::emit(
+                        DiagnosticStage::LifecycleQueryExpiry,
+                        DiagnosticFailure::Authority(*error),
+                    )
+                })
                 .map_err(crate::application::authority_error)?;
-            return authority.query_public_lifecycle(&owner, session)
-                .inspect_err(|error| diagnostics::emit(DiagnosticStage::LifecycleQueryResult,
-                    DiagnosticFailure::Port(*error)));
+            return authority
+                .query_public_lifecycle(&owner, session)
+                .inspect_err(|error| {
+                    diagnostics::emit(
+                        DiagnosticStage::LifecycleQueryResult,
+                        DiagnosticFailure::Port(*error),
+                    )
+                });
         }
         if matches!(
             phase,
@@ -159,9 +174,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                         &observation,
                     )
                     .map_err(crate::application::authority_error)?;
-                    return authority.query_public_lifecycle(&owner, session)
-                        .inspect_err(|error| diagnostics::emit(DiagnosticStage::LifecycleQueryResult,
-                            DiagnosticFailure::Port(*error)));
+                    return authority
+                        .query_public_lifecycle(&owner, session)
+                        .inspect_err(|error| {
+                            diagnostics::emit(
+                                DiagnosticStage::LifecycleQueryResult,
+                                DiagnosticFailure::Port(*error),
+                            )
+                        });
                 }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
@@ -201,8 +221,12 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?
             .query_public_lifecycle(&owner, session)
-            .inspect_err(|error| diagnostics::emit(DiagnosticStage::LifecycleQueryResult,
-                DiagnosticFailure::Port(*error)))
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryResult,
+                    DiagnosticFailure::Port(*error),
+                )
+            })
     }
 }
 

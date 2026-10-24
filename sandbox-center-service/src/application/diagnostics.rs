@@ -66,11 +66,26 @@ mod tests {
         let count = AtomicUsize::new(0);
         let mut bytes = vec![];
         let causes = [
-            (Stage::AuthoritySnapshotLock, Failure::Authority(AuthorityError::RecoveryRequired)),
-            (Stage::AuthoritySnapshot, Failure::Authority(AuthorityError::Store(StoreError::Configuration))),
-            (Stage::LifecycleQueryLookup, Failure::Port(PortError::OutcomeUnknown)),
-            (Stage::LifecycleQueryExpiry, Failure::Authority(AuthorityError::Store(StoreError::Unavailable))),
-            (Stage::LifecycleQueryResult, Failure::Port(PortError::OutcomeUnknown)),
+            (
+                Stage::AuthoritySnapshotLock,
+                Failure::Authority(AuthorityError::RecoveryRequired),
+            ),
+            (
+                Stage::AuthoritySnapshot,
+                Failure::Authority(AuthorityError::Store(StoreError::Configuration)),
+            ),
+            (
+                Stage::LifecycleQueryLookup,
+                Failure::Port(PortError::OutcomeUnknown),
+            ),
+            (
+                Stage::LifecycleQueryExpiry,
+                Failure::Authority(AuthorityError::Store(StoreError::Unavailable)),
+            ),
+            (
+                Stage::LifecycleQueryResult,
+                Failure::Port(PortError::OutcomeUnknown),
+            ),
         ];
         for (stage, failure) in causes.into_iter().cycle().take(1000) {
             record(stage, failure, &count, &mut bytes);
