@@ -188,3 +188,38 @@ async fn unloaded_public_query_keeps_500_after_pre_cas_health_failure_until_expl
 async fn unloaded_public_query_keeps_500_after_lost_reaffirm_reply_until_explicit_recovery() {
     assert_unloaded_query_fault(true).await;
 }
+
+
+#[test]
+fn controlled_unloading_to_unloaded_queries_keep_original_material_and_lifetime() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, clock) = application(&authority);
+    let (session, _, mut observation) = accept_unload(&app);
+    // Same scalar magnitude as the retained real capture, without a VM/file.
+    observation.unloaded.as_mut().unwrap().material_bytes = 3_221_239_189;
+    let (observed, received) = mpsc::channel();
+    let (proceed, wait) = mpsc::channel();
+    let release = Release(Some(proceed));
+    let query_app = app.clone();
+    let query_session = session.clone();
+    let query = std::thread::spawn(move || {
+        observed.send(query_app.query_lifecycle("8", &query_session)).unwrap();
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        query_app.query_lifecycle("8", &query_session)
+    });
+    let pending = received.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    assert_eq!(pending.phase, PublicSessionPhase::Unloading);
+    assert!(pending.unloaded.is_none());
+    *host.unloaded.lock().unwrap() = Some(observation.clone());
+    app.reconcile_once().unwrap();
+    release.complete();
+    let completed = query.join().unwrap().unwrap();
+    assert_eq!(completed.phase, PublicSessionPhase::Unloaded);
+    assert_eq!(completed.unloaded, observation.unloaded);
+    assert_eq!(completed.current_version, pending.current_version);
+    assert_eq!(completed.operation, pending.operation);
+    assert_eq!(completed.session, pending.session);
+    assert!(clock.0.load(Ordering::SeqCst) < completed.unloaded.unwrap().end_at_ms);
+}
