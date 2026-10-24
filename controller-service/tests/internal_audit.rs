@@ -87,11 +87,18 @@ fn assert_no_authority_write(root: &Path, mut before: BTreeMap<PathBuf, (usize, 
 #[test]
 fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired_responsibility() {
     use current::fixture::{State, TestClock, TestEpoch};
+    use sandproof_controller_service::capture::SourceProcessIdentity;
     use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("controller.db");
     let state = Arc::new(Mutex::new(State {
         epoch: TestEpoch::Matching,
+        // Prepare/Activate receipts and later probes name the same boot/process.
+        source: Some(SourceProcessIdentity {
+            pid: 1234,
+            start_time_ticks: 5678,
+            boot_id: "fixture-boot".into(),
+        }),
         ..State::default()
     }));
     let mut inbox = current::config();
@@ -162,6 +169,12 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
         &context,
         local.sandbox,
     );
+    // The next VM has its own process identity on the same registered boot.
+    state.lock().unwrap().source = Some(SourceProcessIdentity {
+        pid: 1235,
+        start_time_ticks: 5679,
+        boot_id: "fixture-boot".into(),
+    });
     let mut next = current::request();
     next.retention.window = 2.try_into().unwrap();
     next.request.binding.key.window = 2.try_into().unwrap();
