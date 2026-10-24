@@ -30,7 +30,7 @@ mod lifecycle;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
-    /// Current original Resume only; absence is neither Ready nor StateLost.
+    /// Current original Resume only; absence is neither Ready nor `StateLost`.
     fn observe_resume(
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
