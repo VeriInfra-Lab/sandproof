@@ -314,6 +314,46 @@ fn install_original_resume(
 }
 
 impl ControllerJournal {
+    /// Project original material identity for a readonly physical inventory.
+    /// This can include a failed or never-sealed capture and authorizes no GC.
+    /// # Errors
+    /// Changed context, source, native binding or missing original Full refuse.
+    pub fn lifecycle_material_retirement_request(
+        &self,
+        source: &super::SourceWork,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<crate::capture::CaptureMaterialRetirementRequest, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        let inbox = super::super::codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        super::super::authenticated(&inbox, source.request(), context)?;
+        let sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let record = sources
+            .records
+            .iter()
+            .find(|record| record.work == *source)
+            .ok_or(JournalError::Conflict)?;
+        super::snapshot::validate_record(&tx, &world, &inbox, &sources.config, record)?;
+        super::full::validate_record(record, &world)?;
+        let capture = record
+            .capture
+            .as_ref()
+            .ok_or(JournalError::UnresolvedAction)?;
+        let request = crate::capture::CaptureMaterialRetirementRequest::from_source(
+            record.work.anchor.local.sandbox,
+            record.work.anchor.native.generation,
+            capture.full.clone(),
+            record.work.requirement.clone(),
+            capture.action.clone(),
+            capture.worker.clone(),
+            capture.completed,
+        );
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(request)
+    }
+
     /// Acquire the source and install the original core Resume in one `SQLite`
     /// commit. No load can start from an uncommitted claim or another key.
     /// # Errors

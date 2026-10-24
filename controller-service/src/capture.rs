@@ -7,12 +7,17 @@
 use serde::{Deserialize, Serialize};
 mod launch;
 mod restore;
+mod retirement;
 mod source;
 mod work;
 pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };
 pub use restore::{RestoreActivationPermit, RestoreWorkRequest};
+pub use retirement::{
+    CaptureMaterialRetirementRequest, MATERIAL_RETIREMENT_PLAN_MAX_BYTES,
+    MaterialRetirementObservation, MaterialRetirementPermit,
+};
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use work::{FullCaptureWorkRequest, PauseWorkRequest};
 

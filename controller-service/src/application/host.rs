@@ -16,6 +16,19 @@ pub trait WorkEvidence {
 
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
+    /// Delete only the exact saved physical plan authorized by the journal.
+    /// Partial failure remains unknown and retains this same plan and charge.
+    /// # Errors
+    /// Unsupported providers, changed files or missing permission refuse.
+    fn retire_lifecycle_material(
+        &self,
+        _request: &crate::capture::CaptureMaterialRetirementRequest,
+        _plan: &[u8],
+        _permit: &crate::capture::MaterialRetirementPermit,
+    ) -> Result<crate::capture::MaterialRetirementObservation, ApplicationError> {
+        Err(ApplicationError::Invalid)
+    }
+
     /// Load paused or activate only the original durably claimed candidate.
     /// Activation requires the permit obtained after recording `MayHaveExecuted`.
     /// # Errors
@@ -77,6 +90,18 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Read an exact bounded physical plan without creating or deleting files.
+    /// An old source VMM may already be absent; current CPU/boot readiness is
+    /// not a substitute for the original file and native execution identities.
+    /// # Errors
+    /// Unknown, substituted, oversized or unsupported material refuses a plan.
+    fn prepare_lifecycle_material_retirement(
+        &self,
+        _request: &crate::capture::CaptureMaterialRetirementRequest,
+    ) -> Result<Vec<u8>, ApplicationError> {
+        Err(ApplicationError::Invalid)
+    }
+
     /// Observe an exact persisted API-end record and the actual original
     /// worker's exit. A helper exit or a timeout alone must return None.
     fn observe_lifecycle_capture_api_end(

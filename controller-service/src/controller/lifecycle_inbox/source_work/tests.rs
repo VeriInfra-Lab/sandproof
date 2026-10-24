@@ -1344,3 +1344,44 @@ fn recorded_resume_rejects_changed_source_digest_and_skipped_incarnation() {
             .is_ok()
     );
 }
+
+#[test]
+fn material_plan_question_keeps_unsealed_native_identity_without_deletion_authority() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let source = observed_for_full(&mut journal);
+    let full = full_request(&source);
+    journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let before = journal.world().unwrap();
+    let question = journal
+        .lifecycle_material_retirement_request(&source.work, &v3::context())
+        .unwrap();
+    assert_eq!(question.sandbox(), source.work.anchor.local.sandbox);
+    assert_eq!(question.generation(), source.work.anchor.native.generation);
+    assert_eq!(question.full(), &full);
+    assert_eq!(question.source(), source.work.requirement());
+    assert_eq!(question.seal_action(), None);
+    assert_eq!(question.worker(), None);
+    assert_eq!(question.manifest_digest(), None);
+    assert_eq!(
+        question,
+        journal
+            .lifecycle_material_retirement_request(&source.work, &v3::context())
+            .unwrap()
+    );
+    assert_eq!(journal.world().unwrap(), before);
+    let mut changed = source.work.clone();
+    changed.anchor.native.generation += 1;
+    assert!(matches!(
+        journal.lifecycle_material_retirement_request(&changed, &v3::context()),
+        Err(JournalError::Conflict)
+    ));
+}
