@@ -124,3 +124,67 @@ fn late_unload_cannot_replace_destroy_or_expiry() {
         assert!(view.unloaded.is_none());
     }
 }
+
+
+async fn public_query(router: &axum::Router, session: &SessionId) -> (u16, serde_json::Value) {
+    use tower::ServiceExt;
+    let response = router.clone().oneshot(axum::http::Request::builder()
+        .uri(format!("/sandproof/lifecycle/sessions/{}", session.as_protocol_id().as_str()))
+        .header("X-API-Key", "unloaded-query-component-only-key")
+        .body(axum::body::Body::empty()).unwrap()).await.unwrap();
+    let status = response.status().as_u16();
+    let bytes = axum::body::to_bytes(response.into_body(), 8192).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+async fn assert_unloaded_query_fault(lost_reply: bool) {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let (session, _, observation) = accept_unload(&app);
+    *host.unloaded.lock().unwrap() = Some(observation.clone());
+    app.reconcile_once().unwrap();
+    let router = sandproof_api::lifecycle::router_with_admission(
+        Arc::new(sandproof_center_service::CenterPort::new(app.clone())),
+        vec![sandproof_api::ApiCredential {
+            tenant: "8".into(), secret: "unloaded-query-component-only-key".into(),
+        }],
+        Arc::new(sandproof_api::admission::RequestAdmission::default()),
+    ).unwrap();
+    let before = public_query(&router, &session).await;
+    assert_eq!(before.0, 200);
+    assert_eq!(before.1["phase"], "unloaded");
+    assert_eq!(before.1["unloaded"], serde_json::to_value(&observation.unloaded).unwrap());
+    if lost_reply {
+        // Deliver the real reaffirm CAS, then lose only its original reply.
+        proxy.lose_after(0);
+    } else {
+        // A known configuration mismatch precedes any reaffirm CAS.
+        let _: () = redis::cmd("CONFIG").arg("SET").arg("maxmemory")
+            .arg(super::super::engine::MEMORY + 1)
+            .query(&mut super::super::engine::connect(fixture.address)).unwrap();
+    }
+    let failed = public_query(&router, &session).await;
+    assert_eq!(failed.0, 500);
+    assert_eq!(failed.1, serde_json::json!({"code":500, "message":"Internal Server Error"}));
+    if !lost_reply {
+        let _: () = redis::cmd("CONFIG").arg("SET").arg("maxmemory")
+            .arg(super::super::engine::MEMORY)
+            .query(&mut super::super::engine::connect(fixture.address)).unwrap();
+    }
+    // Restoring availability cannot turn a fenced cached value into success.
+    assert_eq!(public_query(&router, &session).await.0, 500);
+    app.recover_authority().unwrap();
+    assert_eq!(public_query(&router, &session).await, before);
+}
+
+#[tokio::test]
+async fn unloaded_public_query_keeps_500_after_pre_cas_health_failure_until_explicit_recovery() {
+    assert_unloaded_query_fault(false).await;
+}
+
+#[tokio::test]
+async fn unloaded_public_query_keeps_500_after_lost_reaffirm_reply_until_explicit_recovery() {
+    assert_unloaded_query_fault(true).await;
+}

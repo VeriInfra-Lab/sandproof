@@ -4,6 +4,7 @@ use super::{
     ValidationSettlement,
 };
 use crate::{AuthorityPort, application::authority_error};
+use crate::application::diagnostics::{self, Failure as DiagnosticFailure, Stage as DiagnosticStage};
 use sandproof_api::{PortError, TemplateView};
 use sandproof_center_core::{CenterState, DecisionError, LifecycleSubmission};
 use sandproof_center_store::{
@@ -111,8 +112,14 @@ impl SharedBusinessAuthority {
     pub fn snapshot(&self) -> Result<Envelope, PortError> {
         self.0
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
+            .map_err(|_| {
+                diagnostics::emit(DiagnosticStage::AuthoritySnapshotLock,
+                    DiagnosticFailure::Authority(AuthorityError::RecoveryRequired));
+                PortError::OutcomeUnknown
+            })?
             .snapshot_envelope()
+            .inspect_err(|error| diagnostics::emit(DiagnosticStage::AuthoritySnapshot,
+                DiagnosticFailure::Authority(*error)))
             .map_err(authority_error)
     }
     /// Protected operational node drain only, never a public client action.

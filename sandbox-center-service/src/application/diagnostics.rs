@@ -16,6 +16,11 @@ pub(crate) enum Stage {
     SessionProjection,
     ReplyDeadline,
     RetiredSnapshot,
+    AuthoritySnapshotLock,
+    AuthoritySnapshot,
+    LifecycleQueryLookup,
+    LifecycleQueryExpiry,
+    LifecycleQueryResult,
 }
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Failure {
@@ -55,6 +60,30 @@ pub(crate) fn emit(stage: Stage, failure: Failure) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lifecycle_query_causes_use_only_closed_errors_and_the_same_finite_budget() {
+        use sandproof_center_store::StoreError;
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        let causes = [
+            (Stage::AuthoritySnapshotLock, Failure::Authority(AuthorityError::RecoveryRequired)),
+            (Stage::AuthoritySnapshot, Failure::Authority(AuthorityError::Store(StoreError::Configuration))),
+            (Stage::LifecycleQueryLookup, Failure::Port(PortError::OutcomeUnknown)),
+            (Stage::LifecycleQueryExpiry, Failure::Authority(AuthorityError::Store(StoreError::Unavailable))),
+            (Stage::LifecycleQueryResult, Failure::Port(PortError::OutcomeUnknown)),
+        ];
+        for (stage, failure) in causes.into_iter().cycle().take(1000) {
+            record(stage, failure, &count, &mut bytes);
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), LIMIT);
+        assert_eq!(count.load(Ordering::Relaxed), LIMIT);
+        assert!(text.contains("stage=AuthoritySnapshot authority=Store(Configuration)"));
+        assert!(text.contains("stage=LifecycleQueryExpiry authority=Store(Unavailable)"));
+        assert!(text.lines().all(|line| line.len() < 220));
+        assert!(!text.contains("payload") && !text.contains("credential") && !text.contains("/"));
+    }
+
     #[test]
     fn authority_cause_is_preserved_without_retrying_failed_output() {
         let count = AtomicUsize::new(0);
