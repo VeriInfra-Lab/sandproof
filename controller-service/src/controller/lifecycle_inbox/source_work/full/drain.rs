@@ -11,6 +11,61 @@ use crate::{
 use core::capture::drain::{CaptureDrainCoverage, CaptureDrainEndReceipt};
 use core::maintenance::retirement::QuiescenceStatus;
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
+/// Preserve the original request-end verbatim inside the one prepaid End
+/// envelope. This is deliberately nonrecursive and is never a Continue permit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum PriorCaptureEnd {
+    NeverReleased {
+        full_work_binding: sandproof_protocol::lifecycle::ContentDigest,
+        seal_action: Option<Box<sandproof_protocol::WorkAction<core::EffectId>>>,
+    },
+    WorkerEnded {
+        observation: Box<crate::capture::CaptureRequestEndObservation>,
+    },
+}
+
+fn prior_matches(record: &SourceWorkRecord, prior: &PriorCaptureEnd) -> Result<bool, JournalError> {
+    let capture = record.capture.as_ref().ok_or(JournalError::CorruptStore)?;
+    Ok(match prior {
+        PriorCaptureEnd::NeverReleased { full_work_binding, seal_action } => {
+            capture.worker.is_none() && capture.completed.is_none()
+                && *full_work_binding == capture.full.binding_digest()?
+                && seal_action.as_deref() == capture.action.as_ref()
+        }
+        PriorCaptureEnd::WorkerEnded { observation } => {
+            observation.matches(
+                capture.action.as_ref().ok_or(JournalError::CorruptStore)?,
+                &capture.full, record.work.requirement(),
+                capture.worker.as_ref().ok_or(JournalError::CorruptStore)?,
+            )? && !(capture.completed.is_some()
+                && matches!(observation.outcome, crate::capture::CaptureRequestEndOutcome::NoRequest))
+        }
+    })
+}
+
+fn terminal_end(
+    old: Option<&CaptureEndRecord>,
+    stop: core::StopCoverage,
+    observation: TerminatedCaptureObservation,
+) -> Result<CaptureEndRecord, JournalError> {
+    let prior = match old {
+        None => None,
+        Some(CaptureEndRecord::NeverReleased { full_work_binding, seal_action }) =>
+            Some(PriorCaptureEnd::NeverReleased { full_work_binding:*full_work_binding, seal_action:seal_action.clone() }),
+        Some(CaptureEndRecord::WorkerEnded { observation }) =>
+            Some(PriorCaptureEnd::WorkerEnded { observation:observation.clone() }),
+        Some(saved @ CaptureEndRecord::Terminated { stop:previous_stop, observation:previous, .. }) => {
+            if *previous_stop != stop || **previous != observation {
+                return Err(JournalError::Conflict);
+            }
+            return Ok(saved.clone());
+        }
+    };
+    Ok(CaptureEndRecord::Terminated { stop, observation:Box::new(observation), prior })
+}
 
 /// Check saved bytes against the original immutable capture question. Physical
 /// truth is the protected observer's contract, never a consequence of this SHA.
@@ -23,6 +78,12 @@ pub(super) fn validate_record(
     if !observation.matches(&work)? {
         return Err(JournalError::CorruptStore);
     }
+    if let Some(CaptureEndRecord::Terminated { prior:Some(prior), .. }) =
+        record.capture.as_ref().and_then(|capture|capture.end.as_ref())
+        && !prior_matches(record, prior)?
+    {
+        return Err(JournalError::CorruptStore);
+    }
     Ok(())
 }
 
@@ -30,7 +91,7 @@ pub(super) fn writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalEr
     let Some(capture) = &record.capture else {
         return Ok(false);
     };
-    let Some(CaptureEndRecord::Terminated { stop, observation }) = &capture.end else {
+    let Some(CaptureEndRecord::Terminated { stop, observation, .. }) = &capture.end else {
         return Ok(false);
     };
     validate_record(record, *stop, observation)?;
@@ -39,7 +100,7 @@ pub(super) fn writer_closed(record: &SourceWorkRecord) -> Result<bool, JournalEr
 
 fn coverage(record: &SourceWorkRecord) -> Result<Option<CaptureDrainCoverage>, JournalError> {
     let capture = record.capture.as_ref().ok_or(JournalError::CorruptStore)?;
-    let Some(CaptureEndRecord::Terminated { stop, observation }) = &capture.end else {
+    let Some(CaptureEndRecord::Terminated { stop, observation, .. }) = &capture.end else {
         return Ok(None);
     };
     validate_record(record, *stop, observation)?;
@@ -49,8 +110,12 @@ fn coverage(record: &SourceWorkRecord) -> Result<Option<CaptureDrainCoverage>, J
         return Ok(None);
     }
     let work = question::from_saved(record, *stop, observation)?;
-    let core::Command::SealSnapshot { workspace, snapshot, manifest, .. } =
-        *work.seal_action().command.command()
+    let core::Command::SealSnapshot {
+        workspace,
+        snapshot,
+        manifest,
+        ..
+    } = *work.seal_action().command.command()
     else {
         return Err(JournalError::CorruptStore);
     };
@@ -82,7 +147,11 @@ pub(in crate::controller) fn permits_input(
     let Some(sources) = codec::load(connection)? else {
         return Ok(false);
     };
-    let Some(record) = sources.records.iter().find(|r| key(r) == Some(supplied.identity.key)) else {
+    let Some(record) = sources
+        .records
+        .iter()
+        .find(|r| key(r) == Some(supplied.identity.key))
+    else {
         return Ok(false);
     };
     let Some(saved) = coverage(record)? else {
@@ -109,7 +178,10 @@ impl ControllerJournal {
         self.committed_world.check_identity(&tx)?;
         codec::validate(&tx, &world)?;
         let sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-        let record = sources.records.iter().find(|r| r.work == *source)
+        let record = sources
+            .records
+            .iter()
+            .find(|r| r.work == *source)
             .ok_or(JournalError::Conflict)?;
         let work = question::current(&tx, &self.namespace, &world, record)?;
         self.committed_world.check_identity(&tx)?;
@@ -133,23 +205,29 @@ impl ControllerJournal {
         let world = tx.world();
         codec::validate(&tx, &world)?;
         let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-        let index = sources.records.iter().position(|r| r.work == *source)
+        let index = sources
+            .records
+            .iter()
+            .position(|r| r.work == *source)
             .ok_or(JournalError::Conflict)?;
         let work = question::current(&tx, &self.namespace, &world, &sources.records[index])?;
         if !observation.matches(&work)? {
             return Err(JournalError::Conflict);
         }
-        let saved = CaptureEndRecord::Terminated { stop: work.stop(), observation: Box::new(observation) };
-        let capture = sources.records[index].capture.as_mut().ok_or(JournalError::CorruptStore)?;
-        if capture.end.as_ref().is_some_and(|old| *old != saved) {
-            return Err(JournalError::Conflict);
-        }
-        capture.end = Some(saved);
+        let capture = sources.records[index]
+            .capture
+            .as_mut()
+            .ok_or(JournalError::CorruptStore)?;
+        capture.end = Some(terminal_end(capture.end.as_ref(), work.stop(), observation)?);
         super::save(&tx, &sources)?;
         if let Some(coverage) = coverage(&sources.records[index])? {
-            storage::apply(&tx, &self.namespace, core::ControllerInput::Capture(
-                core::capture::CaptureInput::RetireTerminatedCapture(coverage),
-            ))?;
+            storage::apply(
+                &tx,
+                &self.namespace,
+                core::ControllerInput::Capture(
+                    core::capture::CaptureInput::RetireTerminatedCapture(coverage),
+                ),
+            )?;
         }
         codec::validate(&tx, &tx.world())?;
         crashes.hit(CrashPoint::BeforeCommit)?;
