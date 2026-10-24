@@ -11,6 +11,7 @@ mod create_binding;
 mod gateway;
 mod lifecycle;
 mod lifecycle_dispatch;
+mod lifecycle_resume;
 mod private_gate;
 mod projection;
 mod public_snapshot;

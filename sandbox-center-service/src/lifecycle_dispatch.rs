@@ -28,7 +28,7 @@ pub(crate) enum CurrentObservationError {
     Deadline,
 }
 impl CurrentObservationError {
-    fn into_port(self) -> PortError {
+    pub(crate) fn into_port(self) -> PortError {
         match self {
             Self::Shared(error) | Self::Host(error) => error,
             Self::Superseded => PortError::Busy,
@@ -405,6 +405,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
             return self.reconcile_terminal(intent, deadline);
         }
+        if self.is_resumed_execution(intent)? {
+            return self.reconcile_resume(intent, deadline);
+        }
         // All current intents use the same durable receiver. Recording Unload
         // or Destroy cannot publish physical completion or retire the outbox;
         // their actual final receipts are a separate obligation.
@@ -501,7 +504,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         Ok(())
     }
 
-    fn confirm_pending_sdk_renewal_before(
+    pub(crate) fn confirm_pending_sdk_renewal_before(
         &self,
         owner: &TenantId,
         session: &SessionId,
@@ -661,7 +664,7 @@ fn refused_create_destroy(
     Ok(Some(current.clone()))
 }
 
-fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
+pub(crate) fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|left| !left.is_zero())

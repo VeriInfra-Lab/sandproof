@@ -437,6 +437,45 @@ impl SharedBusinessAuthority {
     }
 
     /// # Errors
+    /// A second Unload is bound to the current resumed execution and lifetime,
+    /// not the historical first Create. The original replay still comes first.
+    pub fn accept_public_resumed_unload(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicUnloadRequest,
+        observation: &sandproof_protocol::lifecycle::ResumeObservation,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority.decide(|current| {
+            if current.metadata.private_sandboxes().contains(session.as_protocol_id()) {
+                return Err(DecisionError::NotFound.into());
+            }
+            let submission = LifecycleSubmission::Unload {
+                key: key(&current.center, owner, request.window, request.sequence),
+                session: session.clone(), expected_version: request.expected_version,
+            };
+            if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                return Ok((current.clone(), intent));
+            }
+            let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } = &observation.readiness else {
+                return Err(DecisionError::Unavailable.into());
+            };
+            if observation.request.request.binding.key.owner != *owner
+                || &observation.request.request.binding.session != session
+                || now_ms >= facts.end_at_ms {
+                return Err(DecisionError::Stale.into());
+            }
+            let observed = current.center.accept_lifecycle_resume_observation(observation)?;
+            let (next, intent) = observed.accept_lifecycle(owner, &submission, now_ms)?;
+            Ok((current.with_center(next), intent))
+        }).map_err(authority_error)
+    }
+
+    /// # Errors
     /// Fresh original authority, full owner and full session are mandatory.
     pub fn query_public_lifecycle(
         &self,
