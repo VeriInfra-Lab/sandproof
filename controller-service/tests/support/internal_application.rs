@@ -97,8 +97,10 @@ pub struct State {
     pub observe_hook: Option<Box<dyn FnOnce() + Send>>,
     pub restore_exit:
         Option<sandproof_controller_service::capture::RestoreCandidateExitObservation>,
-    pub restore_exit_questions:
-        Vec<(WorkAction<core::EffectId>, sandproof_protocol::lifecycle::ContentDigest)>,
+    pub restore_exit_questions: Vec<(
+        WorkAction<core::EffectId>,
+        sandproof_protocol::lifecycle::ContentDigest,
+    )>,
     pub restore_exit_hook: Option<Box<dyn FnOnce() + Send>>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
@@ -203,7 +205,9 @@ impl WorkRecovery for TestHost {
     ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
         let (observed, hook) = {
             let mut state = self.0.lock().unwrap();
-            state.restore_exit_questions.push((action.clone(), work.binding_digest().ok()?));
+            state
+                .restore_exit_questions
+                .push((action.clone(), work.binding_digest().ok()?));
             (state.restore_exit.clone(), state.restore_exit_hook.take())
         };
         if let Some(hook) = hook {

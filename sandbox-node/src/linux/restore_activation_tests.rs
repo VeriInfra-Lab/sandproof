@@ -110,7 +110,11 @@ fn invalid_restore_process_fields_never_produce_an_exit_fact() {
         assert!(
             observe_confirmed_restore_exit(|| {
                 calls.set(calls.get() + 1);
-                assert_eq!(calls.get(), 1, "invalid identity is rejected before confirmation");
+                assert_eq!(
+                    calls.get(),
+                    1,
+                    "invalid identity is rejected before confirmation"
+                );
                 Ok(original.clone())
             })
             .is_err()

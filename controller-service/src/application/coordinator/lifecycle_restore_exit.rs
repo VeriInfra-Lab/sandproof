@@ -12,22 +12,40 @@ impl<H: ControllerHost> ControllerApplication<H> {
         context: &AuthenticatedCenterContext,
     ) -> Result<Option<ResumeObservation>, JournalError> {
         let (before, host) = {
-            let inner = self.inner.lock().map_err(|_| JournalError::ControllerBusy)?;
-            let now = self.clock.now_ms().map_err(|_| JournalError::UnresolvedAction)?;
-            let Some(candidate) = inner.journal.lifecycle_restore_exit_candidate(intent, context, now)? else {
+            let inner = self
+                .inner
+                .lock()
+                .map_err(|_| JournalError::ControllerBusy)?;
+            let now = self
+                .clock
+                .now_ms()
+                .map_err(|_| JournalError::UnresolvedAction)?;
+            let Some(candidate) = inner
+                .journal
+                .lifecycle_restore_exit_candidate(intent, context, now)?
+            else {
                 return Ok(None);
             };
             (candidate, Arc::clone(&inner.host))
         };
-        let Some(observed) = host.observe_lifecycle_restore_exit(&before.action, &before.work) else {
+        let Some(observed) = host.observe_lifecycle_restore_exit(&before.action, &before.work)
+        else {
             return Ok(None);
         };
         if !before.matches(&observed) {
             return Ok(None);
         }
-        let inner = self.inner.lock().map_err(|_| JournalError::ControllerBusy)?;
-        let now = self.clock.now_ms().map_err(|_| JournalError::UnresolvedAction)?;
-        let after = inner.journal.lifecycle_restore_exit_candidate(intent, context, now)?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
+        let now = self
+            .clock
+            .now_ms()
+            .map_err(|_| JournalError::UnresolvedAction)?;
+        let after = inner
+            .journal
+            .lifecycle_restore_exit_candidate(intent, context, now)?;
         if after.as_ref() != Some(&before) {
             return Ok(None);
         }
