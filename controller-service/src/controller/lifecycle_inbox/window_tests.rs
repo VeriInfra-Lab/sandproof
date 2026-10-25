@@ -794,49 +794,103 @@ fn retired_create_history_survives_reopen_only_for_the_original_request_until_ex
     );
     let close = clean_native(&mut journal, &create, local);
     let retained_at = 700_000;
-    journal.retire_reclaimed(local.sandbox, retained_at, |_| Ok(()), &mut NeverCrash).unwrap();
+    journal
+        .retire_reclaimed(local.sandbox, retained_at, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
     let world = journal.world().unwrap();
     assert!(world.sandbox_record(local.sandbox).is_none());
-    let key = core::OperationKey { sandbox: local.sandbox, operation: local.operation };
-    assert!(world.operation_record(key).is_none());
-    let expires_at = world.maintenance_state().unwrap().retained_result(key).unwrap().expires_at;
-    assert!(expires_at > retained_at);
-    assert!(matches!(core::handle_query(&world, core::QueryRequest {
-        actor: core::Actor::Tenant(core::TenantId(local.owner.0 + 1)),
+    let key = core::OperationKey {
         sandbox: local.sandbox,
         operation: local.operation,
-    }), Err(core::Reject::Unauthorized)));
+    };
+    assert!(world.operation_record(key).is_none());
+    let expires_at = world
+        .maintenance_state()
+        .unwrap()
+        .retained_result(key)
+        .unwrap()
+        .expires_at;
+    assert!(expires_at > retained_at);
+    assert!(matches!(
+        core::handle_query(
+            &world,
+            core::QueryRequest {
+                actor: core::Actor::Tenant(core::TenantId(local.owner.0 + 1)),
+                sandbox: local.sandbox,
+                operation: local.operation,
+            }
+        ),
+        Err(core::Reject::Unauthorized)
+    ));
     drop(journal);
     let mut journal = fixture::open(&path);
     fixture::refresh_epoch(&mut journal);
-    let view = journal.lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
-        &create, &context(), i64::try_from(expires_at - 1).unwrap(),
-    ).unwrap().view;
-    assert_eq!(view.historical_result, Some(core::OperationResult::Running(1)));
+    let view = journal
+        .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+            &create,
+            &context(),
+            i64::try_from(expires_at - 1).unwrap(),
+        )
+        .unwrap()
+        .view;
+    assert_eq!(
+        view.historical_result,
+        Some(core::OperationResult::Running(1))
+    );
     assert_eq!(view.readiness, crate::CreateReadiness::NotCurrent);
     assert_eq!(view.current_request, close.terminal.request);
     assert!(view.native.is_none());
     let mut other_owner = create.clone();
     other_owner.request.binding.key.owner = "beta".try_into().unwrap();
     let mut other_parameters = create.clone();
-    let LifecycleOperation::Create { create: parameters, .. } = &mut other_parameters.request.operation else { panic!() };
+    let LifecycleOperation::Create {
+        create: parameters, ..
+    } = &mut other_parameters.request.operation
+    else {
+        panic!()
+    };
     parameters.timeout_ms += 1;
     for changed in [other_owner, other_parameters] {
-        assert!(matches!(journal.lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
-            &changed, &context(), i64::try_from(expires_at - 1).unwrap(),
-        ), Err(JournalError::Conflict)));
+        assert!(matches!(
+            journal
+                .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+                    &changed,
+                    &context(),
+                    i64::try_from(expires_at - 1).unwrap(),
+                ),
+            Err(JournalError::Conflict)
+        ));
     }
-    assert!(journal.expire_retained(expires_at - 1, &mut NeverCrash).unwrap() == 0);
-    assert!(journal.expire_retained(expires_at, &mut NeverCrash).unwrap() > 0);
+    assert!(
+        journal
+            .expire_retained(expires_at - 1, &mut NeverCrash)
+            .unwrap()
+            == 0
+    );
+    assert!(
+        journal
+            .expire_retained(expires_at, &mut NeverCrash)
+            .unwrap()
+            > 0
+    );
     drop(journal);
     let mut journal = fixture::open(&path);
     fixture::refresh_epoch(&mut journal);
-    let view = journal.lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
-        &create, &context(), i64::try_from(expires_at).unwrap(),
-    ).unwrap().view;
+    let view = journal
+        .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+            &create,
+            &context(),
+            i64::try_from(expires_at).unwrap(),
+        )
+        .unwrap()
+        .view;
     assert_eq!(view.historical_result, None);
     assert_eq!(view.readiness, crate::CreateReadiness::NotCurrent);
-    assert!(journal.lifecycle_destroy_cleaned(&close.terminal.request, &context()).unwrap());
+    assert!(
+        journal
+            .lifecycle_destroy_cleaned(&close.terminal.request, &context())
+            .unwrap()
+    );
 }
 
 #[test]

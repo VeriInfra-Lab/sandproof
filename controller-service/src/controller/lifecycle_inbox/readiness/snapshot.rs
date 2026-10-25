@@ -264,21 +264,31 @@ pub(in crate::controller) fn base_snapshot(
         .transpose()?;
     let historical_result = if let Some(local) = local {
         if let Some(record) = world.operation_record(core::OperationKey {
-                sandbox: local.sandbox,
-                operation: local.operation,
-            }) {
+            sandbox: local.sandbox,
+            operation: local.operation,
+        }) {
             record.result
         } else {
             // Native Retire removes detailed rows, but its finite results remain
             // queryable. Reuse the original owner/expiry checks only on this
             // missing-row path; ordinary Ready queries need no extra World clone.
-            match core::handle_query(world, core::QueryRequest {
-                actor: core::Actor::Tenant(local.owner),
-                sandbox: local.sandbox,
-                operation: local.operation,
-            }) {
-                Ok(core::Decision { event: core::Event::QueryOperation { result, .. }, .. }) => result,
-                Err(core::Reject::ResultExpired | core::Reject::SandboxNotFound | core::Reject::OperationUnavailable) => None,
+            match core::handle_query(
+                world,
+                core::QueryRequest {
+                    actor: core::Actor::Tenant(local.owner),
+                    sandbox: local.sandbox,
+                    operation: local.operation,
+                },
+            ) {
+                Ok(core::Decision {
+                    event: core::Event::QueryOperation { result, .. },
+                    ..
+                }) => result,
+                Err(
+                    core::Reject::ResultExpired
+                    | core::Reject::SandboxNotFound
+                    | core::Reject::OperationUnavailable,
+                ) => None,
                 _ => return Err(JournalError::CorruptStore),
             }
         }
