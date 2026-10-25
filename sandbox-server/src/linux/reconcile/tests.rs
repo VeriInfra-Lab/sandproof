@@ -317,12 +317,7 @@ fn a_bad_target_does_not_turn_an_intact_peer_into_a_startup_failure() {
     assert_eq!(faults, [Some(CredentialFault::Malformed), None]);
 }
 
-#[test]
-fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupancy() {
-    use sandproof_controller_service::NeverCrash;
-    const SANDBOXES: u64 = 2;
-    let directory = credential_scratch();
-    let database = directory.0.join("controller.db");
+fn settings_with_result_graphs(sandboxes: u64) -> serde_json::Value {
     let mut value = settings();
     let operations = value["maintenance"]["max_operations_per_sandbox"]
         .as_u64()
@@ -330,7 +325,17 @@ fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupa
     // Each admitted instance reserves its entire N=8 result graph, even while
     // its original Create is pending/unknown: two instances need 16, not 10.
     value["bounded_host"]["maintenance"]["max_retained_results"] =
-        serde_json::json!(SANDBOXES * operations);
+        serde_json::json!(sandboxes * operations);
+    value
+}
+
+#[test]
+fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupancy() {
+    use sandproof_controller_service::NeverCrash;
+    const SANDBOXES: u64 = 2;
+    let directory = credential_scratch();
+    let database = directory.0.join("controller.db");
+    let value = settings_with_result_graphs(SANDBOXES);
     let config: NativeSettings = serde_json::from_value(value.clone()).unwrap();
     let bounded = resolve(value);
     let mut journal = ControllerJournal::open_complete(
