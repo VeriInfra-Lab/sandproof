@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.ReadyFactValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.observation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.ReadyFacts
+open SandboxModel.Stage1Protocol.ReadyFactValues
+namespace SandboxModel.Stage1Protocol.NegativeSourceDigest
+
+theorem actual_mutant_accepts : ready_matches_resumed facts resumeIntent changedSource = .ok true := by
+  simp [ready_matches_resumed, sandproof_protocol.lifecycle.resume.CurrentReadyFacts.matches_resumed,
+    sandproof_protocol.lifecycle.resume.CurrentReadyFacts.matches_resume_source,
+    sandproof_protocol.lifecycle.resume.current_facts, facts, resumeIntent, changedSource, source,
+    IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq, CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+    PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.array_eq, changed_digest_differs]
+
+theorem violates_same_full_contract : ¬ FullResumedContract ready_matches_resumed := by
+  classical
+  intro contract
+  have exact_result := contract facts resumeIntent changedSource
+  rw [actual_mutant_accepts] at exact_result
+  simp [ResumedMatches, ResumeSource, resumeIntent, changedSource, source, changed_digest_differs] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeSourceDigest
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeSourceDigest.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeSourceDigest.violates_same_full_contract
