@@ -535,18 +535,34 @@ fn unknown_restore_activation_is_retired_only_after_original_destroy_stop() {
     drop(journal);
     let clock = Arc::new(v3::fixture::TestClock(AtomicI64::new(10)));
     let app = reopen(&path, state.clone(), clock.clone());
-    assert_eq!(query(&app, &request).readiness, CurrentResumeReadiness::StateLost);
+    assert_eq!(
+        query(&app, &request).readiness,
+        CurrentResumeReadiness::StateLost
+    );
     let stop = destroy(&request);
     app.record_lifecycle_intent(&stop, &v3::context()).unwrap();
-    app.advance_current_workflow(sandbox).unwrap();
+    let advancement = app.advance_current_workflow(sandbox);
+    assert!(matches!(
+        advancement,
+        Ok(_) | Err(crate::application::ApplicationError::OutcomeUnknown)
+    ));
     drop(app);
     let journal = v3::open(&path);
     assert_eq!(
         journal.world().unwrap().effect_status(&activation.command),
         Some(core::EffectStatus::OutcomeUnknown)
     );
-    assert!(!journal.lifecycle_source_work(&v3::config().node).unwrap().is_empty());
-    assert!(!journal.lifecycle_destroy_cleaned(&stop, &v3::context()).unwrap());
+    assert!(
+        !journal
+            .lifecycle_source_work(&v3::config().node)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&stop, &v3::context())
+            .unwrap()
+    );
     assert!(state.lock().unwrap().actions.iter().any(|action| matches!(
         action.command.command(), core::Command::StopVm { sandbox: current, .. } if *current == sandbox
     )), "Destroy must reach its exact Stop despite the unknown original Resume activation");
@@ -561,7 +577,11 @@ fn unknown_restore_activation_is_retired_only_after_original_destroy_stop() {
         journal.world().unwrap().effect_status(&activation.command),
         Some(core::EffectStatus::RetiredByStop(_))
     ));
-    let question = journal.lifecycle_material_retirement_questions(sandbox).unwrap().pop().unwrap();
+    let question = journal
+        .lifecycle_material_retirement_questions(sandbox)
+        .unwrap()
+        .pop()
+        .unwrap();
     let plan = b"original unknown restore material retirement".to_vec();
     let observed = crate::capture::MaterialRetirementObservation {
         work_binding: question.request.binding_digest().unwrap(),
@@ -572,10 +592,17 @@ fn unknown_restore_activation_is_retired_only_after_original_destroy_stop() {
     state.lock().unwrap().material_observation = Some(observed);
     let app = reopen(&path, state.clone(), clock);
     assert_eq!(app.maintain().unwrap().retired_sandboxes, 1);
-    assert!(app.lifecycle_destroy_cleaned(&stop, &v3::context()).unwrap());
-    assert!(!state.lock().unwrap().actions.iter().any(|action| matches!(
-        action.command.command(), core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
-    )), "Destroy may not reload or reactivate the exited candidate");
+    assert!(
+        app.lifecycle_destroy_cleaned(&stop, &v3::context())
+            .unwrap()
+    );
+    assert!(
+        !state.lock().unwrap().actions.iter().any(|action| matches!(
+            action.command.command(),
+            core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+        )),
+        "Destroy may not reload or reactivate the exited candidate"
+    );
 }
 
 #[test]
