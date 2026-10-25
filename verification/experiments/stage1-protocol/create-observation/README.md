@@ -21,6 +21,33 @@ Renew/NotCurrent 的部分分支允许复用 key，非 Refused 改变当前请�
 固定后端将 `TryFromIntError` 映为 `Unit`。最小 `u64::try_from(i64)` 成败/数值/错误载荷连接交 V0，
 不手改生成体、替换转换算法或把整个守卫设为可信。
 
+`conversion-candidate/` 提供该接口的**隔离审查候选**，尚未获 V0 采用。
+它在私有生成命名空间把 `TryFromIntError` 解释为实际生成的 `IntErrorKind`，
+保留固定 Rust/LLBC 的唯一字段；全局后端的 `Unit` 模型保持原样。
+原始生成函数不改写，手写的私有 `FunsExternal` 增加候选类型与 #696 原 Result tag 的导入。
+这属于新增类型表示候选，不能仅因原四个外部函数未变就称库模型完全未变。
+单字段表示的双向往返、错误种类保留、实际转换的任意输入成败/精确值/负溢出载荷
+及 `is_err` 擦除关系在候选环境检查；擦除不保留错误种类另有反例。
+表示关系依据精确 Std 源码和原 LLBC 审查，不是 Charon/Aeneas 正确性的机器证明，
+也没有 ABI/内存布局、`Display`、错误消费链或完整 Create 守卫结论。
+
+候选不进入默认导入或公共登记；文件保留为 `.lean.in`，仅由下列入口安装到新建私有目录。
+入口重新抽取完整 `create` profile（同时保留 Create 比较根），检查原 Request/ReadyFacts/Resume/Create
+值证明及新增文件的完整实际导入闭包和审计。提供 #696 精确提交
+`3e2a7dc2efc00c8efbe226486ee704605b73bf82` 中的 `RenewalResultTag.lean` 原文件，
+入口按内容核对并复用它，不另造 Result 模型。固定 Rust 的 `rust-src` 也须存在并符合审查摘要。
+持有共享重锁运行；正式普通/原生验收仍交 ning：
+
+```sh
+bash scripts/python-entry.sh verification/experiments/stage1-protocol/create-observation/conversion_candidate.py \
+  --packages /private/task/.lake/packages --result-tag-source /private/696/RenewalResultTag.lean \
+  --output /private/create-conversion-candidate
+```
+
+该结果始终标记 `candidate_only=true`、`v0_adopted=false`、`full_guard_refinement=false`。
+V0 需审查名称解析后的字段表示及 Result tag 依赖；获采纳后再接完整 Create 守卫与四个真实错误版，
+公共依赖合同、根/原生登记、冻结与覆盖记录仍由主控协调。现有值证明的验收入口不变。
+
 四个错误版只在隔离生产副本修改一个已登记原表达式：响应只比 key、遗漏当前 retention、
 Refused 允许历史成功、负数续租强转回绕。原生入口逐版检查原版→变异→恢复，
 编译失败、超时或导入失败均不计为反例。负数见证使用 startup=1、max lifetime=`u64::MAX-1`、
