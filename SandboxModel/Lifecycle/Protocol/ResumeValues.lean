@@ -14,6 +14,9 @@ def changedRetention : AcceptedLifecycleIntent := { currentIntent 50#i64 false w
 def unloadIntent : AcceptedLifecycleIntent := {
   currentIntent 50#i64 false with request := {
     (currentIntent 50#i64 false).request with operation := .Unload 3#u64 2#u64 } }
+def wrongUnloadSource : AcceptedLifecycleIntent := {
+  unloadIntent with request := {
+    unloadIntent.request with operation := .Unload 1#u64 2#u64 } }
 def destroyIntent : AcceptedLifecycleIntent := {
   currentIntent 50#i64 false with request := {
     (currentIntent 50#i64 false).request with operation := .Destroy } }
@@ -43,12 +46,18 @@ theorem changed_original_differs : changedOriginal ≠ resumeIntent := by
 theorem counterexamples_outside_contract :
     ¬ ResumeBinding.Matches changedRequestObservation resumeIntent ∧
     ¬ ResumeBinding.Matches (observation changedRetention .Pending) resumeIntent ∧
-    ¬ ResumeBinding.Matches (observation unloadIntent .StateLost) resumeIntent ∧
+    ¬ ResumeBinding.Matches (observation wrongUnloadSource .StateLost) resumeIntent ∧
     ¬ ResumeBinding.Matches (observation wrongIncarnation .Pending) resumeIntent := by
   simp [ResumeBinding.Matches, ResumeBinding.CurrentShape, ResumeBinding.ReadinessMatches,
-    ResumeBinding.UnloadReadiness, ResumeBinding.RenewReadiness, ResumeBinding.Newer,
-    observation, changedRequestObservation, changedOriginal, changedRetention, unloadIntent,
+    ResumeBinding.UnloadReadiness, ResumeBinding.RenewReadiness, ResumeBinding.Newer, ResumeBinding.Continued,
+    observation, changedRequestObservation, changedOriginal, changedRetention, wrongUnloadSource, unloadIntent,
     wrongIncarnation, currentIntent, resumeIntent, EnvelopeValues.intent]
+
+theorem wrong_unload_source_is_valid : ValidEnvelope wrongUnloadSource EnvelopeValues.context := by
+  have checked : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [wrongUnloadSource, unloadIntent, currentIntent, resumeIntent,
+    ValidEnvelope, ValidRequest, headersOK, expectationOK, operationOK, retentionOK, versionOK,
+    EnvelopeValues.context, EnvelopeValues.intent, EnvelopeValues.center, EnvelopeValues.node, checked]
 
 end SandboxModel.Stage1Protocol.ResumeValues
 
@@ -57,3 +66,5 @@ end SandboxModel.Stage1Protocol.ResumeValues
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.changed_original_differs
 
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.counterexamples_outside_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.wrong_unload_source_is_valid

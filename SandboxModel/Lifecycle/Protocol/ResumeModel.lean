@@ -40,8 +40,8 @@ def SameReadiness (readiness : CurrentResumeReadiness) : Prop :=
 def UnloadReadiness (readiness : CurrentResumeReadiness) : Prop :=
   match readiness with
   | .Observed facts => Timing facts
-  | .NotRunning | .Expired | .Pending => True
-  | .NotCurrent | .StateLost => False
+  | .NotRunning | .Expired | .Pending | .StateLost => True
+  | .NotCurrent => False
 
 def RenewReadiness (readiness : CurrentResumeReadiness) (deadline : I64) (extend : Bool) : Prop :=
   match readiness with

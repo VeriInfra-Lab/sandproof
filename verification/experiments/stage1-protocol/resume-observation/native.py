@@ -14,8 +14,8 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path('verification/experiments/stage1-protocol/resume-observation')
-TESTS = ('legal_original_and_successors', 'full_original_is_not_session_only', 'current_retention_is_not_omitted', 'lost_unload_is_rejected', 'renewal_incarnation_is_not_omitted', 'state_lost_value_is_allowed_for_original_and_renewal', 'negative_renewal_pending_is_allowed', 'negative_renewal_observed_is_rejected', 'not_current_needs_a_successor', 'expired_observation_is_rejected')
-MUTANT_TESTS = {'resume-session-only': ('full_original_is_not_session_only', 'same session does not identify the complete original'), 'resume-ignore-retention': ('current_retention_is_not_omitted', 'resume must preserve current retention'), 'resume-lost-unload': ('lost_unload_is_rejected', 'StateLost does not match continued Unload'), 'resume-wrong-renew-incarnation': ('renewal_incarnation_is_not_omitted', 'renew must target original resumed incarnation')}
+TESTS = ('legal_original_and_successors', 'full_original_is_not_session_only', 'current_retention_is_not_omitted', 'lost_unload_keeps_continued_source', 'renewal_incarnation_is_not_omitted', 'state_lost_value_is_allowed_for_original_and_successors', 'negative_renewal_pending_is_allowed', 'negative_renewal_observed_is_rejected', 'not_current_needs_a_successor', 'expired_observation_is_rejected', 'lost_unload_keeps_full_binding')
+MUTANT_TESTS = {'resume-session-only': ('full_original_is_not_session_only', 'same session does not identify the complete original'), 'resume-ignore-retention': ('current_retention_is_not_omitted', 'resume must preserve current retention'), 'resume-continued-binding': ('lost_unload_keeps_continued_source', 'StateLost must preserve continued source incarnation'), 'resume-wrong-renew-incarnation': ('renewal_incarnation_is_not_omitted', 'renew must target original resumed incarnation')}
 
 
 def sha(path):
@@ -62,7 +62,7 @@ def run(archive, output, target):
     record = dict(kind='resume-observation-native-component', archive_sha256=sha(archive),
                   full_acceptance=False, variants={}, commands=[])
     env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_NET_OFFLINE='true',
-        CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='4', RUST_TEST_THREADS='1', CARGO_TERM_COLOR='never')
+        PYTHONDONTWRITEBYTECODE='1', CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='4', RUST_TEST_THREADS='1', CARGO_TERM_COLOR='never')
     for name in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'LD_PRELOAD', 'LD_LIBRARY_PATH'):
         env.pop(name, None)
 
