@@ -2751,10 +2751,27 @@ fn resume_slot_installation_ignores_only_settled_prior_incarnation_work() {
         &journal.world().unwrap(),
         sandbox
     ));
-    let action = journal
-        .claim_next(Some(sandbox), &mut NeverCrash)
-        .unwrap()
-        .unwrap();
+    bootstrap(&mut journal);
+    let mut first_action = None;
+    for _ in 0..8 {
+        match sandbox_controller_core::workflow::next_step(&journal.world().unwrap(), sandbox) {
+            sandbox_controller_core::workflow::WorkflowStep::Apply(input) => {
+                journal.apply(*input, &mut NeverCrash).unwrap();
+            }
+            sandbox_controller_core::workflow::WorkflowStep::Claim => {
+                assert!(can_install_host_slot_binding(
+                    &journal.world().unwrap(),
+                    sandbox
+                ));
+                first_action = journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap();
+                break;
+            }
+            other => {
+                panic!("original resume unexpectedly blocked before its first claim: {other:?}")
+            }
+        }
+    }
+    let action = first_action.expect("original workflow must reach its first host claim");
     assert_eq!(action.identity.generation, 2);
     let claimed = journal.world().unwrap();
     assert!(!can_install_host_slot_binding(&claimed, sandbox));
