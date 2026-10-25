@@ -607,6 +607,19 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(launched.call_args.kwargs['env'],
                              {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', **faults})
 
+    def test_capture_cancel_gate_is_one_explicit_host_only_control(self):
+        faults={'SANDPROOF_TEST_CAPTURE_CANCEL_GATE':'/approved/private-capture-cancel'}
+        self.assertEqual(fixture.fault_environment(faults),faults)
+        with tempfile.TemporaryDirectory() as temporary,patch.object(fixture,'launch') as launched:
+            assembly=fixture.Processes(**self.process_inputs(Path(temporary)))
+            for role in ('center','redis'):
+                with self.subTest(role=role),self.assertRaises(ValueError):
+                    assembly.start(role,env=faults)
+            for value in ('','\0','x'*4097):
+                with self.subTest(value_length=len(value)),self.assertRaises(ValueError):
+                    assembly.start('host-0',env={next(iter(faults)):value})
+            launched.assert_not_called()
+
     def test_missing_shared_root_or_duplicate_role_configuration_fails_before_commands(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(fixture, 'launch') as launch, \
                 patch.object(fixture, 'command') as command:

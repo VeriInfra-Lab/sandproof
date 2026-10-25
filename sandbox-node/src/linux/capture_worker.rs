@@ -75,7 +75,7 @@ impl PreparedCaptureWorker {
         )?)
     }
 
-    fn require_launch_permit(&self, permit: &FullCaptureLaunchPermit) -> NodeResult<()> {
+    pub(crate) fn require_launch_permit(&self, permit: &FullCaptureLaunchPermit) -> NodeResult<()> {
         let payload = handshake::frame_payload(&self.body)?;
         if permit.action() != &self.job.action
             || permit.full_work_binding() != &self.full_work_binding
