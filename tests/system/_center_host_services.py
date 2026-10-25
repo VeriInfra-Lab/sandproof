@@ -86,7 +86,7 @@ def test_credentials(key,extra_credentials=None):
 
 
 def render(native_pools, *, registered_catalogs, deployment, center_root, host_tls_roots, host_addresses,
-           public_address, artifact_address, redis_address, password, key, job_count,
+           public_address, artifact_address, redis_address, password, key, retained_sessions,
            registry, versions, capture_settings, private_builds=None, private_build_boundary=None,extra_credentials=None):
     """Render one explicit protected product configuration per role.
 
@@ -97,7 +97,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     if (not native_pools or len(native_pools) != len(host_addresses)
             or len(native_pools) != len(host_tls_roots) or len(native_pools) != len(registered_catalogs)
             or len(native_pools) > 2
-            or type(job_count) is not int or not 0 < job_count <= 10000):
+            or type(retained_sessions) is not int or not 0 < retained_sessions):
         raise ValueError('explicit finite test cohort and registered host roles required')
     if (type(capture_settings) is not list or len(capture_settings) != len(native_pools)
             or any(type(value) is not dict for value in capture_settings)):
@@ -111,7 +111,8 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     hosts, nodes, registrations = [], [], []
     platform = dict(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
     tenant = dict(platform)
-    max_records = job_count + sum(pool['max_active_global'] for pool in native_pools)
+    # A scenario declares its retained histories independently of live VM slots.
+    max_records = retained_sessions
     if type(max_records) is not int or not 0 < max_records <= 2**16 - 1:
         raise ValueError('existing inbox capacity must fit the mandatory retention slot count')
     expected_roles = ('runtime',) if len(native_pools) == 1 else ('runtime','builder')

@@ -93,7 +93,7 @@ def exercise(args):
         max_artifact_bytes_per_tenant=args.rootfs.stat().st_size*2,
         max_template_disk_bytes=args.rootfs.stat().st_size, validation_timeout_secs=120)
     services = RuntimeServices.prepare(args, root, [settings], [settings['templates']], key,
-        url.removeprefix('http://'), service_record, job_count=2, registry_config=registry)
+        url.removeprefix('http://'), service_record, retained_sessions=2 + settings['max_active_global'], registry_config=registry)
     report = {'commit': commit, 'center_sha256': sha256_file(args.center),
               'host_sha256': sha256_file(args.host), 'namespace': namespace,
               'uid_base': args.uid_base, 'template': view, 'scope': 'prebuilt KVM create receipt recovery',

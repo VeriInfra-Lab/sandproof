@@ -255,7 +255,7 @@ async def exercise(args):
         max_artifact_bytes_per_tenant=args.kernel.stat().st_size+args.rootfs.stat().st_size,
         validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], keys[0],
-        url.removeprefix('http://'), args.service_cgroup_record, job_count=12, registry_config=registry,
+        url.removeprefix('http://'), args.service_cgroup_record, retained_sessions=12 + settings['max_active_global'], registry_config=registry,
         extra_credentials=[dict(tenant=2, secret=keys[1])])
     sampler, monitor = None, None
     known, evidence, results = [], [], []

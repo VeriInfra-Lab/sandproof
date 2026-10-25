@@ -309,7 +309,7 @@ def prepare_registry_runtime(args, *, tool_hashes, registry_limits, build_limits
     apply_acceptance_build_policy(settings[0], settings[1], build, policy)
     windows = policy['builder']['build_retry_windows']
     services = RuntimeServices.prepare(args, root, settings, [pool['templates'] for pool in settings], key,
-        '127.0.0.1:' + str(ports[0]), args.service_cgroup_record, job_count=build_limits['max_jobs'] + 16,
+        '127.0.0.1:' + str(ports[0]), args.service_cgroup_record, retained_sessions=(build_limits['max_jobs'] + 16) + sum(pool['max_active_global'] for pool in settings),
         private_builds=dict(windows=settings[1]['bounded_host']['maintenance']['windows'],
             window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'], builder_revision='builder-base-r1',
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',

@@ -303,7 +303,7 @@ def exercise(args, report):
         'validation_timeout_secs': 60}
     services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
         registered_catalogs=[settings['templates']], key=keys[0], public_address=url.removeprefix('http://'),
-        record=args.service_cgroup_record, job_count=4, registry_config=registry,
+        record=args.service_cgroup_record, retained_sessions=4 + settings['max_active_global'], registry_config=registry,
         extra_credentials=[{'tenant': 2, 'secret': keys[1]}])
     settings = services.native_pools[0]
     config = services.processes.bindings['center']['config']

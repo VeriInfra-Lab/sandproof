@@ -368,7 +368,7 @@ def exercise(args):
         max_artifact_bytes_global=sum(sizes),max_artifact_bytes_per_tenant=sum(sizes),validation_timeout_secs=60)
     services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[catalog],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=2,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        retained_sessions=2 + settings['max_active_global'],registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
     try:
         services.start()
         services.wait_ready()

@@ -400,7 +400,7 @@ def exercise(args):
                 'max_lifetime_secs','startup_timeout_secs')})
     registry = {'root': str(root / 'registry'), **deployment['registry']}
     services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
-        key,public_address,record=service_record,job_count=capacity['jobs'],
+        key,public_address,record=service_record,retained_sessions=(capacity['jobs']) + sum(pool['max_active_global'] for pool in settings),
         private_builds=private_builds,registry_config=registry,activation_ceiling_bytes=disk_ceiling)
     settings = services.native_pools  # Exactly the profile Rust initializes.
     registry_root = services.layout['registry']

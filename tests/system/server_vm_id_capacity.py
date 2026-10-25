@@ -139,7 +139,7 @@ def exercise(args):
         max_artifact_bytes_global=disk_bytes + kernel.stat().st_size,
         max_artifact_bytes_per_tenant=disk_bytes + kernel.stat().st_size, validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
-        f"127.0.0.1:{port}", args.service_cgroup_record, job_count=8, registry_config=registry)
+        f"127.0.0.1:{port}", args.service_cgroup_record, retained_sessions=8 + settings['max_active_global'], registry_config=registry)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     url = f"http://127.0.0.1:{port}"
     owner = options(key, url, url)

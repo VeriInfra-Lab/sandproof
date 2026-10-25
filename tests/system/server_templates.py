@@ -178,7 +178,7 @@ def exercise(args):
         max_artifact_bytes_global=artifact_bytes,max_artifact_bytes_per_tenant=artifact_bytes,validation_timeout_secs=60)
     services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[settings['templates']],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=5,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        retained_sessions=5 + settings['max_active_global'],registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
     settings = services.native_pools[0]
     config = services.processes.bindings['center']['config']
     original_config = config.read_bytes()

@@ -484,7 +484,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         max_memory_bytes_per_tenant=2*768*1024**2))
     config['templates']=catalog
     services=RuntimeServices.prepare(args,root,[config],[catalog],owner_key,f'127.0.0.1:{port}',
-        args.service_cgroup_record,job_count=EXPECTED_SANDBOXES,extra_credentials=[dict(tenant=2,secret=foreign_key)],
+        args.service_cgroup_record,retained_sessions=(EXPECTED_SANDBOXES) + config['max_active_global'],extra_credentials=[dict(tenant=2,secret=foreign_key)],
         registry_config=dict(root=str(root/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
             max_artifact_bytes_global=disk_bytes+args.kernel.stat().st_size,
             max_artifact_bytes_per_tenant=disk_bytes+args.kernel.stat().st_size,validation_timeout_secs=60))

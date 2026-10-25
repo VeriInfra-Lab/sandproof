@@ -150,7 +150,7 @@ def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=
         "max_artifact_bytes_per_tenant": artifact_bytes, "validation_timeout_secs": 60}
     return RuntimeServices.prepare(args, root=root, native_pools=[native],
         registered_catalogs=[catalog], key=key, public_address=f"127.0.0.1:{port}",
-        record=args.service_cgroup_record, job_count=job_count,
+        record=args.service_cgroup_record, retained_sessions=(job_count) + native['max_active_global'],
         private_builds=None, registry_config=registry, extra_credentials=extra_credentials)
 
 

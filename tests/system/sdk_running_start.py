@@ -104,7 +104,7 @@ def main(args):
         'max_artifact_bytes_per_tenant': disk_bytes + kernel.stat().st_size, 'validation_timeout_secs': 60}
     services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
         registered_catalogs=[catalog], key=key, public_address=f'127.0.0.1:{port}',
-        record=args.service_cgroup_record, job_count=4, private_builds=None, registry_config=registry)
+        record=args.service_cgroup_record, retained_sessions=4 + settings['max_active_global'], private_builds=None, registry_config=registry)
     completed = False
     try:
         services.start()

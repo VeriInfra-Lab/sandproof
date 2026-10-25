@@ -131,7 +131,7 @@ def exercise(args):
         max_artifact_bytes_per_tenant=inputs['rootfs']['bytes']*2,
         max_template_disk_bytes=inputs['rootfs']['bytes'],validation_timeout_secs=120)
     services = RuntimeServices.prepare(args,root,[cfg],[cfg['templates']],key,
-        url.removeprefix('http://'),service_record,job_count=4,registry_config=registry)
+        url.removeprefix('http://'),service_record,retained_sessions=4 + cfg['max_active_global'],registry_config=registry)
     create_identities = {}
     helper = args.probe.read_bytes()
 

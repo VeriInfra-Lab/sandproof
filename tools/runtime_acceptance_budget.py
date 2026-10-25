@@ -9,6 +9,7 @@ from tools.template_physical_storage import envelope
 
 MIB=1024**2
 MAX_ACTIVATION_BYTES=200*1024**3
+TWO_SESSION_ACTIVATION_BYTES=320*1024**3
 
 def static_cache(pool, catalog, root):
     sizes = [item['kernel']['size_bytes'] + item['rootfs']['size_bytes'] for item in catalog['templates']]
@@ -20,8 +21,19 @@ def static_cache(pool, catalog, root):
         metadata_bytes=4096+entries*2*(65536+4096),inode_budget=4+entries*5+5)
 
 
-def profile_declaration(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
+def profile_declaration(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None, activation_scope="prepared-ci"):
     """Derive the exact declaration; this performs no physical admission."""
+    if activation_scope not in ('prepared-ci','lifecycle-two-sessions'):
+        raise ValueError('unknown explicit acceptance capacity scope')
+    maximum=MAX_ACTIVATION_BYTES
+    if activation_scope=='lifecycle-two-sessions':
+        if (len(native_pools)!=1 or native_pools[0]['max_active_global']!=2
+                or activation_ceiling_bytes is None):
+            raise ValueError('two-session lifecycle requires one two-active host and finite ceiling')
+        pools=native_pools[0]['bounded_host']['physical_storage']['pools']
+        if len(pools)!=1 or pools[0]['role']!='runtime' or pools[0]['max_host_slots']!=2:
+            raise ValueError('two-session lifecycle requires exactly two physical runtime positions')
+        maximum=TWO_SESSION_ACTIVATION_BYTES
     profiles = [native['bounded_host']['physical_storage'] for native in native_pools]
     if any(profile != profiles[0] for profile in profiles[1:]):
         raise ValueError('one original shared physical declaration required')
@@ -60,8 +72,8 @@ def profile_declaration(native_pools, catalogs, layout, *, registry, service_pea
     peak,inodes=envelope(profile)
     if activation_ceiling_bytes is not None:
         if (type(activation_ceiling_bytes) is not int
-                or not 0<activation_ceiling_bytes<=MAX_ACTIVATION_BYTES):
-            raise ValueError('explicit prepared CI activation ceiling at most 200 GiB required')
+                or not 0<activation_ceiling_bytes<=maximum):
+            raise ValueError('explicit prepared CI activation ceiling or scoped lifecycle ceiling exceeded')
         if 2*peak>activation_ceiling_bytes:
             raise ValueError('complete dual-service activation exceeds prepared CI ceiling; no quota is reduced')
     return profile

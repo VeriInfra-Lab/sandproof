@@ -177,13 +177,13 @@ class FixtureTests(unittest.TestCase):
                 chattr=dict(path='/protected/chattr',sha256=[2]*32),
                 lsattr=dict(path='/protected/lsattr',sha256=[3]*32))) for index,_ in enumerate(pools)]
 
-    def render(self, pools=None):
+    def render(self, pools=None, *, retained_sessions=4):
         native = pools or [self.native()]
         return fixture.render(native, capture_settings=self.captures(native), registered_catalogs=[p['templates'] for p in native], deployment='one-approved-deployment',
             center_root='/approved/center', host_tls_roots=['/approved/host/tls'],
             host_addresses=['127.0.0.1:9001'], public_address='127.0.0.1:9000',
             artifact_address='127.0.0.1:9002', redis_address='127.0.0.1:9003',
-            password='TESTONLYREDISKEY', key='TESTONLYPUBLICKEY', job_count=2,
+            password='TESTONLYREDISKEY', key='TESTONLYPUBLICKEY', retained_sessions=retained_sessions,
             registry=dict(root='/approved/center/registry', max_templates_global=2),
             versions=dict(internal_protocol=2, center_store=6, host_store=16))
 
@@ -208,7 +208,7 @@ class FixtureTests(unittest.TestCase):
                 center_root='/approved/center',host_tls_roots=['/approved/host/tls'],
                 host_addresses=['127.0.0.1:9001'],public_address='127.0.0.1:9000',
                 artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
-                password='TESTREDIS',key='OWNERONE',job_count=2,registry={'root':'/approved/registry'},
+                password='TESTREDIS',key='OWNERONE',retained_sessions=2 + native['max_active_global'],registry={'root':'/approved/registry'},
                 versions=dict(internal_protocol=2,center_store=6,host_store=16),extra_credentials=extra)
         base,_=render([])
         center,hosts=render([dict(tenant=2,secret='OWNERTWO')])
@@ -234,9 +234,13 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(hosts[0]['inbox']['max_sessions'],4)
         self.assertEqual(center['nodes'][0]['registration']['retention_slots'],4)
         self.assertEqual(source,self.native())
-        source['max_active_global']=2**16-2
         with self.assertRaisesRegex(ValueError,'retention slot count'):
-            self.render([source])
+            self.render([source],retained_sessions=2**16)
+        center,hosts=self.render([source],retained_sessions=2)
+        self.assertEqual(hosts[0]['inbox']['max_sessions'],2)
+        self.assertEqual(center['nodes'][0]['registration']['retention_slots'],2)
+        self.assertEqual(center['bounds']['max_sandboxes'],2)
+        self.assertEqual(source,self.native())
 
     def test_missing_or_insufficient_native_operation_bound_is_not_upgraded(self):
         for bound in (None,0,True,7,2**64):
@@ -303,7 +307,7 @@ class FixtureTests(unittest.TestCase):
             center_root='/approved/center', host_tls_roots=['/approved/runtime/tls','/approved/builder/tls'],
             host_addresses=['127.0.0.1:9001','127.0.0.1:9004'], public_address='127.0.0.1:9000',
             artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
-            password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',job_count=2,
+            password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',retained_sessions=2 + sum(pool['max_active_global'] for pool in [runtime, builder]),
             registry=dict(root='/approved/center/registry', max_templates_global=2),
             versions=dict(internal_protocol=2,center_store=6,host_store=16))
         self.assertEqual([node['registration']['role'] for node in center['nodes']], ['runtime','builder'])
@@ -342,7 +346,7 @@ class FixtureTests(unittest.TestCase):
             center_root='/approved/center', host_tls_roots=['/approved/runtime/tls','/approved/builder/tls'],
             host_addresses=['127.0.0.1:9001','127.0.0.1:9004'], public_address='127.0.0.1:9000',
             artifact_address='127.0.0.1:9002',redis_address='127.0.0.1:9003',
-            password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',job_count=2,
+            password='TESTONLYREDISKEY',key='TESTONLYPUBLICKEY',retained_sessions=2 + sum(pool['max_active_global'] for pool in pools),
             registry=dict(root='/approved/center/registry', max_templates_global=2),
             versions=dict(internal_protocol=2,center_store=6,host_store=16))
         self.assertGreaterEqual(center['data_transfer']['file_upload_bytes'], 77683250)

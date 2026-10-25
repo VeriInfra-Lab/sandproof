@@ -166,7 +166,7 @@ def prepare_services(args, mounted, template):
         max_artifact_bytes_global=2*1024*MIB,max_artifact_bytes_per_tenant=2*1024*MIB,
         max_template_disk_bytes=1024*MIB,validation_timeout_secs=120)
     services=RuntimeServices.prepare(args,mounted,[config],[catalog],key,f'127.0.0.1:{port}',
-        args.service_cgroup_record,job_count=4,registry_config=registry)
+        args.service_cgroup_record,retained_sessions=4 + config['max_active_global'],registry_config=registry)
     return services,services.native_pools[0],key,services.sdk_url
 
 

@@ -292,7 +292,7 @@ def exercise(args: argparse.Namespace) -> None:
         max_artifact_bytes_global=rootfs.stat().st_size+kernel.stat().st_size,
         max_artifact_bytes_per_tenant=rootfs.stat().st_size+kernel.stat().st_size, validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
-        f'127.0.0.1:{port}', args.service_cgroup_record, job_count=len(selection)+2, registry_config=registry)
+        f'127.0.0.1:{port}', args.service_cgroup_record, retained_sessions=(len(selection)+2) + settings['max_active_global'], registry_config=registry)
     completed = False
     results = []
     identities = []

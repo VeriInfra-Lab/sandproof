@@ -115,10 +115,10 @@ def _wait_redis(config,process):
 
 
 
-def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
+def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None, activation_scope="prepared-ci"):
     """Validate the full original physical admission before any large copy."""
     profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
-        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes)
+        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,activation_scope=activation_scope)
     peak,inodes=envelope(profile)
     free=os.statvfs(layout['hosts'][0])
     if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
@@ -163,11 +163,17 @@ class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
-                job_count,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
+                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None,activation_scope="prepared-ci"):
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
         if registry_config is None or any(RETIRED_NATIVE_FIELDS & native.keys() for native in native_pools):
             raise ValueError('new native inputs and explicit registry declaration required')
+        if type(retained_sessions) is not int or not 1<=retained_sessions<=2**16-1:
+            raise ValueError('explicit finite retained-session count required')
+        if activation_scope=='lifecycle-two-sessions' and (
+                retained_sessions!=2 or len(native_pools)!=1 or private_builds is not None
+                or native_pools[0]['max_active_global']!=2):
+            raise ValueError('two-session lifecycle scope cannot admit a larger cohort')
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
@@ -183,13 +189,12 @@ class RuntimeServices:
         manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,
             paths={role:str(path) for role,path in paths.items()},versions=versions)
         captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
-        retained=job_count+sum(pool['max_active_global'] for pool in pools)
         for native,capture in zip(pools,captures):
             pool_root=Path(native['database']).parent.parent
             parent=Path(capture['layout_parent'])
             if parent!=pool_root/'p' or parent/'v'!=Path(native['chroot_base']):
                 raise ValueError('capture profile must bind the exact fresh runtime sibling')
-            require_capacity(capture,native,retained)
+            require_capacity(capture,native,retained_sessions)
         redis_receipt=check_material(Path(args.redis_material),protected=True)
         hosts=[]
         for native,capture in zip(pools,captures):
@@ -245,7 +250,7 @@ class RuntimeServices:
         redis_bin=layout['redis']/'redis-server'
         service_peaks=service_declarations(layout,ids,paths,asset_bytes,redis_receipt,private_builds,captures)
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
-                              activation_ceiling_bytes=activation_ceiling_bytes)
+                              activation_ceiling_bytes=activation_ceiling_bytes,activation_scope=activation_scope)
         # Complete original byte/inode activation is checked BEFORE any large
         # disk copy. Rust checks the same final profile independently at init.
         for source,target,checksum in pending_copies:
@@ -290,7 +295,7 @@ class RuntimeServices:
             host_tls_roots=[control/'tls' for control in layout['host_controls']],
             host_addresses=host_addresses,public_address=public_address,
             artifact_address='127.0.0.1:'+str(artifact_port),redis_address='127.0.0.1:'+str(redis_port),
-            password=password,key=key,job_count=job_count,registry=registry,versions=versions,
+            password=password,key=key,retained_sessions=retained_sessions,registry=registry,versions=versions,
             capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials)
         center['redis']['writer_root']=str(layout['writer'])
         write_role(layout['center_control']/'token.key',secrets.token_bytes(32),uid=ids['center'][0],gid=ids['center'][1])
