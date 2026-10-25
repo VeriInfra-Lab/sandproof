@@ -69,7 +69,8 @@ impl ControllerJournal {
             sum.checked_add(super::super::retirement::material_charge(r)?)
                 .ok_or(JournalError::MaintenanceCapacity)
         })?;
-        let total = held.checked_add(reserved_material_bytes)
+        let total = held
+            .checked_add(reserved_material_bytes)
             .ok_or(JournalError::MaintenanceCapacity)?;
         if total > sources.config.max_material_bytes {
             // Only this same-transaction, definite material refusal carries

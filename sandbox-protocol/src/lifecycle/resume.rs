@@ -75,7 +75,7 @@ impl ResumeObservation {
                         | CurrentResumeReadiness::Expired
                         | CurrentResumeReadiness::Pending
                         | CurrentResumeReadiness::StateLost => true,
-                        _ => false,
+                        CurrentResumeReadiness::NotCurrent => false,
                     };
             }
             if let LifecycleOperation::Renew {

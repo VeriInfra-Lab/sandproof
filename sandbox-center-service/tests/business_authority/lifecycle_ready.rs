@@ -139,16 +139,29 @@ impl HostPort for Host {
             return Err(error);
         }
         self.observations.fetch_add(1, Ordering::SeqCst);
-        let value = self.resumed.lock().unwrap().clone().ok_or(PortError::Busy)?;
+        let value = self
+            .resumed
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(PortError::Busy)?;
         let blocked = {
             let mut slot = self.blocked.lock().unwrap();
-            if slot.as_ref().is_some_and(|b| b.session == intent.request.binding.session) {
+            if slot
+                .as_ref()
+                .is_some_and(|b| b.session == intent.request.binding.session)
+            {
                 slot.take()
-            } else { None }
+            } else {
+                None
+            }
         };
         if let Some(blocked) = blocked {
             blocked.entered.send(()).unwrap();
-            blocked.continue_work.recv_timeout(Duration::from_secs(5)).unwrap();
+            blocked
+                .continue_work
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
         }
         Ok(value)
     }

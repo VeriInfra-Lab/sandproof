@@ -150,9 +150,14 @@ impl WorkExecution for TestHost {
     ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest, ApplicationError>
     {
         let state = self.0.lock().unwrap();
-        if let Some(error) = state.full_proposal_error { return Err(error); }
+        if let Some(error) = state.full_proposal_error {
+            return Err(error);
+        }
         let full = state.full_proposal.as_ref().ok_or(ApplicationError::Busy)?;
-        if &full.pause != pause || pause.source_resource != source.resource || pause.source != source.source {
+        if &full.pause != pause
+            || pause.source_resource != source.resource
+            || pause.source != source.source
+        {
             return Err(ApplicationError::Invalid);
         }
         Ok(full.clone())
@@ -214,10 +219,17 @@ impl WorkRecovery for TestHost {
     ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
         let (observed, hook) = {
             let mut state = self.0.lock().unwrap();
-            state.continued_exit_questions.push((action.clone(), work.binding_digest().ok()?));
-            (state.continued_exit.clone(), state.continued_exit_hook.take())
+            state
+                .continued_exit_questions
+                .push((action.clone(), work.binding_digest().ok()?));
+            (
+                state.continued_exit.clone(),
+                state.continued_exit_hook.take(),
+            )
         };
-        if let Some(hook) = hook { hook(); }
+        if let Some(hook) = hook {
+            hook();
+        }
         observed
     }
 

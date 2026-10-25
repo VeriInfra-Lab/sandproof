@@ -2,8 +2,8 @@
 use super::*;
 use sandproof_center_store::authority::AuthorityState;
 use sandproof_protocol::lifecycle::{
-    ContentDigest, UnloadObservation, UnloadOutcome, UnloadedFacts,
-    CurrentResumeReadiness, ResumeObservation, PublicResumeRequest,
+    ContentDigest, CurrentResumeReadiness, PublicResumeRequest, ResumeObservation,
+    UnloadObservation, UnloadOutcome, UnloadedFacts,
 };
 
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
@@ -645,43 +645,81 @@ fn complete_continued(app: &Application, host: &Host) -> (SessionId, u64) {
 
 // Original public acceptance, Redis CAS and query paths; only the physical Host
 // facts are controlled. The first completed Unload remains the Resume source.
-fn complete_resumed_continued(app: &Application, host: &Host) -> (SessionId, ResumeObservation, PublicUnloadRequest) {
+fn complete_resumed_continued(
+    app: &Application,
+    host: &Host,
+) -> (SessionId, ResumeObservation, PublicUnloadRequest) {
     let (session, _, unloaded) = accept_unload(app);
     let source = unloaded.outcome.unloaded().unwrap().clone();
     *host.unloaded.lock().unwrap() = Some(unloaded);
     app.reconcile_once().unwrap();
-    assert_eq!(app.query_lifecycle("8", &session).unwrap().phase, PublicSessionPhase::Unloaded);
-    app.resume_lifecycle("8", &session, &PublicResumeRequest {
-        window: 1.try_into().unwrap(), sequence: 3.try_into().unwrap(), expected_version: 2,
-    }).unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &session).unwrap().phase,
+        PublicSessionPhase::Unloaded
+    );
+    app.resume_lifecycle(
+        "8",
+        &session,
+        &PublicResumeRequest {
+            window: 1.try_into().unwrap(),
+            sequence: 3.try_into().unwrap(),
+            expected_version: 2,
+        },
+    )
+    .unwrap();
     let state = app.snapshot().unwrap();
-    let origin = state.lifecycle_session(&"8".try_into().unwrap(), &session).unwrap().operations().last().unwrap().intent().clone();
+    let origin = state
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .operations()
+        .last()
+        .unwrap()
+        .intent()
+        .clone();
     let ready = ResumeObservation {
-        request: origin.clone(), current_request: origin,
-        readiness: CurrentResumeReadiness::Observed { facts: CurrentReadyFacts {
-            started_at_ms: source.started_at_ms, end_at_ms: source.end_at_ms,
-            max_end_at_ms: source.max_end_at_ms, startup_deadline_ms: source.startup_deadline_ms,
-            observed_at_ms: host.clock.0.load(Ordering::SeqCst),
-        } },
+        request: origin.clone(),
+        current_request: origin,
+        readiness: CurrentResumeReadiness::Observed {
+            facts: CurrentReadyFacts {
+                started_at_ms: source.started_at_ms,
+                end_at_ms: source.end_at_ms,
+                max_end_at_ms: source.max_end_at_ms,
+                startup_deadline_ms: source.startup_deadline_ms,
+                observed_at_ms: host.clock.0.load(Ordering::SeqCst),
+            },
+        },
     };
     *host.resumed.lock().unwrap() = Some(ready.clone());
-    assert_eq!(app.query_lifecycle("8", &session).unwrap().phase, PublicSessionPhase::Running);
+    assert_eq!(
+        app.query_lifecycle("8", &session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
     let request = PublicUnloadRequest {
-        window: 1.try_into().unwrap(), sequence: 4.try_into().unwrap(), expected_version: 3,
+        window: 1.try_into().unwrap(),
+        sequence: 4.try_into().unwrap(),
+        expected_version: 3,
     };
     app.unload_lifecycle("8", &session, &request).unwrap();
     let state = app.snapshot().unwrap();
-    let record = state.lifecycle_session(&"8".try_into().unwrap(), &session).unwrap();
+    let record = state
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap();
     let current = record.operations().last().unwrap().intent().clone();
     let mut ready = ready;
     ready.current_request = current.clone();
-    let CurrentResumeReadiness::Observed { facts } = ready.readiness.clone() else { unreachable!() };
+    let CurrentResumeReadiness::Observed { facts } = ready.readiness.clone() else {
+        unreachable!()
+    };
     *host.unloaded.lock().unwrap() = Some(UnloadObservation {
-        request: current, outcome: UnloadOutcome::OriginalContinued { facts },
+        request: current,
+        outcome: UnloadOutcome::OriginalContinued { facts },
     });
     *host.resumed.lock().unwrap() = Some(ready.clone());
     app.reconcile_once().unwrap();
-    assert_eq!(app.query_lifecycle("8", &session).unwrap().phase, PublicSessionPhase::Running);
+    assert_eq!(
+        app.query_lifecycle("8", &session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
     (session, ready, request)
 }
 
@@ -699,20 +737,33 @@ fn resumed_continued_loss_is_durable_and_old_ready_cannot_revive_it() {
     let saved = app.query_lifecycle("8", &session).unwrap();
     assert_eq!(saved.phase, PublicSessionPhase::StateLost);
     assert_eq!(saved.unload_outcome, before.unload_outcome);
-    assert_eq!(app.unload_lifecycle("8", &session, &request).unwrap().key, saved.operation);
+    assert_eq!(
+        app.unload_lifecycle("8", &session, &request).unwrap().key,
+        saved.operation
+    );
     *host.resumed.lock().unwrap() = Some(ready.clone());
     assert_eq!(app.query_lifecycle("8", &session).unwrap(), saved);
     let snapshot = authority.snapshot().unwrap();
     // The original CAS itself also refuses the old successful observation.
-    assert!(sandproof_center_service::AuthorityPort::accept_lifecycle_resume_observation(&mut authority.clone(), &ready).is_err());
+    assert!(
+        sandproof_center_service::AuthorityPort::accept_lifecycle_resume_observation(
+            &mut authority.clone(),
+            &ready
+        )
+        .is_err()
+    );
     assert_eq!(authority.snapshot().unwrap().center, snapshot.center);
     let limit = snapshot.required_block_bytes();
     drop(app);
     drop(authority);
     let (ledger, _) = super::super::RedisLedger::open(
-        super::super::engine::endpoint(proxy.address), Engine::config(limit), fixture.lease(),
-    ).unwrap();
-    let reopened = SharedBusinessAuthority::new(super::super::CenterAuthority::attach(ledger).unwrap());
+        super::super::engine::endpoint(proxy.address),
+        Engine::config(limit),
+        fixture.lease(),
+    )
+    .unwrap();
+    let reopened =
+        SharedBusinessAuthority::new(super::super::CenterAuthority::attach(ledger).unwrap());
     let (app, host, _) = application(&reopened);
     *host.resumed.lock().unwrap() = Some(ready);
     assert_eq!(app.query_lifecycle("8", &session).unwrap(), saved);
@@ -733,9 +784,17 @@ fn destroy_during_resumed_continued_loss_observation_wins_the_original_redis_cas
     let queried = session.clone();
     let query = std::thread::spawn(move || querying.query_lifecycle("8", &queried));
     await_observation(&observed);
-    let destroyed = app.destroy_lifecycle("8", session.clone(), &PublicDestroyRequest {
-        window: 1.try_into().unwrap(), sequence: 5.try_into().unwrap(), expected_version: 4,
-    }).unwrap();
+    let destroyed = app
+        .destroy_lifecycle(
+            "8",
+            session.clone(),
+            &PublicDestroyRequest {
+                window: 1.try_into().unwrap(),
+                sequence: 5.try_into().unwrap(),
+                expected_version: 4,
+            },
+        )
+        .unwrap();
     release.complete();
     assert!(query.join().unwrap().is_err());
     let current = app.query_lifecycle("8", &session).unwrap();

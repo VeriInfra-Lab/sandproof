@@ -252,7 +252,9 @@ fn map_journal_at(
             ApplicationError::OutcomeUnknown
         }
         JournalError::OperationFailed => ApplicationError::Failed,
-        JournalError::IdentifierExhausted | JournalError::CaptureMaterialQuotaExceeded => ApplicationError::QuotaExceeded,
+        JournalError::IdentifierExhausted | JournalError::CaptureMaterialQuotaExceeded => {
+            ApplicationError::QuotaExceeded
+        }
         _ => ApplicationError::Busy,
     };
     drop(error);

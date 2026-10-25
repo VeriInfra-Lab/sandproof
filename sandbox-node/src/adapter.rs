@@ -1079,7 +1079,12 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
             })();
             if !matches!(selected, Ok(false)) {
                 if let Err(error) = selected {
-                    project(FaultStage::Observe, FaultContext::action(permit.action()), error.as_ref()).emit();
+                    project(
+                        FaultStage::Observe,
+                        FaultContext::action(permit.action()),
+                        error.as_ref(),
+                    )
+                    .emit();
                 }
                 // Close only this original Ready child's release pipe. Its
                 // own durable NoRequest and actual exit must be observed by

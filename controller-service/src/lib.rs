@@ -157,9 +157,8 @@ impl Display for JournalError {
             Self::MaintenanceCapacity => {
                 formatter.write_str("configured maintenance capacity exhausted")
             }
-            Self::CaptureMaterialQuotaExceeded => {
-                formatter.write_str("configured Full capture material quota exceeded before admission")
-            }
+            Self::CaptureMaterialQuotaExceeded => formatter
+                .write_str("configured Full capture material quota exceeded before admission"),
             Self::IdentifierExhausted => {
                 formatter.write_str("controller identifier space exhausted")
             }

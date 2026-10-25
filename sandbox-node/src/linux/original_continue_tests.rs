@@ -65,7 +65,10 @@ fn continued_running_or_unavailable_observation_never_establishes_exit() {
                     || {
                         reads.set(reads.get() + 1);
                         if reads.get() == fail_at {
-                            Err(std::io::Error::new(kind, "original observation unavailable").into())
+                            Err(
+                                std::io::Error::new(kind, "original observation unavailable")
+                                    .into(),
+                            )
                         } else {
                             Ok(OriginalPauseObservation::Exited)
                         }

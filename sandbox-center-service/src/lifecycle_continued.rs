@@ -6,7 +6,7 @@ use sandproof_api::PortError;
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentReadyFacts, CurrentResumeReadiness,
-    LifecycleOperation, PublicSessionPhase, PublicSessionView, SessionId, ResumeObservation,
+    LifecycleOperation, PublicSessionPhase, PublicSessionView, ResumeObservation, SessionId,
     UnloadObservation,
 };
 
@@ -49,12 +49,15 @@ impl<H: HostPort, T: TemplateProvider>
         Ok(facts)
     }
 
-    fn publish_continued_loss_before(
+}
+
+impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H, T> {
+    fn save_continued_loss_before(
         &self,
         observation: &ResumeObservation,
         saved: &UnloadObservation,
         deadline: std::time::Instant,
-    ) -> Result<PublicSessionView, PortError> {
+    ) -> Result<(), PortError> {
         let prior = saved.outcome.continued().ok_or(PortError::Busy)?;
         if observation.readiness != CurrentResumeReadiness::StateLost
             || saved.request != observation.current_request
@@ -66,19 +69,29 @@ impl<H: HostPort, T: TemplateProvider>
         time_left(deadline)?;
         let owner = &observation.current_request.request.binding.key.owner;
         let session = &observation.current_request.request.binding.session;
-        let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
-        let current = authority.public_lifecycle_record(owner, session)?;
+        let mut authority = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?;
+        let state = AuthorityPort::snapshot(&mut *authority).map_err(authority_error)?;
+        let current = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
         if operation.intent() != &observation.current_request
             || operation.unloaded() != Some(saved)
             || current.current_execution_origin() != Some(&observation.request)
-            || !matches!(current.phase(), SessionPhase::Running | SessionPhase::StateLost)
+            || !matches!(
+                current.phase(),
+                SessionPhase::Running | SessionPhase::StateLost
+            )
             || self.now()? >= prior.end_at_ms
         {
             return Err(PortError::Busy);
         }
-        authority.accept_lifecycle_resume_observation(observation).map_err(authority_error)?;
-        let current = authority.public_lifecycle_record(owner, session)?;
+        authority
+            .accept_lifecycle_resume_observation(observation)
+            .map_err(authority_error)?;
+        let state = AuthorityPort::snapshot(&mut *authority).map_err(authority_error)?;
+        let current = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
         if operation.intent() != &observation.current_request
             || operation.unloaded() != Some(saved)
@@ -88,7 +101,7 @@ impl<H: HostPort, T: TemplateProvider>
             return Err(PortError::Busy);
         }
         time_left(deadline)?;
-        authority.query_public_lifecycle(owner, session)
+        Ok(())
     }
 
     // This is consumed only by the existing per-intent reconciliation call.
@@ -99,14 +112,24 @@ impl<H: HostPort, T: TemplateProvider>
         deadline: std::time::Instant,
     ) -> Result<bool, PortError> {
         let state = self.snapshot()?;
-        let Some(record) = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session) else {
+        let Some(record) = state.lifecycle_session(
+            &intent.request.binding.key.owner,
+            &intent.request.binding.session,
+        ) else {
             return Ok(false);
         };
-        let Some(current) = record.operations().last() else { return Ok(false); };
-        let Some(saved) = current.unloaded() else { return Ok(false); };
-        if current.intent() != intent || record.phase() != SessionPhase::Running
+        let Some(current) = record.operations().last() else {
+            return Ok(false);
+        };
+        let Some(saved) = current.unloaded() else {
+            return Ok(false);
+        };
+        if current.intent() != intent
+            || record.phase() != SessionPhase::Running
             || saved.outcome.continued().is_none()
-            || record.current_execution_origin().is_none_or(|origin| !matches!(origin.request.operation, LifecycleOperation::Resume { .. }))
+            || record.current_execution_origin().is_none_or(|origin| {
+                !matches!(origin.request.operation, LifecycleOperation::Resume { .. })
+            })
         {
             return Ok(false);
         }
@@ -115,11 +138,40 @@ impl<H: HostPort, T: TemplateProvider>
             Err(CurrentObservationError::Shared(error)) => return Err(error),
             Ok(_) | Err(_) => return Ok(false),
         };
-        match self.publish_continued_loss_before(&observation, saved, deadline) {
-            Ok(_) => Ok(true),
+        match self.save_continued_loss_before(&observation, saved, deadline) {
+            Ok(()) => Ok(true),
             Err(PortError::Busy | PortError::NotFound) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+}
+
+impl<H: HostPort, T: TemplateProvider>
+    CenterApplication<crate::business::SharedBusinessAuthority, H, T>
+{
+    fn publish_continued_loss_before(
+        &self,
+        observation: &ResumeObservation,
+        saved: &UnloadObservation,
+        deadline: std::time::Instant,
+    ) -> Result<PublicSessionView, PortError> {
+        self.save_continued_loss_before(observation, saved, deadline)?;
+        let owner = &observation.current_request.request.binding.key.owner;
+        let session = &observation.current_request.request.binding.session;
+        let authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        let current = authority.public_lifecycle_record(owner, session)?;
+        let operation = current.operations().last().ok_or(PortError::Busy)?;
+        if operation.intent() != &observation.current_request
+            || operation.unloaded() != Some(saved)
+            || current.current_execution_origin() != Some(&observation.request)
+            || current.phase() != SessionPhase::StateLost
+            || self.now()? >= saved.outcome.continued().ok_or(PortError::Busy)?.end_at_ms
+        {
+            return Err(PortError::Busy);
+        }
+        time_left(deadline)?;
+        authority.query_public_lifecycle(owner, session)
     }
 
     pub(crate) fn query_continued(
@@ -144,7 +196,8 @@ impl<H: HostPort, T: TemplateProvider>
             .ok_or(PortError::Busy)?
             .clone();
         let facts = if matches!(origin.request.operation, LifecycleOperation::Resume { .. }) {
-            let observation = self.current_resume_observation_before(intent, deadline)
+            let observation = self
+                .current_resume_observation_before(intent, deadline)
                 .map_err(CurrentObservationError::into_port)?;
             match &observation.readiness {
                 CurrentResumeReadiness::StateLost => {

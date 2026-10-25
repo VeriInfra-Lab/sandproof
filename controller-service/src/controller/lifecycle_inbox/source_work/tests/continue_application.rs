@@ -136,19 +136,28 @@ fn exact_material_quota_closes_before_admission_through_the_actual_application()
     state.lock().unwrap().full_proposal = Some(full);
     drop(journal);
     let app = reopened(&path, state.clone(), 10);
-    assert!(app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node).unwrap());
+    assert!(
+        app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node)
+            .unwrap()
+    );
     assert_eq!(world(&path), before);
     assert_eq!(state.lock().unwrap().actions.len(), executions);
     assert_eq!(retained_sources(&path), 0);
     let saved = fixed(&app);
-    assert!(app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node).unwrap());
+    assert!(
+        app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node)
+            .unwrap()
+    );
     assert_eq!(fixed(&app), saved);
     assert_eq!(state.lock().unwrap().actions.len(), executions);
 }
 
 #[test]
 fn busy_and_unknown_proposals_do_not_publish_a_pre_admission_continuation() {
-    for error in [crate::application::ApplicationError::Busy, crate::application::ApplicationError::OutcomeUnknown] {
+    for error in [
+        crate::application::ApplicationError::Busy,
+        crate::application::ApplicationError::OutcomeUnknown,
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
         let (mut journal, state) = ready(&path);
@@ -158,12 +167,25 @@ fn busy_and_unknown_proposals_do_not_publish_a_pre_admission_continuation() {
         state.lock().unwrap().full_proposal_error = Some(error);
         drop(journal);
         let app = reopened(&path, state.clone(), 10);
-        assert_eq!(app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node), Err(error));
+        assert_eq!(
+            app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node),
+            Err(error)
+        );
         drop(app);
         let journal = v3::open(&path);
         assert_eq!(journal.world().unwrap(), before);
-        assert!(journal.lifecycle_original_continued_result(&unload(), &v3::context()).unwrap().is_none());
-        assert!(journal.lifecycle_capture_record(source.work.anchor.local.sandbox).unwrap().is_none());
+        assert!(
+            journal
+                .lifecycle_original_continued_result(&unload(), &v3::context())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            journal
+                .lifecycle_capture_record(source.work.anchor.local.sandbox)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(state.lock().unwrap().actions.len(), executions);
         assert_eq!(retained_sources(&path), 1);
     }
@@ -183,12 +205,25 @@ fn an_uncertain_admission_commit_never_becomes_a_material_quota_refusal() {
         drop(journal);
         let app = reopened(&path, state.clone(), 10);
         transaction::fail_next_commit(durable);
-        assert_eq!(app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node), Err(crate::application::ApplicationError::OutcomeUnknown));
+        assert_eq!(
+            app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node),
+            Err(crate::application::ApplicationError::OutcomeUnknown)
+        );
         drop(app);
         let journal = v3::open(&path);
-        assert!(journal.lifecycle_original_continued_result(&unload(), &v3::context()).unwrap().is_none());
-        assert_eq!(journal.lifecycle_capture_record(sandbox).unwrap().is_some(), durable);
-        if !durable { assert_eq!(journal.world().unwrap(), before); }
+        assert!(
+            journal
+                .lifecycle_original_continued_result(&unload(), &v3::context())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            journal.lifecycle_capture_record(sandbox).unwrap().is_some(),
+            durable
+        );
+        if !durable {
+            assert_eq!(journal.world().unwrap(), before);
+        }
         assert_eq!(state.lock().unwrap().actions.len(), executions);
     }
 }

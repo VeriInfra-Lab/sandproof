@@ -46,15 +46,25 @@ fn continued_resume() -> (
 ) {
     let (before, unload) = source();
     let owner = "1".try_into().unwrap();
-    let (accepted, origin) = before.accept_lifecycle(&owner, &input(&unload), 170).unwrap();
-    let running = accepted.accept_lifecycle_resume_observation(&ready(&origin)).unwrap();
+    let (accepted, origin) = before
+        .accept_lifecycle(&owner, &input(&unload), 170)
+        .unwrap();
+    let running = accepted
+        .accept_lifecycle_resume_observation(&ready(&origin))
+        .unwrap();
     let mut key = origin.request.binding.key.clone();
     key.sequence = 4.try_into().unwrap();
-    let (pending, current) = running.accept_lifecycle(&owner, &LifecycleSubmission::Unload {
-        key,
-        session: origin.request.binding.session.clone(),
-        expected_version: origin.accepted_version,
-    }, 181).unwrap();
+    let (pending, current) = running
+        .accept_lifecycle(
+            &owner,
+            &LifecycleSubmission::Unload {
+                key,
+                session: origin.request.binding.session.clone(),
+                expected_version: origin.accepted_version,
+            },
+            181,
+        )
+        .unwrap();
     let mut facts = running.sandboxes()[0].last_running().unwrap().clone();
     facts.observed_at_ms = 185;
     (
@@ -75,44 +85,83 @@ fn continued_resume() -> (
 fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_history_replay() {
     let (pending, loss, continued) = continued_resume();
     assert!(loss.matches_request(&loss.request));
-    assert_eq!(pending.accept_lifecycle_resume_observation(&loss), Err(DecisionError::Unavailable));
-    let running = pending.accept_lifecycle_unload_observation(&continued, 185).unwrap();
+    assert_eq!(
+        pending.accept_lifecycle_resume_observation(&loss),
+        Err(DecisionError::Unavailable)
+    );
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
     let lost = running.accept_lifecycle_resume_observation(&loss).unwrap();
     assert_eq!(lost.sandboxes()[0].phase(), SessionPhase::StateLost);
     assert_eq!(lost.reserved(None, None), Some(resources(1)));
-    assert_eq!(lost.sandboxes()[0].operations().last().unwrap().unloaded(), Some(&continued));
-    let reopened: CenterState = serde_json::from_slice(&serde_json::to_vec(&lost).unwrap()).unwrap();
+    assert_eq!(
+        lost.sandboxes()[0].operations().last().unwrap().unloaded(),
+        Some(&continued)
+    );
+    let reopened: CenterState =
+        serde_json::from_slice(&serde_json::to_vec(&lost).unwrap()).unwrap();
     assert!(reopened.is_valid());
     assert_eq!(reopened, lost);
-    assert_eq!(reopened.accept_lifecycle_unload_observation(&continued, 185), Ok(lost.clone()));
+    assert_eq!(
+        reopened.accept_lifecycle_unload_observation(&continued, 185),
+        Ok(lost.clone())
+    );
     let mut old_ready = ready(&loss.request);
     old_ready.current_request = loss.current_request.clone();
-    assert_eq!(lost.accept_lifecycle_resume_observation(&old_ready), Err(DecisionError::Conflict));
+    assert_eq!(
+        lost.accept_lifecycle_resume_observation(&old_ready),
+        Err(DecisionError::Conflict)
+    );
     let mut corrupted = serde_json::to_value(&lost).unwrap();
-    corrupted["sandboxes"][0]["operations"].as_array_mut().unwrap().last_mut().unwrap()["unloaded"] = serde_json::Value::Null;
+    corrupted["sandboxes"][0]["operations"]
+        .as_array_mut()
+        .unwrap()
+        .last_mut()
+        .unwrap()["unloaded"] = serde_json::Value::Null;
     let corrupted: CenterState = serde_json::from_value(corrupted).unwrap();
-    assert!(!corrupted.is_valid(), "a lost Unload cannot invent its own continuation");
+    assert!(
+        !corrupted.is_valid(),
+        "a lost Unload cannot invent its own continuation"
+    );
 }
 
 #[test]
 fn continued_resume_loss_rejects_changed_current_and_cannot_override_destroy() {
     let (pending, loss, continued) = continued_resume();
-    let running = pending.accept_lifecycle_unload_observation(&continued, 185).unwrap();
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
     let mut changed = loss.clone();
     changed.current_request.accepted_version += 1;
-    assert_eq!(running.accept_lifecycle_resume_observation(&changed), Err(DecisionError::Stale));
+    assert_eq!(
+        running.accept_lifecycle_resume_observation(&changed),
+        Err(DecisionError::Stale)
+    );
     let lost = running.accept_lifecycle_resume_observation(&loss).unwrap();
     let current = &loss.current_request;
     let mut key = current.request.binding.key.clone();
     key.sequence = 5.try_into().unwrap();
-    let (terminating, _) = lost.accept_lifecycle(&"1".try_into().unwrap(), &LifecycleSubmission::Destroy {
-        key,
-        session: current.request.binding.session.clone(),
-        expected_version: current.accepted_version,
-    }, 0).unwrap();
+    let (terminating, _) = lost
+        .accept_lifecycle(
+            &"1".try_into().unwrap(),
+            &LifecycleSubmission::Destroy {
+                key,
+                session: current.request.binding.session.clone(),
+                expected_version: current.accepted_version,
+            },
+            0,
+        )
+        .unwrap();
     assert!(terminating.is_valid());
-    assert_eq!(terminating.sandboxes()[0].phase(), SessionPhase::Terminating);
-    assert_eq!(terminating.accept_lifecycle_resume_observation(&loss), Err(DecisionError::Stale));
+    assert_eq!(
+        terminating.sandboxes()[0].phase(),
+        SessionPhase::Terminating
+    );
+    assert_eq!(
+        terminating.accept_lifecycle_resume_observation(&loss),
+        Err(DecisionError::Stale)
+    );
 }
 
 #[test]

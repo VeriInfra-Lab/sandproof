@@ -80,7 +80,12 @@ impl CaptureCancelGate {
         if directory.read("consumed.json")?.is_some() {
             return Ok(None);
         }
-        Ok(Some(Self { directory, config, config_file, config_bytes }))
+        Ok(Some(Self {
+            directory,
+            config,
+            config_file,
+            config_bytes,
+        }))
     }
 
     pub(crate) fn wait(&self, permit: &FullCaptureLaunchPermit) -> Result<()> {
@@ -124,9 +129,22 @@ impl CaptureCancelGate {
             self.directory.matches("config.json", &self.config_file)?;
             self.directory.matches("observation.json", &file)?;
             let current = file.metadata()?;
-            if (current.len(), current.ctime(), current.ctime_nsec(), current.mode(), current.uid(), current.nlink())
-                != (original.len(), original.ctime(), original.ctime_nsec(), original.mode(), original.uid(), original.nlink())
-                || self.directory.read("config.json")?.as_deref() != Some(self.config_bytes.as_slice())
+            if (
+                current.len(),
+                current.ctime(),
+                current.ctime_nsec(),
+                current.mode(),
+                current.uid(),
+                current.nlink(),
+            ) != (
+                original.len(),
+                original.ctime(),
+                original.ctime_nsec(),
+                original.mode(),
+                original.uid(),
+                original.nlink(),
+            ) || self.directory.read("config.json")?.as_deref()
+                != Some(self.config_bytes.as_slice())
             {
                 return Err("capture cancel original question changed".into());
             }
@@ -141,7 +159,9 @@ impl CaptureCancelGate {
                     || command.full_work_binding != *full_work_binding
                     || command.command != "cancel"
                 {
-                    return Err("capture cancel command differs from the complete original question".into());
+                    return Err(
+                        "capture cancel command differs from the complete original question".into(),
+                    );
                 }
                 self.directory.create("consumed.json", &bytes)?;
                 return Ok(());
