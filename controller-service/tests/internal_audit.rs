@@ -98,9 +98,15 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
     }));
     let mut inbox = current::config();
     inbox.max_sessions = 1;
-    let mut bounded = host(&path);
-    bounded.maintenance.max_host_slots = 1;
-    bounded.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 1;
+    // Match the current lifecycle application's full storage/cleanup envelope;
+    // host() above belongs to the smaller legacy internal-inbox fixture.
+    let bounded = complete_fixture::host(
+        &path,
+        NAMESPACE,
+        1,
+        2 * 1024 * 1024,
+        current::CLEANUP_BYTES + 1000,
+    );
     let app = current::application_with_host_configuration(
         &path,
         state.clone(),
