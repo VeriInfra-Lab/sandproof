@@ -109,6 +109,24 @@ class ScenarioDiagnosticsTests(unittest.TestCase):
                 '/private', 'returned 503', str(SYSTEM)):
             self.assertNotIn(secret, encoded)
 
+    def test_later_success_cannot_replace_the_failed_response_status(self):
+        client=self.client()
+        client.step('unload-acceptance',202)
+        with patch.object(scene,'fetch',side_effect=[(503,b'BODY_SECRET'),(202,b'{}')]):
+            try:
+                client.read_json('POST','/private',key='API_SECRET',status=202)
+            except AssertionError as error:
+                # The other completed response updates the shared diagnostic
+                # before the original failed Future is inspected.
+                client.read_json('POST','/private',key='API_SECRET',status=202)
+                report=scene.failure_details(error,client,'public-unload')
+            else:
+                self.fail('the original 503 must still fail the strict assertion')
+        self.assertEqual(client.last_http_status,{'expected':202,'actual':202})
+        self.assertEqual(report['last_http_status'],{'expected':202,'actual':503})
+        self.assertNotIn('BODY_SECRET',json.dumps(report))
+        self.assertNotIn('API_SECRET',json.dumps(report))
+
     def test_direct_file_status_is_recorded_before_original_strict_assertion(self):
         client=self.client()
         client.session='sandbox-a'

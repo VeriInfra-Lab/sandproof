@@ -197,11 +197,22 @@ def check_center_configuration(services, owner_key, foreign_key):
         node=copy.deepcopy(node), owners=['1', '2'], templates=len(catalog))
 
 
+class PublicStatusMismatch(AssertionError):
+    """Keep this response's fixed status even if another worker finishes later."""
+    def __init__(self, actual, expected):
+        super().__init__('public response status differs')
+        self.actual=actual
+        self.expected=expected
+
+
 def failure_details(error, client, phase):
     """Finite diagnostics only; never exception text, locals or HTTP content."""
+    status=(dict(expected=error.expected,actual=error.actual)
+        if isinstance(error,PublicStatusMismatch)
+        else copy.deepcopy(client.last_http_status) if client is not None else None)
     return dict(
         failure_step=client.failure_step if client is not None else phase,
-        last_http_status=copy.deepcopy(client.last_http_status) if client is not None else None,
+        last_http_status=status,
         failure_stack=[dict(file=Path(frame.filename).name[:128],
                             function=frame.name[:96], line=frame.lineno)
                        for frame in traceback.extract_tb(error.__traceback__, limit=16)])
@@ -297,7 +308,8 @@ class PublicUnloadScenario:
     def read_json(self, method, path, *, key, body=None, status=200):
         self._http_expected = status
         actual, encoded = self.call(method, path, key=key, body=body)
-        assert actual == status, f'public {method} returned {actual}, expected {status}'
+        if actual!=status:
+            raise PublicStatusMismatch(actual,status)
         value = json.loads(encoded, object_pairs_hook=unique_keys)
         assert type(value) is dict
         return value

@@ -67,7 +67,8 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             self.assertEqual(catalog["templates"][0]["resources"]["memory_mib"],256)
             self.assertEqual(catalog["templates"][0]["kernel"]["sha256"],
                              hashlib.sha256(kernel.read_bytes()).hexdigest())
-            self.assertEqual(data["job_count"], 4)
+            self.assertEqual(data["retained_sessions"], 6)
+            self.assertNotIn("job_count", data)
             self.assertEqual(native["maintenance"]["max_tail_inputs"], 1000)
             with patch.object(runtime.RuntimeServices, "prepare", return_value="one-fixture") as selected:
                 faults.prepare_fault_services(args, root, values, slots=2,
