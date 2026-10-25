@@ -7,7 +7,7 @@ use crate::{
     SandboxId, SandboxRecord, StopCoverage, VmId, VmStatus, WorkerFence, World, effect, terminal,
 };
 
-mod effects;
+pub(super) mod effects;
 mod history;
 mod maintenance;
 mod resources;

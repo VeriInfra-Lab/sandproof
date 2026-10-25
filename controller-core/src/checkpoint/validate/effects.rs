@@ -377,7 +377,11 @@ fn historical_success(world: &World, command: &Command) -> Result<(), Reject> {
     Ok(())
 }
 
-fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<(), Reject> {
+pub(in crate::checkpoint) fn retired_stop(
+    world: &World,
+    id: &EffectId,
+    coverage: StopCoverage,
+) -> Result<(), Reject> {
     let command = terminal::activation_stop_covered(id, coverage).ok_or(Reject::InvalidEffect)?;
     let stop = EffectId {
         logical: LogicalEffectId {

@@ -6,7 +6,10 @@ use super::{
 };
 use crate::ProtectedHostEpochSource;
 use sandbox_runtime::{LoadedSnapshotObservation, LoadedSnapshotState};
-use sandproof_controller_service::capture::{RestoreActivationPermit, RestoreWorkRequest};
+use sandproof_controller_service::capture::{
+    RestoreActivationPermit, RestoreCandidateExitObservation, RestoreWorkRequest,
+    SourceProcessIdentity,
+};
 
 // Called only after checking the original private activation permission. It
 // also serves recovery of that same permitted candidate; no startup or load is
@@ -61,6 +64,22 @@ fn require_loaded_candidate(
         (LoadedSnapshotState::Paused, _) | (LoadedSnapshotState::Running, true) => Ok(observed),
         _ => Err("restore candidate state does not allow this operation".into()),
     }
+}
+
+// Observe only through Runtime's original loaded-record/boot/pidfd checks.
+// A physical exit does not establish the service's MayHaveExecuted marker.
+fn observe_confirmed_restore_exit(
+    mut observe: impl FnMut() -> NodeResult<LoadedSnapshotObservation>,
+) -> NodeResult<Option<sandbox_runtime::RuntimeProcessIdentity>> {
+    let before = observe()?;
+    if before.state != LoadedSnapshotState::Exited {
+        return Ok(None);
+    }
+    before.process.validate_fields()?;
+    if observe()? != before {
+        return Err("original restore exit changed during observation".into());
+    }
+    Ok(Some(before.process))
 }
 
 fn scope(
@@ -157,6 +176,56 @@ impl RestoreContext<'_> {
 }
 
 impl LinuxWorker {
+    pub(crate) fn observe_restore_exit(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        work: &RestoreWorkRequest,
+    ) -> NodeResult<Option<RestoreCandidateExitObservation>> {
+        if !matches!(action.command.command(), core::Command::ActivateVm { .. }) {
+            return Err("restore exit requires the original activation action".into());
+        }
+        self.validate_action(action)?;
+        let (sandbox, epoch, _, vm) = scope(action, work, &self.config.namespace, None)?;
+        super::capture::require_source_binding(&work.committed().work().pause, work.source())?;
+        profile.require_original_source(work.source())?;
+        provider.observe_original(
+            &work.source().node,
+            &work.source().host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        self.require_fence(sandbox, epoch, false)?;
+        let runtime = self.runtime(sandbox, vm)?;
+        let name = self.vm_name(vm);
+        let work_binding = work.binding_digest()?;
+        let process = observe_confirmed_restore_exit(|| {
+            runtime
+                .observe_loaded_snapshot(
+                    &name,
+                    *work.committed().manifest_digest().as_bytes(),
+                    *work_binding.as_bytes(),
+                )
+                .map_err(Into::into)
+        })?;
+        self.require_fence(sandbox, epoch, false)?;
+        self.validate_action(action)?;
+        provider.observe_original(
+            &work.source().node,
+            &work.source().host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        Ok(process.map(|process| RestoreCandidateExitObservation {
+            action: action.clone(),
+            work_binding,
+            process: SourceProcessIdentity {
+                pid: process.pid,
+                start_time_ticks: process.start_time_ticks,
+                boot_id: process.boot_id,
+            },
+        }))
+    }
+
     pub(crate) fn restore_action(
         &self,
         provider: &ProtectedHostEpochSource,

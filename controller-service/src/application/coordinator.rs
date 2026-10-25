@@ -3,6 +3,7 @@ mod lifecycle_capture_end;
 mod lifecycle_continue;
 mod lifecycle_material_retirement;
 mod lifecycle_restore;
+mod lifecycle_restore_exit;
 mod lifecycle_source;
 mod lifecycle_unload;
 

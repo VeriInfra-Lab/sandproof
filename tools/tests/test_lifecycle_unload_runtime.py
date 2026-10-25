@@ -1,9 +1,11 @@
 """Ordinary controlled tests for retained deployment exclusion; no root/VM/CI effects."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock,Mock,patch
@@ -16,6 +18,224 @@ SPEC.loader.exec_module(runtime)
 SCENE_SPEC=importlib.util.spec_from_file_location('unload_scenario_checks',SYSTEM/'lifecycle_unload_scenario.py')
 scene=importlib.util.module_from_spec(SCENE_SPEC)
 SCENE_SPEC.loader.exec_module(scene)
+
+
+class OriginalCandidatePidfdTests(unittest.TestCase):
+    def source(self):
+        return dict(resource_id='vm-original',pid=123,start_time_ticks=7,boot_id='boot')
+
+    def test_identity_change_while_opening_closes_handle_without_signalling(self):
+        with patch.object(runtime,'original_process',side_effect=[True,False]), \
+                patch.object(runtime.os,'pidfd_open',return_value=42,create=True), \
+                patch.object(runtime.signal,'pidfd_send_signal',create=True) as send, \
+                patch.object(runtime,'pidfd_exited',return_value=False), \
+                patch.object(runtime.os,'close') as close, \
+                self.assertRaises(ValueError):
+            runtime.open_original_candidate_pidfd(self.source())
+        close.assert_called_once_with(42)
+        send.assert_not_called()
+
+    def test_missing_original_never_opens_or_signals_a_replacement(self):
+        with patch.object(runtime,'original_process',return_value=False), \
+                patch.object(runtime.os,'pidfd_open',create=True) as opened, \
+                patch.object(runtime.signal,'pidfd_send_signal',create=True) as send, \
+                self.assertRaises(ValueError):
+            runtime.open_original_candidate_pidfd(self.source())
+        opened.assert_not_called()
+        send.assert_not_called()
+
+    def test_changed_or_already_exited_candidate_never_receives_exit_signal(self):
+        for exited,original in ((True,True),(False,False)):
+            with self.subTest(exited=exited,original=original), \
+                    patch.object(runtime,'pidfd_exited',return_value=exited), \
+                    patch.object(runtime,'original_process',return_value=original), \
+                    patch.object(runtime.signal,'pidfd_send_signal',create=True) as send, \
+                    self.assertRaises(ValueError):
+                runtime.exit_original_candidate(42,self.source(),time.monotonic()+10)
+            send.assert_not_called()
+
+    def test_signal_success_requires_subsequent_kernel_exit_confirmation(self):
+        with patch.object(runtime,'pidfd_exited',side_effect=[False,False,True]) as observe, \
+                patch.object(runtime,'original_process',return_value=True), \
+                patch.object(runtime.signal,'pidfd_send_signal',create=True) as send:
+            runtime.exit_original_candidate(42,self.source(),time.monotonic()+10)
+        send.assert_called_once_with(42,runtime.signal.SIGKILL)
+        self.assertEqual(observe.call_count,3)
+
+    def test_timeout_after_signal_is_not_confirmed_exit(self):
+        with patch.object(runtime,'pidfd_exited',return_value=False), \
+                patch.object(runtime,'original_process',return_value=True), \
+                patch.object(runtime,'remaining',side_effect=[10,10,TimeoutError('finite deadline')]), \
+                patch.object(runtime.signal,'pidfd_send_signal',create=True) as send, \
+                self.assertRaises(TimeoutError):
+            runtime.exit_original_candidate(42,self.source(),time.monotonic()+10)
+        send.assert_called_once_with(42,runtime.signal.SIGKILL)
+
+    def test_invalid_descriptor_is_an_error_not_execution_exit(self):
+        with patch.object(runtime.select,'poll') as factory,self.assertRaises(ValueError):
+            factory.return_value.poll.return_value=[(42,runtime.select.POLLNVAL)]
+            runtime.pidfd_exited(42)
+
+    @unittest.skipUnless(sys.platform=='linux','Linux pidfd component; no VM or root required')
+    def test_exact_owned_child_exit_is_observed_through_the_held_pidfd(self):
+        import subprocess
+        child=subprocess.Popen([sys.executable,'-c','import sys; sys.stdin.buffer.read(1)'],
+            stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        descriptor=None
+        try:
+            fields=Path('/proc',str(child.pid),'stat').read_text().rsplit(')',1)[1].split()
+            source=dict(resource_id='controlled-child',pid=child.pid,start_time_ticks=int(fields[19]),
+                boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+            wrong=dict(source,start_time_ticks=source['start_time_ticks']+1)
+            with self.assertRaises(ValueError):runtime.open_original_candidate_pidfd(wrong)
+            descriptor=runtime.open_original_candidate_pidfd(source)
+            runtime.exit_original_candidate(descriptor,source,time.monotonic()+10)
+            self.assertTrue(runtime.pidfd_exited(descriptor))
+            self.assertEqual(child.wait(timeout=10),-runtime.signal.SIGKILL)
+        finally:
+            if descriptor is not None:os.close(descriptor)
+            child.stdin.close()
+            if child.poll() is None:
+                child.kill();child.wait(timeout=10)
+
+
+class LostCandidateGateTests(unittest.TestCase):
+    def test_candidate_snapshot_binds_real_scope_marker_work_files_credential_and_pin(self):
+        import copy
+        import hashlib
+        state=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+        local=dict(sandbox=1,owner=1,operation=2)
+        source=dict(resource_id='vm-original-3',pid=201,start_time_ticks=4,boot_id='boot')
+        context=dict(position=7,binding=dict(sandbox=1,generation=2,vm=3))
+        audit=dict(host_slots=[(context,'Occupied')],
+            native=[dict(sandbox=1,terminal=False,current_vm=3,generation=2)])
+        action=dict(identity={'original':True},command={'original':True})
+        accepted=dict(session='s',key={'sequence':3},accepted_version=3)
+        receipt=dict(session='s',operation=accepted['key'],candidate=source,
+            action_sha256=hashlib.sha256(json.dumps(action,sort_keys=True,separators=(',',':')).encode()).hexdigest())
+        restore=dict(intent=dict(request=dict(binding=dict(session='s',key=accepted['key'])),
+            accepted_version=3),local=local,generation=2,activation=action,material_use=True)
+        state.restore_gate=dict(config=dict(generation=2))
+        state.services=SimpleNamespace(native_pools=[dict(namespace='original',chroot_base='/protected')],
+            host_configs=[dict(inbox=dict(node='node'))])
+        state.runs={'s':dict(local=dict(local,operation=1),lifetime={'end_at_ms':100},
+            context=dict(binding=dict(generation=1)))}
+        state.deadline=time.monotonic()+10
+        for fault in ('none','scope','candidate','marker','pin','generation','work','credential','file'):
+            with self.subTest(fault=fault):
+                current=copy.deepcopy(audit)
+                saved=copy.deepcopy(restore)
+                process=copy.deepcopy(source)
+                credential=('2',b'1'*32)
+                if fault=='scope':current['host_slots'][0][0]['binding']['vm']=8
+                if fault=='candidate':process['start_time_ticks']+=1
+                if fault=='marker':saved['activation']=None
+                if fault=='pin':saved['material_use']=False
+                if fault=='generation':saved['generation']=4
+                if fault=='work':saved['intent']['accepted_version']+=1
+                if fault=='credential':credential=('4',b'1'*32)
+                conn=Mock()
+                conn.execute.return_value.fetchone.return_value=credential
+                with patch.object(runtime,'original_json',return_value=process), \
+                        patch.object(runtime,'checked_source_records',return_value=[dict(restore=saved)]), \
+                        patch.object(runtime,'checked_file',side_effect=ValueError('original work file unavailable')
+                            if fault=='file' else lambda path,limit:{'sha256':path.name}) as files:
+                    if fault=='none':
+                        observed=state._restore_candidate_snapshot(receipt,accepted,current,local,{'end_at_ms':100},conn)
+                        self.assertEqual(observed['context'],context)
+                        self.assertEqual(observed['local']['operation'],2)
+                        self.assertEqual(set(observed['files']),{'record.json','restore-intent.json','restore-loaded.json'})
+                        self.assertEqual(files.call_count,3)
+                    else:
+                        with self.assertRaises(ValueError):
+                            state._restore_candidate_snapshot(receipt,accepted,current,local,{'end_at_ms':100},conn)
+
+    def fixture(self,directory):
+        gate=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+        original=Mock(pid=101)
+        original.wait.return_value=86
+        recovered=Mock(pid=102)
+        processes=SimpleNamespace(children={'host-0':original},
+            bindings={'host-0':dict(config='/protected/host.json',uid=0,gid=0)},
+            start=Mock(return_value=recovered),audit=Mock(return_value={}))
+        database=Path(directory)/'controller.db'
+        database.touch()
+        gate.services=SimpleNamespace(processes=processes,wait_ready=Mock(),
+            native_pools=[dict(database=str(database),namespace='original')],
+            host_configs=[dict(inbox=dict(node='original-node'))])
+        gate.restore_gate=dict(host=original,session='s',command_sent=False,
+            observation_sha256='2'*64)
+        gate.release_resume_gate=Mock()
+        gate._gate_files_unchanged=Mock()
+        gate.configs={'host-0':dict(original=True)}
+        source=dict(pid=201,start_time_ticks=3,resource_id='vm-original',boot_id='boot')
+        receipt=dict(session='s',candidate=source)
+        accepted=dict(session='s')
+        saved=dict(context=dict(position=7),source=source)
+        gate.runs={'s':dict(context=dict(position=1),source=dict(pid=99))}
+        gate._restore_candidate_snapshot=Mock(return_value=saved)
+        return gate,receipt,accepted,saved
+
+    def test_non86_changed_configuration_or_unavailable_binding_never_signals_or_restarts(self):
+        for fault in ('manager','configuration','binding','gate'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                gate,receipt,accepted,_=self.fixture(directory)
+                if fault=='manager':gate.restore_gate['host'].wait.return_value=0
+                if fault=='binding':gate._restore_candidate_snapshot.side_effect=ValueError('changed original binding')
+                if fault=='gate':gate._gate_files_unchanged.side_effect=[None,ValueError('gate changed')]
+                config={} if fault=='configuration' else gate.configs['host-0']
+                with patch.object(runtime,'open_original_candidate_pidfd',return_value=42), \
+                        patch.object(runtime,'exit_original_candidate') as exit_candidate, \
+                        patch.object(runtime,'role_facts',return_value=config), \
+                        patch.object(runtime,'private_path',side_effect=Path), \
+                        patch.object(runtime,'local_binding',return_value={'sandbox':1}), \
+                        patch.object(runtime.sqlite3,'connect') as connect, \
+                        patch.object(runtime.os,'close') as close,self.assertRaises(ValueError):
+                    connect.return_value.execute.return_value.fetchone.return_value=(1,2,3,4)
+                    gate.exit_resume_gate(receipt,accepted,time.monotonic()+10)
+                exit_candidate.assert_not_called()
+                gate.services.processes.start.assert_not_called()
+                close.assert_called_once_with(42)
+
+    def test_confirmed_exit_registers_new_candidate_for_destroy_and_starts_without_fault_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate,receipt,accepted,saved=self.fixture(directory)
+            prior=gate.runs['s']
+            with patch.object(runtime,'open_original_candidate_pidfd',return_value=42), \
+                    patch.object(runtime,'exit_original_candidate') as exit_candidate, \
+                    patch.object(runtime,'role_facts',return_value=gate.configs['host-0']), \
+                    patch.object(runtime,'private_path',side_effect=Path), \
+                    patch.object(runtime,'local_binding',return_value={'sandbox':1}), \
+                    patch.object(runtime.sqlite3,'connect') as connect,patch.object(runtime.os,'close') as close:
+                connect.return_value.execute.return_value.fetchone.return_value=(1,2,3,4)
+                deadline=time.monotonic()+10
+                result=gate.exit_resume_gate(receipt,accepted,deadline)
+            exit_candidate.assert_called_once_with(42,receipt['candidate'],deadline)
+            close.assert_called_once_with(42)
+            gate.services.processes.start.assert_called_once_with('host-0')
+            self.assertEqual(gate.lost_prior,prior)
+            self.assertEqual(gate.running,saved)
+            self.assertEqual(gate.runs['s'],saved)
+            self.assertTrue(result['kernel_pidfd_exit_observed'])
+            self.assertFalse(result['capacity_released'])
+            self.assertTrue(gate.restore_gate['exit86_observed'])
+
+    def test_exit_timeout_preserves_old_registration_and_does_not_restart_as_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate,receipt,accepted,_=self.fixture(directory)
+            prior=gate.runs['s']
+            with patch.object(runtime,'open_original_candidate_pidfd',return_value=42), \
+                    patch.object(runtime,'exit_original_candidate',side_effect=TimeoutError), \
+                    patch.object(runtime,'role_facts',return_value=gate.configs['host-0']), \
+                    patch.object(runtime,'private_path',side_effect=Path), \
+                    patch.object(runtime,'local_binding',return_value={'sandbox':1}), \
+                    patch.object(runtime.sqlite3,'connect') as connect, \
+                    patch.object(runtime.os,'close') as close,self.assertRaises(TimeoutError):
+                connect.return_value.execute.return_value.fetchone.return_value=(1,2,3,4)
+                gate.exit_resume_gate(receipt,accepted,time.monotonic()+10)
+            self.assertEqual(gate.runs['s'],prior)
+            gate.services.processes.start.assert_not_called()
+            close.assert_called_once_with(42)
 
 
 class RetainedExclusionTests(unittest.TestCase):
@@ -243,6 +463,28 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         first,second=self.client(),self.client('2')
         self.assertNotEqual(first.key(1),second.key(1))
         self.assertEqual(second.key(1)['owner'],'2')
+
+    def test_state_lost_completes_original_resume_and_allows_explicit_destroy(self):
+        client=self.client()
+        client.operation_sent('resume')
+        client.operation_accepted()
+        lost=self.view(client,'state_lost')
+        with patch.object(client,'call',return_value=(200,json.dumps(lost).encode())):
+            self.assertEqual(client.wait_phase(client.current_acceptance,
+                waiting={'resuming'},complete='state_lost'),lost)
+        client.operation_evidence_completed()
+        self.assertTrue(client.timing_report()[0]['complete'])
+        self.assertEqual(client.timing_report()[0]['completion_condition'],'state_lost')
+        accepted=dict(session=client.session,key=client.key(2),accepted_version=2)
+        with patch.object(client,'read_json',return_value=accepted) as send:
+            self.assertEqual(client.destroy(lost),accepted)
+        self.assertEqual(send.call_args.kwargs['body']['expected_version'],lost['current_version'])
+
+    def test_running_does_not_satisfy_death_branch_public_result(self):
+        client=self.client()
+        running=self.view(client,'running')
+        with patch.object(client,'call',return_value=(200,json.dumps(running).encode())),self.assertRaises(AssertionError):
+            client.wait_phase(client.current_acceptance,waiting={'resuming'},complete='state_lost')
 
     def test_concurrent_unload_uses_one_original_key_and_two_identical_bodies(self):
         client=self.client()

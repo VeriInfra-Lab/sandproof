@@ -1,12 +1,24 @@
 //! Values derived from the original persisted restore claim. These are not
 //! public request DTOs, and deserialization cannot mint an activation permit.
-use super::{CommittedCaptureExpectation, SourceObservationRequirement};
+use super::{CommittedCaptureExpectation, SourceObservationRequirement, SourceProcessIdentity};
 use sandbox_controller_core::{EffectId, Generation, OperationId};
 use sandproof_protocol::{
     WorkAction,
     lifecycle::{AcceptedLifecycleIntent, ContentDigest},
 };
 use sha2::{Digest, Sha256};
+
+/// A trusted provider's positive observation that the exact original loaded
+/// candidate has exited. Missing records, timeouts or another process never
+/// establish this fact. It grants no load, retry, release or material deletion.
+/// The controller separately requires its saved activation marker and rechecks
+/// current authority before and after the lock-free physical observation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RestoreCandidateExitObservation {
+    pub action: WorkAction<EffectId>,
+    pub work_binding: ContentDigest,
+    pub process: SourceProcessIdentity,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestoreWorkRequest {

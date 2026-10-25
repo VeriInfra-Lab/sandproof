@@ -231,6 +231,18 @@ pub fn capture(world: &World, limits: CheckpointLimits) -> Result<Checkpoint, Ch
     Ok(Checkpoint(CheckpointWire::from(world)))
 }
 
+/// Check one persisted activation using the original checkpoint Stop-coverage
+/// validator. This grants no execution, resource release or success receipt.
+#[must_use]
+pub fn retired_activation_valid(world: &World, activation: &crate::EffectId) -> bool {
+    match world.effect_status(activation) {
+        Some(crate::EffectStatus::RetiredByStop(coverage)) => {
+            validate::effects::retired_stop(world, activation, coverage).is_ok()
+        }
+        _ => false,
+    }
+}
+
 /// Restore only after validating the version, bounds and complete references.
 /// No partially restored World escapes on rejection.
 /// # Errors
