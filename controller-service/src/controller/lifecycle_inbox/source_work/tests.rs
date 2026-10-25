@@ -13,6 +13,7 @@ use v3::fixture::{State, TestEpoch, TestHost};
 mod continue_application;
 mod end_pipeline;
 mod original_continue;
+mod slot_reuse;
 mod terminal_drain;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 
