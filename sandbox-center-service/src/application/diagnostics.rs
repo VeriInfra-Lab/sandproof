@@ -10,6 +10,9 @@ static EMITTED: AtomicUsize = AtomicUsize::new(0);
 // A Create poll may exhaust its existing budget before Resume begins. Keep
 // Resume's fixed budget separate without changing any storage/HTTP decision.
 static RESUME_EMITTED: AtomicUsize = AtomicUsize::new(0);
+static RESUME_PENDING: AtomicUsize = AtomicUsize::new(0);
+static RESUME_NOT_RUNNING: AtomicUsize = AtomicUsize::new(0);
+const LOADING_LIMIT: usize = 4;
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Stage {
     TemplateResolve,
@@ -136,12 +139,65 @@ fn counter(stage: Stage) -> &'static AtomicUsize {
         &EMITTED
     }
 }
+fn reserve_loading(count: &AtomicUsize) -> bool {
+    count
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            (value < LOADING_LIMIT).then(|| value + 1)
+        })
+        .is_ok()
+}
 pub(crate) fn emit(stage: Stage, failure: Failure) {
+    // Normal loading must not consume every Resume diagnostic before the
+    // candidate becomes Running. These attempts still use the SAME total 64.
+    let permitted = match stage {
+        Stage::ResumeObservationPending => reserve_loading(&RESUME_PENDING),
+        Stage::ResumeObservationNotRunning => reserve_loading(&RESUME_NOT_RUNNING),
+        _ => true,
+    };
+    if !permitted {
+        return;
+    }
     record(stage, failure, counter(stage), &mut std::io::stderr().lock());
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn normal_loading_reserves_space_within_the_same_resume_total_budget() {
+        let pending = AtomicUsize::new(0);
+        let not_running = AtomicUsize::new(0);
+        let total = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        for _ in 0..1000 {
+            for (stage, count) in [
+                (Stage::ResumeObservationPending, &pending),
+                (Stage::ResumeObservationNotRunning, &not_running),
+            ] {
+                if reserve_loading(count) {
+                    record(stage, Failure::Port(PortError::Busy), &total, &mut bytes);
+                }
+            }
+        }
+        assert_eq!(pending.load(Ordering::Relaxed), LOADING_LIMIT);
+        assert_eq!(not_running.load(Ordering::Relaxed), LOADING_LIMIT);
+        assert_eq!(total.load(Ordering::Relaxed), 2 * LOADING_LIMIT);
+        for _ in 0..1000 {
+            record(
+                Stage::ResumeObservationTransport,
+                Failure::Transport(sandproof_internal::TransportError::Rejected),
+                &total,
+                &mut bytes,
+            );
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), LIMIT);
+        assert_eq!(text.matches("stage=ResumeObservationPending ").count(), 4);
+        assert_eq!(text.matches("stage=ResumeObservationNotRunning ").count(), 4);
+        assert_eq!(text.matches("stage=ResumeObservationTransport ").count(), LIMIT - 8);
+        assert_eq!(total.load(Ordering::Relaxed), LIMIT);
+        assert!(text.ends_with("remaining=0\n"));
+    }
+
     #[test]
     fn resume_diagnostics_keep_an_independent_finite_budget_after_create_polling() {
         for stage in [

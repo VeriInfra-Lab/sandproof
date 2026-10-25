@@ -21,7 +21,7 @@ fn superseded() -> CurrentObservationError {
 fn observation_deadline() -> CurrentObservationError {
     diagnostics::emit(
         diagnostics::Stage::ResumeObservationDeadline,
-        diagnostics::Failure::Port(PortError::OutcomeUnknown),
+        diagnostics::Failure::Port(PortError::Busy),
     );
     CurrentObservationError::Deadline
 }
