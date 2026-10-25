@@ -20,7 +20,7 @@ LIBRARY = Path('verification/aeneas/stage1-protocol/request')
 VIRTUAL_ROOT = Path('/home/zn/u333-5tuoxof8/std-mutex-source')
 INHERITED = ['ReadyFactModel', 'ReadyFactValues', 'ReadyFactBindings', 'ReadyFactExamples']
 NEW_PROOFS = {'ResumeModel', 'ResumeValues', 'ResumeBindings', 'ResumeExamples'}
-CASES = ('correct', 'resume-session-only', 'resume-ignore-retention', 'resume-lost-unload', 'resume-wrong-renew-incarnation')
+CASES = ('correct', 'resume-session-only', 'resume-ignore-retention', 'resume-continued-binding', 'resume-wrong-renew-incarnation')
 
 
 def sha(path):

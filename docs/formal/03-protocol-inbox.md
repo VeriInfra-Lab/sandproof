@@ -22,7 +22,11 @@
 完整 Resume/Create/Unload 观测分支、持久收件和系统组合仍须分别连接并验收。
 
 完整 Resume 观测的[值合同](../../verification/experiments/stage1-protocol/resume-observation/README.md)对应原/当前封套和全部 readiness 分支；
+Continued-Unload 的 `StateLost` 分支按工程候选 `5e9d41b3252e42df1bb7d6e775a59ec43d745124` 迁移；
+保留原请求全文、原/当前封套、来源实例、更新版本和不同 key 的实际守卫。
+旧 #691 证据仍限定原源码；“允许 StateLost Unload”不再是错误版，改以绕过来源/后继关系作同合同反例。
 StateLost 与负期限按实际分支处理，不把值形状当作 journal 状态或候选死亡证据。
+已保存 OriginalContinued、BeforeAdmission/AfterCapture 的来源资格和同一实例确定退出，由 V4/V5/V6 另行提供。
 Create/Unload 观测、续租确认、持久收件和系统连接仍独立登记，公共验收由主控协调。
 
 ## 2. 状态与义务

@@ -155,13 +155,19 @@ fn current_retention_is_not_omitted() {
     );
 }
 #[test]
-fn lost_unload_is_rejected() {
+fn lost_unload_keeps_continued_source() {
+    let mut current = unload();
+    current.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
+    };
+    assert_eq!(current.validate(&context(&current)), Ok(()));
     assert!(
         !matches(
-            &observation(unload(), CurrentResumeReadiness::StateLost),
+            &observation(current, CurrentResumeReadiness::StateLost),
             &resume()
         ),
-        "StateLost does not match continued Unload"
+        "StateLost must preserve continued source incarnation"
     );
 }
 #[test]
@@ -182,8 +188,9 @@ fn renewal_incarnation_is_not_omitted() {
     );
 }
 #[test]
-fn state_lost_value_is_allowed_for_original_and_renewal() {
-    for current in [resume(), renewal(50, false)] {
+fn state_lost_value_is_allowed_for_original_and_successors() {
+    for current in [resume(), renewal(50, false), unload()] {
+        assert_eq!(current.validate(&context(&current)), Ok(()));
         assert!(matches(
             &observation(current, CurrentResumeReadiness::StateLost),
             &resume()
@@ -238,4 +245,36 @@ fn expired_observation_is_rejected() {
         ),
         &resume()
     ));
+}
+
+#[test]
+fn lost_unload_keeps_full_binding() {
+    let original = resume();
+    let mut reused_key = unload();
+    reused_key.request.binding.key = original.request.binding.key.clone();
+    let mut old_version = unload();
+    old_version.accepted_version = 2;
+    old_version.request.binding.expected = ExpectedSession::Version(1);
+    let mut wrong_center = unload();
+    wrong_center.center.center = "other-center".try_into().unwrap();
+    let mut wrong_retention = unload();
+    wrong_retention.retention.window = 2.try_into().unwrap();
+    let mut wrong_session = unload();
+    wrong_session.request.binding.session = "other-session".try_into().unwrap();
+    for current in [
+        reused_key,
+        old_version,
+        wrong_center,
+        wrong_retention,
+        wrong_session,
+    ] {
+        assert_eq!(current.validate(&context(&current)), Ok(()));
+        assert!(!matches(
+            &observation(current, CurrentResumeReadiness::StateLost),
+            &original
+        ));
+    }
+    let mut changed_original = observation(unload(), CurrentResumeReadiness::StateLost);
+    changed_original.request.retention.window = 2.try_into().unwrap();
+    assert!(!matches(&changed_original, &original));
 }

@@ -142,6 +142,22 @@ theorem changed_original_rejected (observation : ResumeObservation) (original : 
   classical
   simp [matches_refines, Matches, changed]
 
+theorem continued_state_lost_accepts_iff (original current : AcceptedLifecycleIntent)
+    (prior source target : IncarnationId) (saved capture : CaptureId)
+    (digest : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (originalResume : original.request.operation = .Resume prior saved target digest)
+    (currentUnload : current.request.operation = .Unload source capture) :
+    resume_matches_request ⟨original, current, .StateLost⟩ original = .ok true ↔
+      OriginalShape original ∧ CurrentShape original current ∧
+      target = source ∧ Newer original current ∧ versionOK current ∧ versionOK original := by
+  have changed : current ≠ original := by
+    intro same
+    subst current
+    rw [originalResume] at currentUnload
+    cases currentUnload
+  simp [matches_accepts_iff, Matches, originalResume, ReadinessMatches, changed,
+    currentUnload, UnloadReadiness, Continued]
+
 end SandboxModel.Stage1Protocol.ResumeBinding
 
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeBinding.readiness_not_current
@@ -156,3 +172,5 @@ end SandboxModel.Stage1Protocol.ResumeBinding
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeBinding.preserves_full_original
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeBinding.preserves_envelope_shapes
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeBinding.changed_original_rejected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ResumeBinding.continued_state_lost_accepts_iff

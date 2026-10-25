@@ -23,7 +23,7 @@ class Admissions(unittest.TestCase):
     def test_complete_source_inventory(self):
         data = formal.inventory(formal.ROOT)
         self.assertEqual(set(data['mutations']), set(native.MUTANT_TESTS))
-        self.assertEqual(len(data['audits']['ResumeBindings']), 12)
+        self.assertEqual(len(data['audits']['ResumeBindings']), 13)
 
     def compiler_fixture(self, root):
         source, target = root / 'source', root / 'target'

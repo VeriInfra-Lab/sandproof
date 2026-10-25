@@ -36,7 +36,7 @@ theorem readiness_boundaries :
     resume_matches_request (observation resumeIntent .StateLost) resumeIntent = .ok true ∧
     resume_matches_request (observation (currentIntent ((-1)#i64) false) .StateLost) resumeIntent = .ok true ∧
     resume_matches_request (observation (currentIntent ((-1)#i64) false) .Pending) resumeIntent = .ok true ∧
-    resume_matches_request (observation unloadIntent .StateLost) resumeIntent = .ok false ∧
+    resume_matches_request (observation unloadIntent .StateLost) resumeIntent = .ok true ∧
     resume_matches_request (observation (currentIntent ((-1)#i64) false) (.Observed negativeFacts)) resumeIntent = .ok false ∧
     resume_matches_request (observation resumeIntent .NotCurrent) resumeIntent = .ok false ∧
     resume_matches_request (observation resumeIntent (.Observed { facts with observed_at_ms := 50#u64 })) resumeIntent = .ok false := by
@@ -48,8 +48,17 @@ theorem readiness_boundaries :
     observation, unloadIntent, currentIntent, resumeIntent, facts, negativeFacts,
     EnvelopeValues.intent, EnvelopeValues.center, EnvelopeValues.node, checked1, checked2]
 
+theorem state_lost_preserves_source :
+    resume_matches_request (observation unloadIntent .StateLost) resumeIntent = .ok true ∧
+    resume_matches_request (observation wrongUnloadSource .StateLost) resumeIntent = .ok false := by
+  have allowed := readiness_boundaries.2.2.2.1
+  have rejected := counterexamples_outside_contract.2.2.1
+  exact ⟨allowed, (matches_rejects_iff _ _).mpr rejected⟩
+
 end SandboxModel.Stage1Protocol.ResumeValues
 
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.normal_original_and_successors
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.omitted_fields_rejected
 #audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.readiness_boundaries
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ResumeValues.state_lost_preserves_source
