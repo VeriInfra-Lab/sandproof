@@ -13,6 +13,29 @@ use std::time::Duration;
 
 type App = ControllerApplication<TestHost>;
 
+// The reopened application reads its original receipts as TestHost::Evidence.
+// FullEvidence deliberately has a smaller journal-only schema; do not use it
+// to complete the application candidate's startup and then weaken decoding.
+fn application_evidence(action: &WorkAction<core::EffectId>) -> Evidence {
+    let original = FullEvidence {
+        resource: action.identity.resource.clone(),
+        command: action.command.command().clone(),
+    };
+    let source = original.source_process_identity(&original.command, &original.resource);
+    Evidence {
+        resource: original.resource,
+        command: original.command,
+        established: true,
+        source,
+    }
+}
+
+fn application_successor(
+    path: &Path,
+) -> (ControllerJournal, SourceWorkRecord, AcceptedLifecycleIntent) {
+    running_successor_with(path, application_evidence)
+}
+
 fn candidate(
     path: &Path,
     activate: bool,
@@ -255,7 +278,7 @@ fn unknown_or_substituted_exit_fact_never_becomes_state_lost() {
 fn completed_activation_also_requires_positive_exit_and_keeps_the_same_candidate() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (journal, _, request) = running_successor(&path);
+    let (journal, _, request) = application_successor(&path);
     let eligible = journal
         .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
         .unwrap()
@@ -330,7 +353,7 @@ fn destroy_during_exit_observation_rechecks_current_request_without_holding_owne
 fn applied_renewal_during_observation_requires_a_new_full_authority_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (journal, _, request) = running_successor(&path);
+    let (journal, _, request) = application_successor(&path);
     let eligible = journal
         .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
         .unwrap()
@@ -417,7 +440,7 @@ fn unadmitted_resume_and_missing_fresh_bootstrap_have_no_exit_question() {
 fn observed_loss_never_reloads_and_original_destroy_still_retires_material() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (journal, _, request) = running_successor(&path);
+    let (journal, _, request) = application_successor(&path);
     let eligible = journal
         .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
         .unwrap()
@@ -499,7 +522,7 @@ fn observed_loss_never_reloads_and_original_destroy_still_retires_material() {
 fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let (mut journal, _, request) = running_successor(&path);
+    let (mut journal, _, request) = application_successor(&path);
     let original = journal
         .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
         .unwrap()
@@ -512,7 +535,7 @@ fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() 
         .close_lifecycle_unload_before_admission(&unload, &v3::context(), 10, &mut NeverCrash)
         .unwrap();
     let candidate = journal
-        .lifecycle_ready_candidate::<FullEvidence>(&request, &v3::context(), 10)
+        .lifecycle_ready_candidate::<Evidence>(&request, &v3::context(), 10)
         .unwrap();
     assert!(candidate.can_probe());
     let probes: Vec<_> = candidate
@@ -521,10 +544,7 @@ fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() 
         .map(|action| {
             Some(WorkReceipt {
                 identity: action.identity.clone(),
-                outcome: WorkOutcome::ObservedSuccess(FullEvidence {
-                    resource: action.identity.resource.clone(),
-                    command: action.command.command().clone(),
-                }),
+                outcome: WorkOutcome::ObservedSuccess(application_evidence(action)),
             })
         })
         .collect();

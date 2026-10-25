@@ -1968,6 +1968,19 @@ fn finish_restored_component(
     journal: &mut ControllerJournal,
     sandbox: sandbox_controller_core::SandboxId,
 ) {
+    finish_restored_component_with(journal, sandbox, |action| FullEvidence {
+        resource: action.identity.resource.clone(),
+        command: action.command.command().clone(),
+    });
+}
+
+fn finish_restored_component_with<E>(
+    journal: &mut ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+    evidence: impl Fn(&sandproof_protocol::WorkAction<core::EffectId>) -> E,
+) where
+    E: HostEvidence + serde::Serialize + serde::de::DeserializeOwned + PartialEq,
+{
     use sandbox_controller_core::workflow::{self, WorkflowStep};
     for _ in 0..32 {
         match workflow::next_step(&journal.world().unwrap(), sandbox) {
@@ -1984,10 +1997,7 @@ fn finish_restored_component(
                         &sandproof_protocol::WorkReceipt {
                             identity: action.identity.clone(),
                             outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
-                                FullEvidence {
-                                    resource: action.identity.resource.clone(),
-                                    command: action.command.command().clone(),
-                                },
+                                evidence(&action),
                             ),
                         },
                         &mut NeverCrash,
@@ -2021,6 +2031,19 @@ fn second_unload(intent: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
 fn running_successor(
     path: &Path,
 ) -> (ControllerJournal, SourceWorkRecord, AcceptedLifecycleIntent) {
+    running_successor_with(path, |action| FullEvidence {
+        resource: action.identity.resource.clone(),
+        command: action.command.command().clone(),
+    })
+}
+
+fn running_successor_with<E>(
+    path: &Path,
+    evidence: impl Fn(&sandproof_protocol::WorkAction<core::EffectId>) -> E,
+) -> (ControllerJournal, SourceWorkRecord, AcceptedLifecycleIntent)
+where
+    E: HostEvidence + serde::Serialize + serde::de::DeserializeOwned + PartialEq,
+{
     let (mut journal, first) = unloaded_resume_source(path);
     let sandbox = first.work.anchor.local.sandbox;
     let intent = record_real_resume(&mut journal);
@@ -2028,7 +2051,7 @@ fn running_successor(
     journal
         .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
         .unwrap();
-    finish_restored_component(&mut journal, sandbox);
+    finish_restored_component_with(&mut journal, sandbox, evidence);
     assert_eq!(
         journal
             .world()
