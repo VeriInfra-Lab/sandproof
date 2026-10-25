@@ -1,11 +1,11 @@
 [Unit]
-Description=Daily disposable Sandproof CI artifact reclamation
+Description=Daily retired Sandproof artifact reclamation for %i
 
 [Timer]
 OnCalendar=daily
 RandomizedDelaySec=30m
 Persistent=true
-Unit=ci_retention.service
+Unit=ci_retention@%i.service
 
 [Install]
 WantedBy=timers.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=Reclaim explicitly retired Sandproof artifacts owned by %i
+ConditionPathIsDirectory=/var/lib/sandproof-retention/%i
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/opt/sandproof-retention
+ExecStart=/usr/bin/python3 -B -m tools.ci_retention --root /var/lib/sandproof-retention/%i collect --apply --keep-days 3 --max-count 5 --max-bytes 26843545600
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryMax=256M
+MemorySwapMax=0
+TasksMax=8
+TimeoutStartSec=300
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/sandproof-retention/%i

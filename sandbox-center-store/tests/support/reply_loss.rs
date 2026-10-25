@@ -8,7 +8,7 @@ use std::{
         atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 // Controlled proxy changes only delivery of an actual Redis reply. It neither
 // implements nor mocks the authority store. Frames/threads have fixed budgets.
@@ -32,6 +32,7 @@ impl ReplyLoss {
         let worker_skip = Arc::clone(&skip_writes);
         let worker_arm = Arc::clone(&armed);
         let worker_stop = Arc::clone(&stop);
+        let owner = thread::current().name().unwrap_or("unnamed").to_owned();
         let worker = thread::spawn(move || {
             for incoming in listener.incoming() {
                 if worker_stop.load(Ordering::SeqCst) {
@@ -77,11 +78,17 @@ impl ReplyLoss {
                             .query(&mut connect(target))
                             .unwrap();
                     }
-                    if upstream.get_mut().write_all(&request).is_err() {
+                    let started = Instant::now();
+                    if let Err(error) = upstream.get_mut().write_all(&request) {
+                        report(&owner, "upstream-write", fault, started, &error);
                         break;
                     }
-                    let Ok(reply) = frame(&mut upstream) else {
-                        break;
+                    let reply = match frame(&mut upstream) {
+                        Ok(reply) => reply,
+                        Err(error) => {
+                            report(&owner, "upstream-reply", fault, started, &error);
+                            break;
+                        }
                     };
                     if fault == 3 {
                         // The actual Redis commit has replied. Hold its reply
@@ -102,7 +109,8 @@ impl ReplyLoss {
                         assert_eq!(reply, b":0\r\n");
                         break; // commit acknowledged by real engine, not by caller
                     }
-                    if client.get_mut().write_all(&reply).is_err() {
+                    if let Err(error) = client.get_mut().write_all(&reply) {
+                        report(&owner, "client-reply", fault, started, &error);
                         break;
                     }
                 }
@@ -139,6 +147,16 @@ impl Drop for ReplyLoss {
         self.worker.take().unwrap().join().unwrap();
     }
 }
+// Failure metadata only: no requests, responses, credentials or arbitrary error
+// strings. Keep the original two-second transport limits and fault behavior.
+fn report(owner: &str, phase: &str, fault: u8, started: Instant, error: &std::io::Error) {
+    eprintln!(
+        "redis_fixture_proxy owner={owner} phase={phase} injected_fault={fault} elapsed_us={} kind={:?}",
+        started.elapsed().as_micros(),
+        error.kind(),
+    );
+}
+
 fn next_request<R: BufRead>(reader: &mut R, stop: &AtomicBool) -> std::io::Result<Option<Vec<u8>>> {
     loop {
         if stop.load(Ordering::SeqCst) {
