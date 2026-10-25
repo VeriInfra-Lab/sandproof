@@ -1840,6 +1840,14 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
             .unwrap(),
         permit
     );
+    confirm_activation_then_claim_file_policy(&mut journal, sandbox, &action);
+}
+
+fn confirm_activation_then_claim_file_policy(
+    journal: &mut ControllerJournal,
+    sandbox: sandbox_controller_core::SandboxId,
+    action: &sandproof_protocol::WorkAction<sandbox_controller_core::EffectId>,
+) {
     assert!(
         journal
             .claim_next(Some(sandbox), &mut NeverCrash)
@@ -1849,7 +1857,7 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
     assert!(
         journal
             .reconcile_observed(
-                &action,
+                action,
                 &sandproof_protocol::WorkReceipt {
                     identity: action.identity.clone(),
                     outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
