@@ -51,4 +51,11 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 
 最多 16 个可写盘是本接口的有限预算，不是 Firecracker 的通用上限或兼容性保证。snapshot_format 和工具/CPU/设备/镜像配置摘要须与原受保护 profile 比较；即使两个任意 profile 相同，也不能据此声明 VMM 兼容。实际文件白名单、原句柄/长度/内容摘要、冻结截面、同步发布及恢复资格分别由 V6/V5 提供，不能让 manifest 自己的字段批准自己。
 
+Manifest 的完整值校验切片以 [独立接受与首错规格](../../SandboxModel/Lifecycle/Protocol/ManifestValidationModel.lean)
+连接真实 `SnapshotManifest::validate`；复用已有文件集合及自然数长度规格。范围包括完整 capture/profile
+比较、任意表示路径和磁盘列表的校验，以及全部文件的有序角色、ID、路径、长度与溢出检查。
+String→str 借用仅使用既有可表示性条件，不预设业务路径合法或材料真实。当前源码适用性、正反证据及
+完整验收仍分别登记；[局部入口](../../verification/experiments/stage1-protocol/manifest-validation/README.md)
+不替代 JSON 字节接线、持久收件、独立认证来源和系统组合义务。
+
 字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
