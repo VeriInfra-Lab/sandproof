@@ -16,7 +16,7 @@ pub use continuation::{OriginalContinuePermit, OriginalContinueWorkRequest};
 pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };
-pub use restore::{RestoreActivationPermit, RestoreWorkRequest};
+pub use restore::{RestoreActivationPermit, RestoreCandidateExitObservation, RestoreWorkRequest};
 #[cfg(feature = "durable")]
 pub(crate) use retirement::MATERIAL_RETIREMENT_RECORD_MAX_BYTES;
 pub use retirement::{

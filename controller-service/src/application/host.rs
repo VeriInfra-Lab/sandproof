@@ -156,6 +156,19 @@ pub trait WorkRecovery: WorkEvidence {
         None
     }
 
+    /// Positively observe the exact original activated candidate's exit.
+    /// The provider must bind the full action and work digest to the same
+    /// PID/start/boot and recheck the original protected identities. This may
+    /// not load, activate, stop, reclaim or clear a pin. None covers alive,
+    /// unknown, unsupported and refused observations; it never means death.
+    fn observe_lifecycle_restore_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::RestoreWorkRequest,
+    ) -> Option<crate::capture::RestoreCandidateExitObservation> {
+        None
+    }
+
     /// Observe the same persisted capture attempt without starting another Full.
     fn observe_lifecycle_capture_action(
         &self,
