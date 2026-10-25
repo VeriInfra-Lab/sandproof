@@ -938,6 +938,9 @@ class UnloadRuntime:
             if recovered is process or recovered.pid==process.pid:
                 raise ValueError('fresh original manager required after exit fault')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+            self._gate_files_unchanged()
+            if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
+                raise ValueError('original host configuration changed across exit recovery')
             gate['exit86_observed']=True
             return dict(exit_code=86,fault_manager_pid=process.pid,recovered_manager_pid=recovered.pid,
                 kernel_pidfd_exit_observed=True,candidate=receipt['candidate'],

@@ -474,6 +474,7 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
                 waiting={'resuming'},complete='state_lost'),lost)
         client.operation_evidence_completed()
         self.assertTrue(client.timing_report()[0]['complete'])
+        self.assertEqual(client.timing_report()[0]['completion_condition'],'state_lost')
         accepted=dict(session=client.session,key=client.key(2),accepted_version=2)
         with patch.object(client,'read_json',return_value=accepted) as send:
             self.assertEqual(client.destroy(lost),accepted)

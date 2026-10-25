@@ -273,6 +273,7 @@ class PublicUnloadScenario:
                 and (expected[sample['operation']]==phase
                     or (sample['operation']=='resume' and phase=='state_lost'))):
             sample['completed_monotonic']=time.monotonic()
+            sample['completion_phase']=phase
 
     def operation_evidence_completed(self):
         sample=self.timings[-1]
@@ -293,8 +294,9 @@ class PublicUnloadScenario:
                     else sample['evidence_monotonic']-sent,
                 public_completion_to_evidence_seconds=None if 'evidence_monotonic' not in sample
                     else sample['evidence_monotonic']-completed,
-                completion_condition={'create':'running','resume':'running','unload':'unloaded',
-                    'destroy':'cleaned'}[sample['operation']],
+                completion_condition=sample.get('completion_phase',
+                    {'create':'running','resume':'running','unload':'unloaded',
+                    'destroy':'cleaned'}[sample['operation']]),
                 complete=completed is not None))
         return result
 
