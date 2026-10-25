@@ -1996,9 +1996,9 @@ fn finish_restored_component_with<E>(
                     .complete(
                         &sandproof_protocol::WorkReceipt {
                             identity: action.identity.clone(),
-                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(
-                                evidence(&action),
-                            ),
+                            outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(evidence(
+                                &action,
+                            )),
                         },
                         &mut NeverCrash,
                     )
