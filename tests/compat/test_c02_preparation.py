@@ -10,7 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / 'tests/system')]
 import sdk_c02_acceptance as runner
-import _runtime_services as services
+from tools.runtime_acceptance_budget import static_cache
 from tools import system_acceptance as reports
 from tools.tests import test_center_host_fixture as fixture
 
@@ -41,7 +41,7 @@ class C02PreparationTests(unittest.TestCase):
                 # The original assembly supplies this cache before the pure
                 # renderer. Reuse its constructor; never start a service/VM.
                 native['bounded_host']['physical_storage']['host_template_caches'] = [
-                    services._static_cache(native, catalogs[0], root / 'template-cache')]
+                    static_cache(native, catalogs[0], root / 'template-cache')]
                 before = copy.deepcopy(native)
                 center, hosts = fixture.FixtureTests().render([native])
                 self.assertEqual(center['startup_timeout_secs'], 300)
