@@ -1,4 +1,4 @@
-//! Original SQLite transitions; host completion/release facts remain controlled.
+//! Original `SQLite` transitions; host completion/release facts remain controlled.
 use super::*;
 use sandbox_controller_core::maintenance::slots::{HostSlotId, HostSlotPhase};
 
