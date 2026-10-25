@@ -224,13 +224,13 @@ mod tests {
             Stage::ResumeObservationPending,
             Stage::ResumeObservationTimeRejected,
         ] {
-            assert!(std::ptr::eq(counter(stage), &RESUME_EMITTED));
+            assert!(std::ptr::eq(counter(stage), &raw const RESUME_EMITTED));
             assert!(!std::ptr::eq(
                 counter(stage),
                 counter(Stage::CreateObservationPending)
             ));
         }
-        assert!(std::ptr::eq(counter(Stage::AuthorityStore), &EMITTED));
+        assert!(std::ptr::eq(counter(Stage::AuthorityStore), &raw const EMITTED));
     }
 
     #[test]
