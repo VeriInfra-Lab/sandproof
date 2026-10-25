@@ -51,6 +51,16 @@ impl WorkExecution for FleetHost {
 }
 
 impl WorkRecovery for FleetHost {
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        self.sandbox(action.command.command().sandbox())
+            .ok()?
+            .observe_lifecycle_original_continue_exit(action, work)
+    }
+
     fn observe_lifecycle_restore_exit(
         &self,
         action: &WorkAction<core::EffectId>,

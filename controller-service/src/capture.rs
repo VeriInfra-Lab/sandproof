@@ -12,7 +12,9 @@ mod retirement;
 mod source;
 mod terminated;
 mod work;
-pub use continuation::{OriginalContinuePermit, OriginalContinueWorkRequest};
+pub use continuation::{
+    OriginalContinueExitObservation, OriginalContinuePermit, OriginalContinueWorkRequest,
+};
 pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };

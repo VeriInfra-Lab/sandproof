@@ -369,6 +369,15 @@ impl WorkExecution for FakeHost {
 }
 
 impl WorkRecovery for FakeHost {
+    // This controlled provider has no physical continuation-exit observer.
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        None
+    }
+
     // This controlled provider has no physical restore-exit observer.
     fn observe_lifecycle_restore_exit(
         &self,

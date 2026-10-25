@@ -198,6 +198,15 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    // This controlled provider has no physical continuation-exit observer.
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        None
+    }
+
     fn observe_lifecycle_restore_exit(
         &self,
         action: &WorkAction<core::EffectId>,
