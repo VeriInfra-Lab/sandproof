@@ -112,7 +112,10 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
             "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} before_ms={before_ms} after_ms={after_ms} observed_at_ms={observed_at_ms} end_at_ms={end_at_ms} health_window_ms={health_window_ms} max_clock_skew_ms={max_clock_skew_ms} remaining={}",
             LIMIT - previous - 1
         ),
-        Failure::ClockInterval { before_ms, after_ms } => writeln!(
+        Failure::ClockInterval {
+            before_ms,
+            after_ms,
+        } => writeln!(
             output,
             "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} before_ms={before_ms} after_ms={after_ms} remaining={}",
             LIMIT - previous - 1
@@ -157,7 +160,12 @@ pub(crate) fn emit(stage: Stage, failure: Failure) {
     if !permitted {
         return;
     }
-    record(stage, failure, counter(stage), &mut std::io::stderr().lock());
+    record(
+        stage,
+        failure,
+        counter(stage),
+        &mut std::io::stderr().lock(),
+    );
 }
 #[cfg(test)]
 mod tests {
@@ -192,8 +200,14 @@ mod tests {
         let text = String::from_utf8(bytes).unwrap();
         assert_eq!(text.lines().count(), LIMIT);
         assert_eq!(text.matches("stage=ResumeObservationPending ").count(), 4);
-        assert_eq!(text.matches("stage=ResumeObservationNotRunning ").count(), 4);
-        assert_eq!(text.matches("stage=ResumeObservationTransport ").count(), LIMIT - 8);
+        assert_eq!(
+            text.matches("stage=ResumeObservationNotRunning ").count(),
+            4
+        );
+        assert_eq!(
+            text.matches("stage=ResumeObservationTransport ").count(),
+            LIMIT - 8
+        );
         assert_eq!(total.load(Ordering::Relaxed), LIMIT);
         assert!(text.ends_with("remaining=0\n"));
     }
@@ -222,10 +236,8 @@ mod tests {
     #[test]
     fn resume_time_rejection_records_bounded_numbers_and_original_query_context() {
         use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
-        let _scope = DiagnosticScope::enter(
-            DiagnosticFlow::LifecycleQuery,
-            DiagnosticStep::Projection,
-        );
+        let _scope =
+            DiagnosticScope::enter(DiagnosticFlow::LifecycleQuery, DiagnosticStep::Projection);
         let context = sandproof_center_store::diagnostic_context();
         let count = AtomicUsize::new(0);
         let mut bytes = vec![];
@@ -246,8 +258,11 @@ mod tests {
         }
         let text = String::from_utf8(bytes).unwrap();
         assert_eq!(text.lines().count(), LIMIT);
-        assert!(text.lines().all(|line| line.len() < 512
-            && line.contains(&format!("c=q{}/p", context.sequence))));
+        assert!(
+            text.lines().all(
+                |line| line.len() < 512 && line.contains(&format!("c=q{}/p", context.sequence))
+            )
+        );
         for field in [
             "before_ms",
             "after_ms",

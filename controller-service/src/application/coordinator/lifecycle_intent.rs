@@ -52,7 +52,9 @@ fn record_resume_pending(
     );
 }
 
-fn resume_readiness(readiness: crate::CreateReadiness) -> Result<CurrentResumeReadiness, JournalError> {
+fn resume_readiness(
+    readiness: crate::CreateReadiness,
+) -> Result<CurrentResumeReadiness, JournalError> {
     Ok(match readiness {
         crate::CreateReadiness::NotCurrent => CurrentResumeReadiness::NotCurrent,
         crate::CreateReadiness::NotRunning => CurrentResumeReadiness::NotRunning,
@@ -256,7 +258,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return Err(JournalError::UnsupportedInput);
         }
         let view = self.observe_lifecycle_execution(intent, context)?;
-        record_resume_pending(&view, &RESUME_PENDING_EMITTED, &mut std::io::stderr().lock());
+        record_resume_pending(
+            &view,
+            &RESUME_PENDING_EMITTED,
+            &mut std::io::stderr().lock(),
+        );
         let readiness = resume_readiness(view.readiness)?;
         Ok(ResumeObservation {
             request: view.request,
@@ -621,7 +627,9 @@ mod tests {
                 lifetime: None,
                 uncertain_actions: vec![],
             }),
-            readiness: crate::CreateReadiness::Pending(crate::CreateReadinessPending::HostUnobserved),
+            readiness: crate::CreateReadiness::Pending(
+                crate::CreateReadinessPending::HostUnobserved,
+            ),
         }
     }
 

@@ -76,9 +76,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         {
             return Err(superseded());
         }
-        let origin = record
-            .current_execution_origin()
-            .ok_or_else(superseded)?;
+        let origin = record.current_execution_origin().ok_or_else(superseded)?;
         if !matches!(origin.request.operation, LifecycleOperation::Resume { .. }) {
             return Err(superseded());
         }

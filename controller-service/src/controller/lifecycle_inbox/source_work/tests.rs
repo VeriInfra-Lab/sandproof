@@ -2067,7 +2067,10 @@ fn completed_resume_readiness_requires_all_original_fresh_startup_probes() {
         assert_eq!(action.identity.epoch, row.epoch);
         assert_eq!(action.command.command().sandbox(), local.sandbox);
         assert_eq!(
-            world.logical_effect(&action.command.logical).unwrap().origin,
+            world
+                .logical_effect(&action.command.logical)
+                .unwrap()
+                .origin,
             core::EffectOrigin::Operation(key)
         );
     }
