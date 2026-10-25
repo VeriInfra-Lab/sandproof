@@ -6,7 +6,7 @@
 
 ## 1. 实现范围
 
-对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。当前 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 明确拒绝 snapshot source，不能将历史 Freeze/Seal/Commit 命令或模型记为真实支持。本阶段新增固定 Firecracker/jailer 1.16.1 的完整路径，原身份/围栏/受保护目录及清理继续复用。
+对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。通用 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 仍明确拒绝 snapshot source；恢复由 `linux/restore.rs` 的 `restore_action` 消费原恢复工作及激活许可，调用 Runtime 的 `load_paused_snapshot` / `activate_loaded_snapshot`。不能将历史 Freeze/Seal/Commit 命令或模型记为这些新连接已证明。本阶段使用固定 Firecracker/jailer 1.16.1，原身份/围栏/受保护目录及清理继续复用，完整恢复与回收仍待统一实机验收和实现对应。
 
 新增外部接口合同仅为[依赖登记 S-C1–6](dependencies.md#第一阶段新增依赖合同)。选择哪个 manifest、原 VM 是否允许停止、何时激活和哪些文件允许删除属于自有业务。外部工具可返回错误但留下部分效果。
 
@@ -50,7 +50,7 @@
 
 `SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
 
-运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明仍须补齐，正式捕获接线见后文；部署还须提供匹配的受保护布局和项目配额。root/0400 封存文件供 jailer File 后端加载时的权限路径、是否需要私有 RAM 副本及相应峰值预算属于恢复批缺口，当前恢复仍不启用。
+运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明仍须补齐，正式捕获接线见后文；部署还须提供匹配的受保护布局和项目配额。当前 `load_paused_snapshot` 从原封存 bundle 复制新 jail 的私有 state、RAM 与磁盘，私有 File backing 在复制前接入原材料项目，保留到精确 VMM 退出与 jail 清理；权限、实际峰值预算及完整恢复链仍须统一验收和证明。
 
 ### 原捕获动作与已发布材料观察
 
@@ -134,12 +134,12 @@ Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取
 
 正式 SealSnapshot 由 `prepare_capture_worker(action, full, original_source)` 准备同一受保护宿主程序的等待子进程，核对原位置/helper 门、owner/generation/VM、围栏及独立 Full 输入。`PreparedCaptureWorker` 保留原子进程和位置门，只提供原 PID/start/boot 与输入摘要，准备成功不授予 Full 许可。原 `ControllerApplication::execute_capture_action` 随后在短事务内调用 `ControllerJournal::authorize_lifecycle_full_capture`，重新核对完整工作、动作及 attempt、当前身份/寿命、原 dispatched outbox，持久保存同一 worker 和 job 后才返回不可公开构造或反序列化的 `FullCaptureLaunchPermit`。提交未知不返回许可，已登记 worker 不再次授权。
 
-V5 通过 `PreparedNodeCapture::release` 调用 `execute_prepared_full_capture`；它与 `release_prepared_full_capture` 包装共用同一放行实现，消费原许可，分别比较完整 action、Full binding、实际 worker 和 job 摘要，才开放原 gate；准备壳和 worker 的 PID 在 exec 前后不变。`run_capture_worker` 是同一宿主二进制的同步早期入口，不装配服务或另起异步捕获任务。它核对有界输入及原摘要，重开原 Bootstrap/layout 和原 Paused 句柄，再沿来源、实际配置和 CPU 检查执行 Full、复制、Seal 和重开，不重新 Pause。`capture_original` 包装仍存在，但不是当前 V5 SealSnapshot 的放行入口，也不能当作绕过原 SQL 许可的备用路线。
+正式 SealSnapshot 只经 `ControllerApplication::execute_capture_action` 的原 SQL 授权，再由 `PreparedNodeCapture::release` 调用 `LinuxWorker::execute_prepared_full_capture` 和 crate 内部的 `LinuxWorker::release_prepared_full_capture`。这条唯一放行链消费原许可，分别比较完整 action、Full binding、实际 worker 和 job 摘要，才开放原 gate；准备壳和 worker 的 PID 在 exec 前后不变。`run_capture_worker` 是同一宿主二进制的同步早期入口，不装配服务或另起异步捕获任务。它核对有界输入及原摘要，重开原 Bootstrap/layout 和原 Paused 句柄，再沿来源、实际配置和 CPU 检查执行 Full、复制、Seal 和重开，不重新 Pause。
 
 worker 完成后保存绑定原 action/Full/job/worker/source 的 completion；父调用必须核对有界回复、原材料和结束依据。原 `complete` 的同一 SQL 事务通过 `full::save_receipt` 采纳 manifest 摘要和实际字节，再推进原动作，CommitSnapshot 仍须与原已采纳值一致。回调返回、退出码0、文件存在或 Paused/Exited 均不能单独证明成功或准许 Stop/退额。任何错误都保留原 Unknown/Dispatched 工作、材料和进程责任。正常 Drop 或 `cancel` 只请求对原自有子进程作有界停止/回收；结果未知仍由原见证及 reaper 跟踪，不把 Drop 当作进程实际结束、无效果或退款回执。
 
-`observe_full_capture` 仍只是未决工作在原 key、独立 profile/原输入及已有摘要下的文件观察；它不再次 Pause/Full，也不单凭完整文件提供捕获来源、worker 退出或数据库接管证明。当前完成观察还需结合原 SQL worker、completion 和实际退出依据。未采用的 `CapturePreparationObservation`/`observe_capture_preparation` 保留在 #638 后续范围：当前没有在原独占门内保留 canonical/stage、并让观察对象覆盖短事务的这套准备恢复接口，三个准备阶段的 manager 崩溃断点回归也尚未接入。正常 Full 后的管理进程重启验收不代表这些断点已覆盖。
+`LinuxWorker::observe_full_capture` 仍只是未决工作在原 key、独立 profile/原输入及已有摘要下的文件观察；它不再次 Pause/Full，也不单凭完整文件提供捕获来源、worker 退出或数据库接管证明。当前完成观察还需结合原 SQL worker、completion 和实际退出依据。未采用的 `CapturePreparationObservation`/`observe_capture_preparation` 保留在 #638 后续范围：当前没有在原独占门内保留 canonical/stage、并让观察对象覆盖短事务的这套准备恢复接口，三个准备阶段的 manager 崩溃断点回归也尚未接入。正常 Full 后的管理进程重启验收不代表这些断点已覆盖。
 
-当前冷启动链没有 Node snapshot-source Prepare 成功路径，T=0 仅限这条原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射；C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套0或删掉真实恢复状态。正常卸载与原材料重开已有定向实机证据，精确版本和失败记录仍在关联 issue；这不覆盖所有未知提交、准备阶段崩溃或任意并发历史，也未新增对应 Rust/Lean 证明。恢复、LoadPaused 和材料 GC 的后续义务保持未完成。
+通用冷启动路径仍不接受 Node snapshot-source Prepare，恢复走独立的原工作入口；T=0 仅限原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射。C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套0或删掉真实恢复状态。正常卸载与原材料重开已有定向实机证据，精确版本和失败记录仍在关联 issue；这不覆盖所有未知提交、准备阶段崩溃或任意并发历史，也未新增对应 Rust/Lean 证明。已接入的恢复、LoadPaused 和材料 GC 仍未完成整体实现对应与统一实机验收。
 
 `NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 消费原 journal 提供的独立材料期望。`sealed_capture_expectation`/`committed_capture_expectation` 已从原持久记录及各阶段检查提供期望，分别连接 CommitSnapshot 前的材料核对和提交后的 Stop/清理观察；封存材料不等于已提交，动作资格仍由原工作流检查。该类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要。Node 核同一受保护 store/epoch、原 key 和全部字节，不依赖旧 Occupied 位置、launch secret 或活 VMM。材料观察不提供恢复、pin、删除、访问、停止或退额许可；后续恢复仍须独立持久 bundle/pin 记录和自己的资格证明，不能由正常卸载通过外推。

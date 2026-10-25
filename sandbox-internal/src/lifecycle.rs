@@ -18,6 +18,8 @@ use sandproof_protocol::lifecycle::{
 pub const REQUEST_BODY_BYTES: usize = 4 * MAX_OPTIONS_BYTES + 16 * 1024;
 /// A requested and current complete envelope plus finite observation values.
 pub const CREATE_OBSERVATION_BODY_BYTES: usize = 2 * REQUEST_BODY_BYTES + 16 * 1024;
+/// The requested and current Resume envelopes plus fixed readiness values.
+pub const RESUME_OBSERVATION_BODY_BYTES: usize = 2 * REQUEST_BODY_BYTES + 16 * 1024;
 /// This profile's bounded drive paths, worst escaping and fixed field allowance.
 /// It bounds encoded bytes, not allocator capacity or whole-process memory.
 pub const MANIFEST_BODY_BYTES: usize = MAX_WRITABLE_DRIVES * 4096 * 6 + 64 * 1024;
@@ -107,7 +109,7 @@ mod tests {
     fn request() -> LifecycleRequest {
         LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: node(),
                 session: SessionId::try_from("session").unwrap(),
                 key: OperationKey {
@@ -227,7 +229,7 @@ mod tests {
     #[test]
     fn semantic_guard_runs_after_json_and_before_encoding() {
         let mut request = request();
-        request.binding.protocol_version = 2;
+        request.binding.protocol_version = 3;
         let bytes = serde_json::to_vec(&request).unwrap();
         assert!(matches!(
             decode_request(&bytes, &node()),

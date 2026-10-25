@@ -17,6 +17,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sqlite3
@@ -77,7 +78,7 @@ def exercise(args):
     assert 1000 <= args.uid_base < 2**32 - 2
     assert not processes_in_uid_range(args.uid_base, args.uid_base + 1)
     root = Path(tempfile.mkdtemp(prefix="sp-cred-", dir=parent))
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     namespace = secrets.token_hex(8)
     kernel, image = (root / name for name in ("vmlinux", "rootfs.ext4"))
@@ -91,7 +92,7 @@ def exercise(args):
     disk_bytes = image.stat().st_size
     settings = {
         "namespace": namespace, "database": str(root / "db/controller.db"),
-        "node_state_dir": str(root / "state"), "chroot_base": str(root / "jails"),
+        "node_state_dir": str(root / "state"), "chroot_base": str(root / "p/v"),
         "jailer": str(args.jailer.resolve(strict=True)),
         "firecracker": str(args.firecracker.resolve(strict=True)),
         "kernel": str(kernel), "rootfs": str(image), "uid_base": args.uid_base,
@@ -118,7 +119,7 @@ def exercise(args):
         first, second = live
         for number in range(2):
             name = f"vm-{namespace}-{number}"
-            claim = json.loads((root / "jails/.claims" / name / "record.json").read_text())
+            claim = json.loads((original_chroot(root) / ".claims" / name / "record.json").read_text())
             assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
             claims.append((name, claim))
         services.processes.stop("host-0")
@@ -204,7 +205,7 @@ def exercise(args):
         vm = matched[0][1]["binding"]["vm"]
         assert vm not in (0, 1)
         name = f"vm-{namespace}-{vm}"
-        claim = json.loads((root / "jails/.claims" / name / "record.json").read_text())
+        claim = json.loads((original_chroot(root) / ".claims" / name / "record.json").read_text())
         assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
         claims.append((name, claim))
         status = Path(f"/proc/{claim['pid']}/status").read_text().splitlines()
@@ -220,7 +221,7 @@ def exercise(args):
         for name, claim in claims:
             assert process_start_ticks(claim["pid"]) != claim["start_time_ticks"]
             assert not Path("/run/netns", name).exists()
-            assert not (root / "jails" / Path(settings["firecracker"]).name / name).exists()
+            assert not (original_chroot(root) / Path(settings["firecracker"]).name / name).exists()
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 1)
         completed = True
         print(json.dumps({"source_commit": commit, "host_sha256": artifact_hash(args.host),

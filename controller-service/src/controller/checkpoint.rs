@@ -14,6 +14,7 @@ use super::{
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
 pub use retirement::RetirementCandidate;
+pub(super) use retirement::material_retirement_pins_closed;
 pub(super) use retirement::original_binding;
 pub(super) use retirement::witnesses as release_witnesses;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -139,11 +140,22 @@ pub(super) fn input_bytes(
 // Refuse unsupported new histories before allocating identity or outbox rows.
 // An exact existing-key replay is still decided by the original reducer.
 pub(super) fn check_input_profile(
-    _connection: &Connection,
-    _world: &core::World,
+    connection: &Connection,
+    world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
-    if let core::ControllerInput::Request(core::Request::Resume(_)) = input {
+    if let core::ControllerInput::Capture(input) = input
+        && !super::lifecycle_inbox::source_work::full::permits_continue_input(
+            connection, world, input,
+        )?
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
+    if let core::ControllerInput::Request(core::Request::Resume(request)) = input
+        && !super::lifecycle_inbox::source_work::restore::permits_resume_input(
+            connection, world, request,
+        )?
+    {
         return Err(JournalError::UnsupportedInput);
     }
 

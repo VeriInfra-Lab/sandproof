@@ -19,6 +19,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sys
@@ -50,13 +51,13 @@ def main(args):
     namespace = secrets.token_hex(8)
     vm_name = f'vm-{namespace}-0'
     firecracker_name = args.firecracker.resolve(strict=True).name
-    socket = root / 'jails' / firecracker_name / f'vm-{namespace}-{2**64 - 1}' / 'root/api.socket'
+    socket = root / 'p/v' / firecracker_name / f'vm-{namespace}-{2**64 - 1}' / 'root/api.socket'
     if len(os.fsencode(socket)) >= 108:
         root.rmdir()
         raise RuntimeError('private Firecracker socket path is too long')
     key = secrets.token_hex(32)
     port = free_loopback_port()
-    for name in ('db', 'state', 'jails'):
+    for name in ('db', 'state', 'p'):
         (root / name).mkdir(mode=0o700)
     kernel = root / 'vmlinux'
     rootfs = root / 'rootfs.ext4'
@@ -76,7 +77,7 @@ def main(args):
         'node_state_dir': str(root / 'state'),
         'jailer': str(args.jailer.resolve(strict=True)),
         'firecracker': str(args.firecracker.resolve(strict=True)),
-        'chroot_base': str(root / 'jails'),
+        'chroot_base': str(root / 'p/v'),
         'kernel': str(kernel),
         'rootfs': str(rootfs),
         'uid_base': args.uid_base,
@@ -96,14 +97,14 @@ def main(args):
         'default_timeout_secs': 300,
         'expiry_scan_seconds': 1,
     }
-    settings = complete_runtime(settings, slots=2)
+    settings = complete_runtime(settings, slots=2, inbox_sessions=4+settings["max_active_global"])
     base_url = f'http://127.0.0.1:{port}'
     registry = {'root': str(root / 'registry'), 'max_templates_global': 1,
         'max_templates_per_tenant': 1, 'max_artifact_bytes_global': disk_bytes + kernel.stat().st_size,
         'max_artifact_bytes_per_tenant': disk_bytes + kernel.stat().st_size, 'validation_timeout_secs': 60}
     services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
         registered_catalogs=[catalog], key=key, public_address=f'127.0.0.1:{port}',
-        record=args.service_cgroup_record, job_count=4, private_builds=None, registry_config=registry)
+        record=args.service_cgroup_record, retained_sessions=4 + settings['max_active_global'], private_builds=None, registry_config=registry)
     completed = False
     try:
         services.start()
@@ -116,7 +117,7 @@ def main(args):
         initial = sandbox.get_info()
         assert before_request <= initial.started_at <= after_response
         assert initial.end_at - initial.started_at == timedelta(seconds=60)
-        record = json.loads((root / 'jails/.claims' / vm_name / 'record.json').read_text())
+        record = json.loads((original_chroot(root) / '.claims' / vm_name / 'record.json').read_text())
         assert record['resource_id'] == vm_name
         assert process_start_ticks(record['pid']) == record['start_time_ticks']
         services.processes.stop('center')
@@ -142,7 +143,7 @@ def main(args):
         assert terminal_cleanup_confirmed(root / 'db/controller.db', native_id)
         assert process_start_ticks(record['pid']) != record['start_time_ticks']
         assert not Path('/run/netns', vm_name).exists()
-        assert not (root / 'jails' / firecracker_name / vm_name).exists()
+        assert not (original_chroot(root) / firecracker_name / vm_name).exists()
         assert digest(rootfs) == base_digest
         completed = True
         print(json.dumps({'center_sha256': digest(args.center), 'host_sha256': digest(args.host),

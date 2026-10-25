@@ -13,6 +13,7 @@ struct Port(
     Mutex<Vec<(String, PublicCreateRequest)>>,
     Mutex<Vec<(String, SessionId, PublicDestroyRequest)>>,
     Mutex<Vec<String>>,
+    Mutex<Vec<(String, SessionId, PublicResumeRequest)>>,
 );
 impl LifecyclePort for Port {
     fn request_window(&self, owner: &str) -> Result<PublicRequestWindow, PortError> {
@@ -73,6 +74,151 @@ impl LifecyclePort for Port {
     fn query_lifecycle(&self, _: &str, _: SessionId) -> Result<PublicSessionView, PortError> {
         Err(PortError::NotFound)
     }
+    fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicResumeRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        self.3
+            .lock()
+            .unwrap()
+            .push((owner.to_owned(), session.clone(), request.clone()));
+        Ok(PublicAcceptance {
+            session,
+            key: OperationKey {
+                deployment: "fixture-deployment".try_into().unwrap(),
+                owner: owner.try_into().unwrap(),
+                window: request.window,
+                sequence: request.sequence,
+            },
+            accepted_version: request
+                .expected_version
+                .checked_add(1)
+                .ok_or(PortError::Conflict)?,
+        })
+    }
+}
+
+fn resume_call(secret: &str, body: &serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/sandproof/lifecycle/sessions/original-session/resume")
+        .header("x-api-key", secret)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(body).unwrap()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn resume_keeps_authenticated_owner_and_rejects_caller_selected_restore_identity() {
+    let port = Arc::new(Port::default());
+    let router = router_with_admission(
+        port.clone(),
+        vec![ApiCredential {
+            tenant: "8".into(),
+            secret: SECRET.into(),
+        }],
+        Arc::new(RequestAdmission::default()),
+    )
+    .unwrap();
+    let input = PublicResumeRequest {
+        window: 1.try_into().unwrap(),
+        sequence: 3.try_into().unwrap(),
+        expected_version: 2,
+    };
+    let body = serde_json::to_value(&input).unwrap();
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(resume_call("wrong", &body))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    for field in [
+        "owner",
+        "session",
+        "node",
+        "source_incarnation",
+        "target_incarnation",
+        "capture",
+        "manifest_digest",
+        "timeout_ms",
+    ] {
+        let mut forged = body.clone();
+        forged[field] = 1.into();
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(resume_call(SECRET, &forged))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    for field in ["window", "sequence"] {
+        let mut invalid = body.clone();
+        invalid[field] = 0.into();
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(resume_call(SECRET, &invalid))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert!(port.3.lock().unwrap().is_empty());
+    let response = router.oneshot(resume_call(SECRET, &body)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let bytes = axum::body::to_bytes(response.into_body(), MAX_JSON_BYTES)
+        .await
+        .unwrap();
+    let accepted: PublicAcceptance = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(accepted.key.owner.as_str(), "8");
+    assert_eq!(accepted.key.sequence, input.sequence);
+    assert_eq!(accepted.accepted_version, 3);
+    assert_eq!(
+        *port.3.lock().unwrap(),
+        vec![("8".into(), "original-session".try_into().unwrap(), input)]
+    );
+}
+
+#[tokio::test]
+async fn resume_respects_ordinary_admission_and_preserves_the_control_reserve() {
+    let port = Arc::new(Port::default());
+    let budget = RequestAdmission::new(super::super::admission::RequestAdmissionLimits {
+        max_pending_requests: 2,
+        control_reserve: 1,
+    })
+    .unwrap();
+    let held = budget.try_acquire(RequestClass::Ordinary).unwrap();
+    let router = router_with_admission(
+        port.clone(),
+        vec![ApiCredential {
+            tenant: "8".into(),
+            secret: SECRET.into(),
+        }],
+        budget.clone(),
+    )
+    .unwrap();
+    let body = serde_json::json!({"window":1,"sequence":3,"expected_version":2});
+    assert_eq!(
+        router
+            .oneshot(resume_call(SECRET, &body))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert!(port.3.lock().unwrap().is_empty());
+    let control = budget.try_acquire(RequestClass::Control).unwrap();
+    drop(control);
+    drop(held);
 }
 
 #[tokio::test]

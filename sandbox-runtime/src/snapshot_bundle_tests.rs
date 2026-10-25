@@ -211,3 +211,208 @@ fn original_content_mutation_is_not_hidden_by_a_retained_descriptor() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
     assert!(bundle.verify_unchanged().is_err());
 }
+
+#[test]
+fn private_restore_copies_preserve_sealed_sources_and_are_independent() {
+    let fixture = Fixture::new();
+    let bundle = fixture.open().unwrap();
+    let private = fixture.temporary.path().join("private-jail");
+    fs::create_dir(&private).unwrap();
+    let directory = File::open(&private).unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    let gid = rustix::process::getegid().as_raw();
+    for role in [
+        SnapshotArtifact::State,
+        SnapshotArtifact::Memory,
+        SnapshotArtifact::Disk(0),
+    ] {
+        bundle.copy_for_restore(&directory, role, uid, gid).unwrap();
+    }
+    for (name, bytes, mode) in [
+        ("restore-state.bin", 1, 0o400),
+        ("restore-memory.bin", 2, 0o400),
+        ("rootfs.ext4", 3, 0o600),
+    ] {
+        let metadata = fs::metadata(private.join(name)).unwrap();
+        assert_eq!(fs::read(private.join(name)).unwrap(), vec![bytes; 17]);
+        assert_eq!(metadata.mode() & 0o777, mode);
+        assert_eq!(metadata.uid(), uid);
+        assert_eq!(metadata.nlink(), 1);
+    }
+    fs::write(private.join("rootfs.ext4"), b"new guest writes").unwrap();
+    assert_eq!(
+        fs::read(fixture.bundle_path().join("disk-0.img")).unwrap(),
+        vec![3; 17]
+    );
+    bundle.verify_unchanged().unwrap();
+    assert!(
+        bundle
+            .copy_for_restore(&directory, SnapshotArtifact::Disk(0), uid, gid)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(private.join("rootfs.ext4")).unwrap(),
+        b"new guest writes"
+    );
+}
+
+#[test]
+fn restore_copy_rejects_substituted_source_and_destination_symlink() {
+    let fixture = Fixture::new();
+    let bundle = fixture.open().unwrap();
+    let private = fixture.temporary.path().join("private-jail");
+    fs::create_dir(&private).unwrap();
+    let directory = File::open(&private).unwrap();
+    let sentinel = fixture.temporary.path().join("sentinel");
+    fs::write(&sentinel, b"unchanged").unwrap();
+    symlink(&sentinel, private.join("restore-memory.bin")).unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    let gid = rustix::process::getegid().as_raw();
+    assert!(
+        bundle
+            .copy_for_restore(&directory, SnapshotArtifact::Memory, uid, gid)
+            .is_err()
+    );
+    assert_eq!(fs::read(&sentinel).unwrap(), b"unchanged");
+    fixture.writable_directory();
+    fs::rename(
+        fixture.bundle_path().join("state.bin"),
+        fixture.bundle_path().join("old-state"),
+    )
+    .unwrap();
+    fs::write(fixture.bundle_path().join("state.bin"), vec![1; 17]).unwrap();
+    fixture.seal_directory();
+    assert!(
+        bundle
+            .copy_for_restore(&directory, SnapshotArtifact::State, uid, gid)
+            .is_err()
+    );
+    assert!(!private.join("restore-state.bin").exists());
+}
+
+#[test]
+fn exact_bundle_retirement_is_restartable_and_never_deletes_a_replacement() {
+    let fixture = Fixture::new();
+    let bundle = fixture.open().unwrap();
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    let plan: crate::snapshot_store::CaptureStoreRetirement =
+        serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
+    assert_eq!(plan.directory_key(), &fixture.key);
+    assert_eq!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .unwrap(),
+        bundle.manifest_sha256()
+    );
+    drop(bundle);
+    // A service crash after unlinking one exact original file resumes using
+    // its original persisted plan, without reopening an incomplete Full.
+    fixture.writable_directory();
+    fs::remove_file(fixture.bundle_path().join("state.bin")).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert!(!fixture.bundle_path().exists());
+    fixture.store.retire_capture_material(&plan).unwrap();
+    fs::create_dir(fixture.bundle_path()).unwrap();
+    fixture.seal_directory();
+    assert!(fixture.store.retire_capture_material(&plan).is_err());
+    assert!(fixture.bundle_path().is_dir());
+}
+
+#[test]
+fn retirement_refuses_unknown_files_changed_inodes_and_other_store() {
+    for variant in 0..3 {
+        let fixture = Fixture::new();
+        fixture.open().unwrap().verify_unchanged().unwrap();
+        let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+        fixture.writable_directory();
+        match variant {
+            0 => fs::write(fixture.bundle_path().join("unknown"), b"keep").unwrap(),
+            1 => {
+                fs::remove_file(fixture.bundle_path().join("memory.bin")).unwrap();
+                fs::write(fixture.bundle_path().join("memory.bin"), vec![2; 17]).unwrap();
+                fs::set_permissions(
+                    fixture.bundle_path().join("memory.bin"),
+                    fs::Permissions::from_mode(0o400),
+                )
+                .unwrap();
+            }
+            2 => {
+                let other = Fixture::new();
+                assert!(other.store.retire_capture_material(&plan).is_err());
+            }
+            _ => unreachable!(),
+        }
+        fixture.seal_directory();
+        if variant != 2 {
+            assert!(fixture.store.retire_capture_material(&plan).is_err());
+        }
+        assert!(fixture.bundle_path().join("manifest.json").exists());
+        assert!(fixture.bundle_path().join("disk-0.img").exists());
+    }
+}
+
+#[test]
+fn retirement_also_reclaims_the_exact_completion_and_interrupted_stage() {
+    let fixture = Fixture::new();
+    fixture
+        .store
+        .publish_request_end(fixture.key, b"original API-end")
+        .unwrap();
+    let mut api_stage = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(
+            fixture
+                .store
+                .path
+                .join(key_name("api-return-stage-", &fixture.key)),
+        )
+        .unwrap();
+    api_stage.write_all(b"partial API-end").unwrap();
+    api_stage.sync_all().unwrap();
+    fixture
+        .store
+        .publish_completion(fixture.key, b"exact original worker completion")
+        .unwrap();
+    let stage = fixture
+        .store
+        .path
+        .join(key_name("completion-stage-", &fixture.key));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&stage)
+        .unwrap();
+    file.write_all(b"partial original completion").unwrap();
+    file.sync_all().unwrap();
+    fixture.open().unwrap().verify_unchanged().unwrap();
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert_eq!(fs::read_dir(&fixture.store.path).unwrap().count(), 0);
+    fixture.store.retire_capture_material(&plan).unwrap();
+}
+
+#[test]
+fn general_retirement_covers_a_published_bundle_without_reading_payloads_again() {
+    let fixture = Fixture::new();
+    assert_eq!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .unwrap(),
+        <[u8; 32]>::from(Sha256::digest(b"actual manifest bytes"))
+    );
+    let plan = fixture.store.capture_retirement_plan(fixture.key).unwrap();
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert!(!fixture.bundle_path().exists());
+    fixture.store.retire_capture_material(&plan).unwrap();
+    assert!(
+        fixture
+            .store
+            .retirement_manifest_sha256(fixture.key)
+            .is_err()
+    );
+}

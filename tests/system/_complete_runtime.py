@@ -22,13 +22,66 @@ import sqlite3
 import stat
 
 MIB = 1024 * 1024
-ONLINE_BYTES = 1042 * MIB
 _envelope = _runpy.run_path(
     str(Path(__file__).resolve().parents[2] / "tools/template_physical_storage.py")
 )["envelope"]
 
 
-def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=1000):
+def maintenance_profile(*,slots,inbox_sessions,checkpoint_tail_inputs):
+    """Stage1 test DTO: size the retained N=8 graph for this producer's M.
+
+    Derived from controller/capacity.rs, not an admission authority. Original
+    Rust configuration/SQL/physical validation must still accept these inputs.
+    Conservatively charge 128 historical results for bytes; the original
+    128 total active-plus-retired result guard remains unchanged.
+    """
+    if type(inbox_sessions) is not int or not 1<=inbox_sessions<=4096:
+        raise ValueError('explicit original producer inbox session bound required')
+    power=lambda value:1<<(value-1).bit_length()
+    rounded=lambda value:(value+MIB-1)//MIB*MIB
+    c=inbox_sessions;r=128;n=8;scalar=4096;input_bytes=8192
+    # N=8: current 16-logical/94-record/142-reference single_pause_graph
+    # times (N-2), plus 2*N*N plan references; includes original Continue.
+    records=564;references=980;copies=108;attempts=384;logical=96;sql_rows=1314
+    policy_bytes=input_bytes-scalar
+    base=1+slots+2
+    checkpoint=power((base+6+c*(records+references+2))*scalar
+        +c*copies*policy_bytes+r*(scalar+input_bytes+64))
+    source_rows=c*(n-2)
+    rows=max(4096,power(c*sql_rows+10+slots+r+source_rows+1))
+    value_bytes=16*MIB;receipt_bytes=16384
+    lease=(attempts+logical)*(input_bytes+scalar)+3*attempts*receipt_bytes \
+        +4*input_bytes+3*65536+sql_rows*scalar
+    # Actual shared producer limits: options=4096, profile=65536,
+    # manifest=262144, raw work/configuration=65536 each. Format23 keeps one
+    # bounded SourceWork per row, not one growing global 16 MiB blob.
+    inbox=c*(4*4096+n*8192+2*262144+65536+4*8192)+8192
+    source_record=65536+4*65536+8192+131072+4*16384+4096+8192
+    sources=8192+source_rows*source_record+48+source_rows*80
+    fixed=inbox+48+sources+(r+slots+32)*scalar
+    sql_bytes=power(fixed+c*lease)
+    tail_bytes=4*MIB;page=4096
+    minimum_database=8*(sql_bytes+2*checkpoint+2*tail_bytes) \
+        +(8*(rows+2*checkpoint_tail_inputs+2)+64)*page
+    database=power(minimum_database)
+    frame=page+24
+    wal=rounded(32+(database//page)*frame+65536+frame)
+    frames=(wal+frame-1)//frame
+    shm=rounded(max(1,(frames+4061)//4062)*32768)
+    scratch=2*checkpoint
+    capacity=dict(max_live_sandboxes=64,max_sql_rows=rows,max_sql_bytes=sql_bytes,
+        max_sql_value_bytes=value_bytes,max_receipt_bytes=receipt_bytes,
+        max_transaction_inputs=4,max_transaction_bytes=32768,
+        max_database_bytes=database,max_wal_bytes=wal,max_shm_bytes=shm,
+        checkpoint_scratch_bytes=scratch,max_online_storage_bytes=database+wal+shm+scratch)
+    return dict(capacity=capacity,retention_ms=60000,max_operations_per_sandbox=n,
+        max_checkpoint_bytes=checkpoint,max_records=max(10000,power(base+c*records+r)),
+        max_references=max(1000000,power(c*(references+copies*policy_bytes)+r*policy_bytes)),
+        max_tail_inputs=checkpoint_tail_inputs,max_tail_bytes=tail_bytes,
+        max_input_bytes=input_bytes,prune_batch_rows=7),r
+
+
+def complete_runtime(settings, *, slots, inbox_sessions, file_size=None, checkpoint_tail_inputs=1000):
     """Construct a single-runtime test DTO from explicit artifact/path inputs.
 
     The caller already owns the fresh private roots. No files are changed here;
@@ -54,8 +107,8 @@ def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=
     jail = Path(result["chroot_base"])
     root = database.parent.parent
     if (database != root / "db/controller.db" or node != root / "state"
-            or jail != root / "jails"):
-        raise ValueError("fresh private test db/state/jails layout required")
+            or jail != root / "p/v"):
+        raise ValueError("fresh private test db/state/p/v layout required")
     size = file_size or (lambda path: Path(path).stat().st_size)
     kernel_bytes = size(result["kernel"])
     runtime_bytes = size(result["firecracker"])
@@ -70,7 +123,9 @@ def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=
     # Rust independently derives the exact envelope and rejects undersizing.
     metadata_bytes = 384 * MIB * slots
     metadata_inodes = 1024 * slots
-    cleanup = ONLINE_BYTES + metadata_bytes
+    policy,result_slots=maintenance_profile(slots=slots,inbox_sessions=inbox_sessions,
+        checkpoint_tail_inputs=checkpoint_tail_inputs)
+    cleanup = policy['capacity']['max_online_storage_bytes'] + metadata_bytes
     rootfs_budget = result["max_disk_bytes_global"] - result["cleanup_reserve_bytes"]
     if rootfs_budget < disk_bytes or result["max_disk_bytes_per_tenant"] <= 0:
         raise ValueError("explicit usable test disk quota must fit one base VM")
@@ -88,27 +143,10 @@ def complete_runtime(settings, *, slots, file_size=None, checkpoint_tail_inputs=
     if (transfers["max_transfers_per_vm"] > 128 or transfers["max_transfers"] > 8192
             or not 0 < transfers["control_reserve"] < transfers["max_transfers_per_vm"]):
         raise ValueError("test metadata envelope supports at most 128 routes per position")
-    result["maintenance"] = {
-        "capacity": {
-            "max_live_sandboxes": 64, "max_sql_rows": 4096, "max_sql_bytes": 16 * MIB,
-            # The retained inbox is ONE original SQL row. Let it use the
-            # existing 16 MiB aggregate ceiling; Rust derives/reserves its
-            # exact future row size and still refuses insufficient TOTAL SQL.
-            # Neither aggregate SQL nor physical online storage is increased.
-            "max_sql_value_bytes": 16 * MIB, "max_receipt_bytes": 16 * 1024,
-            "max_transaction_inputs": 4, "max_transaction_bytes": 32 * 1024,
-            "max_database_bytes": 512 * MIB, "max_wal_bytes": 520 * MIB,
-            "max_shm_bytes": 2 * MIB, "checkpoint_scratch_bytes": 8 * MIB,
-            "max_online_storage_bytes": ONLINE_BYTES,
-        },
-        "retention_ms": 60_000, "max_checkpoint_bytes": 4 * MIB,
-        "max_records": 10_000, "max_references": 1_000_000,
-        "max_tail_inputs": checkpoint_tail_inputs, "max_tail_bytes": 4 * MIB,
-        "max_input_bytes": 8192, "prune_batch_rows": 7,
-    }
+    result["maintenance"] = policy
     result["bounded_host"] = {
         "console_policy": "discard", "uid_base": result["uid_base"], "uplink_base": 0,
-        "maintenance": {"max_host_slots": slots, "max_retained_results": 128,
+        "maintenance": {"max_host_slots": slots, "max_retained_results": result_slots,
                         "windows": {"max_open_windows": 2, "max_duration_ms": 1000}},
         "physical_storage": {
             "version": 1, "coordination_file": str(root / "physical-profile"),

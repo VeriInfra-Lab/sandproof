@@ -29,17 +29,42 @@ pub(in crate::controller) fn original_binding(
     world: &core::World,
     sandbox: core::SandboxId,
 ) -> Result<Option<HostBinding>, JournalError> {
+    let generation = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::CorruptStore)?
+        .generation;
+    execution_binding(world, sandbox, generation)
+}
+
+/// Resolve a retained execution's own immutable plan, including a released
+/// older generation. This does not make that generation currently usable.
+pub(in crate::controller) fn execution_binding(
+    world: &core::World,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+) -> Result<Option<HostBinding>, JournalError> {
     let row = world
         .sandbox_record(sandbox)
         .ok_or(JournalError::CorruptStore)?;
+    if generation == 0 || generation > row.generation {
+        return Err(JournalError::CorruptStore);
+    }
     let mut binding = None;
     for (key, operation) in world.operation_records() {
-        if key.sandbox != sandbox || operation.operation.kind != core::OperationKind::Create {
+        if key.sandbox != sandbox
+            || !matches!(
+                operation.operation.kind,
+                core::OperationKind::Create | core::OperationKind::Resume
+            )
+        {
             continue;
         }
         let plan = world
             .operation_plan(*key)
             .ok_or(JournalError::CorruptStore)?;
+        if plan.generation != generation {
+            continue;
+        }
         match (plan.vm, plan.slot) {
             (Some(vm), Some(network)) => {
                 if binding.is_some() {
@@ -67,7 +92,7 @@ pub(super) fn store_witness(
     let sandbox =
         super::super::identity::sandbox_id(&namespace(tx)?, witness.context.binding.sandbox)?;
     tx.execute(
-        "INSERT INTO controller_release_witnesses(sandbox_id,witness_json) VALUES(?1,?2)",
+        "INSERT INTO controller_release_witnesses(sandbox_id,witness_json) VALUES(?1,?2) ON CONFLICT(sandbox_id) DO UPDATE SET witness_json=excluded.witness_json",
         params![sandbox.as_str(), serde_json::to_vec(&witness)?],
     )?;
     Ok(())
@@ -90,7 +115,7 @@ pub(in crate::controller) fn witnesses(
         if serde_json::to_vec(&witness)? != bytes
             || super::super::identity::sandbox_id(&namespace, binding.sandbox)?.as_str() != id
             || world.sandbox_record(binding.sandbox).is_none()
-            || original_binding(world, binding.sandbox)? != Some(binding)
+            || execution_binding(world, binding.sandbox, binding.generation)? != Some(binding)
             || witness.input_sequence == 0
             || witness.input_sequence > allocators::input_high_water(connection)?
             || values.insert(binding.sandbox.0, witness).is_some()
@@ -116,7 +141,9 @@ pub(super) fn record_release(
         }
         return Ok(());
     }
-    if existing.is_some() {
+    if existing.is_some_and(|old| old.context.binding.generation >= context.binding.generation)
+        || original_binding(&world, context.binding.sandbox)? != Some(context.binding)
+    {
         return Err(JournalError::CorruptStore);
     }
     let sequence = allocators::input_high_water(tx)?;
@@ -142,15 +169,30 @@ pub(super) fn record_release(
 fn pinned(
     connection: &Connection,
     world: &core::World,
-    namespace: &str,
     sandbox: core::SandboxId,
 ) -> Result<bool, JournalError> {
     if super::super::internal_inbox::pinned(connection, sandbox)?
-        || super::super::lifecycle_inbox::pinned(connection, sandbox)?
+        || (super::super::lifecycle_inbox::pinned(connection, sandbox)?
+            && !super::super::lifecycle_inbox::native_retirement::ready(
+                connection, world, sandbox,
+            )?)
     {
         return Ok(true);
     }
-    let id = super::super::identity::sandbox_id(namespace, sandbox)?;
+    Ok(!material_retirement_pins_closed(
+        connection, world, sandbox,
+    )?)
+}
+
+// Physical material pins only. Historical SourceWork/inbox rows retain
+// metadata until final Retire, and must not create a GC prerequisite cycle.
+pub(in crate::controller) fn material_retirement_pins_closed(
+    connection: &Connection,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<bool, JournalError> {
+    let namespace = namespace(connection)?;
+    let id = super::super::identity::sandbox_id(&namespace, sandbox)?;
     let options: Option<Vec<u8>> = connection
         .query_row(
             "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1",
@@ -161,11 +203,11 @@ fn pinned(
     if let Some(bytes) = options {
         let options: super::super::CreateOptions = serde_json::from_slice(&bytes)?;
         options.validate().map_err(|_| JournalError::CorruptStore)?;
-        if super::super::private_build::pinned(connection, world, namespace, sandbox, &options)? {
-            return Ok(true);
+        if super::super::private_build::pinned(connection, world, &namespace, sandbox, &options)? {
+            return Ok(false);
         }
     }
-    Ok(projections::publication_pins(connection)?.contains(&sandbox))
+    Ok(!projections::publication_pins(connection)?.contains(&sandbox))
 }
 
 fn candidate(
@@ -176,14 +218,13 @@ fn candidate(
     let Some(row) = world.sandbox_record(sandbox) else {
         return Ok(None);
     };
-    if row.phase != core::Phase::Destroyed
-        || pinned(connection, world, &namespace(connection)?, sandbox)?
-    {
+    if row.phase != core::Phase::Destroyed || pinned(connection, world, sandbox)? {
         return Ok(None);
     }
-    let release = witnesses(connection, world)?
-        .into_iter()
-        .find(|witness| witness.context.binding.sandbox == sandbox);
+    let release = witnesses(connection, world)?.into_iter().find(|witness| {
+        witness.context.binding.sandbox == sandbox
+            && witness.context.binding.generation == row.generation
+    });
     if release.is_none() {
         return Ok(None);
     }
@@ -309,6 +350,11 @@ impl ControllerJournal {
         let world = tx.world();
         projections::validate(&tx, &world, &self.namespace)?;
         let candidate = candidate(&tx, &world, sandbox)?.ok_or(JournalError::UnresolvedAction)?;
+        // Validate OLD native/source pairs before native Retire removes them.
+        let terminal_sources =
+            super::super::lifecycle_inbox::source_work::validate_terminal_sources(
+                &tx, &world, sandbox,
+            )?;
         let now_ms = now_ms.max(
             world
                 .maintenance_state()
@@ -320,10 +366,15 @@ impl ControllerJournal {
             .ok_or(JournalError::MaintenanceCapacity)?;
         verifier(&candidate).map_err(|_| JournalError::UnresolvedAction)?;
         storage::apply_maintenance(&tx, MaintenanceInput::ExpireResults { now_ms })?;
-        storage::apply_maintenance(
+        let retirement = request(&candidate, retain_until);
+        let retired = storage::apply_maintenance(&tx, MaintenanceInput::Retire(retirement))?;
+        super::super::lifecycle_inbox::native_retirement::record(
             &tx,
-            MaintenanceInput::Retire(request(&candidate, retain_until)),
+            &world,
+            &retired.next,
+            retirement,
         )?;
+        super::super::lifecycle_inbox::source_work::remove_retired(&tx, &terminal_sources)?;
         delete_details(&tx, &world, &self.namespace, sandbox)?;
         crashes.hit(CrashPoint::AfterRetirementDelete)?;
         crashes.hit(CrashPoint::BeforeCommit)?;

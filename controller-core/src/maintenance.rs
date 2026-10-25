@@ -3,7 +3,9 @@
 
 pub mod retirement;
 pub mod slots;
+mod unload_history;
 pub mod windows;
+pub use unload_history::released_unload_termination_history;
 
 use crate::{
     Authority, ControllerDecision, ControllerEvent, FsId, OperationKey, Phase, SandboxId, Store,

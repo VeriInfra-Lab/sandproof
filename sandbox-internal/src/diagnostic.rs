@@ -20,6 +20,14 @@ impl<H> RejectTemplateCache<H> {
     }
 }
 impl<H: LifecycleReceiver> LifecycleReceiver for RejectTemplateCache<H> {
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        self.0.observe_resume(intent, context).await
+    }
+
     async fn observe_unload(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

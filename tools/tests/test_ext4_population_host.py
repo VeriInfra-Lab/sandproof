@@ -413,7 +413,7 @@ def node_identity():
 
 
 def audit_fixture():
-    binding = dict(protocol_version=3, node=node_identity(), session='sandbox-7',
+    binding = dict(protocol_version=4, node=node_identity(), session='sandbox-7',
         key=dict(deployment='test-deployment', owner='1', window=7, sequence=9), expected=dict(state='absent'))
     create = dict(binding=binding, accepted_version=1, retention=dict(slot=1, window=1),
         center=dict(deployment='test-deployment', center='center'))
@@ -431,7 +431,7 @@ def audit_fixture():
     local = dict(sandbox=41, owner=23)  # Deliberately not GLOBAL IDs/owner.
     context = dict(position=0, expected_previous=None, binding=dict(sandbox=41, owner=23, vm=77))
     center = dict(schema_version=3, deployment='test-deployment',
-        versions=dict(internal_protocol=2, center_store=9, host_store=21),
+        versions=dict(internal_protocol=2, center_store=11, host_store=23),
         retention_lanes=[dict(node=node_identity(), retention_slot=1, retired_through=0, phase='open', last_retired=None)],
         sandboxes=[dict(create={'binding': binding}, private=True, released=True,
             operations=[first, last], terminal_confirmation=copy.deepcopy(response))])

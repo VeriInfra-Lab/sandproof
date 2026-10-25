@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock
 
 from tools.runtime_create_recovery import (
-    CURRENT_VERSIONS, RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
+    CURRENT_VERSIONS, LIFECYCLE_PROTOCOL_VERSION, RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
     recover_runtime_create, terminal_result,
 )
 
@@ -25,14 +25,14 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.intent = dict(metadata=dict(benchmark='terminal-bench-2.0', task='sample',
             build='a'*32, revision='r1', runtime_attempt='e'*32), template=self.template)
         self.node = dict(deployment_id='test-deployment', node_id='host-runtime', node_generation=3)
-        self.binding = dict(protocol_version=3, node=copy.deepcopy(self.node), session='sandbox-17',
+        self.binding = dict(protocol_version=4, node=copy.deepcopy(self.node), session='sandbox-17',
             key=dict(deployment='test-deployment', owner='1', window=7, sequence=41),
             expected=dict(state='absent'))
         self.identity = dict(binding=copy.deepcopy(self.binding),
             center=dict(deployment='test-deployment', center='center-a'),
             retention=dict(slot=1, window=2), accepted_version=1)
         previous = self.response(session='sandbox-16', window=1, sequence=39)
-        versions = dict(internal_protocol=2, center_store=9, host_store=21)
+        versions = dict(internal_protocol=2, center_store=11, host_store=23)
         self.center = dict(schema_version=3, versions=copy.deepcopy(versions),
             deployment='test-deployment', revision=1, sandbox_highwater=17, operation_highwater=42, nodes=[], sandboxes=[], retention_lanes=[dict(node=copy.deepcopy(self.node),
                 retention_slot=1, retired_through=1, phase='open', last_retired=copy.deepcopy(previous))])
@@ -107,7 +107,11 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
 
     def test_equal_but_noninteger_versions_and_old_paired_store_formats_refuse(self):
         self.insert()
-        for versions in (dict(internal_protocol=2.0,center_store=9,host_store=21),
+        for versions in (dict(internal_protocol=2,center_store=10,host_store=23),
+                         dict(internal_protocol=2.0,center_store=11,host_store=23),
+                         dict(internal_protocol=2,center_store=11,host_store=21),
+                         dict(internal_protocol=2,center_store=11,host_store=22),
+                         dict(internal_protocol=2,center_store=9,host_store=23),
                          dict(internal_protocol=2,center_store=8,host_store=20),
                          dict(internal_protocol=2,center_store=8,host_store=21),
                          dict(internal_protocol=2,center_store=9,host_store=20),
@@ -128,8 +132,11 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             values = re.findall(r'^pub const ' + name + r': \w+ = (\d+);$', source, re.MULTILINE)
             self.assertEqual(len(values), 1, name)
             actual[field] = int(values[0])
-        self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=9, host_store=21))
+        self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=11, host_store=23))
         self.assertEqual(actual, CURRENT_VERSIONS)
+        lifecycle = (Path(__file__).resolve().parents[2] / 'sandbox-protocol/src/lifecycle.rs').read_text()
+        versions = re.findall(r'^pub const PROTOCOL_VERSION: u16 = (\d+);$', lifecycle, re.MULTILINE)
+        self.assertEqual(versions, [str(LIFECYCLE_PROTOCOL_VERSION)])
 
     def test_missing_version_fields_and_mixed_role_reports_refuse(self):
         self.insert(terminal=True)
@@ -180,9 +187,9 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             unloaded=dict(request=dict(request=dict(binding=copy.deepcopy(operation['binding']),
                 operation=dict(kind='unload', source_incarnation=1, capture=1)),
                 center=copy.deepcopy(operation['center']), retention=copy.deepcopy(operation['retention']),
-                accepted_version=2), unloaded=dict(source_incarnation=1, capture=1,
+                accepted_version=2), outcome=dict(state='unloaded',facts=dict(source_incarnation=1, capture=1,
                 manifest_digest=[7]*32, material_bytes=4096, started_at_ms=1234,
-                end_at_ms=301234, max_end_at_ms=601234, startup_deadline_ms=301000)))
+                end_at_ms=301234, max_end_at_ms=601234, startup_deadline_ms=301000))))
         record['operations'].append(operation)
         record['phase'] = 'unloaded'
         self.assertEqual(find_runtime_create(self.center, self.intent['metadata'],
@@ -330,7 +337,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             ('center',('sandboxes',0,'terminal_confirmation','request','accepted_version'),2.0),
             ('host',('operations',0,'accepted_version'),2.0),
             ('host',('operations',0,'binding','expected','version'),True),
-            ('host',('operations',0,'binding','protocol_version'),3.0),
+            ('host',('operations',0,'binding','protocol_version'),4.0),
             ('host',('operations',0,'confirmed_terminal','request','retention','slot'),True),
             ('host',('operations',0,'confirmed_terminal','request','accepted_version'),2.0),
         ]
@@ -344,6 +351,12 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             with self.subTest(side=side,path=path),self.assertRaises(ValueError):
                 terminal_result(center,host,self.identity)
         self.assertEqual(terminal_result(self.center,self.host,self.identity)['status'],'cleaned')
+
+    def test_previous_lifecycle_protocol_cannot_authenticate_current_result(self):
+        self.insert(terminal=True)
+        host=copy.deepcopy(self.host)
+        host['operations'][0]['binding']['protocol_version']=3
+        self.assertIsNone(terminal_result(self.center,host,self.identity))
 
     def test_original_create_requires_exact_positive_incarnation_operation(self):
         self.insert()
@@ -486,6 +499,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_prepared_checkpoint_and_recovery_require_explicit_supervisor_authority(self):
         self.template['templateId'] = 'ci-' + 'a'*32
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         self.assertEqual(self.load_checkpoint(prepared_ci=True), self.intent)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
@@ -501,6 +515,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_two_point_one_requires_exact_live_dataset_binding(self):
         self.intent['metadata']['benchmark'] = 'terminal-bench@2.1'
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
         self.assertEqual(load_runtime_intent(self.root, task='sample', runtime_attempt='e'*32,
@@ -514,6 +529,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_requires_exact_task_attempt_build_revision_and_fingerprint(self):
         checkpoint = self.root/'runtime-intent.json'
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.assertEqual(self.load_checkpoint(), self.intent)
         variants = []
         for field, value in (('task', 'previous-task'), ('runtime_attempt', 'f'*32),
@@ -535,6 +551,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_rejects_partial_duplicate_and_oversized_json(self):
         for raw in ('{', '{"metadata":{},"metadata":{}}', ' '*(256*1024+1)):
             (self.root/'runtime-intent.json').write_text(raw)
+            (self.root/'runtime-intent.json').chmod(0o600)
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 self.load_checkpoint()
 
@@ -554,6 +571,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             self.load_checkpoint()
         checkpoint.unlink()
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.root.chmod(0o755)
         try:
             with self.assertRaises(ValueError):

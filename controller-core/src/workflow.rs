@@ -33,7 +33,12 @@ fn scheduled(world: &World, command: &Command) -> bool {
 fn failed_create(world: &World, sandbox: SandboxId) -> Option<ControllerInput> {
     let record = world.sandbox_record(sandbox)?;
     let operation = record.current_operation?;
-    if record.phase != Phase::Starting || operation.kind != OperationKind::Create {
+    if record.phase != Phase::Starting
+        || !matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
+    {
         return None;
     }
     let key = OperationKey {
@@ -114,6 +119,7 @@ fn claimable(world: &World, sandbox: SandboxId) -> bool {
         if effect.command().sandbox() == sandbox
             && world.effect_status(effect) == Some(EffectStatus::Committed)
             && !crate::effect::startup_dispatch_revoked(world, effect.command())
+            && crate::capture::continuation::capture_dispatch_allowed(world, effect)
             && (!unresolved
                 || crate::scheduler::dispatch_allowed_during_abort(world, effect.command()))
         {
@@ -224,7 +230,10 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         return WorkflowStep::Blocked;
     };
     if record.phase == Phase::Starting
-        && operation.kind == OperationKind::Create
+        && matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
         && plan.vm.is_none()
     {
         return apply(ControllerInput::Scheduler(SchedulerInput::ReserveStartup(
@@ -234,7 +243,12 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
     if claimable(world, sandbox) {
         return WorkflowStep::Claim;
     }
-    if record.phase == Phase::Starting && operation.kind == OperationKind::Create {
+    if record.phase == Phase::Starting
+        && matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
+    {
         let (Some(vm), Some(slot)) = (plan.vm, plan.slot) else {
             return WorkflowStep::Blocked;
         };
@@ -268,10 +282,20 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
     if record.phase != Phase::Revoking {
         return WorkflowStep::Blocked;
     }
+    revoking_step(world, sandbox, record, operation, plan)
+}
+
+fn revoking_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    operation: crate::Operation,
+    plan: &crate::OperationPlan,
+) -> WorkflowStep {
     let failure = match (operation.kind, operation.status) {
         (OperationKind::Kill, _) => None,
         (
-            OperationKind::Create,
+            OperationKind::Create | OperationKind::Resume,
             OperationStatus::Compensating(failure) | OperationStatus::Failed(failure),
         ) => Some(failure),
         _ => return WorkflowStep::Blocked,

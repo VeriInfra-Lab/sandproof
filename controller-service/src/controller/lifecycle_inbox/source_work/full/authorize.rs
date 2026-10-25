@@ -52,10 +52,19 @@ impl ControllerJournal {
         if !matches_action(record, action, &world) {
             return Err(JournalError::Conflict);
         }
+        let key = super::key(record).ok_or(JournalError::CorruptStore)?;
+        if !world
+            .operation_plan(key)
+            .and_then(|plan| plan.capture)
+            .is_some_and(core::capture::CaptureHandoff::accepts_registration)
+        {
+            return Err(JournalError::Conflict);
+        }
         let capture = record.capture.as_mut().ok_or(JournalError::Conflict)?;
         if capture.action.as_ref() != Some(action)
             || capture.worker.is_some()
             || capture.completed.is_some()
+            || capture.end.is_some()
             || world.effect_status(&action.command) != Some(core::EffectStatus::Dispatched)
         {
             return Err(JournalError::Conflict);

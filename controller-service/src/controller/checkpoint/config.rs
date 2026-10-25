@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaintenanceConfig {
+    /// Retained native Create/Pause/Resume/Kill operations for one sandbox.
+    /// New nonterminal operations must leave one position for termination.
+    /// This required deployment bound is distinct from SDK renewal history.
+    pub max_operations_per_sandbox: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<super::super::capacity::CapacityConfig>,
     pub retention_ms: u64,
@@ -26,6 +30,9 @@ impl MaintenanceConfig {
     /// # Errors
     /// Rejects zero, unrepresentable or contradictory explicit bounds.
     pub fn validate(&self) -> Result<(), JournalError> {
+        if !(3..=128).contains(&self.max_operations_per_sandbox) {
+            return Err(JournalError::UnsupportedStore);
+        }
         for value in [
             self.retention_ms,
             self.max_checkpoint_bytes,

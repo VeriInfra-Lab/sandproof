@@ -4,11 +4,10 @@ use super::capture_profile::ProtectedCaptureProfile;
 use super::{LinuxWorker, NodeResult, Runtime, WorkAction, core};
 use crate::{
     ProtectedHostEpochSource,
-    full_snapshot::{self, CheckedStoredCapture, ExpectedFullCapture, FullCaptureObservation},
+    full_snapshot::{self, CheckedStoredCapture, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureLimits, OriginalPauseObservation, RuntimeProcessIdentity,
-    snapshot_store::BundleReadLimits,
+    OriginalPauseObservation, RuntimeProcessIdentity, snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
     CommittedCaptureExpectation, FullCaptureWorkRequest, PauseWorkRequest, RawSourceObservation,
@@ -95,6 +94,79 @@ fn require_expected_request(
 }
 
 impl LinuxWorker {
+    pub(crate) fn recover_full_request_end(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        profile: &ProtectedCaptureProfile,
+        action: &WorkAction<core::EffectId>,
+        full: &FullCaptureWorkRequest,
+        source: &SourceObservationRequirement,
+        worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> NodeResult<sandproof_controller_service::capture::CaptureRequestEndObservation> {
+        let context = self.require_full_action(action, full)?;
+        require_source_binding(&full.pause, source)?;
+        let process = RuntimeProcessIdentity {
+            pid: worker.process().pid,
+            start_time_ticks: worker.process().start_time_ticks,
+            boot_id: worker.process().boot_id.clone(),
+        };
+        if !worker.valid() || process.boot_id != source.source.boot_id || process.is_alive()? {
+            return Err("original Full worker exit not confirmed on this boot".into());
+        }
+        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
+        let _gate = slot.helper_gate.try_acquire(Some(&slot))?;
+        let expected = self.expected_cold_work(provider, profile, &full.pause, source)?;
+        require_expected_request(full, &expected.request)?;
+        let original = crate::source_observation::expected_source(source)?;
+        let record = profile
+            .layout
+            .read_full_request_end(full_snapshot::capture_directory_key(&full.pause.binding)?)?;
+        record.require_original(
+            source.resource.id.as_str(),
+            &original,
+            full_snapshot::capture_directory_key(&full.pause.binding)?,
+            super::capture_worker::api_context(action, full, *worker.job_digest())?,
+            &process,
+        )?;
+        // This is not a pause/continue action, material adoption or SQL receipt.
+        // A GET on a different socket without the original tagged end record is insufficient.
+        if !matches!(
+            expected
+                .runtime
+                .observe_original_pause_state(source.resource.id.as_str(), &original)?,
+            OriginalPauseObservation::Paused(_)
+        ) || process.is_alive()?
+            || self.require_full_action(action, full)? != context
+        {
+            return Err("original Full request-end context/source changed".into());
+        }
+        provider.observe_original(
+            &source.node,
+            &source.host_bootstrap,
+            self.host_bootstrap_inputs(),
+        )?;
+        Ok(
+            sandproof_controller_service::capture::CaptureRequestEndObservation {
+                action: action.clone(),
+                full_work_binding: full.binding_digest()?,
+                worker: worker.clone(),
+                source: source.source.clone(),
+                outcome: match record.outcome() {
+                    sandbox_runtime::FullCaptureRequestOutcome::NoRequest => {
+                        sandproof_controller_service::capture::CaptureRequestEndOutcome::NoRequest
+                    }
+                    sandbox_runtime::FullCaptureRequestOutcome::Returned {
+                        http_status, ..
+                    } => {
+                        sandproof_controller_service::capture::CaptureRequestEndOutcome::Returned {
+                            http_status,
+                        }
+                    }
+                },
+            },
+        )
+    }
+
     // Independent local expectation. It does not read a manifest/Full DTO and
     // does not claim this cold-source rule automatically covers restored MSRs.
     fn expected_cold_work(
@@ -107,7 +179,7 @@ impl LinuxWorker {
         require_source_binding(pause, original)?;
         profile.require_original_source(original)?;
         let context = self.original_source_context(&pause.source_resource)?;
-        let secret = self.secret(context.binding.sandbox)?;
+        let secret = self.secret(context.binding.sandbox, context.binding.generation)?;
         let template = secret
             .template
             .as_ref()
@@ -163,7 +235,10 @@ impl LinuxWorker {
         let expected = self.expected_cold_work(provider, profile, pause, original)?;
         let raw = crate::source_observation::observe(self, Some(provider), original)?;
         check_measured_source(&expected.template, &raw, &expected.request.compatibility)?;
-        let current = self.secret(expected.context.binding.sandbox)?;
+        let current = self.secret(
+            expected.context.binding.sandbox,
+            expected.context.binding.generation,
+        )?;
         if self.original_source_context(&pause.source_resource)? != expected.context
             || current.template.as_ref() != Some(&expected.template)
         {
@@ -438,62 +513,6 @@ impl LinuxWorker {
                 material_bytes: bytes,
             },
         })
-    }
-
-    pub(crate) fn capture_original(
-        &self,
-        provider: &ProtectedHostEpochSource,
-        profile: &ProtectedCaptureProfile,
-        action: &WorkAction<core::EffectId>,
-        request: &FullCaptureWorkRequest,
-        original: &SourceObservationRequirement,
-    ) -> NodeResult<FullCaptureObservation> {
-        let context = self.require_full_action(action, request)?;
-        let slot = self.runtime_host_slot(context.position, context.binding.vm)?;
-        let _gate = slot.helper_gate.try_acquire(Some(&slot))?;
-        let expected = self.prepare_full_capture(provider, profile, &request.pause, original)?;
-        require_expected_request(request, &expected)?;
-        if self.require_full_action(action, request)? != context {
-            return Err("Full original context changed".into());
-        }
-        let execution = self.expected_cold_work(provider, profile, &request.pause, original)?;
-        if execution.context != context || execution.request != expected {
-            return Err("Full configuration changed before actual execution".into());
-        }
-        let runtime = execution.runtime;
-        let source = crate::source_observation::expected_source(original)?;
-        let paused = match runtime
-            .observe_original_pause_state(request.pause.source_resource.id.as_str(), &source)?
-        {
-            OriginalPauseObservation::Paused(paused) => paused,
-            OriginalPauseObservation::Running | OriginalPauseObservation::Exited => {
-                return Err("original Full source not observed Paused".into());
-            }
-        };
-        let observed = full_snapshot::capture_paused_original(
-            &runtime,
-            &profile.layout,
-            &paused,
-            &ExpectedFullCapture {
-                resource_id: request.pause.source_resource.id.as_str(),
-                source: &source,
-                binding: &request.pause.binding,
-                compatibility: &expected.compatibility,
-            },
-            FullCaptureLimits {
-                state_bytes: profile.state_bytes,
-                disk_bytes: profile.disk_bytes,
-                api_timeout: profile.api_timeout,
-            },
-            read_limits(&expected),
-        )?;
-        // Any failure here can follow actual Full/publication. Keep the same
-        // durable Dispatched/Unknown work and its concurrency/material charge.
-        let after = self.prepare_full_capture(provider, profile, &request.pause, original)?;
-        if after != expected || self.require_full_action(action, request)? != context {
-            return Err("original Full source/profile or current fence changed".into());
-        }
-        Ok(observed)
     }
 
     pub(crate) fn observe_full_capture(

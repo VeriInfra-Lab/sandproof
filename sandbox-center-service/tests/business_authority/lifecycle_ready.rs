@@ -51,10 +51,15 @@ type RecordedSignal = Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>;
 struct Host {
     clock: Arc<Time>,
     ready: Arc<AtomicBool>,
+    pending_once: Arc<AtomicBool>,
+    observation_error_once: Arc<Mutex<Option<PortError>>>,
+    observation_budgets: Arc<Mutex<Vec<Duration>>>,
+    observed_at_override: Arc<Mutex<Option<u64>>>,
     observations: Arc<AtomicUsize>,
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
     notify_recorded: RecordedSignal,
+    current_request_after_block: Arc<Mutex<Option<AcceptedLifecycleIntent>>>,
     unloaded: Arc<Mutex<Option<sandproof_protocol::lifecycle::UnloadObservation>>>,
 }
 impl Host {
@@ -62,10 +67,15 @@ impl Host {
         Self {
             clock,
             ready: Arc::new(AtomicBool::new(true)),
+            pending_once: Arc::new(AtomicBool::new(false)),
+            observation_error_once: Arc::new(Mutex::new(None)),
+            observation_budgets: Arc::new(Mutex::new(Vec::new())),
+            observed_at_override: Arc::new(Mutex::new(None)),
             observations: Arc::new(AtomicUsize::new(0)),
             recordings: Arc::new(AtomicUsize::new(0)),
             blocked: Arc::new(Mutex::new(None)),
             notify_recorded: Arc::new(Mutex::new(None)),
+            current_request_after_block: Arc::new(Mutex::new(None)),
             unloaded: Arc::new(Mutex::new(None)),
         }
     }
@@ -83,14 +93,20 @@ impl Host {
         let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
             panic!("only the original Create is observed")
         };
-        let readiness = if self.ready.load(Ordering::SeqCst) {
+        let readiness = if !self.pending_once.swap(false, Ordering::SeqCst)
+            && self.ready.load(Ordering::SeqCst)
+        {
             CurrentCreateReadiness::Observed {
                 facts: CurrentReadyFacts {
                     started_at_ms: 100,
                     end_at_ms: 100 + create.timeout_ms,
                     max_end_at_ms: 100 + create.max_lifetime_ms,
                     startup_deadline_ms: create.startup_deadline_ms,
-                    observed_at_ms: self.clock.0.load(Ordering::SeqCst),
+                    observed_at_ms: self
+                        .observed_at_override
+                        .lock()
+                        .unwrap()
+                        .unwrap_or_else(|| self.clock.0.load(Ordering::SeqCst)),
                 },
             }
         } else {
@@ -98,7 +114,13 @@ impl Host {
         };
         CreateObservation {
             request: intent.clone(),
-            current_request: intent.clone(),
+            current_request: self
+                .unloaded
+                .lock()
+                .unwrap()
+                .as_ref()
+                .filter(|observation| observation.outcome.continued().is_some())
+                .map_or_else(|| intent.clone(), |observation| observation.request.clone()),
             historical_create_succeeded: true,
             readiness,
         }
@@ -113,7 +135,7 @@ impl HostPort for Host {
         Ok(self.unloaded.lock().unwrap().clone().unwrap_or(
             sandproof_protocol::lifecycle::UnloadObservation {
                 request: intent.clone(),
-                unloaded: None,
+                outcome: sandproof_protocol::lifecycle::UnloadOutcome::Pending,
             },
         ))
     }
@@ -121,10 +143,14 @@ impl HostPort for Host {
     fn observe_lifecycle_create(
         &self,
         intent: &AcceptedLifecycleIntent,
-        _: Duration,
+        budget: Duration,
     ) -> Result<CreateObservation, PortError> {
+        self.observation_budgets.lock().unwrap().push(budget);
+        if let Some(error) = self.observation_error_once.lock().unwrap().take() {
+            return Err(error);
+        }
         self.observations.fetch_add(1, Ordering::SeqCst);
-        let value = self.observed(intent);
+        let mut value = self.observed(intent);
         let blocked = {
             let mut slot = self.blocked.lock().unwrap();
             if slot
@@ -142,6 +168,9 @@ impl HostPort for Host {
                 .continue_work
                 .recv_timeout(Duration::from_secs(5))
                 .unwrap();
+            if let Some(current) = self.current_request_after_block.lock().unwrap().take() {
+                value.current_request = current;
+            }
         }
         Ok(value)
     }

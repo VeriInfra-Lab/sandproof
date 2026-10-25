@@ -418,7 +418,7 @@ fn mapped_destroy_revokes_routes_and_restarted_cleanup_needs_no_startup_epoch() 
     app.record_lifecycle_intent(&request(), &context()).unwrap();
     app.establish_lifecycle_host_epoch().unwrap();
     let local = advance(&app).unwrap().local.unwrap();
-    let secret = state.lock().unwrap().configurations[&local.sandbox.0]
+    let secret = state.lock().unwrap().configurations[&(local.sandbox.0, 1)]
         .0
         .clone();
     let permit = app

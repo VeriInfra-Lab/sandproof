@@ -47,7 +47,7 @@ pub(in crate::controller) fn read_create_options(
     }
 }
 
-fn reserve_startup_in_admission(
+pub(in crate::controller) fn reserve_startup_in_admission(
     tx: &WorldTransaction<'_>,
     namespace: &str,
     key: core::OperationKey,
@@ -253,6 +253,53 @@ pub(super) fn accounted(
     })
 }
 
+// Initial readiness starts the usable Create lease. Resume spends the same
+// original remaining lifetime; it cannot refresh any of its four timestamps.
+fn running_lifetime(
+    kind: core::OperationKind,
+    lifetime: Lifetime,
+    now_ms: i64,
+) -> Result<Option<Lifetime>, JournalError> {
+    let origin = lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?;
+    if now_ms < 0 || now_ms < origin {
+        return Err(JournalError::UnsupportedInput);
+    }
+    match kind {
+        core::OperationKind::Resume => {
+            if now_ms >= lifetime.deadline_ms || now_ms >= lifetime.max_deadline_ms {
+                return Err(JournalError::UnsupportedInput);
+            }
+            Ok(None)
+        }
+        core::OperationKind::Create => {
+            if now_ms >= lifetime.startup_deadline_ms {
+                return Err(JournalError::UnsupportedInput);
+            }
+            let duration = lifetime
+                .deadline_ms
+                .checked_sub(origin)
+                .ok_or(JournalError::CorruptStore)?;
+            let maximum = lifetime
+                .max_deadline_ms
+                .checked_sub(origin)
+                .ok_or(JournalError::CorruptStore)?;
+            Ok(Some(Lifetime {
+                started_at_ms: Some(now_ms),
+                deadline_ms: now_ms
+                    .checked_add(duration)
+                    .ok_or(JournalError::UnsupportedInput)?,
+                max_deadline_ms: now_ms
+                    .checked_add(maximum)
+                    .ok_or(JournalError::UnsupportedInput)?,
+                ..lifetime
+            }))
+        }
+        core::OperationKind::Pause | core::OperationKind::Kill => {
+            Err(JournalError::UnsupportedInput)
+        }
+    }
+}
+
 impl ControllerJournal {
     /// Bind the visible lifetime origin to the first Running publication.
     /// Admission reserves time and disk before host work, but E2B starts the
@@ -280,39 +327,23 @@ impl ControllerJournal {
         let lifetime = read_lifetime(&tx, &self.namespace, sandbox, record.owner)
             .map_err(|_| JournalError::CorruptStore)?
             .ok_or(JournalError::CorruptStore)?;
-        let admitted_at = lifetime.started_at_ms.ok_or(JournalError::CorruptStore)?;
-        if started_at_ms < admitted_at {
-            return Err(JournalError::UnsupportedInput);
-        }
-        if started_at_ms >= lifetime.startup_deadline_ms {
-            // A late-ready VM cannot win a race against its persisted startup
-            // watchdog merely because the periodic scanner has not run yet.
-            return Err(JournalError::UnsupportedInput);
-        }
-        let initial_ms = lifetime
-            .deadline_ms
-            .checked_sub(admitted_at)
-            .ok_or(JournalError::CorruptStore)?;
-        let total_ms = lifetime
-            .max_deadline_ms
-            .checked_sub(admitted_at)
-            .ok_or(JournalError::CorruptStore)?;
-        let end = started_at_ms
-            .checked_add(initial_ms)
-            .ok_or(JournalError::UnsupportedInput)?;
-        let max_end = started_at_ms
-            .checked_add(total_ms)
-            .ok_or(JournalError::UnsupportedInput)?;
+        let kind = record
+            .current_operation
+            .ok_or(JournalError::CorruptStore)?
+            .kind;
+        let update = running_lifetime(kind, lifetime, started_at_ms)?;
         let decision = storage::apply(
             &tx,
             &self.namespace,
             core::ControllerInput::Publication(core::PublicationInput::Running(sandbox)),
         )?;
-        let id = identity::sandbox_id(&self.namespace, sandbox)?;
-        tx.execute(
-            "UPDATE sandbox_lifetimes SET started_at_ms=?1, deadline_ms=?2, max_deadline_ms=?3 WHERE sandbox_id=?4",
-            params![started_at_ms, end, max_end, id.as_str()],
-        )?;
+        if let Some(lifetime) = update {
+            let id = identity::sandbox_id(&self.namespace, sandbox)?;
+            tx.execute(
+                "UPDATE sandbox_lifetimes SET started_at_ms=?1, deadline_ms=?2, max_deadline_ms=?3 WHERE sandbox_id=?4",
+                params![lifetime.started_at_ms, lifetime.deadline_ms, lifetime.max_deadline_ms, id.as_str()],
+            )?;
+        }
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
@@ -776,23 +807,33 @@ impl ControllerJournal {
             .sandbox_records()
             .iter()
             .filter_map(|(sandbox, record)| {
+                let operation = record.current_operation?;
                 (record.phase == core::Phase::Starting
-                    && matches!(record.current_operation, Some(op)
-                        if op.kind == core::OperationKind::Create
-                            && matches!(op.status,
-                                core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown)))
-                .then_some((*sandbox, record.owner))
+                    && matches!(
+                        operation.kind,
+                        core::OperationKind::Create | core::OperationKind::Resume
+                    )
+                    && matches!(
+                        operation.status,
+                        core::OperationStatus::Pending | core::OperationStatus::OutcomeUnknown
+                    ))
+                .then_some((*sandbox, record.owner, operation.kind))
             })
             .collect();
         let maximum_batch =
             super::capacity::config(&tx)?.map_or(u64::MAX, |cap| cap.max_transaction_inputs);
-        for (sandbox, owner) in due {
+        for (sandbox, owner, kind) in due {
             if aborted as u64 >= maximum_batch {
                 break;
             }
             let lifetime = read_lifetime(&tx, &self.namespace, sandbox, owner)?
                 .ok_or(AdmissionError::UnmanagedActive)?;
-            if lifetime.startup_deadline_ms > now_ms {
+            let deadline = if kind == core::OperationKind::Resume {
+                lifetime.deadline_ms.min(lifetime.max_deadline_ms)
+            } else {
+                lifetime.startup_deadline_ms
+            };
+            if deadline > now_ms {
                 continue;
             }
             storage::apply(
@@ -860,5 +901,49 @@ impl ControllerJournal {
         tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(decision)
+    }
+}
+
+#[cfg(test)]
+mod running_lifetime_tests {
+    use super::*;
+
+    fn original() -> Lifetime {
+        Lifetime {
+            started_at_ms: Some(100),
+            deadline_ms: 10_000,
+            max_deadline_ms: 20_000,
+            startup_deadline_ms: 500,
+            disk_bytes: 4096,
+        }
+    }
+
+    #[test]
+    fn resume_after_original_startup_window_preserves_all_original_timestamps() {
+        let saved = original();
+        assert!(running_lifetime(core::OperationKind::Create, saved, 600).is_err());
+        assert_eq!(
+            running_lifetime(core::OperationKind::Resume, saved, 600).unwrap(),
+            None
+        );
+        for now in [10_000, 20_000, 99, -1] {
+            assert!(running_lifetime(core::OperationKind::Resume, saved, now).is_err());
+        }
+    }
+
+    #[test]
+    fn only_first_create_publication_starts_the_usable_lease() {
+        let saved = original();
+        let updated = running_lifetime(core::OperationKind::Create, saved, 200)
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.started_at_ms, Some(200));
+        assert_eq!(updated.deadline_ms, 10_100);
+        assert_eq!(updated.max_deadline_ms, 20_100);
+        assert_eq!(updated.startup_deadline_ms, saved.startup_deadline_ms);
+        assert_eq!(updated.disk_bytes, saved.disk_bytes);
+        for kind in [core::OperationKind::Pause, core::OperationKind::Kill] {
+            assert!(running_lifetime(kind, saved, 200).is_err());
+        }
     }
 }

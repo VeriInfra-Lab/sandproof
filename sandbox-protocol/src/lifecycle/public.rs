@@ -49,6 +49,16 @@ pub struct PublicUnloadRequest {
     pub expected_version: u64,
 }
 
+/// The authority selects the original material and the next execution identity.
+/// Neither a caller-supplied capture nor a new lifetime is accepted here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicResumeRequest {
+    pub window: RequestWindowId,
+    pub sequence: RequestSequence,
+    pub expected_version: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublicDestroyRequest {
@@ -84,6 +94,8 @@ pub enum PublicSessionPhase {
     Renewing,
     Unloading,
     Unloaded,
+    Resuming,
+    StateLost,
     Terminating,
     Cleaned,
 }
@@ -95,7 +107,7 @@ pub struct PublicSessionView {
     pub operation: OperationKey,
     pub current_version: u64,
     pub phase: PublicSessionPhase,
-    pub unloaded: Option<super::UnloadedFacts>,
+    pub unload_outcome: Option<super::UnloadOutcome>,
     /// Original Create outcome, retained independently of the current Destroy.
     pub create_refusal: Option<super::CreateRefusalReason>,
 }

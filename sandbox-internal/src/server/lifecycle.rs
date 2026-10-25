@@ -10,6 +10,7 @@ use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
 pub(super) enum Call {
     Record,
     CreateObservation,
+    ResumeObservation,
     UnloadObservation,
     TerminalObservation,
     Confirm,
@@ -84,17 +85,11 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     if intent.validate(&context).is_err() {
         return response(StatusCode::CONFLICT, Bytes::new());
     }
+    if matches!(call, Call::ResumeObservation) {
+        return resume_observation(intent, context, handler).await;
+    }
     if matches!(call, Call::UnloadObservation) {
-        return match handler.observe_unload(intent.clone(), context).await {
-            Ok(view) if view.matches_request(&intent) => json_response(
-                &view,
-                sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES,
-            ),
-            Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-            Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
-                response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
-            }
-        };
+        return unload_observation(intent, context, handler).await;
     }
     if matches!(call, Call::CreateObservation) {
         return match handler.observe_create(intent.clone(), context).await {
@@ -118,6 +113,39 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     }
     match handler.record_lifecycle(intent.clone(), context).await {
         Ok(recorded) if recorded.matches(&intent) => json_response(&recorded, REQUEST_BODY_BYTES),
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+
+async fn unload_observation<H: LifecycleReceiver>(
+    intent: AcceptedLifecycleIntent,
+    context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    match handler.observe_unload(intent.clone(), context).await {
+        Ok(view) if view.matches_request(&intent) => json_response(
+            &view,
+            sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES,
+        ),
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+
+async fn resume_observation<H: LifecycleReceiver>(
+    intent: AcceptedLifecycleIntent,
+    context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    match handler.observe_resume(intent.clone(), context).await {
+        Ok(view) if view.matches_request(&intent) => {
+            json_response(&view, crate::lifecycle::RESUME_OBSERVATION_BODY_BYTES)
+        }
         Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
         Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
             response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())

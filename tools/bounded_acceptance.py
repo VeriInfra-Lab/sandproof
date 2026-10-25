@@ -231,7 +231,7 @@ def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
     for index, role in enumerate(("runtime", "builder")):
         matches = [pool for pool in profile["pools"] if pool["role"] == role]
         expected = {"namespace": namespaces[index], "database": str(root / str(index) / "db/controller.db"),
-                    "node_state_dir": str(root / str(index) / "state"), "chroot_base": str(root / str(index) / "jails")}
+                    "node_state_dir": str(root / str(index) / "state"), "chroot_base": str(root / str(index) / "p/v")}
         if len(matches) != 1 or any(matches[0][field] != value for field, value in expected.items()):
             raise ValueError("fixed physical profile differs from explicit acceptance layout: " + role)
     public = profile["public_build"]
@@ -248,7 +248,7 @@ def validate_acceptance_socket_paths(root, namespaces, firecracker):
     """
     identifier = 2**64 - 1
     for index, namespace in enumerate(namespaces):
-        path = (Path(root) / str(index) / "jails" / Path(firecracker).name
+        path = (Path(root) / str(index) / "p/v" / Path(firecracker).name
                 / f"vm-{namespace}-{identifier}" / "root/api.socket")
         if len(os.fsencode(path)) >= 108:
             raise ValueError("acceptance path too long for Firecracker socket")

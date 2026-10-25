@@ -7,8 +7,9 @@
 //! discard history: the checked retirement reducer must compact it first.
 //!
 //! Pause/capture state uses the same format and validation as startup and kill.
-//! Resume remains disabled until its explicit source/incarnation rules are
-//! connected. This validator checks structure under the host contracts; it is
+//! Resume and repeated captures check consecutive epochs, native generations,
+//! exact original sources and each resource's own allocation plan. This validator
+//! checks structure under the host contracts; it is
 //! not a proof of historical reachability or authenticity of host evidence.
 //! Record bounds alone do not establish a byte bound. The service must bound
 //! encoded input BEFORE parsing and use a bounded writer when encoding, then
@@ -246,4 +247,17 @@ pub fn restore(
     let world = wire.into_world()?;
     validate::world(&world)?;
     Ok(world)
+}
+
+// Metadata retirement of snapshot histories uses these same source, epoch,
+// generation and reference checks. This is structural validation only: the
+// original retirement certificate must separately attest actual quiescence.
+pub(crate) fn valid_snapshot_retirement_history(world: &World, sandbox: SandboxId) -> bool {
+    validate::world(world).is_ok()
+        && world.operation_plans.entries().iter().all(|(key, plan)| {
+            key.sandbox != sandbox
+                || plan.capture.is_none_or(|capture| {
+                    capture.eligibility() == crate::capture::RestoreEligibility::Revoked
+                })
+        })
 }

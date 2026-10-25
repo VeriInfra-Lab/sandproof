@@ -18,6 +18,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -91,7 +92,7 @@ def exercise(args):
     namespaces = [secrets.token_hex(8), secrets.token_hex(8)]
     while namespaces[0][:6] == namespaces[1][:6]:
         namespaces[1] = secrets.token_hex(8)
-    for name in ('db', 'state', 'jails', 'images'):
+    for name in ('db', 'state', 'p', 'images'):
         (root / name).mkdir(mode=0o700)
     for source, target in ((args.kernel, root / 'images/kernel'), (args.rootfs, root / 'images/rootfs')):
         subprocess.run(['/usr/bin/cp', '--reflink=auto', '--sparse=always', str(source), str(target)], check=True)
@@ -101,7 +102,7 @@ def exercise(args):
     template = descriptor('proxy-policy', root / 'images/kernel', root / 'images/rootfs', 1, args.memory_mib)
     port, key = free_loopback_port(), secrets.token_hex(32)
     cfg = {'namespace': namespaces[0], 'database': str(root / 'db/controller.db'),
-        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'jails'),
+        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'p/v'),
         'jailer': str(args.jailer), 'firecracker': str(args.firecracker),
         'kernel': template['kernel']['path'], 'rootfs': template['rootfs']['path'],
         'uid_base': args.uid_base, 'vcpu_count': 1, 'memory_mib': args.memory_mib,
@@ -116,7 +117,7 @@ def exercise(args):
             'compute_limits': {'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
                 'max_memory_bytes_global': (args.memory_mib + 256) * MIB,
                 'max_memory_bytes_per_tenant': (args.memory_mib + 256) * MIB}}}
-    cfg = complete_runtime(cfg, slots=1)
+    cfg = complete_runtime(cfg, slots=1, inbox_sessions=4+cfg["max_active_global"])
     url = f'http://127.0.0.1:{port}'
     options = dict(api_url=url, sandbox_url=url, api_key=key, domain='example.invalid', retries=0, request_timeout=90)
     proxy = BenchmarkProxy(root / 'proxy', namespaces, args.proxy_binary, args.proxy_sha256, port=args.proxy_socks_port)
@@ -130,7 +131,7 @@ def exercise(args):
         max_artifact_bytes_per_tenant=inputs['rootfs']['bytes']*2,
         max_template_disk_bytes=inputs['rootfs']['bytes'],validation_timeout_secs=120)
     services = RuntimeServices.prepare(args,root,[cfg],[cfg['templates']],key,
-        url.removeprefix('http://'),service_record,job_count=4,registry_config=registry)
+        url.removeprefix('http://'),service_record,retained_sessions=4 + cfg['max_active_global'],registry_config=registry)
     create_identities = {}
     helper = args.probe.read_bytes()
 
@@ -167,7 +168,7 @@ def exercise(args):
             for field in ('kernel','rootfs'):
                 if bound[field]['sha256']!=template[field]['sha256']:
                     raise RuntimeError('original template fingerprint changed')
-            record['network_inode']=json.loads((root/'jails/.claims'/name/'network.json').read_text())['namespace_inode']
+            record['network_inode']=json.loads((original_chroot(root) / '.claims'/name/'network.json').read_text())['namespace_inode']
             identities[name]=record
             save(root/'resource-evidence.json',identities)
         finally:

@@ -66,6 +66,7 @@ pub(super) fn apply(
         .operation_record(key)
         .ok_or(JournalError::CorruptStore)?;
     if world.operation_record(key).is_none() {
+        super::capacity::require_operation_room(transaction, &world, key, ledger.operation.kind)?;
         allocators::require_available(transaction)?;
     }
     allocators::record_accepted(transaction, &world, sandbox, operation.id)?;

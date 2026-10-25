@@ -32,8 +32,8 @@ pub use internal_inbox::{
 pub use lifecycle_inbox::{
     CreateReadiness, CreateReadinessPending, LifecycleAudit, LifecycleAuditOperation,
     LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
-    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, NativeCreateSnapshot,
-    SourceWork, SourceWorkRecord,
+    LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState,
+    MaterialRetirementQuestion, NativeCreateSnapshot, SourceWork, SourceWorkRecord,
 };
 mod private_build;
 mod registry;
@@ -64,6 +64,25 @@ use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 type ReceiptRow = (i64, Vec<u8>, String, Option<Vec<u8>>);
+
+fn terminal_capture_stop_input(world: &core::World, input: &core::ControllerInput) -> bool {
+    let core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(sandbox, generation, vm)) =
+        input
+    else {
+        return false;
+    };
+    world.sandbox_record(*sandbox).is_some_and(|row| {
+        core::capture::drain::terminal_capture_drain_allowed(
+            world,
+            &core::Command::StopVm {
+                sandbox: *sandbox,
+                epoch: row.epoch,
+                generation: *generation,
+                vm: *vm,
+            },
+        )
+    })
+}
 
 /// Only the controller owns this lease; a child never receives its authority.
 struct ControllerLease {
@@ -655,9 +674,10 @@ impl ControllerJournal {
         }
         if matches!(
             input,
-            core::ControllerInput::Request(
-                core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
-            )
+            core::ControllerInput::Capture(_)
+                | core::ControllerInput::Request(
+                    core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
+                )
         ) {
             // Recovery schema support alone does not admit physical work.
             // Create uses its existing admission; pause needs the separately
@@ -704,6 +724,7 @@ impl ControllerJournal {
         if storage::unresolved(&world, sandbox)
             && !terminal_prepare_abort
             && !terminal_activation_abort
+            && !terminal_capture_stop_input(&world, &input)
         {
             return Err(JournalError::UnresolvedAction);
         }
@@ -823,6 +844,10 @@ impl ControllerJournal {
             }
             if storage::unresolved(&world, action.command.command().sandbox())
                 && !core::scheduler::dispatch_allowed_during_abort(&world, action.command.command())
+                && !core::capture::drain::terminal_capture_drain_allowed(
+                    &world,
+                    action.command.command(),
+                )
             {
                 continue;
             }
@@ -842,6 +867,13 @@ impl ControllerJournal {
                 continue;
             }
             if !lifecycle_inbox::source_work::full::claim(&transaction, &world, &action)? {
+                continue;
+            }
+            if !lifecycle_inbox::source_work::restore::claim_activation(
+                &transaction,
+                &world,
+                &action,
+            )? {
                 continue;
             }
             crashes.hit(CrashPoint::BeforeDispatchClaim)?;
@@ -909,6 +941,12 @@ impl ControllerJournal {
         }
         let capacity = capacity::config(&transaction)?.ok_or(JournalError::UnsupportedStore)?;
         let serialized = checkpoint::encode_limited(receipt, capacity.max_receipt_bytes)?;
+        lifecycle_inbox::source_work::full::validate_continue_receipt(
+            &transaction,
+            &transaction.world(),
+            &action,
+            receipt,
+        )?;
         lifecycle_inbox::source_work::full::save_receipt(
             &transaction,
             &transaction.world(),
@@ -1028,8 +1066,16 @@ fn apply_outcome<E: HostEvidence>(
             if !evidence.validates(action.command.command()) {
                 return Err(JournalError::InvalidHostEvidence);
             }
-            if !core::effect::command_result_present(&transaction.world(), action.command.command())
-            {
+            // Frozen is valid historical evidence for an OLD startup Activate,
+            // but it cannot complete the new original-continue activation.
+            // Apply its actual native worker transition before acknowledging it.
+            if core::capture::continuation::continuation_activation_pending(
+                &transaction.world(),
+                action.command.command(),
+            ) || !core::effect::command_result_present(
+                &transaction.world(),
+                action.command.command(),
+            ) {
                 storage::apply(
                     transaction,
                     namespace,

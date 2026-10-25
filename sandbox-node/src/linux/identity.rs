@@ -33,9 +33,10 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         vm: core::VmId,
     ) -> NodeResult<RuntimeConfig> {
-        let secret = self.secret(sandbox)?;
-        let observed = self.observation_config(vm, secret.template.as_ref())?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
+        let observed = self.observation_config(sandbox, vm, secret.template.as_ref())?;
         Ok(RuntimeConfig {
+            guest_instance_id: observed.guest_instance_id,
             console_policy: observed.console_policy,
             jailer: observed.jailer,
             firecracker: observed.firecracker,
@@ -55,6 +56,7 @@ impl LinuxWorker {
 
     pub(super) fn observation_config(
         &self,
+        sandbox: core::SandboxId,
         vm: core::VmId,
         template: Option<&TemplateBinding>,
     ) -> NodeResult<RuntimeObservationConfig> {
@@ -62,6 +64,7 @@ impl LinuxWorker {
         let vm_name = self.vm_name(vm);
         launch_observation::bind_template(
             RuntimeObservationConfig {
+                guest_instance_id: format!("sb-{}-{}", self.config.namespace, sandbox.0),
                 console_policy: self.config.bounded_host.console_policy.map(
                     |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {

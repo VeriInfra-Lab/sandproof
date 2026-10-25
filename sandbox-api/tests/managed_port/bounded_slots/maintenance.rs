@@ -115,16 +115,30 @@ impl HostCapacity for FleetHost {
 }
 
 impl LaunchConfiguration for FleetHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        self.sandbox(sandbox)?.put_secret(sandbox, token)
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), PortError> {
+        self.sandbox(sandbox)?
+            .put_secret(sandbox, generation, token)
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        self.sandbox(sandbox)?.has_secret(sandbox)
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, PortError> {
+        self.sandbox(sandbox)?.has_secret(sandbox, generation)
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        self.sandbox(sandbox)?.token_for(sandbox)
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, PortError> {
+        self.sandbox(sandbox)?.token_for(sandbox, generation)
     }
 }
 
@@ -541,26 +555,27 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     // recommending deployment values.
     let policy = MaintenanceConfig {
         retention_ms: 100,
-        max_checkpoint_bytes: 4 * 1024 * 1024,
+        max_operations_per_sandbox: 8,
+        max_checkpoint_bytes: 32 * 1024 * 1024,
         max_records: 10_000,
-        max_references: 1_000_000,
+        max_references: 4_194_304,
         max_tail_inputs: 8,
         max_tail_bytes: 64 * 1024,
         max_input_bytes: 8192,
         prune_batch_rows: 3,
         capacity: Some(CapacityConfig {
             max_live_sandboxes: 4,
-            max_sql_rows: 1024,
-            max_sql_bytes: 16 * 1024 * 1024,
-            max_sql_value_bytes: 256 * 1024,
+            max_sql_rows: 8192,
+            max_sql_bytes: 256 * 1024 * 1024,
+            max_sql_value_bytes: 16 * 1024 * 1024,
             max_receipt_bytes: 16 * 1024,
             max_transaction_inputs: 4,
             max_transaction_bytes: 32 * 1024,
-            max_database_bytes: 512 * 1024 * 1024,
-            max_wal_bytes: 520 * 1024 * 1024,
-            max_shm_bytes: 2 * 1024 * 1024,
-            checkpoint_scratch_bytes: 8 * 1024 * 1024,
-            max_online_storage_bytes: 1042 * 1024 * 1024,
+            max_database_bytes: 4_294_967_296,
+            max_wal_bytes: 4_321_181_696,
+            max_shm_bytes: 9_437_184,
+            checkpoint_scratch_bytes: 64 * 1024 * 1024,
+            max_online_storage_bytes: 8_692_695_040,
         }),
     };
     let initial =

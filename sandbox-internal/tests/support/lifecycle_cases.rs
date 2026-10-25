@@ -35,6 +35,13 @@ impl sandproof_internal::DataReceiver for Counted {
     }
 }
 impl LifecycleReceiver for Counted {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
     async fn record_lifecycle(
         &self,
         intent: AcceptedLifecycleIntent,
@@ -113,6 +120,47 @@ fn counted_server(
             .unwrap(),
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn unsupported_resume_is_rejected_over_actual_tls() {
+    let certs = certificates();
+    let count = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server = counted_server(&certs, Arc::clone(&count), Arc::clone(&captured));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let client = InternalClient::new(
+        ClientTls::new(
+            certs.center.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(address, "host.test".into(), fixture::node("host-a")).unwrap(),
+        limits(),
+    );
+    let request = accepted(LifecycleOperation::Resume {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        target_incarnation: 2.try_into().unwrap(),
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
+    });
+    // Counted supports recording only. Its explicit refusal reproduces the
+    // former trait default, through the authenticated endpoint and wrapper.
+    assert!(matches!(
+        client.observe_lifecycle_resume(&request).await,
+        Err(TransportError::Rejected)
+    ));
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    assert!(captured.lock().unwrap().is_empty());
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
+    assert_eq!(client.active_calls(), 0);
 }
 
 #[tokio::test]

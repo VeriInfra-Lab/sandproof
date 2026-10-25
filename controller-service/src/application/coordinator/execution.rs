@@ -186,8 +186,17 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .journal
                 .data_credential(sandbox)
                 .map_err(map_journal)?;
+            let key = core::OperationKey {
+                sandbox,
+                operation: record
+                    .current_operation
+                    .ok_or(ApplicationError::OutcomeUnknown)?
+                    .id,
+            };
             let unclaimed = world.effect_ids().iter().all(|effect| {
-                effect.command().sandbox() != sandbox
+                world
+                    .logical_effect(&effect.logical)
+                    .is_none_or(|logical| logical.origin != core::EffectOrigin::Operation(key))
                     || world.effect_status(effect) == Some(core::EffectStatus::Committed)
             });
             (options, registered, unclaimed, record.generation)
@@ -196,13 +205,13 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if registered.is_none() && !unclaimed {
             return Err(ApplicationError::OutcomeUnknown);
         }
-        if !host.has_bound_launch_config(sandbox, &options)? {
+        if !host.has_bound_launch_config(sandbox, generation, &options)? {
             if registered.is_some() || !unclaimed {
                 return Err(ApplicationError::OutcomeUnknown);
             }
-            host.put_bound_launch_config(sandbox, &token()?, &options)?;
+            host.put_bound_launch_config(sandbox, generation, &token()?, &options)?;
         }
-        let secret = host.token_for(sandbox)?;
+        let secret = host.token_for(sandbox, generation)?;
         let digest = data_credentials::digest(&secret)?;
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         if inner
@@ -254,30 +263,18 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         self.prepare_unload_drain(sandbox, host.as_ref())?;
         self.prepare_execution(sandbox, host.as_ref())?;
-        // Reconciliation observes only original Dispatched/Unknown identities.
-        // It cannot race an in-process worker: this turn owns the session gate.
-        let uncertain = {
-            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            inner
-                .journal
-                .uncertain_actions()
-                .map_err(map_journal)?
-                .into_iter()
-                .filter(|action| action.command.command().sandbox() == sandbox)
-                .collect::<Vec<_>>()
-        };
-        for action in uncertain {
-            if let Some(receipt) = self.observe_capture_action(host.as_ref(), &action)? {
-                let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-                // complete loads the latest World and validates the full action.
-                // A terminal result can add physical facts, never grant access.
-                inner
-                    .journal
-                    .reconcile_observed(&action, &receipt)
-                    .map_err(map_journal)?;
-            }
-        }
+        self.reconcile_current_actions(sandbox, host.as_ref())?;
+        self.prepare_original_continue_if_ended(sandbox, host.as_ref())?;
         for _ in 0..128 {
+            self.observe_capture_ends(sandbox, host.as_ref())?;
+            // The failed Pause can have no reserved snapshot. Publish its exact
+            // acknowledged continuation before the ordinary Pause scheduler
+            // considers reserving one on the already closed plan.
+            if let Some(published) =
+                self.publish_original_continue_if_ready(sandbox, host.as_ref())?
+            {
+                return Ok(published);
+            }
             let action = {
                 let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
                 inner
@@ -320,23 +317,81 @@ impl<H: ControllerHost> ControllerApplication<H> {
                         drop(inner);
                         return self.release_current_slot(sandbox, host.as_ref());
                     }
-                    core::workflow::WorkflowStep::Blocked => return Ok(false),
+                    core::workflow::WorkflowStep::Blocked => {
+                        drop(inner);
+                        if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                            continue;
+                        }
+                        return Ok(self
+                            .publish_original_continue_if_ready(sandbox, host.as_ref())?
+                            .unwrap_or(false));
+                    }
                 }
             };
-            let result = self.execute_capture_action(host.as_ref(), &action)?;
-            let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            match result {
-                Ok(receipt) => {
-                    inner
-                        .journal
-                        .complete(&receipt, &mut NeverCrash)
-                        .map_err(map_journal)?;
+            let result = match self.execute_capture_action(host.as_ref(), &action) {
+                Ok(result) => result,
+                Err(error) => {
+                    if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                        continue;
+                    }
+                    return Err(error);
                 }
-                Err(_) => return Ok(false),
+            };
+            let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            if let Ok(receipt) = result {
+                inner
+                    .journal
+                    .complete(&receipt, &mut NeverCrash)
+                    .map_err(map_journal)?;
+            } else {
+                drop(inner);
+                if self.prepare_original_continue_if_ended(sandbox, host.as_ref())? {
+                    continue;
+                }
+                return Ok(false);
             }
         }
         // A finite turn is a fairness bound, not a failure or a new job queue.
         Ok(false)
+    }
+
+    // The caller owns ActiveSandbox; host observations remain outside the lock.
+    fn reconcile_current_actions(
+        &self,
+        sandbox: core::SandboxId,
+        host: &H,
+    ) -> Result<(), ApplicationError> {
+        // Reconciliation observes only original Dispatched/Unknown identities.
+        // It cannot race an in-process worker: this turn owns the session gate.
+        let uncertain = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .uncertain_actions()
+                .map_err(map_journal)?
+                .into_iter()
+                .filter(|action| action.command.command().sandbox() == sandbox)
+                .collect::<Vec<_>>()
+        };
+        for action in uncertain {
+            let receipt = match self.observe_capture_action(host, &action)? {
+                Some(receipt) => Some(receipt),
+                None => match self.continue_original_activation(host, &action)? {
+                    Some(receipt) => Some(receipt),
+                    None => self.continue_restore_activation(host, &action)?,
+                },
+            };
+            if let Some(receipt) = receipt {
+                let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+                // complete loads the latest World and validates the full action.
+                // A terminal result can add physical facts, never grant access.
+                inner
+                    .journal
+                    .reconcile_observed(&action, &receipt)
+                    .map_err(map_journal)?;
+            }
+        }
+        Ok(())
     }
 
     // The caller owns ActiveSandbox. All checks remain against original state;
@@ -414,7 +469,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     .ok_or(ApplicationError::OutcomeUnknown)?;
                 let expected = inner
                     .journal
-                    .committed_capture_expectation(sandbox)
+                    .committed_capture_expectation(&record.work)
                     .map_err(map_journal)?
                     .ok_or(ApplicationError::OutcomeUnknown)?;
                 Some((record, expected))
@@ -466,13 +521,19 @@ pub(super) fn local_routes_dropped<H: ControllerHost>(
             .is_none_or(DataLease::routes_dropped)
 }
 
-fn runtime_resources_reclaimed(world: &core::World, sandbox: core::SandboxId) -> bool {
+pub(super) fn runtime_resources_reclaimed(world: &core::World, sandbox: core::SandboxId) -> bool {
     if super::recovery::reclaimed_sandboxes(world).contains(&sandbox) {
         return true;
     }
     let Some(row) = world.sandbox_record(sandbox) else {
         return false;
     };
+    if row.terminal {
+        // Material/snapshot history survives until its separate settled Retire.
+        // The original terminal check still requires exact reclaimed runtime,
+        // closed native uses, a successful fence and no unresolved effects.
+        return core::maintenance::retirement::validate_terminal_cleanup(world, sandbox).is_ok();
+    }
     if row.phase != core::Phase::Paused || row.terminal || row.durable_snapshot.is_none() {
         return false;
     }

@@ -29,6 +29,13 @@ impl ControllerJournal {
         let mut inbox =
             super::super::super::codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         authenticated(&inbox, work.request(), context)?;
+        let (session, entry) = inbox.find(work.request())?.ok_or(JournalError::Conflict)?;
+        if inbox.sessions[session].entries[entry]
+            .unload_resolution
+            .is_some()
+        {
+            return Err(JournalError::Conflict);
+        }
         let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let i = sources
             .records
@@ -59,7 +66,7 @@ impl ControllerJournal {
         validate::full_binding(&sources.records[i], full)?;
         let reserved_material_bytes = reservation(full)?;
         let held = sources.records.iter().try_fold(0_u64, |sum, r| {
-            sum.checked_add(r.capture.as_ref().map_or(0, |c| c.reserved_material_bytes))
+            sum.checked_add(super::super::retirement::material_charge(r)?)
                 .ok_or(JournalError::MaintenanceCapacity)
         })?;
         if held
@@ -90,6 +97,7 @@ impl ControllerJournal {
             worker: None,
             completed: None,
             material_bytes: None,
+            end: None,
         });
         save(&tx, &sources)?;
         crashes.hit(CrashPoint::BeforeCommit)?;

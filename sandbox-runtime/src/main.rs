@@ -50,6 +50,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let config = RuntimeConfig {
+        guest_instance_id: args[2].clone(),
         console_policy: None,
         host_slot: None,
         jailer: PathBuf::from(&args[3]),

@@ -16,6 +16,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "api_response.rs"]
+mod api_response;
 #[path = "boot_plan.rs"]
 mod boot_plan;
 #[path = "cgroup.rs"]
@@ -35,9 +37,12 @@ mod original_stop;
 mod retirement;
 #[path = "snapshot.rs"]
 mod snapshot;
+#[path = "snapshot_restore.rs"]
+mod snapshot_restore;
+pub use snapshot_restore::{LoadedSnapshotObservation, LoadedSnapshotState};
 #[path = "snapshot_layout.rs"]
 mod snapshot_layout;
-pub use snapshot_layout::SnapshotLayout;
+pub use snapshot_layout::{FullMaterialRetirement, SnapshotLayout};
 #[path = "staging.rs"]
 mod staging;
 #[path = "uid_retirement.rs"]
@@ -52,8 +57,9 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureLimits, OriginalConfigurationObservation,
-    OriginalPauseObservation, PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
+    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureLimits, FullCaptureRequestEnd,
+    FullCaptureRequestOutcome, OriginalConfigurationObservation, OriginalPauseObservation,
+    PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
 };
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
@@ -171,6 +177,8 @@ pub enum ConsolePolicy {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Stable logical guest identity, preserved across physical VM incarnations.
+    pub guest_instance_id: String,
     /// Explicit discard is required by the full bounded deployment policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_policy: Option<ConsolePolicy>,
@@ -319,6 +327,7 @@ impl Runtime {
     }
 
     fn validate_physical_values(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+        validate_id(&config.guest_instance_id)?;
         if config
             .host_slot
             .as_ref()
@@ -394,6 +403,16 @@ impl Runtime {
     /// Preserves partial resources when a launch phase fails.
     pub fn launch(&self, id: &str) -> Result<Observation, RuntimeError> {
         Self::validate_images(&self.config)?;
+        let record = self.claim_and_spawn(id)?;
+        self.stage_and_boot(id, record.pid)?;
+        let observation = self.observe(id)?;
+        if observation.state != VmState::VmmRunning {
+            return Err(RuntimeError::Protocol("VM did not enter Running"));
+        }
+        Ok(observation)
+    }
+
+    fn claim_and_spawn(&self, id: &str) -> Result<ProcessRecord, RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         // Linux sockaddr_un.sun_path has 108 bytes including its trailing NUL.
@@ -407,12 +426,7 @@ impl Runtime {
             self.prepare_private_network(id, &claim)?;
         }
         let record = self.spawn_jailer(id, &claim)?;
-        self.stage_and_boot(id, record.pid)?;
-        let observation = self.observe(id)?;
-        if observation.state != VmState::VmmRunning {
-            return Err(RuntimeError::Protocol("VM did not enter Running"));
-        }
-        Ok(observation)
+        Ok(record)
     }
 
     fn claim_resource(&self, id: &str) -> Result<PathBuf, RuntimeError> {
@@ -528,6 +542,17 @@ impl Runtime {
 
     fn stage_and_boot(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
         self.require_launch_jail(id, 0)?;
+        self.wait_api_socket(id, pid)?;
+        let root = self.root_path(id);
+        self.stage_cold_images(&root)?;
+        boot_plan::BootPlan::for_runtime(&self.config)
+            .configure(|path, body| self.put(id, path, body))?;
+        self.configure_access_metadata(id)?;
+        self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
+        Ok(())
+    }
+
+    fn wait_api_socket(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
         let socket = self.socket_path(id);
         let deadline = Instant::now() + START_TIMEOUT;
         while !socket.exists() {
@@ -541,7 +566,10 @@ impl Runtime {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        let root = self.root_path(id);
+        Ok(())
+    }
+
+    fn stage_cold_images(&self, root: &Path) -> Result<(), RuntimeError> {
         copy_private_kernel(
             &self.config.kernel,
             &root.join("vmlinux"),
@@ -555,16 +583,17 @@ impl Runtime {
             Some(Gid::from_raw(self.config.vm_gid)),
         )
         .map_err(errno_to_io)?;
-        boot_plan::BootPlan::for_runtime(&self.config)
-            .configure(|path, body| self.put(id, path, body))?;
+        Ok(())
+    }
+
+    fn configure_access_metadata(&self, id: &str) -> Result<(), RuntimeError> {
         if let Some(hash) = &self.config.access_token_hash {
             self.put(
                 id,
                 "/mmds",
-                &json!({ "instanceID": id, "envID": "sandproof-base", "accessTokenHash": hash }),
+                &json!({ "instanceID": self.config.guest_instance_id, "envID": "sandproof-base", "accessTokenHash": hash }),
             )?;
         }
-        self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
     }
 
@@ -1280,6 +1309,30 @@ impl Runtime {
         self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
     }
 
+    fn api_stream(&self, id: &str, timeout: Duration) -> Result<UnixStream, RuntimeError> {
+        let record = self.read_record(id)?;
+        if verified_process(&record)?.is_none() {
+            return Err(RuntimeError::IdentityMismatch(
+                "API original VMM is not alive",
+            ));
+        }
+        self.require_launch_jail(id, 0)?;
+        let stream = UnixStream::connect(self.socket_path(id))?;
+        let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(errno_to_io)?;
+        if u32::try_from(peer.pid.as_raw_nonzero().get()).ok() != Some(record.pid)
+            || peer.uid.as_raw() != self.config.vm_uid
+            || peer.gid.as_raw() != self.config.vm_gid
+            || verified_process(&record)?.is_none()
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "API connected peer differs from original VMM",
+            ));
+        }
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
+        Ok(stream)
+    }
+
     fn api_with_timeout(
         &self,
         id: &str,
@@ -1288,63 +1341,7 @@ impl Runtime {
         body: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<Vec<u8>, RuntimeError> {
-        let mut stream = UnixStream::connect(self.socket_path(id))?;
-        stream.set_read_timeout(Some(timeout))?;
-        stream.set_write_timeout(Some(timeout))?;
-        let data = body.unwrap_or_default();
-        write!(
-            stream,
-            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            data.len()
-        )?;
-        stream.write_all(data)?;
-        let mut response = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        let header_end = loop {
-            if let Some(position) = response.windows(4).position(|part| part == b"\r\n\r\n") {
-                break position;
-            }
-            if response.len() > 65_536 {
-                return Err(RuntimeError::Protocol("API headers exceeded limit"));
-            }
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before headers"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        };
-        let header = std::str::from_utf8(&response[..header_end])
-            .map_err(|_| RuntimeError::Protocol("non-UTF-8 HTTP headers"))?;
-        let status: u16 = header
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .and_then(|code| code.parse().ok())
-            .ok_or(RuntimeError::Protocol("missing HTTP status"))?;
-        let declared_length: Option<usize> = header.lines().find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            key.trim()
-                .eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse().ok())
-                .flatten()
-        });
-        let content_length = if status == 204 || status == 304 || status < 200 {
-            declared_length.unwrap_or(0)
-        } else {
-            declared_length.ok_or(RuntimeError::Protocol("missing Content-Length"))?
-        };
-        if content_length > 1_048_576 {
-            return Err(RuntimeError::Protocol("API response exceeded limit"));
-        }
-        let body_start = header_end + 4;
-        while response.len() - body_start < content_length {
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before response body"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        }
-        let body = response[body_start..body_start + content_length].to_vec();
+        let (status, body) = self.api_reply(id, method, path, body, timeout)?;
         if !(200..300).contains(&status) {
             return Err(RuntimeError::Api {
                 status,
@@ -1352,6 +1349,25 @@ impl Runtime {
             });
         }
         Ok(body)
+    }
+
+    fn api_reply(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<(u16, Vec<u8>), RuntimeError> {
+        let mut stream = self.api_stream(id, timeout)?;
+        let data = body.unwrap_or_default();
+        write!(
+            stream,
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            data.len()
+        )?;
+        stream.write_all(data)?;
+        api_response::read_reply(&mut stream)
     }
 }
 
@@ -1798,6 +1814,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
@@ -1850,6 +1867,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
@@ -1926,6 +1944,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),

@@ -27,6 +27,8 @@ pub struct AuditView<'a> {
     revision: Revision,
     sandbox_highwater: u64,
     operation_highwater: u64,
+    /// Original whole-center reservation calculation, not a second quota model.
+    reserved_resources: Resources,
     nodes: &'a [NodeRegistration],
     retention_lanes: &'a [RetentionLane],
     sandboxes: Vec<SandboxAudit<'a>>,
@@ -183,6 +185,10 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
         revision,
         sandbox_highwater,
         operation_highwater,
+        reserved_resources: envelope
+            .center
+            .reserved(None, None)
+            .ok_or("invalid original center reservations")?,
         nodes: envelope.center.nodes(),
         retention_lanes: envelope.center.retention_lanes(),
         sandboxes,

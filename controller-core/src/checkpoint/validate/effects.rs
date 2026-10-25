@@ -69,6 +69,27 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
                 Some(LogicalEffectResult::RetiredByStop { attempt, coverage }),
                 EffectStatus::RetiredByStop(found),
             ) => attempt == current.attempt && coverage == found,
+            (
+                Some(LogicalEffectResult::RetiredByCaptureEnd {
+                    attempt,
+                    end_receipt,
+                }),
+                EffectStatus::RetiredByCaptureEnd(stored),
+            ) => {
+                attempt == current.attempt
+                    && end_receipt == stored
+                    && crate::capture::continuation::retired_capture_end_valid(
+                        world, &current, stored,
+                    )
+            }
+            (
+                Some(LogicalEffectResult::RetiredByCaptureDrain { attempt, coverage }),
+                EffectStatus::RetiredByCaptureDrain(stored),
+            ) => {
+                attempt == current.attempt
+                    && coverage == stored
+                    && crate::capture::drain::retired_capture_drain_valid(world, &current, stored)
+            }
             _ => false,
         };
         if !consistent {
@@ -76,24 +97,29 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         }
     }
     for (id, status) in world.effects.entries() {
-        let logical = world
-            .logical_effect(&id.logical)
-            .ok_or(Reject::InvalidEffect)?;
-        if id.attempt > logical.current_attempt
-            || !world.effect_keys.contains(id)
-            || !world.inflight.contains(id)
-        {
-            return Err(Reject::InvalidEffect);
-        }
-        if matches!(
-            status,
-            EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
-        ) {
-            historical_success(world, id.command())?;
-        }
-        if let EffectStatus::RetiredByStop(coverage) = status {
-            retired_stop(world, id, *coverage)?;
-        }
+        validate_attempt(world, id, *status)?;
+    }
+    Ok(())
+}
+
+fn validate_attempt(world: &World, id: &EffectId, status: EffectStatus) -> Result<(), Reject> {
+    let logical = world
+        .logical_effect(&id.logical)
+        .ok_or(Reject::InvalidEffect)?;
+    if id.attempt > logical.current_attempt
+        || !world.effect_keys.contains(id)
+        || !world.inflight.contains(id)
+    {
+        return Err(Reject::InvalidEffect);
+    }
+    if matches!(
+        status,
+        EffectStatus::Acknowledged(EffectOutcome::Succeeded(_))
+    ) {
+        historical_success(world, id.command())?;
+    }
+    if let EffectStatus::RetiredByStop(coverage) = status {
+        retired_stop(world, id, coverage)?;
     }
     Ok(())
 }
@@ -143,8 +169,8 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
             source,
             ..
         } => {
-            if source.is_some() {
-                return Err(Reject::UnsupportedSnapshotHistory);
+            if plan.is_none_or(|p| p.restore_from != *source) {
+                return Err(Reject::InvalidEffect);
             }
             startup_command(plan, *generation, *vm, *slot)?;
             reserved_vm(world, sandbox, *vm)?;
@@ -179,7 +205,9 @@ fn command(world: &World, command: &Command, origin: EffectOrigin) -> Result<(),
         }
         Command::ActivateVm { generation, vm, .. } => {
             let plan = plan.ok_or(Reject::InvalidEffect)?;
-            if !plan.sealed || plan.vm != Some(*vm) || plan.generation != *generation {
+            if (!plan.sealed || plan.vm != Some(*vm) || plan.generation != *generation)
+                && !crate::capture::continuation::activation_belongs_to_continuation(plan, command)
+            {
                 return Err(Reject::InvalidEffect);
             }
             vm_reference(world, sandbox, *vm, *generation)?;
@@ -263,8 +291,10 @@ fn fence_command(
     let operation = world
         .operation_record(origin.key)
         .ok_or(Reject::InvalidEffect)?;
-    let opening_kind = operation.operation.kind == OperationKind::Create
-        || operation.operation.kind == OperationKind::Pause;
+    let opening_kind = matches!(
+        operation.operation.kind,
+        OperationKind::Create | OperationKind::Pause | OperationKind::Resume
+    );
     if (!terminal && !opening_kind)
         || epoch == 0
         || epoch > row.epoch
@@ -335,6 +365,10 @@ fn historical_success(world: &World, command: &Command) -> Result<(), Reject> {
             slot_reference(world, *sandbox, *slot, *generation, Some(*vm))?;
             true
         }
+        Command::FreezeVm { .. } => {
+            effect::command_result_present(world, command)
+                || crate::capture::continuation::historical_freeze_after_continue(world, command)
+        }
         _ => effect::command_result_present(world, command),
     };
     if !valid {
@@ -366,7 +400,7 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
         && row.terminal
         && row.epoch == coverage.epoch
         && match ledger.operation.kind {
-            OperationKind::Create => matches!(
+            OperationKind::Create | OperationKind::Resume => matches!(
                 ledger.operation.status,
                 OperationStatus::Compensating(_) | OperationStatus::Failed(_)
             ),
@@ -376,7 +410,7 @@ fn retired_stop(world: &World, id: &EffectId, coverage: StopCoverage) -> Result<
                     | OperationStatus::OutcomeUnknown
                     | OperationStatus::Succeeded
             ),
-            OperationKind::Pause | OperationKind::Resume => false,
+            OperationKind::Pause => false,
         }
         && stop_logical.current_attempt == coverage.attempt
         && stop_logical.origin == EffectOrigin::Operation(coverage.operation)

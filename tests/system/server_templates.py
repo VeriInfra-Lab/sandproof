@@ -34,6 +34,7 @@ from server_process_crash import (
 )
 from _runtime_services import RuntimeServices, add_arguments
 from _center_host_services import local_binding
+from tools.capture_acceptance import original_chroot
 
 
 MIB = 1024 * 1024
@@ -74,7 +75,7 @@ def record_for(root, *, native_id):
         raise ValueError("original native physical binding is missing or ambiguous")
     slot = matches[0]
     name = f"vm-{matched[1]}-{slot['vm']}"
-    claim = json.loads((root / "jails/.claims" / name / "record.json").read_text())
+    claim = json.loads((original_chroot(root) / '.claims' / name / "record.json").read_text())
     return secret, name, claim
 
 
@@ -93,7 +94,7 @@ def assert_shape(root, firecracker, cgroup_parent, sandbox, expected, opener, ur
     secret, name, claim = record_for(root, native_id=native_id)
     assert secret["template"] == native_template
     assert process_start_ticks(claim["pid"]) == claim["start_time_ticks"]
-    assert (root / "jails" / firecracker.name / name / "root/rootfs.ext4").stat().st_size == shape["disk_bytes"]
+    assert (original_chroot(root) / firecracker.name / name / "root/rootfs.ext4").stat().st_size == shape["disk_bytes"]
     cgroup = cgroup_parent / name
     assert int((cgroup / "memory.max").read_text()) == shape["host_memory_bytes"]
     assert (cgroup / "cpu.max").read_text().strip() == f"{shape['cpu_count'] * 100000} 100000"
@@ -143,10 +144,10 @@ def exercise(args):
     root = Path(tempfile.mkdtemp(prefix="tm-", dir=parent))
     namespace = secrets.token_hex(8)
     firecracker = args.firecracker.resolve(strict=True)
-    if len(os.fsencode(root / "jails" / firecracker.name / f"vm-{namespace}-2/root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / firecracker.name / f"vm-{namespace}-2/root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("Firecracker socket path too long")
-    for name in ("db", "state", "jails", "images"):
+    for name in ("db", "state", "p", "images"):
         (root / name).mkdir(mode=0o700)
     kernel, first_image, second_image = (root / "images" / name for name in ("vmlinux", "small.ext4", "large.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, first_image), (args.second_rootfs, second_image)):
@@ -159,7 +160,7 @@ def exercise(args):
     settings = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(firecracker),
-        "chroot_base": str(root / "jails"), "kernel": str(args.kernel.resolve(strict=True)),
+        "chroot_base": str(root / "p/v"), "kernel": str(args.kernel.resolve(strict=True)),
         "rootfs": str(args.rootfs.resolve(strict=True)), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 256,
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 512 * MIB},
@@ -171,13 +172,13 @@ def exercise(args):
                       "compute_limits": {"max_vcpus_global": 3, "max_vcpus_per_tenant": 3,
                                          "max_memory_bytes_global": 1280 * MIB, "max_memory_bytes_per_tenant": 1280 * MIB}},
     }
-    settings = complete_runtime(settings, slots=slots)
+    settings = complete_runtime(settings, slots=slots, inbox_sessions=5+settings["max_active_global"])
     artifact_bytes = sum(binding[kind]['size_bytes'] for binding in templates for kind in ('kernel','rootfs'))
     registry = dict(root=str(root/'registry'),max_templates_global=2,max_templates_per_tenant=2,
         max_artifact_bytes_global=artifact_bytes,max_artifact_bytes_per_tenant=artifact_bytes,validation_timeout_secs=60)
     services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[settings['templates']],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=5,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        retained_sessions=5 + settings['max_active_global'],registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
     settings = services.native_pools[0]
     config = services.processes.bindings['center']['config']
     original_config = config.read_bytes()

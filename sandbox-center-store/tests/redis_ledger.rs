@@ -517,6 +517,43 @@ fn actual_commit_reply_loss_fences_until_original_state_is_durably_reaffirmed() 
 }
 
 #[test]
+fn actual_commit_reply_timeout_fences_until_original_state_is_durably_reaffirmed() {
+    let fixture = Engine::new();
+    let proxy = ReplyLoss::new(fixture.address);
+    let (mut ledger, committed) = RedisLedger::initialize(
+        endpoint(proxy.address),
+        Engine::config(1024),
+        fixture.lease(),
+        &state(1),
+    )
+    .unwrap();
+    let original = committed.into_observed();
+    proxy.timeout_after(0);
+    let result = ledger.commit(&original, &state(2));
+    proxy.release_timeout();
+    assert!(matches!(result, Err(StoreError::OutcomeUnknown)));
+    assert!(ledger.writes_fenced());
+    assert_eq!(fixture.revision(), "2");
+    assert!(matches!(
+        ledger.commit(&original, &state(3)),
+        Err(StoreError::WriteFenced)
+    ));
+    ledger.reconnect().unwrap();
+    let observed = ledger.read().unwrap();
+    assert_eq!(observed.state(), &state(2));
+    assert!(ledger.writes_fenced());
+    assert!(matches!(
+        ledger.commit(&observed, &state(3)),
+        Err(StoreError::WriteFenced)
+    ));
+    let confirmed = ledger.reaffirm(&observed).unwrap();
+    assert_eq!(confirmed.revision().get(), 3);
+    assert_eq!(confirmed.state(), &state(2));
+    assert!(!ledger.writes_fenced());
+    drop(ledger);
+}
+
+#[test]
 fn actual_noeviction_write_refusal_keeps_original_record_and_requires_reconciliation() {
     let fixture = Engine::new();
     let proxy = ReplyLoss::new(fixture.address);

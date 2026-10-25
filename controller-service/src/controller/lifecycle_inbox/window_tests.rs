@@ -4,7 +4,9 @@ use crate::NeverCrash;
 use crate::controller::{lifecycle_inbox::tests as fixture, transaction};
 use crate::{InternalAdmission, InternalLocalBinding};
 use sandbox_controller_core as core;
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RetentionWindowId};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, LifecycleOperation, RetentionWindowId,
+};
 
 struct Stop(CrashPoint);
 impl CrashInjector for Stop {
@@ -607,9 +609,10 @@ fn exhausted_retention_lanes_never_wrap_and_advertise_no_fresh_logical_capacity(
 }
 
 #[test]
-fn running_stopped_unknown_release_and_unconfirmed_native_work_keep_window_pinned() {
+fn unknown_release_pins_native_work_and_native_retirement_preserves_unconfirmed_window() {
     let dir = tempfile::tempdir().unwrap();
-    let mut journal = fixture::initialize(&dir.path().join("db"));
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
     let (create, local) = running_native(
         &mut journal,
         fixture::create("alpha", "session-a"),
@@ -678,24 +681,228 @@ fn running_stopped_unknown_release_and_unconfirmed_native_work_keep_window_pinne
         journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
         Err(JournalError::UnresolvedAction)
     ));
-    assert!(journal.retirement_candidates().unwrap().is_empty());
+    assert_native_retirement_preserves_unconfirmed_window(
+        journal, &path, &destroy, close, local, position,
+    );
+}
+
+fn assert_native_retirement_preserves_unconfirmed_window(
+    mut journal: ControllerJournal,
+    path: &std::path::Path,
+    destroy: &AcceptedLifecycleIntent,
+    close: LifecycleWindowClose,
+    local: InternalLocalBinding,
+    position: crate::HostSlotContext,
+) {
+    // Native details may retire before the center confirms its SDK window,
+    // but only with the original release and a durable, request-bound receipt.
+    let candidates = journal.retirement_candidates().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].sandbox, local.sandbox);
+    assert_eq!(candidates[0].owner, local.owner);
+    assert_eq!(candidates[0].operation, core::OperationId(2));
+    assert_eq!(candidates[0].release.unwrap().context, position);
+    let original = journal.lifecycle_work_state(destroy, &context()).unwrap();
+    assert_eq!(&original.intent, destroy);
+    assert_eq!(original.local, Some(local));
+    assert_eq!(original.local_operation, Some(core::OperationId(2)));
+    assert!(original.current && original.terminal);
+    let before = inbox(&journal);
+    assert_eq!(before.lanes[0].retired_through, 0);
     journal
-        .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
-        .unwrap();
-    journal
-        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .retire_reclaimed(
+            local.sandbox,
+            700_000,
+            |candidate| {
+                assert_eq!(candidate, &candidates[0]);
+                Ok(())
+            },
+            &mut NeverCrash,
+        )
         .unwrap();
     assert!(
         journal
             .world()
             .unwrap()
             .sandbox_record(local.sandbox)
-            .is_some()
+            .is_none()
+    );
+    let saved = inbox(&journal);
+    assert_eq!(saved.sessions.len(), 1);
+    assert_eq!(saved.sessions[0].entries, before.sessions[0].entries);
+    assert_eq!(saved.sessions[0].local, Some(local));
+    assert!(saved.sessions[0].native_retirement.is_some());
+    assert!(saved.sessions[0].confirmed_terminal.is_none());
+    assert_eq!(saved.lanes, before.lanes);
+    assert_eq!(saved.owners, before.owners);
+    drop(journal);
+    let mut journal = fixture::open(path);
+    fixture::refresh_epoch(&mut journal);
+    assert_eq!(inbox(&journal), saved);
+    assert_eq!(
+        journal.lifecycle_work_state(destroy, &context()).unwrap(),
+        original
     );
     assert_eq!(
-        journal.retirement_candidates().unwrap()[0].sandbox,
-        local.sandbox
+        journal
+            .record_lifecycle_intent(destroy, &context(), &mut NeverCrash)
+            .unwrap(),
+        original
     );
+    assert!(
+        journal
+            .lifecycle_destroy_cleaned(destroy, &context())
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context(), &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert!(journal.retirement_candidates().unwrap().is_empty());
+    assert_eq!(inbox(&journal), saved);
+    assert_eq!(
+        journal
+            .confirm_lifecycle_terminal(&close.terminal, &context(), &mut NeverCrash)
+            .unwrap()
+            .result,
+        close.terminal
+    );
+    let closed = journal
+        .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+        .unwrap();
+    assert_eq!(closed.terminal, close.terminal);
+    assert_eq!(closed.retired_through, destroy.retention.window);
+    assert_eq!(
+        journal
+            .close_lifecycle_window(&close, &context(), &mut NeverCrash)
+            .unwrap(),
+        closed
+    );
+    let saved = inbox(&journal);
+    assert!(saved.sessions.is_empty());
+    assert_eq!(saved.lanes[0].retired_through, closed.retired_through.get());
+    assert_eq!(saved.lanes[0].last_retired, Some(close.terminal));
+}
+
+#[test]
+fn retired_create_history_survives_reopen_only_for_the_original_request_until_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let mut journal = fixture::initialize(&path);
+    let (create, local) = running_native(
+        &mut journal,
+        fixture::create("alpha", "session-a"),
+        fixture::admission(),
+    );
+    let close = clean_native(&mut journal, &create, local);
+    let retained_at = 700_000;
+    journal
+        .retire_reclaimed(local.sandbox, retained_at, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    let world = journal.world().unwrap();
+    assert!(world.sandbox_record(local.sandbox).is_none());
+    let key = core::OperationKey {
+        sandbox: local.sandbox,
+        operation: local.operation,
+    };
+    assert!(world.operation_record(key).is_none());
+    let expires_at = world
+        .maintenance_state()
+        .unwrap()
+        .retained_result(key)
+        .unwrap()
+        .expires_at;
+    assert!(expires_at > retained_at);
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    fixture::refresh_epoch(&mut journal);
+    let view = journal
+        .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+            &create,
+            &context(),
+            i64::try_from(expires_at - 1).unwrap(),
+        )
+        .unwrap()
+        .view;
+    assert_eq!(
+        view.historical_result,
+        Some(core::OperationResult::Running(1))
+    );
+    assert_eq!(view.readiness, crate::CreateReadiness::NotCurrent);
+    assert_eq!(view.current_request, close.terminal.request);
+    assert!(view.native.is_none());
+    assert_retired_request_authorization(&journal, &create, local, expires_at);
+    assert_eq!(
+        journal
+            .expire_retained(expires_at - 1, &mut NeverCrash)
+            .unwrap(),
+        0
+    );
+    assert!(
+        journal
+            .expire_retained(expires_at, &mut NeverCrash)
+            .unwrap()
+            > 0
+    );
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    fixture::refresh_epoch(&mut journal);
+    let view = journal
+        .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+            &create,
+            &context(),
+            i64::try_from(expires_at).unwrap(),
+        )
+        .unwrap()
+        .view;
+    assert_eq!(view.historical_result, None);
+    assert_eq!(view.readiness, crate::CreateReadiness::NotCurrent);
+    assert!(
+        journal
+            .lifecycle_destroy_cleaned(&close.terminal.request, &context())
+            .unwrap()
+    );
+}
+
+fn assert_retired_request_authorization(
+    journal: &ControllerJournal,
+    create: &AcceptedLifecycleIntent,
+    local: InternalLocalBinding,
+    expires_at: u64,
+) {
+    let world = journal.world().unwrap();
+    assert!(matches!(
+        core::handle_query(
+            &world,
+            core::QueryRequest {
+                actor: core::Actor::Tenant(core::TenantId(local.owner.0 + 1)),
+                sandbox: local.sandbox,
+                operation: local.operation,
+            }
+        ),
+        Err(core::Reject::Unauthorized)
+    ));
+    let mut other_owner = create.clone();
+    other_owner.request.binding.key.owner = "beta".try_into().unwrap();
+    let mut other_parameters = create.clone();
+    let LifecycleOperation::Create {
+        create: parameters, ..
+    } = &mut other_parameters.request.operation
+    else {
+        panic!()
+    };
+    parameters.timeout_ms += 1;
+    for changed in [other_owner, other_parameters] {
+        assert!(matches!(
+            journal
+                .lifecycle_ready_candidate::<crate::controller::tests_support::TestHostEvidence>(
+                    &changed,
+                    &context(),
+                    i64::try_from(expires_at - 1).unwrap(),
+                ),
+            Err(JournalError::Conflict)
+        ));
+    }
 }
 
 #[test]

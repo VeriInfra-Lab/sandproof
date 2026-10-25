@@ -726,7 +726,7 @@ fn cache_application(
         application::{ApplicationConfig, ControllerApplication},
     };
     let namespace = "0123456789abcdef";
-    let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
+    let reserve = current::CLEANUP_BYTES + 1000;
     let mut host = local::complete_fixture::host(path, namespace, 64, 2 * 1024 * 1024, reserve);
     let physical = host.physical_storage.as_mut().unwrap();
     physical.filesystem_overhead_inodes += cache.inode_budget;

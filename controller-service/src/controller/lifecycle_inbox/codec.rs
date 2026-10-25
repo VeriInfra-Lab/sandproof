@@ -53,6 +53,11 @@ pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbo
         return Err(JournalError::CorruptStore);
     }
     inbox.validate()?;
+    let policy =
+        super::super::checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    if u64::from(inbox.config.max_operations_per_session) > policy.max_operations_per_sandbox {
+        return Err(JournalError::CorruptStore);
+    }
     Ok(Some(inbox))
 }
 pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {
@@ -85,12 +90,38 @@ pub(in crate::controller) fn validate(
             continue;
         };
         let Some(row) = world.sandbox_record(local.sandbox) else {
-            if session.terminal {
+            if super::native_retirement::cleaned(session, world)? {
                 continue;
             }
             return Err(JournalError::CorruptStore);
         };
-        if row.owner != local.owner || row.generation != 1 || session.terminal && !row.terminal {
+        if session.native_retirement.is_some() {
+            return Err(JournalError::CorruptStore);
+        }
+        let origin = session
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.local_operation.is_some()
+                    && matches!(
+                        entry.intent.request.operation,
+                        sandproof_protocol::lifecycle::LifecycleOperation::Create { .. }
+                            | sandproof_protocol::lifecycle::LifecycleOperation::Resume { .. }
+                    )
+            })
+            .ok_or(JournalError::CorruptStore)?;
+        let plan = world
+            .operation_plan(sandbox_controller_core::OperationKey {
+                sandbox: local.sandbox,
+                operation: local.operation,
+            })
+            .ok_or(JournalError::CorruptStore)?;
+        if row.owner != local.owner
+            || plan.generation != row.generation
+            || origin.local_operation != Some(local.operation)
+            || session.terminal && !row.terminal
+        {
             return Err(JournalError::CorruptStore);
         }
         let create = session

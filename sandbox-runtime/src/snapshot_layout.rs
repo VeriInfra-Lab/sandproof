@@ -42,6 +42,10 @@ pub struct SnapshotLayout {
     material_project: Option<crate::material_project::MaterialProject>,
 }
 
+#[path = "snapshot_full_retirement.rs"]
+mod full_retirement;
+pub use full_retirement::FullMaterialRetirement;
+
 fn error(message: &'static str) -> RuntimeError {
     RuntimeError::IdentityMismatch(message)
 }

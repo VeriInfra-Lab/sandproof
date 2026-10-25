@@ -34,13 +34,24 @@ NS = "1234567890abcdef"
 CANARY = "secret-canary-key-env-absolute-path"
 
 
+def role_fixture(root):
+    control=root/'control'
+    control.mkdir(mode=0o700,exist_ok=True)
+    path=control/'host.json'
+    path.write_text(json.dumps(dict(native=dict(database=str(root/'db/controller.db'),
+        node_state_dir=str(root/'state'),chroot_base=str(root/'p/v')),
+        capture=dict(layout_parent=str(root/'p')))))
+    path.chmod(0o600)
+
+
 class NativeResourceAuditTests(unittest.TestCase):
     def test_resource_range_uses_explicit_native_not_old_flat_or_global_id_suffix(self):
         native = {'namespace': NS, 'uid_base': 3200000,
                   'bounded_host': {'maintenance': {'max_host_slots': 2}}}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / 'jails/.claims').mkdir(parents=True)
+            native['chroot_base']=str(root/'p/v')
+            (root / 'p/v/.claims').mkdir(parents=True)
             # A stale/public flat file cannot change the explicit checked span.
             (root / 'config.json').write_text(json.dumps({'secret': CANARY}))
             identity = dict(resource_id=f'vm-{NS}-17', pid=345, start_time_ticks=100)
@@ -118,7 +129,7 @@ def rows(count=4, phase="Destroyed"):
 def original_center(count=4):
     records = []
     for number in range(count):
-        binding = dict(protocol_version=3, node=dict(deployment_id='domain', node_id='host', node_generation=1),
+        binding = dict(protocol_version=4, node=dict(deployment_id='domain', node_id='host', node_generation=1),
             session='sandbox-'+str(number+1), key=dict(deployment='domain', owner='1', window=1, sequence=number+1),
             expected=dict(state='absent'))
         operation = dict(binding=copy.deepcopy(binding), center=dict(deployment='domain', center='center'),
@@ -462,11 +473,12 @@ class ProbeProcessTests(unittest.TestCase):
         network = dict(resource_id=record['resource_id'], namespace_inode=789)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for name in ('resource-requests', 'resource-evidence', 'jails/.claims/' + record['resource_id']):
+            role_fixture(root)
+            for name in ('resource-requests', 'resource-evidence', 'p/v/.claims/' + record['resource_id']):
                 (root / name).mkdir(parents=True)
             name = hashlib.sha256(b'sandbox-2').hexdigest()
             reports.write_once(root/'resource-requests'/(name+'.request.json'), dict(sandbox='sandbox-2'))
-            claim = root/'jails/.claims'/record['resource_id']
+            claim = root/'p/v/.claims'/record['resource_id']
             reports.write_once(claim/'record.json', record)
             reports.write_once(claim/'network.json', network)
             services = SimpleNamespace(planned_audit=Mock(return_value=original_center(2)),
@@ -481,6 +493,7 @@ class ProbeProcessTests(unittest.TestCase):
             def status(path, *args, **kwargs):
                 return 'Uid:\t1000\t1000\t1000\t1000\n' if path == Path('/proc/123/status') else original_read(path, *args, **kwargs)
             with patch.object(Path, 'lstat', root_owned), patch.object(Path, 'read_text', status), \
+                    patch.object(runner.os,'geteuid',return_value=0), \
                     patch.object(runner, 'process_start_ticks', return_value=456):
                 report = reports.new_report('sp12-abcdefgh')
                 runner.record_requests(root, services, report)
@@ -597,6 +610,7 @@ class ResourceAuditTests(unittest.TestCase):
                  'record': record, 'network': {'resource_id': record['resource_id'], 'namespace_inode': 789}}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            role_fixture(root)
             evidence = root / 'resource-evidence'
             evidence.mkdir()
             (evidence / (ident + '.json')).write_text(json.dumps(value))
@@ -628,7 +642,8 @@ class ResourceAuditTests(unittest.TestCase):
                     self.assertEqual(failure.exception.code, 'resource_residual')
 
     def audit(self, root, record, ticks, *, expected=None):
-        claims = root / "jails/.claims"
+        role_fixture(root)
+        claims = root / "p/v/.claims"
         claim = claims / f"vm-{NS}-0"
         claim.mkdir(parents=True, exist_ok=True)
         if record is not None:

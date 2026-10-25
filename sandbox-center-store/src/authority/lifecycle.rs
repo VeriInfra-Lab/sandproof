@@ -5,6 +5,26 @@ use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
+    /// Persist the exact current restore result with the original complete
+    /// business envelope and CAS. This does not authorize any host action.
+    /// # Errors
+    /// Unknown commit fences the same authority until explicit recovery.
+    pub fn accept_lifecycle_resume_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::ResumeObservation,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self
+            .state()?
+            .accept_lifecycle_resume_observation(observation)?;
+        if &next == self.state()? {
+            self.snapshot()?;
+        } else {
+            self.commit_center(next)?;
+        }
+        Ok(())
+    }
+
     /// Persist only the original Host's exact renewal acknowledgement. The
     /// complete same envelope still validates business references before CAS.
     /// # Errors

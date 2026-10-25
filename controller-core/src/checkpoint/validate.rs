@@ -8,6 +8,7 @@ use crate::{
 };
 
 mod effects;
+mod history;
 mod maintenance;
 mod resources;
 mod unload;
@@ -41,8 +42,6 @@ fn record(world: &World, sandbox: SandboxId) -> Result<&SandboxRecord, Reject> {
 fn ledger_shape(key: OperationKey, ledger: &OperationLedgerRecord) -> Result<(), Reject> {
     if ledger.operation.kind == OperationKind::Pause {
         return unload::ledger(key, ledger);
-    } else if ledger.operation.kind == OperationKind::Resume {
-        return Err(Reject::UnsupportedSnapshotHistory);
     }
     if ledger.sandbox != key.sandbox || ledger.operation.id != key.operation {
         return Err(Reject::InvalidLedger);
@@ -53,52 +52,42 @@ fn ledger_shape(key: OperationKey, ledger: &OperationLedgerRecord) -> Result<(),
         ledger.result,
     ) {
         (
-            OperationKind::Create | OperationKind::Kill,
+            OperationKind::Create | OperationKind::Resume | OperationKind::Kill,
             OperationStatus::Pending | OperationStatus::OutcomeUnknown,
             None,
         )
-        | (OperationKind::Create, OperationStatus::Compensating(_), None)
+        | (OperationKind::Create | OperationKind::Resume, OperationStatus::Compensating(_), None)
         | (OperationKind::Create, OperationStatus::Succeeded, Some(OperationResult::Running(1)))
         | (OperationKind::Kill, OperationStatus::Succeeded, Some(OperationResult::Destroyed)) => {
             true
         }
         (
-            OperationKind::Create,
+            OperationKind::Resume,
+            OperationStatus::Succeeded,
+            Some(OperationResult::Running(generation)),
+        ) => generation > 1,
+        (
+            OperationKind::Create | OperationKind::Resume,
             OperationStatus::Failed(expected),
             Some(OperationResult::Failed(found)),
         ) => expected == found,
         _ => false,
     };
-    let input_valid = matches!(
-        (&ledger.operation.kind, &ledger.input),
-        (OperationKind::Create, OperationInput::Create { .. })
-            | (OperationKind::Kill, OperationInput::Kill { generation: 1 })
-    );
-    if !valid
-        || !input_valid
-        || ledger.operation.epoch
-            != match ledger.operation.kind {
-                OperationKind::Create => 1,
-                OperationKind::Kill => {
-                    if !(2..=3).contains(&ledger.operation.epoch) {
-                        return Err(Reject::InvalidLedger);
-                    }
-                    ledger.operation.epoch
-                }
-                OperationKind::Pause | OperationKind::Resume => {
-                    unreachable!("snapshot kinds rejected")
-                }
-            }
-    {
+    let input_valid = match (&ledger.operation.kind, &ledger.input) {
+        (OperationKind::Create, OperationInput::Create { .. }) => ledger.operation.epoch == 1,
+        (OperationKind::Kill, OperationInput::Kill { generation }) => {
+            *generation > 0 && ledger.operation.epoch > 1
+        }
+        (OperationKind::Resume, OperationInput::Resume { .. }) => ledger.operation.epoch > 1,
+        _ => false,
+    };
+    if !valid || !input_valid {
         return Err(Reject::InvalidLedger);
     }
     Ok(())
 }
 
 fn sandbox_record(world: &World, sandbox: SandboxId, value: &SandboxRecord) -> Result<(), Reject> {
-    if value.restore_from.is_some() {
-        return Err(Reject::UnsupportedSnapshotHistory);
-    }
     let operation = value.current_operation.ok_or(Reject::InvalidLedger)?;
     let key = OperationKey {
         sandbox,
@@ -107,7 +96,13 @@ fn sandbox_record(world: &World, sandbox: SandboxId, value: &SandboxRecord) -> R
     let ledger = world.operation_record(key).ok_or(Reject::InvalidLedger)?;
     ledger_shape(key, ledger)?;
     unload::record_sources(world, sandbox, value)?;
-    if value.generation != 1 || value.epoch != operation.epoch || operation != ledger.operation {
+    if value.generation == 0
+        || world
+            .operation_plan(key)
+            .is_none_or(|p| p.generation != value.generation)
+        || value.epoch != operation.epoch
+        || operation != ledger.operation
+    {
         return Err(Reject::InvalidLedger);
     }
     let fs = world
@@ -125,13 +120,13 @@ fn sandbox_record(world: &World, sandbox: SandboxId, value: &SandboxRecord) -> R
         let network = world.slot_record(slot).ok_or(Reject::InvalidReference)?;
         if machine.owner != value.owner
             || machine.sandbox != sandbox
-            || machine.generation != 1
+            || machine.generation != value.generation
             || machine.status == VmStatus::Reclaimed
             || network.vm != vm
             || network.reclaimed
             || network.owner != value.owner
             || network.sandbox != sandbox
-            || network.generation != 1
+            || network.generation != value.generation
         {
             return Err(Reject::InvalidResource);
         }
@@ -150,7 +145,10 @@ fn sandbox_phase(
     let valid_phase = match value.phase {
         Phase::Starting => {
             !value.terminal
-                && operation.kind == OperationKind::Create
+                && matches!(
+                    operation.kind,
+                    OperationKind::Create | OperationKind::Resume
+                )
                 && matches!(
                     operation.status,
                     OperationStatus::Pending | OperationStatus::OutcomeUnknown
@@ -160,8 +158,22 @@ fn sandbox_phase(
         }
         Phase::Running => {
             !value.terminal
-                && operation.kind == OperationKind::Create
-                && operation.status == OperationStatus::Succeeded
+                && (matches!(
+                    operation.kind,
+                    OperationKind::Create | OperationKind::Resume
+                ) && operation.status == OperationStatus::Succeeded
+                    || operation.kind == OperationKind::Pause
+                        && matches!(operation.status, OperationStatus::Failed(_))
+                        && world
+                            .operation_plan(OperationKey {
+                                sandbox,
+                                operation: operation.id,
+                            })
+                            .is_some_and(|plan| {
+                                plan.capture.is_some_and(
+                                    crate::capture::CaptureHandoff::may_reactivate_original,
+                                )
+                            }))
                 && value.desired == value.effective
                 && matches!(value.effective, Authority::Running { .. })
         }
@@ -169,7 +181,7 @@ fn sandbox_phase(
             value.terminal
                 && value.desired == Authority::Closed
                 && match operation.kind {
-                    OperationKind::Create => {
+                    OperationKind::Create | OperationKind::Resume => {
                         matches!(operation.status, OperationStatus::Compensating(_))
                             && value.effective == Authority::Closed
                     }
@@ -177,7 +189,7 @@ fn sandbox_phase(
                         operation.status,
                         OperationStatus::Pending | OperationStatus::OutcomeUnknown
                     ),
-                    _ => false,
+                    OperationKind::Pause => false,
                 }
         }
         Phase::Destroyed => {
@@ -189,7 +201,10 @@ fn sandbox_phase(
                 && matches!(
                     (operation.kind, operation.status),
                     (OperationKind::Kill, OperationStatus::Succeeded)
-                        | (OperationKind::Create, OperationStatus::Failed(_))
+                        | (
+                            OperationKind::Create | OperationKind::Resume,
+                            OperationStatus::Failed(_)
+                        )
                 )
         }
         Phase::Pausing | Phase::Paused => {
@@ -277,6 +292,22 @@ fn authority(
 fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> Result<(), Reject> {
     let vm = row.current_vm.ok_or(Reject::InvalidResource)?;
     let slot = row.net_slot.ok_or(Reject::InvalidResource)?;
+    let startup = startup_plan(world, sandbox).ok_or(Reject::InvalidReference)?;
+    if row
+        .current_operation
+        .is_some_and(|operation| operation.kind == OperationKind::Pause)
+        && !effect::effect_succeeded_check(
+            world,
+            &Command::ActivateVm {
+                sandbox,
+                epoch: row.epoch,
+                generation: row.generation,
+                vm,
+            },
+        )
+    {
+        return Err(Reject::InvalidAuthority);
+    }
     let commands = [
         Command::InstallFence {
             sandbox,
@@ -285,15 +316,15 @@ fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> R
         },
         Command::PrepareVm {
             sandbox,
-            epoch: row.epoch,
+            epoch: startup.epoch,
             generation: row.generation,
             vm,
             slot,
-            source: None,
+            source: startup.restore_from,
         },
         Command::ConfigureNetwork {
             sandbox,
-            epoch: row.epoch,
+            epoch: startup.epoch,
             generation: row.generation,
             vm,
             slot,
@@ -301,13 +332,13 @@ fn running_evidence(world: &World, sandbox: SandboxId, row: &SandboxRecord) -> R
         },
         Command::ActivateVm {
             sandbox,
-            epoch: row.epoch,
+            epoch: startup.epoch,
             generation: row.generation,
             vm,
         },
         Command::ApplyFilePolicy {
             sandbox,
-            epoch: row.epoch,
+            epoch: startup.epoch,
             generation: row.generation,
             workspace: row.workspace,
             policy: row.file_policy,
@@ -402,12 +433,29 @@ fn plan_record(world: &World, key: OperationKey, plan: &OperationPlan) -> Result
     if ledger.operation.kind == OperationKind::Pause {
         return unload::plan(world, key, plan);
     }
+    if ledger.operation.kind == OperationKind::Resume {
+        history::resume_plan(world, key, plan)?;
+        unique(&plan.stop_vms)?;
+        unique(&plan.close_slots)?;
+        for vm in &plan.stop_vms {
+            reserved_vm(world, key.sandbox, *vm)?;
+        }
+        for slot in &plan.close_slots {
+            reserved_slot(world, key.sandbox, *slot)?;
+        }
+        return Ok(());
+    }
     if plan.restore_from.is_some() || plan.target_snapshot.is_some() || plan.capture.is_some() {
         return Err(Reject::UnsupportedSnapshotHistory);
     }
     if plan.key != key
         || plan.epoch != ledger.operation.epoch
-        || plan.generation != 1
+        || plan.generation
+            != match ledger.input {
+                OperationInput::Create { .. } => 1,
+                OperationInput::Kill { generation } => generation,
+                _ => return Err(Reject::InvalidLedger),
+            }
         || plan.retry_limit != crate::transition::DEFAULT_RETRY_LIMIT
     {
         return Err(Reject::InvalidLedger);
@@ -441,24 +489,54 @@ fn plan_record(world: &World, key: OperationKey, plan: &OperationPlan) -> Result
 }
 
 fn startup_plan(world: &World, sandbox: SandboxId) -> Option<&OperationPlan> {
-    world
-        .operation_plans
-        .entries()
-        .iter()
-        .find_map(|(key, plan)| {
-            (key.sandbox == sandbox
-                && world
-                    .operation_record(*key)
-                    .is_some_and(|row| row.operation.kind == OperationKind::Create))
-            .then_some(plan)
-        })
+    history::startup(world, sandbox, world.sandbox_record(sandbox)?.generation)
+}
+fn startup_for_vm(world: &World, sandbox: SandboxId, vm: VmId) -> Option<&OperationPlan> {
+    let mut found = None;
+    for (key, plan) in world.operation_plans.entries() {
+        if key.sandbox == sandbox
+            && plan.vm == Some(vm)
+            && world.operation_record(*key).is_some_and(|row| {
+                matches!(
+                    row.operation.kind,
+                    OperationKind::Create | OperationKind::Resume
+                )
+            })
+        {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(plan);
+        }
+    }
+    found
+}
+fn startup_for_slot(world: &World, sandbox: SandboxId, slot: NetSlotId) -> Option<&OperationPlan> {
+    let mut found = None;
+    for (key, plan) in world.operation_plans.entries() {
+        if key.sandbox == sandbox
+            && plan.slot == Some(slot)
+            && world.operation_record(*key).is_some_and(|row| {
+                matches!(
+                    row.operation.kind,
+                    OperationKind::Create | OperationKind::Resume
+                )
+            })
+        {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(plan);
+        }
+    }
+    found
 }
 
 fn reserved_vm(world: &World, sandbox: SandboxId, vm: VmId) -> Result<(), Reject> {
     if vm.0 >= world.next_vm_id {
         return Err(Reject::InvalidFrontier);
     }
-    if startup_plan(world, sandbox).is_none_or(|plan| plan.vm != Some(vm))
+    if startup_for_vm(world, sandbox, vm).is_none()
         || world
             .operation_plans
             .entries()
@@ -473,7 +551,7 @@ fn reserved_slot(world: &World, sandbox: SandboxId, slot: NetSlotId) -> Result<(
     if slot.0 >= world.next_slot_id {
         return Err(Reject::InvalidFrontier);
     }
-    if startup_plan(world, sandbox).is_none_or(|plan| plan.slot != Some(slot))
+    if startup_for_slot(world, sandbox, slot).is_none()
         || world
             .operation_plans
             .entries()
@@ -486,8 +564,25 @@ fn reserved_slot(world: &World, sandbox: SandboxId, slot: NetSlotId) -> Result<(
 }
 
 fn binding_current(world: &World, binding: HostBinding) -> Result<(), Reject> {
+    binding_history(world, binding)?;
     let row = record(world, binding.sandbox)?;
     if row.owner != binding.owner || row.generation != binding.generation {
+        return Err(Reject::InvalidMaintenance);
+    }
+    reserved_vm(world, binding.sandbox, binding.vm)?;
+    reserved_slot(world, binding.sandbox, binding.network)
+}
+
+fn binding_history(world: &World, binding: HostBinding) -> Result<(), Reject> {
+    let row = record(world, binding.sandbox)?;
+    let startup =
+        startup_for_vm(world, binding.sandbox, binding.vm).ok_or(Reject::InvalidReference)?;
+    if row.owner != binding.owner
+        || binding.generation == 0
+        || binding.generation > row.generation
+        || startup.generation != binding.generation
+        || startup.slot != Some(binding.network)
+    {
         return Err(Reject::InvalidMaintenance);
     }
     reserved_vm(world, binding.sandbox, binding.vm)?;

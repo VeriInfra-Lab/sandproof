@@ -10,7 +10,7 @@
 
 端点模型维护当前 `(owner,session,incarnation,permission,deadline,credential)`、开放/关闭门、已登记连接/工作及撤销代次。物理用户流、宿主 relay、guest 进程是不同对象；关闭 HTTP/vsock 不自动证明命令退出，也不应误杀应保留进程。
 
-当前许可登记、重派发时的凭据/寿命/Access 重查、卸载撤销及排空已沿真实路径接线；已有模型和旧读体定理不自动覆盖新 LifecycleAccessIdentity 分支。恢复后的新代授权、guest 凭据更新及开门依赖尚未实现的恢复链。取消 future 不等于 guest 进程已结束；排空仍须说明覆盖了哪些实际写者。
+当前许可登记、重派发时的凭据/寿命/Access 重查、卸载撤销及排空已沿真实路径接线；已有模型和旧读体定理不自动覆盖新 LifecycleAccessIdentity 分支。恢复链已接逐代凭据、同候选激活时的授权元数据更新与 guest 授权核对；新代开门、旧凭据拒绝及故障后补完的完整连接仍须统一实机验收和实现对应。取消 future 不等于 guest 进程已结束；排空仍须说明覆盖了哪些实际写者。
 
 ## 2. 三组合同
 

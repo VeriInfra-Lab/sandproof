@@ -151,7 +151,7 @@ impl CenterState {
                     || session
                         .operations
                         .iter()
-                        .any(|operation| operation.running.is_some())))
+                        .any(|operation| operation.running().is_some())))
             || session
                 .terminal_confirmation
                 .as_ref()
@@ -218,23 +218,44 @@ impl CenterState {
         op: &LifecycleOperationRecord,
         position: usize,
     ) -> bool {
+        if op.resume_state_lost
+            && !super::resume::lost_origin_valid(&session.operations[..=position])
+        {
+            return false;
+        }
         if let Some(observation) = op.unloaded.as_ref() {
-            let Some(facts) = observation.unloaded.as_ref() else {
-                return false;
-            };
-            let Some(prior) = position
+            let Some(previous) = position
                 .checked_sub(1)
                 .and_then(|i| session.operations.get(i))
-                .and_then(|previous| previous.running.as_ref())
             else {
                 return false;
             };
-            if !observation.matches_request(&op.intent)
-                || facts.started_at_ms != prior.started_at_ms
-                || facts.end_at_ms != prior.end_at_ms
-                || facts.max_end_at_ms != prior.max_end_at_ms
-                || facts.startup_deadline_ms != prior.startup_deadline_ms
-            {
+            let Some(prior) = previous.running() else {
+                return false;
+            };
+            let Some(accepted) = op.acceptance_time.sampled_at_ms() else {
+                return false;
+            };
+            if !observation.matches_request(&op.intent) || op.running.is_some() {
+                return false;
+            }
+            let valid = match &observation.outcome {
+                sandproof_protocol::lifecycle::UnloadOutcome::Pending => false,
+                sandproof_protocol::lifecycle::UnloadOutcome::Unloaded { facts } => {
+                    facts.started_at_ms == prior.started_at_ms
+                        && facts.end_at_ms == prior.end_at_ms
+                        && facts.max_end_at_ms == prior.max_end_at_ms
+                        && facts.startup_deadline_ms == prior.startup_deadline_ms
+                }
+                sandproof_protocol::lifecycle::UnloadOutcome::OriginalContinued { facts } => {
+                    facts.started_at_ms == prior.started_at_ms
+                        && facts.end_at_ms == prior.end_at_ms
+                        && facts.max_end_at_ms == prior.max_end_at_ms
+                        && facts.startup_deadline_ms == prior.startup_deadline_ms
+                        && facts.observed_at_ms >= accepted
+                }
+            };
+            if !valid {
                 return false;
             }
         }
@@ -259,6 +280,7 @@ impl CenterState {
             origin,
             previous,
             position + 1 == session.operations.len(),
+            &session.operations[..position],
         )
     }
 
@@ -267,6 +289,7 @@ impl CenterState {
         origin: &LifecycleOperationRecord,
         previous: &LifecycleOperationRecord,
         is_last: bool,
+        history: &[LifecycleOperationRecord],
     ) -> bool {
         let intent = &op.intent;
         let request = &intent.request;
@@ -278,7 +301,7 @@ impl CenterState {
             ..
         } = &op.submission
         else {
-            return Self::valid_lifecycle_nonrenewal(op, previous, is_last);
+            return Self::valid_lifecycle_nonrenewal(op, previous, is_last, history);
         };
         let LifecycleOperation::Renew {
             incarnation,
@@ -288,7 +311,7 @@ impl CenterState {
         else {
             return false;
         };
-        let Some(prior) = previous.running.as_ref() else {
+        let Some(prior) = previous.running() else {
             return false;
         };
         let Some(previous_end) = op.previous_effective_end_at_ms else {
@@ -308,7 +331,7 @@ impl CenterState {
         request.binding.expected == ExpectedSession::Version(*expected_version)
             && named == &request.binding.session
             && *extend_only == *actual_extend
-            && incarnation.get() == 1
+            && Some(*incarnation) == previous.running_incarnation()
             && *timeout_secs > 0
             && super::normalized_renewal_end(accepted_at_ms, *timeout_secs, prior.max_end_at_ms)
                 == end
@@ -320,7 +343,7 @@ impl CenterState {
             && prior.max_end_at_ms > accepted_at_ms
             && op.terminal.is_none()
             && op.running.as_ref().is_none_or(|facts| {
-                facts.matches_renewed(&origin.intent, intent)
+                super::resume::renewed_facts_match(history, &origin.intent, intent, facts)
                     && facts.started_at_ms == prior.started_at_ms
                     && facts.max_end_at_ms == prior.max_end_at_ms
                     && facts.startup_deadline_ms == prior.startup_deadline_ms
@@ -332,6 +355,7 @@ impl CenterState {
         op: &LifecycleOperationRecord,
         previous: &LifecycleOperationRecord,
         is_last: bool,
+        history: &[LifecycleOperationRecord],
     ) -> bool {
         let request = &op.intent.request;
         match &op.submission {
@@ -349,13 +373,56 @@ impl CenterState {
                 };
                 request.binding.expected == ExpectedSession::Version(*expected_version)
                     && named == &request.binding.session
-                    && previous.running.is_some()
+                    && previous.running().is_some()
                     && op.previous_effective_end_at_ms.is_none()
-                    && source_incarnation.get() == 1
-                    && capture.get() == 1
+                    && Some(*source_incarnation) == previous.running_incarnation()
+                    && super::resume::next_capture(history) == Ok(*capture)
                     && op.acceptance_time.sampled_at_ms().is_some()
                     && op.running.is_none()
                     && op.terminal.is_none()
+            }
+            LifecycleSubmission::Resume {
+                session: named,
+                expected_version,
+                ..
+            } => {
+                let Some(source) = previous
+                    .unloaded
+                    .as_ref()
+                    .and_then(|o| o.outcome.unloaded())
+                else {
+                    return false;
+                };
+                let LifecycleOperation::Resume {
+                    source_incarnation,
+                    capture,
+                    target_incarnation,
+                    manifest_digest,
+                } = request.operation
+                else {
+                    return false;
+                };
+                request.binding.expected == ExpectedSession::Version(*expected_version)
+                    && named == &request.binding.session
+                    && source_incarnation == source.source_incarnation
+                    && capture == source.capture
+                    && source.source_incarnation.checked_next() == Ok(target_incarnation)
+                    && manifest_digest == source.manifest_digest
+                    && op.acceptance_time.sampled_at_ms().is_some_and(|time| {
+                        time < source.end_at_ms
+                            && time < source.max_end_at_ms
+                            && previous
+                                .acceptance_time
+                                .sampled_at_ms()
+                                .is_some_and(|old| time >= old)
+                    })
+                    && op.previous_effective_end_at_ms.is_none()
+                    && op.unloaded.is_none()
+                    && op.terminal.is_none()
+                    && op
+                        .running
+                        .as_ref()
+                        .is_none_or(|facts| facts.matches_resumed(&op.intent, source))
             }
             LifecycleSubmission::Destroy {
                 session: named,

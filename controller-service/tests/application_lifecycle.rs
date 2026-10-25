@@ -54,7 +54,7 @@ impl Clock for TestClock {
 
 #[derive(Default)]
 struct PhysicalState {
-    secrets: BTreeMap<u64, String>,
+    secrets: BTreeMap<(u64, core::Generation), String>,
     actions: Vec<WorkAction<core::EffectId>>,
 }
 #[derive(Clone)]
@@ -223,25 +223,43 @@ impl HostCapacity for TestHost {
 }
 
 impl LaunchConfiguration for TestHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), ApplicationError> {
         let mut state = self.state.lock().unwrap();
-        if state.secrets.contains_key(&sandbox.0) {
+        if state.secrets.contains_key(&(sandbox.0, generation)) {
             return Err(ApplicationError::Conflict);
         }
-        state.secrets.insert(sandbox.0, token.into());
+        state.secrets.insert((sandbox.0, generation), token.into());
         Ok(())
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
-        Ok(self.state.lock().unwrap().secrets.contains_key(&sandbox.0))
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .secrets
+            .contains_key(&(sandbox.0, generation)))
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError> {
         self.state
             .lock()
             .unwrap()
             .secrets
-            .get(&sandbox.0)
+            .get(&(sandbox.0, generation))
             .cloned()
             .ok_or(ApplicationError::Busy)
     }

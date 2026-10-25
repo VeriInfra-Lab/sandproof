@@ -12,7 +12,7 @@ use axum::{
 };
 use sandproof_protocol::lifecycle::{
     PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicRequestWindow,
-    PublicSessionView, PublicUnloadRequest, SessionId,
+    PublicResumeRequest, PublicSessionView, PublicUnloadRequest, SessionId,
 };
 use std::sync::Arc;
 #[cfg(test)]
@@ -44,6 +44,14 @@ pub trait LifecyclePort: Send + Sync + 'static {
         owner: &str,
         session: SessionId,
         request: PublicUnloadRequest,
+    ) -> Result<PublicAcceptance, PortError>;
+    /// # Errors
+    /// The original authority chooses material and a fresh execution identity.
+    fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicResumeRequest,
     ) -> Result<PublicAcceptance, PortError>;
     /// # Errors
     /// Missing/foreign sessions share `NotFound`; unknown authority fails closed.
@@ -78,6 +86,10 @@ pub fn router_with_admission<P: LifecyclePort>(
         .route(
             "/sandproof/lifecycle/sessions/{session}/unload",
             post(unload::<P>),
+        )
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/resume",
+            post(resume::<P>),
         )
         .route(
             "/sandproof/lifecycle/sessions/{session}/destroy",
@@ -141,6 +153,22 @@ async fn query<P: LifecyclePort>(
     })
     .await
     .map(Json)
+}
+
+async fn resume<P: LifecyclePort>(
+    State(state): State<ApiState<P>>,
+    headers: HeaderMap,
+    Path(session): Path<String>,
+    request: Result<Json<PublicResumeRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<PublicAcceptance>), ApiFailure> {
+    let owner = authenticate(&state, &headers)?;
+    let session = SessionId::try_from(session.as_str()).map_err(|_| PortError::NotFound)?;
+    let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
+    let result = blocking(state.admission, RequestClass::Ordinary, move || {
+        state.port.resume_lifecycle(&owner, session, request)
+    })
+    .await?;
+    Ok((StatusCode::ACCEPTED, Json(result)))
 }
 
 async fn destroy<P: LifecyclePort>(

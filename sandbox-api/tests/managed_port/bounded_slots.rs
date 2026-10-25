@@ -49,7 +49,7 @@ struct DurableHost {
         Option<sandproof_controller_service::physical_storage::PhysicalStorageProfile>,
     physical_free: Option<u64>,
     row: Option<(HostSlotContext, HostSlotPhase)>,
-    secrets: BTreeMap<u64, String>,
+    secrets: BTreeMap<(u64, core::Generation), String>,
     actions: Vec<WorkAction<core::EffectId>>,
     binding_fault: BindingFault,
     lose_release: bool,
@@ -225,7 +225,9 @@ impl HostSlots for BoundedHost {
             )
             .map_err(|_| PortError::Busy)?;
             state.row = Some((current, free.phase));
-            state.secrets.remove(&context.binding.sandbox.0);
+            state
+                .secrets
+                .remove(&(context.binding.sandbox.0, context.binding.generation));
         }
         if std::mem::take(&mut state.lose_release) {
             return Err(PortError::Busy);
@@ -321,29 +323,52 @@ impl HostCapacity for BoundedHost {
 }
 
 impl LaunchConfiguration for BoundedHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), PortError> {
         let mut state = self.0.lock().unwrap();
         if state.row.is_none_or(|(context, phase)| {
-            context.binding.sandbox != sandbox || phase != HostSlotPhase::Occupied
+            context.binding.sandbox != sandbox
+                || context.binding.generation != generation
+                || phase != HostSlotPhase::Occupied
         }) {
             return Err(PortError::Busy);
         }
-        if state.secrets.insert(sandbox.0, token.into()).is_some() {
-            return Err(PortError::Busy);
+        match state.secrets.entry((sandbox.0, generation)) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(token.into());
+            }
+            std::collections::btree_map::Entry::Occupied(_) => return Err(PortError::Busy),
         }
         Ok(())
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        Ok(self.0.lock().unwrap().secrets.contains_key(&sandbox.0))
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, PortError> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .secrets
+            .contains_key(&(sandbox.0, generation)))
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, PortError> {
         self.0
             .lock()
             .unwrap()
             .secrets
-            .get(&sandbox.0)
+            .get(&(sandbox.0, generation))
             .cloned()
             .ok_or(PortError::Busy)
     }

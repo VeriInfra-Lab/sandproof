@@ -3,6 +3,9 @@ mod admit;
 mod authorize;
 mod claim;
 mod complete;
+mod continuation;
+pub(super) mod drain;
+mod end;
 mod unloaded;
 mod validate;
 
@@ -17,24 +20,39 @@ use serde::{Deserialize, Serialize};
 
 pub(in crate::controller) use claim::claim;
 pub(in crate::controller) use complete::save_receipt;
+pub(in crate::controller) use continuation::validate_receipt as validate_continue_receipt;
+pub(in crate::controller) use continuation::{
+    historical_identity as continued_identity, ready_records as continued_ready_records,
+};
+pub(in crate::controller) use end::prepare::permits_input as permits_continue_input;
 pub(super) use validate::validate_record;
 const RECORD_BYTES: usize = 131_072;
 const MAX_FULL: usize = 2;
 
+pub(in crate::controller) fn material_writer_closed(
+    record: &SourceWorkRecord,
+    world: &core::World,
+) -> Result<bool, JournalError> {
+    validate_record(record, world)?;
+    end::material_writer_closed(record)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CaptureWork {
-    operation: core::OperationId,
+    pub(super) operation: core::OperationId,
     pub(super) reserved_material_bytes: u64,
-    full: FullCaptureWorkRequest,
+    pub(super) full: FullCaptureWorkRequest,
     #[serde(deserialize_with = "super::required_option")]
-    action: Option<WorkAction<core::EffectId>>,
+    pub(super) action: Option<WorkAction<core::EffectId>>,
     #[serde(deserialize_with = "super::required_option")]
-    worker: Option<CaptureWorkerBinding>,
+    pub(super) worker: Option<CaptureWorkerBinding>,
     #[serde(deserialize_with = "super::required_option")]
-    completed: Option<ContentDigest>,
+    pub(super) completed: Option<ContentDigest>,
     #[serde(deserialize_with = "super::required_option")]
-    material_bytes: Option<u64>,
+    pub(super) material_bytes: Option<u64>,
+    #[serde(deserialize_with = "super::required_option")]
+    end: Option<end::CaptureEndRecord>,
 }
 fn key(record: &SourceWorkRecord) -> Option<core::OperationKey> {
     Some(core::OperationKey {
@@ -59,7 +77,7 @@ fn matches_action(
 fn save(connection: &rusqlite::Connection, sources: &codec::Sources) -> Result<(), JournalError> {
     for record in &sources.records {
         if let Some(capture) = &record.capture
-            && serde_json::to_vec(capture)?.len() > RECORD_BYTES
+            && end::reserved_record_bytes(capture)? > RECORD_BYTES
         {
             return Err(JournalError::MaintenanceCapacity);
         }
@@ -79,6 +97,14 @@ fn reservation(full: &FullCaptureWorkRequest) -> Result<u64, JournalError> {
 }
 
 impl SourceWorkRecord {
+    pub(crate) fn source_sandbox(&self) -> core::SandboxId {
+        self.work.anchor.local.sandbox
+    }
+    pub(crate) fn capture_has_end(&self) -> bool {
+        self.capture
+            .as_ref()
+            .is_some_and(|capture| capture.end.is_some())
+    }
     #[must_use]
     pub fn full_capture(&self) -> Option<&FullCaptureWorkRequest> {
         Some(&self.capture.as_ref()?.full)
@@ -86,6 +112,18 @@ impl SourceWorkRecord {
     #[must_use]
     pub fn capture_worker(&self) -> Option<&CaptureWorkerBinding> {
         self.capture.as_ref()?.worker.as_ref()
+    }
+    #[must_use]
+    pub fn capture_action(&self) -> Option<&WorkAction<core::EffectId>> {
+        self.capture.as_ref()?.action.as_ref()
+    }
+    #[must_use]
+    pub fn capture_request_end(&self) -> Option<&crate::capture::CaptureRequestEndObservation> {
+        match self.capture.as_ref()?.end.as_ref()? {
+            end::CaptureEndRecord::WorkerEnded { observation } => Some(observation),
+            end::CaptureEndRecord::NeverReleased { .. }
+            | end::CaptureEndRecord::Terminated { .. } => None,
+        }
     }
     #[must_use]
     pub fn captured_manifest(&self) -> Option<ContentDigest> {
@@ -126,7 +164,7 @@ impl super::SourceWork {
     }
 }
 impl super::ControllerJournal {
-    /// Read the same historical work, not an execution or repeat-Full permission.
+    /// Read the latest accepted source question, not execution permission.
     /// # Errors
     /// Corrupt storage cannot manufacture a missing capture record.
     pub fn lifecycle_capture_record(
@@ -140,7 +178,65 @@ impl super::ControllerJournal {
         let result = codec::load(&tx)?.and_then(|s| {
             s.records
                 .into_iter()
-                .find(|r| r.work.anchor.local.sandbox == sandbox)
+                .filter(|r| r.work.anchor.local.sandbox == sandbox)
+                .max_by_key(|r| r.work.request().accepted_version)
+        });
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub(crate) fn lifecycle_capture_action_record(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<Option<SourceWorkRecord>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let result = codec::load(&tx)?.and_then(|sources| {
+            sources.records.into_iter().find(|record| {
+                if matches_action(record, action, &world) {
+                    return true;
+                }
+                // Unload's maintenance cleanup belongs to the current Pause, not
+                // whichever capture happened to be first in the retained array.
+                let sandbox = record.work.anchor.local.sandbox;
+                matches!(
+                    action.command.command(),
+                    core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. }
+                ) && world
+                    .logical_effect(&action.command.logical)
+                    .is_some_and(|logical| {
+                        logical.origin == core::EffectOrigin::Maintenance(sandbox)
+                    })
+                    && world.sandbox_record(sandbox).is_some_and(|row| {
+                        !row.terminal
+                            && row.phase == core::Phase::Paused
+                            && row
+                                .current_operation
+                                .is_some_and(|op| Some(op.id) == record.capture_operation())
+                    })
+            })
+        });
+        self.committed_world.check_identity(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    fn original_capture_record(
+        &self,
+        source: &super::SourceWork,
+    ) -> Result<Option<SourceWorkRecord>, JournalError> {
+        let world = self.world()?;
+        let tx = self.journal.connection.unchecked_transaction()?;
+        self.committed_world.check_identity(&tx)?;
+        codec::validate(&tx, &world)?;
+        let result = codec::load(&tx)?.and_then(|sources| {
+            sources
+                .records
+                .into_iter()
+                .find(|record| record.work == *source)
         });
         self.committed_world.check_identity(&tx)?;
         tx.commit()?;
@@ -154,9 +250,9 @@ impl super::ControllerJournal {
     /// Incomplete/unknown material registration yields no expectation.
     pub fn committed_capture_expectation(
         &self,
-        sandbox: core::SandboxId,
+        source: &super::SourceWork,
     ) -> Result<Option<crate::capture::CommittedCaptureExpectation>, JournalError> {
-        let Some(record) = self.lifecycle_capture_record(sandbox)? else {
+        let Some(record) = self.original_capture_record(source)? else {
             return Ok(None);
         };
         let Some(capture) = &record.capture else {
@@ -191,9 +287,9 @@ impl super::ControllerJournal {
     /// Missing/unknown Seal cannot produce an expected material digest.
     pub fn sealed_capture_expectation(
         &self,
-        sandbox: core::SandboxId,
+        source: &super::SourceWork,
     ) -> Result<Option<crate::capture::CommittedCaptureExpectation>, JournalError> {
-        let Some(record) = self.lifecycle_capture_record(sandbox)? else {
+        let Some(record) = self.original_capture_record(source)? else {
             return Ok(None);
         };
         let Some(capture) = record.capture else {

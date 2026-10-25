@@ -18,7 +18,8 @@ import time
 # required unloaded projection; host schema 2 retains its existing identity,
 # confirmation and retention-lane fields. This observer does not infer material
 # cleanup or consume the host's source-work/material configuration.
-CURRENT_VERSIONS = dict(internal_protocol=2, center_store=9, host_store=21)
+LIFECYCLE_PROTOCOL_VERSION = 4
+CURRENT_VERSIONS = dict(internal_protocol=2, center_store=11, host_store=23)
 CENTER_OPERATION_FIELDS = frozenset(('binding', 'center', 'retention',
     'accepted_version', 'acceptance_time', 'operation', 'running',
     'create_refusal', 'terminal', 'unloaded'))
@@ -114,7 +115,7 @@ def _binding_shape(binding):
     """Current lifecycle identity only; probe/data protocol has its own version."""
     if (type(binding) is not dict or set(binding) != {
             'protocol_version', 'node', 'session', 'key', 'expected'}
-            or type(binding['protocol_version']) is not int or binding['protocol_version'] != 3
+            or type(binding['protocol_version']) is not int or binding['protocol_version'] != LIFECYCLE_PROTOCOL_VERSION
             or not _node_shape(binding['node']) or not _identifier(binding['session'])):
         return False
     key, expected = binding['key'], binding['expected']

@@ -32,12 +32,37 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let Some(_session) = self.acquire_lifecycle_session(intent, &context)? else {
             return Ok(false);
         };
-        let record = self
-            .prepare_lifecycle_source_work(intent, &context)
-            .map_err(map_journal)?;
+        if self
+            .inner
+            .lock()
+            .map_err(|_| ApplicationError::Busy)?
+            .journal
+            .lifecycle_original_continued_result(intent, &context)
+            .map_err(map_journal)?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        if let Some(done) = self.advance_closed_unload(intent, &context)? {
+            return Ok(done);
+        }
+        let record = match self.prepare_lifecycle_source_work(intent, &context) {
+            Ok(record) => record,
+            Err(error) => {
+                return self.close_failed_unadmitted_unload(intent, &context, map_journal(error));
+            }
+        };
         let record = if record.observation.is_none() {
-            self.observe_lifecycle_source_work(&record.work, &context)
-                .map_err(map_journal)?
+            match self.observe_lifecycle_source_work(&record.work, &context) {
+                Ok(record) => record,
+                Err(error) => {
+                    return self.close_failed_unadmitted_unload(
+                        intent,
+                        &context,
+                        map_journal(error),
+                    );
+                }
+            }
         } else {
             record
         };
@@ -46,13 +71,16 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
                 std::sync::Arc::clone(&inner.host)
             };
-            let full = host.propose_lifecycle_full(
+            let full = match host.propose_lifecycle_full(
                 &record.work.pause_request().map_err(map_journal)?,
                 record.work.requirement(),
-            )?;
+            ) {
+                Ok(full) => full,
+                Err(error) => return self.close_failed_unadmitted_unload(intent, &context, error),
+            };
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             let now = self.clock.now_ms()?;
-            inner
+            let admitted = inner
                 .journal
                 .admit_lifecycle_full_capture::<H::Evidence>(
                     &record.work,
@@ -61,7 +89,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     now,
                     &mut NeverCrash,
                 )
-                .map_err(map_journal)?;
+                .map_err(map_journal);
+            drop(inner);
+            if let Err(error) = admitted {
+                return self.close_failed_unadmitted_unload(intent, &context, error);
+            }
         }
         let sandbox = self
             .lifecycle_work_state(intent, &context)
@@ -78,6 +110,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
         action: &WorkAction<core::EffectId>,
     ) -> Result<Result<WorkReceipt<H::Evidence>, crate::WorkerTransportError>, ApplicationError>
     {
+        if let Some((work, permit)) = self.original_continue_execution_context(action)? {
+            return Ok(host.execute_lifecycle_original_continue(action, &work, &permit));
+        }
+        if let Some((work, permit)) = self.restore_execution_context(action)? {
+            return Ok(host.execute_lifecycle_restore_action(action, &work, permit.as_ref()));
+        }
         let Some((record, expected)) = self.capture_action_context(action)? else {
             return Ok(host.execute(action));
         };
@@ -135,6 +173,26 @@ impl<H: ControllerHost> ControllerApplication<H> {
         host: &H,
         action: &WorkAction<core::EffectId>,
     ) -> Result<Option<WorkReceipt<H::Evidence>>, ApplicationError> {
+        let continuation = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .lifecycle_original_continue_action_work(action)
+                .map_err(map_journal)?
+        };
+        if let Some(work) = continuation {
+            return Ok(host.observe_lifecycle_original_continue(action, &work));
+        }
+        let restore = {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            inner
+                .journal
+                .lifecycle_restore_action_work(action)
+                .map_err(map_journal)?
+        };
+        if let Some(work) = restore {
+            return Ok(host.observe_lifecycle_restore_action(action, &work));
+        }
         let Some((record, expected)) = self.capture_action_context(action)? else {
             return Ok(host.observe(action));
         };
@@ -158,10 +216,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         action: &WorkAction<core::EffectId>,
     ) -> Result<Option<CaptureActionContext>, ApplicationError> {
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let sandbox = action.command.command().sandbox();
         let Some(record) = inner
             .journal
-            .lifecycle_capture_record(sandbox)
+            .lifecycle_capture_action_record(action)
             .map_err(map_journal)?
         else {
             return Ok(None);
@@ -178,12 +235,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
         ) {
             inner
                 .journal
-                .committed_capture_expectation(sandbox)
+                .committed_capture_expectation(&record.work)
                 .map_err(map_journal)?
         } else {
             inner
                 .journal
-                .sealed_capture_expectation(sandbox)
+                .sealed_capture_expectation(&record.work)
                 .map_err(map_journal)?
         };
         Ok(Some((record, expected)))
@@ -207,9 +264,23 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .clock
             .now_ms()
             .map_err(|_| JournalError::UnresolvedAction)?;
+        let continued = inner
+            .journal
+            .lifecycle_original_continued_result(intent, context)?;
+        let outcome = if let Some(facts) = continued {
+            sandproof_protocol::lifecycle::UnloadOutcome::OriginalContinued { facts }
+        } else {
+            inner
+                .journal
+                .lifecycle_unloaded(intent, context, now)?
+                .map_or(
+                    sandproof_protocol::lifecycle::UnloadOutcome::Pending,
+                    |facts| sandproof_protocol::lifecycle::UnloadOutcome::Unloaded { facts },
+                )
+        };
         Ok(sandproof_protocol::lifecycle::UnloadObservation {
             request: intent.clone(),
-            unloaded: inner.journal.lifecycle_unloaded(intent, context, now)?,
+            outcome,
         })
     }
 }

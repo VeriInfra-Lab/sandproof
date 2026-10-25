@@ -5,6 +5,9 @@ use sandproof_controller_service::WorkerTransportError;
 use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
 use std::{fs, os::unix::fs::MetadataExt, path::PathBuf};
 
+mod restore_gate;
+pub(crate) use restore_gate::RestoreActivationGate;
+
 pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
     // Debug-only deterministic crash after the outbox dispatch claim,
     // before any host side effect. Recovery must not assume the

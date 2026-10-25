@@ -39,10 +39,11 @@ def service_fixture(root):
     for index, settings in enumerate((runtime, builder)):
         parent = root / str(index)
         parent.mkdir(mode=0o700)
-        for name in ("db", "state", "jails", "cgroup"):
+        for name in ("db", "state", "p", "cgroup"):
             (parent / name).mkdir(mode=0o700)
+        (parent/'p/v').mkdir(mode=0o700)
         settings.update(namespace=namespaces[index], database=str(parent / "db/controller.db"),
-                        node_state_dir=str(parent / "state"), chroot_base=str(parent / "jails"),
+                        node_state_dir=str(parent / "state"), chroot_base=str(parent / "p/v"),
                         uid_base=1000 + index * 100,
                         kernel=str(kernel), firecracker=str(kernel),
                         host_resources={"cgroup_parent": str(parent / "cgroup")})
@@ -555,14 +556,14 @@ class CoordinationProvisioningTests(unittest.TestCase):
 
 class SocketLayoutTests(unittest.TestCase):
     def test_uid_slot_bound_cannot_hide_lifetime_identifier_overflow(self):
-        root = Path("/var/lib/sp-01a0e1bd/bc9161f-00")
+        root = Path("/var/lib/sp-01a0e1bd/bc9161f-0000")
         namespaces = ["0123456789abcdef", "123456789abcdef0"]
         with self.assertRaisesRegex(ValueError, "Firecracker socket"):
             validate_acceptance_socket_paths(root, namespaces, "/bin/firecracker")
 
     def test_encoded_limit_counts_multibyte_paths_on_all_platforms(self):
         namespace = "0123456789abcdef"
-        tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+        tail = Path("0/p/v/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
         prefix = Path("/tmp/é")
         root = Path(str(prefix) + "a" * (107 - len(os.fsencode(prefix / tail))))
         self.assertEqual(len(os.fsencode(root / tail)), 107)
@@ -575,7 +576,7 @@ class SocketLayoutTests(unittest.TestCase):
     def test_encoded_limit_matches_real_unix_socket_boundary(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:
             namespace = "0123456789abcdef"
-            tail = Path("0/jails/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+            tail = Path("0/p/v/firecracker") / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
             # Include multibyte characters: the kernel limit counts bytes.
             prefix = Path(directory) / "é"
             padding = 107 - len(os.fsencode(prefix / tail))

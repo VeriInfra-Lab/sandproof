@@ -60,10 +60,22 @@ pub type SourceProbe = Box<
 
 #[derive(Default)]
 pub struct State {
+    pub material_plan: Option<Vec<u8>>,
+    pub material_observation:
+        Option<sandproof_controller_service::capture::MaterialRetirementObservation>,
+    pub material_prepare_calls: usize,
+    pub material_delete_plans: Vec<Vec<u8>>,
+    pub block_material_delete: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub capture_request_end:
+        Option<sandproof_controller_service::capture::CaptureRequestEndObservation>,
+    pub capture_request_end_observations: usize,
+    pub terminal_drain_gate: Option<(u64, u64)>,
+    pub terminal_drain_observations: usize,
+    pub full_proposal_error: Option<ApplicationError>,
     pub source_probe: Option<SourceProbe>,
     pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
-    pub configurations: BTreeMap<u64, (String, CreateOptions)>,
+    pub configurations: BTreeMap<(u64, core::Generation), (String, CreateOptions)>,
     pub lose_activation: bool,
     pub block_prepare: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
     pub block_release: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
@@ -89,6 +101,62 @@ impl WorkEvidence for TestHost {
     type Evidence = workflow::FakeHostEvidence;
 }
 impl WorkExecution for TestHost {
+    fn retire_lifecycle_material(
+        &self,
+        _request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+        plan: &[u8],
+        _permit: &sandproof_controller_service::capture::MaterialRetirementPermit,
+    ) -> Result<
+        sandproof_controller_service::capture::MaterialRetirementObservation,
+        ApplicationError,
+    > {
+        let blocked = {
+            let mut state = self.0.lock().unwrap();
+            state.material_delete_plans.push(plan.to_vec());
+            state.block_material_delete.take()
+        };
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
+        self.0
+            .lock()
+            .unwrap()
+            .material_observation
+            .clone()
+            .ok_or(ApplicationError::Busy)
+    }
+    fn propose_lifecycle_full(
+        &self,
+        _pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        _source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest, ApplicationError>
+    {
+        Err(self
+            .0
+            .lock()
+            .unwrap()
+            .full_proposal_error
+            .unwrap_or(ApplicationError::Busy))
+    }
+    fn execute_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: &sandproof_controller_service::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        if permit.action() != action
+            || permit.work_binding()
+                != &work
+                    .binding_digest()
+                    .map_err(|_| WorkerTransportError::ConnectionLost)?
+        {
+            return Err(WorkerTransportError::ConnectionLost);
+        }
+        self.execute(action)
+    }
     fn execute(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -123,6 +191,47 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    fn prepare_lifecycle_material_retirement(
+        &self,
+        _request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+    ) -> Result<Vec<u8>, ApplicationError> {
+        let mut state = self.0.lock().unwrap();
+        state.material_prepare_calls += 1;
+        state.material_plan.clone().ok_or(ApplicationError::Busy)
+    }
+    fn observe_lifecycle_capture_request_end(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        _source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        _worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> Option<sandproof_controller_service::capture::CaptureRequestEndObservation> {
+        let mut state = self.0.lock().unwrap();
+        state.capture_request_end_observations += 1;
+        state.capture_request_end.clone()
+    }
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        work: &sandproof_controller_service::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::TerminatedCaptureObservation> {
+        let mut state = self.0.lock().unwrap();
+        state.terminal_drain_observations += 1;
+        let (device, inode) = state.terminal_drain_gate?;
+        // Explicit controlled physical-boundary facts, never a real gate test.
+        Some(sandproof_controller_service::capture::TerminatedCaptureObservation::StoppedAndDrained{
+            work_binding:work.binding_digest().ok()?,full_work_binding:work.full().binding_digest().ok()?,
+            seal_action:work.seal_action().clone(),stop_action:work.stop_action().clone(),
+            source:work.source().source.clone(),worker:work.worker().cloned(),host_slot:work.host_slot(),
+            helper_gate_device:device,helper_gate_inode:inode,
+        })
+    }
+    fn observe_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.observe(action)
+    }
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         let mut state = self.0.lock().unwrap();
         state.recovery_observations += 1;
@@ -265,48 +374,63 @@ impl HostCapacity for TestHost {
     }
 }
 impl LaunchConfiguration for TestHost {
-    fn put_secret(&self, _: core::SandboxId, _: &str) -> Result<(), ApplicationError> {
+    fn put_secret(
+        &self,
+        _: core::SandboxId,
+        _: core::Generation,
+        _: &str,
+    ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Invalid)
     }
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError> {
         Ok(self
             .0
             .lock()
             .unwrap()
             .configurations
-            .contains_key(&sandbox.0))
+            .contains_key(&(sandbox.0, generation)))
     }
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError> {
         self.0
             .lock()
             .unwrap()
             .configurations
-            .get(&sandbox.0)
+            .get(&(sandbox.0, generation))
             .map(|v| v.0.clone())
             .ok_or(ApplicationError::Busy)
     }
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         let mut state = self.0.lock().unwrap();
-        if state.configurations.contains_key(&sandbox.0) {
+        if state.configurations.contains_key(&(sandbox.0, generation)) {
             return Err(ApplicationError::Conflict);
         }
         state
             .configurations
-            .insert(sandbox.0, (token.into(), options.clone()));
+            .insert((sandbox.0, generation), (token.into(), options.clone()));
         Ok(())
     }
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         let state = self.0.lock().unwrap();
-        match state.configurations.get(&sandbox.0) {
+        match state.configurations.get(&(sandbox.0, generation)) {
             None => Ok(false),
             Some((_, original)) if original == options => Ok(true),
             _ => Err(ApplicationError::Conflict),

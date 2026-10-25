@@ -208,7 +208,12 @@ pub(super) fn update_bindings(
                 .contexts
                 .get(&position.0)
                 .ok_or(JournalError::CorruptStore)?;
-            if context.binding != *binding || bindings.released.contains_key(&binding.sandbox.0) {
+            if context.binding != *binding
+                || bindings
+                    .released
+                    .get(&binding.sandbox.0)
+                    .is_some_and(|old| old.context.binding.generation >= binding.generation)
+            {
                 return Err(JournalError::CorruptStore);
             }
             bindings.released.insert(
@@ -260,7 +265,13 @@ pub(super) fn validate_bindings(
             && bindings
                 .released
                 .get(&slot.binding.sandbox.0)
-                .is_none_or(|witness| witness.context != *context)
+                .is_none_or(|witness| {
+                    witness.context.binding.generation < slot.binding.generation
+                        || (witness.context.binding.generation == slot.binding.generation
+                            && witness.context != *context)
+                        || (witness.context.binding.generation > slot.binding.generation
+                            && !historical_free_binding(world, context))
+                })
         {
             return Err(JournalError::CorruptStore);
         }
@@ -269,8 +280,12 @@ pub(super) fn validate_bindings(
         let row = world
             .sandbox_record(core::SandboxId(*sandbox))
             .ok_or(JournalError::CorruptStore)?;
-        let original = retirement::original_binding(world, core::SandboxId(*sandbox))?
-            .ok_or(JournalError::CorruptStore)?;
+        let original = retirement::execution_binding(
+            world,
+            core::SandboxId(*sandbox),
+            witness.context.binding.generation,
+        )?
+        .ok_or(JournalError::CorruptStore)?;
         let current = bindings
             .contexts
             .get(&witness.context.position.0)
@@ -278,8 +293,10 @@ pub(super) fn validate_bindings(
         if witness.input_sequence == 0
             || witness.input_sequence > high
             || witness.context.binding != original
-            || !(row.phase == core::Phase::Destroyed
-                || paused_release(world, core::SandboxId(*sandbox)))
+            || !(row.generation > original.generation
+                || row.phase == core::Phase::Destroyed
+                || paused_release(world, core::SandboxId(*sandbox))
+                || core::maintenance::released_unload_termination_history(world, original))
             || current.binding.vm < original.vm
             || (current.binding.vm == original.vm
                 && (current != &witness.context
@@ -302,6 +319,22 @@ pub(super) fn validate_bindings(
         }
     }
     Ok(())
+}
+
+// The newest release witness can supersede an older generation's witness,
+// while its unreused Free position still retains the exact historical binding.
+// Old resources must actually be reclaimed; current-generation release never
+// follows merely from a prior generation's receipt.
+fn historical_free_binding(world: &core::World, context: &HostSlotContext) -> bool {
+    let binding = context.binding;
+    retirement::execution_binding(world, binding.sandbox, binding.generation)
+        .is_ok_and(|original| original == Some(binding))
+        && world
+            .vm_record(binding.vm)
+            .is_some_and(|vm| vm.status == core::VmStatus::Reclaimed)
+        && world
+            .slot_record(binding.network)
+            .is_some_and(|slot| slot.reclaimed && !slot.active)
 }
 
 pub(super) fn validate_saved_cursors(

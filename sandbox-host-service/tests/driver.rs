@@ -3,6 +3,8 @@
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../controller-service/tests/support/lifecycle_application.rs"]
 mod current;
+#[path = "driver/maintenance.rs"]
+mod maintenance;
 use current::fixture as local;
 use sandproof_controller_service::{
     CreateReadiness, InternalTemplate,

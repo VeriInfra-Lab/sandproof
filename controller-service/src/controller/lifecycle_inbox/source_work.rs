@@ -1,6 +1,8 @@
 //! Readonly source responsibility in the original journal. Never a VM phase.
 mod codec;
 pub(in crate::controller) mod full;
+pub(in crate::controller) mod restore;
+mod retirement;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -22,13 +24,49 @@ use sandproof_protocol::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
+pub(in crate::controller) fn retire_unadmitted(
+    connection: &rusqlite::Connection,
+    world: &sandbox_controller_core::World,
+    intent: &AcceptedLifecycleIntent,
+    original: &NativeCreateSnapshot,
+) -> Result<(), JournalError> {
+    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    for record in &sources.records {
+        if record.work.request() != intent {
+            continue;
+        }
+        snapshot::validate_record(
+            connection,
+            world,
+            &super::codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?,
+            &sources.config,
+            record,
+        )?;
+        if record.capture.is_some()
+            || record.restore.is_some()
+            || record.retirement.is_some()
+            || record.work.anchor.native != *original
+        {
+            return Err(JournalError::UnresolvedAction);
+        }
+        let empty = b"null";
+        if connection.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=NULL WHERE work_key=?3",
+            rusqlite::params![empty.as_slice(),Sha256::digest(empty).as_slice(),record.work.requirement.work_binding.as_bytes().as_slice()],
+        )?!=1 {return Err(JournalError::CorruptStore)}
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceAnchor {
     request: AcceptedLifecycleIntent,
-    create: AcceptedLifecycleIntent,
+    execution_origin: AcceptedLifecycleIntent,
     local: InternalLocalBinding,
     native: NativeCreateSnapshot,
+    #[serde(deserialize_with = "required_option")]
+    continued_from: Option<sandbox_controller_core::capture::OriginalContinueIdentity>,
     node: NodeIdentity,
     host_bootstrap: HostEpochRegistration,
     source: SourceProcessIdentity,
@@ -64,6 +102,12 @@ pub struct SourceWorkRecord {
     pub observation: Option<RawSourceObservation>,
     #[serde(deserialize_with = "required_option")]
     capture: Option<full::CaptureWork>,
+    /// Unique successor and material use are saved beside their original
+    /// source, not reconstructed from a manager's in-memory handles.
+    #[serde(deserialize_with = "required_option")]
+    restore: Option<restore::RestoreClaim>,
+    #[serde(deserialize_with = "required_option")]
+    retirement: Option<retirement::MaterialRetirementState>,
 }
 
 fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -74,11 +118,23 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-fn digest(bytes: &[u8]) -> ContentDigest {
+pub(super) fn digest(bytes: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(bytes).into())
 }
 
+pub(in crate::controller) use codec::remove_retired;
 pub(in crate::controller) use codec::{charged_bytes, validate};
+pub use retirement::MaterialRetirementQuestion;
+pub(in crate::controller) fn validate_terminal_sources(
+    connection: &rusqlite::Connection,
+    world: &sandbox_controller_core::World,
+    sandbox: sandbox_controller_core::SandboxId,
+) -> Result<Vec<SourceWorkRecord>, JournalError> {
+    if codec::load(connection)?.is_none() {
+        return Ok(Vec::new());
+    }
+    retirement::validate_terminal_sources(connection, world, sandbox)
+}
 pub(super) fn initialize(
     connection: &rusqlite::Connection,
     config: SourceObservationConfig,
@@ -120,7 +176,7 @@ pub(super) fn references_intent(
     let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
     Ok(sources.records.iter().any(|record| {
         record.work.anchor.request.request.binding.key == intent.request.binding.key
-            || record.work.anchor.create.request.binding.key == intent.request.binding.key
+            || record.work.anchor.execution_origin.request.binding.key == intent.request.binding.key
     }))
 }
 
@@ -176,7 +232,14 @@ impl ControllerJournal {
             },
         )?;
         if serde_json::to_vec(&work)?.len() as u64 > u64::from(sources.config.max_work_bytes)
-            || sources.records.len() >= usize::from(inbox.config.max_sessions)
+            || sources
+                .records
+                .iter()
+                .filter(|record| {
+                    record.work.request().request.binding.session == intent.request.binding.session
+                })
+                .count() as u64
+                >= codec::records_per_session(&tx)?
         {
             return Err(JournalError::MaintenanceCapacity);
         }
@@ -184,6 +247,8 @@ impl ControllerJournal {
             work,
             observation: None,
             capture: None,
+            restore: None,
+            retirement: None,
         };
         sources.records.push(record.clone());
         codec::save(&tx, &sources, inbox.config.max_sessions)?;

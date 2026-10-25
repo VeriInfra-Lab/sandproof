@@ -16,6 +16,46 @@ pub trait WorkEvidence {
 
 /// Execute only controller-claimed work; transport loss remains unknown.
 pub trait WorkExecution: WorkEvidence {
+    /// Continue only the same original VM under the exact saved end fact and
+    /// confirmed original dispatch. The provider must match the whole action
+    /// and work digest, recheck the same PID/boot, policies and authorization,
+    /// and never load a snapshot, initialize a guest or allocate a successor.
+    /// # Errors
+    /// Any uncertain action or physical prerequisite remains unknown.
+    fn execute_lifecycle_original_continue(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::OriginalContinueWorkRequest,
+        _permit: &crate::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+    /// Delete only the exact saved physical plan authorized by the journal.
+    /// Partial failure remains unknown and retains this same plan and charge.
+    /// # Errors
+    /// Unsupported providers, changed files or missing permission refuse.
+    fn retire_lifecycle_material(
+        &self,
+        _request: &crate::capture::CaptureMaterialRetirementRequest,
+        _plan: &[u8],
+        _permit: &crate::capture::MaterialRetirementPermit,
+    ) -> Result<crate::capture::MaterialRetirementObservation, ApplicationError> {
+        Err(ApplicationError::Invalid)
+    }
+
+    /// Load paused or activate only the original durably claimed candidate.
+    /// Activation requires the permit obtained after recording `MayHaveExecuted`.
+    /// # Errors
+    /// An unknown effect retains the same candidate and material obligation.
+    fn execute_lifecycle_restore_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::RestoreWorkRequest,
+        _activation: Option<&crate::capture::RestoreActivationPermit>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        Err(WorkerTransportError::ConnectionLost)
+    }
+
     /// Propose protected local capture parameters; this performs no Pause/Full.
     /// # Errors
     /// Missing configuration or physical envelope refuses capture admission.
@@ -64,6 +104,58 @@ pub trait WorkExecution: WorkEvidence {
 
 /// Observe or reconcile exact previously dispatched work, never arbitrary replay.
 pub trait WorkRecovery: WorkEvidence {
+    /// Observe the original terminal Stop, writer exit and exact helper gate
+    /// drain. No VM/API command or material deletion is permitted; the existing
+    /// gate protocol may reclaim a dead-helper marker. Missing facts stay None.
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        _work: &crate::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<crate::capture::TerminatedCaptureObservation> {
+        None
+    }
+    /// Read only the original candidate. This may not PATCH, retry Full,
+    /// initialize a guest, or turn a current Running GET into a new permission.
+    fn observe_lifecycle_original_continue(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        None
+    }
+    /// Read an exact bounded physical plan without creating or deleting files.
+    /// An old source VMM may already be absent; current CPU/boot readiness is
+    /// not a substitute for the original file and native execution identities.
+    /// # Errors
+    /// Unknown, substituted, oversized or unsupported material refuses a plan.
+    fn prepare_lifecycle_material_retirement(
+        &self,
+        _request: &crate::capture::CaptureMaterialRetirementRequest,
+    ) -> Result<Vec<u8>, ApplicationError> {
+        Err(ApplicationError::Invalid)
+    }
+
+    /// Observe the exact durable worker result and actual original worker exit.
+    /// Only an explicit tagged record proves no request; death, EOF, missing
+    /// records, disconnection and timeout alone must return None.
+    fn observe_lifecycle_capture_request_end(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _full: &crate::capture::FullCaptureWorkRequest,
+        _source: &crate::capture::SourceObservationRequirement,
+        _worker: &crate::capture::CaptureWorkerBinding,
+    ) -> Option<crate::capture::CaptureRequestEndObservation> {
+        None
+    }
+
+    /// Observe the same persisted restore; this must not load another VMM.
+    fn observe_lifecycle_restore_action(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &crate::capture::RestoreWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        None
+    }
+
     /// Observe the same persisted capture attempt without starting another Full.
     fn observe_lifecycle_capture_action(
         &self,
@@ -309,17 +401,30 @@ pub trait HostCapacity {
 pub trait LaunchConfiguration {
     /// # Errors
     /// A host credential creation failure leaves the admitted create pending.
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError>;
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), ApplicationError>;
 
     /// Return false only when no credential was ever stored. A malformed or
     /// unreadable credential must be an error, not permission to replace it.
     /// # Errors
     /// Refuses to classify an untrusted or corrupt host credential as absent.
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError>;
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError>;
 
     /// # Errors
     /// Missing credentials cannot be replaced by a new token on connect.
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError>;
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError>;
 
     /// Persist the exact guest initialization environment with its credential
     /// before a VM can be reserved. Hosts without this capability reject
@@ -329,13 +434,14 @@ pub trait LaunchConfiguration {
     fn put_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<(), ApplicationError> {
         if !env_vars.is_empty() {
             return Err(ApplicationError::Invalid);
         }
-        self.put_secret(sandbox, token)
+        self.put_secret(sandbox, generation, token)
     }
 
     /// A present credential with different initialization data is not a
@@ -345,12 +451,13 @@ pub trait LaunchConfiguration {
     fn has_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &BTreeMap<String, String>,
     ) -> Result<bool, ApplicationError> {
         if !env_vars.is_empty() {
             return Err(ApplicationError::Invalid);
         }
-        self.has_secret(sandbox)
+        self.has_secret(sandbox, generation)
     }
 
     /// Persist the exact admitted template alongside the one-time launch credential.
@@ -359,13 +466,14 @@ pub trait LaunchConfiguration {
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         if options.template.is_some() {
             return Err(ApplicationError::Invalid);
         }
-        self.put_launch_config(sandbox, token, &options.env_vars)
+        self.put_launch_config(sandbox, generation, token, &options.env_vars)
     }
 
     /// # Errors
@@ -373,12 +481,13 @@ pub trait LaunchConfiguration {
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         if options.template.is_some() {
             return Err(ApplicationError::Invalid);
         }
-        self.has_launch_config(sandbox, &options.env_vars)
+        self.has_launch_config(sandbox, generation, &options.env_vars)
     }
 }
 

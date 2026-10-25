@@ -48,11 +48,15 @@ mod execution;
 mod guest_transport;
 mod identity;
 mod inventory;
+mod material_retirement;
 mod observation;
+mod original_continue;
 mod readonly;
 mod recovery;
+mod restore;
 mod source_observation;
 mod source_process;
+mod terminated_capture;
 use decisions::fence_can_advance;
 pub use execution::ExecutionReport;
 pub use readonly::LinuxObservation;
@@ -145,6 +149,7 @@ pub struct ObservedSlot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GuestSecret {
+    generation: core::Generation,
     token: String,
     sha512: String,
     #[serde(default)]

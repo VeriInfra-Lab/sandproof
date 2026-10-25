@@ -111,6 +111,13 @@ fn host_budget_retains_management_and_destroy_capacity() {
         ("/inbox/max_sessions", json!(0)),
         ("/inbox/max_operations_per_session", json!(7)),
         ("/inbox/max_operations_per_session", json!(129)),
+        ("/inbox/max_operations_per_session", json!(9)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(0)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(7)),
+        (
+            "/native/maintenance/max_operations_per_sandbox",
+            json!(u64::MAX),
+        ),
         ("/inbox/max_profile_bytes", json!(0)),
         ("/inbox/max_manifest_bytes", json!(262_145)),
         ("/internal/request_timeout_ms", json!(0)),
@@ -119,6 +126,38 @@ fn host_budget_retains_management_and_destroy_capacity() {
         *settings.pointer_mut(path).unwrap() = value;
         assert!(!check(settings));
     }
+}
+
+#[test]
+fn original_host_requires_explicit_native_operation_bound() {
+    let mut value = host_settings();
+    value["native"]["maintenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max_operations_per_sandbox");
+    assert!(!check(value));
+}
+
+#[test]
+fn stage1_example_initializes_the_original_retained_graph_and_inbox() {
+    // Real HostConfig + original SQLite initialization, without Node/VM,
+    // provisioning, sockets, guest calls or a parallel budget validator.
+    let source = include_str!("../../../../deploy/host.example.json");
+    let value: Value = serde_json::from_str(source).unwrap();
+    let config: HostConfig = serde_json::from_value(value).unwrap();
+    let (contract, _) = config.validate_static().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = ControllerJournal::open_complete(
+        directory.path().join("controller.db"),
+        &config.native.namespace,
+        contract.bounded,
+        contract.maintenance,
+        0,
+    )
+    .unwrap();
+    journal
+        .initialize_lifecycle_inbox(config.inbox, config.source_observation, &mut NeverCrash)
+        .unwrap();
 }
 
 #[test]

@@ -237,6 +237,16 @@ pub trait CommittedDriver: Send + Sync {
 /// Called from bounded blocking work, with NO center decision lock held.
 pub trait HostPort: Send + Sync + 'static {
     /// # Errors
+    /// A current original candidate must be observed; missing replies do not
+    /// certify readiness, loss, cleanup or permission to reload old material.
+    fn observe_lifecycle_resume(
+        &self,
+        _intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _deadline: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, PortError> {
+        Err(PortError::Busy)
+    }
+    /// # Errors
     /// Only the original journal may report durable custody and execution exit.
     fn observe_lifecycle_unload(
         &self,
@@ -306,6 +316,14 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// # Errors
+    /// The same durable authority checks source, target and original lifetime.
+    fn accept_lifecycle_resume_observation(
+        &mut self,
+        _observation: &sandproof_protocol::lifecycle::ResumeObservation,
+    ) -> Result<(), AuthorityError> {
+        Err(sandproof_center_core::DecisionError::Invalid.into())
+    }
     /// # Errors
     /// Save only the exact current completed Unload in the original authority.
     fn accept_lifecycle_unload_observation(

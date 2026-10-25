@@ -602,9 +602,9 @@ class CenterHostFaultsTests(unittest.TestCase):
         control=self.root/'control'
         control.mkdir(mode=0o700)
         path=control/'host.json'
-        path.write_text(json.dumps(dict(native=dict(namespace='a'*16))))
+        path.write_text(json.dumps(dict(native=dict(namespace='a'*16,chroot_base=str(self.root/'p/v')))))
         path.chmod(0o600)
-        claim=self.root/'jails/.claims'/('vm-'+'a'*16+'-42')
+        claim=self.root/'p/v/.claims'/('vm-'+'a'*16+'-42')
         claim.mkdir(parents=True,mode=0o700)
         record=claim/'record.json'
         boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()
