@@ -257,6 +257,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         if !matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
             return Err(JournalError::UnsupportedInput);
         }
+        if let Some(observation) = self.observe_continued_state_lost(intent, context)? {
+            return Ok(observation);
+        }
         if let Some(observation) = self.observe_restore_state_lost(intent, context)? {
             return Ok(observation);
         }

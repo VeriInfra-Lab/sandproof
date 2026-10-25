@@ -69,11 +69,13 @@ impl ControllerJournal {
             sum.checked_add(super::super::retirement::material_charge(r)?)
                 .ok_or(JournalError::MaintenanceCapacity)
         })?;
-        if held
-            .checked_add(reserved_material_bytes)
-            .is_none_or(|n| n > sources.config.max_material_bytes)
-        {
-            return Err(JournalError::MaintenanceCapacity);
+        let total = held.checked_add(reserved_material_bytes)
+            .ok_or(JournalError::MaintenanceCapacity)?;
+        if total > sources.config.max_material_bytes {
+            // Only this same-transaction, definite material refusal carries
+            // the pre-admission guarantee. Overflow and later storage/commit
+            // failures retain their original classification.
+            return Err(JournalError::CaptureMaterialQuotaExceeded);
         }
 
         let operation = operation?;

@@ -12,6 +12,7 @@ use sandproof_protocol::{
 };
 use serde::{Deserialize, Serialize};
 mod exit;
+mod continued_exit;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

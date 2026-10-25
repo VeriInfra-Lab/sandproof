@@ -815,7 +815,7 @@ fn full_budget_refusal_precedes_pause_and_does_not_leave_half_reservation() {
             10,
             &mut NeverCrash
         ),
-        Err(JournalError::MaintenanceCapacity)
+        Err(JournalError::CaptureMaterialQuotaExceeded)
     ));
     assert_eq!(journal.world().unwrap(), before);
     assert!(
