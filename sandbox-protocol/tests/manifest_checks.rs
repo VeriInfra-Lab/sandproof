@@ -1,8 +1,9 @@
 use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::lifecycle::{
-    CaptureBinding, CaptureId, ContentDigest, ExpectedSession, IncarnationId, MANIFEST_FORMAT_VERSION,
-    ManifestError, OperationBinding, OperationKey, PROTOCOL_VERSION, RequestSequence, RequestWindowId,
-    SessionId, SnapshotFile, SnapshotFileKind, SnapshotManifest, VmCompatibility, WritableDrive,
+    CaptureBinding, CaptureId, ContentDigest, ExpectedSession, IncarnationId,
+    MANIFEST_FORMAT_VERSION, ManifestError, OperationBinding, OperationKey, PROTOCOL_VERSION,
+    RequestSequence, RequestWindowId, SessionId, SnapshotFile, SnapshotFileKind, SnapshotManifest,
+    VmCompatibility, WritableDrive,
 };
 use sandproof_protocol::{DeploymentId, NodeId, ResourceId, TenantId};
 
