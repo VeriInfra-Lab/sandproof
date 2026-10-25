@@ -25,7 +25,13 @@ pub(crate) enum CurrentObservationError {
     Shared(PortError),
     Host(PortError),
     Superseded,
+    Pending,
     Deadline,
+}
+impl From<PortError> for CurrentObservationError {
+    fn from(error: PortError) -> Self {
+        Self::Shared(error)
+    }
 }
 impl CurrentObservationError {
     pub(crate) fn into_port(self) -> PortError {
@@ -38,6 +44,7 @@ impl CurrentObservationError {
                 );
                 PortError::Busy
             }
+            Self::Pending => PortError::Busy,
             Self::Deadline => PortError::OutcomeUnknown,
         }
     }
@@ -75,7 +82,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.current_create_observation_before(intent, deadline)
     }
 
-    fn current_create_observation_before(
+    pub(crate) fn current_create_observation_before(
         &self,
         intent: &AcceptedLifecycleIntent,
         deadline: Instant,
@@ -132,7 +139,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 _ => DiagnosticStage::CreateObservationPending,
             };
             diagnostics::emit(rejection, DiagnosticFailure::Port(PortError::Busy));
-            return Err(CurrentObservationError::Host(PortError::Busy));
+            return Err(
+                if matches!(view.readiness, CurrentCreateReadiness::Pending) {
+                    CurrentObservationError::Pending
+                } else {
+                    CurrentObservationError::Host(PortError::Busy)
+                },
+            );
         };
         if policy
             .healthy_until(before, after, facts.observed_at_ms)
@@ -439,6 +452,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             Err(CurrentObservationError::Shared(error)) => return Err(error),
             Err(
                 CurrentObservationError::Host(_)
+                | CurrentObservationError::Pending
                 | CurrentObservationError::Superseded
                 | CurrentObservationError::Deadline,
             ) => return Ok(false),
@@ -477,6 +491,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 Ok(_)
                 | Err(
                     CurrentObservationError::Host(_)
+                    | CurrentObservationError::Pending
                     | CurrentObservationError::Superseded
                     | CurrentObservationError::Deadline,
                 ) => Ok(true),

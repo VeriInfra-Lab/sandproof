@@ -665,3 +665,95 @@ fn continued_query_cannot_overwrite_a_destroy_accepted_during_observation() {
     assert_eq!(current.operation, destroyed.key);
     assert!(current.unload_outcome.is_none());
 }
+
+#[test]
+fn pending_before_unload_acceptance_waits_for_original_ready_without_new_key() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    host.observation_budgets.lock().unwrap().clear();
+    host.pending_once.store(true, Ordering::SeqCst);
+    let request = racing_request(2, 1);
+    let result = app.unload_lifecycle("8", &created.session, &request);
+    assert!(
+        result.is_ok(),
+        "original transient Pending must not reject unload: {result:?}"
+    );
+    let accepted = result.unwrap();
+    assert_eq!(accepted.accepted_version, 2);
+    assert_eq!(
+        app.unload_lifecycle("8", &created.session, &request)
+            .unwrap(),
+        accepted
+    );
+    let budgets = host.observation_budgets.lock().unwrap();
+    assert_eq!(budgets.len(), 2);
+    assert!(budgets[1] < budgets[0]);
+    assert_eq!(
+        app.snapshot()
+            .unwrap()
+            .lifecycle_session(&"8".try_into().unwrap(), &created.session)
+            .unwrap()
+            .operations()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn pending_unload_exhausts_original_deadline_without_accepting_or_resetting_budget() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    host.ready.store(false, Ordering::SeqCst);
+    assert_eq!(
+        app.unload_lifecycle("8", &created.session, &racing_request(2, 1)),
+        Err(PortError::Busy)
+    );
+    let budgets = host.observation_budgets.lock().unwrap();
+    assert!(budgets.len() > 1);
+    assert!(budgets.windows(2).all(|pair| pair[1] < pair[0]));
+    assert_eq!(app.snapshot().unwrap(), before);
+}
+
+#[test]
+fn unload_transport_busy_is_not_treated_as_authenticated_pending() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    *host.observation_error_once.lock().unwrap() = Some(PortError::Busy);
+    assert_eq!(
+        app.unload_lifecycle("8", &created.session, &racing_request(2, 1)),
+        Err(PortError::Busy)
+    );
+    assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+    assert_eq!(app.snapshot().unwrap(), before);
+}

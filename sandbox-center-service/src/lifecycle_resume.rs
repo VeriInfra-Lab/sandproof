@@ -86,6 +86,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 }
             }
             CurrentResumeReadiness::StateLost => {}
+            CurrentResumeReadiness::Pending => return Err(CurrentObservationError::Pending),
             _ => return Err(CurrentObservationError::Host(PortError::Busy)),
         }
         Ok(view)

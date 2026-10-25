@@ -51,6 +51,9 @@ type RecordedSignal = Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>;
 struct Host {
     clock: Arc<Time>,
     ready: Arc<AtomicBool>,
+    pending_once: Arc<AtomicBool>,
+    observation_error_once: Arc<Mutex<Option<PortError>>>,
+    observation_budgets: Arc<Mutex<Vec<Duration>>>,
     observed_at_override: Arc<Mutex<Option<u64>>>,
     observations: Arc<AtomicUsize>,
     recordings: Arc<AtomicUsize>,
@@ -64,6 +67,9 @@ impl Host {
         Self {
             clock,
             ready: Arc::new(AtomicBool::new(true)),
+            pending_once: Arc::new(AtomicBool::new(false)),
+            observation_error_once: Arc::new(Mutex::new(None)),
+            observation_budgets: Arc::new(Mutex::new(Vec::new())),
             observed_at_override: Arc::new(Mutex::new(None)),
             observations: Arc::new(AtomicUsize::new(0)),
             recordings: Arc::new(AtomicUsize::new(0)),
@@ -87,7 +93,9 @@ impl Host {
         let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
             panic!("only the original Create is observed")
         };
-        let readiness = if self.ready.load(Ordering::SeqCst) {
+        let readiness = if !self.pending_once.swap(false, Ordering::SeqCst)
+            && self.ready.load(Ordering::SeqCst)
+        {
             CurrentCreateReadiness::Observed {
                 facts: CurrentReadyFacts {
                     started_at_ms: 100,
@@ -135,8 +143,12 @@ impl HostPort for Host {
     fn observe_lifecycle_create(
         &self,
         intent: &AcceptedLifecycleIntent,
-        _: Duration,
+        budget: Duration,
     ) -> Result<CreateObservation, PortError> {
+        self.observation_budgets.lock().unwrap().push(budget);
+        if let Some(error) = self.observation_error_once.lock().unwrap().take() {
+            return Err(error);
+        }
         self.observations.fetch_add(1, Ordering::SeqCst);
         let mut value = self.observed(intent);
         let blocked = {

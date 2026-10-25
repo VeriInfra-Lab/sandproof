@@ -4,6 +4,7 @@ use crate::application::diagnostics::{
     self, Failure as DiagnosticFailure, Stage as DiagnosticStage,
 };
 use crate::application::tenant_id;
+use crate::lifecycle_dispatch::CurrentObservationError;
 use crate::{
     CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
 };
@@ -15,6 +16,7 @@ use sandproof_protocol::lifecycle::{
     PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
     PublicSessionView, PublicUnloadRequest, SessionId,
 };
+use std::time::Instant;
 
 fn query_lock_error(stage: DiagnosticStage) -> PortError {
     diagnostics::emit(stage, DiagnosticFailure::Port(PortError::OutcomeUnknown));
@@ -85,25 +87,37 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         {
             return Ok(acceptance(intent));
         }
-        match self.accept_unload_from_current_observation(&owner, session, request) {
-            Ok(intent) => Ok(acceptance(intent)),
-            Err(error) => {
-                // Another caller may have committed this exact request while
-                // the Host observation was detached. Re-read confirmed authority;
-                // never turn an unknown/fenced store into a cached success.
-                let replay = self
-                    .authority
-                    .lock()
-                    .map_err(|_| PortError::OutcomeUnknown)?
-                    .replay_public_unload(&owner, session, request)?;
-                if let Some(intent) = replay {
-                    Ok(acceptance(intent))
-                } else {
-                    diagnostics::emit(
-                        DiagnosticStage::LifecycleUnloadReplayAbsent,
-                        DiagnosticFailure::Port(error),
-                    );
-                    Err(error)
+        let deadline = self.reply_deadline()?;
+        loop {
+            match self.accept_unload_from_current_observation(&owner, session, request, deadline) {
+                Ok(intent) => return Ok(acceptance(intent)),
+                Err(cause) => {
+                    let pending = matches!(cause, CurrentObservationError::Pending);
+                    let error = cause.into_port();
+                    // A duplicate may have committed while this observation was
+                    // detached. Unknown authority never becomes a cached success.
+                    let replay = self
+                        .authority
+                        .lock()
+                        .map_err(|_| PortError::OutcomeUnknown)?
+                        .replay_public_unload(&owner, session, request)?;
+                    if let Some(intent) = replay {
+                        return Ok(acceptance(intent));
+                    }
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if !pending || left.is_zero() {
+                        diagnostics::emit(
+                            DiagnosticStage::LifecycleUnloadReplayAbsent,
+                            DiagnosticFailure::Port(error),
+                        );
+                        return Err(error);
+                    }
+                    // Only an authenticated Pending view is waited on. No new
+                    // key, no repeated unknown write, and no refreshed deadline.
+                    std::thread::sleep(self.config.poll_interval.min(left));
+                    if Instant::now() >= deadline {
+                        return Err(error);
+                    }
                 }
             }
         }
@@ -114,15 +128,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         owner: &TenantId,
         session: &SessionId,
         request: &PublicUnloadRequest,
-    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        deadline: Instant,
+    ) -> Result<AcceptedLifecycleIntent, CurrentObservationError> {
         let (current, phase) = self.current_lifecycle_intent(owner, session)?;
         if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
-            return Err(PortError::Conflict);
+            return Err(PortError::Conflict.into());
         }
         if self.is_resumed_execution(&current)? {
-            let observation = self
-                .current_resume_observation_before(&current, self.reply_deadline()?)
-                .map_err(crate::lifecycle_dispatch::CurrentObservationError::into_port)?;
+            let observation = self.current_resume_observation_before(&current, deadline)?;
             let intent = self
                 .authority
                 .lock()
@@ -130,7 +143,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 .accept_public_resumed_unload(owner, session, request, &observation, self.now()?)?;
             return Ok(intent);
         }
-        let observation = self.current_create_observation(&current)?;
+        let observation = self.current_create_observation_before(&current, deadline)?;
         let now = self.now()?;
         let intent = self
             .authority
@@ -226,6 +239,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 }
                 Err(
                     crate::lifecycle_dispatch::CurrentObservationError::Host(_)
+                    | crate::lifecycle_dispatch::CurrentObservationError::Pending
                     | crate::lifecycle_dispatch::CurrentObservationError::Superseded
                     | crate::lifecycle_dispatch::CurrentObservationError::Deadline,
                 ) => None,
