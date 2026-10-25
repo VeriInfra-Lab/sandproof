@@ -64,14 +64,6 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         Ok(self)
     }
 
-    pub(crate) fn current_create_observation(
-        &self,
-        intent: &AcceptedLifecycleIntent,
-    ) -> Result<CreateObservation, PortError> {
-        self.current_create_observation_attempt(intent)
-            .map_err(CurrentObservationError::into_port)
-    }
-
     pub(crate) fn current_create_observation_attempt(
         &self,
         intent: &AcceptedLifecycleIntent,
