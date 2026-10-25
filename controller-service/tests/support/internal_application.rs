@@ -95,6 +95,11 @@ pub struct State {
     pub observe_unavailable: bool,
     pub lose_stop: Option<core::SandboxId>,
     pub observe_hook: Option<Box<dyn FnOnce() + Send>>,
+    pub restore_exit:
+        Option<sandproof_controller_service::capture::RestoreCandidateExitObservation>,
+    pub restore_exit_questions:
+        Vec<(WorkAction<core::EffectId>, sandproof_protocol::lifecycle::ContentDigest)>,
+    pub restore_exit_hook: Option<Box<dyn FnOnce() + Send>>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -191,13 +196,20 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
-    // This controlled provider has no physical restore-exit observer.
     fn observe_lifecycle_restore_exit(
         &self,
-        _action: &WorkAction<core::EffectId>,
-        _work: &sandproof_controller_service::capture::RestoreWorkRequest,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
     ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
-        None
+        let (observed, hook) = {
+            let mut state = self.0.lock().unwrap();
+            state.restore_exit_questions.push((action.clone(), work.binding_digest().ok()?));
+            (state.restore_exit.clone(), state.restore_exit_hook.take())
+        };
+        if let Some(hook) = hook {
+            hook();
+        }
+        observed
     }
 
     fn prepare_lifecycle_material_retirement(
