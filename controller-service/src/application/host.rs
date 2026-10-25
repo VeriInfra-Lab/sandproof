@@ -163,11 +163,9 @@ pub trait WorkRecovery: WorkEvidence {
     /// unknown, unsupported and refused observations; it never means death.
     fn observe_lifecycle_restore_exit(
         &self,
-        _action: &WorkAction<core::EffectId>,
-        _work: &crate::capture::RestoreWorkRequest,
-    ) -> Option<crate::capture::RestoreCandidateExitObservation> {
-        None
-    }
+        action: &WorkAction<core::EffectId>,
+        work: &crate::capture::RestoreWorkRequest,
+    ) -> Option<crate::capture::RestoreCandidateExitObservation>;
 
     /// Observe the same persisted capture attempt without starting another Full.
     fn observe_lifecycle_capture_action(

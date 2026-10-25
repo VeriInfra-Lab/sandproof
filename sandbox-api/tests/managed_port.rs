@@ -369,6 +369,15 @@ impl WorkExecution for FakeHost {
 }
 
 impl WorkRecovery for FakeHost {
+    // This controlled provider has no physical restore-exit observer.
+    fn observe_lifecycle_restore_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        None
+    }
+
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
         if self.bad_stop_observation_for == Some(action.command.command().sandbox())
             && matches!(action.command.command(), core::Command::StopVm { .. })

@@ -191,6 +191,15 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    // This controlled provider has no physical restore-exit observer.
+    fn observe_lifecycle_restore_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        None
+    }
+
     fn prepare_lifecycle_material_retirement(
         &self,
         _request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,

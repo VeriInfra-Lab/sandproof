@@ -137,6 +137,15 @@ impl TestHost {
 }
 
 impl WorkRecovery for TestHost {
+    // This controlled provider has no physical restore-exit observer.
+    fn observe_lifecycle_restore_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        None
+    }
+
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         if !self.state.lock().unwrap().actions.contains(action) {
             return None;
@@ -274,6 +283,15 @@ impl WorkEvidence for RecoveryOnly {
     type Evidence = support::FakeHostEvidence;
 }
 impl WorkRecovery for RecoveryOnly {
+    // This controlled provider has no physical restore-exit observer.
+    fn observe_lifecycle_restore_exit(
+        &self,
+        _action: &WorkAction<core::EffectId>,
+        _work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        None
+    }
+
     fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         None
     }
