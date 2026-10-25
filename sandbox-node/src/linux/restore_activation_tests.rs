@@ -69,19 +69,19 @@ fn missing_or_timed_out_restore_observations_remain_errors() {
 #[test]
 fn changed_pid_start_boot_or_state_never_adopts_a_restore_exit() {
     let original = candidate(LoadedSnapshotState::Exited);
-    let mut changes = Vec::new();
+    let mut variants = Vec::new();
     let mut changed = original.clone();
     changed.process.pid += 1;
-    changes.push(changed);
+    variants.push(changed);
     let mut changed = original.clone();
     changed.process.start_time_ticks += 1;
-    changes.push(changed);
+    variants.push(changed);
     let mut changed = original.clone();
     changed.process.boot_id = "00000000-0000-0000-0000-000000000002".into();
-    changes.push(changed);
-    changes.push(candidate(LoadedSnapshotState::Paused));
-    changes.push(candidate(LoadedSnapshotState::Running));
-    for changed in changes {
+    variants.push(changed);
+    variants.push(candidate(LoadedSnapshotState::Paused));
+    variants.push(candidate(LoadedSnapshotState::Running));
+    for changed in variants {
         let calls = Cell::new(0);
         assert!(
             observe_confirmed_restore_exit(|| {
