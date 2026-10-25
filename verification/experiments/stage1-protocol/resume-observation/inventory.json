@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "base_commit": "e7403e13149f4312503ab07a08ace0642b441657",
+  "base_sources": {
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+    "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+    "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+    "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/resume.rs": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+    "sandbox-protocol/src/lifecycle/resume_tests.rs": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+    "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+    "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94"
+  },
+  "audits": {
+    "ResumeBindings": [
+      "SandboxModel.Stage1Protocol.ResumeBinding.readiness_not_current",
+      "SandboxModel.Stage1Protocol.ResumeBinding.version_ne",
+      "SandboxModel.Stage1Protocol.ResumeBinding.validation_branch",
+      "SandboxModel.Stage1Protocol.ResumeBinding.continued_refines",
+      "SandboxModel.Stage1Protocol.ResumeBinding.version_ne_bind",
+      "SandboxModel.Stage1Protocol.ResumeBinding.matches_refines",
+      "SandboxModel.Stage1Protocol.ResumeBinding.matches_complete",
+      "SandboxModel.Stage1Protocol.ResumeBinding.matches_accepts_iff",
+      "SandboxModel.Stage1Protocol.ResumeBinding.matches_rejects_iff",
+      "SandboxModel.Stage1Protocol.ResumeBinding.preserves_full_original",
+      "SandboxModel.Stage1Protocol.ResumeBinding.preserves_envelope_shapes",
+      "SandboxModel.Stage1Protocol.ResumeBinding.changed_original_rejected"
+    ],
+    "ResumeExamples": [
+      "SandboxModel.Stage1Protocol.ResumeValues.normal_original_and_successors",
+      "SandboxModel.Stage1Protocol.ResumeValues.omitted_fields_rejected",
+      "SandboxModel.Stage1Protocol.ResumeValues.readiness_boundaries"
+    ],
+    "ResumeModel": [],
+    "ResumeValues": [
+      "SandboxModel.Stage1Protocol.ResumeValues.changed_original_is_valid",
+      "SandboxModel.Stage1Protocol.ResumeValues.followups_are_valid",
+      "SandboxModel.Stage1Protocol.ResumeValues.changed_original_differs",
+      "SandboxModel.Stage1Protocol.ResumeValues.counterexamples_outside_contract"
+    ],
+    "NegativeResumeLostUnload": [
+      "SandboxModel.Stage1Protocol.NegativeResumeLostUnload.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeResumeLostUnload.violates_same_full_contract"
+    ],
+    "NegativeResumeRenewIncarnation": [
+      "SandboxModel.Stage1Protocol.NegativeResumeRenewIncarnation.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeResumeRenewIncarnation.violates_same_full_contract"
+    ],
+    "NegativeResumeRetention": [
+      "SandboxModel.Stage1Protocol.NegativeResumeRetention.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeResumeRetention.violates_same_full_contract"
+    ],
+    "NegativeResumeSession": [
+      "SandboxModel.Stage1Protocol.NegativeResumeSession.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeResumeSession.violates_same_full_contract"
+    ]
+  },
+  "mutations": {
+    "resume-session-only": {
+      "source": "sandbox-protocol/src/lifecycle/resume.rs",
+      "old": "        if self.request != *original {",
+      "new": "        if self.request.request.binding.session != original.request.binding.session {",
+      "template": "NegativeResumeSession"
+    },
+    "resume-ignore-retention": {
+      "source": "sandbox-protocol/src/lifecycle/resume.rs",
+      "old": "            || self.current_request.retention != original.retention\n",
+      "new": "",
+      "template": "NegativeResumeRetention"
+    },
+    "resume-lost-unload": {
+      "source": "sandbox-protocol/src/lifecycle/resume.rs",
+      "old": "                        | CurrentResumeReadiness::Pending => true,\n",
+      "new": "                        | CurrentResumeReadiness::Pending\n                        | CurrentResumeReadiness::StateLost => true,\n",
+      "template": "NegativeResumeLostUnload"
+    },
+    "resume-wrong-renew-incarnation": {
+      "source": "sandbox-protocol/src/lifecycle/resume.rs",
+      "old": "                    && current.key != binding.key\n                    && incarnation == target_incarnation\n",
+      "new": "                    && current.key != binding.key\n                    && (incarnation == target_incarnation || incarnation != target_incarnation)\n",
+      "template": "NegativeResumeRenewIncarnation"
+    }
+  }
+}
