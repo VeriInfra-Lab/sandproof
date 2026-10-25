@@ -71,3 +71,9 @@ pub fn ready_matches_create_renewal(
 ) -> bool {
     value.matches_renewed(original, current)
 }
+
+// Keep the same actual standard conversion reachable in correct and wrong views.
+// This root does not replace any production guard or its negative variant.
+pub fn create_signed_deadline(value: i64) -> Result<u64, std::num::TryFromIntError> {
+    u64::try_from(value)
+}

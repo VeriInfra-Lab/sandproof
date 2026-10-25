@@ -19,7 +19,7 @@ PROFILES = {
     'facts': COMMON_ROOTS + FACT_ROOTS,
     'resume': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request'],
     'create-values': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request', 'create_observation_equal'],
-    'create': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request', 'create_matches_request', 'ready_matches_create_renewal', 'create_observation_equal'],
+    'create': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request', 'create_matches_request', 'ready_matches_create_renewal', 'create_observation_equal', 'create_signed_deadline'],
 }
 
 

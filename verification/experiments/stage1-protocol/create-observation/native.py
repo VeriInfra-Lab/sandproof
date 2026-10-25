@@ -180,6 +180,8 @@ def run(archive, output, target):
                     save()
                 if case == 'correct':
                     checked(source, folder, 'driver-tests', ['bash', 'scripts/python-entry.sh', str(HERE / 'test_drivers.py')])
+                    checked(source, folder, 'conversion-driver-tests', ['bash', 'scripts/python-entry.sh', str(HERE / 'test_conversion_candidate.py')])
+                    checked(source, folder, 'guard-driver-tests', ['bash', 'scripts/python-entry.sh', str(HERE / 'test_guard_candidate.py')])
                     checked(source, folder, 'format', ['cargo', 'fmt', '--manifest-path', manifest, '--check'])
                     checked(source, folder, 'clippy', ['cargo', 'clippy', '--manifest-path', manifest,
                         '--all-targets', '--locked', '--offline', '--', '-D', 'warnings'])
