@@ -39,9 +39,9 @@ pin 是具名持久集合，可重建 original loader、candidate、running back
 
 ## 5. 显式卸载检查点
 
-当前服务只接受完整初始化的生命周期库。服务格式取共享 `HOST_STORE_FORMAT_VERSION`（本次核对为 21），核心检查点版本为 2；旧 `INTERNAL_INBOX_FORMAT_VERSION = 16` 只用于历史组件断言，不是另一生产模式。旧 FirstUnload/Source18 分阶段启用说明已被当前唯一格式替代；不保留自动迁移或旧读者备用逻辑。
+当前服务只接受完整初始化的生命周期库。服务格式取共享 `HOST_STORE_FORMAT_VERSION`（本次核对为 23），核心检查点版本为 2；旧 `INTERNAL_INBOX_FORMAT_VERSION = 16` 只用于历史组件断言，不是另一生产模式。旧 FirstUnload/Source18 分阶段启用说明已被当前唯一格式替代；不保留自动迁移或旧读者备用逻辑。
 
-检查点和原 SQL 投影支持首次 Pause/Capture/Stop、来源工作及材料责任；`check_input_profile` 仍显式拒绝 Resume。结构校验包含原身份、epoch、计划、来源、资源和捕获未知状态，不能靠反序列化出一个 Paused 值声明物理卸载。原 WorldTransaction、输入日志、outbox、回执与剪枝共同承担重启恢复，不无限保留全局历史代替当前责任。
+检查点和原 SQL 投影支持多轮 Pause/Resume、来源工作及材料责任；`check_input_profile` 通过 `permits_resume_input` 核对原持久恢复记录，拒绝绕过准入的 Resume。结构校验包含原身份、epoch、计划、来源、资源和捕获未知状态，不能靠反序列化出一个 Paused 值声明物理卸载。原 WorldTransaction、输入日志、outbox、回执与剪枝共同承担重启恢复，不无限保留全局历史代替当前责任。
 
 ## 6. 正式接收、启动与首次卸载
 
@@ -68,15 +68,15 @@ SourceWork 绑定原完整 Unload、Create 映射、VM/运行代/epoch、寿命�
 
 恢复已在原 SQL/SourceWork 接入唯一后继、材料使用责任、候选身份、激活前持久记录及多轮工作；不再将 Resume 描述为收件模型一律拒绝。当前恢复相关组件有指定版本证据，但实际服务、Node、网关及虚拟机组合仍须统一验收，完整 SQL 与真实 Rust 对应证明尚未完成。
 
-普通 Pause 失败沿唯一原 Pause/Full 工作推进：`prepare_lifecycle_original_continue` 在原 `WorldTransaction` 验证当前 Unload、原寿命、源身份和 typed End，封住后续捕获放行，并将 End、核心 `PrepareOriginalContinue` 及 outbox 一起提交。提交未知不返回执行许可，重开后按原工作查询。`NeverReleased` 与 `Returned` 互斥；后者要求真实 API 结束与 worker 退出，不以摘要或一次 Running 查询代替。原未决 Seal 可按核心的精确结束规则退休，但 Freeze/Commit 未知仍须解决。原始 `apply(Capture)` 不能绕过这条事务准入。具体核心条件见[V4](04-local-core.md)。
+普通 Pause 失败沿唯一原 Pause/Full 工作推进：`prepare_lifecycle_original_continue` 在原 `WorldTransaction` 验证当前 Unload、原寿命、源身份和 typed End，封住后续捕获放行，并将 End、核心 `PrepareOriginalContinue` 及 outbox 一起提交。提交未知不返回执行许可，重开后按原工作查询。SQL End 区分 `NeverReleased` 与 `WorkerEnded`；后者保存原工作器的 `NoRequest / Returned` 互斥结果，分别对应明确未发送或真实 API 结束，并要求原 worker 退出，不以摘要、缺席或一次 Running 查询代替。原未决 Seal 可按核心的精确结束规则退休，但 Freeze/Commit 未知仍须解决。原始 `apply(Capture)` 不能绕过这条事务准入。具体核心条件见[V4](04-local-core.md)。
 
-Node 已有原实例执行/只观察方法：实际执行要求原 action 与完整工作摘要的私有许可，只继续同一 VM，不加载快照、不重新初始化来宾、不替换凭据；前后核对原配置、进程、位置、网络及文件授权。该方法存在和组件通过不表示外层 application 已能产生许可、完成调用和发布。
+Node 已有原实例执行/只观察方法：实际执行要求原 action 与完整工作摘要的私有许可，只继续同一 VM，不加载快照、不重新初始化来宾、不替换凭据；前后核对原配置、进程、位置、网络及文件授权。外层 `application/coordinator/lifecycle_continue.rs` 已接原许可、实际调用、观察与继续结果发布；源码接线和组件通过不代表完整实现对应或真实 VM 组合已验收。
 
 仍需闭合：
 
-- 将上述事务、私有执行许可、实际调用、原回执及新鲜授权观察接入原后台调度；准入前尚无 native Pause 的失败须沿原 Inbox 关闭并退休无捕获的 SourceWork，不能伪造 Full 工作。
+- 验证已接入原后台的事务、私有执行许可、实际调用、原回执及新鲜授权观察；准入前尚无 native Pause 的失败已沿 `close_failed_unadmitted_unload` 关闭原 Inbox 并观察原执行，仍须证明无捕获 SourceWork 的退休和结果发布，不得伪造 Full 工作。
 - Full 已放行而 API 结束记录丢失时，不能由 worker 缺席或新连接 GET 推定旧调用已经结束。安全继续原 VM 的充分观察尚未闭合；显式 Destroy/TTL 的原终止计划也须能停止精确原 VMM、排空写者后收尾，不能被同一个未知 Full 永久挡住。
-- 卸载后 Destroy、终止和多轮恢复的引用关闭、持久退休计划、精确删除许可、物理回执及最终退额仍须组合。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
+- 原持久退休计划、精确删除许可、物理回执结算及 `maintain` 的材料/元数据收尾已有接线；卸载后 Destroy、终止和多轮恢复的引用关闭与最终退额仍须组合证明及真实回收验收。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
 - 禁止新引用与退休在原事务决定，File backing、loader、VMM 和写者的责任分别结束，才能按实际删除结果结算；TTL 不直接 unlink。
 
 当前已实现内容及检查范围以[覆盖记录](../proof-coverage.md)的精确版本为准。可先认领稳定同步入口的证明，不能把上述待接线、物理事实或未交付收尾作为已证业务前提。
