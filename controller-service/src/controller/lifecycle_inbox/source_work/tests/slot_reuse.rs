@@ -113,6 +113,26 @@ fn assert_release_required(
     assert_eq!(journal.world().unwrap(), before);
 }
 
+fn record_second_resume(
+    journal: &mut ControllerJournal,
+    first: &AcceptedLifecycleIntent,
+) -> AcceptedLifecycleIntent {
+    let mut second = second_unload(first);
+    second.accepted_version = 5;
+    second.request.binding.expected = ExpectedSession::Version(4);
+    second.request.binding.key.sequence = 5.try_into().unwrap();
+    second.request.operation = LifecycleOperation::Resume {
+        source_incarnation: 102.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
+        target_incarnation: 103.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([88; 32]),
+    };
+    journal
+        .record_lifecycle_intent(&second, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    second
+}
+
 #[test]
 fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     let dir = tempfile::tempdir().unwrap();
@@ -141,19 +161,7 @@ fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     finish_restored_component(&mut journal, sandbox);
     destroy_other(&mut journal, &other);
     capture_second(&mut journal, &first);
-    let mut second = second_unload(&first);
-    second.accepted_version = 5;
-    second.request.binding.expected = ExpectedSession::Version(4);
-    second.request.binding.key.sequence = 5.try_into().unwrap();
-    second.request.operation = LifecycleOperation::Resume {
-        source_incarnation: 102.try_into().unwrap(),
-        capture: 2.try_into().unwrap(),
-        target_incarnation: 103.try_into().unwrap(),
-        manifest_digest: ContentDigest::from_sha256([88; 32]),
-    };
-    journal
-        .record_lifecycle_intent(&second, &v3::context(), &mut NeverCrash)
-        .unwrap();
+    let second = record_second_resume(&mut journal, &first);
     assert_release_required(&mut journal, &second, HostSlotPhase::Occupied);
     assert!(
         journal
