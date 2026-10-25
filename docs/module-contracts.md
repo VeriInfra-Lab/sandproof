@@ -93,6 +93,8 @@ Ready 后原 worker 与退出回收者继续持有原进程名额，worker 继�
 
 普通失败的正式结果沿原 `UnloadObservation` 返回唯一互斥的 `Pending`、`Unloaded` 或 `OriginalContinued`；不建立第二条继续接口。`OriginalContinued` 必须由原失败 Pause 的持久结果、已结束的捕获责任及同一原 VM/运行代的确定继续事实提供，不能从一次 Running 查询推断。中心保留失败 Unload 的完整请求与已接受版本，核对原寿命不变后才重新发布 Running；后续网关授权使用这个当前版本与原 incarnation，不能退回旧 Create/Resume 请求身份。历史 `OriginalContinued` 结果仍可重放，但不单独授予当前访问。当前 Running 查询沿原 Create/Resume 执行来源重新观察，绑定当前已确认的失败 Unload；锁外观察后再核对请求、运行代、终止、期限及原四个寿命字段，保留原结果而不刷新历史事实的时间或写第二份 Ready。原 Unload 的失败结果仍可重放，下一次卸载必须使用新操作身份。终止、到期或任一冻结/捕获/激活结果未知时不得恢复访问。该合同的宿主、中心与网关接线须共同验收；仅本地回到 Running 不表示整条继续路径完成。
 
+卸载在接受前等待只读观察时，使用同一绝对期限。观察截止后仍重查原完整请求：已有接受则返回原结果，重查明确没有接受才返回 `Busy`；共享存储或 Host 的未知结果继续保持未知，不重置期限，也不把未知写当作可安全重做。重试仍使用同一键和全文。
+
 ### 恢复：一个来源只能交给一个可能执行的后继
 
 1. 要求 Unloaded、原 VMM 已确认退出、会话未终止/未过期、来源完整且当前。原 SQLite 事务唯一认领 `(session,capture,operation,new_incarnation)`，同时预留运行/磁盘/收尾资源并建立持久 pin。不同键竞争不能各自赢；同键重放读取原认领。
