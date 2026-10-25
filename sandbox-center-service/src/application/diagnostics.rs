@@ -230,7 +230,10 @@ mod tests {
                 counter(Stage::CreateObservationPending)
             ));
         }
-        assert!(std::ptr::eq(counter(Stage::AuthorityStore), &raw const EMITTED));
+        assert!(std::ptr::eq(
+            counter(Stage::AuthorityStore),
+            &raw const EMITTED
+        ));
     }
 
     #[test]
