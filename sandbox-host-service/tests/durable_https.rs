@@ -85,7 +85,10 @@ async fn actual_https_resume_forwards_original_pending_through_facade_and_wrappe
     use sandproof_protocol::lifecycle::{ContentDigest, CurrentResumeReadiness, LifecycleOperation};
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
-    let state = Arc::new(Mutex::new(local::state()));
+    let state = Arc::new(Mutex::new(local::State {
+        lose_activation: true,
+        ..local::state()
+    }));
     let app = local::application(
         &path,
         state.clone(),
@@ -100,15 +103,20 @@ async fn actual_https_resume_forwards_original_pending_through_facade_and_wrappe
     let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
     let create = local::request();
     client.record_lifecycle(&create).await.unwrap();
-    local::drive(&inbox).await;
-    assert!(matches!(
+    // Reuse the original lost-activation fixture: the native mapping exists,
+    // but the original journal retains the unknown action responsibility.
+    inbox
+        .advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    assert_eq!(
         client
             .observe_lifecycle_create(&create)
             .await
             .unwrap()
             .readiness,
-        CurrentCreateReadiness::Observed { .. }
-    ));
+        CurrentCreateReadiness::Pending
+    );
     let mut unload = local::destroy(&create);
     unload.request.operation = LifecycleOperation::Unload {
         source_incarnation: 101.try_into().unwrap(),
@@ -123,9 +131,8 @@ async fn actual_https_resume_forwards_original_pending_through_facade_and_wrappe
         manifest_digest: ContentDigest::from_sha256([7; 32]),
     };
     client.record_lifecycle(&resume).await.unwrap();
-    // Only reception is complete; no Unload/Resume worker ran. With fresh
-    // physical observations unavailable, forwarding cannot manufacture Ready.
-    state.lock().unwrap().observe_unavailable = true;
+    // Only reception is complete; no Unload/Resume worker ran. The original
+    // unresolved native action prevents Ready without inventing a restore pin.
     let expected = inbox
         .observe_resume(resume.clone(), local::context())
         .await
