@@ -39,10 +39,14 @@ pub(super) fn lost_origin_valid(history: &[LifecycleOperationRecord]) -> bool {
     let Some(current) = history.last() else {
         return false;
     };
-    if !matches!(
-        current.intent.request.operation,
-        LifecycleOperation::Resume { .. } | LifecycleOperation::Renew { .. }
-    ) {
+    let eligible = match current.intent.request.operation {
+        LifecycleOperation::Resume { .. } | LifecycleOperation::Renew { .. } => true,
+        LifecycleOperation::Unload { .. } => current.unloaded.as_ref().is_some_and(|saved| {
+            saved.matches_request(&current.intent) && saved.outcome.continued().is_some()
+        }),
+        _ => false,
+    };
+    if !eligible {
         return false;
     }
     history
@@ -197,7 +201,14 @@ impl CenterState {
             .last_mut()
             .ok_or(DecisionError::Invalid)?;
         match &observation.readiness {
-            CurrentResumeReadiness::StateLost => target.resume_state_lost = true,
+            CurrentResumeReadiness::StateLost => {
+                // The wire guard cannot establish this journal's immutable
+                // OriginalContinued result. Never infer it from an Unload key.
+                if !lost_origin_valid(&session.operations) {
+                    return Err(DecisionError::Unavailable);
+                }
+                target.resume_state_lost = true;
+            }
             CurrentResumeReadiness::Observed { facts } => {
                 let source = resume_source(session).ok_or(DecisionError::Invalid)?;
                 let matches = if matches!(

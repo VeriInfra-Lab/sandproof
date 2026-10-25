@@ -73,7 +73,8 @@ impl ResumeObservation {
                         CurrentResumeReadiness::Observed { facts } => current_facts(facts),
                         CurrentResumeReadiness::NotRunning
                         | CurrentResumeReadiness::Expired
-                        | CurrentResumeReadiness::Pending => true,
+                        | CurrentResumeReadiness::Pending
+                        | CurrentResumeReadiness::StateLost => true,
                         _ => false,
                     };
             }

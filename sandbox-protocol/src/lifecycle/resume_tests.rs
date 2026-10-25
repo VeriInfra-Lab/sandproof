@@ -374,7 +374,7 @@ fn current_validation_and_version_guards_reject_an_otherwise_valid_later_result(
 }
 
 #[test]
-fn continued_unload_observation_keeps_original_resume_without_inferred_state_loss() {
+fn continued_unload_loss_shape_keeps_the_complete_original_and_current_binding() {
     let original = original();
     let mut current = original.clone();
     current.accepted_version = 4;
@@ -391,7 +391,21 @@ fn continued_unload_observation_keeps_original_resume_without_inferred_state_los
     };
     assert!(view.matches_request(&original));
     view.readiness = CurrentResumeReadiness::StateLost;
-    assert!(!view.matches_request(&original));
+    // This guard checks a value shape. The two journals independently require
+    // a saved continuation and the provider's positive original-process exit.
+    assert!(view.matches_request(&original));
+    let mut wrong = view.clone();
+    wrong.current_request.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 2.try_into().unwrap(),
+    };
+    assert!(!wrong.matches_request(&original));
+    let mut wrong = view.clone();
+    wrong.current_request.retention.slot += 1;
+    assert!(!wrong.matches_request(&original));
+    let mut wrong = view.clone();
+    wrong.current_request.request.binding.key.owner = "different-owner".try_into().unwrap();
+    assert!(!wrong.matches_request(&original));
     view.readiness = CurrentResumeReadiness::Pending;
     assert!(view.matches_request(&original));
     view.current_request.request.operation = LifecycleOperation::Unload {
