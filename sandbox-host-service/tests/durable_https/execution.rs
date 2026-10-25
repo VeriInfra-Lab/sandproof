@@ -663,3 +663,71 @@ async fn immediate_fixed_expiry_revokes_data_without_waiting_for_physical_stop()
     host.recover().await.unwrap();
     assert_eq!(state.lock().unwrap().released_slots.len(), 1);
 }
+
+#[tokio::test]
+async fn status_and_two_create_observations_share_bounded_capacity_without_spurious_rejection() {
+    use std::{
+        future::Future,
+        task::{Context, Waker},
+        time::Duration,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let state = Arc::new(Mutex::new(local::state()));
+    let app = local::application(
+        &dir.path().join("db"),
+        state.clone(),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+    );
+    let host = HostLifecycle::new(app);
+    let create = local::request();
+    host.record_lifecycle(create.clone(), local::context())
+        .await
+        .unwrap();
+    host.advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    let (entered, ready) = std::sync::mpsc::channel();
+    let (release, wait) = std::sync::mpsc::channel();
+    state.lock().unwrap().block_health = Some((entered, wait));
+    let worker = host.clone();
+    let status = tokio::spawn(async move {
+        worker
+            .free_resources(local::config().node, local::compute())
+            .await
+    });
+    tokio::task::spawn_blocking(move || ready.recv_timeout(Duration::from_secs(10)).unwrap())
+        .await
+        .unwrap();
+    let mut first = Box::pin(host.observe_create(create.clone(), local::context()));
+    let mut second = Box::pin(host.observe_create(create.clone(), local::context()));
+    // Poll while the controlled host state is held: no timing sleep and no
+    // dependency on when the blocking worker gets scheduled.
+    let collision = {
+        let _guard = state.lock().unwrap();
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        second.as_mut().poll(&mut cx)
+    };
+    release.send(()).unwrap();
+    status.await.unwrap().unwrap();
+    assert!(matches!(
+        first.await.unwrap().readiness,
+        CurrentCreateReadiness::Observed { .. }
+    ));
+    assert!(
+        collision.is_pending(),
+        "one additional observer must wait within the fixed budget"
+    );
+    assert!(matches!(
+        second.await.unwrap().readiness,
+        CurrentCreateReadiness::Observed { .. }
+    ));
+    assert!(matches!(
+        host.observe_create(create, local::context())
+            .await
+            .unwrap()
+            .readiness,
+        CurrentCreateReadiness::Observed { .. }
+    ));
+}
