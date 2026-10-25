@@ -621,7 +621,9 @@ fn saved_before_admission_continuation_has_its_own_qualification_without_looseni
     journal
         .close_lifecycle_unload_before_admission(&unload, &v3::context(), 10, &mut NeverCrash)
         .unwrap();
-    let unpublished = journal.lifecycle_continued_exit_candidates::<Evidence>(&request, &v3::context(), 10).unwrap();
+    let unpublished = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&request, &v3::context(), 10)
+        .unwrap();
     assert!(unpublished.0.is_none() && unpublished.1.is_none());
     let candidate = journal
         .lifecycle_ready_candidate::<Evidence>(&request, &v3::context(), 10)
@@ -668,6 +670,9 @@ fn saved_before_admission_continuation_has_its_own_qualification_without_looseni
     let view = query(&app, &request);
     assert_eq!(view.current_request, unload);
     assert_eq!(view.readiness, CurrentResumeReadiness::StateLost);
-    assert_eq!(state.lock().unwrap().restore_exit_questions, vec![(original.action, original.work.binding_digest().unwrap())]);
+    assert_eq!(
+        state.lock().unwrap().restore_exit_questions,
+        vec![(original.action, original.work.binding_digest().unwrap())]
+    );
     assert!(state.lock().unwrap().actions.is_empty());
 }

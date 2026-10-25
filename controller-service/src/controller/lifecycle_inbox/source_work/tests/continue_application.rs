@@ -220,7 +220,11 @@ fn an_uncertain_admission_commit_never_becomes_a_material_quota_refusal() {
                 .is_none()
         );
         assert_eq!(
-            journal.lifecycle_capture_record(sandbox).unwrap().and_then(|record| record.capture).is_some(),
+            journal
+                .lifecycle_capture_record(sandbox)
+                .unwrap()
+                .and_then(|record| record.capture)
+                .is_some(),
             durable
         );
         if !durable {
