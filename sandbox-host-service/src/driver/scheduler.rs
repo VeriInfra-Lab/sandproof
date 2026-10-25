@@ -15,6 +15,7 @@ enum Candidate {
     Unload(AcceptedLifecycleIntent),
     Resume(AcceptedLifecycleIntent),
     Native(sandbox_controller_core::SandboxId, bool),
+    Maintenance,
 }
 
 // Called inside the original blocking callback and its control permit.
@@ -68,6 +69,9 @@ fn recorded_candidates<H: ControllerHost>(
             result.push(Candidate::Native(sandbox, terminal));
         }
     }
+    // Material obligations outlive native workflows and remain in the journal.
+    // This is only a scheduling entry; slow maintenance never runs in this scan.
+    result.push(Candidate::Maintenance);
     Ok(result)
 }
 
@@ -76,7 +80,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         &self,
         config: &DriverConfig,
         templates: Arc<T>,
-        workers: &mut JoinSet<Result<bool, ApplicationError>>,
+        workers: &mut JoinSet<Result<Option<bool>, ApplicationError>>,
     ) -> Result<DriveReport, ApplicationError> {
         let node = config.node.clone();
         let mut candidates = self
@@ -90,14 +94,21 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         }
         let mut report = DriveReport::default();
         for candidate in candidates {
-            report.scanned += 1;
-            let cleanup = matches!(candidate, Candidate::Native(_, true));
+            let maintenance = matches!(candidate, Candidate::Maintenance);
+            if !maintenance {
+                report.scanned += 1;
+            }
+            let cleanup = matches!(candidate, Candidate::Maintenance | Candidate::Native(_, true));
             let Ok(permit) = self.work_permit(cleanup) else {
-                report.unavailable += 1;
+                if !maintenance {
+                    report.unavailable += 1;
+                }
                 continue;
             };
             if workers.len() > self.max_work {
-                report.unavailable += 1;
+                if !maintenance {
+                    report.unavailable += 1;
+                }
                 continue;
             }
             let host = self.clone();
@@ -138,17 +149,21 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                         Candidate::Renew(intent) => app
                             .apply_recorded_lifecycle_renew(&intent, &config.node)
                             .map(|_| true),
+                        Candidate::Maintenance => app.maintain().map(|_| false),
                     };
-                    if let Ok(value) = result {
-                        Ok(value)
+                    let advanced = if let Ok(value) = result {
+                        value
                     } else {
                         // Classify against the original authority while this
                         // actual callback still owns its work permit. Failed
                         // local work must not compete again for control slots.
                         app.check_internal_authority(&node)
                             .map_err(|_| ApplicationError::OutcomeUnknown)?;
-                        Ok(false)
-                    }
+                        false
+                    };
+                    // Preserve business progress counters; a maintenance pass
+                    // is neither a public operation nor a missing observation.
+                    Ok((!maintenance).then_some(advanced))
                 })
                 .await
             });
@@ -169,10 +184,10 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         let mut workers = JoinSet::new();
         let mut report = self.schedule(&config, templates, &mut workers).await?;
         while let Some(result) = workers.join_next().await {
-            if result.map_err(|_| ApplicationError::OutcomeUnknown)?? {
-                report.advanced += 1;
-            } else {
-                report.unavailable += 1;
+            match result.map_err(|_| ApplicationError::OutcomeUnknown)?? {
+                Some(true) => report.advanced += 1,
+                Some(false) => report.unavailable += 1,
+                None => {}
             }
         }
         Ok(report)
@@ -200,7 +215,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                 biased;
                 changed = shutdown.changed() => { if changed.is_err() || *shutdown.borrow() { break } }
                 result = workers.join_next(), if !workers.is_empty() => {
-                    if let Some(result) = result { result.map_err(|_| ApplicationError::OutcomeUnknown)??; }
+                    if let Some(result) = result { let _ = result.map_err(|_| ApplicationError::OutcomeUnknown)??; }
                 }
                 _ = ticks.tick() => {
                     match self.schedule(&config, Arc::clone(&templates), &mut workers).await {
@@ -211,7 +226,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             }
         }
         while let Some(result) = workers.join_next().await {
-            result.map_err(|_| ApplicationError::OutcomeUnknown)??;
+            let _ = result.map_err(|_| ApplicationError::OutcomeUnknown)??;
         }
         Ok(())
     }
