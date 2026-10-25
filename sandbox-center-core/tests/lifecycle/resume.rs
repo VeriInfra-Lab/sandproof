@@ -96,7 +96,11 @@ fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_his
     assert_eq!(after_exit.sandboxes()[0].phase(), SessionPhase::StateLost);
     assert_eq!(after_exit.reserved(None, None), Some(resources(1)));
     assert_eq!(
-        after_exit.sandboxes()[0].operations().last().unwrap().unloaded(),
+        after_exit.sandboxes()[0]
+            .operations()
+            .last()
+            .unwrap()
+            .unloaded(),
         Some(&continued)
     );
     let reopened: CenterState =
@@ -122,7 +126,7 @@ fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_his
     let corrupted: CenterState = serde_json::from_value(corrupted).unwrap();
     assert!(
         !corrupted.is_valid(),
-        "a after_exit Unload cannot invent its own continuation"
+        "a lost Unload cannot invent its own continuation"
     );
 }
 
