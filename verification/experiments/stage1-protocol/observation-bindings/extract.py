@@ -18,6 +18,8 @@ FACT_ROOTS = ['ready_matches_create', 'ready_matches_resumed', 'ready_matches_re
 PROFILES = {
     'facts': COMMON_ROOTS + FACT_ROOTS,
     'resume': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request'],
+    'create-values': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request', 'create_observation_equal'],
+    'create': COMMON_ROOTS + FACT_ROOTS + ['resume_matches_request', 'create_matches_request', 'ready_matches_create_renewal'],
 }
 
 
@@ -97,6 +99,9 @@ def extract(output, profiles, tool_root):
             argv = [str(tool_root / 'aeneas/charon/bin/charon'), 'cargo',
                     '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default',
                     '--include', 'sandproof_protocol']
+            if name == 'create':
+                argv += ['--include', 'core::result::*::is_err', '--include', 'core::result::*::is_ok',
+                         '--include', 'core::convert::num::*::try_from', '--include', 'core::num::error::*']
             for root in PROFILES[name]:
                 argv += ['--start-from', 'crate::' + root]
             argv += ['--dest-file', destination, '--', '--manifest-path',
