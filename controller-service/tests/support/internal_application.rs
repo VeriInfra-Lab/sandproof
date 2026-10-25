@@ -65,6 +65,7 @@ pub struct State {
         Option<sandproof_controller_service::capture::MaterialRetirementObservation>,
     pub material_prepare_calls: usize,
     pub material_delete_plans: Vec<Vec<u8>>,
+    pub block_material_delete: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
     pub capture_request_end:
         Option<sandproof_controller_service::capture::CaptureRequestEndObservation>,
     pub capture_request_end_observations: usize,
@@ -109,9 +110,20 @@ impl WorkExecution for TestHost {
         sandproof_controller_service::capture::MaterialRetirementObservation,
         ApplicationError,
     > {
-        let mut state = self.0.lock().unwrap();
-        state.material_delete_plans.push(plan.to_vec());
-        state
+        let blocked = {
+            let mut state = self.0.lock().unwrap();
+            state.material_delete_plans.push(plan.to_vec());
+            state.block_material_delete.take()
+        };
+        if let Some((entered, release)) = blocked {
+            entered.send(()).unwrap();
+            release
+                .recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap();
+        }
+        self.0
+            .lock()
+            .unwrap()
             .material_observation
             .clone()
             .ok_or(ApplicationError::Busy)
