@@ -166,3 +166,34 @@ fn restored_file_policy_preserves_disk_and_observation_failures() {
         .is_err()
     );
 }
+
+#[test]
+fn restore_execution_requires_paused_but_readonly_probe_can_observe_after_activation() {
+    let paused = candidate(LoadedSnapshotState::Paused);
+    assert_eq!(
+        require_loaded_candidate(paused.clone(), false).unwrap(),
+        paused
+    );
+    assert_eq!(
+        require_loaded_candidate(paused.clone(), true).unwrap(),
+        paused
+    );
+    let activated = finish_permitted_activation(
+        &paused,
+        || Ok(candidate(LoadedSnapshotState::Running)),
+        || Ok(()),
+        || Ok(candidate(LoadedSnapshotState::Running)),
+    )
+    .unwrap();
+    assert_eq!(activated.process, paused.process);
+    assert_eq!(
+        require_loaded_candidate(activated.clone(), true).unwrap(),
+        activated
+    );
+    assert!(require_loaded_candidate(activated, false).is_err());
+    for observe_only in [false, true] {
+        assert!(
+            require_loaded_candidate(candidate(LoadedSnapshotState::Exited), observe_only).is_err()
+        );
+    }
+}

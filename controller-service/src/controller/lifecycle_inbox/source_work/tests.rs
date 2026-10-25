@@ -1731,9 +1731,10 @@ fn resumed_store_rejects_historical_action_rebound_to_new_generation_or_epoch() 
     }
 }
 
-fn claim_restore_activation(
+fn claim_restore_action(
     journal: &mut ControllerJournal,
     sandbox: sandbox_controller_core::SandboxId,
+    target: impl Fn(&sandbox_controller_core::Command) -> bool,
 ) -> sandproof_protocol::WorkAction<sandbox_controller_core::EffectId> {
     use sandbox_controller_core::workflow::{self, WorkflowStep};
     for _ in 0..32 {
@@ -1746,10 +1747,7 @@ fn claim_restore_activation(
                     .claim_next(Some(sandbox), &mut NeverCrash)
                     .unwrap()
                     .unwrap();
-                if matches!(
-                    action.command.command(),
-                    sandbox_controller_core::Command::ActivateVm { .. }
-                ) {
+                if target(action.command.command()) {
                     return action;
                 }
                 journal
@@ -1767,10 +1765,10 @@ fn claim_restore_activation(
                     )
                     .unwrap();
             }
-            other => panic!("original restore blocked before activation: {other:?}"),
+            other => panic!("original restore blocked before target action: {other:?}"),
         }
     }
-    panic!("bounded original restore did not reach activation");
+    panic!("bounded original restore did not reach target action");
 }
 
 #[test]
@@ -1787,7 +1785,9 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
     let work = journal
         .lifecycle_restore_work(&request, &v3::context())
         .unwrap();
-    let action = claim_restore_activation(&mut journal, sandbox);
+    let action = claim_restore_action(&mut journal, sandbox, |command| {
+        matches!(command, sandbox_controller_core::Command::ActivateVm { .. })
+    });
     let permit = journal
         .lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10)
         .unwrap();
@@ -1876,6 +1876,84 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
     assert_eq!(policy.identity.epoch, action.identity.epoch);
 }
 
+#[test]
+fn unknown_restore_prepare_observation_does_not_mint_activation_or_ready() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, source) = unloaded_resume_source(&dir.path().join("db"));
+    let sandbox = source.work.anchor.local.sandbox;
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    journal
+        .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
+        .unwrap();
+    let work = journal
+        .lifecycle_restore_work(&request, &v3::context())
+        .unwrap();
+    let prepare = claim_restore_action(&mut journal, sandbox, |command| {
+        matches!(
+            command,
+            sandbox_controller_core::Command::PrepareVm {
+                source: Some(_),
+                ..
+            }
+        )
+    });
+    journal
+        .complete::<FullEvidence>(
+            &sandproof_protocol::WorkReceipt {
+                identity: prepare.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::Unknown {
+                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                },
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert!(
+        journal
+            .claim_next(Some(sandbox), &mut NeverCrash)
+            .unwrap()
+            .is_none()
+    );
+    // A controlled physical Prepared fact, through the original receipt path;
+    // it proves neither activation nor a new execution authority.
+    assert!(
+        journal
+            .reconcile_observed(
+                &prepare,
+                &sandproof_protocol::WorkReceipt {
+                    identity: prepare.identity.clone(),
+                    outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
+                        resource: prepare.identity.resource.clone(),
+                        command: prepare.command.command().clone(),
+                    }),
+                },
+            )
+            .unwrap()
+    );
+    assert!(matches!(
+        journal.lifecycle_restore_activation_permit(&work, &prepare, &v3::context(), 10),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert!(
+        !journal
+            .lifecycle_ready_candidate::<FullEvidence>(&request, &v3::context(), 10)
+            .unwrap()
+            .can_probe()
+    );
+    let activate = claim_restore_action(&mut journal, sandbox, |command| {
+        matches!(command, sandbox_controller_core::Command::ActivateVm { .. })
+    });
+    assert_eq!(
+        journal
+            .lifecycle_restore_activation_permit(&work, &activate, &v3::context(), 10)
+            .unwrap()
+            .action(),
+        &activate
+    );
+}
+
 fn finish_restored_component(
     journal: &mut ControllerJournal,
     sandbox: sandbox_controller_core::SandboxId,
@@ -1951,6 +2029,62 @@ fn running_successor(
         sandbox_controller_core::Phase::Running
     );
     (journal, first, intent)
+}
+
+#[test]
+fn completed_resume_readiness_requires_all_original_fresh_startup_probes() {
+    use crate::{CreateReadiness, CreateReadinessPending};
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, _, request) = running_successor(&dir.path().join("db"));
+    let candidate = journal
+        .lifecycle_ready_candidate::<FullEvidence>(&request, &v3::context(), 10)
+        .unwrap();
+    assert!(candidate.can_probe());
+    assert_eq!(candidate.actions.len(), 5);
+    let probes: Vec<_> = candidate
+        .actions
+        .iter()
+        .map(|action| {
+            Some(sandproof_protocol::WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
+                    resource: action.identity.resource.clone(),
+                    command: action.command.command().clone(),
+                }),
+            })
+        })
+        .collect();
+    for (index, action) in candidate.actions.iter().enumerate() {
+        if matches!(
+            action.command.command(),
+            sandbox_controller_core::Command::PrepareVm { .. }
+                | sandbox_controller_core::Command::ConfigureNetwork { .. }
+        ) {
+            let mut missing = probes.clone();
+            missing[index] = None;
+            assert_eq!(
+                journal
+                    .finish_lifecycle_ready(&candidate, &v3::context(), &missing, true, 10)
+                    .unwrap()
+                    .readiness,
+                CreateReadiness::Pending(CreateReadinessPending::HostUnobserved)
+            );
+        }
+    }
+    assert!(matches!(
+        journal
+            .finish_lifecycle_ready(&candidate, &v3::context(), &probes, false, 10)
+            .unwrap()
+            .readiness,
+        CreateReadiness::Pending(CreateReadinessPending::CredentialUnobserved)
+    ));
+    assert!(matches!(
+        journal
+            .finish_lifecycle_ready(&candidate, &v3::context(), &probes, true, 10)
+            .unwrap()
+            .readiness,
+        CreateReadiness::Observed(_)
+    ));
 }
 
 fn assert_cross_round_source_tampering_rejected(

@@ -49,6 +49,20 @@ fn observe_running_file_policy(
     Ok(result)
 }
 
+// A readonly probe reports preparation/network facts, not activation authority.
+// Once the same loaded candidate runs, those facts remain observable; executing
+// load/network work still requires Paused. The caller has checked intent,
+// manifest/work binding and original process before reaching this state check.
+fn require_loaded_candidate(
+    observed: LoadedSnapshotObservation,
+    observe_only: bool,
+) -> NodeResult<LoadedSnapshotObservation> {
+    match (observed.state, observe_only) {
+        (LoadedSnapshotState::Paused, _) | (LoadedSnapshotState::Running, true) => Ok(observed),
+        _ => Err("restore candidate state does not allow this operation".into()),
+    }
+}
+
 fn scope(
     action: &WorkAction<core::EffectId>,
     work: &RestoreWorkRequest,
@@ -138,11 +152,7 @@ impl RestoreContext<'_> {
         )?)
     }
     fn paused(&self) -> NodeResult<sandbox_runtime::LoadedSnapshotObservation> {
-        let observed = self.observe()?;
-        if observed.state != LoadedSnapshotState::Paused {
-            return Err("restore candidate is not loaded-paused".into());
-        }
-        Ok(observed)
+        require_loaded_candidate(self.observe()?, false)
     }
 }
 
@@ -227,7 +237,7 @@ impl LinuxWorker {
     ) -> NodeResult<ObservedResult> {
         let observed = if observe_only {
             self.require_slot(context.sandbox, context.generation, context.vm, slot)?;
-            context.paused()?
+            context.observe()?
         } else {
             let template = self
                 .secret(context.sandbox, context.generation)?
@@ -271,9 +281,7 @@ impl LinuxWorker {
                 context.profile.api_timeout,
             )?
         };
-        if observed.state != LoadedSnapshotState::Paused {
-            return Err("restore load candidate not paused".into());
-        }
+        let observed = require_loaded_candidate(observed, observe_only)?;
         Ok(ObservedResult::Prepared {
             pid: observed.process.pid,
             start_ticks: observed.process.start_time_ticks,
@@ -288,7 +296,11 @@ impl LinuxWorker {
         policy: &core::NetworkPolicy,
         observe_only: bool,
     ) -> NodeResult<ObservedResult> {
-        let before = context.paused()?;
+        let before = if observe_only {
+            require_loaded_candidate(context.observe()?, true)?
+        } else {
+            context.paused()?
+        };
         if !observe_only && !matches!(policy, core::NetworkPolicy::DenyAll) {
             context
                 .runtime
