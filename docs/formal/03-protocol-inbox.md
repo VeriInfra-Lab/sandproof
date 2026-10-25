@@ -21,6 +21,10 @@
 这些叶子不重做完整观测封套校验，不核实 material_bytes，也不以字段比较代替来源选择、续租单调政策或实际材料/运行事实。
 完整 Resume/Create/Unload 观测分支、持久收件和系统组合仍须分别连接并验收。
 
+完整 Unload 结果与 outcome 投影的[值合同](../../verification/experiments/stage1-protocol/unload-observation/README.md)另作切片：
+匹配只涉及完整原请求、版本/retention 形状及三类结果各自字段，不重做协议/center 校验或核实 digest。
+耐久材料保管、原候选退出或同一 VM 继续由各提供者独立建立，不从字段匹配或 Pending 推断。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
