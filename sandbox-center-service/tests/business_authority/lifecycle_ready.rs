@@ -56,6 +56,7 @@ struct Host {
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
     notify_recorded: RecordedSignal,
+    current_request_after_block: Arc<Mutex<Option<AcceptedLifecycleIntent>>>,
     unloaded: Arc<Mutex<Option<sandproof_protocol::lifecycle::UnloadObservation>>>,
 }
 impl Host {
@@ -68,6 +69,7 @@ impl Host {
             recordings: Arc::new(AtomicUsize::new(0)),
             blocked: Arc::new(Mutex::new(None)),
             notify_recorded: Arc::new(Mutex::new(None)),
+            current_request_after_block: Arc::new(Mutex::new(None)),
             unloaded: Arc::new(Mutex::new(None)),
         }
     }
@@ -136,7 +138,7 @@ impl HostPort for Host {
         _: Duration,
     ) -> Result<CreateObservation, PortError> {
         self.observations.fetch_add(1, Ordering::SeqCst);
-        let value = self.observed(intent);
+        let mut value = self.observed(intent);
         let blocked = {
             let mut slot = self.blocked.lock().unwrap();
             if slot
@@ -154,6 +156,9 @@ impl HostPort for Host {
                 .continue_work
                 .recv_timeout(Duration::from_secs(5))
                 .unwrap();
+            if let Some(current) = self.current_request_after_block.lock().unwrap().take() {
+                value.current_request = current;
+            }
         }
         Ok(value)
     }

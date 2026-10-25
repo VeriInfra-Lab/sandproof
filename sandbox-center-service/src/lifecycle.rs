@@ -9,6 +9,7 @@ use crate::{
 };
 use sandproof_api::{PortError, lifecycle::LifecyclePort};
 use sandproof_center_core::SessionPhase;
+use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, LifecycleOperation, PublicAcceptance,
     PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
@@ -84,7 +85,32 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         {
             return Ok(acceptance(intent));
         }
-        let (current, phase) = self.current_lifecycle_intent(&owner, session)?;
+        match self.accept_unload_from_current_observation(&owner, session, request) {
+            Ok(intent) => Ok(acceptance(intent)),
+            Err(error) => {
+                // Another caller may have committed this exact request while
+                // the Host observation was detached. Re-read confirmed authority;
+                // never turn an unknown/fenced store into a cached success.
+                let replay = self
+                    .authority
+                    .lock()
+                    .map_err(|_| PortError::OutcomeUnknown)?
+                    .replay_public_unload(&owner, session, request)?;
+                match replay {
+                    Some(intent) => Ok(acceptance(intent)),
+                    None => Err(error),
+                }
+            }
+        }
+    }
+
+    fn accept_unload_from_current_observation(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicUnloadRequest,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        let (current, phase) = self.current_lifecycle_intent(owner, session)?;
         if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
             return Err(PortError::Conflict);
         }
@@ -96,14 +122,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 .authority
                 .lock()
                 .map_err(|_| PortError::OutcomeUnknown)?
-                .accept_public_resumed_unload(
-                    &owner,
-                    session,
-                    request,
-                    &observation,
-                    self.now()?,
-                )?;
-            return Ok(acceptance(intent));
+                .accept_public_resumed_unload(owner, session, request, &observation, self.now()?)?;
+            return Ok(intent);
         }
         let observation = self.current_create_observation(&current)?;
         let now = self.now()?;
@@ -111,8 +131,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             .authority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .accept_public_unload(&owner, session, request, &observation, now)?;
-        Ok(acceptance(intent))
+            .accept_public_unload(owner, session, request, &observation, now)?;
+        Ok(intent)
     }
 
     /// # Errors

@@ -60,6 +60,104 @@ fn accept_unload(app: &Application) -> (SessionId, PublicUnloadRequest, UnloadOb
     )
 }
 
+fn raced_unload(
+    late_request: PublicUnloadRequest,
+    fence_after_winner: bool,
+) -> (
+    Result<sandproof_protocol::lifecycle::PublicAcceptance, PortError>,
+    sandproof_protocol::lifecycle::PublicAcceptance,
+) {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    let request = PublicUnloadRequest {
+        window: 1.try_into().unwrap(),
+        sequence: 2.try_into().unwrap(),
+        expected_version: 1,
+    };
+    let (entered, release) = host.block_next(created.session.clone());
+    let late_app = Arc::clone(&app);
+    let late_session = created.session.clone();
+    let late =
+        std::thread::spawn(move || late_app.unload_lifecycle("8", &late_session, &late_request));
+    await_observation(&entered);
+    let accepted = app
+        .unload_lifecycle("8", &created.session, &request)
+        .unwrap();
+    app.reconcile_once().unwrap();
+    let before = app.snapshot().unwrap();
+    // The real Host may already report the winner's newer current request,
+    // rather than returning the old Create view captured before this barrier.
+    *host.current_request_after_block.lock().unwrap() = Some(
+        before
+            .lifecycle_session(&"8".try_into().unwrap(), &created.session)
+            .unwrap()
+            .operations()
+            .last()
+            .unwrap()
+            .intent()
+            .clone(),
+    );
+    if fence_after_winner {
+        proxy.armed.store(1, Ordering::SeqCst);
+        assert!(matches!(
+            authority.snapshot(),
+            Err(PortError::OutcomeUnknown)
+        ));
+    }
+    release.complete();
+    let result = late.join().unwrap();
+    if fence_after_winner {
+        assert!(matches!(
+            authority.snapshot(),
+            Err(PortError::OutcomeUnknown)
+        ));
+    } else {
+        assert_eq!(app.snapshot().unwrap(), before);
+    }
+    (result, accepted)
+}
+
+fn racing_request(sequence: u64, expected_version: u64) -> PublicUnloadRequest {
+    PublicUnloadRequest {
+        window: 1.try_into().unwrap(),
+        sequence: sequence.try_into().unwrap(),
+        expected_version,
+    }
+}
+
+#[test]
+fn duplicate_unload_replays_acceptance_committed_during_detached_observation() {
+    let (result, accepted) = raced_unload(racing_request(2, 1), false);
+    assert_eq!(result, Ok(accepted));
+}
+
+#[test]
+fn raced_unload_cannot_replay_a_changed_full_request() {
+    let (result, _) = raced_unload(racing_request(2, 2), false);
+    assert_eq!(result, Err(PortError::Conflict));
+}
+
+#[test]
+fn raced_unload_does_not_borrow_another_request_keys_acceptance() {
+    let (result, _) = raced_unload(racing_request(3, 1), false);
+    assert_eq!(result, Err(PortError::Busy));
+}
+
+#[test]
+fn raced_unload_keeps_unknown_storage_fenced_despite_an_existing_acceptance() {
+    let (result, _) = raced_unload(racing_request(2, 1), true);
+    assert_eq!(result, Err(PortError::OutcomeUnknown));
+}
+
 #[test]
 fn unload_requires_completed_fact_and_reopens_original_authorized_result() {
     let fixture = Engine::new();
