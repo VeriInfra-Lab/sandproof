@@ -96,3 +96,73 @@ fn failed_or_unobserved_authorization_keeps_activation_unknown() {
         .is_err()
     );
 }
+
+#[test]
+fn restored_file_policy_observes_the_same_activated_candidate() {
+    let before = candidate(LoadedSnapshotState::Paused);
+    let activated = finish_permitted_activation(
+        &before,
+        || Ok(candidate(LoadedSnapshotState::Running)),
+        || Ok(()),
+        || Ok(candidate(LoadedSnapshotState::Running)),
+    )
+    .unwrap();
+    assert_eq!(activated.process, before.process);
+    assert!(matches!(
+        observe_running_file_policy(
+            &activated,
+            || Ok(ObservedResult::FilePolicy { disk_inode: 41 }),
+            || Ok(activated.clone()),
+        )
+        .unwrap(),
+        ObservedResult::FilePolicy { disk_inode: 41 }
+    ));
+}
+
+#[test]
+fn restored_file_policy_rejects_unactivated_exited_or_changed_candidates() {
+    for state in [LoadedSnapshotState::Paused, LoadedSnapshotState::Exited] {
+        assert!(
+            observe_running_file_policy(
+                &candidate(state),
+                || panic!("an unactivated candidate must not reach the disk observer"),
+                || panic!("an unactivated candidate must not be confirmed"),
+            )
+            .is_err()
+        );
+    }
+    let before = candidate(LoadedSnapshotState::Running);
+    let mut changed = before.clone();
+    changed.process.start_time_ticks += 1;
+    for after in [changed, candidate(LoadedSnapshotState::Paused)] {
+        assert!(
+            observe_running_file_policy(
+                &before,
+                || Ok(ObservedResult::FilePolicy { disk_inode: 41 }),
+                || Ok(after),
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn restored_file_policy_preserves_disk_and_observation_failures() {
+    let before = candidate(LoadedSnapshotState::Running);
+    assert!(
+        observe_running_file_policy(
+            &before,
+            || Err("original private disk policy rejected".into()),
+            || panic!("a rejected disk must not produce a confirmation"),
+        )
+        .is_err()
+    );
+    assert!(
+        observe_running_file_policy(
+            &before,
+            || Ok(ObservedResult::FilePolicy { disk_inode: 41 }),
+            || Err("original candidate observation lost".into()),
+        )
+        .is_err()
+    );
+}

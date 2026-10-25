@@ -32,6 +32,23 @@ fn finish_permitted_activation(
     Ok(after)
 }
 
+// The original core queues ApplyFilePolicy AFTER ActivateVm. Observe only that
+// same running candidate; checking the disk neither activates nor pauses it.
+fn observe_running_file_policy(
+    before: &LoadedSnapshotObservation,
+    disk: impl FnOnce() -> NodeResult<ObservedResult>,
+    confirm: impl FnOnce() -> NodeResult<LoadedSnapshotObservation>,
+) -> NodeResult<ObservedResult> {
+    if before.state != LoadedSnapshotState::Running {
+        return Err("restore file policy requires the activated candidate".into());
+    }
+    let result = disk()?;
+    if confirm()? != *before {
+        return Err("restore candidate changed while checking disk".into());
+    }
+    Ok(result)
+}
+
 fn scope(
     action: &WorkAction<core::EffectId>,
     work: &RestoreWorkRequest,
@@ -298,13 +315,12 @@ impl LinuxWorker {
         if policy.digest != self.config.file_policy_digest {
             return Err("restore file policy differs".into());
         }
-        let before = context.paused()?;
-        let result =
-            self.observe_private_disk_after_candidate(context.sandbox, context.generation)?;
-        if context.observe()? != before {
-            return Err("restore candidate changed while checking disk".into());
-        }
-        Ok(result)
+        let before = context.observe()?;
+        observe_running_file_policy(
+            &before,
+            || self.observe_private_disk_after_candidate(context.sandbox, context.generation),
+            || context.observe(),
+        )
     }
 
     fn restore_activate(

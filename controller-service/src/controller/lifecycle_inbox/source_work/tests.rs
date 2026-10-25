@@ -1840,6 +1840,40 @@ fn unknown_restore_activation_reuses_only_original_live_permit_after_fresh_boots
             .unwrap(),
         permit
     );
+    assert!(
+        journal
+            .claim_next(Some(sandbox), &mut NeverCrash)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        journal
+            .reconcile_observed(
+                &action,
+                &sandproof_protocol::WorkReceipt {
+                    identity: action.identity.clone(),
+                    outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(FullEvidence {
+                        resource: action.identity.resource.clone(),
+                        command: action.command.command().clone(),
+                    }),
+                },
+            )
+            .unwrap()
+    );
+    let policy = journal
+        .claim_next(Some(sandbox), &mut NeverCrash)
+        .unwrap()
+        .expect("the original plan checks file policy after confirmed activation");
+    assert!(matches!(
+        policy.command.command(),
+        sandbox_controller_core::Command::ApplyFilePolicy {
+            sandbox: target,
+            generation: 2,
+            ..
+        } if *target == sandbox
+    ));
+    assert_eq!(policy.identity.operation, action.identity.operation);
+    assert_eq!(policy.identity.epoch, action.identity.epoch);
 }
 
 fn finish_restored_component(
