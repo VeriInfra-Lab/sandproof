@@ -8,6 +8,7 @@ import re
 import signal
 import shutil
 import subprocess
+import sys
 import time
 import traceback
 
@@ -20,6 +21,9 @@ ENVELOPE_TESTS = (
     'current_version_flags_do_not_certify_terminal_truth',
     'matching_a_receipt_does_not_establish_input_validation',
     'renewal_shape_does_not_check_the_business_deadline',
+    'unload_outcomes_are_exclusive_and_old_optional_shape_is_rejected',
+    'original_continued_does_not_accept_expired_or_unstarted_running_facts',
+    'lifecycle_outcome_contract_rejects_previous_wire_version',
 )
 
 
@@ -81,6 +85,8 @@ def native(output, target):
                                               ('clippy', ['cargo', 'clippy', '--version'])]}
         before = sources()
         record['source_sha256'] = before
+        run('driver-tests', [sys.executable,
+                            'verification/experiments/stage1-protocol/test_replay_formal.py'])
         run('format', ['cargo', 'fmt', '-p', 'sandproof-protocol', '-p', 'sandproof-internal', '--check'])
         run('extract-format', ['cargo', 'fmt', '--manifest-path',
                               'verification/experiments/stage1-protocol/Cargo.toml', '--check'])
@@ -143,11 +149,11 @@ def native(output, target):
             section = section[:following.start()]
         passed = re.findall(r'^test ([a-z0-9_]+) \.\.\. ok$', section, re.M)
         if (sorted(passed) != sorted(ENVELOPE_TESTS)
-                or 'test result: ok. 7 passed; 0 failed; 0 ignored;' not in section
+                or f'test result: ok. {len(ENVELOPE_TESTS)} passed; 0 failed; 0 ignored;' not in section
                 or sha(program) != sha(compiled / program.name)):
-            raise ValueError('required seven integration assertions or actual program changed')
+            raise ValueError('required integration assertions or actual program changed')
         record['integration_test_results'] = {'current_envelope': dict(
-            test_names=passed, passed=7, failed=0, ignored=0,
+            test_names=passed, passed=len(ENVELOPE_TESTS), failed=0, ignored=0,
             test_source_sha256=before[integration['current_envelope']],
             executable_sha256=sha(program), test_log_sha256=sha(test_log))}
         run('clippy', ['cargo', 'clippy', *packages, '--all-targets', '--locked', '--offline',

@@ -1,4 +1,4 @@
-"""Local request replay/validation proofs on fresh extractions; not batch acceptance.
+"""Local request/replay/envelope proofs on fresh extractions; not batch acceptance.
 
 Retains the historical component freeze. Each case has an isolated source and
 Lean build directory; both use the same independently stated property.
@@ -38,19 +38,46 @@ VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
      'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total',
      'validate_body_refines']]
 EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.Validation.Examples.' + n for n in
-                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted', 'renew_accepted']]
+                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted', 'renew_accepted',
+                   'resume_gap_accepted', 'previous_protocol_rejected_before_node',
+                   'changed_node_generation_rejected', 'expectation_precedes_same_incarnation']]
+ENVELOPE_VALUE_AUDITS = ['SandboxModel.Stage1Protocol.EnvelopeValues.' + n for n in
+    ['same_session', 'changed_complete_intent', 'both_inputs_have_valid_shape']]
+ACCEPTED_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
+    ['retention_valid', 'version_comparison', 'envelope_refines', 'envelope_complete',
+     'expectedAccepted_success_iff', 'envelope_accepts_iff', 'envelope_keeps_context_center',
+     'envelope_keeps_context_node', 'envelope_retention_shape', 'envelope_version_condition',
+     'foreign_center_rejected_first', 'expectedAccepted_error_iff', 'envelope_error_iff',
+     'normal_envelope_accepted', 'distinct_retention_window_accepted',
+     'invalid_retention_precedes_invalid_version']]
+RECORDED_AUDITS = ['SandboxModel.Stage1Protocol.Recorded.' + n for n in
+    ['matches_refines', 'complete', 'accepts_iff', 'rejects_changed_intent',
+     'matches_keeps_original', 'terminal_flag_not_certified',
+     'older_version_rejected_after_full_intent', 'wrong_current_rejected_after_version',
+     'normal_recorded_matches', 'same_session_changed_capture_rejected',
+     'changed_retention_window_rejected', 'matching_does_not_establish_validation']]
 PROPERTIES = {
     'replay': dict(kind='stage1-full-replay-local-formal', mutation='key-only-replay',
-        positive=POSITIVE, negative=NEGATIVE, common_files=[],
+        positive=POSITIVE, negative=NEGATIVE,
         contract='ReplayContract', template='NegativeFullReplay', audits=REPLAY_AUDITS,
-        negative_audits=['mutant_accepts_changed_capture', 'key_only_not_full_replay']),
+        witnesses=['RequestValues'],
+        negative_audits=['SandboxModel.Stage1Protocol.Request.' + n for n in
+                        ['mutant_accepts_changed_capture', 'key_only_not_full_replay']]),
     'validation': dict(kind='stage1-request-validation-local-formal', mutation='same-incarnation',
         positive=[*POSITIVE, 'ValidationModel', 'Validation', 'ValidationExamples', 'Model', 'RequestValues'],
         negative=['ValidationModel', 'Model', 'RequestValues'],
-        common_files=['SandboxModel/Foundations/Model.lean'],
-        contract='ValidationModel', template='NegativeValidation',
+        contract='ValidationModel', template='NegativeValidation', witnesses=['RequestValues'],
         audits=REPLAY_AUDITS + VALIDATION_AUDITS + EXAMPLE_AUDITS,
-        negative_audits=['mutant_accepts_same_incarnation', 'mutant_not_full_validation']),
+        negative_audits=['SandboxModel.Stage1Protocol.Request.' + n for n in
+                        ['mutant_accepts_same_incarnation', 'mutant_not_full_validation']]),
+    'envelope': dict(kind='stage1-envelope-local-formal', mutation='session-only-envelope',
+        positive=[*POSITIVE, 'ValidationModel', 'Validation', 'EnvelopeValues', 'Accepted', 'Recorded'],
+        negative=['Model', 'ValidationModel', 'EnvelopeValues'],
+        contract='ValidationModel', template='NegativeSessionOnly', witnesses=['EnvelopeValues'],
+        audits=REPLAY_AUDITS + VALIDATION_AUDITS + ENVELOPE_VALUE_AUDITS + ACCEPTED_AUDITS + RECORDED_AUDITS,
+        negative_audits=ENVELOPE_VALUE_AUDITS + [
+            'SandboxModel.Stage1Protocol.NegativeSessionOnly.actual_mutant_accepts_changed_capture',
+            'SandboxModel.Stage1Protocol.NegativeSessionOnly.actual_session_only_violates_same_contract']),
 }
 
 
@@ -76,6 +103,13 @@ def snapshot():
             raise ValueError('snapshot requires regular source files: ' + name)
         result[name] = sha(path)
     return result
+
+
+def prepare_extract_target(project):
+    """Allocate this case's target before the original extractor inspects it."""
+    target = project / 'artifacts/extract-target'
+    target.mkdir(mode=0o700, parents=True)
+    return target
 
 
 def run(output, property_name='replay'):
@@ -131,6 +165,10 @@ def run(output, property_name='replay'):
             expected_inputs = dict(inputs)
             expected_inputs[mutation['source']] = sha(source)
 
+            # extract.py requires the allocated target to exist. It belongs to
+            # this source copy; no case shares its own-package build artifacts.
+            prepare_extract_target(project)
+
             # Only the private source is writable in this extraction namespace.
             # Host tools remain read-only; the target is private to this case.
             command(project, folder, 'extract', ['bwrap', '--ro-bind', '/', '/',
@@ -160,36 +198,33 @@ def run(output, property_name='replay'):
             names = config['positive'] if case == 'correct' else config['negative']
             targets = ['SandboxModel.Lifecycle.Protocol.' + name for name in names]
             command(project, folder, 'build', ['lake', 'build', 'SandproofStage1Request', *targets])
-            files = ['SandboxModel/ProofAuditCommand.lean']
-            files += config['common_files']
-            files += [str(PROOFS / (name + '.lean')) for name in names]
-            files += [str(p.relative_to(project)) for p in sorted((project / LIBRARY).rglob('*.lean'))
-                      if '_Template' not in p.name]
-            files += ['verification/aeneas/foundations/SandproofFoundations/' + name + '.lean'
-                      for name in ['TypesExternal', 'IdentifierLibrary', 'Types', 'FunsExternal']]
+            extra = []
             if case == 'correct':
                 expected_audits = config['audits']
             else:
                 relative = 'artifacts/' + config['template'] + '.lean'
                 template = ROOT / HERE / (config['template'] + '.lean.in')
                 shutil.copy2(template, project / relative)
-                files.append(relative)
+                extra.append(relative)
                 expected_inputs[relative] = sha(template)
-                expected_audits = ['SandboxModel.Stage1Protocol.Request.' + n for n in
-                                   config['negative_audits']]
-            actual = formal.actual_files(project, files, folder, env, command)
-            if sorted(actual['audits']) != sorted(expected_audits):
-                raise ValueError('request property audit inventory differs')
+                expected_audits = config['negative_audits']
+            # Reuse the full component's physical import closure and strict
+            # kernel/service/audit checks, including every transitive helper.
+            actual = formal.check_actual(project, names, 'request', folder, env, command,
+                                         expected_audits, extra)
             for name, digest in expected_inputs.items():
                 if sha(project / name) != digest:
                     raise ValueError('unexpected source/proof/generated change: ' + name)
             record['cases'][case] = dict(complete=True, **actual,
                 rust_sha256=sha(source), installed_generated=installed,
                 contract_sha256=sha(project / PROOFS / (config['contract'] + '.lean')),
+                witness_sha256={n: sha(project / PROOFS / (n + '.lean')) for n in config['witnesses']},
                 extraction_record_sha256=sha(extraction / 'result.json'))
             (output / 'progress.json').write_text(json.dumps(record, indent=2)+'\n')
         if record['cases']['correct']['contract_sha256'] != record['cases'][mutant]['contract_sha256']:
             raise ValueError('correct and wrong versions used different properties')
+        if record['cases']['correct']['witness_sha256'] != record['cases'][mutant]['witness_sha256']:
+            raise ValueError('correct and wrong versions used different witnesses')
         if snapshot() != inputs:
             raise ValueError('source changed during the formal checks')
         record['complete'] = True

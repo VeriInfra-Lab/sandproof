@@ -68,21 +68,24 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 
 ## 验收入口
 
-先在 普通测试机 的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中运行完整原生入口：
+主控在 普通测试机 的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中统一运行完整原生入口：
 
 ```sh
 bash scripts/python-entry.sh tools/proof_native_suite.py run --output /private/native-evidence
 ```
 
-`stage1-protocol` 是其中一个原生 case；原两包全部测试、显式七组 integration 发现、Clippy、格式、
-文档及四种真实错误版/恢复检查均保留。不要另跑裸七组来代替此入口，不能在证明机跑普通测试。
+`stage1-protocol` 是其中一个原生 case；原两包全部测试、显式 integration 发现、Clippy、格式、
+文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
+不要另跑裸 integration 组来代替此入口，不能在证明机跑普通测试。
+原生入口另运行本组件 `test_replay_formal.py`，检查私有抽取目录准备及准确审计清单，
+并确认漏项、额外或重复审计会被原检查器拒绝。这些驱动回归不运行 Lean，不提供业务证明。
 
 将原完整封口与所有 JSON/log 证据交到 证明机，按工作流准备同一 Git 候选、固定工具、独立 `.lake/build`：
 
 ```sh
 export SANDPROOF_NATIVE_EVIDENCE=/private/native-evidence
 bash scripts/verify-stage1-protocol.sh
-# 整套入口继续保留，组件通过不能替代整套通过：
+# 整套入口由主控统一运行，组件通过不能替代整套通过：
 bash scripts/verify-controller.sh
 ```
 
@@ -92,5 +95,9 @@ request 四根变化时，三个 profile 的完整原始 IR 和生成字节都�
 宣称通过，也不能把旧失败记录改写为成功。
 
 `formal.py` 原 `--source-archive/--native-mutants/--native-source-archive/--case` 与
-`replay_formal.py --property replay|validation` 的局部诊断入口继续保留；它们不伪造完整 native seal，
-结果属于局部形式检查，不能代替上述完整入口。精确候选、未完成和环境阻断由 PR/原始记录报告。
+`replay_formal.py --property replay|validation|envelope` 的局部诊断入口继续保留。
+envelope 模式从当前 Rust 重新抽取正确版和原 session-only-envelope 错误版，检查 Accepted、Recorded
+及其实际依赖；两版保持同一 ValidationModel 和 EnvelopeValues，分别记录合同与见证摘要。
+三个模式均复用原完整导入闭包、逐文件内核/同服务诊断和显式审计清单，各有独立构建目录。
+它们不伪造完整 native seal，结果属于局部形式检查，不能代替上述完整入口。
+精确候选、未完成和环境阻断由 PR/原始记录报告。

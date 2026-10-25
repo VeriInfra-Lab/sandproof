@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.ReadyFactValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.observation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.ReadyFacts
+open SandboxModel.Stage1Protocol.ReadyFactValues
+namespace SandboxModel.Stage1Protocol.NegativeCreateTimeout
+
+theorem actual_mutant_accepts : ready_matches_create facts changedCreate = .ok true := by
+  have maximum : U64.checked_add 10#u64 90#u64 = some 100#u64 := by decide
+  simp [ready_matches_create, CurrentReadyFacts.matches_create, facts, changedCreate, createIntent,
+    createPayload, Library.option_u64_eq, lift, maximum]
+
+theorem violates_same_full_contract : ¬ FullCreateContract ready_matches_create := by
+  classical
+  intro contract
+  have exact_result := contract facts changedCreate
+  rw [actual_mutant_accepts] at exact_result
+  have wrong : U64.checked_add 10#u64 30#u64 = some 40#u64 := by decide
+  simp [CreateMatches, changedCreate, createIntent, createPayload, facts, wrong] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeCreateTimeout
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCreateTimeout.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCreateTimeout.violates_same_full_contract
