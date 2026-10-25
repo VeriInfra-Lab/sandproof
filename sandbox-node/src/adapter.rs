@@ -481,6 +481,14 @@ impl WorkRecovery for NodeHost {
         work: &sandproof_controller_service::capture::RestoreWorkRequest,
     ) -> Option<WorkReceipt<Self::Evidence>> {
         self.restore_action_observation(action, work, None, true)
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
             .ok()
             .map(|observed| WorkReceipt {
                 identity: action.identity.clone(),

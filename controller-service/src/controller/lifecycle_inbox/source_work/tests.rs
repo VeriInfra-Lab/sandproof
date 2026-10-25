@@ -2049,6 +2049,28 @@ fn completed_resume_readiness_requires_all_original_fresh_startup_probes() {
         .unwrap();
     assert!(candidate.can_probe());
     assert_eq!(candidate.actions.len(), 5);
+    assert_eq!(candidate.view.request, request);
+    assert_eq!(candidate.view.current_request, request);
+    let local = candidate.view.local.unwrap();
+    assert_eq!(local.operation, core::OperationId(3));
+    let world = journal.world().unwrap();
+    let row = world.sandbox_record(local.sandbox).unwrap();
+    assert_eq!(row.generation, 2);
+    let key = core::OperationKey {
+        sandbox: local.sandbox,
+        operation: local.operation,
+    };
+    let operation = crate::controller::identity::operation_id(&journal.namespace, key).unwrap();
+    for action in &candidate.actions {
+        assert_eq!(action.identity.operation, operation);
+        assert_eq!(action.identity.generation, 2);
+        assert_eq!(action.identity.epoch, row.epoch);
+        assert_eq!(action.command.command().sandbox(), local.sandbox);
+        assert_eq!(
+            world.logical_effect(&action.command.logical).unwrap().origin,
+            core::EffectOrigin::Operation(key)
+        );
+    }
     let probes: Vec<_> = candidate
         .actions
         .iter()
