@@ -51,3 +51,23 @@ pub fn resume_matches_request(
 ) -> bool {
     observation.matches_request(original)
 }
+
+pub fn create_observation_equal(
+    left: &sandproof_protocol::lifecycle::CreateObservation,
+    right: &sandproof_protocol::lifecycle::CreateObservation,
+) -> bool {
+    left == right
+}
+pub fn create_matches_request(
+    value: &sandproof_protocol::lifecycle::CreateObservation,
+    original: &AcceptedLifecycleIntent,
+) -> bool {
+    value.matches_request(original)
+}
+pub fn ready_matches_create_renewal(
+    value: &CurrentReadyFacts,
+    original: &AcceptedLifecycleIntent,
+    current: &AcceptedLifecycleIntent,
+) -> bool {
+    value.matches_renewed(original, current)
+}

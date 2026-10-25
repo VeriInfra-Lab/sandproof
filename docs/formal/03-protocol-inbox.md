@@ -22,6 +22,13 @@
 这里不查原 journal 的 session/owner/key/incarnation 映射，不授予 Access 权限，也不将外部 incarnation 当作本地 generation。
 这些当前身份、阶段、寿命及权限关系仍由 V4/V5/V7 的实际提供者连接。
 
+Create 观察的[完整值合同与检查输入](../../verification/experiments/stage1-protocol/create-observation/README.md)
+保留实际 Header、Refused、同请求、继续、续租与 NotCurrent 分支。
+派生的完整观察值相等、合法合同见证和原生错误版断言是实现对应的独立支撑，
+不能替代完整 `matches_request` 定理。实际 `u64::try_from(i64)` 的成败/数值与错误载荷表示连接由 V0 提供；
+未落实前完整 Create 守卫及其生成体反例仍待证，不把转换失败记为性质拒绝。
+历史成功为 false 或 Pending 不能推出没有资源效果，字段匹配不能证明已应用续租或耐久拒绝。
+
 ## 2. 状态与义务
 
 
