@@ -140,7 +140,11 @@ fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     let (journal, source) = unloaded_resume_source(&path);
     let sandbox = source.work.anchor.local.sandbox;
     assert_eq!(
-        journal.host_slot_context(sandbox).unwrap().unwrap().position,
+        journal
+            .host_slot_context(sandbox)
+            .unwrap()
+            .unwrap()
+            .position,
         HostSlotId(0)
     );
     drop(journal);
