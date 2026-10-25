@@ -562,6 +562,8 @@ class RuntimeServicesTests(unittest.TestCase):
                         bind(2,invalid)
                 scoped=bind(2,320*gib,scope='lifecycle-two-sessions')
                 self.assertEqual(scoped['pools'],original)
+                native['bounded_host']['physical_storage']['service_data']=[]
+                native['bounded_host']['physical_storage']['host_template_caches']=[]
                 for ceiling in (None,0,True,320*gib+1):
                     with self.subTest(lifecycle_ceiling=ceiling),self.assertRaises(ValueError):
                         bind(2,ceiling,scope='lifecycle-two-sessions')
