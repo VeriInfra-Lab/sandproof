@@ -10,6 +10,12 @@
 
 规范化消息至少绑定 deployment、认证中心/固定节点、owner、session、operation key、全文输入、期望版本、源/目标运行代及 capture。外部用户不指定宿主路径/PID、manifest 成功标志或任意命令；当前模板/配置来源仍受原合同约束。
 
+首批证明固定于 `a9c9967889c4cf298e4378c7106948018835fc64`，从已解码且按生成类型表示的值开始：复用原 `ReplayContract`、`ValidationModel`，连接完整请求重放、请求接受与六类首错，以及 Accepted/Recorded 的完整封套关系。协议版本为 4；正常和错误 Rust 使用同一规格，重新抽取和验收后才迁移适用版本。此切片交给 V1 的是值规格和经实际检查的引理，不要求 V1 等待网络与持久收件证明。
+
+独立认证上下文的连接来源由 V7/连接适配提供；V1/V2 提供当前意图与耐久发送，V4/V5 提供本地接受、耐久结果及调用次序，V6 提供文件/VM 的实际事实。全文相等、slot 形状和版本关系都不提供这些前提。Accepted 的首错依次为 center、部署、内层请求首错、retention slot、接受版本；retention window 不要求等于请求 key window。Recorded 只按完整 intent、版本下界和 current 一致性短路，不检查 terminal 真值。
+
+完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
@@ -40,7 +46,7 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 | OperationKey | deployment、经认证的 owner、window、sequence 全部保存；内部 DTO 可解码不等于调用方已认证 | 窗口已签发、当前授权或持久去重 |
 | OperationBinding | 版本、完整 NodeIdentity、session、完整 key、ExpectedSession | 原端点/owner 的选择正确 |
 | ExpectedSession | Create 使用显式 Absent；其它操作使用 Version(u64)，不把零改作不存在标记 | 当前账本确实满足期望版本 |
-| LifecycleOperation | Create 完整原 CreateBinding 和目标代；Unload 源代和 capture；Resume 源代/capture/严格更大目标代/完整摘要；Destroy 只指逻辑会话 | 任意宿主命令、路径、PID 或删除列表 |
+| LifecycleOperation | Create 完整原 CreateBinding 和目标代；Unload 源代和 capture；Resume 源代/capture/严格更大目标代/完整摘要；Renew 原代、绝对结束时间及 extend_only；Destroy 只指逻辑会话 | 任意宿主命令、路径、PID、删除列表或已满足业务寿命政策 |
 | replay_matches | 比较整个原请求，包含全部操作参数 | 已查原键、已保存结果或不会再次派发；这些仍由收件事务提供 |
 
 请求的纯校验按版本、完整节点、deployment、期望类别和操作形状依次拒绝。Resume 允许废弃尝试留下的编号空洞，不要求目标恰好加一。原键查找/全文重放必须在当前阶段、窗口和资源检查之前处理；本库不读取账本，不用类型代替这项控制流。

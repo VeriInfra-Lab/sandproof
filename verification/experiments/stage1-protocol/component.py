@@ -88,7 +88,8 @@ def run(output, native_only):
             native_driver = load('stage1_positive_inventory', HERE/'native.py')
             integration = correct['integration_test_results']['current_envelope']
             if (sorted(integration['test_names']) != sorted(native_driver.ENVELOPE_TESTS)
-                    or (integration['passed'], integration['failed'], integration['ignored']) != (7, 0, 0)
+                    or (integration['passed'], integration['failed'], integration['ignored']) !=
+                        (len(native_driver.ENVELOPE_TESTS), 0, 0)
                     or integration['test_source_sha256'] != historical['files'][
                         'sandbox-protocol/tests/current_envelope.rs']['sha256']):
                 raise ValueError('native positive integration inventory differs')

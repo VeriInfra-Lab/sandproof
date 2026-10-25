@@ -38,7 +38,9 @@ VALIDATION_AUDITS = ['SandboxModel.Stage1Protocol.Validation.' + n for n in
      'validate_accepts_iff', 'validate_error_iff', 'validate_complete', 'validate_total',
      'validate_body_refines']]
 EXAMPLE_AUDITS = ['SandboxModel.Stage1Protocol.Validation.Examples.' + n for n in
-                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted', 'renew_accepted']]
+                  ['create_accepted', 'unload_accepted', 'resume_accepted', 'destroy_accepted', 'renew_accepted',
+                   'resume_gap_accepted', 'previous_protocol_rejected_before_node',
+                   'changed_node_generation_rejected', 'expectation_precedes_same_incarnation']]
 PROPERTIES = {
     'replay': dict(kind='stage1-full-replay-local-formal', mutation='key-only-replay',
         positive=POSITIVE, negative=NEGATIVE, common_files=[],
