@@ -784,8 +784,15 @@ class LifecycleTimingTests(unittest.TestCase):
     def client(self):
         client=scene.PublicUnloadScenario('http://127.0.0.1:12345','key','other','deployment',100)
         client.session='original-session'
-        client.current_acceptance=dict(key={'sequence':1},accepted_version=1)
+        client.window=1
+        client.current_acceptance=dict(session=client.session,key=client.key(1),accepted_version=1)
+        client.unload_acceptance=client.current_acceptance
         return client
+
+    def view(self,client,phase,outcome):
+        return dict(session=client.session,operation=client.current_acceptance['key'],
+            current_version=client.current_acceptance['accepted_version'],phase=phase,
+            unload_outcome=outcome,create_refusal=None)
 
     def test_acceptance_is_separate_from_public_and_physical_completion(self):
         client=self.client()
@@ -812,8 +819,9 @@ class LifecycleTimingTests(unittest.TestCase):
             client.operation_accepted()
             client.operation_completed('running')
             self.assertFalse(client.timing_report()[0]['complete'])
-            client.operation_completed('unloaded')
-            client.operation_completed('unloaded')
+            view=self.view(client,'unloaded',dict(state='unloaded',facts={}))
+            client.operation_completed('unloaded',view=view,acceptance=client.current_acceptance)
+            client.operation_completed('unloaded',view=view,acceptance=client.current_acceptance)
         self.assertEqual(client.timing_report()[0]['send_to_public_completion_seconds'],7)
         with patch.object(scene.time,'monotonic',return_value=20):
             client.operation_sent('destroy')
@@ -821,6 +829,57 @@ class LifecycleTimingTests(unittest.TestCase):
         unknown=client.timing_report()[-1]
         self.assertIsNone(unknown['send_to_accept_seconds'])
         self.assertFalse(unknown['complete'])
+
+    def test_verified_original_continued_query_completes_unload_before_evidence(self):
+        client=self.client()
+        client.deadline=time.monotonic()+60
+        client.operation_sent('unload')
+        client.operation_accepted()
+        view=self.view(client,'running',dict(state='original_continued',facts={}))
+        with patch.object(client,'call',return_value=(200,json.dumps(view).encode())):
+            self.assertEqual(client.wait_phase(client.unload_acceptance,
+                waiting={'unloading'},complete='running'),view)
+        # This is the exact assertion which failed after the real SDK and SQL
+        # continuation checks. Retain it and provide the missing terminal fact.
+        client.operation_evidence_completed()
+        sample=client.timing_report()[0]
+        self.assertTrue(sample['complete'])
+        self.assertEqual(sample['completion_condition'],'original_continued')
+        self.assertIsNotNone(sample['send_to_evidence_completion_seconds'])
+        completed=client.timings[0]['completed_monotonic']
+        lost=dict(view,phase='state_lost')
+        client.operation_completed('state_lost',view=lost,acceptance=client.current_acceptance)
+        self.assertEqual(client.timings[0]['completed_monotonic'],completed,
+            'later loss must not rewrite the historical unload completion time')
+
+    def test_unverified_pending_unknown_or_changed_unload_never_completes_timing(self):
+        import copy
+        faults=('missing_view','missing_acceptance','not_accepted','pending','unknown',
+            'wrong_key','wrong_version','wrong_session','wrong_acceptance','superseded')
+        for fault in faults:
+            client=self.client()
+            client.operation_sent('unload')
+            if fault!='not_accepted':client.operation_accepted()
+            accepted=copy.deepcopy(client.current_acceptance)
+            view=copy.deepcopy(self.view(client,'running',dict(state='original_continued',facts={})))
+            if fault=='missing_view':view=None
+            if fault=='missing_acceptance':accepted=None
+            if fault=='pending':view.update(phase='unloading',unload_outcome={'state':'pending'})
+            if fault=='unknown':view['unload_outcome']['state']='unknown'
+            if fault=='wrong_key':view['operation']['sequence']+=1
+            if fault=='wrong_version':view['current_version']+=1
+            if fault=='wrong_session':view['session']='another-session'
+            if fault=='wrong_acceptance':accepted['accepted_version']+=1
+            if fault=='superseded':client.current_acceptance=dict(accepted,accepted_version=2)
+            with self.subTest(fault=fault):
+                if fault in ('unknown','wrong_key','wrong_version','wrong_session'):
+                    with self.assertRaises(AssertionError):
+                        client.operation_completed('running',view=view,acceptance=accepted)
+                else:
+                    client.operation_completed('running',view=view,acceptance=accepted)
+                self.assertIsNone(client.timings[0]['completed_monotonic'])
+                self.assertFalse(client.timing_report()[0]['complete'])
+                with self.assertRaises(AssertionError):client.operation_evidence_completed()
 
 
 class WitnessMetadataBarrierTests(unittest.TestCase):

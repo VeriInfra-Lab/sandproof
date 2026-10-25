@@ -264,10 +264,28 @@ class PublicUnloadScenario:
         sample['session']=self.session
         sample['acceptance']=copy.deepcopy(self.current_acceptance)
 
-    def operation_completed(self, phase):
+    def operation_completed(self, phase, *, view=None, acceptance=None):
         if not self.timings:
             return
         sample=self.timings[-1]
+        if sample['operation']=='unload':
+            if (sample['accepted_monotonic'] is None or sample['completed_monotonic'] is not None
+                    or view is None or acceptance is None
+                    or acceptance!=sample['acceptance'] or acceptance!=self.current_acceptance
+                    or acceptance!=self.unload_acceptance):
+                return
+            self.check_view(view,acceptance)
+            outcome=view['unload_outcome']
+            if phase==view['phase']=='unloaded' and outcome['state']=='unloaded':
+                completed='unloaded'
+            elif (phase==view['phase']=='running' and outcome is not None
+                    and outcome['state']=='original_continued'):
+                completed='original_continued'
+            else:
+                return
+            sample['completed_monotonic']=time.monotonic()
+            sample['completion_phase']=completed
+            return
         expected={'create':'running','resume':'running','unload':'unloaded','destroy':'cleaned'}
         if (sample['accepted_monotonic'] is not None and sample['completed_monotonic'] is None
                 and (expected[sample['operation']]==phase
@@ -393,7 +411,7 @@ class PublicUnloadScenario:
             self.check_view(view, acceptance)
             if view['phase'] == complete:
                 self.remaining()
-                self.operation_completed(complete)
+                self.operation_completed(complete,view=view,acceptance=acceptance)
                 return view
             assert view['phase'] in waiting, 'unexpected lifecycle phase; no completion inferred'
             time.sleep(min(.1, self.remaining()))
