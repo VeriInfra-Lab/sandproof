@@ -320,10 +320,19 @@ fn a_bad_target_does_not_turn_an_intact_peer_into_a_startup_failure() {
 #[test]
 fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupancy() {
     use sandproof_controller_service::NeverCrash;
+    const SANDBOXES: u64 = 2;
     let directory = credential_scratch();
     let database = directory.0.join("controller.db");
-    let config: NativeSettings = serde_json::from_value(settings()).unwrap();
-    let bounded = resolve(settings());
+    let mut value = settings();
+    let operations = value["maintenance"]["max_operations_per_sandbox"]
+        .as_u64()
+        .unwrap();
+    // Each admitted instance reserves its entire N=8 result graph, even while
+    // its original Create is pending/unknown: two instances need 16, not 10.
+    value["bounded_host"]["maintenance"]["max_retained_results"] =
+        serde_json::json!(SANDBOXES * operations);
+    let config: NativeSettings = serde_json::from_value(value.clone()).unwrap();
+    let bounded = resolve(value);
     let mut journal = ControllerJournal::open_complete(
         &database,
         &config.namespace,
@@ -332,7 +341,7 @@ fn reopening_with_a_local_credential_fault_preserves_the_original_unknown_occupa
         0,
     )
     .unwrap();
-    for id in 1..=2 {
+    for id in 1..=SANDBOXES {
         journal
             .admit_create(
                 core::CreateRequest {
