@@ -84,7 +84,7 @@ fn eligible(
 
 impl ControllerJournal {
     /// No physical fact or new dispatch authority is created. In particular,
-    /// an absent MayHaveExecuted marker never produces an exit question.
+    /// an absent `MayHaveExecuted` marker never produces an exit question.
     pub(crate) fn lifecycle_restore_exit_candidate(
         &self,
         intent: &AcceptedLifecycleIntent,
