@@ -10,6 +10,27 @@ use sandproof_protocol::lifecycle::{
 };
 use std::time::Instant;
 
+fn superseded() -> CurrentObservationError {
+    diagnostics::emit(
+        diagnostics::Stage::ResumeObservationSuperseded,
+        diagnostics::Failure::Port(PortError::Busy),
+    );
+    CurrentObservationError::Superseded
+}
+
+fn observation_deadline() -> CurrentObservationError {
+    diagnostics::emit(
+        diagnostics::Stage::ResumeObservationDeadline,
+        diagnostics::Failure::Port(PortError::OutcomeUnknown),
+    );
+    CurrentObservationError::Deadline
+}
+
+fn not_running(stage: diagnostics::Stage) -> CurrentObservationError {
+    diagnostics::emit(stage, diagnostics::Failure::Port(PortError::Busy));
+    CurrentObservationError::Host(PortError::Busy)
+}
+
 impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H, T> {
     pub(crate) fn is_resumed_execution(
         &self,
@@ -47,33 +68,40 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 &intent.request.binding.key.owner,
                 &intent.request.binding.session,
             )
-            .ok_or(CurrentObservationError::Superseded)?;
+            .ok_or_else(superseded)?;
         if record
             .operations()
             .last()
             .is_none_or(|value| value.intent() != intent)
         {
-            return Err(CurrentObservationError::Superseded);
+            return Err(superseded());
         }
         let origin = record
             .current_execution_origin()
-            .ok_or(CurrentObservationError::Superseded)?;
+            .ok_or_else(superseded)?;
         if !matches!(origin.request.operation, LifecycleOperation::Resume { .. }) {
-            return Err(CurrentObservationError::Superseded);
+            return Err(superseded());
         }
         let before = self.now().map_err(CurrentObservationError::Shared)?;
-        let budget = time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
+        let budget = time_left(deadline).map_err(|_| observation_deadline())?;
         let view = self
             .hosts
             .observe_lifecycle_resume(origin, budget)
             .map_err(CurrentObservationError::Host)?;
         let after = self.now().map_err(CurrentObservationError::Shared)?;
         if after < before {
+            diagnostics::emit(
+                diagnostics::Stage::ResumeObservationTimeRejected,
+                diagnostics::Failure::ClockInterval {
+                    before_ms: before,
+                    after_ms: after,
+                },
+            );
             return Err(CurrentObservationError::Shared(PortError::OutcomeUnknown));
         }
-        time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
+        time_left(deadline).map_err(|_| observation_deadline())?;
         if !view.matches_request(origin) || view.current_request != *intent {
-            return Err(CurrentObservationError::Superseded);
+            return Err(superseded());
         }
         match &view.readiness {
             CurrentResumeReadiness::Observed { facts } => {
@@ -82,12 +110,37 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                     .is_none()
                     || after >= facts.end_at_ms
                 {
+                    diagnostics::emit(
+                        diagnostics::Stage::ResumeObservationTimeRejected,
+                        diagnostics::Failure::ObservationTime {
+                            before_ms: before,
+                            after_ms: after,
+                            observed_at_ms: facts.observed_at_ms,
+                            end_at_ms: facts.end_at_ms,
+                            health_window_ms: policy.health_window_ms,
+                            max_clock_skew_ms: policy.max_clock_skew_ms,
+                        },
+                    );
                     return Err(CurrentObservationError::Host(PortError::Busy));
                 }
             }
             CurrentResumeReadiness::StateLost => {}
-            CurrentResumeReadiness::Pending => return Err(CurrentObservationError::Pending),
-            _ => return Err(CurrentObservationError::Host(PortError::Busy)),
+            CurrentResumeReadiness::Pending => {
+                diagnostics::emit(
+                    diagnostics::Stage::ResumeObservationPending,
+                    diagnostics::Failure::Port(PortError::Busy),
+                );
+                return Err(CurrentObservationError::Pending);
+            }
+            CurrentResumeReadiness::NotCurrent => {
+                return Err(not_running(diagnostics::Stage::ResumeObservationNotCurrent));
+            }
+            CurrentResumeReadiness::NotRunning => {
+                return Err(not_running(diagnostics::Stage::ResumeObservationNotRunning));
+            }
+            CurrentResumeReadiness::Expired => {
+                return Err(not_running(diagnostics::Stage::ResumeObservationExpired));
+            }
         }
         Ok(view)
     }

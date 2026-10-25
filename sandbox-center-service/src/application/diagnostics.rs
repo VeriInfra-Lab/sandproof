@@ -7,6 +7,9 @@ use std::{
 
 const LIMIT: usize = 64;
 static EMITTED: AtomicUsize = AtomicUsize::new(0);
+// A Create poll may exhaust its existing budget before Resume begins. Keep
+// Resume's fixed budget separate without changing any storage/HTTP decision.
+static RESUME_EMITTED: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Stage {
     TemplateResolve,
@@ -29,6 +32,14 @@ pub(crate) enum Stage {
     CreateObservationExpired,
     CreateObservationPending,
     CreateObservationTimeRejected,
+    ResumeObservationTransport,
+    ResumeObservationDeadline,
+    ResumeObservationSuperseded,
+    ResumeObservationNotCurrent,
+    ResumeObservationNotRunning,
+    ResumeObservationExpired,
+    ResumeObservationPending,
+    ResumeObservationTimeRejected,
     LifecycleQueryLookup,
     LifecycleQueryExpiry,
     LifecycleQueryResult,
@@ -42,6 +53,18 @@ pub(crate) enum Failure {
     Authority(AuthorityError),
     Port(PortError),
     Transport(sandproof_internal::TransportError),
+    ObservationTime {
+        before_ms: u64,
+        after_ms: u64,
+        observed_at_ms: u64,
+        end_at_ms: u64,
+        health_window_ms: u64,
+        max_clock_skew_ms: u64,
+    },
+    ClockInterval {
+        before_ms: u64,
+        after_ms: u64,
+    },
 }
 
 fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl Write) {
@@ -74,14 +97,143 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
             "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} transport={error:?} remaining={}",
             LIMIT - previous - 1
         ),
+        Failure::ObservationTime {
+            before_ms,
+            after_ms,
+            observed_at_ms,
+            end_at_ms,
+            health_window_ms,
+            max_clock_skew_ms,
+        } => writeln!(
+            output,
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} before_ms={before_ms} after_ms={after_ms} observed_at_ms={observed_at_ms} end_at_ms={end_at_ms} health_window_ms={health_window_ms} max_clock_skew_ms={max_clock_skew_ms} remaining={}",
+            LIMIT - previous - 1
+        ),
+        Failure::ClockInterval { before_ms, after_ms } => writeln!(
+            output,
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} before_ms={before_ms} after_ms={after_ms} remaining={}",
+            LIMIT - previous - 1
+        ),
     };
 }
+fn resume_stage(stage: Stage) -> bool {
+    matches!(
+        stage,
+        Stage::ResumeObservationTransport
+            | Stage::ResumeObservationDeadline
+            | Stage::ResumeObservationSuperseded
+            | Stage::ResumeObservationNotCurrent
+            | Stage::ResumeObservationNotRunning
+            | Stage::ResumeObservationExpired
+            | Stage::ResumeObservationPending
+            | Stage::ResumeObservationTimeRejected
+    )
+}
+fn counter(stage: Stage) -> &'static AtomicUsize {
+    if resume_stage(stage) {
+        &RESUME_EMITTED
+    } else {
+        &EMITTED
+    }
+}
 pub(crate) fn emit(stage: Stage, failure: Failure) {
-    record(stage, failure, &EMITTED, &mut std::io::stderr().lock());
+    record(stage, failure, counter(stage), &mut std::io::stderr().lock());
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resume_diagnostics_keep_an_independent_finite_budget_after_create_polling() {
+        for stage in [
+            Stage::ResumeObservationTransport,
+            Stage::ResumeObservationDeadline,
+            Stage::ResumeObservationSuperseded,
+            Stage::ResumeObservationNotCurrent,
+            Stage::ResumeObservationNotRunning,
+            Stage::ResumeObservationExpired,
+            Stage::ResumeObservationPending,
+            Stage::ResumeObservationTimeRejected,
+        ] {
+            assert!(std::ptr::eq(counter(stage), &RESUME_EMITTED));
+            assert!(!std::ptr::eq(
+                counter(stage),
+                counter(Stage::CreateObservationPending)
+            ));
+        }
+        assert!(std::ptr::eq(counter(Stage::AuthorityStore), &EMITTED));
+    }
+
+    #[test]
+    fn resume_time_rejection_records_bounded_numbers_and_original_query_context() {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _scope = DiagnosticScope::enter(
+            DiagnosticFlow::LifecycleQuery,
+            DiagnosticStep::Projection,
+        );
+        let context = sandproof_center_store::diagnostic_context();
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        for _ in 0..1000 {
+            record(
+                Stage::ResumeObservationTimeRejected,
+                Failure::ObservationTime {
+                    before_ms: u64::MAX,
+                    after_ms: u64::MAX,
+                    observed_at_ms: u64::MAX,
+                    end_at_ms: u64::MAX,
+                    health_window_ms: u64::MAX,
+                    max_clock_skew_ms: u64::MAX,
+                },
+                &count,
+                &mut bytes,
+            );
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), LIMIT);
+        assert!(text.lines().all(|line| line.len() < 512
+            && line.contains(&format!("c=q{}/p", context.sequence))));
+        for field in [
+            "before_ms",
+            "after_ms",
+            "observed_at_ms",
+            "end_at_ms",
+            "health_window_ms",
+            "max_clock_skew_ms",
+        ] {
+            assert!(text.contains(&format!("{field}={}", u64::MAX)));
+        }
+        assert!(
+            !text.contains("credential") && !text.contains("session") && !text.contains("payload")
+        );
+        assert!(text.ends_with("remaining=0\n"));
+    }
+
+    #[test]
+    fn resume_transport_and_clock_rejections_keep_closed_causes() {
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        record(
+            Stage::ResumeObservationTransport,
+            Failure::Transport(sandproof_internal::TransportError::InvalidResponse),
+            &count,
+            &mut bytes,
+        );
+        record(
+            Stage::ResumeObservationTimeRejected,
+            Failure::ClockInterval {
+                before_ms: 200,
+                after_ms: 100,
+            },
+            &count,
+            &mut bytes,
+        );
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.contains("stage=ResumeObservationTransport transport=InvalidResponse"));
+        assert!(text.contains("before_ms=200 after_ms=100"));
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+    }
+
     #[test]
     fn unload_transport_failure_preserves_closed_cause_and_request_scope() {
         use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
