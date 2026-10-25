@@ -1,8 +1,8 @@
 """Complete manifest value validation, using the retained extractor and checker.
 
-Reuse the stage1-manifest Rust mutations and their actual-acceptance proofs;
-append refutations of one unchanged complete ValidationContract. Native and
-whole-batch acceptance remain separate.
+Reuse the stage1-manifest and retained protocol capture mutations and their
+actual-acceptance proofs; append refutations of one unchanged complete
+ValidationContract. Native and whole-batch acceptance remain separate.
 """
 from pathlib import Path
 import argparse
@@ -24,6 +24,7 @@ BASE_PROOFS = Path('SandboxModel/Lifecycle/Manifest')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
 LIBRARY = Path('verification/aeneas/stage1-protocol/manifest')
 VIRTUAL_ROOT = Path('/home/zn/u333-5tuoxof8/std-mutex-source')
+CAPTURE_CASE = 'skip-capture-binding'
 
 
 def sha(path):
@@ -41,17 +42,40 @@ def read_inventory(root):
     inventory = json.loads((root / HERE / 'inventory.json').read_text())
     base_inventory = json.loads((root / BASE / 'inventory.json').read_text())
     mutations = {m['name']: m for m in json.loads((root / BASE / 'mutations.json').read_text())}
+    protocol_native = load('manifest_capture_native_inventory', root / PROTOCOL / 'negative_native.py')
+    capture = [m for m in protocol_native.MUTATIONS if m['name'] == CAPTURE_CASE]
+    if len(capture) != 1:
+        raise ValueError('one retained capture mutation is required')
+    mutations[CAPTURE_CASE] = capture[0]
+    base_inventory['cases'][CAPTURE_CASE] = dict(proofs=[], template='NegativeManifest')
     if set(inventory['cases']) != {'correct', *mutations}:
         raise ValueError('every registered mutation must have a formal case')
     actual = {p.stem for p in (root / PROOFS).glob('Manifest*.lean')} - {'Manifest', 'ManifestWitnesses'}
     if actual != set(inventory['modules']):
         raise ValueError('missing or unregistered manifest proof module')
-    if set(inventory['cases']['correct']['proofs']) != actual:
+    if set(inventory['cases']['correct']['proofs']) != actual | {'Manifest', 'ManifestWitnesses'}:
         raise ValueError('correct case must check every manifest validation module')
+    if not (root / HERE / 'NegativeFullCapture.lean.in').is_file():
+        raise ValueError('capture counterexample supplement is missing')
     for case, config in inventory['cases'].items():
         if len(config['audits']) != len(set(config['audits'])):
             raise ValueError('duplicate audit declaration: ' + case)
     return inventory, base_inventory, mutations
+
+
+def adapt_capture_helpers(project):
+    """Bind existing proof helper names to actual mutant output, never edit it."""
+    witness = project / PROOFS / 'ManifestWitnesses.lean'
+    original = witness.read_text()
+    old = 'sandproof_protocol.lifecycle.manifest.SnapshotManifest.validate_loop'
+    new = old + '0'
+    raw = (project / LIBRARY / 'SandproofStage1Manifest/Funs.lean').read_text()
+    if (original.count(old) != 6 or 'def ' + new + '.body\n' not in raw
+            or 'def ' + new + '\n' not in raw):
+        raise ValueError('actual capture mutant loop declarations differ')
+    before = sha(witness)
+    witness.write_text(original.replace(old, new))
+    return dict(before=before, after=sha(witness), old=old, new=new, replacements=6)
 
 
 def run(output, selected):
@@ -140,6 +164,10 @@ def run(output, selected):
             shutil.copy2(raw, project / LIBRARY / 'original.llbc')
             installed[str(LIBRARY / 'original.llbc')] = sha(raw)
             expected.update(installed)
+            adaptation = None
+            if case == CAPTURE_CASE:
+                adaptation = adapt_capture_helpers(project)
+                expected[str(PROOFS / 'ManifestWitnesses.lean')] = adaptation['after']
             # Retained generation is historical (protocol 3). Only these private
             # views receive the complete fresh output; no IR fields are dropped.
             names = config['proofs']
@@ -151,12 +179,15 @@ def run(output, selected):
             seeds += [str(p.relative_to(project)) for p in sorted((project / LIBRARY).rglob('*.lean'))
                       if '_Template' not in p.name]
             if case != 'correct':
-                base_template = ROOT / BASE / (base_config['template'] + '.lean.in')
+                base_directory = PROTOCOL if case == CAPTURE_CASE else BASE
+                base_template = ROOT / base_directory / (base_config['template'] + '.lean.in')
                 supplement = ROOT / HERE / (config['template'] + '.lean.in')
                 relative = 'artifacts/' + config['template'] + '.lean'
-                text = ('import SandboxModel.Lifecycle.Protocol.ManifestValidationLaws\n'
-                        'import SandboxModel.Lifecycle.Protocol.ManifestValidationValues\n'
-                        + base_template.read_text() + '\n' + supplement.read_text())
+                prefix = ('import SandboxModel.Lifecycle.Protocol.ManifestValidationModel\n'
+                          if case == CAPTURE_CASE else
+                          'import SandboxModel.Lifecycle.Protocol.ManifestValidationLaws\n'
+                          'import SandboxModel.Lifecycle.Protocol.ManifestValidationValues\n')
+                text = prefix + base_template.read_text() + '\n' + supplement.read_text()
                 (project / relative).write_text(text)
                 expected[relative] = sha(project / relative)
                 seeds.append(relative)
@@ -171,6 +202,7 @@ def run(output, selected):
             contracts = {name: sha(project / name) for name in inventory['contracts']}
             record['cases'][case] = dict(complete=True, **actual, contracts=contracts,
                 rust_sha256=sha(project / 'sandbox-protocol/src/lifecycle/manifest.rs'),
+                helper_adaptation=adaptation,
                 installed_generated=installed, retained_generated_differences=differences,
                 extraction_record_sha256=sha(extraction / 'result.json'))
             (output / 'progress.json').write_text(json.dumps(record, indent=2)+'\n')

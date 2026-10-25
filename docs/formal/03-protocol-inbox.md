@@ -23,3 +23,54 @@
 这些当前身份、阶段、寿命及权限关系仍由 V4/V5/V7 的实际提供者连接。
 
 ## 2. 状态与义务
+
+
+| 状态/事件 | 验收义务 |
+|---|---|
+| 原始字节→结构→合法请求 | 真实 schema/全部字段/版本/限额/错误顺序对应；解析接受不等于业务授权 |
+| 收件、重复、冲突 | 在原 SQLite 事务绑定全文与本地身份；同键重放不生成另一份映射，不同参数明确拒绝 |
+| 高级意图→本地操作 | unload/resume 使用同一会话、原来源与当前版本；不绕过 V4 检查，不转成裸宿主命令 |
+| 宿主结果→中心事实 | Accepted、SnapshotCommitted、Unloaded、Ready、StateLost、终止/释放保持原类别与原身份 |
+| 确认、窗口退休 | 只确认已耐久保存的完整结果；关闭窗口仍保留未结责任，旧消息不能影响复用位置 |
+| 乱序、重启、终止竞争 | 旧意图不能复活已终止代；有效终止前已发出的动作保持原责任，不从消息丢失推物理不存在 |
+
+中心要求与宿主应用分开允许暂时不一致；模型不强制“收到 HTTP 就已经 applied”。所有字段以实际 Rust 表示关系连接，不能把整个 serde 或内部网络层当业务正确。
+
+## 3. 实现与验收
+
+V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久发送责任；V4/V5 提供本地接受/回执；V6 提供真实资源证据。必须补原 codec、映射函数、事务回调与恢复入口的生成体/绑定。
+
+验收：全部新消息合法往返，字段变异/非法输入/冲突拒绝，重复和乱序回执，收件提交未知，两管理进程独立重启，destroy 与旧 resume 同时到达。保留真实 mTLS/限额检查；模板分发、跨节点发现不扩入本任务。负责 LC-I3/4 的邻接和 LC-P2/3/8/9，不能单独声称系统唯一运行。
+
+## 4. 当前字段合同与证明边界
+
+[真实字段和同步校验](../../sandbox-protocol/src/lifecycle.rs)的协议常量为 4，正式生命周期路由、持久收件及后台已经接线；不维护另一旧协议产品路径。数字格式标记不代表证明模块 V3 已完成。字段校验成功不能作为已接受、已捕获或已恢复的回复。请求、manifest、carrier 已有真实生成体及局部定理；当前源码重新绑定与事务/网络调用对应仍须验收。
+
+| 字段/接口 | 准确表示与检查 | 不能从中推出 |
+|---|---|---|
+| SessionId | 包装原协议 SandboxId，复用原不透明字符串域，保留全部字节 | 路径安全、实例存在或所有权 |
+| IncarnationId、CaptureId、RequestWindowId、RequestSequence | 各自包装受检 PositiveCounter；零拒绝、耗尽不回绕；不改变旧 core 数值类型 | 已分配、唯一认领或业务可重用 |
+| OperationKey | deployment、经认证的 owner、window、sequence 全部保存；内部 DTO 可解码不等于调用方已认证 | 窗口已签发、当前授权或持久去重 |
+| OperationBinding | 版本、完整 NodeIdentity、session、完整 key、ExpectedSession | 原端点/owner 的选择正确 |
+| ExpectedSession | Create 使用显式 Absent；其它操作使用 Version(u64)，不把零改作不存在标记 | 当前账本确实满足期望版本 |
+| LifecycleOperation | Create 完整原 CreateBinding 和目标代；Unload 源代和 capture；Resume 源代/capture/严格更大目标代/完整摘要；Destroy 只指逻辑会话 | 任意宿主命令、路径、PID 或删除列表 |
+| replay_matches | 比较整个原请求，包含全部操作参数 | 已查原键、已保存结果或不会再次派发；这些仍由收件事务提供 |
+
+请求的纯校验按版本、完整节点、deployment、期望类别和操作形状依次拒绝。Resume 允许废弃尝试留下的编号空洞，不要求目标恰好加一。原键查找/全文重放必须在当前阶段、窗口和资源检查之前处理；本库不读取账本，不用类型代替这项控制流。
+
+[SnapshotManifest](../../sandbox-protocol/src/lifecycle/manifest.rs)保存原 CaptureBinding、受保护配置指纹和完整文件记录。CaptureBinding 是原已接受捕获的操作/会话/源代/capture；后来的 Resume 具有自己的键，不能覆盖来源 capture 的原键。ContentDigest 是完整 32 字节 SHA-256 值，不与旧 core 的数值 ManifestDigest 转换；构造值不计算哈希或签发验证收据。
+
+文件按 state、memory、设备 profile 的全部可写盘顺序保存。每盘同时匹配原 drive_id，固定内部文件名为 state.bin、memory.bin、disk-N.img；profile 明确登记 drive_id 到原 jail 相对路径，不能仅靠数组位置选择来源。重复 drive/路径、缺少或额外文件、路径不符、零长度及总长度溢出拒绝。实际第一 runtime 的映射为 rootfs → rootfs.ext4 → disk-0.img，恢复复制到新 jail 的私有盘；不允许 VM 写回 bundle。
+
+最多 16 个可写盘是本接口的有限预算，不是 Firecracker 的通用上限或兼容性保证。snapshot_format 和工具/CPU/设备/镜像配置摘要须与原受保护 profile 比较；即使两个任意 profile 相同，也不能据此声明 VMM 兼容。实际文件白名单、原句柄/长度/内容摘要、冻结截面、同步发布及恢复资格分别由 V6/V5 提供，不能让 manifest 自己的字段批准自己。
+
+Manifest 的完整值校验切片以 [独立接受与首错规格](../../SandboxModel/Lifecycle/Protocol/ManifestValidationModel.lean)
+连接真实 `SnapshotManifest::validate`；复用已有文件集合及自然数长度规格。范围包括完整 capture/profile
+比较、任意表示路径和磁盘列表的校验，以及全部文件的有序角色、ID、路径、长度与溢出检查。
+String→str 借用仅使用既有可表示性条件，不预设业务路径合法或材料真实。当前源码适用性、正反证据及
+完整验收仍分别登记；[局部入口](../../verification/experiments/stage1-protocol/manifest-validation/README.md)
+不替代 JSON 字节接线、持久收件、独立认证来源和系统组合义务。
+历史 capture 绑定反例须在当前协议值上否定同一完整清单合同；原 pair 见证与完整任意输入
+证明分别保留，不能用局部循环或一个正常文件集合替代任意文件集的完整校验。
+
+字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
