@@ -1,6 +1,6 @@
 //! Original SQLite transitions; host completion/release facts remain controlled.
 use super::*;
-use core::maintenance::slots::{HostSlotId, HostSlotPhase};
+use sandbox_controller_core::maintenance::slots::{HostSlotId, HostSlotPhase};
 
 fn occupy_released_position(path: &Path) -> AcceptedLifecycleIntent {
     let app = v3::application(
