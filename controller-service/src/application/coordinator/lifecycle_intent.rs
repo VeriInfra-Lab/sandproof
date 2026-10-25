@@ -8,8 +8,68 @@ use crate::{
     templates::ComputeLimits,
 };
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, CurrentResumeReadiness, LifecycleOperation,
 };
+use std::{
+    io::Write,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+const RESUME_PENDING_LIMIT: usize = 64;
+static RESUME_PENDING_EMITTED: AtomicUsize = AtomicUsize::new(0);
+
+fn record_resume_pending(
+    view: &crate::LifecycleCreateObservation,
+    count: &AtomicUsize,
+    output: &mut impl Write,
+) {
+    let crate::CreateReadiness::Pending(reason) = &view.readiness else {
+        return;
+    };
+    let (Some(local), Some(native)) = (view.local, view.native.as_ref()) else {
+        return;
+    };
+    if !matches!(
+        view.request.request.operation,
+        LifecycleOperation::Resume { .. }
+    ) || !native.has_completed_original_execution(local)
+    {
+        return;
+    }
+    let Ok(previous) = count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        (value < RESUME_PENDING_LIMIT).then(|| value + 1)
+    }) else {
+        return;
+    };
+    // The closed reason has no request body, path, credential or foreign text.
+    let _ = writeln!(
+        output,
+        "controller_resume_pending reason={reason:?} sandbox={} operation={} generation={} remaining={}",
+        local.sandbox.0,
+        local.operation.0,
+        native.generation,
+        RESUME_PENDING_LIMIT - previous - 1,
+    );
+}
+
+fn resume_readiness(readiness: crate::CreateReadiness) -> Result<CurrentResumeReadiness, JournalError> {
+    Ok(match readiness {
+        crate::CreateReadiness::NotCurrent => CurrentResumeReadiness::NotCurrent,
+        crate::CreateReadiness::NotRunning => CurrentResumeReadiness::NotRunning,
+        crate::CreateReadiness::Expired => CurrentResumeReadiness::Expired,
+        crate::CreateReadiness::Pending(_) => CurrentResumeReadiness::Pending,
+        crate::CreateReadiness::Refused { .. } => return Err(JournalError::CorruptStore),
+        crate::CreateReadiness::Observed(facts) => CurrentResumeReadiness::Observed {
+            facts: sandproof_protocol::lifecycle::CurrentReadyFacts {
+                started_at_ms: facts.started_at_ms,
+                end_at_ms: facts.end_at_ms,
+                max_end_at_ms: facts.max_end_at_ms,
+                startup_deadline_ms: facts.startup_deadline_ms,
+                observed_at_ms: facts.observed_at_ms,
+            },
+        },
+    })
+}
 
 enum PreparedCurrentAdmission {
     Ready(Box<crate::InternalAdmission>),
@@ -191,27 +251,13 @@ impl<H: ControllerHost> ControllerApplication<H> {
         intent: &AcceptedLifecycleIntent,
         context: &AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, JournalError> {
-        use sandproof_protocol::lifecycle::{CurrentResumeReadiness, ResumeObservation};
+        use sandproof_protocol::lifecycle::ResumeObservation;
         if !matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
             return Err(JournalError::UnsupportedInput);
         }
         let view = self.observe_lifecycle_execution(intent, context)?;
-        let readiness = match view.readiness {
-            crate::CreateReadiness::NotCurrent => CurrentResumeReadiness::NotCurrent,
-            crate::CreateReadiness::NotRunning => CurrentResumeReadiness::NotRunning,
-            crate::CreateReadiness::Expired => CurrentResumeReadiness::Expired,
-            crate::CreateReadiness::Pending(_) => CurrentResumeReadiness::Pending,
-            crate::CreateReadiness::Refused { .. } => return Err(JournalError::CorruptStore),
-            crate::CreateReadiness::Observed(facts) => CurrentResumeReadiness::Observed {
-                facts: sandproof_protocol::lifecycle::CurrentReadyFacts {
-                    started_at_ms: facts.started_at_ms,
-                    end_at_ms: facts.end_at_ms,
-                    max_end_at_ms: facts.max_end_at_ms,
-                    startup_deadline_ms: facts.startup_deadline_ms,
-                    observed_at_ms: facts.observed_at_ms,
-                },
-            },
-        };
+        record_resume_pending(&view, &RESUME_PENDING_EMITTED, &mut std::io::stderr().lock());
+        let readiness = resume_readiness(view.readiness)?;
         Ok(ResumeObservation {
             request: view.request,
             current_request: view.current_request,
@@ -540,6 +586,98 @@ mod tests {
         ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
     };
     use std::sync::{Arc, Mutex};
+
+    fn pending_resume_view() -> crate::LifecycleCreateObservation {
+        let mut request = fixture::request();
+        request.request.operation = LifecycleOperation::Resume {
+            source_incarnation: 101.try_into().unwrap(),
+            capture: 1.try_into().unwrap(),
+            target_incarnation: 102.try_into().unwrap(),
+            manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
+        };
+        crate::LifecycleCreateObservation {
+            request: request.clone(),
+            current_request: request,
+            local: Some(crate::InternalLocalBinding {
+                sandbox: core::SandboxId(7),
+                owner: core::TenantId(1),
+                operation: core::OperationId(3),
+            }),
+            historical_result: Some(core::OperationResult::Running(2)),
+            native_input_high_water: 99,
+            native: Some(crate::NativeCreateSnapshot {
+                owner: core::TenantId(1),
+                phase: core::Phase::Running,
+                terminal: false,
+                epoch: 3,
+                generation: 2,
+                current_vm: Some(core::VmId(8)),
+                current_operation: Some(core::Operation {
+                    id: core::OperationId(3),
+                    epoch: 3,
+                    kind: core::OperationKind::Resume,
+                    status: core::OperationStatus::Succeeded,
+                }),
+                lifetime: None,
+                uncertain_actions: vec![],
+            }),
+            readiness: crate::CreateReadiness::Pending(crate::CreateReadinessPending::HostUnobserved),
+        }
+    }
+
+    #[test]
+    fn resume_pending_diagnostic_is_bounded_and_keeps_the_wire_projection() {
+        use crate::{CreateReadiness, CreateReadinessPending};
+        let reasons = [
+            CreateReadinessPending::NoLocalMapping,
+            CreateReadinessPending::StartupIncomplete,
+            CreateReadinessPending::WorkUnknown,
+            CreateReadinessPending::OriginalEvidenceMissing,
+            CreateReadinessPending::HostUnobserved,
+            CreateReadinessPending::CredentialUnobserved,
+            CreateReadinessPending::SnapshotChanged,
+        ];
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        for index in 0..RESUME_PENDING_LIMIT + reasons.len() {
+            let mut view = pending_resume_view();
+            view.readiness = CreateReadiness::Pending(reasons[index % reasons.len()]);
+            record_resume_pending(&view, &count, &mut bytes);
+            assert_eq!(
+                resume_readiness(view.readiness).unwrap(),
+                CurrentResumeReadiness::Pending
+            );
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), RESUME_PENDING_LIMIT);
+        assert_eq!(count.load(Ordering::Relaxed), RESUME_PENDING_LIMIT);
+        assert!(text.lines().all(|line| {
+            line.contains("sandbox=7 operation=3 generation=2") && line.len() < 256
+        }));
+        for reason in reasons {
+            assert!(text.contains(&format!("reason={reason:?}")));
+        }
+        for hidden in [
+            "account-alpha",
+            "session-a",
+            "0123456789abcdef",
+            "manifest",
+            "token",
+        ] {
+            assert!(!text.contains(hidden));
+        }
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        let mut startup = pending_resume_view();
+        startup.native.as_mut().unwrap().phase = core::Phase::Starting;
+        record_resume_pending(&startup, &count, &mut bytes);
+        assert_eq!(
+            resume_readiness(startup.readiness).unwrap(),
+            CurrentResumeReadiness::Pending
+        );
+        assert!(bytes.is_empty());
+        assert_eq!(count.load(Ordering::Relaxed), 0);
+    }
 
     struct RunningData {
         app: ControllerApplication<TestHost>,
