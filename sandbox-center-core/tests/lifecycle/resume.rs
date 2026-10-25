@@ -92,28 +92,28 @@ fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_his
     let running = pending
         .accept_lifecycle_unload_observation(&continued, 185)
         .unwrap();
-    let lost = running.accept_lifecycle_resume_observation(&loss).unwrap();
-    assert_eq!(lost.sandboxes()[0].phase(), SessionPhase::StateLost);
-    assert_eq!(lost.reserved(None, None), Some(resources(1)));
+    let after_exit = running.accept_lifecycle_resume_observation(&loss).unwrap();
+    assert_eq!(after_exit.sandboxes()[0].phase(), SessionPhase::StateLost);
+    assert_eq!(after_exit.reserved(None, None), Some(resources(1)));
     assert_eq!(
-        lost.sandboxes()[0].operations().last().unwrap().unloaded(),
+        after_exit.sandboxes()[0].operations().last().unwrap().unloaded(),
         Some(&continued)
     );
     let reopened: CenterState =
-        serde_json::from_slice(&serde_json::to_vec(&lost).unwrap()).unwrap();
+        serde_json::from_slice(&serde_json::to_vec(&after_exit).unwrap()).unwrap();
     assert!(reopened.is_valid());
-    assert_eq!(reopened, lost);
+    assert_eq!(reopened, after_exit);
     assert_eq!(
         reopened.accept_lifecycle_unload_observation(&continued, 185),
-        Ok(lost.clone())
+        Ok(after_exit.clone())
     );
     let mut old_ready = ready(&loss.request);
     old_ready.current_request = loss.current_request.clone();
     assert_eq!(
-        lost.accept_lifecycle_resume_observation(&old_ready),
+        after_exit.accept_lifecycle_resume_observation(&old_ready),
         Err(DecisionError::Conflict)
     );
-    let mut corrupted = serde_json::to_value(&lost).unwrap();
+    let mut corrupted = serde_json::to_value(&after_exit).unwrap();
     corrupted["sandboxes"][0]["operations"]
         .as_array_mut()
         .unwrap()
@@ -122,7 +122,7 @@ fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_his
     let corrupted: CenterState = serde_json::from_value(corrupted).unwrap();
     assert!(
         !corrupted.is_valid(),
-        "a lost Unload cannot invent its own continuation"
+        "a after_exit Unload cannot invent its own continuation"
     );
 }
 
@@ -138,11 +138,11 @@ fn continued_resume_loss_rejects_changed_current_and_cannot_override_destroy() {
         running.accept_lifecycle_resume_observation(&changed),
         Err(DecisionError::Stale)
     );
-    let lost = running.accept_lifecycle_resume_observation(&loss).unwrap();
+    let after_exit = running.accept_lifecycle_resume_observation(&loss).unwrap();
     let current = &loss.current_request;
     let mut key = current.request.binding.key.clone();
     key.sequence = 5.try_into().unwrap();
-    let (terminating, _) = lost
+    let (terminating, _) = after_exit
         .accept_lifecycle(
             &"1".try_into().unwrap(),
             &LifecycleSubmission::Destroy {

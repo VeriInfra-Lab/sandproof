@@ -39,7 +39,11 @@ pub(super) fn request() -> PublicCreateRequest {
     }
 }
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
-    setup_with_operation_limit(fixture, proxy, envelope().center.bounds().operations_per_sandbox)
+    setup_with_operation_limit(
+        fixture,
+        proxy,
+        envelope().center.bounds().operations_per_sandbox,
+    )
 }
 
 pub(super) fn setup_with_operation_limit(
