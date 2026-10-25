@@ -16,6 +16,11 @@
 
 完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
 
+运行期限与恢复来源的[事实叶子合同](../../verification/experiments/stage1-protocol/observation-bindings/README.md)另作值切片：
+对应 Create 的原 checked_add、Resume 的来源代/capture/完整摘要与时间字段，以及恢复后续租的非负期限和精确转换。
+这些叶子不重做完整观测封套校验，不核实 material_bytes，也不以字段比较代替来源选择、续租单调政策或实际材料/运行事实。
+完整 Resume/Create/Unload 观测分支、持久收件和系统组合仍须分别连接并验收。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
