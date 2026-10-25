@@ -16,7 +16,7 @@ type App = ControllerApplication<TestHost>;
 // The reopened application reads its original receipts as TestHost::Evidence.
 // FullEvidence deliberately has a smaller journal-only schema; do not use it
 // to complete the application candidate's startup and then weaken decoding.
-fn application_evidence(action: &WorkAction<core::EffectId>) -> Evidence {
+pub(super) fn application_evidence(action: &WorkAction<core::EffectId>) -> Evidence {
     let original = FullEvidence {
         resource: action.identity.resource.clone(),
         command: action.command.command().clone(),

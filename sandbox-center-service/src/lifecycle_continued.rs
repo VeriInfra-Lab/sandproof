@@ -1,18 +1,19 @@
 //! Fresh original execution observation after an immutable failed Unload.
 use crate::application::authority_error;
-use crate::lifecycle_dispatch::time_left;
+use crate::lifecycle_dispatch::{CurrentObservationError, time_left};
 use crate::{AuthorityPort, CenterApplication, HostPort, TemplateProvider};
 use sandproof_api::PortError;
 use sandproof_center_core::SessionPhase;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, CurrentReadyFacts, CurrentResumeReadiness,
-    LifecycleOperation, PublicSessionPhase, PublicSessionView, SessionId,
+    LifecycleOperation, PublicSessionPhase, PublicSessionView, SessionId, ResumeObservation,
+    UnloadObservation,
 };
 
 impl<H: HostPort, T: TemplateProvider>
     CenterApplication<crate::business::SharedBusinessAuthority, H, T>
 {
-    fn observe_continued_before(
+    fn observe_continued_create_before(
         &self,
         origin: &AcceptedLifecycleIntent,
         intent: &AcceptedLifecycleIntent,
@@ -34,16 +35,6 @@ impl<H: HostPort, T: TemplateProvider>
                 };
                 facts
             }
-            LifecycleOperation::Resume { .. } => {
-                let view = self.hosts.observe_lifecycle_resume(origin, budget)?;
-                if !view.matches_request(origin) || view.current_request != *intent {
-                    return Err(PortError::Busy);
-                }
-                let CurrentResumeReadiness::Observed { facts } = view.readiness else {
-                    return Err(PortError::Busy);
-                };
-                facts
-            }
             _ => return Err(PortError::Busy),
         };
         let after = self.now()?;
@@ -56,6 +47,79 @@ impl<H: HostPort, T: TemplateProvider>
             return Err(PortError::Busy);
         }
         Ok(facts)
+    }
+
+    fn publish_continued_loss_before(
+        &self,
+        observation: &ResumeObservation,
+        saved: &UnloadObservation,
+        deadline: std::time::Instant,
+    ) -> Result<PublicSessionView, PortError> {
+        let prior = saved.outcome.continued().ok_or(PortError::Busy)?;
+        if observation.readiness != CurrentResumeReadiness::StateLost
+            || saved.request != observation.current_request
+            || !observation.matches_request(&observation.request)
+            || self.now()? >= prior.end_at_ms
+        {
+            return Err(PortError::Busy);
+        }
+        time_left(deadline)?;
+        let owner = &observation.current_request.request.binding.key.owner;
+        let session = &observation.current_request.request.binding.session;
+        let mut authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        let current = authority.public_lifecycle_record(owner, session)?;
+        let operation = current.operations().last().ok_or(PortError::Busy)?;
+        if operation.intent() != &observation.current_request
+            || operation.unloaded() != Some(saved)
+            || current.current_execution_origin() != Some(&observation.request)
+            || !matches!(current.phase(), SessionPhase::Running | SessionPhase::StateLost)
+            || self.now()? >= prior.end_at_ms
+        {
+            return Err(PortError::Busy);
+        }
+        authority.accept_lifecycle_resume_observation(observation).map_err(authority_error)?;
+        let current = authority.public_lifecycle_record(owner, session)?;
+        let operation = current.operations().last().ok_or(PortError::Busy)?;
+        if operation.intent() != &observation.current_request
+            || operation.unloaded() != Some(saved)
+            || current.current_execution_origin() != Some(&observation.request)
+            || current.phase() != SessionPhase::StateLost
+        {
+            return Err(PortError::Busy);
+        }
+        time_left(deadline)?;
+        authority.query_public_lifecycle(owner, session)
+    }
+
+    // This is consumed only by the existing per-intent reconciliation call.
+    // Completed Unloads are not added to another background scanner.
+    pub(crate) fn reconcile_continued_loss(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: std::time::Instant,
+    ) -> Result<bool, PortError> {
+        let state = self.snapshot()?;
+        let Some(record) = state.lifecycle_session(&intent.request.binding.key.owner, &intent.request.binding.session) else {
+            return Ok(false);
+        };
+        let Some(current) = record.operations().last() else { return Ok(false); };
+        let Some(saved) = current.unloaded() else { return Ok(false); };
+        if current.intent() != intent || record.phase() != SessionPhase::Running
+            || saved.outcome.continued().is_none()
+            || record.current_execution_origin().is_none_or(|origin| !matches!(origin.request.operation, LifecycleOperation::Resume { .. }))
+        {
+            return Ok(false);
+        }
+        let observation = match self.current_resume_observation_before(intent, deadline) {
+            Ok(view) if view.readiness == CurrentResumeReadiness::StateLost => view,
+            Err(CurrentObservationError::Shared(error)) => return Err(error),
+            Ok(_) | Err(_) => return Ok(false),
+        };
+        match self.publish_continued_loss_before(&observation, saved, deadline) {
+            Ok(_) => Ok(true),
+            Err(PortError::Busy | PortError::NotFound) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn query_continued(
@@ -79,7 +143,19 @@ impl<H: HostPort, T: TemplateProvider>
             .current_execution_origin()
             .ok_or(PortError::Busy)?
             .clone();
-        let facts = self.observe_continued_before(&origin, intent, deadline)?;
+        let facts = if matches!(origin.request.operation, LifecycleOperation::Resume { .. }) {
+            let observation = self.current_resume_observation_before(intent, deadline)
+                .map_err(CurrentObservationError::into_port)?;
+            match &observation.readiness {
+                CurrentResumeReadiness::StateLost => {
+                    return self.publish_continued_loss_before(&observation, &saved, deadline);
+                }
+                CurrentResumeReadiness::Observed { facts } => facts.clone(),
+                _ => return Err(PortError::Busy),
+            }
+        } else {
+            self.observe_continued_create_before(&origin, intent, deadline)?
+        };
         let after = self.now()?;
         if after >= facts.end_at_ms
             || facts.started_at_ms != prior.started_at_ms

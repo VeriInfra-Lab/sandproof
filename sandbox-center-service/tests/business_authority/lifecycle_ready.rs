@@ -61,6 +61,7 @@ struct Host {
     notify_recorded: RecordedSignal,
     current_request_after_block: Arc<Mutex<Option<AcceptedLifecycleIntent>>>,
     unloaded: Arc<Mutex<Option<sandproof_protocol::lifecycle::UnloadObservation>>>,
+    resumed: Arc<Mutex<Option<sandproof_protocol::lifecycle::ResumeObservation>>>,
 }
 impl Host {
     fn new(clock: Arc<Time>) -> Self {
@@ -77,6 +78,7 @@ impl Host {
             notify_recorded: Arc::new(Mutex::new(None)),
             current_request_after_block: Arc::new(Mutex::new(None)),
             unloaded: Arc::new(Mutex::new(None)),
+            resumed: Arc::new(Mutex::new(None)),
         }
     }
     fn block_next(&self, session: SessionId) -> (mpsc::Receiver<()>, Release) {
@@ -127,6 +129,30 @@ impl Host {
     }
 }
 impl HostPort for Host {
+    fn observe_lifecycle_resume(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        budget: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, PortError> {
+        self.observation_budgets.lock().unwrap().push(budget);
+        if let Some(error) = self.observation_error_once.lock().unwrap().take() {
+            return Err(error);
+        }
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        let value = self.resumed.lock().unwrap().clone().ok_or(PortError::Busy)?;
+        let blocked = {
+            let mut slot = self.blocked.lock().unwrap();
+            if slot.as_ref().is_some_and(|b| b.session == intent.request.binding.session) {
+                slot.take()
+            } else { None }
+        };
+        if let Some(blocked) = blocked {
+            blocked.entered.send(()).unwrap();
+            blocked.continue_work.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        Ok(value)
+    }
+
     fn observe_lifecycle_unload(
         &self,
         intent: &AcceptedLifecycleIntent,

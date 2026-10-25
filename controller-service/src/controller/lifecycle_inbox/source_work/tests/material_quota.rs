@@ -19,7 +19,7 @@ fn scene_full(record: &SourceWorkRecord) -> crate::capture::FullCaptureWorkReque
     full
 }
 
-fn resumed_with_scene_budget(path: &Path) -> (ControllerJournal, AcceptedLifecycleIntent) {
+pub(super) fn resumed_with_scene_budget(path: &Path) -> (ControllerJournal, AcceptedLifecycleIntent) {
     let mut source_limits = config();
     source_limits.max_disk_bytes = GIB;
     source_limits.max_material_bytes = MATERIAL_LIMIT;
@@ -60,7 +60,7 @@ fn resumed_with_scene_budget(path: &Path) -> (ControllerJournal, AcceptedLifecyc
     (journal, resume)
 }
 
-fn next_unload(previous: &AcceptedLifecycleIntent, capture: u64) -> AcceptedLifecycleIntent {
+pub(super) fn next_unload(previous: &AcceptedLifecycleIntent, capture: u64) -> AcceptedLifecycleIntent {
     let mut intent = previous.clone();
     intent.accepted_version += 1;
     intent.request.binding.expected = ExpectedSession::Version(previous.accepted_version);
@@ -85,7 +85,7 @@ fn observe_source(
     ).unwrap()
 }
 
-fn continue_explicit_no_request(
+pub(super) fn continue_explicit_no_request(
     journal: &mut ControllerJournal,
     intent: &AcceptedLifecycleIntent,
 ) -> OriginalContinueWorkRequest {

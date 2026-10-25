@@ -13,6 +13,8 @@ use v3::fixture::{State, TestEpoch, TestHost};
 mod continue_application;
 mod end_pipeline;
 mod original_continue;
+mod material_quota;
+mod continued_exit;
 mod restore_exit;
 mod slot_reuse;
 mod terminal_drain;
