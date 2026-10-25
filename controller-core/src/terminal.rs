@@ -978,6 +978,7 @@ mod tests {
             .unwrap()
             .clone();
         assert!(handle_retire_activation(&world, activation.clone(), stop.clone()).is_err());
+        assert!(!checkpoint::retired_activation_valid(&world, &activation));
         let stopped = execute(&world, |c| c == stop.command());
         let retired = handle_retire_activation(&stopped, activation.clone(), stop.clone())
             .unwrap()
@@ -986,6 +987,7 @@ mod tests {
             panic!("original unknown restore activation must retire by its exact Stop");
         };
         assert!(activation_coverage_origin(&retired, &activation, coverage));
+        assert!(checkpoint::retired_activation_valid(&retired, &activation));
         assert!(!effect_succeeded_check(&retired, activation.command()));
         assert!(
             handle_controller(
@@ -1006,6 +1008,19 @@ mod tests {
             },
         );
         assert!(handle_retire_activation(&unfenced, activation.clone(), stop.clone()).is_err());
+        let mut missing_stop = retired.clone();
+        missing_stop.effects.put(stop.clone(), EffectStatus::OutcomeUnknown);
+        assert!(!checkpoint::retired_activation_valid(&missing_stop, &activation));
+        let mut mismatched_coverage = retired.clone();
+        mismatched_coverage.effects.put(activation.clone(), EffectStatus::RetiredByStop(StopCoverage {
+            result: ResultDigest(99), ..coverage
+        }));
+        assert!(!checkpoint::retired_activation_valid(&mismatched_coverage, &activation));
+        let mut missing_fence = retired.clone();
+        missing_fence.effects.put(EffectId::initial(Command::InstallFence {
+            sandbox: SandboxId(1), epoch: coverage.epoch, terminal: true,
+        }), EffectStatus::OutcomeUnknown);
+        assert!(!checkpoint::retired_activation_valid(&missing_fence, &activation));
         let mut old_epoch = stop.clone();
         if let Command::StopVm { epoch, .. } = &mut old_epoch.logical.command {
             *epoch -= 1;
