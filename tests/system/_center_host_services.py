@@ -85,15 +85,24 @@ def test_credentials(key,extra_credentials=None):
     return values
 
 
+def validate_redis_operation_timeout_ms(value):
+    """Match the product StoreConfig bound; never alter durability or retries."""
+    if type(value) is not int or not 1 <= value <= 60000:
+        raise ValueError('Redis operation timeout must be an integer in 1..60000 milliseconds')
+    return value
+
+
 def render(native_pools, *, registered_catalogs, deployment, center_root, host_tls_roots, host_addresses,
            public_address, artifact_address, redis_address, password, key, retained_sessions,
-           registry, versions, capture_settings, private_builds=None, private_build_boundary=None,extra_credentials=None):
+           registry, versions, capture_settings, private_builds=None, private_build_boundary=None,extra_credentials=None,
+           redis_operation_timeout_ms=1000):
     """Render one explicit protected product configuration per role.
 
     This function neither computes Rust canonical descriptor digests nor models
     required-block/SQL reservations. Product initialize must reject insufficient
     approved capacities; this fixture never increases them to force success.
     """
+    redis_operation_timeout_ms=validate_redis_operation_timeout_ms(redis_operation_timeout_ms)
     if (not native_pools or len(native_pools) != len(host_addresses)
             or len(native_pools) != len(host_tls_roots) or len(native_pools) != len(registered_catalogs)
             or len(native_pools) > 2
@@ -219,7 +228,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         data_transfer=center_transfer,
         redis=dict(address=redis_address, username='default', password=password,
             max_block_bytes=BLOCK_BYTES, memory_bytes=REDIS_MEMORY_BYTES,
-            operation_timeout_ms=1000, writer_root=str(center_root / 'writer')),
+            operation_timeout_ms=redis_operation_timeout_ms, writer_root=str(center_root / 'writer')),
         tls=dict(**common_tls, max_connections=transfers + 4,
             handshake_timeout_ms=2000, request_timeout_ms=10000),
         node_observation=dict(health_window_ms=runtime['expiry_scan_seconds']*1000+5000,

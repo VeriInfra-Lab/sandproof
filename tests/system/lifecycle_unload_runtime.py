@@ -32,7 +32,7 @@ import sys
 import time
 
 from _runtime_services import RuntimeServices, add_arguments as service_arguments
-from _center_host_services import local_binding, role_facts
+from _center_host_services import local_binding, role_facts, validate_redis_operation_timeout_ms
 from server_process_crash import free_loopback_port, process_start_ticks
 from tools.check_kvm_host import unique_keys
 from tools.ci_e2e_supervisor import HostLease
@@ -459,12 +459,17 @@ class UnloadRuntime:
     def measurement_identity(self):
         """Reuse validated artifact identities; disclose no configuration secrets."""
         from tools.ci_e2e_artifacts import public_identity
+        redis_timeout=validate_redis_operation_timeout_ms(
+            self.services.center_config['redis']['operation_timeout_ms'])
+        if redis_timeout!=validate_redis_operation_timeout_ms(self.args.redis_operation_timeout_ms):
+            raise ValueError('rendered Redis operation timeout differs from the explicit deployment input')
         def fingerprint(value):
             return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
         return dict(candidate=public_identity(self.services.manifest),
             candidate_manifest_sha256=self.services.manifest_sha256,
             fixture_sha256=fingerprint(self.inputs),capture_settings_sha256=fingerprint(self.captures),
             role_configuration_identity_sha256=fingerprint(self.configs),
+            redis_operation_timeout_ms=redis_timeout,
             quota_readback_sha256=fingerprint(self.quota),
             images=[{kind+'_sha256':template[kind]['sha256'] for kind in ('kernel','rootfs')}
                 for template in self.inputs['catalog']['templates']],

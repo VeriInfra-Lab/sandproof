@@ -242,7 +242,8 @@ class RuntimeServicesTests(unittest.TestCase):
                 artifacts={role:dict(path=path,sha256='b'*64) for role,path in paths.items()})
             args=SimpleNamespace(**paths,center_uid=1001,center_gid=1001,redis_uid=1002,
                 redis_gid=1002,candidate_manifest=root/'manifest.json',redis_material=root/'redis',
-                service_staging_parent=root/'staging',capture_settings=root/'capture.json')
+                service_staging_parent=root/'staging',capture_settings=root/'capture.json',
+                redis_operation_timeout_ms=1000)
             disk=root/'disk';disk.write_bytes(bytes(512))
             native=dict(uid_base=3200000,database=str(root/'db/controller.db'),
                 node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),
@@ -484,6 +485,33 @@ class RuntimeServicesTests(unittest.TestCase):
         self.assertIn('--host',options)
         self.assertIn('--candidate-manifest',options)
         self.assertNotIn('--server',options)
+
+    def test_common_cli_preserves_default_and_accepts_explicit_redis_wait(self):
+        parser=argparse.ArgumentParser()
+        services.add_arguments(parser,required=False)
+        self.assertEqual(parser.parse_args([]).redis_operation_timeout_ms,1000)
+        for value in (1,5000,60000):
+            with self.subTest(value=value):
+                parsed=parser.parse_args(['--redis-operation-timeout-ms',str(value)])
+                self.assertEqual(parsed.redis_operation_timeout_ms,value)
+        for value in ('0','-1','60001','1.5','true'):
+            with self.subTest(value=value),patch('sys.stderr'),self.assertRaises(SystemExit) as rejected:
+                parser.parse_args(['--redis-operation-timeout-ms',value])
+            self.assertEqual(rejected.exception.code,2)
+
+    def test_invalid_redis_wait_is_rejected_before_any_deployment_effect(self):
+        for value in (None,True,0,60001,5000.0,'5000'):
+            with self.subTest(value=value), \
+                    patch.object(services,'private_path') as paths, \
+                    patch.object(services,'stage_role_directories') as stage, \
+                    patch.object(services,'_copy') as copy_file, \
+                    patch.object(services,'_provision_host') as provision, \
+                    patch.object(services,'render') as render, \
+                    self.assertRaisesRegex(ValueError,'Redis operation timeout'):
+                services.RuntimeServices.prepare(SimpleNamespace(redis_operation_timeout_ms=value),
+                    Path('/not-prepared'),[],[],'test-key','127.0.0.1:12345',None,2)
+            for effect in (paths,stage,copy_file,provision,render):
+                effect.assert_not_called()
 
     def test_native_mapping_refuses_live_host_before_any_audit_or_global_suffix_parse(self):
         instance=services.RuntimeServices()

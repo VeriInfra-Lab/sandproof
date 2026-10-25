@@ -11,6 +11,7 @@ _require_assertions = _runpy.run_path(
 )['require_assertions']
 _require_assertions()
 
+import argparse
 import copy
 import hashlib
 import json
@@ -27,7 +28,8 @@ import urllib.request
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from _center_host_services import (Processes, identities, local_binding, render,
-    redis_configuration, role_facts, stage_role_directories, stage_tls, write_role,test_credentials,process_facts)
+    redis_configuration, role_facts, stage_role_directories, stage_tls, write_role,test_credentials,process_facts,
+    validate_redis_operation_timeout_ms)
 from tools.service_storage_observation import ServiceStoragePeaks
 from server_process_crash import fetch, free_loopback_port
 from tools import ci_e2e_artifacts as artifacts
@@ -52,6 +54,15 @@ def add_arguments(parser, *, required=True):
         parser.add_argument('--' + name, type=Path, required=required)
     for name in ('center-uid','center-gid','redis-uid','redis-gid'):
         parser.add_argument('--' + name, type=int, required=required)
+    parser.add_argument('--redis-operation-timeout-ms',type=_redis_operation_timeout_argument,
+        default=1000,help='Explicit deployment-only Redis wait budget, 1..60000 ms (default: 1000)')
+
+
+def _redis_operation_timeout_argument(value):
+    try:
+        return validate_redis_operation_timeout_ms(int(value))
+    except (TypeError,ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def _mkdir(path, identity):
@@ -164,6 +175,7 @@ class RuntimeServices:
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
                 retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
+        redis_operation_timeout_ms=validate_redis_operation_timeout_ms(args.redis_operation_timeout_ms)
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
         if registry_config is None or any(RETIRED_NATIVE_FIELDS & native.keys() for native in native_pools):
@@ -292,7 +304,8 @@ class RuntimeServices:
             host_addresses=host_addresses,public_address=public_address,
             artifact_address='127.0.0.1:'+str(artifact_port),redis_address='127.0.0.1:'+str(redis_port),
             password=password,key=key,retained_sessions=retained_sessions,registry=registry,versions=versions,
-            capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials)
+            capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials,
+            redis_operation_timeout_ms=redis_operation_timeout_ms)
         center['redis']['writer_root']=str(layout['writer'])
         write_role(layout['center_control']/'token.key',secrets.token_bytes(32),uid=ids['center'][0],gid=ids['center'][1])
         center_path=layout['center_control']/'center.json'

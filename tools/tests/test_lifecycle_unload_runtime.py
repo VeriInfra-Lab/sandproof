@@ -75,6 +75,36 @@ class RetainedExclusionTests(unittest.TestCase):
         self.assertTrue(stopped['managers_exited'])
 
 
+class DeploymentMeasurementTests(unittest.TestCase):
+    def state(self):
+        state=object.__new__(runtime.UnloadRuntime)
+        state.args=SimpleNamespace(redis_operation_timeout_ms=5000)
+        state.services=SimpleNamespace(center_config=dict(redis=dict(operation_timeout_ms=5000)),
+            manifest={},manifest_sha256='a'*64)
+        state.inputs=dict(catalog=dict(templates=[]))
+        state.captures=[]
+        state.configs=dict(center=dict(config_sha256='b'*64))
+        state.quota={}
+        return state
+
+    def test_receipt_records_the_explicit_rendered_redis_wait_and_keeps_config_binding(self):
+        state=self.state()
+        with patch('tools.ci_e2e_artifacts.public_identity',return_value={'candidate':'c'*40}):
+            receipt=state.measurement_identity()
+            self.assertEqual(receipt['redis_operation_timeout_ms'],5000)
+            original=receipt['role_configuration_identity_sha256']
+            state.configs['center']['config_sha256']='d'*64
+            self.assertNotEqual(state.measurement_identity()['role_configuration_identity_sha256'],original)
+        self.assertNotIn('operation_timeout_ms',state.inputs)
+
+    def test_receipt_refuses_changed_or_invalid_timeout_instead_of_reporting_requested_value(self):
+        for value in (1000,None,True,0,60001,'5000'):
+            state=self.state()
+            state.services.center_config['redis']['operation_timeout_ms']=value
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'Redis operation timeout'):
+                state.measurement_identity()
+
+
 class ScenarioDiagnosticsTests(unittest.TestCase):
     def client(self):
         import time

@@ -177,7 +177,7 @@ class FixtureTests(unittest.TestCase):
                 chattr=dict(path='/protected/chattr',sha256=[2]*32),
                 lsattr=dict(path='/protected/lsattr',sha256=[3]*32))) for index,_ in enumerate(pools)]
 
-    def render(self, pools=None, *, retained_sessions=4):
+    def render(self, pools=None, *, retained_sessions=4, redis_operation_timeout_ms=1000):
         native = pools or [self.native()]
         return fixture.render(native, capture_settings=self.captures(native), registered_catalogs=[p['templates'] for p in native], deployment='one-approved-deployment',
             center_root='/approved/center', host_tls_roots=['/approved/host/tls'],
@@ -185,7 +185,30 @@ class FixtureTests(unittest.TestCase):
             artifact_address='127.0.0.1:9002', redis_address='127.0.0.1:9003',
             password='TESTONLYREDISKEY', key='TESTONLYPUBLICKEY', retained_sessions=retained_sessions,
             registry=dict(root='/approved/center/registry', max_templates_global=2),
-            versions=dict(internal_protocol=2, center_store=6, host_store=16))
+            versions=dict(internal_protocol=2, center_store=6, host_store=16),
+            redis_operation_timeout_ms=redis_operation_timeout_ms)
+
+    def test_explicit_redis_wait_changes_only_the_original_store_timeout(self):
+        original,original_hosts=self.render()
+        self.assertEqual(original['redis']['operation_timeout_ms'],1000)
+        adjusted,adjusted_hosts=self.render(redis_operation_timeout_ms=5000)
+        self.assertEqual(adjusted['redis']['operation_timeout_ms'],5000)
+        self.assertEqual(adjusted_hosts,original_hosts)
+        adjusted['redis']['operation_timeout_ms']=1000
+        self.assertEqual(adjusted,original)
+        self.assertEqual(original['reply_timeout_ms'],25000)
+        config=fixture.redis_configuration('/approved/redis',port=6379,password='TESTONLY')
+        self.assertIn('appendonly yes\nappendfsync always\n',config)
+        self.assertIn('no-appendfsync-on-rewrite no\naof-load-truncated no\n',config)
+
+    def test_redis_wait_limits_match_the_existing_product_and_reject_nonintegers(self):
+        for value in (1,60000):
+            with self.subTest(value=value):
+                center,_=self.render(redis_operation_timeout_ms=value)
+                self.assertEqual(center['redis']['operation_timeout_ms'],value)
+        for value in (None,True,False,0,-1,60001,5000.0,'5000'):
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'Redis operation timeout'):
+                self.render(redis_operation_timeout_ms=value)
 
     def test_public_credentials_are_only_at_center_and_original_native_budgets_unchanged(self):
         source = self.native()
