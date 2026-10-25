@@ -918,12 +918,12 @@ def sandproof_protocol.lifecycle.manifest.file_length
             sandproof_protocol.lifecycle.manifest.ManifestError) residual
 
 /-- [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 45:0-45:31
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs', lines 50:0-50:31
     Name pattern: [sandproof_protocol::lifecycle::PROTOCOL_VERSION]
     Visibility: public -/
 @[global_simps, irreducible, rust_const
   "sandproof_protocol::lifecycle::PROTOCOL_VERSION"]
-def sandproof_protocol.lifecycle.PROTOCOL_VERSION : Std.U16 := 3#u16
+def sandproof_protocol.lifecycle.PROTOCOL_VERSION : Std.U16 := 4#u16
 
 /-- [sandproof_protocol::lifecycle::manifest::{sandproof_protocol::lifecycle::manifest::SnapshotManifest}::validate]: loop body 0:
     Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle/manifest.rs', lines 249:8-257:9
