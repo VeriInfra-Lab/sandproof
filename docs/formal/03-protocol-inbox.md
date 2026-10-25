@@ -18,8 +18,13 @@
 
 终局确认与关闭的独立值切片复用完整 intent 和既有版本/retention 合同：终局匹配只核对全文与 Destroy/版本/slot 形状，
 不重新认证或 validate；确认与关闭另外要求 Cleaned，关闭回执要求完整 terminal 及精确 retention window。
-这些守卫不能签发耐久确认或物理清理事实；续租确认的库表示连接、实际 journal 确认/退休事务和未结责任仍另行验收。
+这些守卫不能签发耐久确认或物理清理事实；实际 journal 确认/退休事务和未结责任仍另行验收。
 对应入口和边界见[终局值组件](../../verification/experiments/stage1-protocol/result-confirmation/README.md)。
+
+[续租确认值切片](../../verification/experiments/stage1-protocol/renewal-confirmation/README.md)复用同一请求/封套合同，
+核对 key window=2、接受版本至少为 2、请求校验及非负截止时间关系；extend_only 允许有效截止时间大于请求值。
+请求匹配保留完整 intent，确认匹配还保留有效截止时间，不增加 retention window 与 key window 相等。
+固定 Result 逻辑标签表示候选须经 V0 逐符号登记；值匹配不提供独立认证、当前意图、已应用或已耐久保存的事实。
 
 ## 2. 状态与义务
 

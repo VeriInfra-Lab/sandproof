@@ -43,4 +43,5 @@ bash scripts/python-entry.sh verification/experiments/stage1-protocol/result-con
 
 续租三个根保留为抽取预检：固定工具可翻译其原 `Result::is_err/is_ok`，但 Lean 内置 `core.result.Result` 缺少对应判别标签实例；
 它们不属于本切片已证范围。该最小库表示接口交 V0/主控核对原枚举标签；不导入自定义公理或工具模板补洞。
+[续租独立切片](../renewal-confirmation/README.md)提供该表示候选及三个守卫的独立检查，不迁记为本终局切片的结论。
 JSON/认证来源、原 journal 持久确认、窗口关闭事务和未结资源责任、重启/乱序/竞争与 V1–V7 组合仍是独立义务。
