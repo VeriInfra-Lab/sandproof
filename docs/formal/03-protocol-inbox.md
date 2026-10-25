@@ -16,6 +16,11 @@
 
 完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
 
+访问身份的[结构校验切片](../../verification/experiments/stage1-protocol/access-identity/README.md)对应实际
+`LifecycleAccessIdentity::validate`：按协议版本、独立 context 的完整 center/node、两种 deployment 关系、非零 accepted version 顺序拒绝。
+这里不查原 journal 的 session/owner/key/incarnation 映射，不授予 Access 权限，也不将外部 incarnation 当作本地 generation。
+这些当前身份、阶段、寿命及权限关系仍由 V4/V5/V7 的实际提供者连接。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
