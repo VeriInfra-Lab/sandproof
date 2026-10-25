@@ -24,6 +24,8 @@ import os
 import re
 from pathlib import Path
 import secrets
+import select
+import signal
 import sqlite3
 import stat
 import selectors
@@ -187,6 +189,41 @@ def original_process(source):
         return False
     # A zombie still holds process identity/capacity; it is not a released PID.
     return int(fields[19])==source['start_time_ticks']
+
+
+def pidfd_exited(descriptor,timeout_ms=0):
+    poll=select.poll()
+    poll.register(descriptor,select.POLLIN)
+    events=poll.poll(timeout_ms)
+    if any(mask&(select.POLLERR|select.POLLNVAL) for _,mask in events):
+        raise ValueError('original candidate pidfd observation failed')
+    return any(mask&select.POLLIN for _,mask in events)
+
+
+def open_original_candidate_pidfd(source):
+    """Test-only fault handle; missing/reused PID never authorizes a signal."""
+    if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):
+        raise RuntimeError('Linux pidfd fault support required; no bare PID fallback')
+    if not original_process(source):
+        raise ValueError('original fault candidate must still be live')
+    descriptor=os.pidfd_open(source['pid'],0)
+    try:
+        if pidfd_exited(descriptor) or not original_process(source):
+            raise ValueError('candidate changed while acquiring original pidfd')
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def exit_original_candidate(descriptor,source,deadline):
+    """Inject only execution exit; do not unlink records or release resources."""
+    remaining(deadline)
+    if pidfd_exited(descriptor) or not original_process(source):
+        raise ValueError('original candidate changed before explicit exit fault')
+    signal.pidfd_send_signal(descriptor,signal.SIGKILL)
+    while not pidfd_exited(descriptor,min(1000,math.ceil(remaining(deadline)*1000))):
+        remaining(deadline)
 
 
 def checked_file(path,limit,*,mode=None):
@@ -805,6 +842,132 @@ class UnloadRuntime:
         return dict(exit_code=86,fault_manager_pid=process.pid,recovered_manager_pid=recovered.pid,
             same_product_configuration=True,fault_environment_removed=True,
             observation_sha256=gate['observation_sha256'],public_authorization_proven=False)
+
+    def _restore_candidate_snapshot(self,receipt,accepted,audit,local,lifetime,conn,*,prior=None):
+        """Bind a candidate before fault, without calling it public Running."""
+        gate=self.restore_gate
+        native=self.services.native_pools[0]
+        prior=self.runs[receipt['session']] if prior is None else prior
+        slots=[context for context,phase in audit['host_slots']
+            if context['binding']['sandbox']==local['sandbox'] and phase=='Occupied']
+        if (len(slots)!=1 or any(local[key]!=prior['local'][key] for key in ('sandbox','owner'))
+                or lifetime!=prior['lifetime']
+                or accepted['session']!=receipt['session'] or accepted['key']!=receipt['operation']):
+            raise ValueError('original session, lifetime and occupied candidate required')
+        context=slots[0]
+        binding=context['binding']
+        resource='vm-'+native['namespace']+'-'+str(binding['vm'])
+        if (binding['generation']!=gate['config']['generation']
+                or binding['generation']<=prior['context']['binding']['generation']
+                or resource!=receipt['candidate']['resource_id']):
+            raise ValueError('original gate target and candidate slot differ')
+        rows=[row for row in audit['native'] if row['sandbox']==local['sandbox']]
+        if (len(rows)!=1 or rows[0]['terminal'] or rows[0]['current_vm']!=binding['vm']
+                or rows[0]['generation']!=binding['generation']):
+            raise ValueError('original current native candidate required')
+        claim=Path(native['chroot_base'])/'.claims'/resource
+        source=original_json(claim/'record.json',16384)
+        if any(source[key]!=value for key,value in receipt['candidate'].items()):
+            raise ValueError('original candidate record changed')
+        records=[row for row in checked_source_records(conn,self.services.host_configs[0],self.deadline)
+            if row['restore'] is not None
+            and row['restore']['intent']['accepted_version']==accepted['accepted_version']
+            and row['restore']['intent']['request']['binding']['session']==receipt['session']
+            and row['restore']['intent']['request']['binding']['key']==accepted['key']]
+        if len(records)!=1 or records[0]['restore']['material_use'] is not True:
+            raise ValueError('original restore work and material pin required')
+        restore=records[0]['restore']
+        if restore['local']!=local or restore['generation']!=binding['generation']:
+            raise ValueError('original persisted restore target differs')
+        action=restore['activation']
+        if (action is None or hashlib.sha256(json.dumps(action,sort_keys=True,
+                separators=(',',':')).encode()).hexdigest()!=receipt['action_sha256']):
+            raise ValueError('original durable activation changed')
+        credential=conn.execute('SELECT generation,digest FROM controller_data_credentials '
+            'WHERE sandbox_id=?',('sb-'+native['namespace']+'-'+str(local['sandbox']),)).fetchone()
+        if credential is None or credential[0]!=str(binding['generation']) or len(credential[1])!=32:
+            raise ValueError('original candidate credential registration required')
+        files={name:checked_file(claim/name,16384) for name in
+            ('record.json','restore-intent.json','restore-loaded.json')}
+        return dict(session=receipt['session'],local=local,context=context,source=source,
+            lifetime=lifetime,files=files,restore=restore,
+            credential=(credential[0],bytes(credential[1]).hex()))
+
+    def exit_resume_gate(self,receipt,accepted,deadline):
+        """Separate death branch; the alive E7 recovery contract stays intact."""
+        gate=self.restore_gate
+        self._gate_files_unchanged()
+        if gate['session']!=receipt['session'] or gate['command_sent']:
+            raise ValueError('one original observed gate required for exit fault')
+        descriptor=open_original_candidate_pidfd(receipt['candidate'])
+        try:
+            self.release_resume_gate('continue')
+            process=gate['host']
+            if (process is not self.services.processes.children['host-0']
+                    or process.wait(timeout=remaining(deadline))!=86):
+                raise ValueError('original activation manager did not exit86')
+            self._gate_files_unchanged()
+            role=self.services.processes.bindings['host-0']
+            if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
+                raise ValueError('original host configuration changed before candidate exit')
+            audit=self.services.processes.audit('host-0')
+            local=local_binding(audit,receipt['session'],expected_node=self.services.host_configs[0]['inbox']['node'])
+            database=private_path(self.services.native_pools[0]['database'])
+            database_identity=(database.stat().st_dev,database.stat().st_ino)
+            with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
+                    timeout=min(2,remaining(deadline)))) as conn:
+                conn.execute('BEGIN')
+                ident='sb-'+self.services.native_pools[0]['namespace']+'-'+str(local['sandbox'])
+                row=conn.execute('SELECT started_at_ms,deadline_ms,max_deadline_ms,startup_deadline_ms '
+                    'FROM sandbox_lifetimes WHERE sandbox_id=?',(ident,)).fetchone()
+                if row is None:
+                    raise ValueError('original candidate lifetime missing')
+                lifetime=dict(zip(('started_at_ms','end_at_ms','max_end_at_ms','startup_deadline_ms'),row,strict=True))
+                saved=self._restore_candidate_snapshot(receipt,accepted,audit,local,lifetime,conn)
+            if (database.stat().st_dev,database.stat().st_ino)!=database_identity:
+                raise ValueError('original database replaced before exit fault')
+            self._gate_files_unchanged()
+            exit_original_candidate(descriptor,receipt['candidate'],deadline)
+            # Register the actual new candidate for exact Destroy/finish audits,
+            # never the old Unloaded VMM or another tenant's live occupant.
+            self.lost_prior=copy.deepcopy(self.runs[receipt['session']])
+            self.lost_candidate=copy.deepcopy(saved)
+            self.running=copy.deepcopy(saved)
+            self.runs[receipt['session']]=copy.deepcopy(saved)
+            recovered=self.services.processes.start('host-0')
+            if recovered is process or recovered.pid==process.pid:
+                raise ValueError('fresh original manager required after exit fault')
+            self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+            gate['exit86_observed']=True
+            return dict(exit_code=86,fault_manager_pid=process.pid,recovered_manager_pid=recovered.pid,
+                kernel_pidfd_exit_observed=True,candidate=receipt['candidate'],
+                candidate_position=saved['context']['position'],same_product_configuration=True,
+                fault_environment_removed=True,observation_sha256=gate['observation_sha256'],
+                capacity_released=False,public_authorization_proven=False)
+        finally:
+            os.close(descriptor)
+
+    def lost_candidate_evidence(self,receipt,accepted,deadline):
+        def observe(audit,local,lifetime,conn):
+            current=self._restore_candidate_snapshot(receipt,accepted,audit,local,lifetime,conn,
+                prior=self.lost_prior)
+            if current!=self.lost_candidate:
+                raise ValueError('StateLost changed candidate, work, credential or backing responsibility')
+            self._gate_files_unchanged()
+            record,_,_=gate_json(self.restore_gate['path']/'observation.json',16384,
+                directory_fd=self.restore_gate['fd'])
+            import httpx
+            with httpx.Client(base_url=self.services.sdk_url,trust_env=False,
+                    timeout=min(10,remaining(deadline))) as client:
+                response=client.get('/files',params={'path':'/tmp/sandproof-unload-marker'},
+                    headers={'X-Access-Token':record['token']})
+                if response.status_code!=401:
+                    raise ValueError('lost candidate activation token still authorizes data')
+            return dict(same_candidate_and_generation=True,same_restore_work=True,
+                same_credential_registration=True,material_use_pin_retained=True,
+                activation_token_status=401,no_replacement_load_observed=True,
+                execution_exit_is_not_resource_release=True)
+        return self._host_snapshot(receipt['session'],deadline,observe)
 
     def fail_resume_gate(self):
         gate=self.restore_gate

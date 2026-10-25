@@ -270,7 +270,8 @@ class PublicUnloadScenario:
         sample=self.timings[-1]
         expected={'create':'running','resume':'running','unload':'unloaded','destroy':'cleaned'}
         if (sample['accepted_monotonic'] is not None and sample['completed_monotonic'] is None
-                and expected[sample['operation']]==phase):
+                and (expected[sample['operation']]==phase
+                    or (sample['operation']=='resume' and phase=='state_lost'))):
             sample['completed_monotonic']=time.monotonic()
 
     def operation_evidence_completed(self):
@@ -636,9 +637,9 @@ class PublicUnloadScenario:
 def exercise(args):
     """Only the sibling helper can start/restart or inspect original resources."""
     from lifecycle_unload_runtime import prepare
-    if args.scenario not in ('normal','restore-activation-loss'):
+    if args.scenario not in ('normal','restore-activation-loss','restore-candidate-exit'):
         raise ValueError('one explicit existing lifecycle scenario required')
-    if args.scenario=='restore-activation-loss' and (type(args.activation_gate_timeout_ms) is not int
+    if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
         raise ValueError('bounded original activation gate timeout required before preparing services')
     seconds = args.scenario_timeout
@@ -728,18 +729,51 @@ def exercise(args):
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
         report['cycles']=[]
+        lost=None
         for cycle in (1,2):
             report['phase']='public-resume-'+str(cycle)
             gate_receipt=None
-            if cycle==1 and args.scenario=='restore-activation-loss':
+            if cycle==1 and args.scenario!='normal':
                 report['phase']='arm-original-restore-activation-gate'
                 runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
-            if cycle==1 and args.scenario=='restore-activation-loss':
+            if cycle==1 and args.scenario!='normal':
                 report['phase']='original-restore-activation-gate-read'
                 gate_receipt=runtime.wait_resume_gate(client.session,accepted,
                     copy.deepcopy(client.witness),deadline)
                 report['activation_gate_observation']=gate_receipt
+                if args.scenario=='restore-candidate-exit':
+                    report['phase']='original-restore-candidate-pidfd-exit'
+                    report['activation_gate_recovery']=runtime.exit_resume_gate(gate_receipt,accepted,deadline)
+                    report['phase']='public-original-state-lost'
+                    lost=client.wait_phase(accepted,waiting={'resuming'},complete='state_lost')
+                    client.assert_data_closed()
+                    client.assert_previous_tokens_closed()
+                    client.assert_owner_isolation()
+                    report['lost_candidate']=runtime.lost_candidate_evidence(gate_receipt,accepted,deadline)
+                    client.operation_evidence_completed()
+                    client.step('original-lost-resume-replay',202)
+                    replay=client.read_json('POST',client.path()+'/resume',key=client.owner_key,
+                        body=client.resume_request,status=202)
+                    assert replay==accepted, 'original Resume replay created another acceptance'
+                    assert client.query()==lost, 'original Resume replay revived lost state'
+                    report['phase']='lost-state-same-manager-config-reopen'
+                    report['lost_manager_restart']=runtime.restart_managers(deadline)
+                    assert client.query()==lost, 'manager restart changed original StateLost result'
+                    report['lost_candidate_after_restart']=runtime.lost_candidate_evidence(gate_receipt,accepted,deadline)
+                    client.assert_data_closed()
+                    client.assert_previous_tokens_closed()
+                    assert control.query()==control_running
+                    report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(
+                        control.session,control_physical,deadline)
+                    assert report['activation_gate_recovery']['candidate_position']!=control_physical['context']['position']
+                    control.destroy(control_running)
+                    control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
+                    report['cycles'].append(dict(cycle=cycle,resume=accepted,state_lost=lost,
+                        original_replay_same_acceptance=True,original_state_preserved_after_restart=True))
+                    break
                 report['phase']='original-activation-manager-lost-receipt'
                 report['activation_gate_recovery']=runtime.recover_resume_gate(gate_receipt,deadline)
             resumed=client.wait_running()
@@ -773,7 +807,7 @@ def exercise(args):
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
         report['phase']='public-destroy-and-physical-gc'
-        report['destroy']=client.destroy(resumed)
+        report['destroy']=client.destroy(lost if lost is not None else resumed)
         client.assert_data_closed()
         client.wait_cleaned()
         report['final_resources']=runtime.destroy_evidence(client.session,deadline)
@@ -797,6 +831,13 @@ def exercise(args):
         }
         if args.scenario=='restore-activation-loss':
             report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
+        if args.scenario=='restore-candidate-exit':
+            report['acceptance_cases']={
+                'E7':'latest RAM gate, exact original pidfd exit, original StateLost replay and manager reopen, no replacement candidate observed, explicit Destroy/GC',
+                'E12':'other owner/session remained on the same live candidate across original candidate exit',
+                'E14':'prior and gate activation credentials rejected after StateLost; same credential registration observed',
+                'other_cases':'one death cycle only; no normal two-cycle or full E1-E16 claim',
+            }
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -831,7 +872,7 @@ def exercise(args):
                 p95_seconds=values[math.ceil(.95*len(values))-1] if values else None,
                 method='nearest rank over completed public operations only; observational small sample')
         report['timing_scope']=dict(clock='host monotonic seconds',
-            public_completion='strict original Running/Unloaded/Cleaned query; not HTTP 202',
+            public_completion='strict original Running/Unloaded/StateLost/Cleaned query; not HTTP 202',
             evidence_completion='existing workload/physical evidence checks, including their observation overhead',
             internal_stages={name:'unknown:not separately instrumented' for name in
                 ('freeze','capture','copy','sync','stop','load','activate','ready')},
@@ -859,7 +900,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
-    parser.add_argument('--scenario',choices=('normal','restore-activation-loss'),default='normal')
+    parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
