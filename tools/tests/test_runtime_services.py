@@ -542,12 +542,12 @@ class RuntimeServicesTests(unittest.TestCase):
             original=copy.deepcopy(physical['pools'])
             layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
             image=dict(kernel=dict(size_bytes=44_649_272),rootfs=dict(size_bytes=10*gib))
-            def bind(count,ceiling=services.MAX_ACTIVATION_BYTES,scope="prepared-ci"):
+            def bind(count,ceiling=services.MAX_ACTIVATION_BYTES):
                 return services._bind_profile([native],[dict(templates=[image]*count)],layout,
                     registry=dict(max_artifact_bytes_global=count*(10*gib+44_649_272),max_templates_global=count),
                     service_peaks=[dict(root=str(root/'assets'),owner_uid=1001,
                                         peak_bytes=count*(10*gib+44_649_272)+gib,inode_budget=32)],
-                    activation_ceiling_bytes=ceiling,activation_scope=scope)
+                    activation_ceiling_bytes=ceiling)
             with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
                     f_bavail=10**12,f_frsize=4096,f_favail=10**9)):
                 with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling; no quota is reduced'):
@@ -560,19 +560,6 @@ class RuntimeServicesTests(unittest.TestCase):
                 for invalid in (0,True,services.MAX_ACTIVATION_BYTES+1):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
-                scoped=bind(2,320*gib,scope='lifecycle-two-sessions')
-                self.assertEqual(scoped['pools'],original)
-                native['bounded_host']['physical_storage']['service_data']=[]
-                native['bounded_host']['physical_storage']['host_template_caches']=[]
-                for ceiling in (None,0,True,320*gib+1):
-                    with self.subTest(lifecycle_ceiling=ceiling),self.assertRaises(ValueError):
-                        bind(2,ceiling,scope='lifecycle-two-sessions')
-                with self.assertRaisesRegex(ValueError,'unknown explicit acceptance'):
-                    bind(1,scope='unregistered')
-                native['max_active_global']=3
-                with self.assertRaisesRegex(ValueError,'two-session lifecycle'):
-                    bind(2,320*gib,scope='lifecycle-two-sessions')
-                native['max_active_global']=2
                 generic_profile=bind(2,None)
             self.assertLessEqual(2*services.envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(profile['pools'],original)

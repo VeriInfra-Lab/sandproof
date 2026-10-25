@@ -446,8 +446,7 @@ class UnloadRuntime:
             self.owner_key,'127.0.0.1:'+str(free_loopback_port()),self.args.service_cgroup_record,
             2,registry_config=self.inputs['registry'],
             extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
-            activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'],
-            activation_scope='lifecycle-two-sessions')
+            activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'])
         self.configs={name:role_facts(Path(role['config']).parent,role['config'],
             uid=role['uid'],gid=role['gid']) for name,role in self.services.processes.bindings.items()}
 

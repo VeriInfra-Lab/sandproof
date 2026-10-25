@@ -115,10 +115,10 @@ def _wait_redis(config,process):
 
 
 
-def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None, activation_scope="prepared-ci"):
+def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
     """Validate the full original physical admission before any large copy."""
     profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
-        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,activation_scope=activation_scope)
+        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes)
     peak,inodes=envelope(profile)
     free=os.statvfs(layout['hosts'][0])
     if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
@@ -163,17 +163,13 @@ class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
-                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None,activation_scope="prepared-ci"):
+                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
         if registry_config is None or any(RETIRED_NATIVE_FIELDS & native.keys() for native in native_pools):
             raise ValueError('new native inputs and explicit registry declaration required')
         if type(retained_sessions) is not int or not 1<=retained_sessions<=2**16-1:
             raise ValueError('explicit finite retained-session count required')
-        if activation_scope=='lifecycle-two-sessions' and (
-                retained_sessions!=2 or len(native_pools)!=1 or private_builds is not None
-                or native_pools[0]['max_active_global']!=2):
-            raise ValueError('two-session lifecycle scope cannot admit a larger cohort')
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
@@ -250,7 +246,7 @@ class RuntimeServices:
         redis_bin=layout['redis']/'redis-server'
         service_peaks=service_declarations(layout,ids,paths,asset_bytes,redis_receipt,private_builds,captures)
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
-                              activation_ceiling_bytes=activation_ceiling_bytes,activation_scope=activation_scope)
+                              activation_ceiling_bytes=activation_ceiling_bytes)
         # Complete original byte/inode activation is checked BEFORE any large
         # disk copy. Rust checks the same final profile independently at init.
         for source,target,checksum in pending_copies:
