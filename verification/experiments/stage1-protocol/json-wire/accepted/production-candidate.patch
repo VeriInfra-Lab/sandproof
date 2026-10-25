@@ -1,0 +1,61 @@
+--- a/sandbox-internal/src/lifecycle.rs
++++ b/sandbox-internal/src/lifecycle.rs
+@@ -85,6 +85,32 @@
+         .validate(expected, profile)
+         .map_err(CodecError::Manifest)?;
+     encode_bounded(manifest, MANIFEST_BODY_BYTES).map_err(CodecError::Encode)
++}
++
++/// The synchronous result distinctions used by the original lifecycle route.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum AcceptedBodyError {
++    InvalidJson,
++    InvalidIntent,
++}
++
++/// Decode the complete envelope and run its original ordered guard.
++/// The route supplies the fixed parser after collecting its bounded body.
++/// # Errors
++/// A parser refusal precedes an intent refusal; neither grants authorization.
++pub fn decode_accepted_with<F, E>(
++    bytes: &[u8],
++    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
++    decode: F,
++) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AcceptedBodyError>
++where
++    F: FnOnce(&[u8]) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, E>,
++{
++    let intent = decode(bytes).map_err(|_| AcceptedBodyError::InvalidJson)?;
++    intent
++        .validate(context)
++        .map_err(|_| AcceptedBodyError::InvalidIntent)?;
++    Ok(intent)
+ }
+
+ #[cfg(test)]
+--- a/sandbox-internal/src/server/lifecycle.rs
++++ b/sandbox-internal/src/server/lifecycle.rs
+@@ -79,12 +79,17 @@
+     if matches!(call, Call::Confirm | Call::Close) {
+         return terminal_command(&body.to_bytes(), context, handler, call).await;
+     }
+-    let Ok(intent) = serde_json::from_slice::<AcceptedLifecycleIntent>(&body.to_bytes()) else {
+-        return response(StatusCode::BAD_REQUEST, Bytes::new());
+-    };
+-    if intent.validate(&context).is_err() {
+-        return response(StatusCode::CONFLICT, Bytes::new());
+-    }
++    let intent = match crate::lifecycle::decode_accepted_with(&body.to_bytes(), &context, |input| {
++        serde_json::from_slice::<AcceptedLifecycleIntent>(input)
++    }) {
++        Ok(intent) => intent,
++        Err(crate::lifecycle::AcceptedBodyError::InvalidJson) => {
++            return response(StatusCode::BAD_REQUEST, Bytes::new());
++        }
++        Err(crate::lifecycle::AcceptedBodyError::InvalidIntent) => {
++            return response(StatusCode::CONFLICT, Bytes::new());
++        }
++    };
+     if matches!(call, Call::ResumeObservation) {
+         return resume_observation(intent, context, handler).await;
+     }

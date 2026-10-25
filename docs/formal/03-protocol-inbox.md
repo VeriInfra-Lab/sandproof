@@ -65,3 +65,8 @@ String→str 借用仅使用既有可表示性条件，不预设业务路径合�
 不替代 JSON 字节接线、持久收件、独立认证来源和系统组合义务。
 
 字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
+
+真实收件路由的字节入口另在 [server/lifecycle](../../sandbox-internal/src/server/lifecycle.rs)：它直接解析
+`AcceptedLifecycleIntent`，使用独立连接 context 校验完整封套，并在回复前检查完整 recorded 关系；
+它不调用上述独立 request/manifest codec。[隔离接线候选](../../verification/experiments/stage1-protocol/json-wire/README.md)
+用于验证这一真实路由所需的最小同步接口，未接纳的生产候选或抽象 parser 回调证明不能算当前字节入口已证。
