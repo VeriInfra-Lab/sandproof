@@ -1,5 +1,5 @@
 //! One debug-only cancellation before the original Full release pipe opens.
-//! This publishes a question, never NoRequest, an End receipt or VM success.
+//! This publishes a question, never `NoRequest`, an End receipt or VM success.
 use super::restore_gate::{Directory, hex_digest, valid_digest};
 use sandbox_controller_core as core;
 use sandproof_controller_service::capture::{CaptureWorkerBinding, FullCaptureLaunchPermit};

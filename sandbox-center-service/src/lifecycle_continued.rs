@@ -48,7 +48,6 @@ impl<H: HostPort, T: TemplateProvider>
         }
         Ok(facts)
     }
-
 }
 
 impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H, T> {
@@ -74,7 +73,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?;
         let state = AuthorityPort::snapshot(&mut *authority).map_err(authority_error)?;
-        let current = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
+        let current = state
+            .lifecycle_session(owner, session)
+            .ok_or(PortError::NotFound)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
         if operation.intent() != &observation.current_request
             || operation.unloaded() != Some(saved)
@@ -91,7 +92,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .accept_lifecycle_resume_observation(observation)
             .map_err(authority_error)?;
         let state = AuthorityPort::snapshot(&mut *authority).map_err(authority_error)?;
-        let current = state.lifecycle_session(owner, session).ok_or(PortError::NotFound)?;
+        let current = state
+            .lifecycle_session(owner, session)
+            .ok_or(PortError::NotFound)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
         if operation.intent() != &observation.current_request
             || operation.unloaded() != Some(saved)
@@ -144,7 +147,6 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             Err(error) => Err(error),
         }
     }
-
 }
 
 impl<H: HostPort, T: TemplateProvider>
@@ -159,7 +161,10 @@ impl<H: HostPort, T: TemplateProvider>
         self.save_continued_loss_before(observation, saved, deadline)?;
         let owner = &observation.current_request.request.binding.key.owner;
         let session = &observation.current_request.request.binding.session;
-        let authority = self.authority.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        let authority = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?;
         let current = authority.public_lifecycle_record(owner, session)?;
         let operation = current.operations().last().ok_or(PortError::Busy)?;
         if operation.intent() != &observation.current_request
