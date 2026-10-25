@@ -2725,3 +2725,46 @@ fn late_full_worker_authorization_is_rejected_after_native_revocation_before_and
         );
     }
 }
+
+#[test]
+fn resume_slot_installation_ignores_only_settled_prior_incarnation_work() {
+    use crate::application::can_install_host_slot_binding;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source) = unloaded_resume_source(&path);
+    let sandbox = source.work.anchor.local.sandbox;
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    let world = journal.world().unwrap();
+    assert_eq!(world.sandbox_record(sandbox).unwrap().generation, 2);
+    assert!(world.effect_ids().iter().any(|effect| matches!(
+        world.effect_status(effect),
+        Some(sandbox_controller_core::EffectStatus::Acknowledged(_))
+    )));
+    assert!(
+        can_install_host_slot_binding(&world, sandbox),
+        "settled prior incarnation must not prevent a never-dispatched successor binding"
+    );
+    drop(journal);
+    let mut journal = v3::open(&path);
+    assert!(can_install_host_slot_binding(
+        &journal.world().unwrap(),
+        sandbox
+    ));
+    let action = journal
+        .claim_next(Some(sandbox), &mut NeverCrash)
+        .unwrap()
+        .unwrap();
+    assert_eq!(action.identity.generation, 2);
+    let claimed = journal.world().unwrap();
+    assert!(!can_install_host_slot_binding(&claimed, sandbox));
+    let unknown = sandbox_controller_core::handle_controller(
+        &claimed,
+        sandbox_controller_core::ControllerInput::Effect(
+            sandbox_controller_core::EffectInput::Timeout(action.command),
+        ),
+    )
+    .unwrap()
+    .next;
+    assert!(!can_install_host_slot_binding(&unknown, sandbox));
+}
