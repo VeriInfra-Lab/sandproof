@@ -18,6 +18,14 @@ impl sandproof_internal::ValidationReceiver for LoseFirst {
     }
 }
 impl LifecycleReceiver for LoseFirst {
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        self.inbox.observe_resume(intent, context).await
+    }
+
     async fn record_lifecycle(
         &self,
         request: AcceptedLifecycleIntent,

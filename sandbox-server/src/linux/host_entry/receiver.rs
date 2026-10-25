@@ -30,6 +30,14 @@ pub(super) struct RegisteredHost {
     pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        self.facade.observe_resume(intent, context).await
+    }
+
     async fn observe_unload(
         &self,
         intent: AcceptedLifecycleIntent,

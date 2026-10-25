@@ -459,7 +459,15 @@ impl CacheReceiver for VerifiedCache {
         })
     }
 }
-impl LifecycleReceiver for VerifiedCache {}
+impl LifecycleReceiver for VerifiedCache {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for VerifiedCache {
     async fn receive_data(
         &self,

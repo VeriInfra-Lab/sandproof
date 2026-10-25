@@ -31,15 +31,14 @@ mod lifecycle;
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
     /// Current original Resume only; absence is neither Ready nor `StateLost`.
+    /// Every receiver must explicitly forward or reject this operation.
     fn observe_resume(
         &self,
         _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> impl std::future::Future<
         Output = Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError>,
-    > + Send {
-        std::future::ready(Err(ReceiveError::Unavailable))
-    }
+    > + Send;
     /// Read a completed original Unload from durable host state only.
     fn observe_unload(
         &self,
@@ -135,7 +134,15 @@ pub enum ReceiveError {
 
 /// Diagnostic receivers reject lifecycle calls; no public deployment fallback.
 pub struct RejectLifecycle;
-impl LifecycleReceiver for RejectLifecycle {}
+impl LifecycleReceiver for RejectLifecycle {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for RejectLifecycle {
     async fn receive_data(
         &self,
