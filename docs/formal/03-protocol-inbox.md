@@ -21,6 +21,10 @@
 这些叶子不重做完整观测封套校验，不核实 material_bytes，也不以字段比较代替来源选择、续租单调政策或实际材料/运行事实。
 完整 Resume/Create/Unload 观测分支、持久收件和系统组合仍须分别连接并验收。
 
+完整 Resume 观测的[值合同](../../verification/experiments/stage1-protocol/resume-observation/README.md)对应原/当前封套和全部 readiness 分支；
+StateLost 与负期限按实际分支处理，不把值形状当作 journal 状态或候选死亡证据。
+Create/Unload 观测、续租确认、持久收件和系统连接仍独立登记，公共验收由主控协调。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
