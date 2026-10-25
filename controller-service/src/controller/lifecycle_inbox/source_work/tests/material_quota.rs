@@ -224,7 +224,10 @@ fn assert_charges(journal: &ControllerJournal, full_count: usize) -> u64 {
 }
 
 #[test]
-#[expect(clippy::too_many_lines, reason = "one original quota transaction history and its reopen invariants")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one original quota transaction history and its reopen invariants"
+)]
 fn three_original_full_charges_refuse_fourth_before_pause_and_keep_prior_continued_qualification() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
