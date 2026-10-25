@@ -57,5 +57,7 @@ Manifest 的完整值校验切片以 [独立接受与首错规格](../../Sandbox
 String→str 借用仅使用既有可表示性条件，不预设业务路径合法或材料真实。当前源码适用性、正反证据及
 完整验收仍分别登记；[局部入口](../../verification/experiments/stage1-protocol/manifest-validation/README.md)
 不替代 JSON 字节接线、持久收件、独立认证来源和系统组合义务。
+历史 capture 绑定反例须在当前协议值上否定同一完整清单合同；原 pair 见证与完整任意输入
+证明分别保留，不能用局部循环或一个正常文件集合替代任意文件集的完整校验。
 
 字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。

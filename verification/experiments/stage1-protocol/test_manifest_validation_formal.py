@@ -17,9 +17,10 @@ class RegistrationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for directory, names in ((driver.HERE, ['inventory.json']),
-                                 (driver.BASE, ['inventory.json', 'mutations.json'])):
-            (self.root / directory).mkdir(parents=True)
+        for directory, names in ((driver.HERE, ['inventory.json', 'NegativeFullCapture.lean.in']),
+                                 (driver.BASE, ['inventory.json', 'mutations.json']),
+                                 (driver.PROTOCOL, ['negative_native.py'])):
+            (self.root / directory).mkdir(parents=True, exist_ok=True)
             for name in names:
                 shutil.copy2(driver.ROOT / directory / name, self.root / directory / name)
         (self.root / driver.PROOFS).mkdir(parents=True)
@@ -50,6 +51,31 @@ class RegistrationTests(unittest.TestCase):
         self.change_inventory(lambda value: value['cases'].pop('skip-file-path'))
         with self.assertRaisesRegex(ValueError, 'every registered mutation'):
             driver.read_inventory(self.root)
+
+    def test_capture_mutation_cannot_lose_counterexample(self):
+        self.change_inventory(lambda value: value['cases'].pop(driver.CAPTURE_CASE))
+        with self.assertRaisesRegex(ValueError, 'every registered mutation'):
+            driver.read_inventory(self.root)
+
+    def test_historical_normal_witness_must_be_checked(self):
+        self.change_inventory(lambda value: value['cases']['correct']['proofs'].remove('Manifest'))
+        with self.assertRaisesRegex(ValueError, 'every manifest validation module'):
+            driver.read_inventory(self.root)
+
+    def test_capture_supplement_cannot_be_omitted(self):
+        (self.root / driver.HERE / 'NegativeFullCapture.lean.in').unlink()
+        with self.assertRaisesRegex(ValueError, 'capture counterexample supplement'):
+            driver.read_inventory(self.root)
+
+    def test_capture_helper_adaptation_requires_actual_declarations(self):
+        generated = self.root / driver.LIBRARY / 'SandproofStage1Manifest/Funs.lean'
+        generated.parent.mkdir(parents=True)
+        generated.write_text('-- Missing actual loop0 output\n')
+        witness = self.root / driver.PROOFS / 'ManifestWitnesses.lean'
+        before = witness.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'actual capture mutant loop declarations'):
+            driver.adapt_capture_helpers(self.root)
+        self.assertEqual(witness.read_bytes(), before)
 
     def test_duplicate_audit_is_rejected(self):
         self.change_inventory(lambda value: value['cases']['correct']['audits'].append(

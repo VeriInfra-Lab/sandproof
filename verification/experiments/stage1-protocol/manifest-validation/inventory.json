@@ -41,7 +41,9 @@
         "ManifestValidationExamples",
         "ManifestValidationLaws",
         "ManifestValidationModel",
-        "ManifestValidationValues"
+        "ManifestValidationValues",
+        "ManifestWitnesses",
+        "Manifest"
       ],
       "audits": [
         "SandboxModel.Stage1Protocol.ManifestLoop.loop_done",
@@ -163,7 +165,28 @@
         "SandboxModel.Stage1Protocol.ManifestValidation.observe_run_iff",
         "SandboxModel.Stage1Protocol.ManifestValidation.contract_acceptance",
         "SandboxModel.Stage1Protocol.ManifestValidation.Values.represented_profile",
-        "SandboxModel.Stage1Protocol.ManifestValidation.Values.original_binding_valid"
+        "SandboxModel.Stage1Protocol.ManifestValidation.Values.original_binding_valid",
+        "SandboxModel.Stage1Protocol.Manifest.bytes_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.digest_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.deref_r",
+        "SandboxModel.Stage1Protocol.Manifest.distinct_first",
+        "SandboxModel.Stage1Protocol.Manifest.profile_first_step",
+        "SandboxModel.Stage1Protocol.Manifest.profile_loop",
+        "SandboxModel.Stage1Protocol.Manifest.profile_valid",
+        "SandboxModel.Stage1Protocol.Manifest.profile_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.literal_owned",
+        "SandboxModel.Stage1Protocol.Manifest.sub_exact",
+        "SandboxModel.Stage1Protocol.Manifest.state_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.memory_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.disk_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_0",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_1",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_2",
+        "SandboxModel.Stage1Protocol.Manifest.files_loop",
+        "SandboxModel.Stage1Protocol.Manifest.unsupported_version_first",
+        "SandboxModel.Stage1Protocol.Manifest.changed_capture_key_first",
+        "SandboxModel.Stage1Protocol.Manifest.normal_manifest_accepted",
+        "SandboxModel.Stage1Protocol.Manifest.original_capture_contract"
       ]
     },
     "wrapping-manifest-length": {
@@ -345,6 +368,44 @@
         "SandboxModel.Stage1Protocol.ManifestFiles.Negative.skipped_count_not_validation_contract"
       ],
       "template": "NegativeFullCount"
+    },
+    "skip-capture-binding": {
+      "proofs": [
+        "Model",
+        "LoopWitness",
+        "ManifestWitnesses",
+        "ManifestValidationModel"
+      ],
+      "template": "NegativeFullCapture",
+      "audits": [
+        "SandboxModel.Stage1Protocol.ManifestLoop.loop_done",
+        "SandboxModel.Stage1Protocol.ManifestLoop.loop_cont",
+        "SandboxModel.Stage1Protocol.ManifestLoop.path_body_first",
+        "SandboxModel.Stage1Protocol.ManifestLoop.add_exact",
+        "SandboxModel.Stage1Protocol.ManifestLoop.path_loop",
+        "SandboxModel.Stage1Protocol.ManifestLoop.path_valid",
+        "SandboxModel.Stage1Protocol.Manifest.bytes_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.digest_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.deref_r",
+        "SandboxModel.Stage1Protocol.Manifest.distinct_first",
+        "SandboxModel.Stage1Protocol.Manifest.profile_first_step",
+        "SandboxModel.Stage1Protocol.Manifest.profile_loop",
+        "SandboxModel.Stage1Protocol.Manifest.profile_valid",
+        "SandboxModel.Stage1Protocol.Manifest.profile_eq_self",
+        "SandboxModel.Stage1Protocol.Manifest.literal_owned",
+        "SandboxModel.Stage1Protocol.Manifest.sub_exact",
+        "SandboxModel.Stage1Protocol.Manifest.state_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.memory_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.disk_file_length",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_0",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_1",
+        "SandboxModel.Stage1Protocol.Manifest.files_step_2",
+        "SandboxModel.Stage1Protocol.Manifest.files_loop",
+        "SandboxModel.Stage1Protocol.Manifest.mutant_accepts_changed_capture",
+        "SandboxModel.Stage1Protocol.Manifest.mutant_not_original_capture_contract",
+        "SandboxModel.Stage1Protocol.Manifest.changed_capture_profile_representable",
+        "SandboxModel.Stage1Protocol.Manifest.mutant_not_full_validation_contract"
+      ]
     }
   }
 }

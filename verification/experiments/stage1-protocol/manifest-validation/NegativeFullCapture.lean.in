@@ -1,0 +1,24 @@
+namespace SandboxModel.Stage1Protocol.Manifest
+open SandboxModel.Stage1Protocol.ManifestProfile
+open SandproofFoundationsRust.IdentifierLibrary
+
+theorem changed_capture_profile_representable : Representable profile := by
+  intro drive member
+  have same : drive = ⟨"rootfs", "r"⟩ := by simpa [profile] using member
+  subst drive
+  simp [StringRepresentable, stringBytes]
+  change (1 : Nat) ≤ Usize.max
+  scalar_tac
+
+theorem mutant_not_full_validation_contract :
+    ¬ ManifestValidation.ValidationContract manifest_validate := by
+  intro contract
+  have result := contract manifest changed profile changed_capture_profile_representable
+  rw [mutant_accepts_changed_capture] at result
+  simp [ManifestValidation.validationResult, ManifestValidation.observe,
+    manifest, manifestWith, original, changed] at result
+
+end SandboxModel.Stage1Protocol.Manifest
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Manifest.changed_capture_profile_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.Manifest.mutant_not_full_validation_contract
