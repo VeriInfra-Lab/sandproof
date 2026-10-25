@@ -179,6 +179,32 @@ def _material_source_charge(record):
     return 0
 
 
+def continued_capture_question(question,accepted,records,source):
+    """Compare Rust's actual permit question with its original saved row.
+
+    The original Rust provider validates Full's digest; this consumer does not
+    guess Rust serialization or allocate a replacement native action.
+    """
+    matches=[record for record in records
+        if record['work']['anchor']['request']['request']['binding']['session']==accepted['session']
+        and record['work']['anchor']['request']['request']['binding']['key']==accepted['key']
+        and record['work']['anchor']['request']['accepted_version']==accepted['accepted_version']]
+    if len(matches)!=1:raise ValueError('one exact saved Full work required')
+    record=matches[0];capture=record['capture']
+    process={key:source[key] for key in ('pid','start_time_ticks','boot_id')}
+    digest=question.get('full_work_binding')
+    if (capture is None or capture['action']!=question.get('action')
+            or capture['worker']!=question.get('worker') or capture['worker'] is None
+            or record['work']['requirement']['source']!=process
+            or capture['full']['pause']['source']!=process
+            or capture['full']['pause']['source_resource']['id']!=source['resource_id']
+            or capture['full']['pause']['binding']['operation']!=record['work']['anchor']['request']['request']['binding']
+            or type(digest) is not list or len(digest)!=32
+            or any(type(byte) is not int or not 0<=byte<=255 for byte in digest)):
+        raise ValueError('Full cancellation differs from original action, worker or source')
+    return copy.deepcopy(record)
+
+
 def original_process(source):
     if source['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip():
         raise ValueError('foreign original source boot')
@@ -459,6 +485,8 @@ class UnloadRuntime:
         self.material_paths={}
         self.gc_complete=False
         self.restore_gate=None
+        self.capture_cancel_gate=None
+        self.continued_state=None
         self.deadline=None
         self.physical_complete=False
         self._prepare()
@@ -709,6 +737,260 @@ class UnloadRuntime:
             raise ValueError('original durable completion differs from adopted bytes')
         return dict(materials=files,manifest=measured,completion=checked_file(witness,16384,mode=0o400),
             material_paths=[str(bundle),str(witness)])
+
+    def _continued_physical(self,audit,local,lifetime,conn,prior):
+        native=self.services.native_pools[0]
+        rows=[row for row in audit['native'] if row['sandbox']==local['sandbox']]
+        slots=[context for context,phase in audit['host_slots']
+            if context['binding']['sandbox']==local['sandbox'] and phase=='Occupied']
+        if (len(rows)!=1 or rows[0]['phase']!='Running' or rows[0]['terminal']
+                or len(slots)!=1 or slots[0]!=prior['context']
+                or any(local[key]!=prior['local'][key] for key in ('sandbox','owner'))
+                or lifetime!=prior['lifetime']
+                or rows[0]['current_vm']!=slots[0]['binding']['vm']
+                or rows[0]['generation']!=slots[0]['binding']['generation']):
+            raise ValueError('continued execution changed original VM, position or lifetime')
+        resource='vm-'+native['namespace']+'-'+str(rows[0]['current_vm'])
+        claim=Path(native['chroot_base'])/'.claims'/resource
+        source=original_json(claim/'record.json',16384)
+        if source!=prior['source']:
+            raise ValueError('continued original process record changed')
+        files={name:checked_file(claim/name,16384) for name in
+            ('record.json','restore-intent.json','restore-loaded.json','network.json')}
+        credential=conn.execute('SELECT generation,digest FROM controller_data_credentials '
+            'WHERE sandbox_id=?',('sb-'+native['namespace']+'-'+str(local['sandbox']),)).fetchone()
+        if credential is None or credential[0]!=str(rows[0]['generation']) or len(credential[1])!=32:
+            raise ValueError('continued original credential registration required')
+        records=checked_source_records(conn,self.services.host_configs[0],self.deadline)
+        backing=[row for row in records if row['restore'] is not None
+            and row['restore']['intent']['request']['binding']['session']==prior['session']
+            and row['restore']['generation']==rows[0]['generation']]
+        if len(backing)!=1 or backing[0]['restore']['material_use'] is not True:
+            raise ValueError('continued restored source lost its exact backing pin')
+        return dict(session=prior['session'],local=local,context=slots[0],source=source,
+            lifetime=lifetime,native=rows[0],files=files,restore=backing[0]['restore'],
+            credential=(credential[0],bytes(credential[1]).hex()))
+
+    def arm_capture_cancel_gate(self,session,deadline,timeout_ms):
+        if self.capture_cancel_gate is not None:
+            raise ValueError('one original Full cancellation only')
+        prior=self.runs[session]
+        def observe(audit,local,lifetime,conn):
+            baseline=self._continued_physical(audit,local,lifetime,conn,prior)
+            if not original_process(baseline['source']):
+                raise ValueError('original restored candidate must be alive before cancellation')
+            return baseline
+        baseline=self._host_snapshot(session,deadline,observe)
+        control=private_path(self.quota['deployment_control'],directory=True)
+        path=control/'capture-cancel-gate'
+        path.mkdir(mode=0o700)
+        fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        meta=os.fstat(fd);parent=control.stat()
+        config=gate_configuration(self.lease.identity,
+            'sb-'+self.services.native_pools[0]['namespace']+'-'+str(prior['local']['sandbox']),
+            prior['context']['binding']['generation'],timeout_ms)
+        self.capture_cancel_gate=dict(path=path,fd=fd,directory_identity=(meta.st_dev,meta.st_ino),
+            control_identity=(parent.st_dev,parent.st_ino),config=config,session=session,
+            baseline=baseline,files={},deadline=min(deadline,time.monotonic()+timeout_ms/1000))
+        gate_publish(fd,'config.json',config)
+        _,digest,identity=gate_json(path/'config.json',1024,directory_fd=fd)
+        self.capture_cancel_gate['files']['config.json']=(digest,identity)
+        self.services.processes.stop('host-0')
+        role=self.services.processes.bindings['host-0']
+        if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
+            raise ValueError('original host configuration changed before cancellation')
+        self.services.processes.start('host-0',env={'SANDPROOF_TEST_CAPTURE_CANCEL_GATE':str(path)})
+        self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
+
+    def _capture_cancel_files(self):
+        gate=self.capture_cancel_gate
+        current=gate['path'].lstat();held=os.fstat(gate['fd'])
+        if (not stat.S_ISDIR(current.st_mode) or current.st_uid!=0
+                or stat.S_IMODE(current.st_mode)!=0o700
+                or (current.st_dev,current.st_ino)!=gate['directory_identity']
+                or (held.st_dev,held.st_ino)!=gate['directory_identity']
+                or set(os.listdir(gate['fd']))-{'config.json','observation.json','ready.json',
+                    'ready-stage.json','command-stage.json','command.json','consumed.json'}):
+            raise ValueError('original private capture cancel directory changed')
+        for name,expected in gate['files'].items():
+            _,digest,identity=gate_json(gate['path']/name,16384 if name=='observation.json' else 1024,
+                directory_fd=gate['fd'])
+            if (digest,identity)!=expected:
+                raise ValueError('original sealed capture cancel file changed')
+
+    def cancel_original_full(self,accepted,deadline):
+        gate=self.capture_cancel_gate
+        deadline=min(deadline,gate['deadline'])
+        while True:
+            remaining(deadline);self._capture_cancel_files()
+            if (gate['path']/'ready.json').exists():break
+            if self.services.processes.children['host-0'].poll() is not None:
+                raise RuntimeError('original Full manager exited before cancellation question')
+            time.sleep(min(.05,remaining(deadline)))
+        ready,ready_digest,ready_identity=gate_json(gate['path']/'ready.json',1024,directory_fd=gate['fd'])
+        question,digest,identity=gate_json(gate['path']/'observation.json',16384,directory_fd=gate['fd'])
+        if (set(question)!={'schema_version','run_identity','action','full_work_binding','worker'}
+                or question['schema_version']!=1 or question['run_identity']!=self.lease.identity
+                or ready!={'schema_version':1,'observation_sha256':digest}
+                or accepted['session']!=gate['session']):
+            raise ValueError('original Full cancellation question differs')
+        database=private_path(self.services.native_pools[0]['database'])
+        with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
+                timeout=min(2,remaining(deadline)))) as conn:
+            conn.execute('BEGIN')
+            records=checked_source_records(conn,self.services.host_configs[0],deadline)
+            record=continued_capture_question(question,accepted,records,gate['baseline']['source'])
+        gate['question']=question;gate['capture_record']=record
+        gate['files'].update({'observation.json':(digest,identity),'ready.json':(ready_digest,ready_identity)})
+        self._capture_cancel_files()
+        command=dict(schema_version=1,run_identity=self.lease.identity,
+            observation_sha256=digest,full_work_binding=question['full_work_binding'],command='cancel')
+        gate_publish(gate['fd'],'command.json',command)
+        _,command_digest,command_identity=gate_json(gate['path']/'command.json',1024,directory_fd=gate['fd'])
+        gate['files']['command.json']=(command_digest,command_identity)
+        return dict(original_action_and_worker_matched=True,full_question_sha256=digest,
+            release_sent=False,no_request_not_inferred=True)
+
+    def _continued_snapshot(self,accepted,view,stage,audit,local,lifetime,conn):
+        gate=self.capture_cancel_gate
+        if (view['session']!=accepted['session'] or view['operation']!=accepted['key']
+                or view['current_version']!=accepted['accepted_version']
+                or view['phase'] not in ('running','state_lost')):
+            raise ValueError('exact original public continued observation required')
+        current=self._continued_physical(audit,local,lifetime,conn,gate['baseline'])
+        if any(current[key]!=gate['baseline'][key] for key in ('files','restore','credential')):
+            raise ValueError('continued execution replaced source files, credentials or backing work')
+        header=conn.execute('SELECT length(state_json),reserve_bytes FROM controller_lifecycle_inbox WHERE id=1').fetchone()
+        if header is None or not 0<header[0]<=header[1]<=16*1024**2:
+            raise ValueError('bounded original inbox required')
+        encoded,checksum=conn.execute('SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1').fetchone()
+        if hashlib.sha256(encoded).digest()!=checksum:
+            raise ValueError('original inbox checksum differs')
+        inbox=json.loads(encoded,object_pairs_hook=unique_keys)
+        sessions=[s for s in inbox['sessions'] if s['id']==accepted['session']]
+        if (len(sessions)!=1 or sessions[0]['terminal']
+                or sessions[0]['current_version']!=accepted['accepted_version']):
+            raise ValueError('exact current continued session required')
+        entries=[e for e in sessions[0]['entries'] if e['intent']['accepted_version']==accepted['accepted_version']
+            and e['intent']['request']['binding']['key']==accepted['key']]
+        if len(entries)!=1 or entries[0]['intent']['request']['operation']['kind']!='unload':
+            raise ValueError('exact current failed Unload required')
+        entry=entries[0];resolution=entry['unload_resolution']
+        if resolution is None or resolution['stage']!=stage:
+            raise ValueError('wrong failed Unload qualification stage')
+        facts=resolution['result'] if stage=='before_admission' else resolution['facts']
+        if view['unload_outcome']!={'state':'original_continued','facts':facts}:
+            raise ValueError('public continued history differs from original journal')
+        records=checked_source_records(conn,self.services.host_configs[0],self.deadline)
+        held=sum(material_source_charge(record) for record in records)
+        if stage=='after_capture':
+            record=continued_capture_question(gate['question'],accepted,records,current['source'])
+            captured=record['capture'];end=captured['end']
+            if (entry['local_operation']!=captured['operation']
+                    or current['native']['operation']!=captured['operation']
+                    or current['native']['epoch']!=gate['question']['action']['identity']['epoch']
+                    or current['native']['epoch']<=gate['baseline']['native']['epoch']
+                    or end is None or end['state']!='worker_ended'
+                    or end['observation']['outcome']!={'kind':'no_request'}
+                    or end['observation']['full_work_binding']!=gate['question']['full_work_binding']
+                    or end['observation']['action']!=captured['action']
+                    or end['observation']['worker']!=captured['worker']
+                    or end['observation']['source']!=record['work']['requirement']['source']
+                    or original_process(captured['worker']['process'])
+                    or captured['completed'] is not None):
+                raise ValueError('actual original NoRequest, worker exit and new continuation required')
+        else:
+            previous=self.continued_state
+            if (previous is None or entry['local_operation'] is not None
+                    or current['native']!=previous['native']
+                    or len(records)!=previous['source_records'] or held!=previous['held_material_bytes']
+                    or any(record['work']['anchor']['request']==entry['intent'] for record in records)):
+                raise ValueError('BeforeAdmission created new Pause/Full or changed original charge')
+        current.update(entry=entry,source_records=len(records),held_material_bytes=held,
+            material_limit=self.services.host_configs[0]['source_observation']['max_material_bytes'])
+        return current
+
+    def continued_evidence(self,accepted,view,stage,deadline):
+        current=self._host_snapshot(accepted['session'],deadline,
+            lambda audit,local,lifetime,conn:self._continued_snapshot(accepted,view,stage,audit,local,lifetime,conn))
+        if not original_process(current['source']):
+            raise ValueError('original continued candidate must be live before exit fault')
+        gate=self.capture_cancel_gate
+        consumed,digest,identity=gate_json(gate['path']/'consumed.json',1024,directory_fd=gate['fd'])
+        command,_,_=gate_json(gate['path']/'command.json',1024,directory_fd=gate['fd'])
+        if consumed!=command:raise ValueError('original Full cancellation not consumed exactly')
+        gate['files']['consumed.json']=(digest,identity)
+        self._capture_cancel_files()
+        self.continued_state=current
+        self.running=copy.deepcopy(current)
+        return dict(stage=stage,same_candidate_and_generation=True,same_credential_registration=True,
+            backing_pin_retained=True,native_epoch=current['native']['epoch'],
+            source_records=current['source_records'],held_material_bytes=current['held_material_bytes'],
+            max_material_bytes=current['material_limit'],fault_environment_removed=True)
+
+    def exit_continued_candidate(self,accepted,view,stage,deadline):
+        original=self.continued_state
+        descriptor=open_original_candidate_pidfd(original['source'])
+        try:
+            def observe(audit,local,lifetime,conn):
+                current=self._continued_snapshot(accepted,view,stage,audit,local,lifetime,conn)
+                if current!=original:raise ValueError('continued candidate changed before exit fault')
+                self._capture_cancel_files()
+                exit_original_candidate(descriptor,original['source'],deadline)
+                return dict(kernel_pidfd_exit_observed=True,same_original_candidate=True,capacity_released=False)
+            return self._host_snapshot(accepted['session'],deadline,observe)
+        finally:
+            os.close(descriptor)
+
+    def continued_lost_evidence(self,accepted,view,stage,deadline):
+        def observe(audit,local,lifetime,conn):
+            current=self._continued_snapshot(accepted,view,stage,audit,local,lifetime,conn)
+            if current!=self.continued_state:
+                raise ValueError('StateLost changed original continued history, source, charge or credential')
+            self._capture_cancel_files()
+            return dict(same_candidate_and_generation=True,same_historical_result=True,
+                same_credential_registration=True,backing_pin_retained=True,
+                no_replacement_load_observed=True,execution_exit_is_not_resource_release=True)
+        return self._host_snapshot(accepted['session'],deadline,observe)
+
+    def cleanup_capture_cancel_gate(self):
+        gate=self.capture_cancel_gate
+        if gate is None:return None
+        expected={'config.json','observation.json','ready.json','command.json','consumed.json'}
+        if not self.gc_complete or not self.physical_complete or set(gate['files'])!=expected:
+            raise ValueError('exact consumed cancellation and product GC required')
+        self._capture_cancel_files()
+        if set(os.listdir(gate['fd']))!=expected:
+            raise ValueError('unknown capture cancellation entries retain responsibility')
+        parent=os.open(gate['path'].parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:
+            meta=os.fstat(parent)
+            if (meta.st_dev,meta.st_ino)!=gate['control_identity']:
+                raise ValueError('original cancellation parent changed')
+            for name in ('consumed.json','command.json','ready.json','observation.json','config.json'):
+                _,digest,identity=gate_json(gate['path']/name,16384 if name=='observation.json' else 1024,
+                    directory_fd=gate['fd'])
+                if (digest,identity)!=gate['files'][name]:raise ValueError('cancel file changed before unlink')
+                descriptor=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=gate['fd'])
+                try:
+                    opened=os.fstat(descriptor)
+                    actual=(opened.st_dev,opened.st_ino,opened.st_size,opened.st_mtime_ns,
+                        opened.st_ctime_ns,opened.st_mode,opened.st_uid,opened.st_nlink)
+                    if actual!=identity:raise ValueError('original cancel FD changed before unlink')
+                    os.unlink(name,dir_fd=gate['fd'])
+                    if os.fstat(descriptor).st_nlink!=0:raise ValueError('original cancel FD not unlinked')
+                    os.fsync(gate['fd'])
+                finally:os.close(descriptor)
+            meta=gate['path'].lstat()
+            if (meta.st_dev,meta.st_ino)!=gate['directory_identity']:
+                raise ValueError('original cancellation directory changed before removal')
+            os.rmdir(gate['path'].name,dir_fd=parent);os.fsync(parent)
+        finally:os.close(parent)
+        return dict(directory_removed=True,exact_original_files_removed=sorted(expected))
+
+    def close_capture_cancel_gate(self):
+        if self.capture_cancel_gate is not None and self.capture_cancel_gate.get('fd') is not None:
+            os.close(self.capture_cancel_gate['fd']);self.capture_cancel_gate['fd']=None
 
     def arm_restore_gate(self,session,deadline,timeout_ms):
         """Plan only this debug fault, using the original paused native audit."""
@@ -1233,6 +1515,7 @@ class UnloadRuntime:
             raise RuntimeError('original exclusive VM UID domain not empty')
         self.services.storage_peaks()
         report['activation_gate_cleanup']=self.cleanup_restore_gate()
+        report['capture_cancel_cleanup']=self.cleanup_capture_cancel_gate()
         report['cleanup']='product-gc-settled-exact-runtime-free-managers-exited'
         # Actual host audit calls original observe_position_free, including
         # exact retirement of VMM/helpers/network. Product material references

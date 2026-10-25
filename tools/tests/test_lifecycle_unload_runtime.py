@@ -20,6 +20,112 @@ scene=importlib.util.module_from_spec(SCENE_SPEC)
 SCENE_SPEC.loader.exec_module(scene)
 
 
+class ContinuedExitConsumerTests(unittest.TestCase):
+    def fixture(self):
+        import copy
+        accepted=dict(session='original',key={'sequence':4},accepted_version=4)
+        source=dict(resource_id='vm-original',pid=41,start_time_ticks=17,boot_id='original-boot')
+        process={key:source[key] for key in ('pid','start_time_ticks','boot_id')}
+        action=dict(identity={'epoch':4},command={'original':'seal'})
+        worker=dict(process=dict(pid=51,start_time_ticks=19,boot_id='original-boot'),job_digest=[7]*32)
+        binding=dict(session=accepted['session'],key=accepted['key'])
+        intent=dict(request=dict(binding=binding,operation={'kind':'unload'}),accepted_version=4)
+        record=dict(work=dict(anchor={'request':intent},requirement={'source':process}),
+            capture=dict(action=action,worker=worker,operation=4,completed=None,
+                full=dict(pause=dict(source=process,source_resource={'id':source['resource_id']},
+                    binding={'operation':binding}))))
+        question=dict(schema_version=1,run_identity='a'*64,action=action,worker=worker,full_work_binding=[9]*32)
+        record['capture']['end']=dict(state='worker_ended',observation=dict(action=action,worker=worker,
+            source=process,full_work_binding=[9]*32,outcome={'kind':'no_request'}))
+        return copy.deepcopy((accepted,source,record,question))
+
+    def test_full_cancel_question_requires_original_scope_action_worker_process_and_digest_shape(self):
+        import copy
+        for fault in ('none','key','version','worker','action','source','full_source','digest'):
+            accepted,source,record,question=self.fixture()
+            if fault=='key':record['work']['anchor']['request']['request']['binding']['key']={'sequence':9}
+            if fault=='version':record['work']['anchor']['request']['accepted_version']+=1
+            if fault=='worker':question['worker']=dict(question['worker'],job_digest=[8]*32)
+            if fault=='action':question['action']={'other':True}
+            if fault=='source':record['work']['requirement']['source']=dict(pid=42,start_time_ticks=17,boot_id='original-boot')
+            if fault=='full_source':record['capture']['full']['pause']['source_resource']['id']='vm-other'
+            if fault=='digest':question['full_work_binding']=[True]*32
+            with self.subTest(fault=fault):
+                if fault=='none':
+                    observed=runtime.continued_capture_question(question,accepted,[record],source)
+                    self.assertEqual(observed,record)
+                    self.assertIsNot(observed,record)
+                else:
+                    with self.assertRaises(ValueError):
+                        runtime.continued_capture_question(question,accepted,[record],source)
+
+    def test_continued_snapshot_requires_actual_no_request_end_worker_exit_and_current_fence(self):
+        import copy
+        for fault in ('none','returned','missing_end','live_worker','old_fence','changed_credential'):
+            accepted,source,record,question=self.fixture()
+            current=dict(session='original',source=source,files={'original':True},restore={'material_use':True},
+                credential=('2','digest'),native=dict(epoch=4,operation=4))
+            baseline=copy.deepcopy(current);baseline['native']['epoch']=3
+            entry=dict(intent=record['work']['anchor']['request'],local_operation=4,
+                unload_resolution=dict(stage='after_capture',facts={'original':True}))
+            view=dict(session='original',operation=accepted['key'],current_version=4,phase='running',
+                unload_outcome=dict(state='original_continued',facts={'original':True}))
+            if fault=='returned':record['capture']['end']['observation']['outcome']={'kind':'returned','http_status':400}
+            if fault=='missing_end':record['capture']['end']=None
+            if fault=='old_fence':current['native']['epoch']=3
+            if fault=='changed_credential':current['credential']=('2','other')
+            encoded=json.dumps(dict(sessions=[dict(id='original',terminal=False,current_version=4,entries=[entry])])).encode()
+            import hashlib
+            conn=Mock();conn.execute.return_value.fetchone.side_effect=[(len(encoded),len(encoded)),(encoded,hashlib.sha256(encoded).digest())]
+            state=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+            state.capture_cancel_gate=dict(baseline=baseline,question=question)
+            state.services=SimpleNamespace(host_configs=[dict(source_observation=dict(max_material_bytes=1000))])
+            state.deadline=time.monotonic()+10
+            with self.subTest(fault=fault),patch.object(state,'_continued_physical',return_value=current), \
+                    patch.object(runtime,'checked_source_records',return_value=[record]), \
+                    patch.object(runtime,'material_source_charge',return_value=100), \
+                    patch.object(runtime,'original_process',return_value=fault=='live_worker'):
+                if fault=='none':
+                    result=state._continued_snapshot(accepted,view,'after_capture',{}, {}, {},conn)
+                    self.assertEqual(result['held_material_bytes'],100)
+                else:
+                    with self.assertRaises(ValueError):
+                        state._continued_snapshot(accepted,view,'after_capture',{}, {}, {},conn)
+
+    def test_before_admission_cannot_add_native_pause_full_or_release_existing_charge(self):
+        import copy,hashlib
+        for fault in ('none','native','pause','full','charge'):
+            accepted,source,record,_=self.fixture()
+            accepted['accepted_version']=5;accepted['key']={'sequence':5}
+            current=dict(session='original',source=source,files={},restore={},credential=('2','same'),
+                native=dict(epoch=4,operation=4))
+            baseline=copy.deepcopy(current)
+            previous=dict(native=copy.deepcopy(current['native']),source_records=1,held_material_bytes=100)
+            entry=dict(intent=dict(request=dict(binding=dict(session='original',key=accepted['key']),
+                operation={'kind':'unload'}),accepted_version=5),local_operation=None,
+                unload_resolution=dict(stage='before_admission',result={'original':True}))
+            view=dict(session='original',operation=accepted['key'],current_version=5,phase='state_lost',
+                unload_outcome=dict(state='original_continued',facts={'original':True}))
+            if fault=='native':current['native']['operation']+=1
+            if fault=='pause':entry['local_operation']=5
+            records=[record]
+            if fault=='full':records.append(copy.deepcopy(record))
+            encoded=json.dumps(dict(sessions=[dict(id='original',terminal=False,current_version=5,entries=[entry])])).encode()
+            conn=Mock();conn.execute.return_value.fetchone.side_effect=[(len(encoded),len(encoded)),(encoded,hashlib.sha256(encoded).digest())]
+            state=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+            state.capture_cancel_gate=dict(baseline=baseline)
+            state.continued_state=previous;state.deadline=time.monotonic()+10
+            state.services=SimpleNamespace(host_configs=[dict(source_observation=dict(max_material_bytes=1000))])
+            with self.subTest(fault=fault),patch.object(state,'_continued_physical',return_value=current), \
+                    patch.object(runtime,'checked_source_records',return_value=records), \
+                    patch.object(runtime,'material_source_charge',return_value=99 if fault=='charge' else 100):
+                if fault=='none':
+                    self.assertEqual(state._continued_snapshot(accepted,view,'before_admission',{}, {}, {},conn)['native'],previous['native'])
+                else:
+                    with self.assertRaises(ValueError):
+                        state._continued_snapshot(accepted,view,'before_admission',{}, {}, {},conn)
+
+
 class OriginalCandidatePidfdTests(unittest.TestCase):
     def source(self):
         return dict(resource_id='vm-original',pid=123,start_time_ticks=7,boot_id='boot')
@@ -280,6 +386,7 @@ class RetainedExclusionTests(unittest.TestCase):
         state.physical_complete=True
         state.gc_complete=True
         state.restore_gate=None
+        state.capture_cancel_gate=None
         state.lease=Mock(identity=self.identity)
         state.quota={'deployment_control':str(self.root)}
         report={'complete':True}
@@ -400,7 +507,8 @@ class ScenarioDiagnosticsTests(unittest.TestCase):
             root=Path(directory)
             runner=SimpleNamespace(root=root, services=object(), owner_key='API_SECRET',
                 foreign_key='FOREIGN_SECRET', finish=Mock(),measurement_identity=lambda:{},
-                fail_resume_gate=Mock(return_value='original responsibility preserved'),close_restore_gate=Mock())
+                fail_resume_gate=Mock(return_value='original responsibility preserved'),close_restore_gate=Mock(),
+                close_capture_cancel_gate=Mock())
             error=AssertionError('BODY_SECRET API_SECRET TOKEN_SECRET')
             args=SimpleNamespace(scenario_timeout=60,scenario='normal',activation_gate_timeout_ms=60000)
             module=SimpleNamespace(prepare=lambda _args:runner)
@@ -485,6 +593,67 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         running=self.view(client,'running')
         with patch.object(client,'call',return_value=(200,json.dumps(running).encode())),self.assertRaises(AssertionError):
             client.wait_phase(client.current_acceptance,waiting={'resuming'},complete='state_lost')
+
+    def test_continued_loss_preserves_original_unload_history_and_allows_destroy(self):
+        client=self.client()
+        accepted=dict(session=client.session,key=client.key(2),accepted_version=2)
+        client.current_acceptance=client.unload_acceptance=accepted
+        client.sequence=2
+        lost=self.view(client,'state_lost')
+        facts=dict(started_at_ms=1,end_at_ms=100,max_end_at_ms=200,
+            startup_deadline_ms=10,observed_at_ms=5)
+        lost['unload_outcome']=dict(state='original_continued',facts=facts)
+        with patch.object(client,'call',return_value=(200,json.dumps(lost).encode())):
+            self.assertEqual(client.wait_phase(accepted,
+                waiting={'running'},complete='state_lost'),lost)
+        destroyed=dict(session=client.session,key=client.key(3),accepted_version=3)
+        with patch.object(client,'read_json',return_value=destroyed) as send:
+            self.assertEqual(client.destroy(lost),destroyed)
+        self.assertEqual(send.call_args.kwargs['body']['expected_version'],2)
+        self.assertEqual(lost['unload_outcome']['facts'],facts)
+
+    def test_lost_history_cannot_be_replaced_by_pending_or_unloaded_outcome(self):
+        client=self.client()
+        for state in ('pending','unloaded'):
+            lost=self.view(client,'state_lost')
+            lost['unload_outcome']=dict(state=state,facts={})
+            with self.subTest(state=state),self.assertRaises(AssertionError):
+                client.check_view(lost,client.current_acceptance)
+
+    def test_continuation_requires_same_ram_activation_authorization_and_lifetime(self):
+        import copy
+        for fault in ('none','ram','activation','process','authorization','lifetime'):
+            client=self.client()
+            client.unload_acceptance=client.current_acceptance
+            lifetime=dict(started_at_ms=1,end_at_ms=100,max_end_at_ms=200,startup_deadline_ms=10)
+            running=self.view(client,'running')
+            running['unload_outcome']=dict(state='original_continued',
+                facts=dict(lifetime,observed_at_ms=5))
+            client.witness=dict(nonce='a'*64,activation_nonce='b'*64,metadata_generation=2,
+                counter=3,pid=41,start_time_ticks=7)
+            client.data_token='same-execution'
+            observed=copy.deepcopy(client.witness)
+            if fault=='ram':observed['nonce']='c'*64
+            if fault=='activation':observed['metadata_generation']+=1
+            if fault=='process':observed['start_time_ticks']+=1
+            if fault=='lifetime':running['unload_outcome']['facts']['end_at_ms']+=1
+            advanced=dict(observed,counter=4)
+            sandbox=Mock()
+            sandbox.files.read.side_effect=['disk-counter:3','disk-counter:4']
+            def sdk():
+                if fault=='authorization':client.data_token='different-execution'
+                return sandbox
+            with self.subTest(fault=fault),patch.object(client,'sdk',side_effect=sdk), \
+                    patch.object(client,'witness_command',side_effect=[observed,advanced]), \
+                    patch.object(client,'assert_previous_tokens_closed'), \
+                    patch.object(client,'query',return_value=running):
+                if fault=='none':
+                    result=client.assert_continued_workload(running,lifetime)
+                    self.assertTrue(result['same_ram_and_activation'])
+                    self.assertEqual(client.witness,advanced)
+                else:
+                    with self.assertRaises(AssertionError):
+                        client.assert_continued_workload(running,lifetime)
 
     def test_concurrent_unload_uses_one_original_key_and_two_identical_bodies(self):
         client=self.client()
