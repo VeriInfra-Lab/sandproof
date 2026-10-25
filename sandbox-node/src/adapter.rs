@@ -496,6 +496,25 @@ impl WorkRecovery for NodeHost {
             })
     }
 
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        self.worker
+            .observe_original_continue_exit(self.host_epoch_source.as_ref()?, action, work)
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
+            .ok()
+            .flatten()
+    }
+
     fn observe_lifecycle_restore_exit(
         &self,
         action: &WorkAction<core::EffectId>,

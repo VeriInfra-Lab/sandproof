@@ -4,7 +4,10 @@
 use super::{HostObservation, LinuxWorker, NodeResult, ObservedResult, WorkAction, core};
 use crate::ProtectedHostEpochSource;
 use sandbox_runtime::{OriginalPauseObservation, Runtime, RuntimeProcessIdentity};
-use sandproof_controller_service::capture::{OriginalContinuePermit, OriginalContinueWorkRequest};
+use sandproof_controller_service::capture::{
+    OriginalContinueExitObservation, OriginalContinuePermit, OriginalContinueWorkRequest,
+    SourceProcessIdentity,
+};
 use sandproof_protocol::ResourceRef;
 
 fn require_original_activation(
@@ -35,6 +38,28 @@ struct ContinueContext<'a> {
     expected: RuntimeProcessIdentity,
     original: sandproof_controller_service::HostSlotContext,
 }
+
+// Runtime binds every observation to the saved record/PID/start/boot. The
+// caller independently rechecks the same current fence and occupied position;
+// an unavailable observation or changed authority never becomes an exit fact.
+fn observe_confirmed_original_exit(
+    expected: &RuntimeProcessIdentity,
+    mut check: impl FnMut() -> NodeResult<()>,
+    mut observe: impl FnMut() -> NodeResult<OriginalPauseObservation>,
+) -> NodeResult<Option<RuntimeProcessIdentity>> {
+    expected.validate_fields()?;
+    check()?;
+    if !matches!(observe()?, OriginalPauseObservation::Exited) {
+        return Ok(None);
+    }
+    check()?;
+    if !matches!(observe()?, OriginalPauseObservation::Exited) {
+        return Err("original continuation exit changed during observation".into());
+    }
+    check()?;
+    Ok(Some(expected.clone()))
+}
+
 impl ContinueContext<'_> {
     fn require_running(&self) -> NodeResult<()> {
         if !matches!(
@@ -51,6 +76,38 @@ impl ContinueContext<'_> {
 }
 
 impl LinuxWorker {
+    pub(crate) fn observe_original_continue_exit(
+        &self,
+        provider: &ProtectedHostEpochSource,
+        action: &WorkAction<core::EffectId>,
+        work: &OriginalContinueWorkRequest,
+    ) -> NodeResult<Option<OriginalContinueExitObservation>> {
+        let context = self.prepare_continue_context(provider, action, work)?;
+        let work_binding = work.binding_digest()?;
+        let process = observe_confirmed_original_exit(
+            &context.expected,
+            || self.check_continue_context(&context),
+            || {
+                context
+                    .runtime
+                    .observe_original_pause_state(
+                        context.work.source().resource.id.as_str(),
+                        &context.expected,
+                    )
+                    .map_err(Into::into)
+            },
+        )?;
+        Ok(process.map(|process| OriginalContinueExitObservation {
+            action: action.clone(),
+            work_binding,
+            process: SourceProcessIdentity {
+                pid: process.pid,
+                start_time_ticks: process.start_time_ticks,
+                boot_id: process.boot_id,
+            },
+        }))
+    }
+
     pub(crate) fn original_continue_action(
         &self,
         provider: &ProtectedHostEpochSource,

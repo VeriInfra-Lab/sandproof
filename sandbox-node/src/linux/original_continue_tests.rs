@@ -4,8 +4,142 @@ use sandproof_protocol::{
     ActionIdentity, LogicalActionId, OperationId, PROTOCOL_VERSION, ResourceId, ResourceKind,
     SandboxId, TenantId,
 };
+use std::cell::Cell;
 
 const NS: &str = "0123456789abcdef";
+
+fn process() -> RuntimeProcessIdentity {
+    RuntimeProcessIdentity {
+        pid: 17,
+        start_time_ticks: 23,
+        boot_id: "00000000-0000-0000-0000-000000000001".into(),
+    }
+}
+
+#[test]
+fn continued_exit_requires_two_positive_exits_between_current_authority_checks() {
+    let checks = Cell::new(0);
+    let reads = Cell::new(0);
+    let expected = process();
+    let result = observe_confirmed_original_exit(
+        &expected,
+        || {
+            checks.set(checks.get() + 1);
+            assert_eq!(checks.get(), reads.get() + 1);
+            Ok(())
+        },
+        || {
+            reads.set(reads.get() + 1);
+            assert_eq!(reads.get(), checks.get());
+            Ok(OriginalPauseObservation::Exited)
+        },
+    )
+    .unwrap();
+    assert_eq!(result, Some(expected));
+    assert_eq!(checks.get(), 3);
+    assert_eq!(reads.get(), 2);
+}
+
+#[test]
+fn continued_running_or_unavailable_observation_never_establishes_exit() {
+    assert!(
+        observe_confirmed_original_exit(
+            &process(),
+            || Ok(()),
+            || Ok(OriginalPauseObservation::Running),
+        )
+        .unwrap()
+        .is_none()
+    );
+    for fail_at in [1, 2] {
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::PermissionDenied,
+        ] {
+            let reads = Cell::new(0);
+            assert!(
+                observe_confirmed_original_exit(
+                    &process(),
+                    || Ok(()),
+                    || {
+                        reads.set(reads.get() + 1);
+                        if reads.get() == fail_at {
+                            Err(std::io::Error::new(kind, "original observation unavailable").into())
+                        } else {
+                            Ok(OriginalPauseObservation::Exited)
+                        }
+                    },
+                )
+                .is_err()
+            );
+        }
+    }
+    let reads = Cell::new(0);
+    assert!(
+        observe_confirmed_original_exit(
+            &process(),
+            || Ok(()),
+            || {
+                reads.set(reads.get() + 1);
+                Ok(if reads.get() == 1 {
+                    OriginalPauseObservation::Exited
+                } else {
+                    OriginalPauseObservation::Running
+                })
+            },
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn changed_continued_authority_at_any_check_never_establishes_exit() {
+    for fail_at in 1..=3 {
+        let checks = Cell::new(0);
+        let reads = Cell::new(0);
+        assert!(
+            observe_confirmed_original_exit(
+                &process(),
+                || {
+                    checks.set(checks.get() + 1);
+                    if checks.get() == fail_at {
+                        Err("original fence or occupied position changed".into())
+                    } else {
+                        Ok(())
+                    }
+                },
+                || {
+                    reads.set(reads.get() + 1);
+                    Ok(OriginalPauseObservation::Exited)
+                },
+            )
+            .is_err()
+        );
+        assert_eq!(reads.get(), fail_at - 1);
+    }
+}
+
+#[test]
+fn invalid_continued_process_identity_is_rejected_before_any_observation() {
+    for field in 0..3 {
+        let mut expected = process();
+        match field {
+            0 => expected.pid = 0,
+            1 => expected.start_time_ticks = 0,
+            _ => expected.boot_id.clear(),
+        }
+        assert!(
+            observe_confirmed_original_exit(
+                &expected,
+                || panic!("invalid process must not reach authority checks"),
+                || panic!("invalid process must not reach Runtime"),
+            )
+            .is_err()
+        );
+    }
+}
+
 fn identity() -> core::capture::OriginalContinueIdentity {
     core::capture::OriginalContinueIdentity {
         key: core::OperationKey {
