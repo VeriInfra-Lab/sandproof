@@ -1,0 +1,18 @@
+namespace SandboxModel.Stage1Protocol.ManifestFiles.Negative
+open SandboxModel.Stage1Protocol.ManifestValidation
+open SandboxModel.Stage1Protocol.ManifestValidation.Values
+open SandboxModel.Stage1Protocol.ManifestChecks
+open SandboxModel.Stage1Protocol.ManifestFiles.Values
+
+theorem skipped_path_not_validation_contract : ¬ ValidationContract manifest_validate := by
+  intro contract
+  have accepted := contract_acceptance manifest_validate contract
+    (manifestWith profile (filesWithDisk "rootfs" "disk-1.img")) original profile represented_profile
+    3#u64 mutant_accepts_wrong_path
+  rcases accepted with ⟨_, _, _, _, _, complete, _, _, _⟩
+  have disk := complete.2 2 (by simp [manifestWith, filesWithDisk])
+  simp [FileAt, diskName, manifestWith, filesWithDisk, profile] at disk
+  exact (by decide : ("disk-1.img" : String) ≠ diskName 0) disk
+end SandboxModel.Stage1Protocol.ManifestFiles.Negative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ManifestFiles.Negative.skipped_path_not_validation_contract

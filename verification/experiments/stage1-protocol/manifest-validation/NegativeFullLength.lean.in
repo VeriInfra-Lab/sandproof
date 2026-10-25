@@ -1,0 +1,17 @@
+namespace SandboxModel.Stage1Protocol.ManifestLength.Negative
+open SandboxModel.Stage1Protocol.ManifestValidation
+open SandboxModel.Stage1Protocol.ManifestValidation.Values
+open SandboxModel.Stage1Protocol.ManifestChecks
+open SandboxModel.Stage1Protocol.ManifestLength.Values
+
+theorem wrapping_not_validation_contract : ¬ ValidationContract manifest_validate := by
+  intro contract
+  have accepted := contract_acceptance manifest_validate contract
+    (value 18446744073709551615#u64 1#u64 1#u64) original profile represented_profile
+    1#u64 mutant_wraps_total
+  rcases accepted with ⟨_, _, _, _, _, _, _, exact_sum, _⟩
+  have different : (1#u64).val ≠ bytes (value 18446744073709551615#u64 1#u64 1#u64).files.val := by decide
+  exact different exact_sum
+end SandboxModel.Stage1Protocol.ManifestLength.Negative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ManifestLength.Negative.wrapping_not_validation_contract
