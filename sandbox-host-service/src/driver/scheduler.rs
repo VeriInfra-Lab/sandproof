@@ -98,7 +98,10 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             if !maintenance {
                 report.scanned += 1;
             }
-            let cleanup = matches!(candidate, Candidate::Maintenance | Candidate::Native(_, true));
+            let cleanup = matches!(
+                candidate,
+                Candidate::Maintenance | Candidate::Native(_, true)
+            );
             let Ok(permit) = self.work_permit(cleanup) else {
                 if !maintenance {
                     report.unavailable += 1;
