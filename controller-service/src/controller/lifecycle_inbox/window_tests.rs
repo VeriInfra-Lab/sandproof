@@ -833,7 +833,9 @@ fn retired_create_history_survives_reopen_only_for_the_original_request_until_ex
     assert!(view.native.is_none());
     assert_retired_request_authorization(&journal, &create, local, expires_at);
     assert_eq!(
-        journal.expire_retained(expires_at - 1, &mut NeverCrash).unwrap(),
+        journal
+            .expire_retained(expires_at - 1, &mut NeverCrash)
+            .unwrap(),
         0
     );
     assert!(
