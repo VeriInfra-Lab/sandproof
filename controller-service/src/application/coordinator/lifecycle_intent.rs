@@ -588,6 +588,7 @@ mod tests {
     use super::*;
     use crate::controller::tests_support::lifecycle_application as fixture;
     use fixture::fixture::{State, TestEpoch, TestHost};
+    use sandbox_controller_core as core;
     use sandproof_protocol::lifecycle::{
         ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
     };
