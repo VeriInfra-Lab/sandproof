@@ -222,7 +222,7 @@ impl CenterState {
                 if current.resume_state_lost || !matches {
                     return Err(DecisionError::Conflict);
                 }
-                if let Some(saved) = current.running.as_ref() {
+                if let Some(saved) = current.running() {
                     if saved.started_at_ms != facts.started_at_ms
                         || saved.end_at_ms != facts.end_at_ms
                         || saved.max_end_at_ms != facts.max_end_at_ms
