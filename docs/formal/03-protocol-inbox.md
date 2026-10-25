@@ -16,17 +16,10 @@
 
 完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
 
-终局确认与关闭的独立值切片复用完整 intent 和既有版本/retention 合同：终局匹配只核对全文与 Destroy/版本/slot 形状，
-不重新认证或 validate；确认与关闭另外要求 Cleaned，关闭回执要求完整 terminal 及精确 retention window。
-这些守卫不能签发耐久确认或物理清理事实；续租确认的库表示连接、实际 journal 确认/退休事务和未结责任仍另行验收。
-对应入口和边界见[终局值组件](../../verification/experiments/stage1-protocol/result-confirmation/README.md)。
 
-运行期限与恢复来源的[事实叶子合同](../../verification/experiments/stage1-protocol/observation-bindings/README.md)另作值切片：
-对应 Create 的原 checked_add、Resume 的来源代/capture/完整摘要与时间字段，以及恢复后续租的非负期限和精确转换。
-这些叶子不重做完整观测封套校验，不核实 material_bytes，也不以字段比较代替来源选择、续租单调政策或实际材料/运行事实。
-完整 Resume/Create/Unload 观测分支、持久收件和系统组合仍须分别连接并验收。
+访问身份的[结构校验切片](../../verification/experiments/stage1-protocol/access-identity/README.md)对应实际
+`LifecycleAccessIdentity::validate`：按协议版本、独立 context 的完整 center/node、两种 deployment 关系、非零 accepted version 顺序拒绝。
+这里不查原 journal 的 session/owner/key/incarnation 映射，不授予 Access 权限，也不将外部 incarnation 当作本地 generation。
+这些当前身份、阶段、寿命及权限关系仍由 V4/V5/V7 的实际提供者连接。
 
-
-完整 Unload 结果与 outcome 投影的[值合同](../../verification/experiments/stage1-protocol/unload-observation/README.md)另作切片：
-匹配只涉及完整原请求、版本/retention 形状及三类结果各自字段，不重做协议/center 校验或核实 digest。
-耐久材料保管、原候选退出或同一 VM 继续由各提供者独立建立，不从字段匹配或 Pending 推断。
+## 2. 状态与义务
