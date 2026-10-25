@@ -10,6 +10,7 @@ use std::{
 pub enum DiagnosticFlow {
     Unscoped,
     LifecycleQuery,
+    LifecycleUnload,
     Background,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,7 +31,7 @@ pub struct DiagnosticContext {
     pub flow: DiagnosticFlow,
     pub step: DiagnosticStep,
 }
-/// Compact fixed codes: q=query, b=background; l=lookup, e=expiry,
+/// Compact fixed codes: q=query, u=unload, b=background; l=lookup, e=expiry,
 /// p=projection, f=refresh, c=reconcile, t=retire, r=recovery, m=material.
 /// A dash is explicitly uncorrelated (including exhausted sequence numbers).
 impl std::fmt::Display for DiagnosticContext {
@@ -40,6 +41,7 @@ impl std::fmt::Display for DiagnosticContext {
         }
         let flow = match self.flow {
             DiagnosticFlow::LifecycleQuery => 'q',
+            DiagnosticFlow::LifecycleUnload => 'u',
             DiagnosticFlow::Background => 'b',
             DiagnosticFlow::Unscoped => '-',
         };

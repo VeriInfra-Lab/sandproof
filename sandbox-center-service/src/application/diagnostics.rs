@@ -19,6 +19,16 @@ pub(crate) enum Stage {
     AuthorityStore,
     AuthoritySnapshotLock,
     AuthoritySnapshot,
+    LifecycleUnloadResult,
+    LifecycleUnloadReplayAbsent,
+    CreateObservationTransport,
+    CreateObservationDeadline,
+    CreateObservationSuperseded,
+    CreateObservationNotCurrent,
+    CreateObservationNotRunning,
+    CreateObservationExpired,
+    CreateObservationPending,
+    CreateObservationTimeRejected,
     LifecycleQueryLookup,
     LifecycleQueryExpiry,
     LifecycleQueryResult,
@@ -31,6 +41,7 @@ pub(crate) enum Stage {
 pub(crate) enum Failure {
     Authority(AuthorityError),
     Port(PortError),
+    Transport(sandproof_internal::TransportError),
 }
 
 fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl Write) {
@@ -39,7 +50,7 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
     }) else {
         return;
     };
-    // Both errors are closed enums without arbitrary text or request data.
+    // All errors are closed enums without arbitrary text or request data.
     // Match their contents explicitly so no stored payload can be introduced.
     let unix_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -58,6 +69,11 @@ fn record(stage: Stage, failure: Failure, count: &AtomicUsize, output: &mut impl
             "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} port={error:?} remaining={}",
             LIMIT - previous - 1
         ),
+        Failure::Transport(error) => writeln!(
+            output,
+            "center_wait unix_ms={unix_ms:?} pid={pid} c={context} stage={stage:?} transport={error:?} remaining={}",
+            LIMIT - previous - 1
+        ),
     };
 }
 pub(crate) fn emit(stage: Stage, failure: Failure) {
@@ -66,6 +82,34 @@ pub(crate) fn emit(stage: Stage, failure: Failure) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unload_transport_failure_preserves_closed_cause_and_request_scope() {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _scope =
+            DiagnosticScope::enter(DiagnosticFlow::LifecycleUnload, DiagnosticStep::Lookup);
+        let sequence = sandproof_center_store::diagnostic_context().sequence;
+        let count = AtomicUsize::new(0);
+        let mut bytes = vec![];
+        for error in [
+            sandproof_internal::TransportError::Overloaded,
+            sandproof_internal::TransportError::InvalidResponse,
+        ] {
+            record(
+                Stage::CreateObservationTransport,
+                Failure::Transport(error),
+                &count,
+                &mut bytes,
+            );
+        }
+        let text = String::from_utf8(bytes).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(
+            text.lines()
+                .all(|line| line.contains(&format!("c=u{sequence}/l")) && line.len() < 220)
+        );
+        assert!(text.contains("transport=Overloaded"));
+        assert!(text.contains("transport=InvalidResponse"));
+    }
     #[test]
     fn failure_is_bound_to_the_synchronous_query_stage_without_identity() {
         use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};

@@ -98,7 +98,13 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     .replay_public_unload(&owner, session, request)?;
                 match replay {
                     Some(intent) => Ok(acceptance(intent)),
-                    None => Err(error),
+                    None => {
+                        diagnostics::emit(
+                            DiagnosticStage::LifecycleUnloadReplayAbsent,
+                            DiagnosticFailure::Port(error),
+                        );
+                        Err(error)
+                    }
                 }
             }
         }
@@ -364,8 +370,17 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         session: SessionId,
         request: PublicUnloadRequest,
     ) -> Result<PublicAcceptance, PortError> {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _scope =
+            DiagnosticScope::enter(DiagnosticFlow::LifecycleUnload, DiagnosticStep::Lookup);
         self.application()
             .unload_lifecycle(owner, &session, &request)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleUnloadResult,
+                    DiagnosticFailure::Port(*error),
+                )
+            })
     }
     fn query_lifecycle(
         &self,

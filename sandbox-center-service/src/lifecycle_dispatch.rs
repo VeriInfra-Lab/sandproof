@@ -31,7 +31,13 @@ impl CurrentObservationError {
     pub(crate) fn into_port(self) -> PortError {
         match self {
             Self::Shared(error) | Self::Host(error) => error,
-            Self::Superseded => PortError::Busy,
+            Self::Superseded => {
+                diagnostics::emit(
+                    DiagnosticStage::CreateObservationSuperseded,
+                    DiagnosticFailure::Port(PortError::Busy),
+                );
+                PortError::Busy
+            }
             Self::Deadline => PortError::OutcomeUnknown,
         }
     }
@@ -119,6 +125,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Ok(view);
         }
         let CurrentCreateReadiness::Observed { facts } = &view.readiness else {
+            let stage = match &view.readiness {
+                CurrentCreateReadiness::NotCurrent => DiagnosticStage::CreateObservationNotCurrent,
+                CurrentCreateReadiness::NotRunning => DiagnosticStage::CreateObservationNotRunning,
+                CurrentCreateReadiness::Expired => DiagnosticStage::CreateObservationExpired,
+                _ => DiagnosticStage::CreateObservationPending,
+            };
+            diagnostics::emit(stage, DiagnosticFailure::Port(PortError::Busy));
             return Err(CurrentObservationError::Host(PortError::Busy));
         };
         if policy
@@ -126,6 +139,10 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .is_none()
             || after >= facts.end_at_ms
         {
+            diagnostics::emit(
+                DiagnosticStage::CreateObservationTimeRejected,
+                DiagnosticFailure::Port(PortError::Busy),
+            );
             return Err(CurrentObservationError::Host(PortError::Busy));
         }
         Ok(view)

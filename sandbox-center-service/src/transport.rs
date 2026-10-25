@@ -152,8 +152,20 @@ impl HostPort for RegisteredHosts {
         self.runtime.block_on(async {
             tokio::time::timeout(deadline, client.observe_lifecycle_create(intent))
                 .await
-                .map_err(|_| PortError::Busy)?
-                .map_err(|_| PortError::Busy)
+                .map_err(|_| {
+                    crate::application::diagnostics::emit(
+                        crate::application::diagnostics::Stage::CreateObservationDeadline,
+                        crate::application::diagnostics::Failure::Port(PortError::Busy),
+                    );
+                    PortError::Busy
+                })?
+                .map_err(|error| {
+                    crate::application::diagnostics::emit(
+                        crate::application::diagnostics::Stage::CreateObservationTransport,
+                        crate::application::diagnostics::Failure::Transport(error),
+                    );
+                    PortError::Busy
+                })
         })
     }
     fn observe_lifecycle_resume(
