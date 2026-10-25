@@ -96,15 +96,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     .lock()
                     .map_err(|_| PortError::OutcomeUnknown)?
                     .replay_public_unload(&owner, session, request)?;
-                match replay {
-                    Some(intent) => Ok(acceptance(intent)),
-                    None => {
-                        diagnostics::emit(
-                            DiagnosticStage::LifecycleUnloadReplayAbsent,
-                            DiagnosticFailure::Port(error),
-                        );
-                        Err(error)
-                    }
+                if let Some(intent) = replay {
+                    Ok(acceptance(intent))
+                } else {
+                    diagnostics::emit(
+                        DiagnosticStage::LifecycleUnloadReplayAbsent,
+                        DiagnosticFailure::Port(error),
+                    );
+                    Err(error)
                 }
             }
         }
@@ -379,7 +378,7 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
                 diagnostics::emit(
                     DiagnosticStage::LifecycleUnloadResult,
                     DiagnosticFailure::Port(*error),
-                )
+                );
             })
     }
     fn query_lifecycle(
