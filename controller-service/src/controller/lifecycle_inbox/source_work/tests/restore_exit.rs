@@ -606,7 +606,7 @@ fn unknown_restore_activation_is_retired_only_after_original_destroy_stop() {
 }
 
 #[test]
-fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() {
+fn saved_before_admission_continuation_has_its_own_qualification_without_loosening_direct_resume() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let (mut journal, _, request) = application_successor(&path);
@@ -621,6 +621,8 @@ fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() 
     journal
         .close_lifecycle_unload_before_admission(&unload, &v3::context(), 10, &mut NeverCrash)
         .unwrap();
+    let unpublished = journal.lifecycle_continued_exit_candidates::<Evidence>(&request, &v3::context(), 10).unwrap();
+    assert!(unpublished.0.is_none() && unpublished.1.is_none());
     let candidate = journal
         .lifecycle_ready_candidate::<Evidence>(&request, &v3::context(), 10)
         .unwrap();
@@ -665,6 +667,7 @@ fn failed_unload_continuation_never_borrows_the_old_resume_exit_qualification() 
     );
     let view = query(&app, &request);
     assert_eq!(view.current_request, unload);
-    assert_eq!(view.readiness, CurrentResumeReadiness::Pending);
-    assert!(state.lock().unwrap().restore_exit_questions.is_empty());
+    assert_eq!(view.readiness, CurrentResumeReadiness::StateLost);
+    assert_eq!(state.lock().unwrap().restore_exit_questions, vec![(original.action, original.work.binding_digest().unwrap())]);
+    assert!(state.lock().unwrap().actions.is_empty());
 }

@@ -184,6 +184,8 @@ fn busy_and_unknown_proposals_do_not_publish_a_pre_admission_continuation() {
             journal
                 .lifecycle_capture_record(source.work.anchor.local.sandbox)
                 .unwrap()
+                .unwrap()
+                .capture
                 .is_none()
         );
         assert_eq!(state.lock().unwrap().actions.len(), executions);
@@ -218,7 +220,7 @@ fn an_uncertain_admission_commit_never_becomes_a_material_quota_refusal() {
                 .is_none()
         );
         assert_eq!(
-            journal.lifecycle_capture_record(sandbox).unwrap().is_some(),
+            journal.lifecycle_capture_record(sandbox).unwrap().and_then(|record| record.capture).is_some(),
             durable
         );
         if !durable {
