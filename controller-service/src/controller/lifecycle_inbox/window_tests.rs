@@ -4,7 +4,7 @@ use crate::NeverCrash;
 use crate::controller::{lifecycle_inbox::tests as fixture, transaction};
 use crate::{InternalAdmission, InternalLocalBinding};
 use sandbox_controller_core as core;
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RetentionWindowId};
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation, RetentionWindowId};
 
 struct Stop(CrashPoint);
 impl CrashInjector for Stop {
