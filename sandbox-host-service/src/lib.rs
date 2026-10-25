@@ -20,7 +20,6 @@ pub mod data_gateway;
 mod driver;
 mod facade;
 mod observation;
-mod observation_admission;
 mod status_admission;
 pub use driver::{DriveReport, DriverConfig, TemplateSource};
 pub use facade::HostFacade;
@@ -33,7 +32,6 @@ pub struct HostLifecycle<H: ControllerHost> {
     status: Arc<Semaphore>,
     control: Arc<Semaphore>,
     observations: Arc<Semaphore>,
-    observation_waiter: Arc<Semaphore>,
     cleanup: Arc<Semaphore>,
     max_work: usize,
     scan_cursor: Arc<AtomicUsize>,
@@ -46,7 +44,6 @@ impl<H: ControllerHost> Clone for HostLifecycle<H> {
             status: Arc::clone(&self.status),
             control: Arc::clone(&self.control),
             observations: Arc::clone(&self.observations),
-            observation_waiter: Arc::clone(&self.observation_waiter),
             cleanup: Arc::clone(&self.cleanup),
             max_work: self.max_work,
             scan_cursor: Arc::clone(&self.scan_cursor),
@@ -63,7 +60,6 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             status: Arc::new(Semaphore::new(1)),
             control: Arc::new(Semaphore::new(2)),
             observations: Arc::new(Semaphore::new(2)),
-            observation_waiter: Arc::new(Semaphore::new(1)),
             cleanup: Arc::new(Semaphore::new(1)),
             max_work: 4,
             scan_cursor: Arc::new(AtomicUsize::new(0)),
@@ -227,8 +223,9 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError> {
-        let permit =
-            observation_admission::acquire(&self.observations, &self.observation_waiter).await?;
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
@@ -314,8 +311,9 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError> {
-        let permit =
-            observation_admission::acquire(&self.observations, &self.observation_waiter).await?;
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
@@ -346,8 +344,9 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::CreateObservation, ReceiveError> {
-        let permit =
-            observation_admission::acquire(&self.observations, &self.observation_waiter).await?;
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
@@ -368,8 +367,9 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
-        let permit =
-            observation_admission::acquire(&self.observations, &self.observation_waiter).await?;
+        let permit = Arc::clone(&self.observations)
+            .try_acquire_owned()
+            .map_err(|_| ReceiveError::Capacity)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
