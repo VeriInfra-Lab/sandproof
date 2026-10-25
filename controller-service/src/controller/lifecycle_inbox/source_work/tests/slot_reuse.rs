@@ -91,9 +91,13 @@ fn assert_release_required(
     resume: &AcceptedLifecycleIntent,
     position: HostSlotPhase,
 ) {
-    assert!(journal.host_slot_inventory().unwrap().iter().any(|(ctx, phase)| {
-        ctx.position == HostSlotId(1) && *phase == position
-    }));
+    assert!(
+        journal
+            .host_slot_inventory()
+            .unwrap()
+            .iter()
+            .any(|(ctx, phase)| { ctx.position == HostSlotId(1) && *phase == position })
+    );
     let before = journal.world().unwrap();
     assert!(matches!(
         journal.admit_lifecycle_resume(
@@ -126,7 +130,11 @@ fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     let first = record_real_resume(&mut journal);
     admit_real_resume(&mut journal, &first);
     let moved = journal.host_slot_context(sandbox).unwrap().unwrap();
-    assert_eq!(moved.position, HostSlotId(1), "occupied original slot cannot be reused");
+    assert_eq!(
+        moved.position,
+        HostSlotId(1),
+        "occupied original slot cannot be reused"
+    );
     journal
         .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
         .unwrap();
@@ -165,7 +173,10 @@ fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     bootstrap(&mut journal);
     admit_real_resume(&mut journal, &second);
     let rebound = journal.host_slot_context(sandbox).unwrap().unwrap();
-    assert_eq!(rebound.position, moved.position, "retain one position identity per sandbox");
+    assert_eq!(
+        rebound.position, moved.position,
+        "retain one position identity per sandbox"
+    );
     assert_eq!(rebound.expected_previous, Some(moved.binding.vm));
     assert_eq!(rebound.binding.generation, 3);
     assert!(rebound.binding.vm > moved.binding.vm);
@@ -174,10 +185,24 @@ fn two_owner_two_cycle_resume_keeps_its_released_position_across_reopen() {
     let mut journal = v3::open(&path);
     assert_eq!(journal.host_slot_context(sandbox).unwrap(), Some(rebound));
     bootstrap(&mut journal);
-    assert_eq!(admit_real_resume(&mut journal, &second).local.unwrap().sandbox, sandbox);
+    assert_eq!(
+        admit_real_resume(&mut journal, &second)
+            .local
+            .unwrap()
+            .sandbox,
+        sandbox
+    );
     journal
         .register_data_credential(sandbox, 3, [100; 32], &mut NeverCrash)
         .unwrap();
     finish_restored_component(&mut journal, sandbox);
-    assert_eq!(journal.world().unwrap().sandbox_record(sandbox).unwrap().phase, core::Phase::Running);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Running
+    );
 }
