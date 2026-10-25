@@ -242,7 +242,7 @@ if sys.argv[1] == 'tree':
                 ['build', '--locked', '-p', 'sandproof-controller-service', '--bin', 'sandproof-window-reducer'],
                 ['fmt', '--all', '--', '--check'],
                 ['clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'],
-                ['test', '--workspace', '--all-targets', '--locked'],
+                ['test', '--workspace', '--all-targets', '--locked', '--no-fail-fast'],
                 ['test', '--workspace', '--doc', '--locked'],
                 ['clippy', '--locked', '-p', 'sandproof-controller-service', '--all-targets', '--features', 'contention-diagnostics', '--', '-D', 'warnings'],
                 ['test', '--locked', '-p', 'sandproof-controller-service', '--features', 'contention-diagnostics'],
@@ -258,7 +258,7 @@ if sys.argv[1] == 'tree':
             self.assertEqual(len(report['stages']), 13)
 
     def test_failed_execution_keeps_exit_and_never_runs_later_checks(self):
-        command = ['test', '--workspace', '--all-targets', '--locked']
+        command = ['test', '--workspace', '--all-targets', '--locked', '--no-fail-fast']
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.fixture(directory)
