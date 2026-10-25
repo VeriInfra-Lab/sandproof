@@ -129,13 +129,13 @@ pub(super) fn validate_record(
                 .logical_effect(&action.command.logical)
                 .is_none_or(|effect| effect.origin != core::EffectOrigin::Operation(key))
             || !(matches!(
-                    world.effect_status(&action.command),
-                    Some(
-                        core::EffectStatus::Dispatched
-                            | core::EffectStatus::OutcomeUnknown
-                            | core::EffectStatus::Acknowledged(_)
-                    )
-                ) || core::checkpoint::retired_activation_valid(world, &action.command)))
+                world.effect_status(&action.command),
+                Some(
+                    core::EffectStatus::Dispatched
+                        | core::EffectStatus::OutcomeUnknown
+                        | core::EffectStatus::Acknowledged(_)
+                )
+            ) || core::checkpoint::retired_activation_valid(world, &action.command)))
     {
         return Err(JournalError::CorruptStore);
     }
