@@ -84,11 +84,18 @@ fn continued_resume() -> (
 #[test]
 fn observed_continued_resume_rechecks_facts_without_writing_a_running_field_into_unload() {
     let (pending, mut observation, continued) = continued_resume();
-    let running = pending.accept_lifecycle_unload_observation(&continued, 185).unwrap();
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
     let mut facts = continued.outcome.continued().unwrap().clone();
     facts.observed_at_ms = 186;
-    observation.readiness = CurrentResumeReadiness::Observed { facts: facts.clone() };
-    assert_eq!(running.accept_lifecycle_resume_observation(&observation), Ok(running.clone()));
+    observation.readiness = CurrentResumeReadiness::Observed {
+        facts: facts.clone(),
+    };
+    assert_eq!(
+        running.accept_lifecycle_resume_observation(&observation),
+        Ok(running.clone())
+    );
     for field in 0..4 {
         let mut changed = facts.clone();
         match field {
@@ -98,7 +105,10 @@ fn observed_continued_resume_rechecks_facts_without_writing_a_running_field_into
             _ => changed.startup_deadline_ms += 1,
         }
         observation.readiness = CurrentResumeReadiness::Observed { facts: changed };
-        assert_eq!(running.accept_lifecycle_resume_observation(&observation), Err(DecisionError::Conflict));
+        assert_eq!(
+            running.accept_lifecycle_resume_observation(&observation),
+            Err(DecisionError::Conflict)
+        );
     }
 }
 

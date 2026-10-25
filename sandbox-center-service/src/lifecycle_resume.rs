@@ -43,7 +43,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 &intent.request.binding.session,
             )
             .ok_or(PortError::NotFound)?;
-        if record.operations().last().is_none_or(|current| current.intent() != intent) {
+        if record
+            .operations()
+            .last()
+            .is_none_or(|current| current.intent() != intent)
+        {
             return Err(PortError::Busy);
         }
         // A failed Unload can keep the resumed execution running. Classify
