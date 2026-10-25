@@ -15,6 +15,110 @@ fn candidate(state: LoadedSnapshotState) -> LoadedSnapshotObservation {
 }
 
 #[test]
+fn restore_exit_requires_two_confirmed_observations_of_the_same_process() {
+    let original = candidate(LoadedSnapshotState::Exited);
+    let calls = Cell::new(0);
+    let observed = observe_confirmed_restore_exit(|| {
+        calls.set(calls.get() + 1);
+        Ok(original.clone())
+    })
+    .unwrap();
+    assert_eq!(observed, Some(original.process));
+    assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn live_restore_candidate_never_produces_an_exit_fact() {
+    for state in [LoadedSnapshotState::Paused, LoadedSnapshotState::Running] {
+        let calls = Cell::new(0);
+        assert!(
+            observe_confirmed_restore_exit(|| {
+                calls.set(calls.get() + 1);
+                assert_eq!(calls.get(), 1, "a live first observation is not an exit");
+                Ok(candidate(state))
+            })
+            .unwrap()
+            .is_none()
+        );
+    }
+}
+
+#[test]
+fn missing_or_timed_out_restore_observations_remain_errors() {
+    use std::io::{Error, ErrorKind};
+    for kind in [
+        ErrorKind::NotFound,
+        ErrorKind::TimedOut,
+        ErrorKind::PermissionDenied,
+    ] {
+        for fail_at in [1, 2] {
+            let calls = Cell::new(0);
+            let result = observe_confirmed_restore_exit(|| {
+                calls.set(calls.get() + 1);
+                if calls.get() == fail_at {
+                    Err(Error::new(kind, "original restore observation unavailable").into())
+                } else {
+                    Ok(candidate(LoadedSnapshotState::Exited))
+                }
+            });
+            assert!(result.is_err(), "observation failure is never an exit fact");
+        }
+    }
+}
+
+#[test]
+fn changed_pid_start_boot_or_state_never_adopts_a_restore_exit() {
+    let original = candidate(LoadedSnapshotState::Exited);
+    let mut changes = Vec::new();
+    let mut changed = original.clone();
+    changed.process.pid += 1;
+    changes.push(changed);
+    let mut changed = original.clone();
+    changed.process.start_time_ticks += 1;
+    changes.push(changed);
+    let mut changed = original.clone();
+    changed.process.boot_id = "00000000-0000-0000-0000-000000000002".into();
+    changes.push(changed);
+    changes.push(candidate(LoadedSnapshotState::Paused));
+    changes.push(candidate(LoadedSnapshotState::Running));
+    for changed in changes {
+        let calls = Cell::new(0);
+        assert!(
+            observe_confirmed_restore_exit(|| {
+                calls.set(calls.get() + 1);
+                Ok(if calls.get() == 1 {
+                    original.clone()
+                } else {
+                    changed.clone()
+                })
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn invalid_restore_process_fields_never_produce_an_exit_fact() {
+    for field in 0..3 {
+        let mut original = candidate(LoadedSnapshotState::Exited);
+        match field {
+            0 => original.process.pid = 0,
+            1 => original.process.start_time_ticks = 0,
+            _ => original.process.boot_id.clear(),
+        }
+        let calls = Cell::new(0);
+        assert!(
+            observe_confirmed_restore_exit(|| {
+                calls.set(calls.get() + 1);
+                assert_eq!(calls.get(), 1, "invalid identity is rejected before confirmation");
+                Ok(original.clone())
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn interrupted_after_resume_finishes_current_authorization_on_same_pid() {
     let state = Cell::new(LoadedSnapshotState::Paused);
     let current_token = Cell::new("old-token");
