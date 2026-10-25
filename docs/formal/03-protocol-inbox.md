@@ -63,3 +63,10 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 `AcceptedLifecycleIntent`，使用独立连接 context 校验完整封套，并在回复前检查完整 recorded 关系；
 它不调用上述独立 request/manifest codec。[隔离接线候选](../../verification/experiments/stage1-protocol/json-wire/README.md)
 用于验证这一真实路由所需的最小同步接口，未接纳的生产候选或抽象 parser 回调证明不能算当前字节入口已证。
+
+[协议角色叶子候选](../../verification/experiments/stage1-protocol/schema-leaves/README.md)把 SessionId、
+CenterId 和五种计数器角色的实际 Deserialize 接回同一 V0 编号/非零计数器生成体，保留原值、
+错误及效果；原 SliceRead 字典绑定条件下的叶子拒绝仍先于文档结束检查。它不重证或迁记旧
+协议 2 的全文 schema，不把普通 accepted_version、ExpectedSession::Version 或 slot 加强为非零。
+完整派生字段覆盖、具体 parser 调用位置、字节预算及输出 Writer 仍是后续义务。共享根和
+独立生成的标准 Result::map 接线以候选 diff 交 V0/主控，未公共采用前不认领正式入口通过。
