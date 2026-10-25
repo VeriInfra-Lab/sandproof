@@ -93,6 +93,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 Ok(intent) => return Ok(acceptance(intent)),
                 Err(cause) => {
                     let pending = matches!(cause, CurrentObservationError::Pending);
+                    let observation_expired = matches!(cause, CurrentObservationError::Deadline);
                     let error = cause.into_port();
                     // A duplicate may have committed while this observation was
                     // detached. Unknown authority never becomes a cached success.
@@ -104,6 +105,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     if let Some(intent) = replay {
                         return Ok(acceptance(intent));
                     }
+                    // No acceptance was attempted by this readonly observation.
+                    // Only the successful exact replay above establishes absence;
+                    // unknown shared storage or host results remain unchanged.
+                    let error = if observation_expired {
+                        PortError::Busy
+                    } else {
+                        error
+                    };
                     let left = deadline.saturating_duration_since(Instant::now());
                     if !pending || left.is_zero() {
                         diagnostics::emit(
