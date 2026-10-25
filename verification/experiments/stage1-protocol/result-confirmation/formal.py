@@ -35,8 +35,14 @@ def module(name, path):
 def inventory(root):
     data = json.loads((root / HERE / 'inventory.json').read_text())
     parent = module('confirmation_inventory_parent', root / HERE.parent / 'formal.py')
+    extra = set()
+    sibling = root / HERE.parent / 'renewal-confirmation/formal.py'
+    if sibling.is_file():
+        renewal = module('registered_renewal_inventory', sibling)
+        renewal.inventory(root)
+        extra = renewal.NEW_PROOFS
     actual = {p.stem for p in (root / PROOFS).glob('*.lean')}
-    if data.get('schema') != 1 or actual != set(parent.POSITIVE) | NEW_PROOFS:
+    if data.get('schema') != 1 or actual != set(parent.POSITIVE) | NEW_PROOFS | extra:
         raise ValueError('unregistered or missing retained protocol proof')
     templates = {p.name.removesuffix('.lean.in') for p in (root / HERE).glob('*.lean.in')}
     if templates != {m['template'] for m in data['mutations'].values()}:
