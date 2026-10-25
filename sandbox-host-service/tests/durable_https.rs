@@ -82,7 +82,9 @@ async fn changed_requests_are_refused(
 
 #[tokio::test]
 async fn actual_https_resume_forwards_original_pending_through_facade_and_wrapper() {
-    use sandproof_protocol::lifecycle::{ContentDigest, CurrentResumeReadiness, LifecycleOperation};
+    use sandproof_protocol::lifecycle::{
+        ContentDigest, CurrentResumeReadiness, LifecycleOperation,
+    };
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let state = Arc::new(Mutex::new(local::State {
