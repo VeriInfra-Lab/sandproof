@@ -79,7 +79,8 @@ def run(output, native_only):
             record['native_source_archive_sha256'] = historical['archive_sha256']
             record['native_docs_scope'] = 'historical native snapshot; current docs require the functional seal'
             if [step['name'] for step in correct['steps']] != [
-                    'format', 'extract-format', 'clean-own', 'build', 'test', 'clippy', 'docs', 'fmt-check']:
+                    'driver-tests', 'format', 'extract-format', 'clean-own', 'build', 'test',
+                    'clippy', 'docs', 'fmt-check']:
                 raise ValueError('native positive required phase inventory differs')
             for step in correct['steps']:
                 if (step['exit_code'] != 0 or archive_builder.sha(

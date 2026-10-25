@@ -8,6 +8,7 @@ import re
 import signal
 import shutil
 import subprocess
+import sys
 import time
 import traceback
 
@@ -84,6 +85,8 @@ def native(output, target):
                                               ('clippy', ['cargo', 'clippy', '--version'])]}
         before = sources()
         record['source_sha256'] = before
+        run('driver-tests', [sys.executable,
+                            'verification/experiments/stage1-protocol/test_replay_formal.py'])
         run('format', ['cargo', 'fmt', '-p', 'sandproof-protocol', '-p', 'sandproof-internal', '--check'])
         run('extract-format', ['cargo', 'fmt', '--manifest-path',
                               'verification/experiments/stage1-protocol/Cargo.toml', '--check'])
