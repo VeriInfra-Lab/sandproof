@@ -9,6 +9,24 @@ fn next_request() -> PublicUnloadRequest {
     }
 }
 
+fn accept_next(
+    app: &Application,
+    authority: &SharedBusinessAuthority,
+    session: &SessionId,
+    request: &PublicUnloadRequest,
+    before: &sandproof_center_core::CenterState,
+) -> sandproof_protocol::lifecycle::PublicAcceptance {
+    let result = app.unload_lifecycle("8", session, request);
+    if result.is_err() {
+        // Preserve the original failure's transaction boundary as evidence:
+        // the readonly wrong-source rejection has not appended an acceptance.
+        assert_eq!(app.snapshot().unwrap(), *before);
+        assert!(authority.replay_public_unload(&"8".try_into().unwrap(), session, request).unwrap().is_none());
+        assert_eq!(result, Err(PortError::Busy));
+    }
+    result.expect("a fresh exact Resume observation must permit the next public Unload")
+}
+
 #[test]
 fn next_unload_after_resumed_continuation_accepts_only_fresh_resume_and_preserves_history() {
     let fixture = Engine::new();
@@ -24,7 +42,7 @@ fn next_unload_after_resumed_continuation_accepts_only_fresh_resume_and_preserve
     let old_create_queries = host.create_requests.lock().unwrap().len();
     let old_resume_queries = host.resume_requests.lock().unwrap().len();
     let request = next_request();
-    let accepted = app.unload_lifecycle("8", &session, &request).unwrap();
+    let accepted = accept_next(&app, &authority, &session, &request, &before);
     assert_eq!(accepted.accepted_version, 5);
     assert_eq!(host.create_requests.lock().unwrap().len(), old_create_queries);
     assert_eq!(host.resume_requests.lock().unwrap().len(), old_resume_queries + 1);
