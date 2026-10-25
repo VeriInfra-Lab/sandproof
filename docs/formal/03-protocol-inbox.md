@@ -16,6 +16,11 @@
 
 完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
 
+终局确认与关闭的独立值切片复用完整 intent 和既有版本/retention 合同：终局匹配只核对全文与 Destroy/版本/slot 形状，
+不重新认证或 validate；确认与关闭另外要求 Cleaned，关闭回执要求完整 terminal 及精确 retention window。
+这些守卫不能签发耐久确认或物理清理事实；续租确认的库表示连接、实际 journal 确认/退休事务和未结责任仍另行验收。
+对应入口和边界见[终局值组件](../../verification/experiments/stage1-protocol/result-confirmation/README.md)。
+
 ## 2. 状态与义务
 
 | 状态/事件 | 验收义务 |
