@@ -67,6 +67,17 @@ fn raced_unload(
     Result<sandproof_protocol::lifecycle::PublicAcceptance, PortError>,
     sandproof_protocol::lifecycle::PublicAcceptance,
 ) {
+    raced_unload_with_deadline(late_request, fence_after_winner, false)
+}
+
+fn raced_unload_with_deadline(
+    late_request: PublicUnloadRequest,
+    fence_after_winner: bool,
+    exhaust_deadline: bool,
+) -> (
+    Result<sandproof_protocol::lifecycle::PublicAcceptance, PortError>,
+    sandproof_protocol::lifecycle::PublicAcceptance,
+) {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = lifecycle_public::setup(&fixture, &proxy);
@@ -89,6 +100,7 @@ fn raced_unload(
     let late =
         std::thread::spawn(move || late_app.unload_lifecycle("8", &late_session, &late_request));
     await_observation(&entered);
+    let blocked_budget = *host.observation_budgets.lock().unwrap().last().unwrap();
     let accepted = app
         .unload_lifecycle("8", &created.session, &request)
         .unwrap();
@@ -113,6 +125,9 @@ fn raced_unload(
             Err(PortError::OutcomeUnknown)
         ));
     }
+    if exhaust_deadline {
+        exhaust_observation_budget(blocked_budget);
+    }
     release.complete();
     let result = late.join().unwrap();
     if fence_after_winner {
@@ -124,6 +139,19 @@ fn raced_unload(
         assert_eq!(app.snapshot().unwrap(), before);
     }
     (result, accepted)
+}
+
+// The observer is already inside the original Host barrier. Its supplied
+// remaining budget started before this wait, so a full timed receive guarantees
+// the original deadline has elapsed before we release it. No polling race.
+fn exhaust_observation_budget(budget: Duration) {
+    assert!(!budget.is_zero());
+    let (sender, receiver) = mpsc::channel::<()>();
+    assert_eq!(
+        receiver.recv_timeout(budget),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    );
+    drop(sender);
 }
 
 fn racing_request(sequence: u64, expected_version: u64) -> PublicUnloadRequest {
@@ -753,6 +781,73 @@ fn unload_transport_busy_is_not_treated_as_authenticated_pending() {
     assert_eq!(
         app.unload_lifecycle("8", &created.session, &racing_request(2, 1)),
         Err(PortError::Busy)
+    );
+    assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+    assert_eq!(app.snapshot().unwrap(), before);
+}
+
+#[test]
+fn unload_observation_deadline_is_busy_only_after_confirmed_replay_absence() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    host.ready.store(false, Ordering::SeqCst);
+    let (entered, release) = host.block_next(created.session.clone());
+    let late_app = Arc::clone(&app);
+    let late_session = created.session;
+    let late = std::thread::spawn(move || {
+        late_app.unload_lifecycle("8", &late_session, &racing_request(2, 1))
+    });
+    await_observation(&entered);
+    let budget = *host.observation_budgets.lock().unwrap().last().unwrap();
+    exhaust_observation_budget(budget);
+    release.complete();
+    assert_eq!(late.join().unwrap(), Err(PortError::Busy));
+    assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+    assert_eq!(app.snapshot().unwrap(), before);
+}
+
+#[test]
+fn unload_observation_deadline_replays_the_same_full_acceptance() {
+    let (result, accepted) = raced_unload_with_deadline(racing_request(2, 1), false, true);
+    assert_eq!(result, Ok(accepted));
+}
+
+#[test]
+fn unload_observation_deadline_keeps_unknown_replay_fenced() {
+    let (result, _) = raced_unload_with_deadline(racing_request(2, 1), true, true);
+    assert_eq!(result, Err(PortError::OutcomeUnknown));
+}
+
+#[test]
+fn unload_host_unknown_is_not_relabelled_as_a_readonly_deadline() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    assert_eq!(
+        app.query_lifecycle("8", &created.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    *host.observation_error_once.lock().unwrap() = Some(PortError::OutcomeUnknown);
+    assert_eq!(
+        app.unload_lifecycle("8", &created.session, &racing_request(2, 1)),
+        Err(PortError::OutcomeUnknown)
     );
     assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
     assert_eq!(app.snapshot().unwrap(), before);
