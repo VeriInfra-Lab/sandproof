@@ -6,6 +6,9 @@ use sandproof_protocol::lifecycle::{
     UnloadObservation, UnloadOutcome, UnloadedFacts,
 };
 
+#[path = "lifecycle_continued_reunload.rs"]
+mod continued_reunload;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,

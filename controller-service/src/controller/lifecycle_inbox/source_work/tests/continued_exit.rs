@@ -99,6 +99,41 @@ fn prepared(
 }
 
 #[test]
+fn continued_resume_sql_retains_the_resume_origin_and_rejects_old_create_as_current_observation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, current, state) = prepared(&path, true);
+    let before = journal.world().unwrap();
+    let sources = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    let obsolete = journal.lifecycle_ready_candidate::<Evidence>(&v3::request(), &v3::context(), 10).unwrap();
+    assert_eq!(obsolete.view.readiness, crate::CreateReadiness::NotCurrent);
+    let actual = journal.lifecycle_ready_candidate::<Evidence>(&resume, &v3::context(), 10).unwrap();
+    assert!(actual.can_probe());
+    assert_eq!(actual.view.request, resume);
+    assert_eq!(actual.view.current_request, current);
+    assert!(actual.continuation.is_some(), "readiness uses the actual Continue work, not the old Resume fence");
+    // Keep the exit observation absent: loss is not inferred to make a fresh
+    // Ready query work. The fake has no plaintext restored credential, so the
+    // actual application may return Pending, but must retain this exact origin.
+    state.lock().unwrap().continued_exit = None;
+    drop(journal);
+    let app = v3::application(&path, state.clone(), false);
+    app.establish_lifecycle_host_epoch().unwrap();
+    let old = app.observe_lifecycle_create(&v3::request(), &v3::context()).unwrap();
+    assert_eq!(old.readiness, crate::CreateReadiness::NotCurrent);
+    let observed = app.observe_lifecycle_resume(&resume, &v3::context()).unwrap();
+    assert_eq!(observed.current_request, current);
+    assert_eq!(observed.request, resume);
+    assert_ne!(observed.readiness, CurrentResumeReadiness::NotCurrent);
+    assert_ne!(observed.readiness, CurrentResumeReadiness::StateLost);
+    drop(app);
+    let reopened = v3::open(&path);
+    assert_eq!(reopened.world().unwrap(), before);
+    assert_eq!(reopened.lifecycle_source_work(&v3::config().node).unwrap(), sources);
+    assert!(state.lock().unwrap().actions.is_empty());
+}
+
+#[test]
 fn both_failed_unload_qualifications_report_exact_loss_after_reopen_without_new_work() {
     for after_capture in [false, true] {
         let dir = tempfile::tempdir().unwrap();
