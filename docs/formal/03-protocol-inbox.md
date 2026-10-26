@@ -1,5 +1,10 @@
 # V3 高级协议与持久收件
 
+原保留历史的版本关系候选见[收件历史校验](../../verification/experiments/stage1-protocol/inbox-retained/README.md)。
+本边界直接对应 follows_retained 的初始、相邻和压缩空洞条件；保存的压缩位置和确认
+版本不证明删除或确认实际发生。完整 Inbox.validate、原 validate_lifetimes 的循环、
+确认事务保持性与真实读取/提交仍各有义务，不能由此局部成功认领持久收件闭合。
+
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
 任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。

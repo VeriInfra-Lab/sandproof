@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetained
+import SandboxModel.Lifecycle.Protocol.InboxRetainedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.InboxRetained
+open Values
+
+theorem actual_normal_and_boundary_cases :
+    renewal_confirmation.follows_retained empty 0#u64 initial = .ok true ∧
+    renewal_confirmation.follows_retained empty 1#u64 (renewal 2#u64 1#u64) = .ok true ∧
+    renewal_confirmation.follows_retained gap 1#u64 (renewal 4#u64 3#u64) = .ok true ∧
+    renewal_confirmation.follows_retained pastCompaction 1#u64 (renewal 5#u64 4#u64) = .ok false ∧
+    renewal_confirmation.follows_retained pastConfirmation 1#u64 (renewal 5#u64 4#u64) = .ok false ∧
+    renewal_confirmation.follows_retained empty 0#u64 (renewal 1#u64 0#u64) = .ok false := by
+  simpa only [follows_refines, Result.ok.injEq] using expected_outcomes
+
+theorem does_not_establish_history_exists :
+    gap.entries.val = [] ∧
+    renewal_confirmation.follows_retained gap 1#u64 (renewal 4#u64 3#u64) = .ok true := by
+  exact ⟨rfl, actual_normal_and_boundary_cases.2.2.1⟩
+
+end SandboxModel.Stage1Protocol.InboxRetained
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.actual_normal_and_boundary_cases
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.does_not_establish_history_exists
