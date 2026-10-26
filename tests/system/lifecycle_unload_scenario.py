@@ -1070,6 +1070,7 @@ def exercise(args):
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E6': 'original pre-marker LoadPaused stayed unknown until actual public Destroy reached Host and terminal fence; same candidate was observed, stopped and collected without another Prepare or Activate',
+                'E8': 'real public Destroy competed with the original unknown LoadPaused Prepare; actual Host terminal fencing preceded continuation of the same candidate',
                 'E12': 'other owner kept its original live candidate across the first owner terminal handoff, then explicit cleanup',
                 'E14': 'original data access and prior execution tokens remained closed during unknown Resume and Destroy',
                 'other_cases': 'one pre-marker cancellation branch; no resumed Running, second Resume, full matrix or formal proof claim',
