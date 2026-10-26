@@ -1021,13 +1021,16 @@ def exercise(args):
             }
         if capture_stage == 'copy-partial':
             report['acceptance_cases'] = {
-                'E7': 'actual partial Memory copy returned an error; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
+                'E3': 'actual partial Memory copy returned an error; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
                 'E12': 'two owners and actual slot reuse observed before the copy fault',
                 'E14': 'old tokens rejected after the first Resume; original continued authorization preserved',
                 'other_cases': 'one restore cycle and failed second Unload; no second Unloaded or full fault matrix claim',
             }
         elif capture_stage or prepare_fault:
-            report['acceptance_cases']['E7'] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+            case = {'freeze-receipt': 'E3', 'seal-receipt': 'E4',
+                    'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
+                        capture_stage or 'restore-prepare-receipt']
+            report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
         if capture_probe is not None:
