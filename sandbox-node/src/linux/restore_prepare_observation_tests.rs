@@ -133,7 +133,7 @@ fn changed_current_fence_or_candidate_never_returns_original_prepared() {
                         0 => observed.process.pid += 1,
                         1 => observed.process.start_time_ticks += 1,
                         2 => {
-                            observed.process.boot_id = "00000000-0000-0000-0000-000000000002".into()
+                            observed.process.boot_id = "00000000-0000-0000-0000-000000000002".into();
                         }
                         3 => observed.state = LoadedSnapshotState::Running,
                         _ => write_fence(
@@ -301,7 +301,7 @@ fn original_scope_rejects_wrong_snapshot_manifest_owner_operation_and_old_genera
             2 => changed.identity.owner = TenantId::try_from("tenant-8").unwrap(),
             3 => {
                 changed.identity.operation =
-                    OperationId::try_from("op-0123456789abcdef-1-4").unwrap()
+                    OperationId::try_from("op-0123456789abcdef-1-4").unwrap();
             }
             _ => {
                 let mut command = changed.command.command().clone();
