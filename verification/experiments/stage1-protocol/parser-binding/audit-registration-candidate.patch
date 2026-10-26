@@ -1,0 +1,14 @@
+--- a/tools/proof_batch.py
++++ b/tools/proof_batch.py
+@@ -33,0 +34,11 @@
++
++EXTRA_AUDIT_FILES += (
++    'verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in',
++    'verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in',
++    'verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in',
++    'verification/experiments/stage1-protocol/envelope-budget/EnvelopeBudget.lean.in',
++    'verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriter.lean.in',
++    'verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriterWitnesses.lean.in',
++    'verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriterWrong.lean.in',
++    'verification/experiments/stage1-protocol/parser-binding/EnvelopeParser.lean.in',
++)

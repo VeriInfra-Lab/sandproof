@@ -1,0 +1,32 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -174,6 +174,9 @@
+     target = work / 'stage1-protocol-serde-binding'
+     native_case('stage1-protocol-serde-binding', ROOT, target, lambda p=target:
+         call(['verification/experiments/stage1-protocol/serde-binding/native.py', '--output', p]))
++    target = work / 'stage1-protocol-parser-binding'
++    native_case('stage1-protocol-parser-binding', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/parser-binding/native.py', '--output', p]))
+     target = work / 'schema-domains'
+     native_case('schema-domains', ROOT, target, lambda p=target:
+         call(['verification/experiments/schema-domains/native.py', '--output', p]))
+@@ -251,7 +254,7 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     sub = parser.add_subparsers(dest='mode', required=True)
+     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-protocol-envelope-budget','stage1-protocol-envelope-writer','stage1-protocol-serde-binding'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-protocol-envelope-budget','stage1-protocol-envelope-writer','stage1-protocol-serde-binding','stage1-protocol-parser-binding'])
+     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
+     args = parser.parse_args(argv)
+     if args.mode == 'run':
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -20,3 +20,8 @@
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/serde-binding/negative.py --native-evidence "${SANDPROOF_SERDE_BINDING_NATIVE:?exact component record required}" --output "$EVIDENCE/serde-binding-omission"
+ SANDPROOF_SERDE_BINDING_LLBC="$EVIDENCE/serde-binding/source/artifacts/bytes-recorded_encode.llbc" bash scripts/python-entry.sh -m unittest discover -s verification/experiments/stage1-protocol/serde-binding -p 'test_*.py'
+ echo 'Concrete protocol Serialize source binding and real field omission checked; A6 adoption, parser binding and full V3 remain separate.'
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-protocol-parser-binding
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/parser-binding/formal.py --output "$EVIDENCE/parser-binding"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/parser-binding/negative.py --native-evidence "${SANDPROOF_PARSER_BINDING_NATIVE:?exact component record required}" --output "$EVIDENCE/parser-binding-unknown"
++SANDPROOF_PARSER_BINDING_NATIVE="${SANDPROOF_PARSER_BINDING_NATIVE:?exact component record required}" SANDPROOF_PARSER_BINDING_LLBC="$EVIDENCE/parser-binding/source/artifacts/bytes-recorded_decode.llbc" bash scripts/python-entry.sh -m unittest discover -s verification/experiments/stage1-protocol/parser-binding -p 'test_*.py'
++echo 'Conditional parser error composition and real unknown-field source rejection checked; complete parser adoption and V3 remain separate.'
