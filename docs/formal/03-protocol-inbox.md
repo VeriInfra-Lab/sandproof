@@ -11,6 +11,12 @@
 每条 applied deadline 及最终值；版本空洞只断开前驱关系，不证明压缩实际发生。
 真实 read_lifetime 的同一对象/事务、确认保持性与完整 Inbox.validate 继续另列。
 
+[续期会话校验候选](../../verification/experiments/stage1-protocol/inbox-renewal-session/README.md)
+保留完整确认形状、编码及字节上限、首个全文匹配项、压缩边界和未应用续期的检查顺序。
+其值合同覆盖任意编码回调；标准 Serde 实例连接、原函数一般等价、生产候选采用和 V0
+借用 Vec/Result 标签采用仍待完成。local/previous 的存在、保存的压缩标记及完整字段
+相等不证明资源存在、实际删除、授权或耐久接受；完整 Inbox.validate 与持久组合另列。
+
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
 任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。

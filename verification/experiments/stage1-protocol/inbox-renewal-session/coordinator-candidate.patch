@@ -1,0 +1,21 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -188,0 +189,3 @@
++    target = work / 'stage1-inbox-renewal-session'
++    native_case('stage1-inbox-renewal-session', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-renewal-session/native.py', '--output', p]))
+@@ -266 +269 @@
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage','stage1-inbox-retained','stage1-inbox-lifetimes'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage','stage1-inbox-retained','stage1-inbox-lifetimes','stage1-inbox-renewal-session'])
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -39,0 +40,5 @@
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-renewal-session
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-renewal-session/formal.py --require-native --variant correct --output "$EVIDENCE/renewal-session-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-renewal-session/formal.py --require-native --variant key-only-checkpoint --output "$EVIDENCE/renewal-session-key-only-checkpoint"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-renewal-session/formal.py --require-native --variant ignore-retained-frontier --output "$EVIDENCE/renewal-session-ignore-retained-frontier"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-renewal-session/formal.py --require-native --variant ignore-unapplied-sdk --output "$EVIDENCE/renewal-session-ignore-unapplied-sdk"
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -59,0 +60 @@
++| V3 续期会话校验私有候选 | 任意编码回调下的完整 validate_session_using 值合同、首次全文匹配、压缩边界及未应用续期扫描；复用 #696 确认规格并检查同合同反例；见[范围](../verification/experiments/stage1-protocol/inbox-renewal-session/README.md) | 原函数一般等价、标准 Serde 实例连接、生产采用、V0 借用 Vec/Result 标签、ning/native 与公共验收待完成；不代表授权、实际删除、完整 Inbox.validate 或持久收件 |

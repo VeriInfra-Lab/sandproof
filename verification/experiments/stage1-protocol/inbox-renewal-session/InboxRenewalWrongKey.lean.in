@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalNegativeSupport
+import SandboxModel.Lifecycle.Protocol.InboxRenewalValues
+import SandboxModel.Lifecycle.Protocol.InboxRenewalUnapplied
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxRenewal.WrongKey
+open Values
+
+theorem checkpoint_return : checkpoint_entry_invalid keyOnly RenewalValues.exactResult = .ok false := by
+  let values := alloc.vec.Vec.deref keyOnly.entries
+  have step : checkpoint_entry_invalid_loop.body RenewalValues.exactResult (sliceCursor values 0) =
+      .ok (.done false) := by
+    unfold checkpoint_entry_invalid_loop.body
+    rw [slice_next_some values 0 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[0] = entry RenewalValues.changedRetention (some 200#i64) := by rfl
+    rw [selected]
+    simp [entry, RenewalValues.changedRetention,
+      RenewalValues.exactResult, Replay.key_eq, core.cmp.PartialEq.ne.trait_default,
+      core.cmp.PartialEq.ne.default, core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+  have done := loop_done _ (sliceCursor values 0) false step
+  simpa [checkpoint_entry_invalid, checkpoint_entry_invalid_loop,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter,
+    core.slice.Slice.iter, sliceCursor, values] using done
+
+theorem actual_return : run encode keyOnly = .ok (.Ok ()) := by
+  apply accepts_given_actual_checks encode keyOnly RenewalValues.exactResult rfl
+    RenewalValues.legal_exact bytes rfl (by simp [bytes]) (by rfl) checkpoint_return
+  · simp [keyOnly, base, core.option.Option.is_some_and,
+      SandproofFoundationsRust.core.option.Option.is_some_and]
+  · rw [unapplied_sdk_spec]
+    simp [keyOnly, base, entry, unappliedSdk]
+
+theorem rejects_same_full_contract : ¬ FullRenewalSessionContract run := by
+  intro contract
+  have required := contract encode keyOnly
+  rw [actual_return, expected_outcomes.2.1] at required
+  cases Result.ok_injective required
+
+end SandboxModel.Stage1Protocol.InboxRenewal.WrongKey
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.WrongKey.checkpoint_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.WrongKey.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.WrongKey.rejects_same_full_contract

@@ -1,0 +1,62 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalComposition
+import SandboxModel.Lifecycle.Protocol.InboxRenewalValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+open scoped Classical
+noncomputable section
+
+theorem normal_witness : run Values.encode Values.base = .ok (.Ok ()) := by
+  rw [full_contract]
+  exact Values.expected_outcomes.1
+
+theorem field_omission_rejections :
+    run Values.encode Values.keyOnly = .ok corrupt ∧
+    run Values.encode Values.retained = .ok corrupt ∧
+    run Values.encode Values.unapplied = .ok corrupt ∧
+    run Values.encode Values.duplicateFirst = .ok corrupt := by
+  simp only [run, validate_session_spec]
+  exact Values.expected_outcomes.2
+
+theorem absent_ignores_encoding (encode : Encoding) (session : Session)
+    (absent : session.confirmed_renewal = none) :
+    run encode session = .ok (if session.compacted_sdk_through.isNone then .Ok () else corrupt) := by
+  rw [full_contract]
+  simp [validateView, absent]
+
+theorem invalid_shape_ignores_encoding (encode : Encoding) (session : Session)
+    (confirmed : RenewalConfirmation) (present : session.confirmed_renewal = some confirmed)
+    (invalid : ¬ Renewal.Shape confirmed) : run encode session = .ok corrupt := by
+  rw [full_contract]
+  simp [validateView, present, invalid]
+
+theorem json_error_precedes_remaining_checks (encode : Encoding) (session : Session)
+    (confirmed : RenewalConfirmation) (present : session.confirmed_renewal = some confirmed)
+    (shape : Renewal.Shape confirmed) (error : serde_json.error.Error)
+    (encoded : encode confirmed = .ok (.Err error)) :
+    run encode session = .ok (.Err (.Json error)) := by
+  rw [full_contract]
+  simp [validateView, present, shape, encoded]
+
+theorem accepts_encoded_iff (encode : Encoding) (session : Session)
+    (confirmed : RenewalConfirmation) (present : session.confirmed_renewal = some confirmed)
+    (bytes : alloc.vec.Vec U8) (encoded : encode confirmed = .ok (.Ok bytes)) :
+    run encode session = .ok (.Ok ()) ↔
+      Renewal.Shape confirmed ∧ bytes.val.length ≤ 8192 ∧ session.local.isSome ∧
+        checkpointInvalid session.entries.val confirmed = false ∧
+        frontierInvalid session confirmed = false ∧
+        session.entries.val.any (unappliedSdk confirmed.request.accepted_version) = false := by
+  rw [full_contract]
+  cases hasLocal : session.local <;>
+    simp [validateView, present, encoded, afterEncoding, corrupt, ite_eq_iff, hasLocal]
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.normal_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.absent_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.invalid_shape_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.json_error_precedes_remaining_checks
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.accepts_encoded_iff
