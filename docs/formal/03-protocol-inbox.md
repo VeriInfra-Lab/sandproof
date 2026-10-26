@@ -75,3 +75,9 @@ CenterId 和五种计数器角色的实际 Deserialize 接回同一 V0 编号/�
 使用同一实际生成类型及原守卫合同，涵盖五种操作和 Recorded 全部字段。输出表示的
 单射不等于整个 Serde parser 已证，也不能把标准对象输出限制为唯一合法输入；固定派生
 还接受对应声明顺序的序列。具体字节/字典、容器收尾、原预算和 Writer 接线仍需独立验收。
+
+字段字节组合候选见[封套原回调](../../verification/experiments/stage1-protocol/envelope-bytes/README.md)：
+在原 `SliceFieldReader` 上覆盖全部自有字段并明确 Recorded 的 `intent` 路径，复用完整
+表示与原守卫；字节往返仍以显式标准派生条件和成功输出为前提。生产 parser 实例、
+正常编码完成、字节预算、实际 Writer、持久收件与完整 V3 继续列为待证义务。独立 JSON
+抽取视图仅服务本组合，不替代公共 V0/lane 目标或其验收。
