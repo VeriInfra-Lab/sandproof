@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.ValidationModel
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAdmission
+
+def ContextMatches (inbox : Inbox) (context : AuthenticatedCenterContext) : Prop :=
+  inbox.config.center = context.center ∧ inbox.config.node = context.expected_node
+
+noncomputable def expectedContext (inbox : Inbox) (context : AuthenticatedCenterContext) :
+    core.result.Result Unit sandproof_controller_service.JournalError := by
+  classical
+  exact if ContextMatches inbox context then .Ok () else .Err .Conflict
+
+def collapse : core.result.Result Unit AcceptedIntentError →
+    core.result.Result Unit sandproof_controller_service.JournalError
+  | .Ok value => .Ok value
+  | .Err _ => .Err .Conflict
+
+noncomputable def expectedAuthentication (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) : core.result.Result Unit sandproof_controller_service.JournalError := by
+  classical
+  exact if ContextMatches inbox context then collapse (Validation.expectedAccepted intent context) else .Err .Conflict
+
+def FullAuthenticationContract (run : Inbox → AcceptedLifecycleIntent → AuthenticatedCenterContext →
+    Result (core.result.Result Unit sandproof_controller_service.JournalError)) : Prop :=
+  ∀ inbox intent context, run inbox intent context = .ok (expectedAuthentication inbox intent context)
+
+theorem collapse_ok_iff (result : core.result.Result Unit AcceptedIntentError) :
+    collapse result = .Ok () ↔ result = .Ok () := by
+  cases result with
+  | Ok value => cases value; simp [collapse]
+  | Err error => simp [collapse]
+
+end SandboxModel.Stage1Protocol.InboxAdmission
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.collapse_ok_iff
