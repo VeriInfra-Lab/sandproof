@@ -20,6 +20,9 @@ use tokio::{
 mod lifecycle;
 use lifecycle::fixture as local;
 
+#[path = "port_tests/unload.rs"]
+mod unload;
+
 struct Permit {
     revocation: watch::Receiver<bool>,
     drain: DataLease,
