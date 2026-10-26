@@ -125,6 +125,91 @@ fn stage_drop_and_copy_error_keep_original_and_partial_materials() {
 }
 
 #[test]
+fn actual_copy_write_error_child() {
+    let Some(root) = std::env::var_os("SANDPROOF_UNIT_COPY_FSIZE_ROOT") else { return; };
+    let root = std::path::PathBuf::from(root);
+    let owner = rustix::process::geteuid().as_raw();
+    let store = SnapshotStore::open_for_owner(&root.join("store"), owner).unwrap();
+    let mut source = File::open(root.join("large-source")).unwrap();
+    let original = FileStamp::from_metadata(&source.metadata().unwrap());
+    let key = [27;32];
+    let mut stage = store.begin(key).unwrap();
+    let result = stage.copy_artifact(&mut source, owner, SnapshotArtifact::Memory, 196_608);
+    let RuntimeError::Io(error) = result.unwrap_err() else { panic!("expected actual write I/O failure"); };
+    assert_eq!(error.kind(), io::ErrorKind::FileTooLarge);
+    assert!(stage.measurements().is_empty(), "partial bytes are not a completed artifact");
+    drop(stage);
+    let length = fs::metadata(root.join("store").join(key_name("staging-",&key)).join("memory.bin")).unwrap().len();
+    assert!(length>0 && length<196_608, "kernel must reject an actual mid-copy write");
+    assert_eq!(FileStamp::from_metadata(&source.metadata().unwrap()),original);
+    assert!(!root.join("store").join(key_name("capture-",&key)).exists());
+    assert!(store.begin(key).is_err(), "same original partial work cannot be silently reused");
+}
+
+#[test]
+fn actual_mid_copy_write_error_keeps_partial_bytes_and_original_source() {
+    let fixture = Fixture::new();
+    let payload=vec![b'L';196_608];
+    drop(fixture.source("large-source", &payload));
+    // The inherited ignored SIGXFSZ makes the kernel return EFBIG to write(2).
+    // Without it the child could die, which would be Unknown, not a returned
+    // ordinary I/O error. This limit applies only to this exact child process.
+    let output=std::process::Command::new("/bin/sh")
+        .args(["-c", "trap '' XFSZ; ulimit -f 128; exec \"$@\"", "copy-fsize"])
+        .arg(std::env::current_exe().unwrap())
+        .args(["--exact","snapshot_store::tests::actual_copy_write_error_child","--nocapture"])
+        .env("SANDPROOF_UNIT_COPY_FSIZE_ROOT",fixture.root.path())
+        .output().unwrap();
+    assert!(output.status.success(), "{}",String::from_utf8_lossy(&output.stderr));
+    assert_eq!(fs::read(fixture.root.path().join("large-source")).unwrap(),payload);
+    assert!(fixture.store.join(key_name("staging-",&[27;32])).join("memory.bin").metadata().unwrap().len()>0);
+}
+
+#[test]
+fn real_parent_sync_error_after_publish_keeps_original_bundle_reopenable() {
+    let fixture=Fixture::new();
+    let key=[28;32];
+    let mut stage=fixture.full_stage(key);
+    let measured=stage.measurements();
+    let before=stage.parent.metadata().unwrap();
+    // O_PATH is the SAME original directory inode: renameat is valid, but
+    // fsync on this descriptor returns EBADF after the actual publication.
+    // This is fixture-only FD substitution, never a production sync bypass.
+    stage.parent=File::from(open(&fixture.store,OFlags::PATH|OFlags::DIRECTORY|OFlags::NOFOLLOW|OFlags::CLOEXEC,Mode::empty()).unwrap());
+    assert_eq!((stage.parent.metadata().unwrap().dev(),stage.parent.metadata().unwrap().ino()),(before.dev(),before.ino()));
+    assert!(matches!(stage.publish(b"original bound manifest",&measured),Err(RuntimeError::Io(_))));
+    let bundle=fixture.open().open_bundle(key,BundleReadLimits{state_bytes:100,memory_bytes:100,disk_bytes:100}).unwrap();
+    assert_eq!(bundle.manifest_bytes(),b"original bound manifest");
+    assert_eq!(bundle.measurements(),measured);
+    assert!(fixture.open().begin(key).is_err(),"visible publication must not be repeated");
+    for index in 0..3 { assert_eq!(fs::read(fixture.root.path().join(format!("source-{index}"))).unwrap(),b"actual bytes"); }
+}
+
+#[test]
+fn copy_observer_is_after_real_block_write_and_failure_never_seals_partial_bytes() {
+    let fixture=Fixture::new();
+    let key=[29;32];
+    let payload=vec![7;COPY_BUFFER_BYTES*2];
+    let mut source=fixture.source("observed-source",&payload);
+    let mut stage=fixture.open().begin(key).unwrap();
+    let partial=fixture.store.join(key_name("staging-",&key)).join("memory.bin");
+    let mut calls=0;
+    let result=stage.copy_artifact_observing(&mut source,fixture.owner,SnapshotArtifact::Memory,payload.len() as u64,&mut |role,copied,total| {
+        calls+=1;
+        assert_eq!(role,SnapshotArtifact::Memory);
+        assert_eq!(copied,COPY_BUFFER_BYTES as u64);
+        assert_eq!(total,payload.len() as u64);
+        assert_eq!(fs::read(&partial).unwrap(),payload[..COPY_BUFFER_BYTES]);
+        Err(RuntimeError::Io(io::Error::other("controlled block boundary failure")))
+    });
+    assert!(result.is_err());
+    assert_eq!(calls,1);
+    assert!(stage.measurements().is_empty());
+    assert_eq!(fs::read(fixture.root.path().join("observed-source")).unwrap(),payload);
+    assert!(!fixture.store.join(key_name("capture-",&key)).exists());
+}
+
+#[test]
 fn rejects_hardlinked_non_private_wrong_owner_empty_and_over_budget_sources() {
     let fixture = Fixture::new();
     let mut stage = fixture.open().begin([3; 32]).unwrap();

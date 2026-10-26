@@ -340,6 +340,17 @@ impl SnapshotStage {
         artifact: SnapshotArtifact,
         max_length: u64,
     ) -> Result<SnapshotFileMeasurement, RuntimeError> {
+        self.copy_artifact_observing(source, source_owner, artifact, max_length, &mut |_, _, _| Ok(()))
+    }
+
+    pub(crate) fn copy_artifact_observing(
+        &mut self,
+        source: &mut File,
+        source_owner: u32,
+        artifact: SnapshotArtifact,
+        max_length: u64,
+        observe: &mut impl FnMut(SnapshotArtifact, u64, u64) -> Result<(), RuntimeError>,
+    ) -> Result<SnapshotFileMeasurement, RuntimeError> {
         if self
             .copied
             .iter()
@@ -378,6 +389,10 @@ impl SnapshotStage {
             destination.write_all(&buffer[..count])?;
             digest.update(&buffer[..count]);
             remaining -= count as u64;
+            // The real write has completed on the original destination FD.
+            // A failed observer retains that same partial stage; it cannot
+            // manufacture a manifest, Full End, publication or Stop authority.
+            observe(artifact, original.len() - remaining, original.len())?;
         }
         let mut extra = [0_u8; 1];
         if source.read(&mut extra)? != 0 || before != FileStamp::from_metadata(&source.metadata()?)

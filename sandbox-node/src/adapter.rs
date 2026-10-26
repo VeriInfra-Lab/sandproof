@@ -265,6 +265,36 @@ fn restore_action_receipt(
     result
 }
 
+fn capture_action_receipt(
+    action: &WorkAction<core::EffectId>,
+    observation: Result<HostObservation, Box<dyn std::error::Error>>,
+) -> Result<WorkReceipt<HostObservation>, WorkerTransportError> {
+    let outcome = match observation {
+        Ok(value) => sandproof_protocol::WorkOutcome::ObservedSuccess(value),
+        Err(error) => {
+            project(
+                FaultStage::Observe,
+                FaultContext::action(action),
+                error.as_ref(),
+            )
+            .emit();
+            sandproof_protocol::WorkOutcome::Unknown {
+                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                last_observation: None,
+            }
+        }
+    };
+    let result = Ok(WorkReceipt {
+        identity: action.identity.clone(),
+        outcome,
+    });
+    // The actual Pause/Commit/Stop has returned. This cut is before the
+    // original journal receives the result, never permission to execute it.
+    #[cfg(debug_assertions)]
+    faults::after_execute(action, &result);
+    result
+}
+
 impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }
@@ -325,27 +355,10 @@ impl WorkExecution for NodeHost {
         worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
         committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
     ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
-        let observed =
-            self.capture_action_observation(action, full, source, worker, committed, false);
-        let outcome = match observed {
-            Ok(value) => sandproof_protocol::WorkOutcome::ObservedSuccess(value),
-            Err(error) => {
-                project(
-                    FaultStage::Observe,
-                    FaultContext::action(action),
-                    error.as_ref(),
-                )
-                .emit();
-                sandproof_protocol::WorkOutcome::Unknown {
-                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
-                    last_observation: None,
-                }
-            }
-        };
-        Ok(WorkReceipt {
-            identity: action.identity.clone(),
-            outcome,
-        })
+        capture_action_receipt(
+            action,
+            self.capture_action_observation(action, full, source, worker, committed, false),
+        )
     }
 
     fn propose_lifecycle_full(
@@ -1093,12 +1106,21 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
                 return sandproof_controller_service::capture::FullCaptureResult::UnknownCapture;
             }
         }
-        self.worker.execute_prepared_full_capture(
+        #[cfg(debug_assertions)]
+        let original_action = permit.action().clone();
+        let result = self.worker.execute_prepared_full_capture(
             &self.provider,
             &self.profile,
             self.prepared,
             permit,
-        )
+        );
+        #[cfg(debug_assertions)]
+        if let sandproof_controller_service::capture::FullCaptureResult::Captured(receipt) = &result {
+            // Actual bundle readback and original worker completion already
+            // happened; V5 has not received/adopted this receipt yet.
+            faults::after_execute(&original_action, &Ok(receipt.clone()));
+        }
+        result
     }
 }
 
@@ -1222,3 +1244,7 @@ impl NodeHost {
 #[cfg(test)]
 #[path = "adapter/restore_receipt_tests.rs"]
 mod restore_receipt_tests;
+
+#[cfg(test)]
+#[path = "adapter/capture_receipt_tests.rs"]
+mod capture_receipt_tests;

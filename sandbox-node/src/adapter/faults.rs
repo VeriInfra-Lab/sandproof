@@ -9,6 +9,8 @@ mod restore_gate;
 pub(crate) use restore_gate::RestoreActivationGate;
 mod capture_cancel;
 pub(super) use capture_cancel::CaptureCancelGate;
+mod capture_copy;
+pub(crate) use capture_copy::CaptureCopyGate;
 
 pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
     // Debug-only deterministic crash after the outbox dispatch claim,
@@ -77,6 +79,8 @@ pub(super) fn after_execute(
         if matches!(
             (target.as_deref(), command),
             (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                | (Some("freeze_vm"), core::Command::FreezeVm { .. })
+                | (Some("seal_snapshot"), core::Command::SealSnapshot { .. })
                 | (
                     Some("configure_network"),
                     core::Command::ConfigureNetwork { .. }
