@@ -160,7 +160,7 @@ pub(super) fn unresolved(world: &core::World, sandbox: core::SandboxId) -> bool 
             && matches!(
                 world.effect_status(effect),
                 Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
-            )
+            ) && !core::maintenance::released_execution::discharged(world, effect)
     })
 }
 

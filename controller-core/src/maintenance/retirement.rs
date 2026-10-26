@@ -1104,6 +1104,8 @@ fn check_logical_effects(
             return Err(RetirementReject::LedgerMismatch);
         }
         let result_matches = match (logical.result, status) {
+            (Some(LogicalEffectResult::ReleasedExecution(_)), _) =>
+                crate::maintenance::released_execution::discharged(world, &id),
             (
                 None,
                 EffectStatus::Committed | EffectStatus::Acknowledged(EffectOutcome::Failed(_)),
@@ -1173,6 +1175,9 @@ fn check_effect_attempts(world: &World, sandbox: SandboxId) -> Result<(), Retire
             .ok_or(RetirementReject::LedgerMismatch)?;
         if !world.effect_keys.contains(id) || id.attempt > logical.current_attempt {
             return Err(RetirementReject::LedgerMismatch);
+        }
+        if crate::maintenance::released_execution::discharged(world, id) {
+            continue;
         }
         match status {
             EffectStatus::Acknowledged(_) => {
@@ -1325,6 +1330,7 @@ pub fn validate_terminal_cleanup(
     }
     check_resources(world, sandbox, record, &ids)?;
     check_effects(world, sandbox, record)?;
+    if !crate::maintenance::released_execution::terminal_closed(world, sandbox) {
     if world.worker_fences.get(&sandbox)
         != Some(&WorkerFence {
             epoch: record.epoch,
@@ -1340,6 +1346,7 @@ pub fn validate_terminal_cleanup(
         )
     {
         return Err(RetirementReject::NotTerminal);
+    }
     }
 
     Ok(())

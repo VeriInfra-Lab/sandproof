@@ -144,6 +144,9 @@ pub(super) fn check_input_profile(
     world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
+    if let core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::CloseReleasedExecution(basis)) = input
+        && !super::lifecycle_inbox::released_execution::permits(connection, world, *basis)?
+    { return Err(JournalError::UnsupportedInput); }
     if let core::ControllerInput::Capture(input) = input
         && !super::lifecycle_inbox::source_work::full::permits_continue_input(
             connection, world, input,
@@ -235,6 +238,7 @@ pub(super) fn validate_candidate(
     connection: &Connection,
     world: &core::World,
 ) -> Result<(), JournalError> {
+    super::lifecycle_inbox::released_execution::validate_saved(connection, world)?;
     let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let value = envelope(connection, world, &config)?;
     encode_limited(&value, config.max_checkpoint_bytes)?;

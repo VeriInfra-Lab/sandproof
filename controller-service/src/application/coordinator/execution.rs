@@ -257,6 +257,8 @@ impl<H: ControllerHost> ControllerApplication<H> {
         sandbox: core::SandboxId,
     ) -> Result<bool, ApplicationError> {
         let _active = self.acquire_sandbox(sandbox)?;
+        self.inner.lock().map_err(|_| ApplicationError::Busy)?.journal
+            .close_released_lifecycle_execution(sandbox, &mut NeverCrash).map_err(map_journal)?;
         let host = {
             let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
             Arc::clone(&inner.host)

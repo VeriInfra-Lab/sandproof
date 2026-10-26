@@ -14,6 +14,7 @@ mod pending;
 mod readiness;
 mod refusal;
 pub(in crate::controller) mod source_work;
+pub(in crate::controller) mod released_execution;
 #[cfg(test)]
 mod tests;
 mod unload_resolution;

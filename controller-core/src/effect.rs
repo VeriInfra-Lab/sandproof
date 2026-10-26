@@ -445,7 +445,8 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
     let Some(status) = world.effect_status(effect) else {
         return false;
     };
-    status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown
+    (status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown)
+        && !crate::maintenance::released_execution::discharged(world, effect)
 }
 
 /// Dispatch the current attempt, rejecting new capture work after revocation.
@@ -454,6 +455,7 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
 /// # Errors
 /// Returns the first failed guard; rejection leaves `world` unchanged.
 pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) { return Err(EffectReject::EffectRetired); }
     if !world.controller_up {
         return Err(EffectReject::ControllerDown);
     }
@@ -490,6 +492,7 @@ pub fn handle_effect_receipt(
     id: EffectId,
     outcome: EffectOutcome,
 ) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) { return Err(EffectReject::EffectRetired); }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
@@ -534,6 +537,7 @@ pub fn handle_effect_receipt(
 /// # Errors
 /// Returns the first failed guard in the same order as the Lean reducer.
 pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) { return Err(EffectReject::EffectRetired); }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched) => Ok(EffectDecision {

@@ -86,7 +86,7 @@ fn terminal_binding(world: &World, binding: HostBinding) -> Option<(Epoch, Resto
     Some((row.epoch, source))
 }
 
-fn completed_pause_epoch(
+pub(super) fn completed_pause_epoch(
     world: &World,
     binding: HostBinding,
     epoch: Epoch,

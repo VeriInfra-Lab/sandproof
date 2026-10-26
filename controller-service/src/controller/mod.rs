@@ -675,6 +675,7 @@ impl ControllerJournal {
         if matches!(
             input,
             core::ControllerInput::Capture(_)
+                | core::ControllerInput::Maintenance(core::maintenance::MaintenanceInput::CloseReleasedExecution(_))
                 | core::ControllerInput::Request(
                     core::Request::Create(_) | core::Request::Pause(_) | core::Request::Resume(_)
                 )
@@ -989,7 +990,7 @@ impl ControllerJournal {
             if matches!(
                 world.effect_status(&action.command),
                 Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
-            ) {
+            ) && !core::maintenance::released_execution::discharged(&world, &action.command) {
                 actions.push(action);
             }
         }

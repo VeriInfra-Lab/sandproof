@@ -454,6 +454,9 @@ pub enum EffectOrigin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LogicalEffectResult {
+    /// The original execution was already durably released. The actual effect
+    /// status/unknown receipt is retained; this is not successful fence I/O.
+    ReleasedExecution(crate::maintenance::released_execution::ReleasedExecution),
     Succeeded {
         attempt: AttemptNo,
         result: ResultDigest,

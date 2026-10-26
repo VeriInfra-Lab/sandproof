@@ -169,6 +169,7 @@ pub(super) fn input_sandbox(
         SchedulerInput as S,
     };
     Ok(match input {
+        I::Maintenance(core::maintenance::MaintenanceInput::CloseReleasedExecution(basis)) => basis.key.sandbox,
         I::Request(R::Create(request)) => request.sandbox,
         I::Request(R::Kill(request)) => request.sandbox,
         I::Request(R::Pause(request)) => request.sandbox,

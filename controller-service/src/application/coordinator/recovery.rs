@@ -132,6 +132,7 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
 }
 
 fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
+    if core::maintenance::released_execution::discharged(world, effect) { return false; }
     match world.effect_status(effect) {
         Some(
             core::EffectStatus::Acknowledged(_)
@@ -647,6 +648,13 @@ pub(super) fn recover_locked<H: ControllerHost>(
         journal
             .abort_due_startups(clock.now_ms()?, &mut NeverCrash)
             .map_err(map_admission)?;
+    }
+    let originals = journal.world().map_err(map_journal)?;
+    for (sandbox, _) in originals.sandbox_records() {
+        if selected.is_none_or(|id| id == *sandbox) {
+            journal.close_released_lifecycle_execution(*sandbox, &mut NeverCrash)
+                .map_err(map_journal)?;
+        }
     }
     let initial = journal.world().map_err(map_journal)?;
     // Use the state before reconciliation: work whose last cleanup receipt is

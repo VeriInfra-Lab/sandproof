@@ -224,12 +224,13 @@ fn sandbox_phase(
             epoch: value.epoch,
             terminal: true,
         };
-        if world.worker_fences.get(&sandbox)
+        if !crate::maintenance::released_execution::terminal_closed(world, sandbox)
+            && (world.worker_fences.get(&sandbox)
             != Some(&WorkerFence {
                 epoch: value.epoch,
                 terminal: true,
             })
-            || !effect::effect_succeeded_check(world, &command)
+            || !effect::effect_succeeded_check(world, &command))
         {
             return Err(Reject::InvalidAuthority);
         }

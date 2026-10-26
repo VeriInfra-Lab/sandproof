@@ -118,6 +118,7 @@ fn claimable(world: &World, sandbox: SandboxId) -> bool {
         let effect = &world.effect_ids()[index];
         if effect.command().sandbox() == sandbox
             && world.effect_status(effect) == Some(EffectStatus::Committed)
+            && !crate::maintenance::released_execution::discharged(world, effect)
             && !crate::effect::startup_dispatch_revoked(world, effect.command())
             && crate::capture::continuation::capture_dispatch_allowed(world, effect)
             && (!unresolved

@@ -110,6 +110,36 @@ pub struct SourceWorkRecord {
     retirement: Option<retirement::MaterialRetirementState>,
 }
 
+// The original complete capture/end must still be bound to this execution.
+// A material-use record can outlive its VM; only a genuinely newer/live loader
+// blocks this released-execution path. Historical source metadata is retained.
+pub(in crate::controller) fn released_execution_source(
+    connection: &rusqlite::Connection,
+    world: &sandbox_controller_core::World,
+    binding: sandbox_controller_core::maintenance::slots::HostBinding,
+) -> Result<bool, JournalError> {
+    use sandbox_controller_core as core;
+    let Some(sources) = codec::load(connection)? else { return Ok(false) };
+    let mut original = false;
+    for record in sources.records.iter().filter(|r| r.work.anchor.local.sandbox == binding.sandbox) {
+        if !full::material_writer_closed(record, world)? { return Ok(false); }
+        if let Some(claim) = &record.restore {
+            let key = core::OperationKey { sandbox: binding.sandbox, operation: claim.local.operation };
+            if claim.generation > binding.generation || world.operation_plan(key)
+                .and_then(|p| p.vm).is_none_or(|vm| world.vm_record(vm)
+                    .is_none_or(|v| v.status != core::VmStatus::Reclaimed))
+            { return Ok(false); }
+        }
+        if record.work.anchor.native.generation == binding.generation
+            && record.work.anchor.native.current_vm == Some(binding.vm)
+            && record.work.anchor.local.owner == binding.owner
+            && record.capture.as_ref().is_some_and(|capture|
+                capture.completed.is_some() && capture.end.is_some())
+        { original = true; }
+    }
+    Ok(original)
+}
+
 fn required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
