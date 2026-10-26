@@ -14,6 +14,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import select
 import socket
 import sqlite3
 import stat
@@ -76,9 +77,18 @@ def _live_routes(native, running):
                 or record['route_index'] != index
                 or record['context']['position'] != position
                 or record['context']['vm'] != binding['vm']
-                or record['control'] not in (False, True)):
+                or type(record['control']) is not bool):
             raise ValueError('exact original route cell/context required')
-        if _alive(record['process']):
+        gate = record['context']['helper_gate']
+        gate_path = directory / f'{position}.lock'
+        meta = gate_path.lstat()
+        if (gate['path'] != str(gate_path) or (gate['device'], gate['inode']) != (meta.st_dev, meta.st_ino)
+                or gate['max_data_routes_per_slot'] != maximum
+                or record['context']['uplink_index'] != native['bounded_host']['uplink_base'] + position
+                or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0 or meta.st_nlink != 1
+                or meta.st_mode & 0o077):
+            raise ValueError('original route helper gate/physical position differs')
+        if record['control'] is False and _alive(record['process']):
             result[_route_key(record['process'])] = (marker, record)
     return result
 
@@ -97,6 +107,10 @@ def _capture_state(native, running, deadline):
         if len(rows) != 1 or rows[0][0] != 'tenant-' + str(local['owner']):
             raise ValueError('original data-drain sandbox owner required')
         state = json.loads(rows[0][1])
+        binding = running['context']['binding']
+        if (state['owner'] != local['owner'] or state['terminal'] is not False
+                or state['generation'] != binding['generation'] or state['current_vm'] != binding['vm']):
+            raise ValueError('original running generation/VM changed while data drain is held')
         matches = []
         for encoded, dispatch in connection.execute(
                 'SELECT action_json,dispatch_state FROM outbox WHERE sandbox_id=?', (sandbox,)):
@@ -181,6 +195,8 @@ class InflightDataDrain:
                 break
         else:
             raise RuntimeError('one exact newly accepted live upload route not observed')
+        if select.select([connection.sock], [], [], 0)[0]:
+            raise RuntimeError('partial upload already has a reply/EOF; no in-flight work inferred')
         self.source = self.route['process']
         self.pidfd = open_original_candidate_pidfd(self.source)
         self.arm_bytes = ('\n'.join((MAGIC, self.run_identity, str(self.source['pid']),
@@ -208,7 +224,7 @@ class InflightDataDrain:
                 self.peer.settimeout(_remaining(gate_deadline))
                 self.peer.connect(str(path))
                 break
-            except FileNotFoundError:
+            except (FileNotFoundError, ConnectionRefusedError):
                 self.peer.close()
                 self.peer = None
                 time.sleep(.005)  # Polls an explicit gate; no completion inferred.
@@ -329,7 +345,8 @@ if __name__ == '__main__':
         def test_real_readonly_sql_preserves_ready_and_dispatched_actions(self):
             with tempfile.TemporaryDirectory() as root:
                 database = Path(root) / 'db'
-                state = {'phase': 'Pausing'}
+                state = {'phase': 'Pausing', 'owner': 2, 'terminal': False,
+                         'generation': 1, 'current_vm': 7}
                 action = {'command': {'logical': {'command': {'FreezeVm': {'vm': 7}}}}}
                 with sqlite3.connect(database) as connection:
                     connection.execute('CREATE TABLE sandboxes(sandbox_id,owner_id,state_blob)')
@@ -339,7 +356,8 @@ if __name__ == '__main__':
                     connection.execute('INSERT INTO outbox VALUES(?,?,?)',
                         ('sb-fixed-1', json.dumps(action), 'dispatched'))
                 native = {'database': str(database), 'namespace': 'fixed'}
-                running = {'local': {'sandbox': 1, 'owner': 2}}
+                running = {'local': {'sandbox': 1, 'owner': 2},
+                           'context': {'binding': {'generation': 1, 'vm': 7}}}
                 with patch(__name__ + '._remaining', return_value=2):
                     actual, actions = _capture_state(native, running, 10)
                 self.assertEqual(actual, state)
