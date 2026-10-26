@@ -63,6 +63,14 @@ fn unknown_prepare_then_terminal(expiry: bool) {
         held,
         "terminal admission/reopen cannot drop original loader/File backing obligation"
     );
+    let held_charge = super::super::retirement::material_charge(&held[0]).unwrap();
+    assert!(held_charge > 0);
+    assert!(matches!(journal.lifecycle_material_retirement_questions(sandbox),
+        Err(JournalError::UnresolvedAction)),
+        "unknown original loader must not receive a material retirement question or deletion permission");
+    let retained = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    assert_eq!(retained, held, "refused GC must preserve original backing/pin and all saved work");
+    assert_eq!(super::super::retirement::material_charge(&retained[0]).unwrap(), held_charge);
     let observed = journal.reconcile_observed(
         &prepare,
         &WorkReceipt {
