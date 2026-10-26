@@ -17,12 +17,16 @@ struct Case {
 
 impl Case {
     fn new() -> Self {
+        Self::with_timeouts(1000, 2)
+    }
+
+    fn with_timeouts(source_timeout_ms: u64, renewal_seconds: i64) -> Self {
         let engine = Engine::new();
         let proxy = reply_loss::ReplyLoss::new(engine.address);
         let authority = lifecycle_public::setup_with_operation_limit(&engine, &proxy, 8);
         let (app, host, clock) = application(&authority);
         let mut create = lifecycle_public::request();
-        create.parameters.timeout_ms = 1000;
+        create.parameters.timeout_ms = source_timeout_ms;
         let (session, _, unloaded) = accept_unload_with_create(&app, &create);
         let source = unloaded.outcome.unloaded().unwrap().clone();
         *host.unloaded.lock().unwrap() = Some(unloaded);
@@ -45,39 +49,59 @@ impl Case {
         host.create_superseded.store(true, Ordering::SeqCst);
         assert_eq!(app.query_lifecycle("8", &session).unwrap().phase, PublicSessionPhase::Running);
         host.apply_renewals.store(true, Ordering::SeqCst);
-        app.set_timeout("8", session.as_protocol_id().as_str(), 2).unwrap();
+        app.set_timeout("8", session.as_protocol_id().as_str(), renewal_seconds).unwrap();
         let snapshot = app.snapshot().unwrap();
         let record = snapshot.lifecycle_session(&"8".try_into().unwrap(), &session).unwrap();
         assert!(matches!(record.operations().last().unwrap().intent().request.operation, LifecycleOperation::Renew { .. }));
         let effective_end = record.current_running().unwrap().end_at_ms;
-        assert!(effective_end > source.end_at_ms);
-        app.unload_lifecycle("8", &session, &PublicUnloadRequest {
+        assert_ne!(effective_end, source.end_at_ms);
+        let ready = host.resumed.lock().unwrap().clone().unwrap();
+        let mut case = Self { _engine: engine, _proxy: proxy, authority, app, host, clock, session, ready,
+            source_end: source.end_at_ms, effective_end };
+        case.continue_failed_unload();
+        case
+    }
+
+    fn continue_failed_unload(&mut self) {
+        self.app.unload_lifecycle("8", &self.session, &PublicUnloadRequest {
             window: 1.try_into().unwrap(), sequence: 4.try_into().unwrap(), expected_version: 4,
         }).unwrap();
-        let snapshot = app.snapshot().unwrap();
-        let record = snapshot.lifecycle_session(&"8".try_into().unwrap(), &session).unwrap();
+        let snapshot = self.app.snapshot().unwrap();
+        let record = snapshot.lifecycle_session(&"8".try_into().unwrap(), &self.session).unwrap();
         let current = record.operations().last().unwrap().intent().clone();
-        let mut ready = host.resumed.lock().unwrap().clone().unwrap();
-        ready.current_request = current.clone();
-        let CurrentResumeReadiness::Observed { facts } = &ready.readiness else { unreachable!() };
-        assert_eq!(facts.end_at_ms, effective_end);
-        *host.unloaded.lock().unwrap() = Some(UnloadObservation {
+        self.ready.current_request = current.clone();
+        let CurrentResumeReadiness::Observed { facts } = &self.ready.readiness else { unreachable!() };
+        assert_eq!(facts.end_at_ms, self.effective_end);
+        *self.host.unloaded.lock().unwrap() = Some(UnloadObservation {
             request: current, outcome: UnloadOutcome::OriginalContinued { facts: facts.clone() },
         });
-        *host.resumed.lock().unwrap() = Some(ready.clone());
-        app.reconcile_once().unwrap();
-        clock.0.store(source.end_at_ms + 1, Ordering::SeqCst);
-        let CurrentResumeReadiness::Observed { facts } = &mut ready.readiness else { unreachable!() };
-        facts.observed_at_ms = source.end_at_ms + 1;
-        *host.resumed.lock().unwrap() = Some(ready.clone());
-        assert_eq!(app.query_lifecycle("8", &session).unwrap().phase, PublicSessionPhase::Running);
-        Self { _engine: engine, _proxy: proxy, authority, app, host, clock, session, ready,
-            source_end: source.end_at_ms, effective_end }
+        *self.host.resumed.lock().unwrap() = Some(self.ready.clone());
+        self.app.reconcile_once().unwrap();
+        let now = if self.source_end < self.effective_end { self.source_end + 1 } else { 101 };
+        self.clock.0.store(now, Ordering::SeqCst);
+        let CurrentResumeReadiness::Observed { facts } = &mut self.ready.readiness else { unreachable!() };
+        facts.observed_at_ms = now;
+        *self.host.resumed.lock().unwrap() = Some(self.ready.clone());
+        assert_eq!(self.app.query_lifecycle("8", &self.session).unwrap().phase, PublicSessionPhase::Running);
     }
 
     fn next(&self) -> PublicUnloadRequest {
         PublicUnloadRequest { window: 1.try_into().unwrap(), sequence: 5.try_into().unwrap(), expected_version: 5 }
     }
+}
+
+#[test]
+fn renewed_continued_public_reunload_shortened_lifetime_never_reverts_to_longer_source() {
+    let live = Case::with_timeouts(3000, 1);
+    assert!(live.effective_end < live.source_end);
+    assert_eq!(live.app.unload_lifecycle("8", &live.session, &live.next()).unwrap().accepted_version, 6);
+    let expired = Case::with_timeouts(3000, 1);
+    expired.clock.0.store(expired.effective_end, Ordering::SeqCst);
+    assert!(expired.effective_end < expired.source_end, "the old capture would still appear live");
+    let before = expired.app.snapshot().unwrap();
+    assert_eq!(expired.app.unload_lifecycle("8", &expired.session, &expired.next()), Err(PortError::Busy));
+    assert_eq!(expired.app.snapshot().unwrap(), before);
+    assert!(expired.authority.replay_public_unload(&"8".try_into().unwrap(), &expired.session, &expired.next()).unwrap().is_none());
 }
 
 #[test]
