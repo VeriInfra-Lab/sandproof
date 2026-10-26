@@ -253,7 +253,10 @@ mod tests {
             match UnixStream::connect(socket) {
                 Ok(peer) => return Ok(peer),
                 Err(error)
-                    if error.kind() == io::ErrorKind::NotFound && Instant::now() < deadline =>
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                    ) && Instant::now() < deadline =>
                 {
                     pending(error.kind());
                     std::thread::yield_now();
