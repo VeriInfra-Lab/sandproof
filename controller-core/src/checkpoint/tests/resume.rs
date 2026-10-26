@@ -320,14 +320,14 @@ fn restore_terminal_fence_rejects_substituted_origin_and_other_unknown_work() {
                 altered.operation_plans.put(key, plan);
             }
             7 => {
-                let mut logical = *altered.logical_effect(&prepare.logical).unwrap();
+                let mut logical = altered.logical_effect(&prepare.logical).unwrap();
                 logical.current_attempt += 1;
                 altered
                     .logical_effects
                     .put(prepare.logical.clone(), logical);
             }
             8 => {
-                let mut logical = *altered.logical_effect(&fence.logical).unwrap();
+                let mut logical = altered.logical_effect(&fence.logical).unwrap();
                 logical.origin = EffectOrigin::Operation(key);
                 altered.logical_effects.put(fence.logical.clone(), logical);
             }
