@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageLoop
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLineage
+
+/-- Minimal library-call obligation. It says nothing about lineage validity,
+authentication, native attachment or durability. V0 adoption is still pending. -/
+def BorrowedVecBinding : Prop :=
+  ∀ values : alloc.vec.Vec Entry,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter Global values =
+      .ok (cursor (alloc.vec.Vec.deref values) 0)
+
+theorem caller_with_binding (binding : BorrowedVecBinding) :
+    FullLineageContract Session.validate_execution_lineage := by
+  intro session
+  unfold Session.validate_execution_lineage
+  rw [binding]
+  simp only [bind_tc_ok]
+  have spec := loop_refines (alloc.vec.Vec.deref session.entries) session.incarnation initial 0 (by omega)
+  simpa [initial, expectedResult, alloc.vec.Vec.deref] using spec
+
+/-- The local candidate delegates to the fixed Vec deref and Slice.iter models.
+This theorem does not prove the original Rust &Vec IntoIterator binding. -/
+theorem candidate_iterator_binding : BorrowedVecBinding := by
+  intro values
+  rfl
+
+theorem candidate_validate_contract : FullLineageContract Session.validate_execution_lineage :=
+  caller_with_binding candidate_iterator_binding
+
+theorem accepts_iff (session : Session) :
+    session.validate_execution_lineage = .ok (.Ok ()) ↔
+      scan session.incarnation session.entries.val initial = .ok () := by
+  rw [candidate_validate_contract]
+  cases result : scan session.incarnation session.entries.val initial with
+  | error reason => simp [expectedResult, result, observed]
+  | ok value => cases value; simp [expectedResult, result, observed]
+
+theorem rejects_iff (session : Session) :
+    session.validate_execution_lineage = .ok (.Err .CorruptStore) ↔
+      ∃ reason, scan session.incarnation session.entries.val initial = .error reason := by
+  rw [candidate_validate_contract]
+  cases result : scan session.incarnation session.entries.val initial with
+  | error reason => simp [expectedResult, result, observed]
+  | ok value => cases value; simp [expectedResult, result, observed]
+
+end SandboxModel.Stage1Protocol.InboxLineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.caller_with_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.candidate_iterator_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.candidate_validate_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.rejects_iff

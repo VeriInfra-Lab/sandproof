@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxLineage
+
+theorem loop_continue (body : LoopState → Result (ControlFlow LoopState Return))
+    (start next : LoopState) (step : body start = .ok (.cont next)) :
+    loop body start = loop body next := by
+  rw [loop, step]
+  simp only [bind_ok]
+
+theorem loop_done (body : LoopState → Result (ControlFlow LoopState Return))
+    (start : LoopState) (result : Return) (step : body start = .ok (.done result)) :
+    loop body start = .ok result := by
+  rw [loop, step]
+  simp only [bind_ok]
+
+theorem next_some (values : Slice Entry) (index : Nat) (inside : index < values.val.length) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (some values.val[index], cursor values (index + 1)) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, inside]
+
+theorem next_none (values : Slice Entry) (index : Nat) (outside : values.val.length ≤ index) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr outside]
+
+theorem prior_callback (source : IncarnationId) (capture : CaptureId) (entry : Entry) :
+    Session.validate_execution_lineage.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once
+      (source, capture) entry = .ok (!priorMatches source capture (some entry)) := by
+  unfold Session.validate_execution_lineage.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once
+  cases operation : entry.intent.request.operation <;>
+    simp [priorMatches, operation, IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+      CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+      PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+  split <;> simp_all
+  split <;> simp_all
+
+@[simp] theorem prior_option (source : IncarnationId) (capture : CaptureId) (previous : Option Entry) :
+    core.option.Option.is_none_or
+      Session.validate_execution_lineage.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool
+      previous (source, capture) = .ok (!priorMatches source capture previous) := by
+  cases previous <;>
+    simp [core.option.Option.is_none_or, SandproofFoundationsRust.core.option.Option.is_none_or,
+      prior_callback, priorMatches]
+
+end SandboxModel.Stage1Protocol.InboxLineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.prior_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.prior_option
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.loop_continue
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.loop_done

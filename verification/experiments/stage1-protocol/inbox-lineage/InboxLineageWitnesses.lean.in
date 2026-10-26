@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineage
+import SandboxModel.Lifecycle.Protocol.InboxLineageValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLineage
+open Values
+
+/-- Normal decoded trajectories under the candidate library-call binding.
+Neither local_operation nor an accepted DTO establishes a physical VM fact. -/
+theorem legal_trajectories :
+    created.validate_execution_lineage = .ok (.Ok ()) ∧
+    (resumed false).validate_execution_lineage = .ok (.Ok ()) ∧
+    (resumed true).validate_execution_lineage = .ok (.Ok ()) ∧
+    advancedCapture.validate_execution_lineage = .ok (.Ok ()) ∧
+    renewedDestroyed.validate_execution_lineage = .ok (.Ok ()) := by
+  have normalize (s : Session) : s.validate_execution_lineage = .ok (expectedResult s) :=
+    candidate_validate_contract s
+  simp only [normalize, Result.ok.injEq]
+  exact ⟨expected_outcomes.1, expected_outcomes.2.1, expected_outcomes.2.2.1,
+    expected_outcomes.2.2.2.1, expected_outcomes.2.2.2.2.1⟩
+
+theorem malformed_lineage_rejected :
+    repeatedCapture.validate_execution_lineage = .ok (.Err .CorruptStore) ∧
+    storedMismatch.validate_execution_lineage = .ok (.Err .CorruptStore) := by
+  have normalize (s : Session) : s.validate_execution_lineage = .ok (expectedResult s) :=
+    candidate_validate_contract s
+  simp only [normalize, Result.ok.injEq]
+  exact ⟨expected_outcomes.2.2.2.2.2.1, expected_outcomes.2.2.2.2.2.2.1⟩
+
+/-- Protocol Resume permits a gap; this separate internal validator uses checked_next. -/
+theorem protocol_gap_and_internal_successor_are_distinct :
+    Validation.ValidEnvelope (resume 9#u64) EnvelopeValues.context ∧
+    gap.validate_execution_lineage = .ok (.Err .CorruptStore) := by
+  rw [candidate_validate_contract]
+  exact ⟨inputs_valid.2.2.2.1, congrArg Result.ok expected_outcomes.2.2.2.2.2.2.2⟩
+
+end SandboxModel.Stage1Protocol.InboxLineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.legal_trajectories
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.malformed_lineage_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.protocol_gap_and_internal_successor_are_distinct
