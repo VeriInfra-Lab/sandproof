@@ -14,19 +14,30 @@ impl<H: ControllerHost> ControllerApplication<H> {
         intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         node: &sandproof_protocol::internal::NodeIdentity,
     ) -> Result<bool, JournalError> {
-        let inner = self.inner.lock().map_err(|_| JournalError::ControllerBusy)?;
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| JournalError::ControllerBusy)?;
         let context = inner.journal.recorded_lifecycle_context(intent, node)?;
         let state = inner.journal.lifecycle_work_state(intent, &context)?;
-        if !state.current || state.terminal
-            || !matches!(intent.request.operation,
-                sandproof_protocol::lifecycle::LifecycleOperation::Unload { .. })
+        if !state.current
+            || state.terminal
+            || !matches!(
+                intent.request.operation,
+                sandproof_protocol::lifecycle::LifecycleOperation::Unload { .. }
+            )
         {
             return Ok(false);
         }
-        let Some(local) = state.local else { return Ok(false) };
+        let Some(local) = state.local else {
+            return Ok(false);
+        };
         let world = inner.journal.world()?;
-        let Some(native) = world.sandbox_record(local.sandbox) else { return Ok(false) };
-        if native.phase != sandbox_controller_core::Phase::Pausing || native.terminal
+        let Some(native) = world.sandbox_record(local.sandbox) else {
+            return Ok(false);
+        };
+        if native.phase != sandbox_controller_core::Phase::Pausing
+            || native.terminal
             || native.owner != local.owner
             || native.current_operation.map(|op| op.id) != state.local_operation
         {
@@ -37,8 +48,12 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         Ok(record.work.request() == intent
             && record.capture_operation() == state.local_operation
-            && record.full_capture().is_some_and(|full|
-                record.work.pause_request().is_ok_and(|pause| full.pause == pause)))
+            && record.full_capture().is_some_and(|full| {
+                record
+                    .work
+                    .pause_request()
+                    .is_ok_and(|pause| full.pause == pause)
+            }))
     }
 
     /// Return a checked, bounded original snapshot, not an execution permission

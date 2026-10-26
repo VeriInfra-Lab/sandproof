@@ -166,14 +166,18 @@ fn wait_selected(pid: u32, directory: &Path, owner: u32, wait: Duration) -> io::
     result
 }
 
-pub(in crate::data_gateway) fn record_unload_busy<H: sandproof_controller_service::application::ControllerHost>(
+pub(in crate::data_gateway) fn record_unload_busy<
+    H: sandproof_controller_service::application::ControllerHost,
+>(
     intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
     app: &sandproof_controller_service::application::ControllerApplication<H>,
     directory: &Path,
     owner: u32,
 ) -> io::Result<()> {
-    if !app.lifecycle_unload_is_pausing(intent, &intent.request.binding.node)
-        .map_err(|_| invalid())? {
+    if !app
+        .lifecycle_unload_is_pausing(intent, &intent.request.binding.node)
+        .map_err(|_| invalid())?
+    {
         return Ok(());
     }
     record_busy_at(directory, intent, owner)
