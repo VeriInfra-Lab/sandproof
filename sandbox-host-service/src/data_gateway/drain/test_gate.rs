@@ -100,8 +100,8 @@ fn wait_selected(pid: u32, directory: &Path, owner: u32, wait: Duration) -> io::
     if fields[2] != pid.to_string() {
         return Ok(());
     }
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    let (_, values) = stat.rsplit_once(')').ok_or_else(invalid)?;
+    let process_text = fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    let (_, values) = process_text.rsplit_once(')').ok_or_else(invalid)?;
     let start = values.split_whitespace().nth(19).ok_or_else(invalid)?;
     let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
     if fields[3] != start || fields[4] != boot.trim() {
@@ -130,7 +130,7 @@ fn wait_selected(pid: u32, directory: &Path, owner: u32, wait: Duration) -> io::
                     peer.write_all(&bytes)?;
                     let mut release = [0];
                     peer.read_exact(&mut release)?;
-                    return if release == [b'g'] {
+                    return if release == *b"g" {
                         Ok(())
                     } else {
                         Err(invalid())
@@ -243,8 +243,8 @@ mod tests {
 
     fn arm(directory: &Path, start_override: Option<&str>) -> Vec<u8> {
         let pid = std::process::id();
-        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
-        let start = stat
+        let process_text = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+        let start = process_text
             .rsplit_once(')')
             .unwrap()
             .1

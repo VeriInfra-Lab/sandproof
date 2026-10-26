@@ -121,6 +121,8 @@ class InflightDataDrain:
         self.native, self.host_config = native, host_config
         self.deadline = client.deadline
         self.directory = _private_directory(gate_directory)
+        if len(os.fsencode(self.directory / '2147483647.sock')) >= 108:
+            raise ValueError('original data-drain Unix socket path exceeds Linux limit')
         if (not isinstance(run_identity, str) or len(run_identity) != 64
                 or any(c not in '0123456789abcdef' for c in run_identity)):
             raise ValueError('exact original run identity required')
@@ -130,7 +132,8 @@ class InflightDataDrain:
         self.pidfd = None
         self.accepted = None
         self.report = dict(prefix_bytes=len(PREFIX), prefix_sha256=hashlib.sha256(PREFIX).hexdigest(),
-                           declared_bytes=len(PREFIX) + 1, tail_sent=False, completed=False)
+                           declared_bytes=len(PREFIX) + 1, tail_sent=False, completed=False,
+                           upload_result='unacknowledged partial request; never replayed')
         _, baseline = _capture_state(native, running, self.deadline)
         self.baseline_actions = {json.dumps(row['action'], sort_keys=True) for row in baseline}
 

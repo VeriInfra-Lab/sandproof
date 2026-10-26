@@ -32,6 +32,73 @@ fn capture_dispatches(path: &std::path::Path) -> Vec<WorkAction<core::EffectId>>
         .collect()
 }
 
+fn prepare_unload(
+    app: &ControllerApplication<local::TestHost>,
+    state: &std::sync::Mutex<local::State>,
+    create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> sandproof_protocol::lifecycle::AcceptedLifecycleIntent {
+    let mut unload = create.clone();
+    unload.accepted_version = 2;
+    unload.request.binding.expected = ExpectedSession::Version(1);
+    unload.request.binding.key.sequence = 2.try_into().unwrap();
+    unload.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 101.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+    };
+    app.record_lifecycle_intent(&unload, context).unwrap();
+    let question = app.prepare_lifecycle_source_work(&unload, context).unwrap();
+    state.lock().unwrap().source_probe = Some(Box::new(|r| {
+        Ok(RawSourceObservation {
+            work_binding: r.work_binding,
+            resource: r.resource.clone(),
+            source: r.source.clone(),
+            configuration: br#"{"vcpu_count":1}"#.to_vec(),
+            executable_sha256: [11; 32],
+            kernel_sha256: [12; 32],
+            kernel_bytes: 100,
+            disk_bytes: 4096,
+        })
+    }));
+    let source = app
+        .observe_lifecycle_source_work(&question.work, context)
+        .unwrap();
+    state.lock().unwrap().full_proposal = Some(FullCaptureWorkRequest {
+        pause: source.work.pause_request().unwrap(),
+        compatibility: VmCompatibility {
+            snapshot_format: 1,
+            tool: ContentDigest::from_sha256([1; 32]),
+            cpu: ContentDigest::from_sha256([2; 32]),
+            devices: ContentDigest::from_sha256([3; 32]),
+            image_configuration: ContentDigest::from_sha256([4; 32]),
+            writable_drives: vec![WritableDrive {
+                drive_id: "rootfs".try_into().unwrap(),
+                jail_relative_path: "rootfs.ext4".into(),
+            }],
+        },
+        state_bytes: 4096,
+        memory_bytes: 4096,
+        disk_bytes: 4096,
+        api_timeout_ms: 1000,
+        worker_timeout_ms: 1000,
+    });
+    unload
+}
+
+fn current_identity(
+    create: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+) -> LifecycleAccessIdentity {
+    LifecycleAccessIdentity {
+        protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+        center: create.center.clone(),
+        node: create.request.binding.node.clone(),
+        session: create.request.binding.session.clone(),
+        operation: create.request.binding.key.clone(),
+        accepted_version: create.accepted_version,
+        incarnation: 101.try_into().unwrap(),
+    }
+}
+
 #[tokio::test]
 async fn original_unload_waits_for_both_gateway_body_and_actual_relay_before_first_freeze() {
     for body_first in [false, true] {
@@ -52,15 +119,7 @@ async fn original_unload_waits_for_both_gateway_body_and_actual_relay_before_fir
         app.record_lifecycle_intent(&create, &context).unwrap();
         app.establish_lifecycle_host_epoch().unwrap();
         lifecycle::advance(&app).unwrap();
-        let identity = LifecycleAccessIdentity {
-            protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-            center: create.center.clone(),
-            node: create.request.binding.node.clone(),
-            session: create.request.binding.session.clone(),
-            operation: create.request.binding.key.clone(),
-            accepted_version: create.accepted_version,
-            incarnation: 101.try_into().unwrap(),
-        };
+        let identity = current_identity(&create);
         let (permit, secret) = app
             .lifecycle_data_authorization(&identity, &context, DataKind::FileWrite)
             .unwrap();
@@ -94,52 +153,7 @@ async fn original_unload_waits_for_both_gateway_body_and_actual_relay_before_fir
         );
         drop((port, relay_permit));
 
-        let mut unload = create;
-        unload.accepted_version = 2;
-        unload.request.binding.expected = ExpectedSession::Version(1);
-        unload.request.binding.key.sequence = 2.try_into().unwrap();
-        unload.request.operation = LifecycleOperation::Unload {
-            source_incarnation: 101.try_into().unwrap(),
-            capture: 1.try_into().unwrap(),
-        };
-        app.record_lifecycle_intent(&unload, &context).unwrap();
-        let question = app
-            .prepare_lifecycle_source_work(&unload, &context)
-            .unwrap();
-        state.lock().unwrap().source_probe = Some(Box::new(|r| {
-            Ok(RawSourceObservation {
-                work_binding: r.work_binding,
-                resource: r.resource.clone(),
-                source: r.source.clone(),
-                configuration: br#"{"vcpu_count":1}"#.to_vec(),
-                executable_sha256: [11; 32],
-                kernel_sha256: [12; 32],
-                kernel_bytes: 100,
-                disk_bytes: 4096,
-            })
-        }));
-        let source = app
-            .observe_lifecycle_source_work(&question.work, &context)
-            .unwrap();
-        state.lock().unwrap().full_proposal = Some(FullCaptureWorkRequest {
-            pause: source.work.pause_request().unwrap(),
-            compatibility: VmCompatibility {
-                snapshot_format: 1,
-                tool: ContentDigest::from_sha256([1; 32]),
-                cpu: ContentDigest::from_sha256([2; 32]),
-                devices: ContentDigest::from_sha256([3; 32]),
-                image_configuration: ContentDigest::from_sha256([4; 32]),
-                writable_drives: vec![WritableDrive {
-                    drive_id: "rootfs".try_into().unwrap(),
-                    jail_relative_path: "rootfs.ext4".into(),
-                }],
-            },
-            state_bytes: 4096,
-            memory_bytes: 4096,
-            disk_bytes: 4096,
-            api_timeout_ms: 1000,
-            worker_timeout_ms: 1000,
-        });
+        let unload = prepare_unload(&app, &state, &create, &context);
         let advance =
             || app.advance_recorded_lifecycle_unload(&unload, &unload.request.binding.node);
         assert_eq!(advance(), Err(PortError::Busy));

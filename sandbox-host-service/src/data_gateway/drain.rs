@@ -72,14 +72,18 @@ impl RelayExit {
     pub async fn wait_test_revocation_gate(&self, child: &RelayProcess) {
         #[cfg(target_os = "linux")]
         if std::env::var_os("SANDPROOF_TEST_DATA_DRAIN_GATE").is_some()
-            && let Some(pid) = child.0.as_ref().and_then(|child| child.process_id())
+            && let Some(pid) = child
+                .0
+                .as_ref()
+                .and_then(sandproof_controller_service::application::TrackedRelayChild::process_id)
         {
             // Even cancellation of this await cannot refund the original pin
             // while the bounded blocking barrier is still running.
             let lease = self.lease.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                let _lease = lease;
-                test_gate::wait(pid)
+                let result = test_gate::wait(pid);
+                drop(lease);
+                result
             })
             .await;
         }
