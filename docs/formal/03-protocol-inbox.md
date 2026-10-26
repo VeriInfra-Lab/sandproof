@@ -70,3 +70,8 @@ CenterId 和五种计数器角色的实际 Deserialize 接回同一 V0 编号/�
 协议 2 的全文 schema，不把普通 accepted_version、ExpectedSession::Version 或 slot 加强为非零。
 完整派生字段覆盖、具体 parser 调用位置、字节预算及输出 Writer 仍是后续义务。共享根和
 独立生成的标准 Result::map 接线以候选 diff 交 V0/主控，未公共采用前不认领正式入口通过。
+
+[完整封套字段表示](../../verification/experiments/stage1-protocol/envelope-schema/README.md)
+使用同一实际生成类型及原守卫合同，涵盖五种操作和 Recorded 全部字段。输出表示的
+单射不等于整个 Serde parser 已证，也不能把标准对象输出限制为唯一合法输入；固定派生
+还接受对应声明顺序的序列。具体字节/字典、容器收尾、原预算和 Writer 接线仍需独立验收。
