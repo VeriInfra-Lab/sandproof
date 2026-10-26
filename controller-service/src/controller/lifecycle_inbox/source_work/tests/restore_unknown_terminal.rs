@@ -6,7 +6,11 @@ use core::workflow::{self, WorkflowStep};
 use sandbox_controller_core as core;
 use sandproof_protocol::{UnknownReason, WorkOutcome, WorkReceipt};
 
-fn unknown_prepare_then_terminal(expiry: bool, unknown_receipt: bool, fence_first: bool) {
+fn unknown_prepare_then_terminal(
+    expiry: bool,
+    unknown_receipt: Option<UnknownReason>,
+    fence_first: bool,
+) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let (mut journal, source) = unloaded_resume_source(&path);
@@ -22,18 +26,19 @@ fn unknown_prepare_then_terminal(expiry: bool, unknown_receipt: bool, fence_firs
             }
         )
     });
-    if unknown_receipt {
-        journal.complete::<FullEvidence>(
-            &WorkReceipt {
-                identity: prepare.identity.clone(),
-                outcome: WorkOutcome::Unknown {
-                    reason: UnknownReason::ObservationUnavailable,
-                    last_observation: None,
+    if let Some(reason) = unknown_receipt {
+        journal
+            .complete::<FullEvidence>(
+                &WorkReceipt {
+                    identity: prepare.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason,
+                        last_observation: None,
+                    },
                 },
-            },
-            &mut NeverCrash,
-        )
-        .unwrap();
+                &mut NeverCrash,
+            )
+            .unwrap();
     }
     let held = journal.lifecycle_source_work(&v3::config().node).unwrap();
     assert!(held[0].restore.as_ref().unwrap().material_use);
@@ -83,46 +88,111 @@ fn unknown_prepare_then_terminal(expiry: bool, unknown_receipt: bool, fence_firs
         held_charge
     );
     if fence_first {
-        let world = journal.world().unwrap();
-        let row = world.sandbox_record(sandbox).unwrap();
-        assert_eq!(row.current_operation.unwrap().kind, core::OperationKind::Kill);
-        assert!(row.terminal && row.current_vm.is_none() && row.net_slot.is_none());
-        let expected = core::Command::InstallFence {
-            sandbox,
-            epoch: row.epoch,
-            terminal: true,
-        };
-        // Exercise both the production preview and the real SQLite claim before
-        // supplying any positive observation of the still-unknown original load.
-        let step = workflow::next_step(&world, sandbox);
-        let claimed = journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap();
-        assert!(
-            step == WorkflowStep::Claim
-                && claimed.as_ref().is_some_and(|action| *action.command.command() == expected),
-            "terminal Fence must advance before original Prepare observation: step={step:?} claim={claimed:?}"
-        );
-        let fence = claimed.unwrap();
-        journal.complete(&WorkReceipt {
-            identity: fence.identity.clone(),
-            outcome: WorkOutcome::ObservedSuccess(FullEvidence {
-                resource: fence.identity.resource.clone(),
-                command: fence.command.command().clone(),
-            }),
-        }, &mut NeverCrash).unwrap();
-        assert!(journal.uncertain_actions().unwrap().contains(&prepare));
-        assert_eq!(journal.lifecycle_source_work(&v3::config().node).unwrap(), held);
-        assert!(journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap().is_none());
-        assert!(matches!(journal.lifecycle_material_retirement_questions(sandbox),
-            Err(JournalError::UnresolvedAction)));
-        let world = journal.world().unwrap();
-        let row = world.sandbox_record(sandbox).unwrap();
-        assert!(row.terminal && row.current_vm.is_none() && row.net_slot.is_none());
-        assert_ne!(row.phase, core::Phase::Destroyed);
-        assert!(matches!(journal.apply(core::ControllerInput::Publication(
-            core::PublicationInput::Destroyed(sandbox)), &mut NeverCrash),
-            Err(JournalError::UnresolvedAction)));
+        claim_terminal_fence_before_observation(&mut journal, sandbox, &prepare, &held);
     }
     finish_terminal(&mut journal, sandbox, &prepare, expiry);
+}
+
+fn claim_terminal_fence_before_observation(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    prepare: &sandproof_protocol::WorkAction<core::EffectId>,
+    held: &[SourceWorkRecord],
+) {
+    let world = journal.world().unwrap();
+    let row = world.sandbox_record(sandbox).unwrap();
+    assert_eq!(
+        row.current_operation.unwrap().kind,
+        core::OperationKind::Kill
+    );
+    assert!(row.terminal && row.current_vm.is_none() && row.net_slot.is_none());
+    let expected = core::Command::InstallFence {
+        sandbox,
+        epoch: row.epoch,
+        terminal: true,
+    };
+    // Exercise both the production preview and the real SQLite claim before
+    // supplying any positive observation of the still-unknown original load.
+    let step = workflow::next_step(&world, sandbox);
+    let claimed = journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap();
+    assert!(
+        step == WorkflowStep::Claim
+            && claimed
+                .as_ref()
+                .is_some_and(|action| *action.command.command() == expected),
+        "terminal Fence must advance before original Prepare observation: step={step:?} claim={claimed:?}"
+    );
+    let fence = claimed.unwrap();
+    assert_no_early_terminal_release(journal, prepare);
+    journal
+        .complete(
+            &WorkReceipt {
+                identity: fence.identity.clone(),
+                outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+                    resource: fence.identity.resource.clone(),
+                    command: fence.command.command().clone(),
+                }),
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert!(journal.uncertain_actions().unwrap().contains(prepare));
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        held
+    );
+    assert!(
+        journal
+            .claim_next(Some(sandbox), &mut NeverCrash)
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        journal.lifecycle_material_retirement_questions(sandbox),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_no_early_terminal_release(journal, prepare);
+}
+
+fn assert_no_early_terminal_release(
+    journal: &mut ControllerJournal,
+    prepare: &sandproof_protocol::WorkAction<core::EffectId>,
+) {
+    let core::Command::PrepareVm {
+        sandbox,
+        generation,
+        vm,
+        slot,
+        ..
+    } = *prepare.command.command()
+    else {
+        panic!("original restore Prepare required");
+    };
+    let before = journal.world().unwrap();
+    let row = before.sandbox_record(sandbox).unwrap();
+    assert!(row.terminal && row.current_vm.is_none() && row.net_slot.is_none());
+    assert_ne!(row.phase, core::Phase::Destroyed);
+    // These pass through the same real SQL apply guard which owns the original
+    // Create-compensation exception. The Fence exception must not widen it.
+    for input in [
+        core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(sandbox, generation, vm)),
+        core::ControllerInput::Scheduler(core::SchedulerInput::AbortPrepare(
+            sandbox, generation, vm, slot,
+        )),
+        core::ControllerInput::Scheduler(core::SchedulerInput::CleanupVm(sandbox, generation, vm)),
+        core::ControllerInput::Publication(core::PublicationInput::Failed(
+            sandbox,
+            core::FailureKind::Cancelled,
+        )),
+        core::ControllerInput::Publication(core::PublicationInput::Destroyed(sandbox)),
+    ] {
+        let result = journal.apply(input, &mut NeverCrash);
+        assert!(
+            matches!(result, Err(JournalError::UnresolvedAction)),
+            "unexpected physical/terminal permission: {result:?}"
+        );
+        assert_eq!(journal.world().unwrap(), before);
+    }
 }
 
 fn finish_terminal(
@@ -203,20 +273,20 @@ fn finish_terminal(
 
 #[test]
 fn unknown_prepare_destroy_preserves_backing_and_finishes_without_second_load() {
-    unknown_prepare_then_terminal(false, true, false);
+    unknown_prepare_then_terminal(false, Some(UnknownReason::ObservationUnavailable), false);
 }
 
 #[test]
 fn unknown_prepare_expiry_preserves_backing_and_finishes_without_second_load() {
-    unknown_prepare_then_terminal(true, true, false);
+    unknown_prepare_then_terminal(true, Some(UnknownReason::ObservationUnavailable), false);
 }
 
 #[test]
 fn dispatched_prepare_destroy_claims_terminal_fence_before_prepare_observation() {
-    unknown_prepare_then_terminal(false, false, true);
+    unknown_prepare_then_terminal(false, None, true);
 }
 
 #[test]
 fn unknown_prepare_destroy_claims_terminal_fence_before_prepare_observation() {
-    unknown_prepare_then_terminal(false, true, true);
+    unknown_prepare_then_terminal(false, Some(UnknownReason::ObservationUnavailable), true);
 }
