@@ -142,28 +142,47 @@ impl Host {
         if !self.apply_renewals.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let LifecycleOperation::Renew { incarnation, end_at_ms, extend_only } = intent.request.operation else {
+        let LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        } = intent.request.operation
+        else {
             return Ok(());
         };
         let mut stored = self.resumed.lock().unwrap();
         let mut view = stored.clone().ok_or(PortError::Busy)?;
-        let LifecycleOperation::Resume { target_incarnation, .. } = view.request.request.operation else {
+        let LifecycleOperation::Resume {
+            target_incarnation, ..
+        } = view.request.request.operation
+        else {
             return Err(PortError::Busy);
         };
-        if incarnation != target_incarnation || intent.center != view.request.center
+        if incarnation != target_incarnation
+            || intent.center != view.request.center
             || intent.retention != view.request.retention
             || intent.request.binding.session != view.request.request.binding.session
             || intent.request.binding.node != view.request.request.binding.node
             || intent.request.binding.key.owner != view.request.request.binding.key.owner
-            || (view.current_request != *intent && intent.request.binding.expected != sandproof_protocol::lifecycle::ExpectedSession::Version(view.current_request.accepted_version))
+            || (view.current_request != *intent
+                && intent.request.binding.expected
+                    != sandproof_protocol::lifecycle::ExpectedSession::Version(
+                        view.current_request.accepted_version,
+                    ))
         {
             return Err(PortError::Busy);
         }
-        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } = &mut view.readiness else {
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &mut view.readiness
+        else {
             return Err(PortError::Busy);
         };
         let end = u64::try_from(end_at_ms).map_err(|_| PortError::Busy)?;
-        facts.end_at_ms = if extend_only { facts.end_at_ms.max(end) } else { end };
+        facts.end_at_ms = if extend_only {
+            facts.end_at_ms.max(end)
+        } else {
+            end
+        };
         facts.observed_at_ms = self.clock.0.load(Ordering::SeqCst);
         view.current_request = intent.clone();
         if !view.matches_request(&view.request) {
@@ -184,15 +203,20 @@ impl HostPort for Host {
         }
         let stored = self.resumed.lock().unwrap();
         let view = stored.as_ref().ok_or(PortError::Busy)?;
-        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } = &view.readiness else {
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &view.readiness
+        else {
             return Err(PortError::Busy);
         };
-        if view.current_request != result.request || !result.is_sdk_renewal()
+        if view.current_request != result.request
+            || !result.is_sdk_renewal()
             || u64::try_from(result.effective_end_at_ms).ok() != Some(facts.end_at_ms)
         {
             return Err(PortError::Busy);
         }
-        Ok(sandproof_protocol::lifecycle::ConfirmedRenewal { result: result.clone() })
+        Ok(sandproof_protocol::lifecycle::ConfirmedRenewal {
+            result: result.clone(),
+        })
     }
     fn observe_lifecycle_resume(
         &self,

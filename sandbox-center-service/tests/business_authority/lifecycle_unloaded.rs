@@ -27,9 +27,7 @@ fn accept_unload_with_create(
     app: &Application,
     create: &sandproof_protocol::lifecycle::PublicCreateRequest,
 ) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
-    let accepted = app
-        .create_lifecycle("8", create)
-        .unwrap();
+    let accepted = app.create_lifecycle("8", create).unwrap();
     assert_eq!(
         app.query_lifecycle("8", &accepted.session).unwrap().phase,
         PublicSessionPhase::Running
