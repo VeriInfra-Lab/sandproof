@@ -1,6 +1,7 @@
 //! Original SQLite/workflow with controlled physical port outcomes, not KVM.
 //! No successful Prepare/Load observation is fabricated for the unknown action.
 use super::*;
+use sandbox_controller_core as core;
 use core::workflow::{self, WorkflowStep};
 use sandproof_protocol::{UnknownReason, WorkOutcome, WorkReceipt};
 
