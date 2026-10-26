@@ -133,7 +133,8 @@ fn changed_current_fence_or_candidate_never_returns_original_prepared() {
                         0 => observed.process.pid += 1,
                         1 => observed.process.start_time_ticks += 1,
                         2 => {
-                            observed.process.boot_id = "00000000-0000-0000-0000-000000000002".into();
+                            observed.process.boot_id =
+                                "00000000-0000-0000-0000-000000000002".into();
                         }
                         3 => observed.state = LoadedSnapshotState::Running,
                         _ => write_fence(
