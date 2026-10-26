@@ -99,3 +99,9 @@ Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的�
 映射及完整 V3 继续开放。
 尤其协议 Resume 校验允许编号空洞，而当前收件追加路径另检查 `checked_next`，必须分别
 陈述并由对应提供者连接，不能用后者加强公共请求规格。
+
+[原收件查询候选](../../verification/experiments/stage1-protocol/inbox-state/README.md)直接连接
+未重构的 `Inbox::state`：两个索引有效时，完整 intent 与其余六个返回字段均对应
+选中的 Session/Entry。旧条目是否 current 仅由版本相等决定，local_operation 来自
+条目自身。这不表示执行/释放许可或资源存在。record 返回索引的有效性及同一视图
+的 record→state 组合另列；持久外层、公共采用与 ning/共享验收仍未完成。
