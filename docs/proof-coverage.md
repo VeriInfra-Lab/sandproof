@@ -2,6 +2,19 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 已卸载执行的专用终止：待验证的新实现
+
+以 `42b07d0a` 为修改基线，在原 Core/Journal 增加 `ReleasedExecution` 终止依据，
+连接正式 Unload 的成功 Pause、精确 ConfirmRelease 见证和当前完整 Destroy。
+它只消解原执行已释放后的本次终止 fence，保留原 Unknown 状态与回执；不产生物理
+fence 成功，不改变 Node 的占用位置检查，也不提前删除材料或释放材料额度。
+持久依据须在原 SQL 事务、恢复快照和输入重放中核对完整释放 context 与输入序列。
+
+这部分新增 Rust reducer、Journal producer、恢复与终态校验尚无 Lean 对应证明。
+旧终止/fence、发布、checkpoint 或整控制器定理不自动覆盖新增分支；本批不迁移 Lean，
+不修改 Charon/Aeneas 或生成物。普通组件结果、固定提交及系统验收另据实际记录报告，
+不能用受控退出/捕获输入的测试代替真实 VMM 与完整部署验收。
+
 ## 协议 4 清单长度与文件集合的局部证明
 
 本包基于 #683 的 `236d40db71fdf06e5ffce3968cabf69eb5244325`，选择性接回旧 #671/#675

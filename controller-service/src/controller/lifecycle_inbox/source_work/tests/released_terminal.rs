@@ -185,3 +185,63 @@ fn released_terminal_can_finish_after_another_owner_occupies_its_old_position() 
     let journal = v3::open(&path);
     assert_eq!(journal.host_slot_inventory().unwrap(), positions);
 }
+
+#[test]
+fn released_terminal_checkpoint_rejects_a_marker_with_the_wrong_release_sequence() {
+    use sha2::{Digest, Sha256};
+    let (_directory, mut journal, _source, _destroy, basis) = prepared();
+    journal.close_released_lifecycle_execution(basis.key.sandbox, &mut NeverCrash).unwrap();
+    journal.publish_checkpoint(&mut NeverCrash).unwrap();
+    let payload: Vec<u8> = journal.journal.connection.query_row(
+        "SELECT payload FROM controller_checkpoint WHERE id=1", [], |r| r.get(0)).unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    fn change(value: &mut serde_json::Value) -> usize {
+        match value {
+            serde_json::Value::Object(fields) => {
+                let mut changed = 0;
+                if let Some(sequence) = fields.get_mut("release_input_sequence") {
+                    *sequence = serde_json::json!(sequence.as_u64().unwrap() + 1);
+                    changed += 1;
+                }
+                changed + fields.values_mut().map(change).sum::<usize>()
+            }
+            serde_json::Value::Array(values) => values.iter_mut().map(change).sum(),
+            _ => 0,
+        }
+    }
+    assert_eq!(change(&mut value), 1);
+    let bytes = serde_json::to_vec(&value).unwrap();
+    journal.journal.connection.execute("UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
+        rusqlite::params![&bytes, Sha256::digest(&bytes).as_slice()]).unwrap();
+    assert!(matches!(crate::controller::checkpoint::load_world(&journal.journal.connection),
+        Err(JournalError::CorruptStore)));
+}
+
+#[test]
+fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_deletion() {
+    use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
+    let (_directory, mut journal, source, destroy, basis) = prepared();
+    crate::finish_accepted_kill::<FullEvidence, _>(&mut journal, basis.key.sandbox, basis.key.operation,
+        &mut |_| panic!("no physical fence for an already released execution")).unwrap();
+    let world = journal.world().unwrap();
+    let row = world.sandbox_record(basis.key.sandbox).unwrap();
+    let original_charge = journal.lifecycle_capture_record(basis.key.sandbox).unwrap().unwrap()
+        .capture.as_ref().unwrap().reserved_material_bytes;
+    let question = journal.lifecycle_material_retirement_questions(basis.key.sandbox).unwrap().remove(0);
+    let certificate = QuiescenceCertificate {
+        sandbox: basis.key.sandbox, owner: basis.binding.owner, epoch: basis.epoch,
+        operation: basis.key.operation, workspace: row.workspace,
+        worker_drained: QuiescenceStatus::Confirmed, data_connections_drained: QuiescenceStatus::Confirmed,
+        host_resources_reclaimed: QuiescenceStatus::Confirmed, external_pins_released: QuiescenceStatus::Unconfirmed,
+    };
+    assert!(journal.prepare_lifecycle_material_retirement(&question, b"original material plan", certificate, &mut NeverCrash).is_err());
+    let certificate = QuiescenceCertificate { external_pins_released: QuiescenceStatus::Confirmed, ..certificate };
+    journal.prepare_lifecycle_material_retirement(&question, b"original material plan", certificate, &mut NeverCrash).unwrap();
+    // The provider has returned no deletion observation, so no settlement is
+    // supplied. A committed plan cannot stand in for completed unlink.
+    assert!(!journal.lifecycle_destroy_cleaned(&destroy, &v3::context()).unwrap());
+    assert!(journal.retirement_candidates().unwrap().is_empty());
+    let saved = journal.lifecycle_capture_record(source.source_sandbox()).unwrap().unwrap();
+    assert_eq!(saved.capture.unwrap().reserved_material_bytes, original_charge);
+    assert!(journal.retire_reclaimed(basis.key.sandbox, 20, |_| Ok(()), &mut NeverCrash).is_err());
+}

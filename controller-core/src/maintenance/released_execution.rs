@@ -114,7 +114,7 @@ pub(super) fn close(world: &World, basis: ReleasedExecution) -> Result<World, Ma
     if !world.controller_up { return Err(MaintenanceReject::ControllerDown); }
     if !valid_basis(world, basis) { return Err(MaintenanceReject::ResourcesNotReclaimed); }
     let logical_id = LogicalEffectId { command: basis.command() };
-    let mut logical = *world.logical_effect(&logical_id).ok_or(MaintenanceReject::ResourceMismatch)?;
+    let mut logical = world.logical_effect(&logical_id).ok_or(MaintenanceReject::ResourceMismatch)?;
     if logical.result == Some(LogicalEffectResult::ReleasedExecution(basis)) { return Ok(world.clone()); }
     if world.sandbox_record(basis.key.sandbox).is_none_or(|r| r.phase != Phase::Revoking) {
         return Err(MaintenanceReject::ResourceMismatch);
