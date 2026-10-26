@@ -1,0 +1,89 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendShape
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord
+open scoped Classical
+
+def isDestroy : LifecycleOperation → Bool
+  | .Destroy => true
+  | _ => false
+
+inductive ExistingDecision where
+  | reject (error : sandproof_controller_service.JournalError)
+  | append (terminal : Bool)
+
+/-- Exact order of the existing-session guards. Non-Destroy accepted-version
+successor validity belongs to envelope validation; it is not a guard here. -/
+noncomputable def existingDecision (inbox : Inbox) (session : Session)
+    (intent : AcceptedLifecycleIntent) : ExistingDecision :=
+  if session.owner ≠ intent.request.binding.key.owner then .reject .Conflict
+  else if session.terminal then .reject .Conflict
+  else if session.retention ≠ intent.retention then .reject .Conflict
+  else
+    let terminal := isDestroy intent.request.operation
+    if !terminal && decide (intent.request.binding.expected ≠ .Version session.current_version) then
+      .reject .Conflict
+    else if terminal && decide (intent.accepted_version ≤ session.current_version) then .reject .Conflict
+    else if inbox.config.max_operations_per_session.val ≤ session.entries.val.length then .reject .Conflict
+    else if !terminal && decide (inbox.config.max_operations_per_session.val ≤ session.entries.val.length + 1) then
+      .reject .Conflict
+    else if !(operationAllowed session intent.request.operation) then .reject .UnsupportedInput
+    else if sdkRenewal intent && session.entries.val.any (unconfirmedSdk session.confirmed_renewal) then
+      .reject .UnresolvedAction
+    else .append terminal
+
+def appendedSession (session : Session) (intent : AcceptedLifecycleIntent) (terminal : Bool)
+    (entries : alloc.vec.Vec Entry) : Session :=
+  { session with current_version := intent.accepted_version, terminal := terminal, entries := entries }
+
+/-- Exact entry append and whole-inbox frame, including unchanged native state,
+confirmations, identity, retention, and every unselected session. -/
+def ExistingPost (inbox : Inbox) (s : Usize) (session : Session)
+    (intent : AcceptedLifecycleIntent) (decision : ExistingDecision) (out : RecordReturn) : Prop :=
+  match decision with
+  | .reject error => out = (.Err error, inbox)
+  | .append terminal =>
+      ∃ (entries : alloc.vec.Vec Entry) (index : Usize),
+        entries.val = session.entries.val ++ [pendingEntry intent] ∧
+        index.val = session.entries.val.length ∧
+        out = (.Ok (s, index), replaceSession inbox s (appendedSession session intent terminal entries))
+
+def FullExistingContract (run : Inbox → Usize → AcceptedLifecycleIntent → Result RecordReturn) : Prop :=
+  ∀ inbox s intent, ∀ bound : s.val < inbox.sessions.val.length,
+    run inbox s intent ⦃ out =>
+      ExistingPost inbox s inbox.sessions.val[s.val] intent
+        (existingDecision inbox inbox.sessions.val[s.val] intent) out ⦄
+
+theorem append_push_outcome (session : Session) (intent : AcceptedLifecycleIntent) (limit : U16)
+    (room : session.entries.val.length < limit.val) :
+    ∃ (entries : alloc.vec.Vec Entry) (index : Usize),
+      session.entries.push (pendingEntry intent) = .ok entries ∧
+      ((alloc.vec.Vec.len entries - 1#usize) : Result Usize) = .ok index ∧
+      index.val = session.entries.val.length ∧
+      entries.val = session.entries.val ++ [pendingEntry intent] := by
+  have capacity : session.entries.val.length < Usize.max := by scalar_tac
+  obtain ⟨entries, pushed, contents⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.push_spec session.entries (pendingEntry intent) capacity)
+  have length : entries.val.length = session.entries.val.length + 1 := by simp [contents]
+  obtain ⟨index, subtracted, post⟩ := WP.spec_imp_exists
+    (Usize.sub_spec (x := alloc.vec.Vec.len entries) (y := 1#usize) (by simp; omega))
+  refine ⟨entries, index, pushed, subtracted, ?_, contents⟩
+  simp only [alloc.vec.Vec.len_val] at post
+  scalar_tac
+
+theorem reserve_add_total (session : Session) (limit : U16)
+    (room : session.entries.val.length < limit.val) :
+    ∃ next : Usize, ((alloc.vec.Vec.len session.entries + 1#usize) : Result Usize) = .ok next ∧
+      next.val = session.entries.val.length + 1 := by
+  obtain ⟨next, added, value⟩ := WP.spec_imp_exists
+    (Usize.add_spec (x := alloc.vec.Vec.len session.entries) (y := 1#usize) (by simp; scalar_tac))
+  exact ⟨next, added, by simpa using value⟩
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.append_push_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.reserve_add_total
