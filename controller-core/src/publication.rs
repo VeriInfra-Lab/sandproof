@@ -628,22 +628,22 @@ pub fn handle_publish_destroyed(
         return Err(PublicationReject::TerminalMismatch);
     }
     if !crate::maintenance::released_execution::terminal_closed(world, sandbox) {
-    if world.worker_fences.get(&sandbox)
-        != Some(&WorkerFence {
+        if world.worker_fences.get(&sandbox)
+            != Some(&WorkerFence {
+                epoch: record.epoch,
+                terminal: true,
+            })
+        {
+            return Err(PublicationReject::FenceNotInstalled);
+        }
+        let fence = Command::InstallFence {
+            sandbox,
             epoch: record.epoch,
             terminal: true,
-        })
-    {
-        return Err(PublicationReject::FenceNotInstalled);
-    }
-    let fence = Command::InstallFence {
-        sandbox,
-        epoch: record.epoch,
-        terminal: true,
-    };
-    if !effect_succeeded_check(world, &fence) {
-        return Err(PublicationReject::PrerequisiteNotSucceeded);
-    }
+        };
+        if !effect_succeeded_check(world, &fence) {
+            return Err(PublicationReject::PrerequisiteNotSucceeded);
+        }
     }
     if !indexed_vms_closed(world, sandbox) {
         return Err(PublicationReject::ResourcesNotClosed);

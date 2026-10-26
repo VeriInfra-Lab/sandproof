@@ -1,10 +1,10 @@
 //! Checked maintenance of the existing controller state. These transitions
 //! perform no I/O and never constitute physical cleanup evidence themselves.
 
+pub mod released_execution;
 pub mod retirement;
 pub mod slots;
 mod unload_history;
-pub mod released_execution;
 pub mod windows;
 pub use unload_history::released_unload_termination_history;
 

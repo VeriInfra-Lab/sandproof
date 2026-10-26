@@ -175,23 +175,51 @@ fn released_execution_closure_roundtrips_without_manufacturing_fence_success() {
     use crate::maintenance::released_execution::{ReleasedExecution, discharged};
     let (world, binding) = unloaded();
     let world = accept_kill(&release(&world, 0, binding));
-    let fence = effect(&world, binding.sandbox, |c| matches!(c, Command::InstallFence { terminal: true, .. }));
-    let world = step(&world, ControllerInput::Effect(EffectInput::Dispatch(fence.clone())));
-    let world = step(&world, ControllerInput::Effect(EffectInput::Timeout(fence.clone())));
+    let fence = effect(&world, binding.sandbox, |c| {
+        matches!(c, Command::InstallFence { terminal: true, .. })
+    });
+    let world = step(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(fence.clone())),
+    );
+    let world = step(
+        &world,
+        ControllerInput::Effect(EffectInput::Timeout(fence.clone())),
+    );
     let basis = ReleasedExecution {
-        key: OperationKey { sandbox: binding.sandbox, operation: OperationId(3) },
+        key: OperationKey {
+            sandbox: binding.sandbox,
+            operation: OperationId(3),
+        },
         epoch: world.sandbox_record(binding.sandbox).unwrap().epoch,
-        position: HostSlotId(0), expected_previous: None, binding, release_input_sequence: 1,
+        position: HostSlotId(0),
+        expected_previous: None,
+        binding,
+        release_input_sequence: 1,
     };
-    let world = step(&world, ControllerInput::Maintenance(MaintenanceInput::CloseReleasedExecution(basis)));
+    let world = step(
+        &world,
+        ControllerInput::Maintenance(MaintenanceInput::CloseReleasedExecution(basis)),
+    );
     assert!(discharged(&world, &fence));
-    assert_eq!(world.effect_status(&fence), Some(EffectStatus::OutcomeUnknown));
+    assert_eq!(
+        world.effect_status(&fence),
+        Some(EffectStatus::OutcomeUnknown)
+    );
     assert!(!effect::effect_succeeded_check(&world, fence.command()));
     assert!(effect::handle_effect_dispatch(&world, fence.clone()).is_err());
     assert!(worker::handle_worker(&world, &fence).is_err());
     roundtrip(&world);
-    let destroyed = step(&world, ControllerInput::Publication(PublicationInput::Destroyed(binding.sandbox)));
-    assert!(destroyed.worker_fences.get(&binding.sandbox).is_some_and(|f| f.epoch < basis.epoch && !f.terminal));
+    let destroyed = step(
+        &world,
+        ControllerInput::Publication(PublicationInput::Destroyed(binding.sandbox)),
+    );
+    assert!(
+        destroyed
+            .worker_fences
+            .get(&binding.sandbox)
+            .is_some_and(|f| f.epoch < basis.epoch && !f.terminal)
+    );
     roundtrip(&destroyed);
     let crashed = step(&destroyed, ControllerInput::Runtime(RuntimeInput::Crash));
     roundtrip(&crashed);
@@ -204,23 +232,53 @@ fn released_execution_closure_cannot_discharge_an_old_unknown_or_a_new_generatio
     let world = release(&world, 0, binding);
     let killed = accept_kill(&world);
     let basis = ReleasedExecution {
-        key: OperationKey { sandbox: binding.sandbox, operation: OperationId(3) },
+        key: OperationKey {
+            sandbox: binding.sandbox,
+            operation: OperationId(3),
+        },
         epoch: killed.sandbox_record(binding.sandbox).unwrap().epoch,
-        position: HostSlotId(0), expected_previous: None, binding, release_input_sequence: 1,
+        position: HostSlotId(0),
+        expected_previous: None,
+        binding,
+        release_input_sequence: 1,
     };
     assert!(valid_basis(&killed, basis));
-    let seal = effect(&killed, binding.sandbox, |c| matches!(c, Command::SealSnapshot { .. }));
+    let seal = effect(&killed, binding.sandbox, |c| {
+        matches!(c, Command::SealSnapshot { .. })
+    });
     let mut unknown = killed.clone();
     unknown.effects.put(seal, EffectStatus::OutcomeUnknown);
     assert!(!valid_basis(&unknown, basis));
-    let resumed = step(&world, ControllerInput::Request(Request::Resume(ResumeRequest {
-        actor: Actor::Tenant(OWNER), sandbox: binding.sandbox, operation: OperationId(3),
-    })));
-    let new_kill = step(&resumed, ControllerInput::Request(Request::Kill(KillRequest {
-        actor: Actor::Tenant(OWNER), sandbox: binding.sandbox, operation: OperationId(4),
-    })));
-    let wrong = ReleasedExecution { key: OperationKey { sandbox: binding.sandbox, operation: OperationId(4) },
-        epoch: new_kill.sandbox_record(binding.sandbox).unwrap().epoch, ..basis };
+    let resumed = step(
+        &world,
+        ControllerInput::Request(Request::Resume(ResumeRequest {
+            actor: Actor::Tenant(OWNER),
+            sandbox: binding.sandbox,
+            operation: OperationId(3),
+        })),
+    );
+    let new_kill = step(
+        &resumed,
+        ControllerInput::Request(Request::Kill(KillRequest {
+            actor: Actor::Tenant(OWNER),
+            sandbox: binding.sandbox,
+            operation: OperationId(4),
+        })),
+    );
+    let wrong = ReleasedExecution {
+        key: OperationKey {
+            sandbox: binding.sandbox,
+            operation: OperationId(4),
+        },
+        epoch: new_kill.sandbox_record(binding.sandbox).unwrap().epoch,
+        ..basis
+    };
     assert!(!valid_basis(&new_kill, wrong));
-    assert!(handle_controller(&new_kill, ControllerInput::Maintenance(MaintenanceInput::CloseReleasedExecution(wrong))).is_err());
+    assert!(
+        handle_controller(
+            &new_kill,
+            ControllerInput::Maintenance(MaintenanceInput::CloseReleasedExecution(wrong))
+        )
+        .is_err()
+    );
 }
