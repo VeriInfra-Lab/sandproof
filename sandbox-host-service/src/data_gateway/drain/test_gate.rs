@@ -310,8 +310,8 @@ mod tests {
             .path()
             .join(format!("{}.sock", std::process::id()));
         let deadline = Instant::now() + Duration::from_secs(2);
-        let mut peer = connect_selected_socket(&socket, deadline, |_| {})
-            .expect("original selected socket");
+        let mut peer =
+            connect_selected_socket(&socket, deadline, |_| {}).expect("original selected socket");
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut echo = vec![0; bytes.len()];
         peer.read_exact(&mut echo).unwrap();
