@@ -2,7 +2,7 @@
 use super::*;
 use sandbox_controller_core::maintenance::slots::{HostSlotId, HostSlotPhase};
 
-fn occupy_released_position(path: &Path) -> AcceptedLifecycleIntent {
+pub(super) fn occupy_released_position(path: &Path) -> AcceptedLifecycleIntent {
     let app = v3::application(
         path,
         Arc::new(Mutex::new(State {

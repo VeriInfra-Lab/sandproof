@@ -110,6 +110,11 @@ pub(super) fn load(connection: &Connection) -> Result<(core::World, Bindings), J
         if entry.version != 1 {
             return Err(JournalError::CorruptStore);
         }
+        if let core::ControllerInput::Maintenance(MaintenanceInput::CloseReleasedExecution(basis)) =
+            &entry.input
+        {
+            validate_released_basis(&bindings, *basis, sequence.saturating_sub(1))?;
+        }
         world = core::handle_controller(&world, entry.input.clone())
             .map_err(|_| JournalError::CorruptStore)?
             .next;
@@ -235,11 +240,42 @@ pub(super) fn update_bindings(
     Ok(())
 }
 
+fn validate_released_basis(
+    bindings: &Bindings,
+    basis: core::maintenance::released_execution::ReleasedExecution,
+    high: u64,
+) -> Result<(), JournalError> {
+    let witness = bindings
+        .released
+        .get(&basis.key.sandbox.0)
+        .ok_or(JournalError::CorruptStore)?;
+    if witness.input_sequence == 0
+        || witness.input_sequence > high
+        || witness.input_sequence != basis.release_input_sequence
+        || witness.context.binding != basis.binding
+        || witness.context.position != basis.position
+        || witness.context.expected_previous != basis.expected_previous
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(())
+}
+
 pub(super) fn validate_bindings(
     bindings: &Bindings,
     world: &core::World,
     high: u64,
 ) -> Result<(), JournalError> {
+    for id in world.effect_ids() {
+        if let Some(core::LogicalEffectResult::ReleasedExecution(basis)) =
+            world.logical_effect(&id.logical).and_then(|r| r.result)
+        {
+            validate_released_basis(bindings, basis, high)?;
+            if !core::maintenance::released_execution::discharged(world, id) {
+                return Err(JournalError::CorruptStore);
+            }
+        }
+    }
     let state = world
         .maintenance_state()
         .ok_or(JournalError::CorruptStore)?;

@@ -1,6 +1,7 @@
 //! Checked maintenance of the existing controller state. These transitions
 //! perform no I/O and never constitute physical cleanup evidence themselves.
 
+pub mod released_execution;
 pub mod retirement;
 pub mod slots;
 mod unload_history;
@@ -49,6 +50,8 @@ pub enum MaintenanceInput {
     },
     Slot(SlotInput),
     Window(WindowInput),
+    /// Original confirmed release, not a new physical fence acknowledgement.
+    CloseReleasedExecution(released_execution::ReleasedExecution),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +62,7 @@ pub enum MaintenanceEvent {
     SlotChanged(HostSlotId),
     SlotChecked(HostSlotId),
     Window(windows::WindowEvent),
+    ReleasedExecutionClosed(SandboxId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -330,6 +334,10 @@ pub fn handle_maintenance(
             state.retained.retain(|_, value| value.expires_at > now_ms);
             (next, MaintenanceEvent::ResultsExpired)
         }
+        MaintenanceInput::CloseReleasedExecution(basis) => (
+            released_execution::close(world, basis)?,
+            MaintenanceEvent::ReleasedExecutionClosed(basis.key.sandbox),
+        ),
         MaintenanceInput::Slot(input) => {
             let event = if matches!(input, SlotInput::CheckOccupied { .. }) {
                 MaintenanceEvent::SlotChecked(slot_position(input))

@@ -367,6 +367,9 @@ fn current_plan<'a>(
 /// the historical worker reducer and require their own correspondence proof.
 #[allow(clippy::too_many_lines)]
 pub fn handle_worker(world: &World, id: &EffectId) -> Result<WorkerDecision, WorkerReject> {
+    if crate::maintenance::released_execution::discharged(world, id) {
+        return Err(WorkerReject::NotAwaiting);
+    }
     let command = id.logical.command.clone();
     if current_effect_id(world, &command) != *id {
         return Err(WorkerReject::StaleAttempt);

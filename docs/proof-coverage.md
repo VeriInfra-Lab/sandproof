@@ -2,6 +2,29 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 已卸载执行的专用终止：实现与证明边界
+
+以 `42b07d0a` 为修改基线，在原 Core/Journal 增加 `ReleasedExecution` 终止依据，
+连接正式 Unload 的成功 Pause、精确 ConfirmRelease 见证和当前完整 Destroy。
+它只消解原执行已释放后的本次终止 fence，保留原 Unknown 状态与回执；不产生物理
+fence 成功，不改变 Node 的占用位置检查，也不提前删除材料或释放材料额度。
+持久依据须在原 SQL 事务、恢复快照和输入重放中核对完整释放 context 与输入序列。
+该窄分支只接受本次终止 fence 的单个当前 attempt；已有旧重试 attempt 时保守拒绝，
+不据此放宽一般重试规则。当前生产自动重试只用于创建失败，不为 Kill fence 新建重试。
+
+实现与必要回归冻结于 `a3d1a6289eb027197291e98b7b725b762eeffca5`。
+ning 的 42 项组件及相邻回归、格式和三包严格 Clippy 已通过，完整批次 40.610 秒。
+原实现的同一终止性质先在 `96d0b5ca` 成功编译后被拒绝；修复不改该断言。
+组件包含原 SQL/释放记录、Node 原位置守卫、他人复用后的隔离、Unknown 不变、
+损坏释放序列的 root/tail 恢复拒绝、提交未知、新代恢复，以及材料结算和 native
+Retire 后才可 Cleaned 的重开结果。物理捕获/退出/删除输入仍是受控提供方，
+这些组件不执行 VMM，不代替统一候选的完整入口、CI 或受影响实机场景。
+
+这部分新增 Rust reducer、Journal producer、恢复与终态校验尚无 Lean 对应证明。
+旧终止/fence、发布、checkpoint 或整控制器定理不自动覆盖新增分支；本批不迁移 Lean，
+不修改 Charon/Aeneas 或生成物。普通组件结果、固定提交及系统验收另据实际记录报告，
+不能用受控退出/捕获输入的测试代替真实 VMM 与完整部署验收。
+
 ## 协议 4 清单长度与文件集合的局部证明
 
 本包基于 #683 的 `236d40db71fdf06e5ffce3968cabf69eb5244325`，选择性接回旧 #671/#675

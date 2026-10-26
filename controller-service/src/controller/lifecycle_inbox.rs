@@ -13,6 +13,7 @@ mod model;
 mod pending;
 mod readiness;
 mod refusal;
+pub(in crate::controller) mod released_execution;
 pub(in crate::controller) mod source_work;
 #[cfg(test)]
 mod tests;

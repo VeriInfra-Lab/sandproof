@@ -46,6 +46,9 @@ pub(super) fn validate(world: &World) -> Result<(), Reject> {
         };
         let status = world.effect_status(&current).ok_or(Reject::InvalidEffect)?;
         let consistent = match (logical.result, status) {
+            (Some(LogicalEffectResult::ReleasedExecution(_)), _) => {
+                crate::maintenance::released_execution::discharged(world, &current)
+            }
             (
                 None,
                 EffectStatus::Committed
