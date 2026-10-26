@@ -9,6 +9,8 @@
 它只消解原执行已释放后的本次终止 fence，保留原 Unknown 状态与回执；不产生物理
 fence 成功，不改变 Node 的占用位置检查，也不提前删除材料或释放材料额度。
 持久依据须在原 SQL 事务、恢复快照和输入重放中核对完整释放 context 与输入序列。
+该窄分支只接受本次终止 fence 的单个当前 attempt；已有旧重试 attempt 时保守拒绝，
+不据此放宽一般重试规则。当前生产自动重试只用于创建失败，不为 Kill fence 新建重试。
 
 这部分新增 Rust reducer、Journal producer、恢复与终态校验尚无 Lean 对应证明。
 旧终止/fence、发布、checkpoint 或整控制器定理不自动覆盖新增分支；本批不迁移 Lean，

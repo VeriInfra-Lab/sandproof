@@ -60,6 +60,16 @@ impl ControllerJournal {
         sandbox: core::SandboxId,
         crashes: &mut impl CrashInjector,
     ) -> Result<bool, JournalError> {
+        // A hint only; the writer transaction repeats every check. Ordinary
+        // creates, live kills and pauses must not rotate a checkpoint merely
+        // to discover that this released-object branch is inapplicable.
+        let before = self.world()?;
+        if before.sandbox_record(sandbox).is_none_or(|row|
+            row.phase != core::Phase::Revoking || !row.terminal
+                || row.current_vm.is_some() || row.net_slot.is_some()
+                || row.durable_snapshot.is_none()
+                || row.current_operation.is_none_or(|op| op.kind != core::OperationKind::Kill))
+        { return Ok(false); }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let world = tx.world();
         let Some(row) = world.sandbox_record(sandbox) else { return Ok(false) };

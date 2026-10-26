@@ -274,3 +274,50 @@ fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_
     assert_eq!(saved.capture.unwrap().reserved_material_bytes, original_charge);
     assert!(journal.retire_reclaimed(basis.key.sandbox, 20, |_| Ok(()), &mut NeverCrash).is_err());
 }
+
+#[test]
+fn released_terminal_only_becomes_cleaned_after_original_material_settlement_and_retire() {
+    use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
+    let (directory, mut journal, _source, destroy, basis) = prepared();
+    crate::finish_accepted_kill::<FullEvidence, _>(&mut journal, basis.key.sandbox, basis.key.operation,
+        &mut |_| panic!("already released execution must not enter Node")).unwrap();
+    let world = journal.world().unwrap();
+    let row = world.sandbox_record(basis.key.sandbox).unwrap();
+    let certificate = QuiescenceCertificate {
+        sandbox: basis.key.sandbox, owner: row.owner, epoch: row.epoch,
+        operation: basis.key.operation, workspace: row.workspace,
+        worker_drained: QuiescenceStatus::Confirmed, data_connections_drained: QuiescenceStatus::Confirmed,
+        host_resources_reclaimed: QuiescenceStatus::Confirmed, external_pins_released: QuiescenceStatus::Confirmed,
+    };
+    let question = journal.lifecycle_material_retirement_questions(basis.key.sandbox).unwrap().remove(0);
+    let permit = journal.prepare_lifecycle_material_retirement(&question, b"original bounded material plan", certificate, &mut NeverCrash).unwrap();
+    assert!(!journal.lifecycle_destroy_cleaned(&destroy, &v3::context()).unwrap());
+    journal.settle_lifecycle_material_retirement(&question,
+        &crate::capture::MaterialRetirementObservation {
+            work_binding: permit.work_binding(), plan_binding: permit.plan_binding(),
+        }, certificate, &mut NeverCrash).unwrap();
+    assert!(!journal.lifecycle_destroy_cleaned(&destroy, &v3::context()).unwrap());
+    journal.retire_reclaimed(basis.key.sandbox, 20, |_| Ok(()), &mut NeverCrash).unwrap();
+    assert!(journal.lifecycle_destroy_cleaned(&destroy, &v3::context()).unwrap());
+    assert!(journal.world().unwrap().sandbox_record(basis.key.sandbox).is_none());
+    drop(journal);
+    let journal = v3::open(&directory.path().join("db"));
+    assert!(journal.lifecycle_destroy_cleaned(&destroy, &v3::context()).unwrap());
+}
+
+#[test]
+fn released_terminal_old_witness_does_not_close_an_admitted_new_resume() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, source) = unloaded_resume_source(&directory.path().join("db"));
+    let resume = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &resume);
+    let mut destroy = destroy_request();
+    destroy.accepted_version = 4;
+    destroy.request.binding.expected = ExpectedSession::Version(3);
+    destroy.request.binding.key.sequence = 4.try_into().unwrap();
+    journal.record_lifecycle_intent(&destroy, &v3::context(), &mut NeverCrash).unwrap();
+    let before = journal.world().unwrap();
+    assert_eq!(before.sandbox_record(source.source_sandbox()).unwrap().generation, 2);
+    assert!(!journal.close_released_lifecycle_execution(source.source_sandbox(), &mut NeverCrash).unwrap());
+    assert_eq!(journal.world().unwrap(), before);
+}
