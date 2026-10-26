@@ -1,0 +1,57 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupSupport
+import SandboxModel.Lifecycle.Protocol.InboxLookupValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxLookup.Wrong
+open Witness
+
+theorem wrong_entry_body :
+    Session.find_entry_loop.body (EnvelopeValues.intent 1#u64)
+      (cursor (alloc.vec.Vec.deref (session 2#u64).entries) 0#usize) =
+      .ok (.done (.Ok (some 0#usize))) := by
+  classical
+  unfold Session.find_entry_loop.body
+  rw [next_some _ 0#usize 1#usize (by simp [session, Witness.singleton, alloc.vec.Vec.deref]) (by scalar_tac)]
+  simp [session, Witness.singleton, entry, alloc.vec.Vec.deref,
+    Replay.key_eq, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    EnvelopeValues.intent]
+
+theorem wrong_entry_hit : (session 2#u64).find_entry (EnvelopeValues.intent 1#u64) = .ok (.Ok (some 0#usize)) := by
+  have completed : Session.find_entry_loop
+      (cursor (alloc.vec.Vec.deref (session 2#u64).entries) 0#usize)
+      (EnvelopeValues.intent 1#u64) = .ok (.Ok (some 0#usize)) := by
+    unfold Session.find_entry_loop
+    rw [loop, wrong_entry_body]
+    simp
+  simpa [Session.find_entry, core.slice.Slice.iter, cursor,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default] using completed
+
+theorem wrong_first_hit : (inbox 2#u64).find (EnvelopeValues.intent 1#u64) = .ok (.Ok (some (0#usize,0#usize))) := by
+  have body := inbox_body_hit (alloc.vec.Vec.deref (inbox 2#u64).sessions) 0#usize 1#usize 0#usize
+    (EnvelopeValues.intent 1#u64) (by simp [inbox, Witness.singleton, alloc.vec.Vec.deref]) (by scalar_tac)
+    (by simpa [inbox, Witness.singleton, alloc.vec.Vec.deref] using wrong_entry_hit)
+  have completed : Inbox.find_loop
+      (cursor (alloc.vec.Vec.deref (inbox 2#u64).sessions) 0#usize)
+      (EnvelopeValues.intent 1#u64) = .ok (.Ok (some (0#usize,0#usize))) := by
+    unfold Inbox.find_loop
+    rw [loop, body]
+    simp
+  simpa [Inbox.find, core.slice.Slice.iter, cursor,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default] using completed
+
+theorem rejects_same_full_contract : ¬ FullLookupContract Inbox.find := by
+  intro contract
+  have actual := contract (inbox 2#u64) (EnvelopeValues.intent 1#u64)
+  rw [wrong_first_hit] at actual
+  obtain ⟨result, returned, observed⟩ := WP.spec_imp_exists actual
+  have result_eq : result = .Ok (some (0#usize,0#usize)) := by simpa using returned.symm
+  simp [result_eq, observeInbox, conflicting_spec] at observed
+end SandboxModel.Stage1Protocol.InboxLookup.Wrong
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Wrong.wrong_entry_body
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Wrong.wrong_entry_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Wrong.wrong_first_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Wrong.rejects_same_full_contract
