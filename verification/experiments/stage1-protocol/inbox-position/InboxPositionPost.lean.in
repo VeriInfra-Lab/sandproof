@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionLookup
+import SandboxModel.Lifecycle.Protocol.InboxPositionAppend
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxLookup InboxRecord InboxAppend InboxRecordTotal
+
+theorem record_post_stores_intent (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (out : RecordReturn) (s e : Usize) (post : RecordPost inbox intent out)
+    (returned : out.1 = .Ok (s, e)) : StoredIntent out.2 s e intent := by
+  classical
+  cases lookup : inboxSpec intent inbox.sessions.val 0 with
+  | conflict =>
+      have same : out = (.Err .Conflict, inbox) := by simpa [RecordPost, lookup] using post
+      simp [same] at returned
+  | found session entry =>
+      simp only [RecordPost, lookup] at post
+      obtain ⟨si, ei, spos, epos, same⟩ := post
+      rw [same] at returned ⊢
+      have pair : si = s ∧ ei = e := by simpa using returned
+      obtain ⟨rfl, rfl⟩ := pair
+      simp only [StoredIntent, spos, epos]
+      exact inbox_found_reads intent inbox.sessions.val session entry lookup
+  | absent =>
+      simp only [RecordPost, lookup] at post
+      cases selected : firstIndex
+          (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 with
+      | none =>
+          rw [selected] at post
+          exact fresh_stores_intent inbox intent _ out s e post returned
+      | some index =>
+          rw [selected] at post
+          obtain ⟨si, bound, _position, existing⟩ := post
+          exact existing_stores_intent inbox si _ intent _ out s e bound existing returned
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.record_post_stores_intent

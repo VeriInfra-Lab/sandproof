@@ -1,0 +1,20 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionReplay
+import SandboxModel.Lifecycle.Protocol.InboxStateWrongCurrent
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxState InboxState.Values
+
+theorem wrong_current_rejects_same_composed_contract :
+    ¬ FullRecordStateContract Inbox.record Inbox.state := by
+  intro contract
+  have expected := composed_replay_query Inbox.record Inbox.state contract
+    inbox older 0#usize 0#usize retained_fixture_found session_bound old_bound
+  rw [WrongCurrent.stale_returned_as_current] at expected
+  have current := congrArg LifecycleWorkState.current (Result.ok_injective expected)
+  simp [workState, inbox, session, oldEntry, older, EnvelopeValues.intent] at current
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.wrong_current_rejects_same_composed_contract

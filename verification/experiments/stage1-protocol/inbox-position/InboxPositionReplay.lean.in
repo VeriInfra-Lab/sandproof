@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionContract
+import SandboxModel.Lifecycle.Protocol.InboxStateValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxLookup InboxRecord InboxRecordTotal InboxState
+
+/-- The same composed contract constrains queries after an actual retained hit;
+it cannot omit the state relation while retaining only the record result. -/
+theorem composed_replay_query
+    (record : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (query : Inbox → Usize → Usize → Result LifecycleWorkState)
+    (contract : FullRecordStateContract record query)
+    (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : inboxSpec intent inbox.sessions.val 0 = .found s.val e.val)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length) :
+    query inbox s e = .ok (workState (inbox.sessions.val[s.val]'sb)
+      ((inbox.sessions.val[s.val]'sb).entries.val[e.val]'eb)) := by
+  obtain ⟨out, _returned, recorded, queried⟩ := WP.spec_imp_exists (contract inbox intent)
+  simp only [RecordPost, found] at recorded
+  obtain ⟨si, ei, spos, epos, same⟩ := recorded
+  have same_s : si = s := UScalar.eq_of_val_eq spos
+  have same_e : ei = e := UScalar.eq_of_val_eq epos
+  subst si
+  subst ei
+  rw [same] at queried
+  obtain ⟨_sb, _eb, _full, result⟩ := queried s e rfl
+  exact result
+
+theorem retained_fixture_found :
+    inboxSpec InboxState.Values.older InboxState.Values.inbox.sessions.val 0 = .found 0 0 := by
+  classical
+  simp [InboxState.Values.inbox, InboxState.Values.session, InboxState.Values.oldEntry,
+    inboxSpec, entrySpec]
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.composed_replay_query
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.retained_fixture_found
