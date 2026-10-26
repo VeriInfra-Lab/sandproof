@@ -4,9 +4,15 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import queue
+import signal
+import socket
 import stat
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -138,6 +144,195 @@ class DataDrainRouteSchemaTests(unittest.TestCase):
                 with patch.object(runtime, 'original_json', side_effect=AssertionError('invalid input reached a route cell')), \
                         self.assertRaises(ValueError):
                     drain._live_routes(native, running)
+
+
+@unittest.skipUnless(sys.platform == 'linux', 'real Linux pidfd/procfs component')
+class DataDrainRelayPauseTests(unittest.TestCase):
+    """Real owned Linux child/pipe/pidfd; no VM, Host or exit certificate stub."""
+    @contextmanager
+    def owned_relay(self):
+        child = subprocess.Popen(['/bin/cat'], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        probe = object.__new__(drain.InflightDataDrain)
+        probe.pidfd = None
+        probe.peer = probe.connection = probe.accepted = None
+        probe.deadline = time.monotonic() + 5
+        probe._closed = False
+        probe._relay_control = dict(pause_requested=False, pause_signal_sent=False,
+            pause_confirmed=False, continue_sent=False, gate_release_sent=False,
+            cleanup_unknown=False)
+        probe.report = {}
+        try:
+            # Echo is the scheduling barrier: the real pipe child has started
+            # and forwarded these bytes before its tracked pidfd is selected.
+            child.stdin.write(b'head')
+            child.stdin.flush()
+            self.assertTrue(drain.select.select([child.stdout], [], [], 5)[0])
+            self.assertEqual(child.stdout.read(4), b'head')
+            fields = Path(f'/proc/{child.pid}/stat').read_text().rsplit(')', 1)[1].split()
+            probe.source = dict(pid=child.pid, start_time_ticks=int(fields[19]),
+                boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+            probe._bound_source = probe.source.copy()
+            probe.pidfd = runtime.open_original_candidate_pidfd(probe.source)
+            yield child, probe
+        finally:
+            probe.close()
+            child.stdin.close()
+            child.stdout.close()
+            # Only this test's unreaped Child, never a looked-up numeric PID.
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=5)
+
+    def test_pipe_eof_before_stop_barrier_can_legally_exit_the_same_child(self):
+        with self.owned_relay() as (child, probe):
+            observer, barrier = socket.socketpair()
+            arrived = threading.Event()
+            errors = queue.Queue()
+            def stop_barrier():
+                try:
+                    arrived.set()
+                    self.assertEqual(barrier.recv(1), b'g')
+                except BaseException as error:
+                    errors.put(error)
+            worker = threading.Thread(target=stop_barrier)
+            worker.start()
+            try:
+                self.assertTrue(arrived.wait(5))
+                # Hyper cancellation closes pipes before calling the stop
+                # barrier. No signal, timeout injection or release is needed
+                # for this real pipe consumer's legitimate EOF exit.
+                child.stdin.close()
+                self.assertTrue(runtime.pidfd_exited(probe.pidfd, 5000))
+                self.assertEqual(child.wait(timeout=5), 0)
+                self.assertTrue(worker.is_alive())
+            finally:
+                observer.sendall(b'g')
+                worker.join(timeout=5)
+                observer.close()
+                barrier.close()
+            self.assertFalse(worker.is_alive())
+            if not errors.empty():
+                raise errors.get()
+
+    def test_exact_pause_holds_pipe_eof_until_continue_and_original_wait(self):
+        with self.owned_relay() as (child, probe):
+            probe._pause_original_relay()
+            child.stdin.close()
+            probe._require_paused_relay()
+            self.assertEqual(probe._relay_state(), 'T')
+            self.assertFalse(runtime.pidfd_exited(probe.pidfd))
+            waited = queue.Queue()
+            entered = threading.Event()
+            def original_wait():
+                entered.set()
+                waited.put(child.wait(timeout=5))
+            worker = threading.Thread(target=original_wait)
+            worker.start()
+            observer, barrier = socket.socketpair()
+            try:
+                self.assertTrue(entered.wait(5))
+                probe._require_paused_relay()
+                self.assertTrue(waited.empty())
+                probe.peer = observer
+                probe.connection = SimpleNamespace(close=lambda: None)
+                probe.accepted = {'accepted_version': 2}
+                probe.release()
+                self.assertEqual(barrier.recv(1), b'g')
+                self.assertTrue(probe._relay_control['continue_sent'])
+                self.assertTrue(probe._relay_control['gate_release_sent'])
+                self.assertTrue(runtime.pidfd_exited(probe.pidfd))
+                self.assertEqual(waited.get(timeout=5), 0)
+            finally:
+                barrier.close()
+                worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+            with self.assertRaises(RuntimeError):
+                probe.release()
+
+    def test_foreign_boot_start_or_replaced_binding_never_authorizes_a_signal(self):
+        for field in ('boot_id', 'start_time_ticks', 'whole_identity'):
+            with self.subTest(field=field), self.owned_relay() as (_child, probe):
+                if field == 'boot_id': probe.source['boot_id'] = 'foreign'
+                elif field == 'start_time_ticks': probe.source['start_time_ticks'] += 1
+                else:
+                    fields = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()
+                    probe.source = dict(pid=os.getpid(), start_time_ticks=int(fields[19]),
+                        boot_id=probe.source['boot_id'])
+                with patch.object(drain.signal, 'pidfd_send_signal') as send, \
+                        self.assertRaises(ValueError):
+                    probe._pause_original_relay()
+                send.assert_not_called()
+                self.assertFalse(probe._relay_control['pause_requested'])
+
+    def test_exited_relay_and_expired_release_are_refused_without_signalling(self):
+        with self.owned_relay() as (child, probe):
+            child.stdin.close()
+            self.assertTrue(runtime.pidfd_exited(probe.pidfd, 5000))
+            self.assertEqual(child.wait(timeout=5), 0)
+            with patch.object(drain.signal, 'pidfd_send_signal') as send, \
+                    self.assertRaises(ValueError):
+                probe._pause_original_relay()
+            send.assert_not_called()
+        with self.owned_relay() as (_child, probe):
+            probe._pause_original_relay()
+            observer, barrier = socket.socketpair()
+            probe.peer, probe.accepted = observer, {'accepted_version': 2}
+            probe.deadline = time.monotonic() - 1
+            try:
+                with patch.object(drain.signal, 'pidfd_send_signal') as send, \
+                        self.assertRaises(TimeoutError):
+                    probe.release()
+                send.assert_not_called()
+                probe._require_paused_relay()
+            finally:
+                # Failure cleanup may withdraw its own exact test pause even
+                # after the scenario deadline. It never asserts exit/success.
+                result = probe.close()
+                barrier.close()
+            self.assertTrue(result['continue_sent'])
+            self.assertFalse(result['gate_release_sent'] or result['cleanup_unknown'])
+
+    def test_external_continuation_or_duplicate_pause_cannot_fake_the_held_cut(self):
+        with self.owned_relay() as (_child, probe):
+            probe._pause_original_relay()
+            with patch.object(drain.signal, 'pidfd_send_signal') as send, \
+                    self.assertRaises(ValueError):
+                probe._pause_original_relay()
+            send.assert_not_called()
+            signal.pidfd_send_signal(probe.pidfd, signal.SIGCONT)
+            while probe._relay_state() == 'T':
+                drain._remaining(probe.deadline)
+            with self.assertRaises(AssertionError):
+                probe._require_paused_relay()
+
+    def test_failure_close_withdraws_only_its_pause_and_is_idempotent(self):
+        with self.owned_relay() as (_child, probe):
+            probe._pause_original_relay()
+            result = probe.close()
+            self.assertEqual(result['cleanup'], 'same-pidfd-test-pause-withdrawn')
+            self.assertTrue(result['continue_sent'])
+            self.assertFalse(result['gate_release_sent'] or result['cleanup_unknown'])
+            self.assertIsNone(probe.pidfd)
+            with patch.object(drain.signal, 'pidfd_send_signal') as send:
+                self.assertEqual(probe.close(), result)
+            send.assert_not_called()
+            with self.assertRaises(AssertionError):
+                probe._continue_original_relay()
+
+    def test_failure_close_preserves_unknown_identity_without_signalling(self):
+        with self.owned_relay() as (_child, probe):
+            probe._pause_original_relay()
+            original = probe._bound_source.copy()
+            probe.source['start_time_ticks'] += 1
+            with patch.object(drain.signal, 'pidfd_send_signal') as send:
+                result = probe.close()
+            send.assert_not_called()
+            self.assertTrue(result['cleanup_unknown'])
+            self.assertEqual(result['original_process'], original)
+            self.assertFalse(result['continue_sent'] or result['gate_release_sent'])
+            # The owned-child fixture's finalizer kills/reaps exactly its own
+            # still-stopped child; the observer cannot guess continuation.
 
 
 if __name__ == '__main__':

@@ -1123,6 +1123,13 @@ def exercise(args):
             cpu_rss_disk_peak='unknown:not sampled by this timing instrumentation',
             e16_complete=False)
         try:
+            if data_probe is not None:
+                # Withdraw only this observer's exact relay pause before the
+                # original product failure cleanup. Record uncertainty rather
+                # than leaving an unreported stopped process on any error.
+                report['data_drain_observer_close'] = data_probe.close()
+                if report['data_drain_observer_close']['cleanup_unknown']:
+                    report['complete'] = False
             # Runtime finish preserves exact resources/material on uncertainty;
             # it is not permission for broad cleanup or untested GC.
             runtime.finish(report)

@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import select
+import signal
 import socket
 import sqlite3
 import stat
@@ -187,8 +188,13 @@ class InflightDataDrain:
         self.connection = self.peer = None
         self.pidfd = None
         self.accepted = None
+        self._closed = False
+        self._relay_control = dict(pause_requested=False, pause_signal_sent=False,
+            pause_confirmed=False, continue_sent=False, gate_release_sent=False,
+            cleanup_unknown=False)
         self.report = dict(prefix_bytes=len(PREFIX), prefix_sha256=hashlib.sha256(PREFIX).hexdigest(),
                            declared_bytes=len(PREFIX) + 1, tail_sent=False, completed=False,
+                           relay_control=self._relay_control,
                            upload_result='unacknowledged partial request; never replayed')
         _, baseline = _capture_state(native, running, self.deadline)
         self.baseline_actions = {json.dumps(row['action'], sort_keys=True) for row in baseline}
@@ -241,6 +247,11 @@ class InflightDataDrain:
             raise RuntimeError('partial upload already has a reply/EOF; no in-flight work inferred')
         self.source = self.route['process']
         self.pidfd = open_original_candidate_pidfd(self.source)
+        self._bound_source = self.source.copy()
+        # Revocation drops Hyper's connection (and its pipes) BEFORE the debug
+        # stop gate. That gate delays terminate/wait, not natural EOF. Hold
+        # only this already-admitted relay, not its VM or either manager.
+        self._pause_original_relay()
         self.arm_bytes = ('\n'.join((MAGIC, self.run_identity, str(self.source['pid']),
             str(self.source['start_time_ticks']), self.source['boot_id'])) + '\n').encode()
         arm = self.directory / 'selected.arm'
@@ -254,10 +265,46 @@ class InflightDataDrain:
                            actual_admission='guest exact prefix + original durable live route')
         return self.report.copy()
 
+    def _relay_state(self):
+        from lifecycle_unload_runtime import pidfd_exited
+        if self.source != self._bound_source:
+            raise ValueError('relay identity differs from the original held pidfd binding')
+        if self.pidfd is None or pidfd_exited(self.pidfd) or not _alive(self.source):
+            raise ValueError('exact original relay is no longer live')
+        fields = (Path('/proc') / str(self.source['pid']) / 'stat').read_text().rsplit(')', 1)[1].split()
+        if (int(fields[19]) != self.source['start_time_ticks']
+                or pidfd_exited(self.pidfd) or not _alive(self.source)):
+            raise ValueError('original relay changed during process-state observation')
+        return fields[0]
+
+    def _pause_original_relay(self):
+        _remaining(self.deadline)
+        if self._closed or self._relay_control['pause_requested']:
+            raise ValueError('one original relay pause before public Unload required')
+        if self._relay_state() in ('T', 't'):
+            raise ValueError('externally stopped relay is not this observer pause')
+        self._relay_control['pause_requested'] = True
+        signal.pidfd_send_signal(self.pidfd, signal.SIGSTOP)
+        self._relay_control['pause_signal_sent'] = True
+        while self._relay_state() != 'T':
+            time.sleep(min(.005, _remaining(self.deadline)))
+        self._relay_control['pause_confirmed'] = True
+
+    def _require_paused_relay(self):
+        if (self._closed or not self._relay_control['pause_confirmed']
+                or self._relay_control['continue_sent'] or self._relay_state() != 'T'):
+            raise AssertionError('same original relay must remain test-paused before gate release')
+
+    def _continue_original_relay(self):
+        self._require_paused_relay()
+        signal.pidfd_send_signal(self.pidfd, signal.SIGCONT)
+        self._relay_control['continue_sent'] = True
+
     def wait_held(self, accepted):
         """Called AFTER the original client's Unload acceptance, before release."""
         from lifecycle_unload_runtime import original_json, pidfd_exited, checked_source_records
         self.accepted = accepted
+        self._require_paused_relay()
         path = self.directory / f"{self.source['pid']}.sock"
         gate_deadline = min(self.deadline, time.monotonic() + 8)
         while True:
@@ -283,6 +330,7 @@ class InflightDataDrain:
             _remaining(gate_deadline)
             if pidfd_exited(self.pidfd) or not _alive(self.source):
                 raise AssertionError('held original relay exited before gate release')
+            self._require_paused_relay()
             if original_json(self.marker, 16384) != self.route:
                 raise ValueError('original upload route changed while held')
             state, actions = _capture_state(self.native, self.running, gate_deadline)
@@ -325,7 +373,10 @@ class InflightDataDrain:
     def release(self):
         if self.peer is None or self.accepted is None:
             raise RuntimeError('original accepted Unload and reached gate required')
+        _remaining(self.deadline)
+        self._continue_original_relay()
         self.peer.sendall(b'g')
+        self._relay_control['gate_release_sent'] = True
         self.peer.close()
         self.peer = None
         from lifecycle_unload_runtime import pidfd_exited
@@ -437,6 +488,26 @@ class InflightDataDrain:
     def close(self):
         # A failed observer releases only its own debug gate/socket. Original
         # product Destroy and runtime cleanup remain the outer owner's job.
+        control = getattr(self, '_relay_control', None)
+        if control is not None and not self._closed:
+            try:
+                if control['pause_signal_sent'] and not control['continue_sent']:
+                    from lifecycle_unload_runtime import pidfd_exited
+                    if self.pidfd is not None and pidfd_exited(self.pidfd):
+                        control['cleanup'] = 'original-relay-already-exited'
+                    else:
+                        # No waiting or new deadline: undo only our own exact
+                        # signal, including a STOP not yet observed as T. A
+                        # foreign/reused process never authorizes continuation.
+                        self._relay_state()
+                        signal.pidfd_send_signal(self.pidfd, signal.SIGCONT)
+                        control['continue_sent'] = True
+                        control['cleanup'] = 'same-pidfd-test-pause-withdrawn'
+            except Exception as error:
+                control['cleanup_unknown'] = True
+                control['cleanup_failure_type'] = type(error).__name__
+                control['original_process'] = self._bound_source.copy()
+            self._closed = True
         if self.peer is not None:
             self.peer.close()
             self.peer = None
@@ -446,6 +517,7 @@ class InflightDataDrain:
         if self.pidfd is not None:
             os.close(self.pidfd)
             self.pidfd = None
+        return None if control is None else control.copy()
 
 
 if __name__ == '__main__':
