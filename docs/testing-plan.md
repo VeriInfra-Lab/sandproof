@@ -42,6 +42,14 @@ Destroy 和原产品流程完成 Cleaned、物理释放及账本结算。故障�
 材料记录；退出本身不是释放位置或材料的凭据。该分支不认领正常两周期或任意故障后的
 状态可恢复性，不能关闭存活分支的原断言。
 
+`restore-prepare-destroy` 先核原 LoadPaused 候选，再持同一 pidfd 暂停该 VMM 进程，
+使原只读 API 观察暂时不可用。只有真实 Destroy 已进入宿主、原终止围栏已安装且原
+Prepare 仍未完成时，才恢复这个进程供原取证/Stop 流程推进；SIGCONT 不等于激活 vCPU。
+原另一会话的查询在该候选仍停止期间必须返回。随后复用已有 Cleanup 成功但 SQL 回执
+未记录时的管理服务退出点，稳定读取原 Prepared/Stop 完整回执及精确进程退出；未决
+Cleanup 阻止明细退休，不靠轮询碰巧抢在 GC 之前。重开后沿原 Cleanup 观察、公开
+Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成功。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
@@ -96,6 +104,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
+| `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
