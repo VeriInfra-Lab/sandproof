@@ -367,6 +367,22 @@ class DataDrainRelayPauseTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 probe._continue_original_relay()
 
+    def test_failure_after_stop_signal_does_not_leave_an_unconfirmed_pause(self):
+        with self.owned_relay() as (_child, probe):
+            send_signal = signal.pidfd_send_signal
+            def interrupted_after_stop(descriptor, value):
+                send_signal(descriptor, value)
+                raise InterruptedError('observer interrupted after its exact signal')
+            with patch.object(drain.signal, 'pidfd_send_signal',
+                    side_effect=interrupted_after_stop), self.assertRaises(InterruptedError):
+                probe._pause_original_relay()
+            self.assertTrue(probe._relay_control['pause_requested'])
+            self.assertFalse(probe._relay_control['pause_signal_sent'])
+            result = probe.close()
+            self.assertTrue(result['continue_sent'])
+            self.assertFalse(result['pause_confirmed'] or result['gate_release_sent']
+                             or result['cleanup_unknown'])
+
     def test_failure_close_preserves_unknown_identity_without_signalling(self):
         with self.owned_relay() as (_child, probe):
             probe._pause_original_relay()

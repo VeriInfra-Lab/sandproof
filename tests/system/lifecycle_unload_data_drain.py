@@ -491,7 +491,7 @@ class InflightDataDrain:
         control = getattr(self, '_relay_control', None)
         if control is not None and not self._closed:
             try:
-                if control['pause_signal_sent'] and not control['continue_sent']:
+                if control['pause_requested'] and not control['continue_sent']:
                     from lifecycle_unload_runtime import pidfd_exited
                     if self.pidfd is not None and pidfd_exited(self.pidfd):
                         control['cleanup'] = 'original-relay-already-exited'
