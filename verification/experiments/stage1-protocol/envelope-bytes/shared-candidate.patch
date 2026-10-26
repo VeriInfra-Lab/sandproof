@@ -1,0 +1,5 @@
+--- a/lakefile.toml
++++ b/lakefile.toml
+@@ -9 +9 @@
+-srcDir = "verification/aeneas/foundations"
++srcDir = "verification/aeneas/stage1-protocol/json-foundations"
