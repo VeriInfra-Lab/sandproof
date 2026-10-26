@@ -46,7 +46,7 @@ impl Fixture {
         let connection = rusqlite::Connection::open_with_flags(&path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         assert_eq!(connection.query_row("SELECT version FROM controller_meta WHERE id=1",
-            [], |row| row.get::<_, u64>(0)).unwrap(), 23);
+            [], |row| row.get::<_, i64>(0)).unwrap(), 23);
         assert!(!connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_internal_inbox')",
             [], |row| row.get::<_, bool>(0)).unwrap());
         Self { directory, gate, app, state, create, permit, relay, arm, owner }

@@ -48,6 +48,35 @@ fn original_directory(path: &Path, held: &File, owner: u32) -> io::Result<()> {
     Ok(())
 }
 
+fn arm_fields(bytes: &[u8]) -> io::Result<Vec<&str>> {
+    let text = std::str::from_utf8(bytes).map_err(|_| invalid())?;
+    let fields: Vec<_> = text.lines().collect();
+    if fields.len() != 5
+        || fields[0] != MAGIC
+        || fields[1].len() != 64
+        || !fields[1].bytes().all(|b| b.is_ascii_hexdigit())
+        || !text.ends_with('\n')
+    {
+        return Err(invalid());
+    }
+    Ok(fields)
+}
+
+fn original_selected_process(fields: &[&str]) -> io::Result<()> {
+    let pid: u32 = fields[2].parse().map_err(|_| invalid())?;
+    if pid == 0 || fields[2] != pid.to_string() {
+        return Err(invalid());
+    }
+    let process_text = fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    let (_, values) = process_text.rsplit_once(')').ok_or_else(invalid)?;
+    let start = values.split_whitespace().nth(19).ok_or_else(invalid)?;
+    let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
+    if fields[3] != start || fields[4] != boot.trim() {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 pub(super) fn wait(pid: u32) -> io::Result<()> {
     let Some(directory) = std::env::var_os("SANDPROOF_TEST_DATA_DRAIN_GATE") else {
         return Ok(());
@@ -87,26 +116,11 @@ fn wait_selected(pid: u32, directory: &Path, owner: u32, wait: Duration) -> io::
     let mut bytes = Vec::new();
     Read::by_ref(&mut file).take(513).read_to_end(&mut bytes)?;
     original(&arm, &file)?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| invalid())?;
-    let fields: Vec<_> = text.lines().collect();
-    if fields.len() != 5
-        || fields[0] != MAGIC
-        || fields[1].len() != 64
-        || !fields[1].bytes().all(|b| b.is_ascii_hexdigit())
-        || !text.ends_with('\n')
-    {
-        return Err(invalid());
-    }
+    let fields = arm_fields(&bytes)?;
     if fields[2] != pid.to_string() {
         return Ok(());
     }
-    let process_text = fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    let (_, values) = process_text.rsplit_once(')').ok_or_else(invalid)?;
-    let start = values.split_whitespace().nth(19).ok_or_else(invalid)?;
-    let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
-    if fields[3] != start || fields[4] != boot.trim() {
-        return Err(invalid());
-    }
+    original_selected_process(&fields)?;
     let socket = directory.join(format!("{pid}.sock"));
     let listener = UnixListener::bind(&socket)?;
     let socket_identity = identity(&fs::symlink_metadata(&socket)?);
@@ -158,21 +172,8 @@ pub(in crate::data_gateway) fn record_unload_busy<H: sandproof_controller_servic
     directory: &Path,
     owner: u32,
 ) -> io::Result<()> {
-    let state = app
-        .lifecycle_work_state_for_recorded(intent, &intent.request.binding.node)
-        .map_err(|_| invalid())?;
-    let Some(local) = state.local else {
-        return Ok(());
-    };
-    let audit = app.internal_audit().map_err(|_| invalid())?;
-    if !state.current
-        || state.terminal
-        || !audit.native.iter().any(|row| {
-            row.sandbox == local.sandbox
-                && row.phase == sandbox_controller_core::Phase::Pausing
-                && !row.terminal
-        })
-    {
+    if !app.lifecycle_unload_is_pausing(intent, &intent.request.binding.node)
+        .map_err(|_| invalid())? {
         return Ok(());
     }
     record_busy_at(directory, intent, owner)
@@ -209,6 +210,7 @@ fn record_busy_at(
     let mut bytes = Vec::new();
     Read::by_ref(&mut file).take(513).read_to_end(&mut bytes)?;
     original(&arm, &file)?;
+    original_selected_process(&arm_fields(&bytes)?)?;
     let encoded =
         sandproof_controller_service::template_registry::evidence::encode_bounded(intent, 8192)
             .map_err(|_| invalid())?;
