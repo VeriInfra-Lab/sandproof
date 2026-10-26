@@ -560,7 +560,7 @@ fn snapshot_retirement_still_requires_every_original_quiescence_condition() {
 }
 
 #[test]
-fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
+fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
     let world = resume_reserved();
     let index = world.resource_index(SID);
     let old_vm = index
@@ -580,10 +580,15 @@ fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
         .unwrap()
         .current_operation
         .unwrap();
-    let ledger = world
-        .operation_record(crate::transition::operation_key(SID, operation.id))
-        .unwrap();
-    let clean = crate::transition::initial_operation_plan(&world, SID, operation, &ledger.input);
+    let compensated_plan = |world: &World| {
+        let record = world.sandbox_record(SID).unwrap();
+        let next = crate::transition::begin_compensation(world,SID,record,operation,FailureKind::DeadlineExceeded);
+        next.operation_plan(crate::transition::operation_key(SID,operation.id)).unwrap().clone()
+    };
+    let record = world.sandbox_record(SID).unwrap();
+    let compensated = crate::transition::begin_compensation(&world,SID,record,operation,FailureKind::DeadlineExceeded);
+    assert_eq!(restore(capture(&compensated,LIMITS).unwrap(),LIMITS).unwrap(),compensated);
+    let clean = compensated_plan(&world);
     assert!(!clean.stop_vms.contains(&old_vm));
     assert!(!clean.close_slots.contains(&old_slot));
     for status in [
@@ -597,7 +602,7 @@ fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
         vm.status = status;
         pending.vms.put(old_vm, vm);
         let plan =
-            crate::transition::initial_operation_plan(&pending, SID, operation, &ledger.input);
+            compensated_plan(&pending);
         assert!(plan.stop_vms.contains(&old_vm));
         assert!(plan.close_slots.contains(&old_slot));
     }
@@ -606,7 +611,7 @@ fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
     slot.active = true;
     active.net_slots.put(old_slot, slot);
     assert!(
-        crate::transition::initial_operation_plan(&active, SID, operation, &ledger.input)
+        compensated_plan(&active)
             .close_slots
             .contains(&old_slot)
     );
@@ -615,7 +620,12 @@ fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
     indexed.vms.push(VmId(999));
     indexed.slots.push(NetSlotId(999));
     unknown.resource_indexes.put(SID, indexed);
-    let plan = crate::transition::initial_operation_plan(&unknown, SID, operation, &ledger.input);
+    let key = crate::transition::operation_key(SID,operation.id);
+    let mut pending_plan = unknown.operation_plan(key).unwrap().clone();
+    pending_plan.stop_vms.push(VmId(999));
+    pending_plan.close_slots.push(NetSlotId(999));
+    unknown.operation_plans.put(key,pending_plan);
+    let plan = compensated_plan(&unknown);
     assert!(plan.stop_vms.contains(&VmId(999)));
     assert!(plan.close_slots.contains(&NetSlotId(999)));
     let mut current = world.clone();
@@ -623,7 +633,7 @@ fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
     vm.generation = 2;
     current.vms.put(old_vm, vm);
     assert!(
-        crate::transition::initial_operation_plan(&current, SID, operation, &ledger.input)
+        compensated_plan(&current)
             .stop_vms
             .contains(&old_vm)
     );

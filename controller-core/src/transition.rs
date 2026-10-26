@@ -67,7 +67,7 @@ pub fn initial_operation_plan(
     operation: Operation,
     input: &OperationInput,
 ) -> OperationPlan {
-    let mut index = world.resource_index(sandbox);
+    let index = world.resource_index(sandbox);
     let generation = match input {
         OperationInput::Create { .. } => 1,
         OperationInput::Pause { generation } | OperationInput::Kill { generation } => *generation,
@@ -76,9 +76,6 @@ pub fn initial_operation_plan(
             None => 0,
         },
     };
-    if matches!(input, OperationInput::Resume { .. }) {
-        index = resume_cleanup_index(world, sandbox, generation, index);
-    }
     let restore_from = match input {
         OperationInput::Resume { source } => Some(*source),
         OperationInput::Create { .. }
@@ -106,7 +103,7 @@ pub fn initial_operation_plan(
     }
 }
 
-// A resumed generation does not acquire the already reclaimed predecessor's
+// Terminal Resume compensation does not acquire the already reclaimed predecessor's
 // cleanup work. History stays indexed and all global publication checks still
 // require its original Stop evidence. Missing, live or current-generation
 // resources remain obligations rather than being inferred closed.
@@ -538,6 +535,18 @@ pub fn begin_compensation(
         ledger.operation = compensating;
         ledger.result = None;
         next.operations.put(key, ledger);
+    }
+
+    if operation.kind == OperationKind::Resume {
+        if let Some(stored) = next.operation_plans.get(&key) {
+            let mut plan = stored.clone();
+            let index = resume_cleanup_index(world, sandbox, plan.generation, crate::ResourceIndex {
+                vms: plan.stop_vms.clone(), slots: plan.close_slots.clone(), snapshots: Vec::new(),
+            });
+            plan.stop_vms = index.vms;
+            plan.close_slots = index.slots;
+            next.operation_plans.put(key, plan);
+        }
     }
 
     enqueue(
