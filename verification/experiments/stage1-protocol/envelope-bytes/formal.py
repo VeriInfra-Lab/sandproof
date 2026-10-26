@@ -54,6 +54,13 @@ def inventory(root):
     return data
 
 
+def local_closure(project, seeds):
+    # Load the reviewed candidate in the actual private project, never the
+    # unchanged public helper from ROOT (which has no active-view parameter).
+    resolver = module('bytes_original_closure', project / 'tools/proof_batch.py')
+    return sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
+
+
 def run(output, prepare_only=False):
     output.mkdir(parents=True, mode=0o700)
     started = time.monotonic()
@@ -165,9 +172,7 @@ def run(output, prepare_only=False):
                 record['byte_roots'][name] = dict(registered, llbc_sha256=sha(rawpath), parser_proved=False)
             command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeBytes'])
             original = module('bytes_actual_formal', ROOT / HERE.parent / 'formal.py')
-            resolver = module('bytes_original_closure', ROOT / 'tools/proof_batch.py')
-            files = sorted(resolver.closure(project, [PROOF, *[n for n in generated if n.endswith('.lean')]],
-                active_view='lakefile.toml'))
+            files = local_closure(project, [PROOF, *[n for n in generated if n.endswith('.lean')]])
             actual = original.actual_files(project, files, output, env, command)
             declared = [n for file in files for n in re.findall(r'^#audit_controller_proof (\S+)$',
                         (project / file).read_text(), re.M)]
