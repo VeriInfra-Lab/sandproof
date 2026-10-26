@@ -49,7 +49,13 @@ fn unknown_prepare_then_terminal(expiry: bool) {
     let mut completed = false;
     for _ in 0..64 {
         match workflow::next_step(&journal.world().unwrap(), sandbox) {
-            WorkflowStep::Apply(input) => { journal.apply(*input, &mut NeverCrash).unwrap(); }
+            WorkflowStep::Apply(input) => {
+                let diagnostic = format!("{input:?}");
+                if let Err(error) = journal.apply(*input, &mut NeverCrash) {
+                    let world = journal.world().unwrap();
+                    panic!("expiry={expiry} input={diagnostic} error={error:?} sandboxes={:?} plans={:?} vms={:?} slots={:?}", world.sandboxes, world.operation_plans, world.vms, world.net_slots);
+                }
+            }
             WorkflowStep::Claim => {
                 let action=journal.claim_next(Some(sandbox), &mut NeverCrash).unwrap().unwrap();
                 assert!(!matches!(action.command.command(),core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }),
