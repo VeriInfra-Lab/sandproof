@@ -127,7 +127,7 @@ fn resumed_prepare_origin(
                 && snapshot.workspace == record.workspace
                 && snapshot.source_generation.checked_add(1) == Some(plan.generation)
                 && snapshot.manifest == source.manifest
-                && snapshot.stage == crate::SnapshotStage::Committed
+                && snapshot.stage == crate::SnapshotStage::Durable
                 && snapshot.immutable
         })
 }
