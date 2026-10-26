@@ -2,7 +2,9 @@
 //! No file/command creates an End, published Full, adoption or VM permission.
 use super::restore_gate::{Directory, hex_digest, valid_digest};
 use sandbox_controller_core as core;
-use sandproof_controller_service::capture::{CaptureWorkerBinding, FullCaptureWorkRequest, SourceProcessIdentity};
+use sandproof_controller_service::capture::{
+    CaptureWorkerBinding, FullCaptureWorkRequest, SourceProcessIdentity,
+};
 use sandproof_protocol::{WorkAction, lifecycle::ContentDigest};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -51,7 +53,10 @@ pub(crate) struct CaptureCopyGate {
     config_bytes: Vec<u8>,
 }
 impl CaptureCopyGate {
-    pub(crate) fn configured(path: PathBuf, action: &WorkAction<core::EffectId>) -> Result<Option<Self>> {
+    pub(crate) fn configured(
+        path: PathBuf,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<Option<Self>> {
         Self::select(Directory::open(path)?, action)
     }
     fn select(directory: Directory, action: &WorkAction<core::EffectId>) -> Result<Option<Self>> {
@@ -99,7 +104,13 @@ impl CaptureCopyGate {
         if !full.valid() {
             return Err("copy gate original Full is invalid".into());
         }
-        self.wait_question(action, full.binding_digest()?, &full.pause.source, worker, (copied_bytes, total_bytes))
+        self.wait_question(
+            action,
+            full.binding_digest()?,
+            &full.pause.source,
+            worker,
+            (copied_bytes, total_bytes),
+        )
     }
 
     fn wait_question(

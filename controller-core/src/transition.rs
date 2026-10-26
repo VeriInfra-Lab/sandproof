@@ -121,9 +121,13 @@ fn resume_cleanup_index(
     while cursor < index.vms.len() {
         let id = index.vms[cursor];
         let closed_history = world.vm_record(id).is_some_and(|vm| {
-            vm.sandbox == sandbox && vm.generation < generation && vm.status == crate::VmStatus::Reclaimed
+            vm.sandbox == sandbox
+                && vm.generation < generation
+                && vm.status == crate::VmStatus::Reclaimed
         });
-        if !closed_history { vms.push(id); }
+        if !closed_history {
+            vms.push(id);
+        }
         cursor += 1;
     }
     let mut slots = Vec::new();
@@ -131,13 +135,20 @@ fn resume_cleanup_index(
     while cursor < index.slots.len() {
         let id = index.slots[cursor];
         let closed_history = world.slot_record(id).is_some_and(|slot| {
-            slot.sandbox == sandbox && slot.generation < generation && slot.reclaimed && !slot.active
+            slot.sandbox == sandbox
+                && slot.generation < generation
+                && slot.reclaimed
+                && !slot.active
                 && world.vm_record(slot.vm).is_some_and(|vm| {
-                    vm.sandbox == sandbox && vm.owner == slot.owner && vm.generation == slot.generation
+                    vm.sandbox == sandbox
+                        && vm.owner == slot.owner
+                        && vm.generation == slot.generation
                         && vm.status == crate::VmStatus::Reclaimed
                 })
         });
-        if !closed_history { slots.push(id); }
+        if !closed_history {
+            slots.push(id);
+        }
         cursor += 1;
     }
     index.vms = vms;

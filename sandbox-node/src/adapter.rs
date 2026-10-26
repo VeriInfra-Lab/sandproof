@@ -1115,7 +1115,8 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
             permit,
         );
         #[cfg(debug_assertions)]
-        if let sandproof_controller_service::capture::FullCaptureResult::Captured(receipt) = &result {
+        if let sandproof_controller_service::capture::FullCaptureResult::Captured(receipt) = &result
+        {
             // Actual bundle readback and original worker completion already
             // happened; V5 has not received/adopted this receipt yet.
             faults::after_execute(&original_action, &Ok(receipt.clone()));

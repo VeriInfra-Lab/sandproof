@@ -65,16 +65,27 @@ pub(crate) fn capture_paused_original_observed(
     expected: &ExpectedFullCapture<'_>,
     limits: FullCaptureLimits,
     read_limits: BundleReadLimits,
-    observe: &mut impl FnMut(sandbox_runtime::snapshot_store::SnapshotArtifact, u64, u64) -> Result<(), sandbox_runtime::RuntimeError>,
+    observe: &mut impl FnMut(
+        sandbox_runtime::snapshot_store::SnapshotArtifact,
+        u64,
+        u64,
+    ) -> Result<(), sandbox_runtime::RuntimeError>,
 ) -> SealResult<FullCaptureObservation> {
     require_original(paused, expected)?;
     let captured = runtime.capture_full_into_observed(
-        paused, layout, capture_directory_key(expected.binding)?, limits, observe,
+        paused,
+        layout,
+        capture_directory_key(expected.binding)?,
+        limits,
+        observe,
     )?;
     complete_original(runtime, layout, paused, expected, captured, read_limits)
 }
 
-fn require_original(paused: &PausedOriginalVm, expected: &ExpectedFullCapture<'_>) -> SealResult<()> {
+fn require_original(
+    paused: &PausedOriginalVm,
+    expected: &ExpectedFullCapture<'_>,
+) -> SealResult<()> {
     // Reject a handle for another VM before any physical Full effect. The
     // private handle's identity is independent of the expected persisted work.
     if paused.resource_id() != expected.resource_id || paused.source() != expected.source {

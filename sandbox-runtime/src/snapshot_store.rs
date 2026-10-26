@@ -340,7 +340,13 @@ impl SnapshotStage {
         artifact: SnapshotArtifact,
         max_length: u64,
     ) -> Result<SnapshotFileMeasurement, RuntimeError> {
-        self.copy_artifact_observing(source, source_owner, artifact, max_length, &mut |_, _, _| Ok(()))
+        self.copy_artifact_observing(
+            source,
+            source_owner,
+            artifact,
+            max_length,
+            &mut |_, _, _| Ok(()),
+        )
     }
 
     pub(crate) fn copy_artifact_observing(

@@ -342,64 +342,105 @@ impl CaptureWorkerJob {
                 return Err("capture worker original source not paused".into());
             }
         };
-        let capture = |observe: &mut dyn FnMut(sandbox_runtime::snapshot_store::SnapshotArtifact, u64, u64) -> Result<(), sandbox_runtime::RuntimeError>| {
+        let capture = |observe: &mut dyn FnMut(
+            sandbox_runtime::snapshot_store::SnapshotArtifact,
+            u64,
+            u64,
+        )
+            -> Result<(), sandbox_runtime::RuntimeError>| {
             #[cfg(debug_assertions)]
             if self.copy_gate.is_some() {
                 return full_snapshot::capture_paused_original_observed(
-                    &runtime, &layout, &paused,
+                    &runtime,
+                    &layout,
+                    &paused,
                     &ExpectedFullCapture {
                         resource_id: self.full.pause.source_resource.id.as_str(),
-                        source: &original, binding: &self.full.pause.binding, compatibility: &expected,
+                        source: &original,
+                        binding: &self.full.pause.binding,
+                        compatibility: &expected,
                     },
                     FullCaptureLimits {
                         api_context: api_context(&self.action, &self.full, job_digest)?,
-                        state_bytes: self.full.state_bytes, disk_bytes: self.full.disk_bytes,
+                        state_bytes: self.full.state_bytes,
+                        disk_bytes: self.full.disk_bytes,
                         api_timeout: Duration::from_millis(self.full.api_timeout_ms),
                     },
-                    BundleReadLimits { state_bytes: self.full.state_bytes, memory_bytes: self.full.memory_bytes, disk_bytes: self.full.disk_bytes },
+                    BundleReadLimits {
+                        state_bytes: self.full.state_bytes,
+                        memory_bytes: self.full.memory_bytes,
+                        disk_bytes: self.full.disk_bytes,
+                    },
                     &mut |artifact, copied, total| observe(artifact, copied, total),
                 );
             }
             #[cfg(not(debug_assertions))]
             let _ = observe;
             full_snapshot::capture_paused_original(
-            &runtime,
-            &layout,
-            &paused,
-            &ExpectedFullCapture {
-                resource_id: self.full.pause.source_resource.id.as_str(),
-                source: &original,
-                binding: &self.full.pause.binding,
-                compatibility: &expected,
-            },
-            FullCaptureLimits {
-                api_context: api_context(&self.action, &self.full, job_digest)?,
-                state_bytes: self.full.state_bytes,
-                disk_bytes: self.full.disk_bytes,
-                api_timeout: Duration::from_millis(self.full.api_timeout_ms),
-            },
-            BundleReadLimits {
-                state_bytes: self.full.state_bytes,
-                memory_bytes: self.full.memory_bytes,
-                disk_bytes: self.full.disk_bytes,
-            },
+                &runtime,
+                &layout,
+                &paused,
+                &ExpectedFullCapture {
+                    resource_id: self.full.pause.source_resource.id.as_str(),
+                    source: &original,
+                    binding: &self.full.pause.binding,
+                    compatibility: &expected,
+                },
+                FullCaptureLimits {
+                    api_context: api_context(&self.action, &self.full, job_digest)?,
+                    state_bytes: self.full.state_bytes,
+                    disk_bytes: self.full.disk_bytes,
+                    api_timeout: Duration::from_millis(self.full.api_timeout_ms),
+                },
+                BundleReadLimits {
+                    state_bytes: self.full.state_bytes,
+                    memory_bytes: self.full.memory_bytes,
+                    disk_bytes: self.full.disk_bytes,
+                },
             )
         };
         #[cfg(debug_assertions)]
         let mut observed_copy = false;
         let captured = capture(&mut |artifact, copied, total| {
             #[cfg(debug_assertions)]
-            if !observed_copy && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory && copied < total {
+            if !observed_copy
+                && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory
+                && copied < total
+            {
                 observed_copy = true;
                 if let Some(path) = &self.copy_gate {
-                    let gate = crate::adapter::faults::CaptureCopyGate::configured(path.clone(), &self.action)
-                        .map_err(|_| sandbox_runtime::RuntimeError::Io(std::io::Error::other("capture copy selector rejected")))?;
+                    let gate = crate::adapter::faults::CaptureCopyGate::configured(
+                        path.clone(),
+                        &self.action,
+                    )
+                    .map_err(|_| {
+                        sandbox_runtime::RuntimeError::Io(std::io::Error::other(
+                            "capture copy selector rejected",
+                        ))
+                    })?;
                     if let Some(gate) = gate {
                         let binding = CaptureWorkerBinding::new(
-                            SourceProcessIdentity { pid: std::process::id(), start_time_ticks: RuntimeProcessIdentity::capture(std::process::id())?.start_time_ticks, boot_id: original.boot_id.clone() }, job_digest,
-                        ).map_err(|_| sandbox_runtime::RuntimeError::Io(std::io::Error::other("capture copy original worker rejected")))?;
+                            SourceProcessIdentity {
+                                pid: std::process::id(),
+                                start_time_ticks: RuntimeProcessIdentity::capture(
+                                    std::process::id(),
+                                )?
+                                .start_time_ticks,
+                                boot_id: original.boot_id.clone(),
+                            },
+                            job_digest,
+                        )
+                        .map_err(|_| {
+                            sandbox_runtime::RuntimeError::Io(std::io::Error::other(
+                                "capture copy original worker rejected",
+                            ))
+                        })?;
                         gate.wait(&self.action, &self.full, &binding, copied, total)
-                            .map_err(|_| sandbox_runtime::RuntimeError::Io(std::io::Error::other("capture copy interrupted after partial write")))?;
+                            .map_err(|_| {
+                                sandbox_runtime::RuntimeError::Io(std::io::Error::other(
+                                    "capture copy interrupted after partial write",
+                                ))
+                            })?;
                     }
                 }
             }

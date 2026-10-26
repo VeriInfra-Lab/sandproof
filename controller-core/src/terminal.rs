@@ -114,22 +114,29 @@ fn resumed_prepare_origin(
     let crate::OperationInput::Resume { source } = original.input else {
         return false;
     };
-    let Command::PrepareVm { source: Some(actual), .. } = command else {
+    let Command::PrepareVm {
+        source: Some(actual),
+        ..
+    } = command
+    else {
         return false;
     };
     original.operation.kind == OperationKind::Resume
         && plan.restore_from == Some(source)
         && *actual == source
         && record.durable_snapshot == Some(source)
-        && world.snapshots.get(&source.snapshot).is_some_and(|snapshot| {
-            snapshot.owner == record.owner
-                && snapshot.sandbox == original.sandbox
-                && snapshot.workspace == record.workspace
-                && snapshot.source_generation.checked_add(1) == Some(plan.generation)
-                && snapshot.manifest == source.manifest
-                && snapshot.stage == crate::SnapshotStage::Durable
-                && snapshot.immutable
-        })
+        && world
+            .snapshots
+            .get(&source.snapshot)
+            .is_some_and(|snapshot| {
+                snapshot.owner == record.owner
+                    && snapshot.sandbox == original.sandbox
+                    && snapshot.workspace == record.workspace
+                    && snapshot.source_generation.checked_add(1) == Some(plan.generation)
+                    && snapshot.manifest == source.manifest
+                    && snapshot.stage == crate::SnapshotStage::Durable
+                    && snapshot.immutable
+            })
 }
 
 fn startup_command_matches(
