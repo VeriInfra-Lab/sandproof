@@ -95,11 +95,12 @@ def _route_key(source):
 
 def _live_routes(native, running):
     from lifecycle_unload_runtime import original_json
+    from tools.template_build_config import bounded_data_route_limits
     position = running['context']['position']
     binding = running['context']['binding']
     directory = _private_directory(Path(native['node_state_dir']) / 'helper-gates')
     result = {}
-    maximum = native['bounded_host']['max_data_routes_per_slot']
+    maximum = bounded_data_route_limits(native)['max_data_routes_per_slot']
     for index in range(maximum):
         marker = directory / f'{position}.lock.route-{index}.json'
         try:
