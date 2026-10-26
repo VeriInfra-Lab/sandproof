@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+
+theorem next_some (values : Slice Entry) (index : Nat) (inside : index < values.val.length) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (some values.val[index], cursor values (index + 1)) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, inside]
+
+theorem next_none (values : Slice Entry) (index : Nat) (outside : values.val.length ≤ index) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr outside]
+
+theorem loop_continue (body : LoopState → Result (ControlFlow LoopState Return))
+    (start next : LoopState) (step : body start = .ok (.cont next)) :
+    loop body start = loop body next := by
+  rw [loop, step]
+  simp only [bind_ok]
+
+theorem loop_done (body : LoopState → Result (ControlFlow LoopState Return))
+    (start : LoopState) (result : Return) (step : body start = .ok (.done result)) :
+    loop body start = .ok result := by
+  rw [loop, step]
+  simp only [bind_ok]
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.loop_continue
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.loop_done
+
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.next_none

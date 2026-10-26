@@ -5,6 +5,12 @@
 版本不证明删除或确认实际发生。完整 Inbox.validate、原 validate_lifetimes 的循环、
 确认事务保持性与真实读取/提交仍各有义务，不能由此局部成功认领持久收件闭合。
 
+[收件寿命校验候选](../../verification/experiments/stage1-protocol/inbox-lifetimes/README.md)
+将原 validate_lifetimes 的循环及收尾原样移入私有辅助函数，以接通固定工具；生产采用
+与原实现的一般等价仍待完成。值合同覆盖开始时间、首条 Create、转换/加法边界、
+每条 applied deadline 及最终值；版本空洞只断开前驱关系，不证明压缩实际发生。
+真实 read_lifetime 的同一对象/事务、确认保持性与完整 Inbox.validate 继续另列。
+
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
 任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
