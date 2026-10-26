@@ -99,7 +99,31 @@ def admit_generated(directory):
     return translation
 
 
-def run(output, variant, require_native=False, development_native=None):
+def add_proofs(root, project, inputs, expected, stems, sources):
+    additions = {}
+    for source in sources:
+        source = Path(source)
+        if source.is_absolute() or '..' in source.parts or source.suffixes != ['.lean', '.in']:
+            raise ValueError('invalid additional proof template path')
+        name = str(source)
+        if name not in inputs:
+            raise ValueError('additional proof template is outside the checked input closure')
+        stem = source.name.removesuffix('.lean.in')
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', stem):
+            raise ValueError('invalid additional proof module name')
+        destination = Path('SandboxModel/Lifecycle/Protocol') / (stem + '.lean')
+        if (project / destination).exists() or str(destination) in additions:
+            raise ValueError('additional proof must not replace an existing file')
+        shutil.copy2(root/source, project/destination)
+        expected[str(destination)] = sha(project/destination)
+        if expected[str(destination)] != inputs[name]:
+            raise ValueError('additional proof template changed while copying')
+        additions[str(destination)] = dict(template=name, sha256=inputs[name])
+        stems.append(stem)
+    return additions
+
+
+def run(output, variant, require_native=False, development_native=None, additional_templates=()):
     output.mkdir(parents=True, mode=0o700)
     start = time.monotonic()
     record = dict(kind='inbox-append-formal-development', variant=variant, complete=False,
@@ -283,6 +307,7 @@ def run(output, variant, require_native=False, development_native=None):
             destination = Path('SandboxModel/Lifecycle/Protocol')/(stem+'.lean')
             shutil.copy2(ROOT/HERE/(stem+'.lean.in'), project/destination)
             expected[str(destination)] = sha(project/destination)
+        record['additional_proofs'] = add_proofs(ROOT, project, inputs, expected, stems, additional_templates)
         stems = parent_stems + stems
         command(project, output, 'build', ['lake', 'build',
             *['SandboxModel.Lifecycle.Protocol.'+stem for stem in stems]])

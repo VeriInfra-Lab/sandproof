@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendCallerModel
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSessionModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxRecordTotal
+open InboxLookup InboxRecord InboxAppend
+open scoped Classical
+
+/-- Unconditional three-way caller contract. Lookup precedence is part of the
+postcondition; authorization and persistence are not assumptions or conclusions. -/
+noncomputable def RecordPost (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (out : RecordReturn) : Prop :=
+  match inboxSpec intent inbox.sessions.val 0 with
+  | .conflict => out = (.Err .Conflict, inbox)
+  | .found session entry =>
+      ∃ si ei : Usize, si.val = session ∧ ei.val = entry ∧
+        out = (.Ok (si, ei), inbox)
+  | .absent =>
+      match firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 with
+      | none => FreshPost inbox intent (freshDecision inbox intent) out
+      | some index =>
+          ∃ (s : Usize) (bound : s.val < inbox.sessions.val.length), s.val = index ∧
+            ExistingPost inbox s (inbox.sessions.val[s.val]'bound) intent
+              (existingDecision inbox (inbox.sessions.val[s.val]'bound) intent) out
+
+def FullRecordContract (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn) : Prop :=
+  ∀ inbox intent, run inbox intent ⦃ out => RecordPost inbox intent out ⦄
+
+/-- The same total contract specializes to the existing-session contract used
+by the real SDK/capture mutants; no property switch in negative views. -/
+theorem total_implies_existing (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (contract : FullRecordContract run) : FullRecordExistingContract run := by
+  intro inbox intent s selected
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists (contract inbox intent)
+  have absent := (inbox_absent_iff intent inbox.sessions.val 0).mpr selected.1
+  simp only [RecordPost, absent, selected.2] at post
+  obtain ⟨index, bound, same, post⟩ := post
+  have equal : index = s := UScalar.eq_of_val_eq same
+  subst index
+  rw [returned]
+  exact WP.spec.ret post
+
+theorem total_implies_new_session (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (contract : FullRecordContract run) : FullNewSessionContract run := by
+  intro inbox intent new_session
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists (contract inbox intent)
+  have absent := (inbox_absent_iff intent inbox.sessions.val 0).mpr new_session.1
+  have absent_index : firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 = none :=
+    (firstIndex_none_iff _ _ _).mpr (by intro session member; simp [new_session.2 session member])
+  simp only [RecordPost, absent, absent_index] at post
+  rw [returned]
+  exact WP.spec.ret post
+
+end SandboxModel.Stage1Protocol.InboxRecordTotal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.total_implies_existing
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.total_implies_new_session

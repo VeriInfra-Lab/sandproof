@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel
+import SandboxModel.Lifecycle.Protocol.InboxAppend
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSession
+import SandboxModel.Lifecycle.Protocol.InboxRecordReplay
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecordTotal
+open InboxLookup InboxRecord InboxAppend
+
+/-- Complete pure-memory caller, for any represented inbox and decoded intent. -/
+theorem record_contract : FullRecordContract Inbox.record := by
+  intro inbox intent
+  cases lookup : inboxSpec intent inbox.sessions.val 0 with
+  | conflict =>
+      rw [record_retained_conflict inbox intent lookup]
+      apply WP.spec.ret
+      simp [RecordPost, lookup]
+  | found si ei =>
+      obtain ⟨s, e, session, entry, returned⟩ := record_retained_replay inbox intent si ei lookup
+      rw [returned]
+      apply WP.spec.ret
+      simp only [RecordPost, lookup]
+      exact ⟨s, e, session, entry, rfl⟩
+  | absent =>
+      have no_key := (inbox_absent_iff intent inbox.sessions.val 0).mp lookup
+      obtain ⟨index, _returned, position⟩ := WP.spec_imp_exists
+        (session_index_spec inbox intent.request.binding.session)
+      cases index with
+      | none =>
+          have absent_index : firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 = none := by
+            simpa using position.symm
+          have missing : ∀ session ∈ inbox.sessions.val, session.id ≠ intent.request.binding.session := by
+            simpa using (firstIndex_none_iff _ _ _).mp absent_index
+          obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists
+            (record_new_session_contract inbox intent ⟨no_key, missing⟩)
+          rw [recorded]
+          apply WP.spec.ret
+          simpa [RecordPost, lookup, absent_index] using post
+      | some s =>
+          have selected : ExistingSelection inbox intent s := ⟨no_key, by simpa using position.symm⟩
+          obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists
+            (record_existing_contract inbox intent s selected)
+          rw [recorded]
+          apply WP.spec.ret
+          simp only [RecordPost, lookup, selected.2]
+          exact ⟨s, selected_bound inbox intent s selected, rfl, post⟩
+
+end SandboxModel.Stage1Protocol.InboxRecordTotal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.record_contract
