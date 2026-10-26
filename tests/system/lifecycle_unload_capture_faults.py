@@ -16,14 +16,16 @@ import copy
 import hashlib
 import json
 import os
+import signal
 from pathlib import Path
 import sqlite3
 import stat
 import time
 
-from _center_host_services import role_facts
+from _center_host_services import local_binding, role_facts
 from lifecycle_unload_runtime import (
     checked_file, checked_source_records, continued_capture_question, gate_configuration,
+    material_source_charge,
     gate_json, gate_publish, open_original_candidate_pidfd, original_json,
     original_process, pidfd_exited, remaining, validate_gate_ready,
 )
@@ -36,7 +38,13 @@ STAGES = {
     'seal-receipt': ('seal_snapshot', 'SealSnapshot'),
     'stop-receipt': ('stop_vm', 'StopVm'),
     'restore-prepare-receipt': ('prepare_vm', 'PrepareVm'),
+    'restore-prepare-destroy': ('prepare_vm', 'PrepareVm'),
 }
+RESTORE_STAGES = frozenset(('restore-prepare-receipt', 'restore-prepare-destroy'))
+
+
+class _AwaitTerminal(Exception):
+    """An identified original operation is still pending; never success."""
 
 
 class CaptureHandoffProbe:
@@ -48,6 +56,8 @@ class CaptureHandoffProbe:
         self.path = Path(gate_dir) if gate_dir is not None else None
         self.fd = self.pidfd = None
         self.files, self.accepted = {}, None
+        self.terminal_accepted = None
+        self.pause_requested = self.candidate_paused = False
         self.host = self.question = self.record = self.action = None
         self.command_sent = self.recovered = False
 
@@ -64,13 +74,13 @@ class CaptureHandoffProbe:
         self._configuration()
         runtime = self.runtime
         generation = self.prior['context']['binding']['generation']
-        if self.stage == 'restore-prepare-receipt':
+        if self.stage in RESTORE_STAGES:
             generation += 1  # gate_configuration rejects overflow; no old-generation pidfd adoption.
         native = runtime.services.native_pools[0]
         sandbox = 'sb-' + native['namespace'] + '-' + str(self.prior['local']['sandbox'])
         self.config = gate_configuration(runtime.lease.identity, sandbox, generation, timeout_ms)
         self.deadline = min(deadline, time.monotonic() + timeout_ms / 1000)
-        if self.stage != 'restore-prepare-receipt':
+        if self.stage not in RESTORE_STAGES:
             self.pidfd = open_original_candidate_pidfd(self.prior['source'])
         if self.stage == 'copy-partial':
             control = private_path(runtime.quota['deployment_control'], directory=True)
@@ -175,7 +185,7 @@ class CaptureHandoffProbe:
         action = matches[0][0]
         identity = action['identity']
         generation = self.prior['context']['binding']['generation']
-        if self.stage == 'restore-prepare-receipt':
+        if self.stage in RESTORE_STAGES:
             generation += 1
         fields = action['command']['logical']['command'][command]
         native = self.runtime.services.native_pools[0]
@@ -188,7 +198,7 @@ class CaptureHandoffProbe:
                 or fields['generation'] != generation or identity['epoch'] != fields['epoch']
                 or identity['attempt'] != action['command']['attempt']):
             raise ValueError('original command identity differs from accepted operation')
-        if self.stage != 'restore-prepare-receipt' and fields['vm'] != self.prior['context']['binding']['vm']:
+        if self.stage not in RESTORE_STAGES and fields['vm'] != self.prior['context']['binding']['vm']:
             raise ValueError('original physical VM differs from selected command')
         return action
 
@@ -264,16 +274,18 @@ class CaptureHandoffProbe:
             raise ValueError('original selected manager did not exit86')
         self._configuration()
         entry, records, actions = self._read(deadline)
-        expected_kind = 'resume' if self.stage == 'restore-prepare-receipt' else 'unload'
+        expected_kind = 'resume' if self.stage in RESTORE_STAGES else 'unload'
         if entry['intent']['request']['operation']['kind'] != expected_kind:
             raise ValueError('selected boundary has another original lifecycle operation')
         self.action = self._original_action(actions, entry)
-        if self.stage == 'restore-prepare-receipt':
+        if self.stage in RESTORE_STAGES:
             candidates = [r for r in records if r['restore'] is not None
                           and r['restore']['intent'] == entry['intent']]
             if (len(candidates) != 1 or candidates[0]['restore']['activation'] is not None
                     or candidates[0]['restore']['material_use'] is not True):
                 raise ValueError('original LoadPaused pin before activation marker required')
+            self.restore_entry = copy.deepcopy(entry)
+            self.restore_record = copy.deepcopy(candidates[0])
             resource = self.action['identity']['resource']['id']
             native = self.runtime.services.native_pools[0]
             candidate = original_json(Path(native['chroot_base']) / '.claims' / resource / 'record.json', 16384)
@@ -289,6 +301,22 @@ class CaptureHandoffProbe:
                 raise ValueError('original loaded candidate differs from retained source manifest')
             self.pidfd = open_original_candidate_pidfd(candidate)
             self.candidate = candidate
+            if self.stage == 'restore-prepare-destroy':
+                self.prepare_files = {name: checked_file(claim / name, 16384) for name in
+                    ('record.json', 'restore-intent.json', 'restore-loaded.json')}
+                # The manager has actually exited86, so this original audit
+                # interrupts no live Host or held observation.
+                audit = self.runtime.services.processes.audit('host-0')
+                local = local_binding(audit, accepted['session'],
+                    expected_node=self.runtime.services.host_configs[0]['inbox']['node'])
+                slots = [context for context, phase in audit['host_slots'] if phase == 'Occupied'
+                    and context['binding']['sandbox'] == local['sandbox']]
+                if (local != self.restore_record['restore']['local'] or len(slots) != 1
+                        or slots[0]['binding']['generation'] != self.action['identity']['generation']
+                        or slots[0]['binding']['vm'] != self.action['command']['logical']['command']['PrepareVm']['vm']):
+                    raise ValueError('exact original physically occupied LoadPaused slot required')
+                self.prepare_context = copy.deepcopy(slots[0])
+
         else:
             candidates = [r for r in records if r['work']['anchor']['request'] == entry['intent']]
             if len(candidates) != 1:
@@ -322,7 +350,304 @@ class CaptureHandoffProbe:
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
 
+    def _prepare_candidate_state(self, deadline):
+        remaining(deadline)
+        if (self.stage != 'restore-prepare-destroy' or self.pidfd is None
+                or getattr(self, 'candidate', None) is None):
+            raise ValueError('exact terminal-only loaded candidate and original pidfd required')
+        if pidfd_exited(self.pidfd) or not original_process(self.candidate):
+            raise ValueError('original pre-marker loaded candidate no longer live')
+        fields = (Path('/proc') / str(self.candidate['pid']) / 'stat').read_text().rsplit(')', 1)[1].split()
+        if (int(fields[19]) != self.candidate['start_time_ticks']
+                or pidfd_exited(self.pidfd) or not original_process(self.candidate)):
+            raise ValueError('original candidate changed during process-state observation')
+        return fields[0]
+
+    def pause_original_prepare(self, deadline):
+        """Stop the exact process; T alone is no VM-state or exit observation.
+
+        Prior LoadPaused comes from its original protected loaded record.
+        No Firecracker action, guessed PID, new Load or resource release occurs.
+        An uncertain pause keeps this scenario's original responsibilities.
+        """
+        if self.action is None or self.pause_requested or self.recovered:
+            raise ValueError('one original pre-marker Prepare observation required')
+        deadline = min(deadline, self.deadline)
+        self._prepare_candidate_state(deadline)
+        self.pause_requested = True
+        signal.pidfd_send_signal(self.pidfd, signal.SIGSTOP)
+        while self._prepare_candidate_state(deadline) != 'T':
+            time.sleep(min(.01, remaining(deadline)))
+        self.candidate_paused = True
+        return dict(original_pidfd_stopped=True, process_state='T',
+                    physical_exit=False, public_completion=False, capacity_released=False)
+
+    def _bind_terminal_acceptance(self, accepted):
+        if (self.stage != 'restore-prepare-destroy' or self.accepted is None
+                or self.terminal_accepted is not None or not self.candidate_paused):
+            raise ValueError('one paused original Prepare and one public Destroy required')
+        if (type(accepted) is not dict or set(accepted) != {'session', 'key', 'accepted_version'}
+                or accepted != self.client.current_acceptance
+                or accepted['session'] != self.accepted['session']
+                or type(accepted['accepted_version']) is not int
+                or accepted['accepted_version'] != self.accepted['accepted_version'] + 1
+                or accepted['key'] == self.accepted['key']
+                or any(accepted['key'][k] != self.accepted['key'][k] for k in ('deployment', 'owner'))
+                or self.client.destroy_request != dict(window=accepted['key']['window'],
+                    sequence=accepted['key']['sequence'], expected_version=self.accepted['accepted_version'])):
+            raise ValueError('public Destroy differs from the exact next accepted request')
+        self.terminal_accepted = copy.deepcopy(accepted)
+
+    def _terminal_entries(self, inbox):
+        if self.stage != 'restore-prepare-destroy' or self.terminal_accepted is None:
+            raise ValueError('terminal-specific original acceptance required')
+        accepted = self.terminal_accepted
+        sessions = [row for row in inbox['sessions'] if row['id'] == self.accepted['session']]
+        if len(sessions) != 1:
+            raise ValueError('one exact original Host session required')
+        session = sessions[0]
+        if session['current_version'] == self.accepted['accepted_version'] and session['terminal'] is False:
+            raise _AwaitTerminal('public Destroy has not reached the original Host session')
+        if session['current_version'] != accepted['accepted_version'] or session['terminal'] is not True:
+            raise ValueError('another current Host version or nonterminal state')
+        original = [entry for entry in session['entries'] if entry['intent'] == self.restore_entry['intent']]
+        terminal = [entry for entry in session['entries'] if
+            entry['intent']['accepted_version'] == accepted['accepted_version']
+            and entry['intent']['request']['binding']['key'] == accepted['key']]
+        if (len(original) != 1 or original[0] != self.restore_entry or len(terminal) != 1
+                or any(session['local'][k] != self.prior['local'][k] for k in ('sandbox', 'owner'))):
+            raise ValueError('original Resume, public Destroy or native mapping changed')
+        entry = terminal[0]; intent = entry['intent']; binding = intent['request']['binding']
+        prior = self.restore_entry['intent']
+        if (intent['request']['operation'] != {'kind': 'destroy'}
+                or binding['session'] != self.accepted['session']
+                or binding['node'] != prior['request']['binding']['node']
+                or binding['protocol_version'] != prior['request']['binding']['protocol_version']
+                or binding['expected'] != {'state': 'version', 'version': self.accepted['accepted_version']}
+                or intent['center'] != prior['center'] or intent['retention'] != prior['retention']):
+            raise ValueError('complete original Destroy intent differs from the accepted successor')
+        if entry['local_operation'] is None:
+            raise _AwaitTerminal('Host received Destroy but native Kill is not yet admitted')
+        return original[0], entry, session['local']
+
+    def _terminal_outbox(self, conn, local, operation, capacity):
+        native = self.runtime.services.native_pools[0]
+        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+        op = 'op-' + native['namespace'] + '-' + str(local['sandbox']) + '-' + str(operation)
+        count, largest, receipt_size = conn.execute(
+            'SELECT count(*),max(length(action_json)),max(length(receipt_json)) FROM outbox '
+            'WHERE sandbox_id=? AND operation_id=?', (sandbox, op)).fetchone()
+        if (not 0 < count <= capacity['max_sql_rows'] or largest > capacity['max_sql_value_bytes']
+                or (receipt_size is not None and receipt_size > capacity['max_sql_value_bytes'])):
+            raise ValueError('original bounded actions missing or retired before terminal evidence')
+        result = []
+        for raw, state, receipt in conn.execute('SELECT action_json,dispatch_state,receipt_json '
+                'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
+            action = json.loads(raw, object_pairs_hook=unique_keys)
+            identity = action['identity']; command = action['command']
+            if (identity['sandbox'] != sandbox or identity['operation'] != op
+                    or identity['owner'] != self.action['identity']['owner']
+                    or identity['protocol_version'] != self.action['identity']['protocol_version']
+                    or identity['generation'] != self.action['identity']['generation']
+                    or identity['attempt'] != command['attempt']):
+                raise ValueError('terminal observation action has a foreign complete identity')
+            result.append((action, state, None if receipt is None else
+                           json.loads(receipt, object_pairs_hook=unique_keys)))
+        return result
+
+    def _read_terminal(self, deadline):
+        """Separate terminal-only SQL snapshot; the five old stages stay strict."""
+        native = self.runtime.services.native_pools[0]
+        database = private_path(native['database'])
+        identity = (database.stat().st_dev, database.stat().st_ino)
+        capacity = self.runtime.services.host_configs[0]['native']['maintenance']['capacity']
+        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True,
+                                      timeout=min(2, remaining(deadline)))) as conn:
+            conn.execute('BEGIN')
+            header = conn.execute('SELECT length(state_json),reserve_bytes FROM '
+                                  'controller_lifecycle_inbox WHERE id=1').fetchone()
+            if header is None or not 0 < header[0] <= header[1] <= min(capacity['max_sql_value_bytes'], 16 * 1024**2):
+                raise ValueError('bounded original Host inbox required')
+            raw, checksum = conn.execute('SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1').fetchone()
+            if hashlib.sha256(raw).digest() != checksum:
+                raise ValueError('original terminal inbox checksum differs')
+            original, terminal, local = self._terminal_entries(json.loads(raw, object_pairs_hook=unique_keys))
+            sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+            size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+            if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
+                raise ValueError('original native terminal row missing or retired before evidence')
+            raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+            state = json.loads(raw, object_pairs_hook=unique_keys)
+            if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
+                raise ValueError('original native terminal owner changed')
+            sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
+            resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
+            terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
+        if (database.stat().st_dev, database.stat().st_ino) != identity:
+            raise ValueError('original SQLite replaced during terminal snapshot')
+        return dict(original=original, terminal=terminal, local=local, native=state,
+                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions)
+
+    def _terminal_inventory(self, snapshot):
+        rows = snapshot['resume_actions'] + snapshot['terminal_actions']
+        prepared = [row for row in rows if 'PrepareVm' in row[0]['command']['logical']['command']]
+        if len(prepared) != 1 or prepared[0][0] != self.action:
+            raise ValueError('a missing, replaced or second Prepare action appeared')
+        if any('ActivateVm' in row[0]['command']['logical']['command'] for row in rows):
+            raise ValueError('pre-marker Destroy must never create an Activate action')
+        return prepared[0]
+
+    @staticmethod
+    def _success_observation(row, result_kind):
+        action, state, receipt = row
+        if state in ('ready', 'dispatched') and receipt is None:
+            return None
+        if (state != 'receipted' or type(receipt) is not dict
+                or receipt['identity'] != action['identity']):
+            raise ValueError('complete original action receipt required')
+        outcome = receipt['outcome']
+        if outcome['status'] == 'unknown':
+            return None  # Actual tagged uncertainty remains pending, never success.
+        if outcome['status'] != 'observed_success':
+            raise ValueError('original action did not have an observed successful result')
+        observation = outcome['details']
+        if (observation['resource'] != action['identity']['resource']
+                or observation['command'] != action['command']['logical']['command']
+                or set(observation['result']) != {result_kind}):
+            raise ValueError('original command-specific receipt resource or kind differs')
+        return observation['result'][result_kind]
+
+    def _terminal_pause_barrier(self, snapshot):
+        prepared = self._terminal_inventory(snapshot)
+        if prepared[1:] != ('dispatched', None):
+            raise ValueError('paused original Prepare gained a receipt before terminal qualification')
+        record = [row for row in snapshot['sources'] if row['restore'] is not None
+                  and row['restore']['intent'] == self.restore_entry['intent']]
+        if (len(record) != 1 or record[0]['work'] != self.restore_record['work']
+                or record[0]['capture'] != self.restore_record['capture']
+                or record[0]['restore'] != self.restore_record['restore']
+                or record[0]['retirement'] is not None
+                or record[0]['restore']['activation'] is not None
+                or record[0]['restore']['material_use'] is not True
+                or material_source_charge(record[0]) != material_source_charge(self.restore_record)
+                or material_source_charge(record[0]) <= 0):
+            raise ValueError('unknown Prepare lost original source, pin or positive material responsibility')
+        native = snapshot['native']; operation = native['current_operation']
+        if (native['terminal'] is not True or native['phase'] != 'Revoking'
+                or native['generation'] != self.action['identity']['generation']
+                or native['current_vm'] is not None or native['net_slot'] is not None
+                or operation is None or operation['kind'] != 'Kill'
+                or operation['id'] != snapshot['terminal']['local_operation']
+                or operation['epoch'] != native['epoch']):
+            raise ValueError('original native Kill and loaded candidate are not current')
+        fences = [row for row in snapshot['terminal_actions'] if 'InstallFence' in row[0]['command']['logical']['command']
+                  and row[0]['command']['logical']['command']['InstallFence']['terminal'] is True]
+        if not fences:
+            raise _AwaitTerminal('original terminal Fence not yet scheduled')
+        if len(fences) != 1:
+            raise ValueError('more than one terminal Fence requires separate evidence')
+        action = fences[0][0]
+        if (action['command']['logical']['command']['InstallFence'] != dict(
+                sandbox=snapshot['local']['sandbox'], epoch=native['epoch'], terminal=True)
+                or action['identity']['epoch'] != native['epoch']
+                or native['epoch'] < self.action['identity']['epoch']):
+            raise ValueError('original terminal Fence action identity differs')
+        observed = self._success_observation(fences[0], 'Fence')
+        if observed is None:
+            raise _AwaitTerminal('original terminal Fence has no successful SQL receipt yet')
+        if observed != dict(epoch=native['epoch'], terminal=True):
+            raise ValueError('original terminal Fence observation differs')
+        native_pool = self.runtime.services.native_pools[0]
+        path = Path(native_pool['node_state_dir']) / 'fences' / self.config['sandbox']
+        fence = original_json(path.with_suffix('.json'), 16384)
+        if (set(fence) != {'epoch', 'terminal'} or type(fence['epoch']) is not int
+                or type(fence['terminal']) is not bool or fence != observed):
+            raise ValueError('actual original terminal fence file differs from SQL receipt')
+        return fence
+
+    def recover_after_destroy(self, accepted, deadline, *, observe_peer):
+        """Continue the same stopped process only after actual terminal fencing."""
+        self._bind_terminal_acceptance(accepted)
+        deadline = min(deadline, self.deadline)
+        if self._prepare_candidate_state(deadline) != 'T' or self.host.poll() != 86:
+            raise ValueError('original exited manager and stopped loaded candidate required')
+        self._configuration()
+        process = self.runtime.services.processes.start('host-0')
+        if process is self.host or process.pid == self.host.pid:
+            raise ValueError('fresh original Host required to receive public Destroy')
+        self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
+        while True:
+            if self._prepare_candidate_state(deadline) != 'T':
+                raise ValueError('candidate was externally continued before exact terminal barrier')
+            try:
+                snapshot = self._read_terminal(deadline)
+                fence = self._terminal_pause_barrier(snapshot)
+                break
+            except _AwaitTerminal:
+                time.sleep(min(.05, remaining(deadline)))
+        self._configuration()
+        native = self.runtime.services.native_pools[0]
+        claim = Path(native['chroot_base']) / '.claims' / self.candidate['resource_id']
+        if any(checked_file(claim / name, 16384) != value for name, value in self.prepare_files.items()):
+            raise ValueError('original loaded process files changed before terminal continuation')
+        if self._prepare_candidate_state(deadline) != 'T':
+            raise ValueError('original loaded process is no longer held stopped')
+        if not callable(observe_peer):
+            raise ValueError('one original peer observation required before continuation')
+        peer = observe_peer()
+        if self._prepare_candidate_state(deadline) != 'T':
+            raise ValueError('original candidate changed during peer progress observation')
+        self.terminal_barrier = copy.deepcopy(snapshot)
+        signal.pidfd_send_signal(self.pidfd, signal.SIGCONT)
+        self.continue_sent = self.recovered = True
+        return dict(public_destroy_reached_host=True, terminal_fence_observed=fence,
+                    unknown_prepare_still_dispatched=True, material_pin_and_charge_retained=True,
+                    peer_observation=peer, original_pidfd_continue_sent=True,
+                    public_completion=False, capacity_released=False)
+
+    def assert_terminal_before_gc(self, deadline):
+        """Require original Prepared/Stop receipts and actual candidate exit.
+
+        Missing/retired rows do not become success. Caller still observes the
+        original public Cleaned, physical Free and material/accounting GC.
+        """
+        if self.stage != 'restore-prepare-destroy' or not self.recovered or not self.continue_sent:
+            raise ValueError('original terminal barrier and explicit pidfd continuation required')
+        deadline = min(deadline, self.deadline)
+        while True:
+            snapshot = self._read_terminal(deadline)
+            prepared = self._terminal_inventory(snapshot)
+            prepared_result = self._success_observation(prepared, 'Prepared')
+            if prepared_result is not None and prepared_result != dict(
+                    pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks'],
+                    boot_id=self.candidate['boot_id']):
+                raise ValueError('original Prepared process differs from exact loaded candidate')
+            stops = [row for row in snapshot['terminal_actions'] if 'StopVm' in row[0]['command']['logical']['command']]
+            if len(stops) > 1:
+                raise ValueError('second original Stop attempt needs separate evidence')
+            stop_result = None
+            if stops:
+                action = stops[0][0]
+                if (action['command']['logical']['command']['StopVm'] != dict(
+                        sandbox=snapshot['local']['sandbox'], epoch=self.terminal_barrier['native']['epoch'],
+                        generation=self.action['identity']['generation'],
+                        vm=self.action['command']['logical']['command']['PrepareVm']['vm'])
+                        or action['identity']['resource'] != self.action['identity']['resource']):
+                    raise ValueError('Stop did not name the exact original loaded candidate')
+                stop_result = self._success_observation(stops[0], 'Stopped')
+                if stop_result is not None and stop_result != dict(
+                        pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks']):
+                    raise ValueError('original Stop process differs from exact loaded candidate')
+            if (prepared_result is not None and stop_result is not None
+                    and pidfd_exited(self.pidfd) and not original_process(self.candidate)):
+                return dict(original_prepare_observed=True, original_stop_observed=True,
+                            original_candidate_exited=True, no_second_prepare_or_activate=True,
+                            public_completion=False, capacity_released=False)
+            time.sleep(min(.05, remaining(deadline)))
+
     def finish(self, deadline):
+        if self.stage == 'restore-prepare-destroy':
+            raise ValueError('terminal handoff requires recover_after_destroy with the exact Destroy acceptance')
         if self.action is None or self.recovered:
             raise ValueError('one observed original handoff required')
         deadline = min(deadline, self.deadline)
@@ -421,6 +746,27 @@ class CaptureHandoffProbe:
             os.close(parent)
         return dict(exact_consumed_gate_removed=True)
 
+    def terminal_failure_state(self):
+        """Preserve exact stopped-process identity; never signal or infer GC."""
+        if self.stage != 'restore-prepare-destroy':
+            return None
+        result = dict(candidate=copy.deepcopy(getattr(self, 'candidate', None)),
+                      pause_requested=self.pause_requested,
+                      continue_sent=getattr(self, 'continue_sent', False),
+                      public_completion=False, capacity_released=False,
+                      action='none; preserve original process and resource responsibility')
+        if self.pidfd is not None and result['candidate'] is not None:
+            try:
+                result['pidfd_exited'] = pidfd_exited(self.pidfd)
+                if not result['pidfd_exited'] and original_process(self.candidate):
+                    fields = (Path('/proc') / str(self.candidate['pid']) / 'stat').read_text().rsplit(')', 1)[1].split()
+                    if int(fields[19]) != self.candidate['start_time_ticks']:
+                        raise ValueError('candidate identity changed while preserving failure evidence')
+                    result['process_state'] = fields[0]
+            except (OSError, ValueError):
+                result['process_observation'] = 'unknown; do not adopt a replacement or release resources'
+        return result
+
     def close(self):
         """Close observation descriptors only; uncertain effects and files remain."""
         for name in ('fd', 'pidfd', 'worker_pidfd'):
@@ -431,8 +777,16 @@ class CaptureHandoffProbe:
 
 
 def self_test():
-    """The same four pure input checks; no services, Rust build or VM."""
+    """Original input checks and terminal handoff checks; no Host or VM.
+
+    Two tests own a small Linux child to check real pidfd stop/continue order.
+    """
     import unittest
+    import subprocess
+    import select
+    import sys
+    from contextlib import contextmanager
+    from unittest.mock import Mock, patch
     from types import SimpleNamespace as NS
     class IdentityTests(unittest.TestCase):
         def fixture(self,stage='freeze-receipt'):
@@ -440,7 +794,7 @@ def self_test():
             p.stage=stage;p.prior=dict(local=dict(sandbox=4,owner=7),context=dict(binding=dict(generation=2,vm=8)))
             p.config=dict(sandbox='sb-0123456789abcdef-4')
             p.runtime=NS(services=NS(native_pools=[dict(namespace='0123456789abcdef')]))
-            command=STAGES[stage][1];generation=3 if stage=='restore-prepare-receipt' else 2
+            command=STAGES[stage][1];generation=3 if stage in RESTORE_STAGES else 2
             fields=dict(sandbox=4,epoch=9,generation=generation,vm=10 if generation==3 else 8)
             action=dict(identity=dict(protocol_version=1,operation='op-0123456789abcdef-4-3',sandbox=p.config['sandbox'],
                 generation=generation,owner='tenant-7',epoch=9,attempt=0),command=dict(logical=dict(command={command:fields}),attempt=0))
@@ -475,6 +829,199 @@ def self_test():
             self.assertEqual(gate_configuration('a'*64,'sb-0123456789abcdef-4',3,1000)['generation'],3)
             for generation in (0,2**64):
                 with self.assertRaises(ValueError):gate_configuration('a'*64,'sb-0123456789abcdef-4',generation,1000)
+        def terminal_fixture(self, *, bind=True):
+            p, action, _ = self.fixture('restore-prepare-destroy')
+            p.action = action
+            action['identity']['resource'] = dict(kind='vm', id='vm-0123456789abcdef-10')
+            p.accepted = dict(session='session', accepted_version=3,
+                key=dict(deployment='deployment', owner='7', window=1, sequence=3))
+            terminal = dict(session='session', accepted_version=4,
+                key=dict(deployment='deployment', owner='7', window=1, sequence=4))
+            node = dict(deployment_id='deployment', node='node')
+            original = dict(accepted_version=3, center={'center':'original'}, retention={'window':1},
+                request=dict(binding=dict(protocol_version=2, node=node, session='session',
+                    key=p.accepted['key'], expected=dict(state='version', version=2)),
+                    operation=dict(kind='resume')))
+            ending = copy.deepcopy(original); ending['accepted_version'] = 4
+            ending['request']['binding']['key'] = terminal['key']
+            ending['request']['binding']['expected']['version'] = 3
+            ending['request']['operation'] = {'kind':'destroy'}
+            p.restore_entry = dict(intent=original, local_operation=3)
+            ending_entry = dict(intent=ending, local_operation=4)
+            inbox = dict(sessions=[dict(id='session', current_version=4, terminal=True,
+                local=dict(sandbox=4, owner=7, operation=1), entries=[copy.deepcopy(p.restore_entry), ending_entry])])
+            p.client = NS(current_acceptance=terminal,
+                destroy_request=dict(window=1, sequence=4, expected_version=3))
+            p.terminal_accepted = None; p.candidate_paused = True
+            p.pause_requested = False; p.recovered = False
+            if bind:
+                p._bind_terminal_acceptance(terminal)
+            return p, terminal, inbox
+
+        @staticmethod
+        def receipt(action, kind, value):
+            return dict(identity=copy.deepcopy(action['identity']), outcome=dict(status='observed_success',
+                details=dict(resource=copy.deepcopy(action['identity']['resource']),
+                    command=copy.deepcopy(action['command']['logical']['command']), result={kind:value})))
+
+        def test_terminal_entries_keep_both_complete_acceptances_and_local_mapping(self):
+            p, terminal, inbox = self.terminal_fixture()
+            original, ending, local = p._terminal_entries(inbox)
+            self.assertEqual(original, p.restore_entry)
+            self.assertEqual(ending['intent']['request']['binding']['key'], terminal['key'])
+            self.assertEqual(local['owner'], 7)
+            pending = copy.deepcopy(inbox)
+            pending['sessions'][0].update(current_version=3, terminal=False)
+            with self.assertRaises(_AwaitTerminal):
+                p._terminal_entries(pending)
+            for mutate in (
+                    lambda row: row.update(current_version=5),
+                    lambda row: row['local'].update(owner=8),
+                    lambda row: row['entries'][0]['intent'].update(accepted_version=2),
+                    lambda row: row['entries'][1]['intent']['request']['binding']['expected'].update(version=2),
+                    lambda row: row['entries'][1]['intent']['request'].update(operation={'kind':'renew'})):
+                wrong = copy.deepcopy(inbox); mutate(wrong['sessions'][0])
+                with self.assertRaises(ValueError):
+                    p._terminal_entries(wrong)
+
+        def test_terminal_public_acceptance_is_not_an_unrelated_or_repeated_request(self):
+            for mutate in (
+                    lambda a: a.update(session='another'),
+                    lambda a: a.update(accepted_version=5),
+                    lambda a: a['key'].update(owner='8'),
+                    lambda a: a['key'].update(deployment='another'),
+                    lambda a: a['key'].update(sequence=3)):
+                p, terminal, _ = self.terminal_fixture(bind=False)
+                wrong = copy.deepcopy(terminal); mutate(wrong)
+                p.client.current_acceptance = wrong
+                with self.assertRaises(ValueError):
+                    p._bind_terminal_acceptance(wrong)
+                self.assertIsNone(p.terminal_accepted)
+            p, terminal, _ = self.terminal_fixture()
+            with self.assertRaises(ValueError):
+                p._bind_terminal_acceptance(terminal)
+
+        def test_terminal_inventory_and_complete_receipts_reject_replacement_or_activation(self):
+            p, _, _ = self.terminal_fixture()
+            snapshot = dict(resume_actions=[(p.action, 'dispatched', None)], terminal_actions=[])
+            self.assertEqual(p._terminal_inventory(snapshot)[0], p.action)
+            duplicate = copy.deepcopy(snapshot); duplicate['terminal_actions'] = duplicate['resume_actions']
+            with self.assertRaises(ValueError):
+                p._terminal_inventory(duplicate)
+            activated = copy.deepcopy(snapshot); action = copy.deepcopy(p.action)
+            action['command']['logical']['command'] = {'ActivateVm': {'sandbox':4}}
+            activated['terminal_actions'].append((action, 'ready', None))
+            with self.assertRaises(ValueError):
+                p._terminal_inventory(activated)
+            value = dict(pid=123, start_ticks=456, boot_id='boot')
+            receipt = self.receipt(p.action, 'Prepared', value)
+            self.assertEqual(p._success_observation((p.action, 'receipted', receipt), 'Prepared'), value)
+            for mutate in (
+                    lambda r: r['identity'].update(epoch=10),
+                    lambda r: r['outcome']['details']['resource'].update(id='another'),
+                    lambda r: r['outcome']['details']['command']['PrepareVm'].update(vm=11)):
+                wrong = copy.deepcopy(receipt); mutate(wrong)
+                with self.assertRaises(ValueError):
+                    p._success_observation((p.action, 'receipted', wrong), 'Prepared')
+            unknown = dict(identity=p.action['identity'], outcome=dict(status='unknown', details={}))
+            self.assertIsNone(p._success_observation((p.action, 'receipted', unknown), 'Prepared'))
+
+        def test_terminal_barrier_requires_actual_fence_pending_prepare_and_retained_pin(self):
+            p, _, inbox = self.terminal_fixture()
+            capture = dict(full=dict(state_bytes=64, memory_bytes=128, disk_bytes=256),
+                           reserved_material_bytes=2*(64+128+256)+2*262144+65536)
+            p.restore_record = dict(work={}, capture=capture, retirement=None,
+                restore=dict(intent=p.restore_entry['intent'], activation=None, material_use=True))
+            fence = copy.deepcopy(p.action)
+            fence['identity'].update(epoch=10, operation='op-0123456789abcdef-4-4',
+                                     resource=dict(kind='sandbox', id=p.config['sandbox']))
+            fence['command']['logical']['command'] = dict(InstallFence=dict(sandbox=4, epoch=10, terminal=True))
+            receipt = self.receipt(fence, 'Fence', dict(epoch=10, terminal=True))
+            snapshot = dict(original=p.restore_entry, terminal=inbox['sessions'][0]['entries'][1],
+                local=inbox['sessions'][0]['local'], sources=[copy.deepcopy(p.restore_record)],
+                native=dict(terminal=True, phase='Revoking', generation=3, current_vm=None, net_slot=None, epoch=10,
+                    current_operation=dict(id=4, kind='Kill', epoch=10)),
+                resume_actions=[(p.action, 'dispatched', None)], terminal_actions=[(fence, 'receipted', receipt)])
+            p.runtime.services.native_pools[0]['node_state_dir'] = '/unused-unit-fixture'
+            with patch.dict(globals(), original_json=lambda *_a, **_k: {'epoch':10, 'terminal':True}):
+                self.assertEqual(p._terminal_pause_barrier(snapshot), {'epoch':10, 'terminal':True})
+                wrong = copy.deepcopy(snapshot); wrong['sources'][0]['restore']['material_use'] = False
+                with self.assertRaises(ValueError):p._terminal_pause_barrier(wrong)
+                wrong = copy.deepcopy(snapshot); wrong['sources'][0]['restore']['activation'] = p.action
+                with self.assertRaises(ValueError):p._terminal_pause_barrier(wrong)
+                wrong = copy.deepcopy(snapshot)
+                wrong['resume_actions'][0] = (p.action, 'receipted', self.receipt(p.action, 'Prepared', {}))
+                with self.assertRaises(ValueError):p._terminal_pause_barrier(wrong)
+            with patch.dict(globals(), original_json=lambda *_a, **_k: {'epoch':10, 'terminal':False}):
+                with self.assertRaises(ValueError):p._terminal_pause_barrier(snapshot)
+
+        @contextmanager
+        def owned_candidate(self):
+            child = subprocess.Popen([sys.executable, '-B', '-c',
+                "import os,sys; os.write(1,b'ready\\n'); sys.stdin.buffer.read(1)"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            descriptor = None
+            try:
+                self.assertTrue(select.select([child.stdout], [], [], 2)[0])
+                self.assertEqual(child.stdout.readline(), b'ready\n')
+                fields = (Path('/proc') / str(child.pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+                candidate = dict(resource_id='unit-owned-child', pid=child.pid,
+                    start_time_ticks=int(fields[19]), boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+                descriptor = open_original_candidate_pidfd(candidate)
+                p, terminal, _ = self.terminal_fixture(bind=False)
+                p.candidate = candidate; p.pidfd = descriptor
+                p.candidate_paused = False; p.deadline = time.monotonic()+5
+                p.host = NS(pid=10101, poll=lambda:86)
+                p.prepare_files = {}; p._configuration = Mock()
+                p.runtime.services.native_pools[0]['chroot_base'] = '/unused-unit-fixture'
+                p.runtime.services.processes = NS(start=Mock(return_value=NS(pid=10102)))
+                p.runtime.services.wait_ready = Mock()
+                yield p, terminal
+            finally:
+                if descriptor is not None and child.poll() is None:
+                    signal.pidfd_send_signal(descriptor, signal.SIGCONT)
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                child.stdin.close()
+                child.wait(timeout=2)
+                child.stdout.close(); child.stderr.close()
+                if descriptor is not None:os.close(descriptor)
+
+        def test_owned_pidfd_continues_only_after_terminal_barrier_and_peer_query(self):
+            with self.owned_candidate() as (p, terminal):
+                p.pause_original_prepare(p.deadline)
+                self.assertEqual(p._prepare_candidate_state(p.deadline), 'T')
+                order = []
+                p._read_terminal = Mock(return_value={})
+                def barrier(_snapshot):
+                    self.assertEqual(p._prepare_candidate_state(p.deadline), 'T')
+                    order.append('terminal-fence'); return {'epoch':10, 'terminal':True}
+                p._terminal_pause_barrier = barrier
+                def peer():
+                    self.assertEqual(p._prepare_candidate_state(p.deadline), 'T')
+                    order.append('peer-query'); return {'unit_peer_returned':True}
+                result = p.recover_after_destroy(terminal, p.deadline, observe_peer=peer)
+                self.assertEqual(order, ['terminal-fence', 'peer-query'])
+                self.assertTrue(result['original_pidfd_continue_sent'])
+                self.assertFalse(result['public_completion'])
+                while p._prepare_candidate_state(p.deadline) == 'T':
+                    time.sleep(min(.001, remaining(p.deadline)))
+
+        def test_rejected_terminal_barrier_keeps_exact_owned_process_stopped(self):
+            with self.owned_candidate() as (p, terminal):
+                p.pause_original_prepare(p.deadline)
+                p._read_terminal = Mock(return_value={})
+                p._terminal_pause_barrier = Mock(side_effect=ValueError('wrong original fence'))
+                peer = Mock()
+                with self.assertRaises(ValueError):
+                    p.recover_after_destroy(terminal, p.deadline, observe_peer=peer)
+                peer.assert_not_called()
+                self.assertFalse(getattr(p, 'continue_sent', False))
+                failure = p.terminal_failure_state()
+                self.assertEqual(failure['candidate'], p.candidate)
+                self.assertEqual(failure['process_state'], 'T')
+                self.assertFalse(failure['pidfd_exited'])
+                self.assertFalse(failure['capacity_released'])
+
     result = unittest.TextTestRunner(verbosity=2).run(
         unittest.defaultTestLoader.loadTestsFromTestCase(IdentityTests))
     return 0 if result.wasSuccessful() else 1

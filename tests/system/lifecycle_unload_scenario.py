@@ -695,7 +695,8 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    prepare_fault = args.scenario == 'restore-prepare-receipt'
+    prepare_destroy = args.scenario == 'restore-prepare-destroy'
+    prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
     data_drain = args.scenario == 'data-drain'
     if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain):
         raise ValueError('one explicit existing lifecycle scenario required')
@@ -713,6 +714,7 @@ def exercise(args):
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
     capture_probe = data_probe = None
+    terminal_destroy_done = False
     failed = False
     try:
         report['measurement_identity']=runtime.measurement_identity()
@@ -811,11 +813,44 @@ def exercise(args):
             if cycle == 1 and prepare_fault:
                 from lifecycle_unload_capture_faults import CaptureHandoffProbe
                 capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
-                    'restore-prepare-receipt')
+                    'restore-prepare-destroy' if prepare_destroy else 'restore-prepare-receipt')
                 report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
             if cycle == 1 and prepare_fault:
                 report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted, deadline)
+                if prepare_destroy:
+                    report['phase'] = 'hold-exact-pre-marker-loaded-process'
+                    report['prepare_destroy_pause'] = capture_probe.pause_original_prepare(deadline)
+                    report['phase'] = 'public-destroy-while-original-resume-is-unknown'
+                    pending = client.query()
+                    client.check_view(pending, accepted)
+                    assert pending['phase'] == 'resuming', 'pre-marker Prepare unexpectedly became Running'
+                    client.assert_data_closed(); client.assert_previous_tokens_closed()
+                    report['destroy'] = client.destroy(pending)
+                    report['phase'] = 'original-host-terminal-fence-before-process-continue'
+                    def observe_original_peer():
+                        assert control.query() == control_running, 'other owner lost its original Running observation'
+                        return dict(session=control.session, original_public_running_query_completed=True,
+                                    scope='one existing peer query while original loaded process is stopped')
+                    report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
+                        report['destroy'], deadline, observe_peer=observe_original_peer)
+                    report['phase'] = 'original-prepared-and-stop-receipts-before-gc'
+                    report['prepare_destroy_terminal'] = capture_probe.assert_terminal_before_gc(deadline)
+                    report['phase'] = 'public-destroy-cleaned-and-physical-gc'
+                    client.assert_data_closed(); client.assert_previous_tokens_closed()
+                    client.wait_cleaned()
+                    report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
+                    client.operation_evidence_completed()
+                    assert control.query() == control_running
+                    report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
+                        control.session, control_physical, deadline)
+                    control.destroy(control_running); control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+                    control.operation_evidence_completed()
+                    report['cycles'].append(dict(cycle=cycle, resume=accepted,
+                        destroyed_before_public_running=True, original_prepare_then_stop_observed=True))
+                    terminal_destroy_done = True
+                    break
                 report['capture_handoff_recovery'] = capture_probe.finish(deadline)
             if cycle==1 and restore_fault:
                 report['phase']='original-restore-activation-gate-read'
@@ -979,12 +1014,13 @@ def exercise(args):
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
-        report['phase']='public-destroy-and-physical-gc'
-        report['destroy']=client.destroy(lost if lost is not None else resumed)
-        client.assert_data_closed()
-        client.wait_cleaned()
-        report['final_resources']=runtime.destroy_evidence(client.session,deadline)
-        client.operation_evidence_completed()
+        if not terminal_destroy_done:
+            report['phase']='public-destroy-and-physical-gc'
+            report['destroy']=client.destroy(lost if lost is not None else resumed)
+            client.assert_data_closed()
+            client.wait_cleaned()
+            report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+            client.operation_evidence_completed()
         # Quota settlement and historical refusal-frontier retirement use the
         # original owner-provided persisted accounting oracle; they are never
         # inferred solely from filesystem absence or an HTTP acceptance.
@@ -1031,6 +1067,13 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if prepare_destroy:
+            report['acceptance_cases'] = {
+                'E6': 'original pre-marker LoadPaused stayed unknown until actual public Destroy reached Host and terminal fence; same candidate was observed, stopped and collected without another Prepare or Activate',
+                'E12': 'other owner kept its original live candidate across the first owner terminal handoff, then explicit cleanup',
+                'E14': 'original data access and prior execution tokens remained closed during unknown Resume and Destroy',
+                'other_cases': 'one pre-marker cancellation branch; no resumed Running, second Resume, full matrix or formal proof claim',
+            }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
         if capture_probe is not None:
@@ -1043,6 +1086,8 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
+        if prepare_destroy and capture_probe is not None:
+            report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1105,7 +1150,7 @@ def main():
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-copy-partial','capture-seal-receipt',
-        'capture-stop-receipt','restore-prepare-receipt'),default='normal')
+        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
