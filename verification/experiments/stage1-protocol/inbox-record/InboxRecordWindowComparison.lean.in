@@ -1,0 +1,22 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordFreshSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+@[simp] theorem retention_window_ne (left : Option RetentionWindowId) (right : RetentionWindowId) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId) left (some right) =
+      .ok (decide (left ≠ some right)) := by
+  cases left <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq,
+      sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+  scalar_tac
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.retention_window_ne
