@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesReduction
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+
+@[simp] theorem previous_callback (previous : I64) (before : Option I64) :
+    core.option.Option.is_some_and
+      validate_applied_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool
+      before previous = .ok (different before previous) := by
+  cases before <;> simp [different, bne, Bool.beq_eq_decide_eq,core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.is_some_and,
+    validate_applied_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once]
+  scalar_tac
+
+@[simp] theorem final_callback (deadline : I64) (last : Option I64) :
+    core.option.Option.is_some_and
+      validate_applied_lifetimes.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool
+      last deadline = .ok (different last deadline) := by
+  cases last <;> simp [different, bne, Bool.beq_eq_decide_eq,core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.is_some_and,
+    validate_applied_lifetimes.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    ne_comm]
+  scalar_tac
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.previous_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.final_callback
