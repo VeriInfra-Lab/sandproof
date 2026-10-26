@@ -16,6 +16,7 @@ mod end_pipeline;
 mod material_quota;
 mod original_continue;
 mod restore_exit;
+mod restore_unknown_terminal;
 mod slot_reuse;
 mod terminal_drain;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
