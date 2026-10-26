@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.Library
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxState
+
+/-- Every returned field is determined by the selected session and entry.
+This is a value description, not authority to execute or release resources. -/
+def workState (session : Session) (entry : Entry) : LifecycleWorkState :=
+  { intent := entry.intent
+    current_session_version := session.current_version
+    current := decide (entry.intent.accepted_version = session.current_version)
+    terminal := session.terminal
+    refusal := session.refusal
+    «local» := session.local
+    local_operation := entry.local_operation }
+
+/-- The two positions are valid in this exact inbox value. -/
+def ValidPosition (inbox : Inbox) (session entry : Usize) : Prop :=
+  ∃ bound : session.val < inbox.sessions.val.length,
+    entry.val < (inbox.sessions.val[session.val]'bound).entries.val.length
+
+def FullStateContract
+    (run : Inbox → Usize → Usize → Result LifecycleWorkState) : Prop :=
+  ∀ (inbox : Inbox) (session entry : Usize)
+    (session_bound : session.val < inbox.sessions.val.length)
+    (entry_bound : entry.val < (inbox.sessions.val[session.val]'session_bound).entries.val.length),
+    run inbox session entry = .ok (workState
+      (inbox.sessions.val[session.val]'session_bound)
+      ((inbox.sessions.val[session.val]'session_bound).entries.val[entry.val]'entry_bound))
+
+end SandboxModel.Stage1Protocol.InboxState
