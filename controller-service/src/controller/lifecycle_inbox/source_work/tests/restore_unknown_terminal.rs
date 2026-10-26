@@ -1,5 +1,6 @@
 //! Original SQLite/workflow with controlled physical port outcomes, not KVM.
-//! No successful Prepare/Load observation is fabricated for the unknown action.
+//! Unknown stays held. Only the second phase supplies the controlled physical
+//! port's exact original Prepare observation after the fault has cleared.
 use super::*;
 use sandbox_controller_core as core;
 use core::workflow::{self, WorkflowStep};
@@ -36,6 +37,14 @@ fn unknown_prepare_then_terminal(expiry: bool) {
     let mut journal = v3::open(&path);
     assert_eq!(journal.lifecycle_source_work(&v3::config().node).unwrap(), held,
         "terminal admission/reopen cannot drop original loader/File backing obligation");
+    let observed = journal.reconcile_observed(&prepare, &WorkReceipt {
+        identity: prepare.identity.clone(),
+        outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+            resource: prepare.identity.resource.clone(), command: prepare.command.command().clone(),
+        }),
+    });
+    assert_eq!(observed, Ok(true),
+        "after fault clearance the exact original readonly Prepare observation must reconcile while keeping terminal authority: {observed:?}");
     let mut stopped = false;
     let mut completed = false;
     for _ in 0..64 {
@@ -57,7 +66,7 @@ fn unknown_prepare_then_terminal(expiry: bool) {
             other => panic!("original unknown Prepare terminal workflow blocked: expiry={expiry} step={other:?}"),
         }
     }
-    assert!(stopped && completed, "original terminal workflow must stop/clean without resolving unknown Load as success");
+    assert!(stopped && completed, "original terminal workflow must finish after its exact original Prepare is physically confirmed");
     assert!(!journal.uncertain_actions().unwrap().contains(&prepare),
         "original unknown loader must be retired by exact terminal cleanup, not forgotten");
 }
