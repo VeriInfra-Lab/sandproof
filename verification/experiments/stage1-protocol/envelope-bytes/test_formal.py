@@ -76,13 +76,15 @@ class Admission(unittest.TestCase):
         resolver = formal.module('bytes_test_resolver', self.root / 'prepared/source/tools/proof_batch.py')
         example = self.root / 'example'
         example.mkdir()
+        (example / 'tools').mkdir()
+        shutil.copy2(self.root / 'prepared/source/tools/proof_batch.py', example / 'tools/proof_batch.py')
         (example / 'lakefile.toml').write_text('[[lean_lib]]\nname="Demo"\nsrcDir="selected"\n')
         (example / 'lake-other.toml').write_text('[[lean_lib]]\nname="Demo"\nsrcDir="other"\n')
         (example / 'Main.lean').write_text('import Demo.Value\n')
         for view in ['selected', 'other']:
             (example / view / 'Demo').mkdir(parents=True)
             (example / view / 'Demo/Value.lean').write_text('-- ' + view + '\n')
-        self.assertEqual(set(resolver.closure(example, ['Main.lean'], active_view='lakefile.toml')),
+        self.assertEqual(set(formal.local_closure(example, ['Main.lean'])),
             {'Main.lean', 'selected/Demo/Value.lean'})
         self.assertEqual(set(resolver.closure(example, ['Main.lean'], active_view='lake-other.toml')),
             {'Main.lean', 'other/Demo/Value.lean'})
