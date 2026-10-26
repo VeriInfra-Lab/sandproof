@@ -3,3 +3,15 @@
 @@ -9 +9 @@
 -srcDir = "verification/aeneas/foundations"
 +srcDir = "verification/aeneas/stage1-protocol/json-foundations"
+--- a/tools/proof_batch.py
++++ b/tools/proof_batch.py
+@@ -55 +55 @@
+-def closure(root, seeds):
++def closure(root, seeds, *, active_view=None):
+@@ -63 +63,5 @@
+-    for view in root.glob('lake*.toml'):
++    if active_view is not None and (Path(active_view).name != active_view
++            or not (root / active_view).is_file()):
++        raise ValueError('missing or non-local active Lake view')
++    views = root.glob('lake*.toml') if active_view is None else [root / active_view]
++    for view in views:

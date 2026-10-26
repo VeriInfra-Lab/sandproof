@@ -67,6 +67,28 @@ class Admission(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unadopted'):
             formal.inventory(self.root)
 
+    def test_active_view_cannot_be_overridden_by_other_configs(self):
+        with patch.object(formal, 'ROOT', self.root), patch.object(formal, 'snapshot',
+                return_value=dict(self.data['inputs'])), patch.object(
+                formal.subprocess, 'check_output', return_value='reviewed-base\n'):
+            prepared = formal.run(self.root / 'prepared', prepare_only=True)
+        self.assertTrue(prepared['prepared'])
+        resolver = formal.module('bytes_test_resolver', self.root / 'prepared/source/tools/proof_batch.py')
+        example = self.root / 'example'
+        example.mkdir()
+        (example / 'lakefile.toml').write_text('[[lean_lib]]\nname="Demo"\nsrcDir="selected"\n')
+        (example / 'lake-other.toml').write_text('[[lean_lib]]\nname="Demo"\nsrcDir="other"\n')
+        (example / 'Main.lean').write_text('import Demo.Value\n')
+        for view in ['selected', 'other']:
+            (example / view / 'Demo').mkdir(parents=True)
+            (example / view / 'Demo/Value.lean').write_text('-- ' + view + '\n')
+        self.assertEqual(set(resolver.closure(example, ['Main.lean'], active_view='lakefile.toml')),
+            {'Main.lean', 'selected/Demo/Value.lean'})
+        self.assertEqual(set(resolver.closure(example, ['Main.lean'], active_view='lake-other.toml')),
+            {'Main.lean', 'other/Demo/Value.lean'})
+        with self.assertRaisesRegex(ValueError, 'active Lake'):
+            resolver.closure(example, ['Main.lean'], active_view='missing.toml')
+
     def test_source_race_revokes_preparation(self):
         inputs = dict(self.data['inputs'])
         with patch.object(formal, 'ROOT', self.root), patch.object(formal, 'snapshot',
