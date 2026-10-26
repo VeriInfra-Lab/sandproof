@@ -4,6 +4,13 @@ Call arm only after record_running. During a held copy gate no helper may stop
 or audit the Host. Public completion and product GC remain the caller's job.
 An exit code, gate command or missing process alone never means Unloaded/Free.
 """
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
 from contextlib import closing
 import copy
 import hashlib
