@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.UnloadModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.UnloadResolution
+open scoped Classical
+noncomputable section
+
+theorem operation_spec (entry : Entry) : is_unload_entry entry = .ok (unload entry) := by
+  cases operation : entry.intent.request.operation <;> simp [is_unload_entry, unload, operation]
+
+theorem result_spec (resolution : Resolution) :
+    sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution.result resolution =
+      .ok (resultOf resolution) := by
+  cases resolution <;>
+    simp [sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution.result,
+      resultOf, core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref]
+
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.operation_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.result_spec
