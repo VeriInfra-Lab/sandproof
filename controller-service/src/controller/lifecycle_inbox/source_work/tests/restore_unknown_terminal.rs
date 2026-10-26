@@ -43,7 +43,7 @@ fn unknown_prepare_then_terminal(expiry: bool) {
             resource: prepare.identity.resource.clone(), command: prepare.command.command().clone(),
         }),
     });
-    assert_eq!(observed, Ok(true),
+    assert!(matches!(&observed, Ok(true)),
         "after fault clearance the exact original readonly Prepare observation must reconcile while keeping terminal authority: {observed:?}");
     let mut stopped = false;
     let mut completed = false;
