@@ -521,6 +521,24 @@ class UnloadRuntime:
         self.services.start()
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=True)
 
+    def arm_data_drain(self, deadline):
+        """Install one debug selector after the last running audit; VM stays live."""
+        remaining(deadline)
+        path = private_path(self.quota['deployment_control'], directory=True) / 'data-drain-gate'
+        path.mkdir(mode=0o700)
+        role = self.services.processes.bindings['host-0']
+        def unchanged():
+            if role_facts(Path(role['config']).parent, role['config'],
+                          uid=role['uid'], gid=role['gid']) != self.configs['host-0']:
+                raise ValueError('original Host configuration changed while arming drain')
+        unchanged()
+        self.services.processes.stop('host-0')
+        unchanged()
+        self.services.processes.start('host-0', env={'SANDPROOF_TEST_DATA_DRAIN_GATE': str(path)})
+        self.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
+        unchanged()
+        return path
+
     def measurement_identity(self):
         """Reuse validated artifact identities; disclose no configuration secrets."""
         from tools.ci_e2e_artifacts import public_identity

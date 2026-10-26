@@ -688,7 +688,16 @@ def exercise(args):
     from lifecycle_unload_runtime import prepare
     restore_fault=args.scenario in ('restore-activation-loss','restore-candidate-exit')
     continued_exit=args.scenario in ('continued-after-capture-exit','continued-before-admission-exit')
-    if args.scenario!='normal' and not restore_fault and not continued_exit:
+    capture_stages = {
+        'capture-freeze-receipt': 'freeze-receipt',
+        'capture-copy-partial': 'copy-partial',
+        'capture-seal-receipt': 'seal-receipt',
+        'capture-stop-receipt': 'stop-receipt',
+    }
+    capture_stage = capture_stages.get(args.scenario)
+    prepare_fault = args.scenario == 'restore-prepare-receipt'
+    data_drain = args.scenario == 'data-drain'
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -703,6 +712,7 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
+    capture_probe = data_probe = None
     failed = False
     try:
         report['measurement_identity']=runtime.measurement_identity()
@@ -723,6 +733,13 @@ def exercise(args):
         client.operation_evidence_completed()
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
+        if data_drain:
+            from lifecycle_unload_data_drain import InflightDataDrain
+            gate = runtime.arm_data_drain(deadline)
+            data_probe = InflightDataDrain(client, report['running'],
+                runtime.services.native_pools[0], runtime.services.host_configs[0],
+                gate, runtime.lease.identity)
+            report['data_drain_begin'] = data_probe.begin()
         report['phase'] = 'public-unload'
         report['unload'] = client.unload(running,concurrent_duplicate=True)
         report['concurrent_unload']=dict(requests=2,distinct_business_keys=1,
@@ -731,6 +748,10 @@ def exercise(args):
             send_control='two HTTP workers and coordinator rendezvous on one barrier; no sleep')
         # This checks new authorization closes at durable Unload acceptance;
         # it does not claim existing holders or physical workers have exited.
+        if data_probe is not None:
+            report['phase'] = 'original-inflight-drain-held'
+            report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
+            data_probe.release()
         client.assert_data_closed()
         saved = client.wait_unloaded()
         client.assert_owner_isolation()
@@ -787,7 +808,15 @@ def exercise(args):
             if cycle==1 and restore_fault:
                 report['phase']='arm-original-restore-activation-gate'
                 runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
+            if cycle == 1 and prepare_fault:
+                from lifecycle_unload_capture_faults import CaptureHandoffProbe
+                capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
+                    'restore-prepare-receipt')
+                report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
+            if cycle == 1 and prepare_fault:
+                report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted, deadline)
+                report['capture_handoff_recovery'] = capture_probe.finish(deadline)
             if cycle==1 and restore_fault:
                 report['phase']='original-restore-activation-gate-read'
                 gate_receipt=runtime.wait_resume_gate(client.session,accepted,
@@ -832,6 +861,10 @@ def exercise(args):
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
+            if cycle == 1 and prepare_fault:
+                report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
+            if cycle == 1 and data_probe is not None:
+                report['data_drain_resumed'] = data_probe.assert_resumed()
             client.operation_evidence_completed()
             client.assert_owner_isolation()
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
@@ -916,8 +949,28 @@ def exercise(args):
                 control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+                if capture_stage is not None:
+                    from lifecycle_unload_capture_faults import CaptureHandoffProbe
+                    gate = (Path(runtime.quota['deployment_control']) / 'capture-copy-gate'
+                            if capture_stage == 'copy-partial' else None)
+                    capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
+                        capture_stage, gate)
+                    report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
                 report['phase']='second-public-unload'
-                client.unload(resumed)
+                accepted_unload = client.unload(resumed)
+                if capture_stage is not None:
+                    report['phase'] = 'original-capture-handoff-observation'
+                    report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    report['capture_handoff_recovery'] = capture_probe.finish(deadline)
+                    if capture_stage == 'copy-partial':
+                        resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
+                        report['copy_partial_continued'] = client.assert_continued_workload(resumed, lifetime)
+                        report['copy_partial_same_candidate'] = runtime.confirm_running(
+                            client.session, physical_running, deadline)
+                        client.operation_evidence_completed()
+                        client.assert_original_replay(resumed)
+                        report['cycles'][-1]['continued_after_copy_error'] = copy.deepcopy(resumed)
+                        break
                 client.assert_data_closed()
                 saved=client.wait_unloaded()
                 physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
@@ -966,6 +1019,19 @@ def exercise(args):
                 'qualification':stage,
                 'other_cases':'one selected continued death branch; no full fault matrix or formal proof claim',
             }
+        if capture_stage == 'copy-partial':
+            report['acceptance_cases'] = {
+                'E7': 'actual partial Memory copy returned an error; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
+                'E12': 'two owners and actual slot reuse observed before the copy fault',
+                'E14': 'old tokens rejected after the first Resume; original continued authorization preserved',
+                'other_cases': 'one restore cycle and failed second Unload; no second Unloaded or full fault matrix claim',
+            }
+        elif capture_stage or prepare_fault:
+            report['acceptance_cases']['E7'] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if data_probe is not None:
+            report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
+        if capture_probe is not None:
+            report['capture_handoff_gate_cleanup'] = capture_probe.cleanup()
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -1017,6 +1083,10 @@ def exercise(args):
             if not failed:
                 raise
         finally:
+            if capture_probe is not None:
+                capture_probe.close()
+            if data_probe is not None:
+                data_probe.close()
             runtime.close_restore_gate()
             runtime.close_capture_cancel_gate()
             report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
@@ -1030,7 +1100,9 @@ def main():
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
-        'continued-after-capture-exit','continued-before-admission-exit'),default='normal')
+        'continued-after-capture-exit','continued-before-admission-exit',
+        'data-drain','capture-freeze-receipt','capture-copy-partial','capture-seal-receipt',
+        'capture-stop-receipt','restore-prepare-receipt'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
