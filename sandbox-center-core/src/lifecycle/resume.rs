@@ -93,6 +93,26 @@ pub(super) fn renewed_facts_match(
         .is_some_and(|source| facts.matches_resumed_renewal(origin, current, source))
 }
 
+fn applied_renewal_after_origin(
+    history: &[LifecycleOperationRecord],
+    origin: &super::AcceptedLifecycleIntent,
+) -> Option<usize> {
+    let mut index = history.len();
+    while index > 0 {
+        index -= 1;
+        let operation = &history[index];
+        if operation.intent == *origin {
+            break;
+        }
+        if matches!(operation.intent.request.operation, LifecycleOperation::Renew { .. })
+            && operation.running.is_some()
+        {
+            return Some(index);
+        }
+    }
+    None
+}
+
 impl CenterState {
     pub(super) fn accept_lifecycle_resume(
         &self,
@@ -217,11 +237,10 @@ impl CenterState {
                 let lifetime = if matches!(current.intent.request.operation, LifecycleOperation::Unload { .. })
                     && current.unloaded.as_ref().is_some_and(|saved| saved.outcome.continued().is_some())
                 {
-                    session.operations.iter().rev()
-                        .take_while(|operation| operation.intent != *origin)
-                        .find(|operation| matches!(operation.intent.request.operation, LifecycleOperation::Renew { .. })
-                            && operation.running.is_some())
-                        .map_or(&current.intent, |operation| &operation.intent)
+                    match applied_renewal_after_origin(&session.operations, origin) {
+                        Some(index) => &session.operations[index].intent,
+                        None => &current.intent,
+                    }
                 } else { &current.intent };
                 let matches = if matches!(
                     lifetime.request.operation,
