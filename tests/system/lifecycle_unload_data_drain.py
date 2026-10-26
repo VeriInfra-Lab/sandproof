@@ -25,6 +25,38 @@ from urllib.parse import urlencode, urlsplit
 
 PREFIX = bytes(range(256)) * 16
 MAGIC = 'sandproof-data-drain-v1'
+CONTROL_LIMITS = {'selected.arm': 512, 'unload-busy': 8704}
+
+
+def _file_identity(value):
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns,
+            value.st_ctime_ns, value.st_mode, value.st_uid, value.st_nlink)
+
+
+def _control_stamp(directory_fd, name, limit, owner):
+    before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid != owner or before.st_nlink != 1
+            or before.st_mode & 0o077 or not 0 < before.st_size <= limit):
+        raise ValueError('exact original private data-drain control file required')
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                         dir_fd=directory_fd)
+    try:
+        if _file_identity(os.fstat(descriptor)) != _file_identity(before):
+            raise ValueError('data-drain control replaced before protected read')
+        data = bytearray()
+        while len(data) <= limit:
+            part = os.read(descriptor, limit + 1 - len(data))
+            if not part:
+                break
+            data.extend(part)
+        if (len(data) != before.st_size
+                or _file_identity(os.fstat(descriptor)) != _file_identity(before)
+                or _file_identity(os.stat(name, dir_fd=directory_fd, follow_symlinks=False))
+                   != _file_identity(before)):
+            raise ValueError('data-drain control changed during protected read')
+        return dict(identity=_file_identity(before), sha256=hashlib.sha256(data).hexdigest())
+    finally:
+        os.close(descriptor)
 
 
 def _require_busy(raw, arm, saved, accepted):
@@ -135,6 +167,13 @@ class InflightDataDrain:
         self.native, self.host_config = native, host_config
         self.deadline = client.deadline
         self.directory = _private_directory(gate_directory)
+        metadata = self.directory.lstat()
+        self._directory_identity = metadata.st_dev, metadata.st_ino
+        parent = _private_directory(self.directory.parent).lstat()
+        self._parent_identity = parent.st_dev, parent.st_ino
+        self._directory_owner = 0
+        self._control_files = {}
+        self._controls_retired = False
         if len(os.fsencode(self.directory / '2147483647.sock')) >= 108:
             raise ValueError('original data-drain Unix socket path exceeds Linux limit')
         if (not isinstance(run_identity, str) or len(run_identity) != 64
@@ -207,6 +246,7 @@ class InflightDataDrain:
             output.write(self.arm_bytes)
             output.flush()
             os.fsync(output.fileno())
+        self._remember_control('selected.arm', self.arm_bytes)
         self.report.update(guest_prefix_observed=True, original_route=self.route,
                            actual_admission='guest exact prefix + original durable live route')
         return self.report.copy()
@@ -268,6 +308,7 @@ class InflightDataDrain:
                     continue
                 saved = original[0]['work']['anchor']['request']
                 _require_busy(raw, self.arm_bytes, saved, accepted)
+                self._remember_control('unload-busy', raw)
                 break
             if state['phase'] != 'Running':
                 raise AssertionError('unexpected original phase while data drain is held')
@@ -303,6 +344,93 @@ class InflightDataDrain:
         self.report.update(resumed_exact_prefix=True, completed=True)
         return self.report.copy()
 
+    def _open_control_directory(self):
+        _private_directory(self.directory)
+        descriptor = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        value = os.fstat(descriptor)
+        current = self.directory.lstat()
+        if ((value.st_dev, value.st_ino) != self._directory_identity
+                or (current.st_dev, current.st_ino) != self._directory_identity
+                or value.st_uid != self._directory_owner or value.st_mode & 0o077):
+            os.close(descriptor)
+            raise ValueError('original data-drain control directory changed')
+        return descriptor
+
+    def _remember_control(self, name, expected):
+        descriptor = self._open_control_directory()
+        try:
+            stamp = _control_stamp(descriptor, name, CONTROL_LIMITS[name], self._directory_owner)
+        finally:
+            os.close(descriptor)
+        if (stamp['sha256'] != hashlib.sha256(expected).hexdigest()
+                or stamp['identity'][2] != len(expected)
+                or (name in self._control_files and self._control_files[name] != stamp)):
+            raise ValueError('data-drain control differs from the originally observed bytes')
+        self._control_files[name] = stamp
+        self.report['control_file_identities'] = dict(self._control_files)
+
+    def cleanup_after_success(self, runtime):
+        """Retire only our two exact controls AFTER original product GC succeeds."""
+        if (getattr(runtime, 'physical_complete', None) is not True
+                or getattr(runtime, 'gc_complete', None) is not True
+                or self.report.get('completed') is not True):
+            raise ValueError('product physical/GC success and completed data-drain probe required')
+        if self._controls_retired:
+            raise ValueError('original data-drain controls already retired')
+        if set(self._control_files) != set(CONTROL_LIMITS):
+            raise ValueError('both original data-drain controls must be registered before retirement')
+        _private_directory(self.directory.parent)
+        parent_fd = os.open(self.directory.parent,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        parent = os.fstat(parent_fd)
+        if ((parent.st_dev, parent.st_ino) != self._parent_identity
+                or parent.st_uid != self._directory_owner or parent.st_mode & 0o077):
+            os.close(parent_fd)
+            raise ValueError('original data-drain control parent changed')
+        try:
+            descriptor = self._open_control_directory()
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        removed = []
+        try:
+            entry = os.stat(self.directory.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (entry.st_dev, entry.st_ino) != self._directory_identity:
+                raise ValueError('original data-drain directory entry changed')
+            if set(os.listdir(descriptor)) != set(CONTROL_LIMITS):
+                raise ValueError('unregistered data-drain control entries preserved')
+            # Check BOTH complete original identities/hashes before first unlink.
+            for name, limit in CONTROL_LIMITS.items():
+                if _control_stamp(descriptor, name, limit, self._directory_owner) != self._control_files[name]:
+                    raise ValueError('changed data-drain control preserved before retirement')
+            for name, limit in CONTROL_LIMITS.items():
+                if _control_stamp(descriptor, name, limit, self._directory_owner) != self._control_files[name]:
+                    raise ValueError('data-drain control changed before exact unlink')
+                os.unlink(name, dir_fd=descriptor)
+                removed.append(name)
+            os.fsync(descriptor)
+            entry = os.stat(self.directory.name, dir_fd=parent_fd, follow_symlinks=False)
+            if (entry.st_dev, entry.st_ino) != self._directory_identity or os.listdir(descriptor):
+                raise ValueError('original empty data-drain directory changed before retirement')
+            os.rmdir(self.directory.name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            self._controls_retired = True
+            result = dict(state='exact-controls-retired-after-product-gc', files=list(removed),
+                          original_files=dict(self._control_files), directory_fsynced=True,
+                          directory_retired=True, parent_fsynced=True,
+                          directory_identity=self._directory_identity, parent_identity=self._parent_identity)
+            self.report['control_cleanup'] = result
+            return result
+        except BaseException:
+            # If an unlink/fsync itself fails, record its exact partial prefix;
+            # never synthesize success, recreate controls, or touch product data.
+            self.report['control_cleanup'] = dict(state='unknown-preserved-original-evidence',
+                removed_files=list(removed), original_files=dict(self._control_files))
+            raise
+        finally:
+            os.close(descriptor)
+            os.close(parent_fd)
+
     def close(self):
         # A failed observer releases only its own debug gate/socket. Original
         # product Destroy and runtime cleanup remain the outer owner's job.
@@ -326,6 +454,80 @@ if __name__ == '__main__':
     from unittest.mock import patch
 
     class DataDrainOracleTests(unittest.TestCase):
+        def control_probe(self, root):
+            # Same-owner unprivileged filesystem fixture only. Production
+            # construction still requires root-private parent and directory.
+            directory = Path(root) / 'gate'
+            directory.mkdir(mode=0o700)
+            probe = object.__new__(InflightDataDrain)
+            probe.directory = directory
+            meta, parent = directory.stat(), directory.parent.stat()
+            probe._directory_identity = meta.st_dev, meta.st_ino
+            probe._parent_identity = parent.st_dev, parent.st_ino
+            probe._directory_owner = meta.st_uid
+            probe._control_files = {}
+            probe._controls_retired = False
+            probe.report = {'completed': False}
+            probe.peer = probe.connection = probe.pidfd = None
+            for name in CONTROL_LIMITS:
+                content = ('original ' + name).encode()
+                path = directory / name
+                path.write_bytes(content)
+                path.chmod(0o600)
+                probe._remember_control(name, content)
+            return probe
+
+        def test_control_cleanup_requires_product_success_and_close_only_closes(self):
+            from types import SimpleNamespace
+            with tempfile.TemporaryDirectory() as root, patch(__name__ + '._private_directory', Path):
+                probe = self.control_probe(root)
+                probe.close()
+                for physical, gc, complete in ((False, True, True), (True, False, True), (True, True, False)):
+                    probe.report['completed'] = complete
+                    with self.assertRaises(ValueError):
+                        probe.cleanup_after_success(SimpleNamespace(physical_complete=physical, gc_complete=gc))
+                    self.assertEqual(set(os.listdir(probe.directory)), set(CONTROL_LIMITS))
+                probe.report['completed'] = True
+                result = probe.cleanup_after_success(SimpleNamespace(physical_complete=True, gc_complete=True))
+                self.assertTrue(result['directory_retired'] and result['directory_fsynced'] and result['parent_fsynced'])
+                self.assertFalse(probe.directory.exists())
+                self.assertTrue(Path(root).is_dir())
+
+        def test_control_cleanup_refuses_changed_or_replaced_files_before_first_unlink(self):
+            from types import SimpleNamespace
+            for replacement in (False, True):
+                with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as root, \
+                        patch(__name__ + '._private_directory', Path):
+                    probe = self.control_probe(root)
+                    path = probe.directory / 'unload-busy'
+                    content = path.read_bytes()
+                    if replacement:
+                        path.rename(Path(root) / 'retained-original')
+                        path.write_bytes(content)
+                        path.chmod(0o600)
+                    else:
+                        path.write_bytes(b'changed')
+                    probe.report['completed'] = True
+                    with self.assertRaises(ValueError):
+                        probe.cleanup_after_success(SimpleNamespace(physical_complete=True, gc_complete=True))
+                    self.assertEqual(set(os.listdir(probe.directory)), set(CONTROL_LIMITS))
+
+        def test_control_cleanup_refuses_unknown_entries_or_replaced_directory(self):
+            from types import SimpleNamespace
+            for replacement in (False, True):
+                with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as root, \
+                        patch(__name__ + '._private_directory', Path):
+                    probe = self.control_probe(root)
+                    if replacement:
+                        probe.directory.rename(Path(root) / 'retained-directory')
+                        probe.directory.mkdir(mode=0o700)
+                    else:
+                        (probe.directory / 'unknown').write_bytes(b'keep')
+                    probe.report['completed'] = True
+                    with self.assertRaises(ValueError):
+                        probe.cleanup_after_success(SimpleNamespace(physical_complete=True, gc_complete=True))
+                    self.assertTrue(probe.directory.is_dir())
+
         def test_busy_binds_every_original_field_and_relay(self):
             saved = {'accepted_version': 2, 'request': {'binding': {'session': 's', 'key':
                 {'owner': '1', 'window': 1, 'sequence': 2}}, 'operation': {'kind': 'unload'}}}
