@@ -146,6 +146,14 @@ class RetentionTests(unittest.TestCase):
         (fresh / 'generated-disk').unlink()
         with (fresh / 'generated-disk').open('wb') as stream:
             stream.truncate(1024**3)
+            # XFS can store this directory inline and leave a pure hole at
+            # zero allocated bytes. Give the byte-budget eviction a real
+            # positive allocation while keeping the 1 GiB logical sparse file.
+            stream.write(b'x' * 8192)
+            stream.flush()
+            os.fsync(stream.fileno())
+        self.assertEqual((fresh / 'generated-disk').stat().st_size, 1024**3)
+        self.assertGreater(gc.allocated_bytes(fresh), 0)
         plan = self.store.collect(now=self.now, max_count=1)
         self.assertEqual([row['id'] for row in plan], [old.name])
         self.assertLess(gc.allocated_bytes(fresh), 1024**3)
