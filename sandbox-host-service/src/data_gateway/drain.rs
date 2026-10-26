@@ -9,6 +9,17 @@ use std::{
 };
 use tokio::process::{ChildStdin, ChildStdout};
 
+#[cfg(all(target_os = "linux", debug_assertions))]
+mod test_gate;
+
+#[cfg(all(target_os = "linux", debug_assertions))]
+pub(crate) fn test_unload_busy<H: sandproof_controller_service::application::ControllerHost>(
+    intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    app: &sandproof_controller_service::application::ControllerApplication<H>,
+) {
+    let _ = test_gate::record_unload_busy(intent, app);
+}
+
 // Bounded children were permission-gated and durably identified before exec.
 // The std Child remains the exact unreaped same-PID process; pipe conversion
 // changes only transport readiness, never its durable host identity.
@@ -55,6 +66,25 @@ impl RelayExit {
 
     pub async fn stop(&mut self, child: &mut RelayProcess) {
         self.confirmed = child.stop().await;
+    }
+
+    #[cfg(debug_assertions)]
+    pub async fn wait_test_revocation_gate(&self, child: &RelayProcess) {
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("SANDPROOF_TEST_DATA_DRAIN_GATE").is_some()
+            && let Some(pid) = child.0.as_ref().and_then(|child| child.process_id())
+        {
+            // Even cancellation of this await cannot refund the original pin
+            // while the bounded blocking barrier is still running.
+            let lease = self.lease.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                let _lease = lease;
+                test_gate::wait(pid)
+            })
+            .await;
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = child;
     }
 }
 

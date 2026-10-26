@@ -141,7 +141,13 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
                             .map(|_| true)
                         }
                         Candidate::Unload(intent) => {
-                            app.advance_recorded_lifecycle_unload(&intent, &config.node)
+                            let result =
+                                app.advance_recorded_lifecycle_unload(&intent, &config.node);
+                            #[cfg(all(target_os = "linux", debug_assertions))]
+                            if matches!(result, Err(ApplicationError::Busy)) {
+                                crate::data_gateway::test_unload_busy(&intent, app);
+                            }
+                            result
                         }
                         Candidate::Resume(intent) => app.advance_recorded_lifecycle_resume(
                             &intent,

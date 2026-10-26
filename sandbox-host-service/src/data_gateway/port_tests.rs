@@ -17,7 +17,7 @@ use tokio::{
 
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../../controller-service/tests/support/lifecycle_application.rs"]
-mod lifecycle;
+pub(super) mod lifecycle;
 use lifecycle::fixture as local;
 
 #[path = "port_tests/unload.rs"]
