@@ -343,11 +343,16 @@ impl CaptureWorkerJob {
             }
         };
         let captured = self.capture_original(
-            &runtime, &layout, &paused,
+            &runtime,
+            &layout,
+            &paused,
             &ExpectedFullCapture {
                 resource_id: self.full.pause.source_resource.id.as_str(),
-                source: &original, binding: &self.full.pause.binding, compatibility: &expected,
-            }, job_digest,
+                source: &original,
+                binding: &self.full.pause.binding,
+                compatibility: &expected,
+            },
+            job_digest,
         )?;
         self.check_source(&runtime, &original, &allowed)?;
         provider.observe_original(&self.source.node, &self.source.host_bootstrap, inputs)?;
@@ -384,30 +389,53 @@ impl CaptureWorkerJob {
         #[cfg(debug_assertions)]
         if self.copy_gate.is_some() {
             let mut observed = false;
-            return full_snapshot::capture_paused_original_observed(runtime,layout,paused,expected,limits,reads,
-                &mut |artifact,copied,total| {
-                    if !observed && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory && copied < total {
+            return full_snapshot::capture_paused_original_observed(
+                runtime,
+                layout,
+                paused,
+                expected,
+                limits,
+                reads,
+                &mut |artifact, copied, total| {
+                    if !observed
+                        && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory
+                        && copied < total
+                    {
                         observed = true;
-                        self.wait_copy(job_digest,copied,total)?;
+                        self.wait_copy(job_digest, copied, total)?;
                     }
                     Ok(())
-                });
+                },
+            );
         }
-        full_snapshot::capture_paused_original(runtime,layout,paused,expected,limits,reads)
+        full_snapshot::capture_paused_original(runtime, layout, paused, expected, limits, reads)
     }
 
     #[cfg(debug_assertions)]
-    fn wait_copy(&self, job_digest: ContentDigest, copied: u64, total: u64) -> Result<(), sandbox_runtime::RuntimeError> {
+    fn wait_copy(
+        &self,
+        job_digest: ContentDigest,
+        copied: u64,
+        total: u64,
+    ) -> Result<(), sandbox_runtime::RuntimeError> {
         let failure = |message| sandbox_runtime::RuntimeError::Io(std::io::Error::other(message));
-        let Some(path) = &self.copy_gate else { return Ok(()); };
+        let Some(path) = &self.copy_gate else {
+            return Ok(());
+        };
         let gate = crate::adapter::faults::CaptureCopyGate::configured(path.clone(), &self.action)
             .map_err(|_| failure("capture copy selector rejected"))?;
         if let Some(gate) = gate {
             let process = RuntimeProcessIdentity::capture(std::process::id())?;
-            let binding = CaptureWorkerBinding::new(SourceProcessIdentity {
-                pid: std::process::id(), start_time_ticks: process.start_time_ticks, boot_id: process.boot_id,
-            }, job_digest).map_err(|_| failure("capture copy original worker rejected"))?;
-            gate.wait(&self.action,&self.full,&binding,copied,total)
+            let binding = CaptureWorkerBinding::new(
+                SourceProcessIdentity {
+                    pid: std::process::id(),
+                    start_time_ticks: process.start_time_ticks,
+                    boot_id: process.boot_id,
+                },
+                job_digest,
+            )
+            .map_err(|_| failure("capture copy original worker rejected"))?;
+            gate.wait(&self.action, &self.full, &binding, copied, total)
                 .map_err(|_| failure("capture copy interrupted after partial write"))?;
         }
         Ok(())
