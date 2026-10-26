@@ -134,7 +134,7 @@ pub(in crate::controller) fn released_execution_source(
             && record.work.anchor.native.current_vm == Some(binding.vm)
             && record.work.anchor.local.owner == binding.owner
             && record.capture.as_ref().is_some_and(|capture|
-                capture.completed.is_some() && capture.end.is_some())
+                capture.completed.is_some()) && record.capture_has_end()
         { original = true; }
     }
     Ok(original)

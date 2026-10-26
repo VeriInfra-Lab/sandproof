@@ -194,27 +194,54 @@ fn released_terminal_checkpoint_rejects_a_marker_with_the_wrong_release_sequence
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
     let payload: Vec<u8> = journal.journal.connection.query_row(
         "SELECT payload FROM controller_checkpoint WHERE id=1", [], |r| r.get(0)).unwrap();
-    let mut value: serde_json::Value = serde_json::from_slice(&payload).unwrap();
-    fn change(value: &mut serde_json::Value) -> usize {
-        match value {
-            serde_json::Value::Object(fields) => {
-                let mut changed = 0;
-                if let Some(sequence) = fields.get_mut("release_input_sequence") {
-                    *sequence = serde_json::json!(sequence.as_u64().unwrap() + 1);
-                    changed += 1;
-                }
-                changed + fields.values_mut().map(change).sum::<usize>()
-            }
-            serde_json::Value::Array(values) => values.iter_mut().map(change).sum(),
-            _ => 0,
-        }
-    }
-    assert_eq!(change(&mut value), 1);
-    let bytes = serde_json::to_vec(&value).unwrap();
+    // Preserve the original typed field order: failure must come from the
+    // wrong historical witness, not JSON canonicalisation or its checksum.
+    let text = String::from_utf8(payload).unwrap();
+    let needle = format!("\"release_input_sequence\":{}", basis.release_input_sequence);
+    assert_eq!(text.matches(&needle).count(), 1);
+    let bytes = text.replacen(&needle, &format!("\"release_input_sequence\":{}", basis.release_input_sequence + 1), 1).into_bytes();
     journal.journal.connection.execute("UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
         rusqlite::params![&bytes, Sha256::digest(&bytes).as_slice()]).unwrap();
     assert!(matches!(crate::controller::checkpoint::load_world(&journal.journal.connection),
         Err(JournalError::CorruptStore)));
+}
+
+#[test]
+fn released_terminal_tail_rejects_the_wrong_confirm_release_sequence() {
+    let (_directory, mut journal, _source, _destroy, basis) = prepared();
+    journal.close_released_lifecycle_execution(basis.key.sandbox, &mut NeverCrash).unwrap();
+    let (sequence, input): (i64, Vec<u8>) = journal.journal.connection.query_row(
+        "SELECT sequence,input_json FROM controller_inputs ORDER BY sequence DESC LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    let text = String::from_utf8(input).unwrap();
+    assert!(text.contains("CloseReleasedExecution"));
+    let needle = format!("\"release_input_sequence\":{}", basis.release_input_sequence);
+    assert_eq!(text.matches(&needle).count(), 1);
+    let changed = text.replacen(&needle, &format!("\"release_input_sequence\":{}", basis.release_input_sequence + 1), 1);
+    journal.journal.connection.execute("UPDATE controller_inputs SET input_json=?1 WHERE sequence=?2",
+        rusqlite::params![changed.into_bytes(), sequence]).unwrap();
+    assert!(matches!(crate::controller::checkpoint::load_world(&journal.journal.connection), Err(JournalError::CorruptStore)));
+}
+
+#[test]
+fn released_terminal_missing_witness_and_releasing_position_do_not_close() {
+    let (_directory, mut journal, _source, _destroy, basis) = prepared();
+    journal.journal.connection.execute("DELETE FROM controller_release_witnesses", []).unwrap();
+    assert!(!matches!(journal.close_released_lifecycle_execution(basis.key.sandbox, &mut NeverCrash), Ok(true)));
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let (mut journal, _) = ready(&path);
+    let record = observed_for_full(&mut journal);
+    let accepted = journal.admit_lifecycle_full_capture::<Evidence>(
+        &record.work, &v3::context(), &full_request(&record), 10, &mut NeverCrash).unwrap();
+    finish_full_component(&mut journal, &accepted);
+    let sandbox = record.source_sandbox();
+    let context = journal.host_slot_context(sandbox).unwrap().unwrap();
+    assert!(!journal.close_released_lifecycle_execution(sandbox, &mut NeverCrash).unwrap());
+    journal.begin_host_slot_release(context, &mut NeverCrash).unwrap();
+    let before = journal.world().unwrap();
+    assert!(matches!(journal.record_lifecycle_intent(&destroy_request(), &v3::context(), &mut NeverCrash), Err(JournalError::UnresolvedAction)));
+    assert!(!journal.close_released_lifecycle_execution(sandbox, &mut NeverCrash).unwrap());
+    assert_eq!(journal.world().unwrap(), before);
 }
 
 #[test]
