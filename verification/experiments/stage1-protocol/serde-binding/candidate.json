@@ -1,0 +1,293 @@
+{
+  "schema": 1,
+  "status": "source-reviewed A6/B4 use-site candidate; coordinator adoption and ning/shared acceptance pending",
+  "base_commit": "73e0cfb5eb079ab75bf81b27ed23da2f509efd02",
+  "production_base": "a9c9967889c4cf298e4378c7106948018835fc64",
+  "a6_instance_adopted": false,
+  "new_library_refinement_theorems": 0,
+  "inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "controller-service/src/template_registry/evidence.rs": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+    "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
+    "verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in": "388c2fbfa292c4305da646b0cb1e18a6dd8328b55b0743dbc0e78bbf50cad2a8",
+    "verification/experiments/stage1-protocol/envelope-budget/EnvelopeBudget.lean.in": "db488bba4334faceb41c75ca58e7ab89646b419836e6e8c6155952f2b291531d",
+    "verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriterContract.lean.in": "27abfdfea6284e8bc66abc83fc2952e53ca1c25c646befb0ddfc0cad285c7f3b",
+    "verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriter.lean.in": "f4523d5340c4fc7037bb1acfc0a35fe8b0f096fed6ba6592df3e86874ee2cc85"
+  },
+  "library_inputs": {
+    "features": {
+      "production": {
+        "itoa": {
+          "version": "1.0.15",
+          "features": []
+        },
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "raw_value",
+            "std"
+          ]
+        }
+      },
+      "vec_calls": {
+        "itoa": {
+          "version": "1.0.15",
+          "features": []
+        },
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "std"
+          ]
+        }
+      },
+      "writer_calls": {
+        "itoa": {
+          "version": "1.0.15",
+          "features": []
+        },
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "raw_value",
+            "std"
+          ]
+        }
+      },
+      "native_full_fields": {
+        "itoa": {
+          "version": "1.0.15",
+          "features": []
+        },
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "std"
+          ]
+        }
+      }
+    },
+    "sources": {
+      "itoa-1.0.15/src/lib.rs": "ef9f1a8665a678cf5b77bcaa628d00538d620de0c84fd2a8b92323a314a95636",
+      "itoa-1.0.15/src/udiv128.rs": "d28c1872c37ee2185931babcb20a221b8706a5aa8abc4963419763888023ff17",
+      "serde-1.0.228/src/private/ser.rs": "bea364a6199b57c2aa5a96a6bb0530176850dbeaaee908a6307fe610c873c8e3",
+      "serde_core-1.0.228/src/ser/mod.rs": "ec097d92c8545356961e977a4c9650361cadd1d3a243d805ae7b0e0e589ae803",
+      "serde_core-1.0.228/src/ser/impls.rs": "5ee7efc439345e8665da0bd79bc06c02a0506e5fd0f3a4cf11af0c7197eaa643",
+      "serde_core-1.0.228/src/crate_root.rs": "157ca402e23c32f11a4f1797c81afb5e9f08df96768012cf3e3199153aafb2dd",
+      "serde_derive-1.0.228/src/ser.rs": "d43be68a3c1d5d4617c30baebe06aceeaf012097ffa343102328ff94349e35e9",
+      "serde_json-1.0.142/src/ser.rs": "59dd65e09972907a1ee6a054544fbf80abf380ca866da01a50ca343f88b527b3",
+      "serde_json-1.0.142/src/error.rs": "a9b5de0a82f95608b51b8e8875c7c49f94fb60b9f976fc6277aec0213926dec9",
+      "serde_json-1.0.142/src/lib.rs": "afaae0fbc466612354af660292dfb6dbaff990691339399184bdf06dd18c5b09"
+    },
+    "standard_library": {
+      "1.97.0": {
+        "std/src/io/mod.rs": "2632ed7f256a08b4e87587aa909bb90380db1e146df033fddde3308eeee5090e",
+        "std/src/io/impls.rs": "fb3b6c64edfc33c4cd25f6527271f20e8710ec849fe152c3c4c74ceaee3e9fa2",
+        "core/src/convert/mod.rs": "45a0dd7cb34dcd592018f5b463493bf83254aaf3a2c909152060be8a4ea9b873",
+        "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d"
+      },
+      "nightly-2026-02-07": {
+        "std/src/io/mod.rs": "6dc2214a87c8f1b1b90c99f1a447ce76e7dfcf0c762fc46b9432343525491fdf",
+        "std/src/io/impls.rs": "402f0d2795902d8f1b491d98de0a4221e5897b4be97904fac1306f0fd95b29f0",
+        "core/src/convert/mod.rs": "603b64e1beb380e4e138782358b07443b3416b1906c38647d2177480a8688d27",
+        "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d"
+      }
+    }
+  },
+  "ordinary_struct_names": [
+    "NodeIdentity",
+    "Resources",
+    "CreateBinding",
+    "OperationKey",
+    "OperationBinding",
+    "RetentionBinding",
+    "LifecycleRequest",
+    "CenterIdentity",
+    "AcceptedLifecycleIntent",
+    "RecordedLifecycleIntent",
+    "LifecycleOperation",
+    "ExpectedSession"
+  ],
+  "contracts": {
+    "pre": "Exact fixed standard derives and ordinary finite protocol4 values; valid borrow, no custom Serialize/Drop; normal allocation for completion only.",
+    "input": "Same full AcceptedLifecycleIntent/RecordedLifecycleIntent, original serializer, original limit and Writer.",
+    "events": "Actual declaration-order field calls; both ExpectedSession cases and all five LifecycleOperation branches; same container; first field error returns original error through identity From; fixed compact formatting writes to the original Writer.",
+    "post": "Unchanged EnvelopeSchema full fields, NormalRenderer structural bound and EnvelopeWriter StandardCalls are the exact target conditions for adoption; own leaf conversions and policy remain their already extracted theorems.",
+    "frame": "Input borrowed; writer/private output prefix and formatter state belong to this call. to_vec and to_writer use distinct actual objects with the same pure fixed schema; no assertion about arbitrary stateful Serialize.",
+    "fault": "No rollback of emitted prefix. Non-Interrupted Writer error exits write_all and becomes Error::io; fixed Writer returns full input length or ErrorKind::Other. Panic/unwind, OOM/abort, arbitrary custom sources and async cancellation are not covered by normal completion.",
+    "budget": "Same EnvelopeBudget outputBound; fixed punctuation/numeric/UTF8 compact renderer is the A6 provider, own complete-field bounds and original guard remain the proved caller obligations."
+  },
+  "symbols": [
+    {
+      "provider": "serde_derive 1.0.228",
+      "symbols": [
+        "Serialize standard struct and internally/adjacently tagged enum derivations",
+        "transparent newtypes",
+        "into via original Clone and Into"
+      ],
+      "evidence": "All 26 original bodies; exact full LLBC plus field/projection/dictionary/error-path admission. No replacement encoder."
+    },
+    {
+      "provider": "serde_core 1.0.228",
+      "symbols": [
+        "Serialize for str/String/bool/u8/u16/u64/i64",
+        "Serialize for [u8;32] and Vec<u8>",
+        "Serializer::collect_seq",
+        "SerializeMap::serialize_entry"
+      ],
+      "evidence": "Fixed ordinary value iteration and first error propagation, excluding custom collections/elements."
+    },
+    {
+      "provider": "serde 1.0.228",
+      "symbols": [
+        "private::ser::AdjacentlyTaggedEnumVariant::serialize"
+      ],
+      "evidence": "ExpectedSession state helper carries exact enum name/index/tag to serialize_unit_variant."
+    },
+    {
+      "provider": "serde_json 1.0.142",
+      "symbols": [
+        "to_vec",
+        "to_writer",
+        "Serializer::new/with_formatter",
+        "Serializer serialize primitives/seq/tuple/map/struct/unit_variant",
+        "Compound SerializeStruct/SerializeMap/SerializeSeq/SerializeTuple",
+        "MapKeySerializer::serialize_str",
+        "CompactFormatter and Formatter write primitives/delimiters",
+        "format_escaped_str/format_escaped_str_contents",
+        "Error::io",
+        "tri!"
+      ],
+      "evidence": "Actual Writer/production have raw_value enabled; ordinary struct names cannot select reserved raw-value token. Vec-call feature sets separately bound. No arbitrary_precision."
+    },
+    {
+      "provider": "fixed Rust 1.97.0 and nightly-2026-02-07",
+      "symbols": [
+        "std::io::Write for &mut W",
+        "std::io::Write::write_all",
+        "Result Try::branch/FromResidual",
+        "From<T> for T"
+      ],
+      "evidence": "Same Writer handle, empty buffer no write; full write or non-Interrupted original error. No generic partial-write or retry claim."
+    },
+    {
+      "provider": "itoa 1.0.15",
+      "symbols": [
+        "Buffer::format for bounded integers"
+      ],
+      "evidence": "Fixed decimal output used by Formatter; no float or custom Display path."
+    }
+  ],
+  "remaining": [
+    "coordinator adoption of exact library/source binding",
+    "concrete parser SliceContract source binding including buffered enum fields and container/document end",
+    "actual route/B4 candidate adoption",
+    "ning ordinary/native and shared complete acceptance",
+    "durable inbox, GLOBAL-to-LOCAL, restart/commit unknown/retirement and full V3 composition"
+  ]
+}
