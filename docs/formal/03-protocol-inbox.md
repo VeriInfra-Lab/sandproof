@@ -105,3 +105,9 @@ Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的�
 选中的 Session/Entry。旧条目是否 current 仅由版本相等决定，local_operation 来自
 条目自身。这不表示执行/释放许可或资源存在。record 返回索引的有效性及同一视图
 的 record→state 组合另列；持久外层、公共采用与 ning/共享验收仍未完成。
+
+[返回位置与查询组合候选](../../verification/experiments/stage1-protocol/inbox-position/README.md)
+进一步在同一生成视图中连接 record/state：从原完整 RecordPost 的三条成功路径推导
+实际返回索引有效、该位置保存完整 intent，再得到七字段查询关系；所有原拒绝/状态
+关系仍保留。它沿用隔离 record 重构的采用/等价缺口，不覆盖事务外层在两次调用之间
+进行的 Destroy 本地效果及 operation 映射，也不说明已持久接受或资源存在。
