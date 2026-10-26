@@ -121,7 +121,7 @@ fn resumed_prepare_origin(
         && plan.restore_from == Some(source)
         && *actual == source
         && record.durable_snapshot == Some(source)
-        && world.snapshot_record(source.snapshot).is_some_and(|snapshot| {
+        && world.snapshots.get(&source.snapshot).is_some_and(|snapshot| {
             snapshot.owner == record.owner
                 && snapshot.sandbox == original.sandbox
                 && snapshot.workspace == record.workspace
