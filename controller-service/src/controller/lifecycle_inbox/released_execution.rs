@@ -1,6 +1,6 @@
 //! Only the original writer can discharge an already released execution's
 //! terminal fence. No Node receipt, remote flag or current Free cell supplies
-//! the historical ConfirmRelease witness required here.
+//! the historical `ConfirmRelease` witness required here.
 use super::{ControllerJournal, codec};
 use crate::controller::{checkpoint, storage, transaction::WorldTransaction};
 use crate::{CrashInjector, CrashPoint, JournalError};

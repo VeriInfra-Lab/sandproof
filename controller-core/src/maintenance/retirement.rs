@@ -1331,8 +1331,8 @@ pub fn validate_terminal_cleanup(
     }
     check_resources(world, sandbox, record, &ids)?;
     check_effects(world, sandbox, record)?;
-    if !crate::maintenance::released_execution::terminal_closed(world, sandbox) {
-        if world.worker_fences.get(&sandbox)
+    if !crate::maintenance::released_execution::terminal_closed(world, sandbox)
+        && (world.worker_fences.get(&sandbox)
             != Some(&WorkerFence {
                 epoch: record.epoch,
                 terminal: true,
@@ -1344,10 +1344,9 @@ pub fn validate_terminal_cleanup(
                     epoch: record.epoch,
                     terminal: true,
                 },
-            )
-        {
-            return Err(RetirementReject::NotTerminal);
-        }
+            ))
+    {
+        return Err(RetirementReject::NotTerminal);
     }
 
     Ok(())

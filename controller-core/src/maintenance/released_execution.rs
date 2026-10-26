@@ -1,5 +1,5 @@
 //! Terminal closure for a completed Unload whose physical position was already
-//! released. The journal supplies the ORIGINAL ConfirmRelease witness under its
+//! released. The journal supplies the original `ConfirmRelease` witness under its
 //! writer transaction; a presently Free position is never such a witness.
 use super::{
     MaintenanceReject,
