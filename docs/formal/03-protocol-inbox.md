@@ -137,3 +137,11 @@ Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的�
 其调用者合同显式保留借用 Vec 迭代入口的最小 V0 接线义务，私有候选只委托固定
 Vec.deref/Slice.iter 模型。库采用、原 current_execution_origin 来源选择、完整
 Inbox.validate、外层事务/重启与真实资源关系仍另行交对应提供者闭合。
+
+[卸载决议校验候选](../../verification/experiments/stage1-protocol/inbox-unload-resolution/README.md)
+从已解码 Entry 开始连接 validate_entry：决议缺席时直接接受；存在时按操作类别、
+任意编码计算及长度、快照/捕获元数据、可选结果时间关系依次检查。BeforeAdmission
+不检查快照所有者或寿命内容，AfterCapture 的 operation 存在也不表示实际捕获已完成。
+编码错误和提前返回保持原顺序；同一完整合同用于字段遗漏错误版。候选仍有生产采用、
+原函数一般等价及标准 Serde 实例连接义务，不能据此认领原 Inbox.validate、持久收件、
+新的物理 Ready 观察或完整 JSON/网络链已证。
