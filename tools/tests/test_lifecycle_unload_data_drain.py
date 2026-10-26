@@ -15,7 +15,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/system'))
@@ -183,6 +183,53 @@ class DataDrainRelayPauseTests(unittest.TestCase):
             if child.poll() is None:
                 child.kill()
             child.wait(timeout=5)
+
+    def test_begin_stops_the_original_relay_before_publishing_its_arm(self):
+        with self.owned_relay() as (child, probe), tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            directory.chmod(0o700)
+            metadata = directory.stat()
+            probe.directory = directory
+            probe._directory_identity = metadata.st_dev, metadata.st_ino
+            probe._directory_owner = metadata.st_uid
+            probe._control_files = {}
+            probe.native = probe.running = {}
+            probe.run_identity = 'a' * 64
+            probe.path = '/tmp/controlled-upload'
+            route = dict(process=probe.source.copy())
+            marker = directory / 'original-route.json'
+            marker.write_text(json.dumps(route))
+            observer, idle_peer = socket.socketpair()
+            connection = Mock(sock=observer)
+            def send_prefix(value):
+                child.stdin.write(value)
+                child.stdin.flush()
+            connection.send.side_effect = send_prefix
+            def read_prefix(*_args, **_kwargs):
+                self.assertTrue(drain.select.select([child.stdout], [], [], 5)[0])
+                return child.stdout.read(len(drain.PREFIX))
+            probe.client = SimpleNamespace(base_url='http://127.0.0.1:9999',
+                data_token='controlled-unused-header',
+                sdk=lambda: SimpleNamespace(files=SimpleNamespace(read=read_prefix)))
+            try:
+                os.close(probe.pidfd)
+                probe.pidfd = None
+                with patch.object(drain.http.client, 'HTTPConnection', return_value=connection), \
+                        patch.object(drain, '_private_directory', Path), \
+                        patch.object(drain, '_live_routes', side_effect=[{}, {
+                            drain._route_key(route['process']): (marker, route)}]):
+                    result = probe.begin()
+                fields = Path(f'/proc/{child.pid}/stat').read_text().rsplit(')', 1)[1].split()
+                self.assertEqual(fields[0], 'T',
+                    'same original relay must be stopped before publishing its arm')
+                self.assertFalse(runtime.pidfd_exited(probe.pidfd))
+                self.assertTrue(result['guest_prefix_observed'])
+                self.assertEqual((directory / 'selected.arm').read_bytes(), probe.arm_bytes)
+                self.assertIn('selected.arm', probe._control_files)
+            finally:
+                probe.close()
+                observer.close()
+                idle_peer.close()
 
     def test_pipe_eof_before_stop_barrier_can_legally_exit_the_same_child(self):
         with self.owned_relay() as (child, probe):
