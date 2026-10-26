@@ -12,6 +12,9 @@ use sandproof_protocol::{
     },
 };
 
+#[path = "unload/debug_busy.rs"]
+mod debug_busy;
+
 fn capture_dispatches(path: &std::path::Path) -> Vec<WorkAction<core::EffectId>> {
     let connection =
         rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)

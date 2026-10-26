@@ -152,13 +152,12 @@ fn wait_selected(pid: u32, directory: &Path, owner: u32, wait: Duration) -> io::
     result
 }
 
-pub(super) fn record_unload_busy<H: sandproof_controller_service::application::ControllerHost>(
+pub(in crate::data_gateway) fn record_unload_busy<H: sandproof_controller_service::application::ControllerHost>(
     intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
     app: &sandproof_controller_service::application::ControllerApplication<H>,
+    directory: &Path,
+    owner: u32,
 ) -> io::Result<()> {
-    let Some(directory) = std::env::var_os("SANDPROOF_TEST_DATA_DRAIN_GATE") else {
-        return Ok(());
-    };
     let state = app
         .lifecycle_work_state_for_recorded(intent, &intent.request.binding.node)
         .map_err(|_| invalid())?;
@@ -176,7 +175,7 @@ pub(super) fn record_unload_busy<H: sandproof_controller_service::application::C
     {
         return Ok(());
     }
-    record_busy_at(Path::new(&directory), intent, 0)
+    record_busy_at(directory, intent, owner)
 }
 
 fn record_busy_at(

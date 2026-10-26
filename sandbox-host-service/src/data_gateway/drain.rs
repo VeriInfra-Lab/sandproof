@@ -11,13 +11,17 @@ use tokio::process::{ChildStdin, ChildStdout};
 
 #[cfg(all(target_os = "linux", debug_assertions))]
 mod test_gate;
+#[cfg(all(target_os = "linux", debug_assertions, test))]
+pub(super) use test_gate::record_unload_busy;
 
 #[cfg(all(target_os = "linux", debug_assertions))]
 pub(crate) fn test_unload_busy<H: sandproof_controller_service::application::ControllerHost>(
     intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
     app: &sandproof_controller_service::application::ControllerApplication<H>,
 ) {
-    let _ = test_gate::record_unload_busy(intent, app);
+    if let Some(directory) = std::env::var_os("SANDPROOF_TEST_DATA_DRAIN_GATE") {
+        let _ = test_gate::record_unload_busy(intent, app, std::path::Path::new(&directory), 0);
+    }
 }
 
 // Bounded children were permission-gated and durably identified before exec.
