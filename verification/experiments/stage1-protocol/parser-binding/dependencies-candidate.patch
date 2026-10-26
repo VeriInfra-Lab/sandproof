@@ -1,0 +1,18 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -844,3 +844,15 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++## A6/B4 协议 4 缓冲解码错误组合候选
++
++[逐符号来源与未覆盖项](../../verification/experiments/stage1-protocol/parser-binding/README.md)
++区分 LifecycleOperation 全内容缓冲、ExpectedSession tag/content 两种读取路径、ContentDeserializer
++短路收尾和真实 JSON 容器的主动收尾。既有 SliceFieldReader 支持缓冲 D，before/after 是原字节游标
++的观察；关联 Error、实际调用与游标来源仍由固定 A6/B4 提供。八项条件组合定理保持原自有错误、
++最近外层位置、收尾效果及完整正常 payload；不提供整套 parser 的机器证明或生产 SliceContract 实例。
++
++真实原类型七项回归及允许未知操作字段的同合同 Rust 错误版，由 ning 给出正式原生回执；源/特性/
++完整 LLBC 准入及局部 Lean 检查分别记录。固定16份库源码、生产/native feature一致性及原包装
++raw_value差异显式登记。主控接纳前本条保持候选；认证、持久接受、资源事实和全 V3 仍由各提供者证明。
