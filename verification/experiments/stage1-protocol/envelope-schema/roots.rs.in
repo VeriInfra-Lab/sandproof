@@ -1,0 +1,19 @@
+//! Direct calls to the current production envelope's actual Serde dictionaries.
+use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+pub fn accepted_decode<'de, D: Deserializer<'de>>(
+    input: D,
+) -> Result<AcceptedLifecycleIntent, D::Error> {
+    AcceptedLifecycleIntent::deserialize(input)
+}
+
+pub fn accepted_encode<S: Serializer>(
+    value: &AcceptedLifecycleIntent,
+    output: S,
+) -> Result<S::Ok, S::Error> {
+    value.serialize(output)
+}
+
+#[cfg(test)]
+mod tests;
