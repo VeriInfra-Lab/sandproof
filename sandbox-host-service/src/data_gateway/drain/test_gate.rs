@@ -241,6 +241,13 @@ mod tests {
     use super::*;
     use std::os::unix::{fs::PermissionsExt, net::UnixStream};
 
+    fn private_directory() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().unwrap();
+        fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(directory.path().metadata().unwrap().mode() & 0o7777, 0o700);
+        directory
+    }
+
     fn arm(directory: &Path, start_override: Option<&str>) -> Vec<u8> {
         let pid = std::process::id();
         let process_text = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
@@ -267,7 +274,7 @@ mod tests {
 
     #[test]
     fn exact_selected_process_waits_for_release_without_claiming_exit() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = private_directory();
         let owner = directory.path().metadata().unwrap().uid();
         let bytes = arm(directory.path(), None);
         let path = directory.path().to_owned();
@@ -302,7 +309,7 @@ mod tests {
 
     #[test]
     fn timeout_stale_process_and_foreign_owner_never_claim_exit() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = private_directory();
         let owner = directory.path().metadata().unwrap().uid();
         arm(directory.path(), None);
         let result = wait_selected(
@@ -333,7 +340,7 @@ mod tests {
 
     #[test]
     fn busy_progress_is_once_and_binds_the_complete_original_request_and_relay() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = private_directory();
         let owner = directory.path().metadata().unwrap().uid();
         let bytes = arm(directory.path(), None);
         let mut intent = crate::data_gateway::port_tests::lifecycle::request();
