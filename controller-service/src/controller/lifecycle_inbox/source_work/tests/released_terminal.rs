@@ -2,6 +2,7 @@
 //! Node. Capture/exit inputs are controlled; this does not run a VMM. The Node
 //! companion checks its actual private action gate, including position reuse.
 use super::*;
+use sandbox_controller_core as core;
 use core::maintenance::slots::{HostSlotPhase, HostSlotRecord, SlotInput, reduce_slot};
 
 fn destroy_request() -> AcceptedLifecycleIntent {
