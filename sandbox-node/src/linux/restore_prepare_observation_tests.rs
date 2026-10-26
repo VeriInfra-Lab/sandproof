@@ -6,7 +6,7 @@ use std::{cell::Cell, os::unix::fs::PermissionsExt};
 
 fn candidate() -> LoadedSnapshotObservation {
     LoadedSnapshotObservation {
-        process: sandbox_runtime::RuntimeProcessIdentity { pid: 17, start_time_ticks: 23, boot_id: "original-boot".into() },
+        process: sandbox_runtime::RuntimeProcessIdentity { pid: 17, start_time_ticks: 23, boot_id: "00000000-0000-0000-0000-000000000001".into() },
         state: LoadedSnapshotState::Paused,
     }
 }
@@ -61,7 +61,7 @@ fn changed_current_fence_or_candidate_never_returns_original_prepared() {
             if calls.get()==2 {match part {
                 0 => observed.process.pid+=1,
                 1 => observed.process.start_time_ticks+=1,
-                2 => observed.process.boot_id="replacement-boot".into(),
+                2 => observed.process.boot_id="00000000-0000-0000-0000-000000000002".into(),
                 3 => observed.state=LoadedSnapshotState::Running,
                 _ => write_fence(&path,super::super::Fence {epoch:5,terminal:true}),
             }}
