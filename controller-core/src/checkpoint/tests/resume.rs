@@ -582,12 +582,29 @@ fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
         .unwrap();
     let compensated_plan = |world: &World| {
         let record = world.sandbox_record(SID).unwrap();
-        let next = crate::transition::begin_compensation(world,SID,record,operation,FailureKind::DeadlineExceeded);
-        next.operation_plan(crate::transition::operation_key(SID,operation.id)).unwrap().clone()
+        let next = crate::transition::begin_compensation(
+            world,
+            SID,
+            record,
+            operation,
+            FailureKind::DeadlineExceeded,
+        );
+        next.operation_plan(crate::transition::operation_key(SID, operation.id))
+            .unwrap()
+            .clone()
     };
     let record = world.sandbox_record(SID).unwrap();
-    let compensated = crate::transition::begin_compensation(&world,SID,record,operation,FailureKind::DeadlineExceeded);
-    assert_eq!(restore(capture(&compensated,LIMITS).unwrap(),LIMITS).unwrap(),compensated);
+    let compensated = crate::transition::begin_compensation(
+        &world,
+        SID,
+        record,
+        operation,
+        FailureKind::DeadlineExceeded,
+    );
+    assert_eq!(
+        restore(capture(&compensated, LIMITS).unwrap(), LIMITS).unwrap(),
+        compensated
+    );
     let clean = compensated_plan(&world);
     assert!(!clean.stop_vms.contains(&old_vm));
     assert!(!clean.close_slots.contains(&old_slot));
@@ -601,8 +618,7 @@ fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
         let mut vm = *pending.vm_record(old_vm).unwrap();
         vm.status = status;
         pending.vms.put(old_vm, vm);
-        let plan =
-            compensated_plan(&pending);
+        let plan = compensated_plan(&pending);
         assert!(plan.stop_vms.contains(&old_vm));
         assert!(plan.close_slots.contains(&old_slot));
     }
@@ -610,21 +626,17 @@ fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
     let mut slot = active.slot_record(old_slot).unwrap().clone();
     slot.active = true;
     active.net_slots.put(old_slot, slot);
-    assert!(
-        compensated_plan(&active)
-            .close_slots
-            .contains(&old_slot)
-    );
+    assert!(compensated_plan(&active).close_slots.contains(&old_slot));
     let mut unknown = world.clone();
     let mut indexed = index;
     indexed.vms.push(VmId(999));
     indexed.slots.push(NetSlotId(999));
     unknown.resource_indexes.put(SID, indexed);
-    let key = crate::transition::operation_key(SID,operation.id);
+    let key = crate::transition::operation_key(SID, operation.id);
     let mut pending_plan = unknown.operation_plan(key).unwrap().clone();
     pending_plan.stop_vms.push(VmId(999));
     pending_plan.close_slots.push(NetSlotId(999));
-    unknown.operation_plans.put(key,pending_plan);
+    unknown.operation_plans.put(key, pending_plan);
     let plan = compensated_plan(&unknown);
     assert!(plan.stop_vms.contains(&VmId(999)));
     assert!(plan.close_slots.contains(&NetSlotId(999)));
@@ -632,11 +644,7 @@ fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
     let mut vm = *current.vm_record(old_vm).unwrap();
     vm.generation = 2;
     current.vms.put(old_vm, vm);
-    assert!(
-        compensated_plan(&current)
-            .stop_vms
-            .contains(&old_vm)
-    );
+    assert!(compensated_plan(&current).stop_vms.contains(&old_vm));
 }
 
 #[test]
