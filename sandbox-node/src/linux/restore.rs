@@ -83,12 +83,20 @@ fn observe_confirmed_restore_exit(
 }
 
 fn readonly_restore_prepare(command: &core::Command, observe_only: bool) -> bool {
-    observe_only && matches!(command, core::Command::PrepareVm { source: Some(_), .. })
+    observe_only
+        && matches!(
+            command,
+            core::Command::PrepareVm {
+                source: Some(_),
+                ..
+            }
+        )
 }
 
 fn readonly_prepare_fence_matches(fence: super::Fence, epoch: core::Epoch) -> bool {
-    epoch != 0 && (super::decisions::fence_matches(fence, epoch, false)
-        || fence.terminal && fence.epoch >= epoch)
+    epoch != 0
+        && (super::decisions::fence_matches(fence, epoch, false)
+            || fence.terminal && fence.epoch >= epoch)
 }
 
 // This consumes only observations; it cannot load, activate, rewrite a fence,
@@ -106,7 +114,9 @@ fn observe_prepared_under_fence(
     original.process.validate_fields()?;
     let confirmed = require_loaded_candidate(observe()?, true)?;
     if confirmed != original || fence()? != original_fence {
-        return Err("original restore preparation or current fence changed during observation".into());
+        return Err(
+            "original restore preparation or current fence changed during observation".into(),
+        );
     }
     Ok(original)
 }
@@ -117,7 +127,14 @@ fn scope(
     namespace: &str,
     workspace_vm: Option<core::VmId>,
 ) -> NodeResult<(core::SandboxId, core::Epoch, core::Generation, core::VmId)> {
-    scope_target(action, work.committed().seal_action(), work.operation(), work.generation(), namespace, workspace_vm)
+    scope_target(
+        action,
+        work.committed().seal_action(),
+        work.operation(),
+        work.generation(),
+        namespace,
+        workspace_vm,
+    )
 }
 
 // Same source/target checks as the opaque original work; exposed only inside
