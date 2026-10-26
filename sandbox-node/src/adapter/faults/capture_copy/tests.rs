@@ -104,7 +104,7 @@ fn instruction(path: &Path, mode: &str) {
         "wrong-question" => value["observation_sha256"] = serde_json::json!("c".repeat(64)),
         "wrong-work" => {
             value["full_work_binding"] =
-                serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap()
+                serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap();
         }
         _ => {}
     }
