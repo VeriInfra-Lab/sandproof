@@ -53,7 +53,7 @@ fn unknown_prepare_then_terminal(expiry: bool) {
                 let diagnostic = format!("{input:?}");
                 if let Err(error) = journal.apply(*input, &mut NeverCrash) {
                     let world = journal.world().unwrap();
-                    panic!("expiry={expiry} input={diagnostic} error={error:?} sandboxes={:?} plans={:?} vms={:?} slots={:?}", world.sandboxes, world.operation_plans, world.vms, world.net_slots);
+                    panic!("expiry={expiry} input={diagnostic} error={error:?} world={world:?}");
                 }
             }
             WorkflowStep::Claim => {
