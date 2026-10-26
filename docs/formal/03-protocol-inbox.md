@@ -111,3 +111,12 @@ Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的�
 实际返回索引有效、该位置保存完整 intent，再得到七字段查询关系；所有原拒绝/状态
 关系仍保留。它沿用隔离 record 重构的采用/等价缺口，不覆盖事务外层在两次调用之间
 进行的 Destroy 本地效果及 operation 映射，也不说明已持久接受或资源存在。
+
+[原执行谱系校验候选](../../verification/experiments/stage1-protocol/inbox-lineage/README.md)
+独立连接未重构的 Session::validate_execution_lineage：任意长度历史逐步检查来源代、
+跨代不回退的 capture frontier、相邻 Unload/Resume 关系与最终存储 incarnation。
+收到 Resume 只有在本条目的 local_operation 非空时才更新计算代；该字段本身不提供
+持久附加或 VM 运行事实。内部 checked_next 与允许编号空洞的公共请求校验分别陈述。
+其调用者合同显式保留借用 Vec 迭代入口的最小 V0 接线义务，私有候选只委托固定
+Vec.deref/Slice.iter 模型。库采用、原 current_execution_origin 来源选择、完整
+Inbox.validate、外层事务/重启与真实资源关系仍另行交对应提供者闭合。
