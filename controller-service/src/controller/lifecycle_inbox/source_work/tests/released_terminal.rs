@@ -18,7 +18,7 @@ fn released_unload_destroy_does_not_send_a_fence_to_a_free_position() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("db");
     let (mut journal, source) = unloaded_resume_source(&path);
-    let sandbox = source.work.source_sandbox();
+    let sandbox = source.source_sandbox();
     let context = journal.host_slot_context(sandbox).unwrap().unwrap();
     let position = journal
         .world()
