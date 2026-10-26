@@ -81,8 +81,17 @@ fn unknown_prepare_then_terminal(expiry: bool) {
         super::super::retirement::material_charge(&retained[0]).unwrap(),
         held_charge
     );
+    finish_terminal(&mut journal, sandbox, &prepare, expiry);
+}
+
+fn finish_terminal(
+    journal: &mut ControllerJournal,
+    sandbox: core::SandboxId,
+    prepare: &sandproof_protocol::WorkAction<core::EffectId>,
+    expiry: bool,
+) {
     let observed = journal.reconcile_observed(
-        &prepare,
+        prepare,
         &WorkReceipt {
             identity: prepare.identity.clone(),
             outcome: WorkOutcome::ObservedSuccess(FullEvidence {
@@ -146,7 +155,7 @@ fn unknown_prepare_then_terminal(expiry: bool) {
         "original terminal workflow must finish after its exact original Prepare is physically confirmed"
     );
     assert!(
-        !journal.uncertain_actions().unwrap().contains(&prepare),
+        !journal.uncertain_actions().unwrap().contains(prepare),
         "original unknown loader must be retired by exact terminal cleanup, not forgotten"
     );
 }
