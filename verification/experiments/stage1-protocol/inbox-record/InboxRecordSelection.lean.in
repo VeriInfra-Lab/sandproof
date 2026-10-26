@@ -1,0 +1,142 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRecord
+open InboxLookup
+
+/-- First matching position, with the caller's original traversal offset. -/
+def firstIndex (predicate : T → Bool) : List T → Nat → Option Nat
+  | [], _ => none
+  | value :: tail, start =>
+      if predicate value then some start else firstIndex predicate tail (start + 1)
+
+/-- Reusable loop argument; each actual generated body is discharged below. -/
+theorem first_index_loop (values : Slice T) (predicate : T → Bool)
+    (body : Iter T → Result (ControlFlow (Iter T) (Option Usize)))
+    (at_end : ∀ index, values.val.length ≤ index.val →
+      body (cursor values index) = .ok (.done none))
+    (at_next : ∀ index next, ∀ bound : index.val < values.val.length,
+      next.val = index.val + 1 → body (cursor values index) =
+        .ok (if predicate values.val[index.val] then .done (some index) else .cont (cursor values next)))
+    (start : Usize) (bound : start.val ≤ values.val.length) :
+    Aeneas.Std.loop body (cursor values start)
+      ⦃ result => result.map UScalar.val = firstIndex predicate (values.val.drop start.val) start.val ⦄ := by
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun it => values.val.length - it.count.val)
+    (fun it => ∃ index : Usize, it = cursor values index ∧ index.val ≤ values.val.length ∧
+      firstIndex predicate (values.val.drop index.val) index.val =
+        firstIndex predicate (values.val.drop start.val) start.val)
+    (fun (result : Option Usize) => result.map UScalar.val = firstIndex predicate (values.val.drop start.val) start.val)
+  · rintro it ⟨index, rfl, upper, same⟩
+    by_cases inside : index.val < values.val.length
+    · obtain ⟨next, added, post⟩ := (WP.spec_equiv_exists _ _).mp
+        (Usize.add_bv_spec (x := index) (y := 1#usize) (by have := values.property; scalar_tac))
+      have nextval : next.val = index.val + 1 := by scalar_tac
+      rw [at_next index next inside nextval]
+      by_cases hit : predicate values.val[index.val] = true
+      · simp only [hit, ↓reduceIte]
+        apply WP.spec.ret
+        rw [List.drop_eq_getElem_cons inside] at same
+        simpa [firstIndex, hit] using same
+      · simp only [hit]
+        apply WP.spec.ret
+        constructor
+        · refine ⟨next, rfl, by omega, ?_⟩
+          rw [List.drop_eq_getElem_cons inside] at same
+          simpa [firstIndex, hit, nextval] using same
+        · dsimp [cursor]; omega
+    · rw [at_end index (Nat.le_of_not_gt inside)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt inside)] at same
+      simpa [firstIndex] using same
+  · exact ⟨start, rfl, bound, rfl⟩
+
+theorem session_index_spec (inbox : Inbox) (id : SessionId) :
+    inbox.session_index id ⦃ result => result.map UScalar.val =
+      firstIndex (fun session => decide (session.id = id)) inbox.sessions.val 0 ⦄ := by
+  have loop_spec := first_index_loop (alloc.vec.Vec.deref inbox.sessions)
+    (fun session => decide (session.id = id)) (Inbox.session_index_loop.body id)
+    (by intro index bound; unfold Inbox.session_index_loop.body; rw [next_none _ _ bound]; simp)
+    (by
+      intro index next bound added
+      unfold Inbox.session_index_loop.body
+      rw [next_some _ _ _ bound added]
+      simp [SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+        sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+        alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+        SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+      split <;> simp_all)
+    0#usize (by simp)
+  simpa [Inbox.session_index, Inbox.session_index_loop, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, cursor, alloc.vec.Vec.deref] using loop_spec
+
+theorem retention_lane_index_spec (inbox : Inbox) (slot : U16) :
+    inbox.retention_lane_index slot ⦃ result => result.map UScalar.val =
+      firstIndex (fun lane => decide (lane.slot = slot)) inbox.lanes.val 0 ⦄ := by
+  have loop_spec := first_index_loop (alloc.vec.Vec.deref inbox.lanes)
+    (fun lane => decide (lane.slot = slot)) (Inbox.retention_lane_index_loop.body slot)
+    (by intro index bound; unfold Inbox.retention_lane_index_loop.body; rw [next_none _ _ bound]; simp)
+    (by
+      intro index next bound added
+      unfold Inbox.retention_lane_index_loop.body
+      rw [next_some _ _ _ bound added]
+      simp
+      split <;> simp_all)
+    0#usize (by simp)
+  simpa [Inbox.retention_lane_index, Inbox.retention_lane_index_loop, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, cursor, alloc.vec.Vec.deref] using loop_spec
+
+theorem firstIndex_bounds (predicate : T → Bool) (values : List T) (start index : Nat)
+    (found : firstIndex predicate values start = some index) :
+    start ≤ index ∧ index < start + values.length := by
+  induction values generalizing start with
+  | nil => simp [firstIndex] at found
+  | cons value tail ih =>
+    by_cases hit : predicate value = true
+    · simp [firstIndex, hit] at found
+      subst index
+      simp
+    · have later : firstIndex predicate tail (start + 1) = some index := by
+        simpa [firstIndex, hit] using found
+      have limits := ih (start + 1) later
+      simp only [List.length_cons]
+      omega
+
+theorem firstIndex_none_iff (predicate : T → Bool) (values : List T) (start : Nat) :
+    firstIndex predicate values start = none ↔ ∀ value ∈ values, predicate value = false := by
+  induction values generalizing start with
+  | nil => simp [firstIndex]
+  | cons value tail ih =>
+    cases hit : predicate value <;> simp [firstIndex, hit, ih]
+
+theorem last_entry_spec (session : Session) :
+    session.last_entry = .ok session.entries.val.getLast? := by
+  unfold Session.last_entry
+  simp only [alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    bind_tc_ok, decide_eq_true_eq]
+  by_cases empty : session.entries.val.length = 0
+  · have nil : session.entries.val = [] := by simpa using empty
+    simp [nil]
+  · simp only [empty, ↓reduceIte]
+    obtain ⟨index, subtracted, post⟩ := WP.spec_imp_exists
+      (Usize.sub_spec (x := alloc.vec.Vec.len session.entries) (y := 1#usize) (by simp; omega))
+    have indexval : index.val = session.entries.val.length - 1 := by simpa using post.1
+    rw [subtracted]
+    have inside : index.val < session.entries.val.length := by omega
+    obtain ⟨value, indexed, same⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.index_usize_spec session.entries index inside)
+    simp [indexed, same, List.getLast?_eq_getElem?, ← indexval, List.getElem?_eq_getElem inside]
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.first_index_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.session_index_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.retention_lane_index_spec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.firstIndex_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.firstIndex_none_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.last_entry_spec

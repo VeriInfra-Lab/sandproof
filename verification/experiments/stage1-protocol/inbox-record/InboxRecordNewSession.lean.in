@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordFresh
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSessionModel
+import SandboxModel.Lifecycle.Protocol.InboxRecordValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+theorem record_new_session_contract : FullNewSessionContract Inbox.record := by
+  intro inbox intent new_session
+  rw [record_new_session_path inbox intent new_session]
+  exact record_fresh_contract inbox intent
+
+theorem normal_create_records_complete :
+    Values.emptyInbox.record Values.createIntent
+      ⦃ out => FreshPost Values.emptyInbox Values.createIntent (.insert false (some 1#u64)) out ⦄ := by
+  simpa only [Values.normal_decision] using
+    record_new_session_contract Values.emptyInbox Values.createIntent Values.both_new_sessions.1
+
+theorem normal_destroy_records_complete :
+    Values.emptyInbox.record Values.destroyIntent
+      ⦃ out => FreshPost Values.emptyInbox Values.destroyIntent (.insert true none) out ⦄ := by
+  simpa only [Values.destroy_decision] using
+    record_new_session_contract Values.emptyInbox Values.destroyIntent Values.destroy_new_session
+
+theorem foreign_window_rejected_unchanged :
+    Values.emptyInbox.record Values.foreignWindowIntent = .ok (.Err .Conflict, Values.emptyInbox) := by
+  have checked := record_new_session_contract Values.emptyInbox Values.foreignWindowIntent Values.both_new_sessions.2
+  rw [Values.foreign_window_decision] at checked
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists checked
+  change out = (.Err .Conflict, Values.emptyInbox) at post
+  simpa [post] using returned
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.record_new_session_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.normal_create_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.normal_destroy_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.foreign_window_rejected_unchanged

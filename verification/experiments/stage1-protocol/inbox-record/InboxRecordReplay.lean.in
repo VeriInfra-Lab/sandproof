@@ -1,0 +1,46 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxRecord
+open InboxLookup
+
+/-- The first complete retained replay returns its original position and whole inbox unchanged. -/
+theorem record_retained_replay (inbox : Inbox) (intent : AcceptedLifecycleIntent) (session entry : Nat)
+    (found : inboxSpec intent inbox.sessions.val 0 = .found session entry) :
+    ∃ si ei : Usize, si.val = session ∧ ei.val = entry ∧
+      inbox.record intent = .ok (.Ok (si, ei), inbox) := by
+  have existing := find_outcome inbox intent
+  rw [found] at existing
+  obtain ⟨si, ei, hs, he, returned⟩ := existing
+  refine ⟨si, ei, hs, he, ?_⟩
+  simp [Inbox.record, returned, core.result.Result.Insts.CoreOpsTry.branch]
+
+/-- A first-key mismatch leaves the whole inbox unchanged; later gates cannot hide it. -/
+theorem record_retained_conflict (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (conflict : inboxSpec intent inbox.sessions.val 0 = .conflict) :
+    inbox.record intent = .ok (.Err .Conflict, inbox) := by
+  have existing := find_outcome inbox intent
+  rw [conflict] at existing
+  simp [Inbox.record, existing, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- Concrete valid envelopes exercise the actual record caller, not only lookup. -/
+theorem normal_retained_record :
+    ∃ si ei : Usize, si.val = 0 ∧ ei.val = 0 ∧
+      (Witness.inbox 1#u64).record (EnvelopeValues.intent 1#u64) =
+        .ok (.Ok (si, ei), Witness.inbox 1#u64) :=
+  record_retained_replay _ _ _ _ Witness.normal_spec
+
+theorem changed_capture_conflicts :
+    (Witness.inbox 2#u64).record (EnvelopeValues.intent 1#u64) =
+      .ok (.Err .Conflict, Witness.inbox 2#u64) :=
+  record_retained_conflict _ _ Witness.conflicting_spec
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.record_retained_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.record_retained_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.normal_retained_record
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.changed_capture_conflicts

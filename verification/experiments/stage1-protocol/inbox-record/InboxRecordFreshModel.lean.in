@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordPredicates
+import SandboxModel.Lifecycle.Protocol.InboxRecordCloning
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+abbrev RecordReturn := core.result.Result (Usize × Usize) sandproof_controller_service.JournalError × Inbox
+
+def pendingEntry (intent : AcceptedLifecycleIntent) : Entry :=
+  ⟨intent, none, none, none, none⟩
+
+def freshEntries (intent : AcceptedLifecycleIntent) : alloc.vec.Vec Entry :=
+  alloc.vec.Vec.from [pendingEntry intent] (by simp only [List.length_cons, List.length_nil]; scalar_tac)
+
+def freshSession (intent : AcceptedLifecycleIntent) (terminal : Bool) (incarnation : Option IncarnationId) : Session := {
+  id := intent.request.binding.session,
+  retention := intent.retention,
+  owner := intent.request.binding.key.owner,
+  current_version := intent.accepted_version,
+  terminal := terminal,
+  refusal := none,
+  incarnation := incarnation,
+  «local» := none,
+  entries := freshEntries intent,
+  confirmed_terminal := none,
+  confirmed_renewal := none,
+  compacted_sdk_through := none,
+  native_retirement := none }
+
+inductive FreshDecision where
+  | reject (error : sandproof_controller_service.JournalError)
+  | insert (terminal : Bool) (incarnation : Option IncarnationId)
+
+/-- Existing inbox guards, in their original first-error order. Authentication
+and accepted-envelope validity are intentionally not additional guards here. -/
+noncomputable def freshDecision (inbox : Inbox) (intent : AcceptedLifecycleIntent) : FreshDecision :=
+  if inbox.lanes.val.any (retiredMatch intent) then .reject .Conflict
+  else if intent.retention.slot = 0#u16 then .reject .Conflict
+  else if inbox.config.max_sessions < intent.retention.slot then .reject .Conflict
+  else match firstIndex (fun lane => decide (lane.slot = intent.retention.slot)) inbox.lanes.val 0 with
+    | none => .reject .Conflict
+    | some index => match inbox.lanes.val[index]? with
+      | none => .reject .Conflict
+      | some lane =>
+        if lane.current_window ≠ some intent.retention.window then .reject .Conflict
+        else if inbox.config.max_sessions.val ≤ inbox.sessions.val.length then .reject .MaintenanceCapacity
+        else if inbox.sessions.val.any (fun session => decide (session.retention.slot = intent.retention.slot)) then
+          .reject .MaintenanceCapacity
+        else match intent.request.operation with
+          | .Create create target =>
+              if create.options.val.length ≤ inbox.config.max_options_bytes.val then .insert false (some target)
+              else .reject .UnsupportedInput
+          | .Destroy => .insert true none
+          | _ => .reject .UnsupportedInput
+
+/-- Whole-inbox frame plus exact appended session; metadata and native resources
+are not changed by pure recording. No durable commit is asserted. -/
+def FreshPost (inbox : Inbox) (intent : AcceptedLifecycleIntent) (decision : FreshDecision) (out : RecordReturn) : Prop :=
+  match decision with
+  | .reject error => out = (.Err error, inbox)
+  | .insert terminal incarnation =>
+      ∃ index : Usize, index.val = inbox.sessions.val.length ∧
+        out.1 = .Ok (index, 0#usize) ∧
+        out.2 = {inbox with sessions := out.2.sessions} ∧
+        out.2.sessions.val = inbox.sessions.val ++ [freshSession intent terminal incarnation]
+
+def FullFreshContract (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn) : Prop :=
+  ∀ inbox intent, run inbox intent ⦃ out => FreshPost inbox intent (freshDecision inbox intent) out ⦄
+
+end SandboxModel.Stage1Protocol.InboxRecord
