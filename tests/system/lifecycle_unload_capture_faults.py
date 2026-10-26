@@ -572,7 +572,9 @@ class CaptureHandoffProbe:
         if self._prepare_candidate_state(deadline) != 'T' or self.host.poll() != 86:
             raise ValueError('original exited manager and stopped loaded candidate required')
         self._configuration()
-        process = self.runtime.services.processes.start('host-0')
+        process = self.runtime.services.processes.start('host-0',
+            env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': 'cleanup_vm'})
+        self.terminal_host = process
         if process is self.host or process.pid == self.host.pid:
             raise ValueError('fresh original Host required to receive public Destroy')
         self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
@@ -606,44 +608,59 @@ class CaptureHandoffProbe:
                     public_completion=False, capacity_released=False)
 
     def assert_terminal_before_gc(self, deadline):
-        """Require original Prepared/Stop receipts and actual candidate exit.
+        """Read once at the original CleanupVm-success/pre-SQL-receipt cut.
 
-        Missing/retired rows do not become success. Caller still observes the
-        original public Cleaned, physical Free and material/accounting GC.
+        Unacknowledged CleanupVm prevents logical reclamation and Retire. The
+        actual exit86 freezes this Host's original Prepared/Stop rows before
+        any deletion. No polling race, missing-row inference or new Rust gate.
         """
         if self.stage != 'restore-prepare-destroy' or not self.recovered or not self.continue_sent:
             raise ValueError('original terminal barrier and explicit pidfd continuation required')
         deadline = min(deadline, self.deadline)
-        while True:
-            snapshot = self._read_terminal(deadline)
-            prepared = self._terminal_inventory(snapshot)
-            prepared_result = self._success_observation(prepared, 'Prepared')
-            if prepared_result is not None and prepared_result != dict(
-                    pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks'],
-                    boot_id=self.candidate['boot_id']):
-                raise ValueError('original Prepared process differs from exact loaded candidate')
-            stops = [row for row in snapshot['terminal_actions'] if 'StopVm' in row[0]['command']['logical']['command']]
-            if len(stops) > 1:
-                raise ValueError('second original Stop attempt needs separate evidence')
-            stop_result = None
-            if stops:
-                action = stops[0][0]
-                if (action['command']['logical']['command']['StopVm'] != dict(
-                        sandbox=snapshot['local']['sandbox'], epoch=self.terminal_barrier['native']['epoch'],
-                        generation=self.action['identity']['generation'],
-                        vm=self.action['command']['logical']['command']['PrepareVm']['vm'])
-                        or action['identity']['resource'] != self.action['identity']['resource']):
-                    raise ValueError('Stop did not name the exact original loaded candidate')
-                stop_result = self._success_observation(stops[0], 'Stopped')
-                if stop_result is not None and stop_result != dict(
-                        pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks']):
-                    raise ValueError('original Stop process differs from exact loaded candidate')
-            if (prepared_result is not None and stop_result is not None
-                    and pidfd_exited(self.pidfd) and not original_process(self.candidate)):
-                return dict(original_prepare_observed=True, original_stop_observed=True,
-                            original_candidate_exited=True, no_second_prepare_or_activate=True,
-                            public_completion=False, capacity_released=False)
-            time.sleep(min(.05, remaining(deadline)))
+        if (self.terminal_host is not self.runtime.services.processes.children['host-0']
+                or self.terminal_host.wait(timeout=remaining(deadline)) != 86):
+            raise ValueError('exact original cleanup receipt-loss manager must exit86')
+        self._configuration()
+        snapshot = self._read_terminal(deadline)
+        prepared = self._terminal_inventory(snapshot)
+        prepared_result = self._success_observation(prepared, 'Prepared')
+        if prepared_result != dict(pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks'],
+                                   boot_id=self.candidate['boot_id']):
+            raise ValueError('original Prepared process differs at fixed cleanup boundary')
+        stops = [row for row in snapshot['terminal_actions'] if 'StopVm' in row[0]['command']['logical']['command']]
+        cleanups = [row for row in snapshot['terminal_actions'] if 'CleanupVm' in row[0]['command']['logical']['command']]
+        if len(stops) != 1 or len(cleanups) != 1:
+            raise ValueError('one original Stop and one unacknowledged Cleanup boundary required')
+        vm = self.action['command']['logical']['command']['PrepareVm']['vm']
+        expected = dict(sandbox=snapshot['local']['sandbox'], generation=self.action['identity']['generation'], vm=vm)
+        stop = stops[0][0]; cleanup = cleanups[0][0]
+        epoch = self.terminal_barrier['native']['epoch']
+        if (stop['command']['logical']['command']['StopVm'] != dict(expected, epoch=epoch)
+                or stop['identity']['epoch'] != epoch
+                or stop['identity']['resource'] != self.action['identity']['resource']
+                or cleanup['command']['logical']['command']['CleanupVm'] != expected
+                or cleanup['identity']['epoch'] != epoch
+                or cleanup['identity']['resource'] != self.action['identity']['resource']
+                or cleanups[0][1:] != ('dispatched', None)):
+            raise ValueError('fixed cleanup cut does not name the exact original terminal VM')
+        stopped = self._success_observation(stops[0], 'Stopped')
+        if stopped != dict(pid=self.candidate['pid'], start_ticks=self.candidate['start_time_ticks']):
+            raise ValueError('original Stop process differs at fixed cleanup boundary')
+        if not pidfd_exited(self.pidfd) or original_process(self.candidate):
+            raise ValueError('exact loaded candidate has not actually exited')
+        # The cut's pending Cleanup SQL receipt forbids the original Retire path.
+        # After stable evidence, reuse ordinary recovery rather than inventing ack.
+        self.terminal_cut = copy.deepcopy(snapshot)
+        self._configuration()
+        process = self.runtime.services.processes.start('host-0')
+        if process is self.terminal_host or process.pid == self.terminal_host.pid:
+            raise ValueError('fresh original manager required after cleanup receipt-loss cut')
+        self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
+        self._configuration()
+        return dict(original_prepare_observed=True, original_stop_observed=True,
+                    original_candidate_exited=True, no_second_prepare_or_activate=True,
+                    cleanup_success_pre_sql_exit86=True, cleanup_sql_ack_pending_at_cut=True,
+                    original_recovery_resumed=True, public_completion=False, capacity_released=False)
 
     def finish(self, deadline):
         if self.stage == 'restore-prepare-destroy':
@@ -1001,6 +1018,8 @@ def self_test():
                     order.append('peer-query'); return {'unit_peer_returned':True}
                 result = p.recover_after_destroy(terminal, p.deadline, observe_peer=peer)
                 self.assertEqual(order, ['terminal-fence', 'peer-query'])
+                p.runtime.services.processes.start.assert_called_once_with('host-0',
+                    env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': 'cleanup_vm'})
                 self.assertTrue(result['original_pidfd_continue_sent'])
                 self.assertFalse(result['public_completion'])
                 while p._prepare_candidate_state(p.deadline) == 'T':
@@ -1021,6 +1040,60 @@ def self_test():
                 self.assertEqual(failure['process_state'], 'T')
                 self.assertFalse(failure['pidfd_exited'])
                 self.assertFalse(failure['capacity_released'])
+
+        def cleanup_cut_fixture(self):
+            p, _, _ = self.terminal_fixture()
+            p.recovered = p.continue_sent = True
+            p.deadline = time.monotonic()+5
+            p.candidate = dict(resource_id='vm-0123456789abcdef-10', pid=123,
+                               start_time_ticks=456, boot_id='boot')
+            p.pidfd = 99999
+            p.terminal_barrier = {'native': {'epoch':10}}
+            p.terminal_host = Mock(pid=10101); p.terminal_host.wait.return_value = 86
+            p.runtime.services.processes = NS(children={'host-0':p.terminal_host},
+                start=Mock(return_value=NS(pid=10102)))
+            p.runtime.services.wait_ready = Mock(); p._configuration = Mock()
+            stop = copy.deepcopy(p.action)
+            stop['identity'].update(epoch=10, operation='op-0123456789abcdef-4-4')
+            stop['command']['logical']['command'] = {'StopVm':dict(sandbox=4, epoch=10, generation=3, vm=10)}
+            cleanup = copy.deepcopy(stop)
+            cleanup['command']['logical']['command'] = {'CleanupVm':dict(sandbox=4, generation=3, vm=10)}
+            prepared = self.receipt(p.action, 'Prepared', dict(pid=123, start_ticks=456, boot_id='boot'))
+            stopped = self.receipt(stop, 'Stopped', dict(pid=123, start_ticks=456))
+            snapshot = dict(local={'sandbox':4}, resume_actions=[(p.action, 'receipted', prepared)],
+                terminal_actions=[(stop, 'receipted', stopped), (cleanup, 'dispatched', None)])
+            def read(_deadline):
+                self.assertTrue(p.terminal_host.wait.called, 'read must follow actual cut manager exit')
+                return snapshot
+            p._read_terminal = Mock(side_effect=read)
+            return p, snapshot
+
+        def test_cleanup_cut_freezes_original_receipts_before_one_read_then_original_recovery(self):
+            p, _ = self.cleanup_cut_fixture()
+            with patch.dict(globals(), pidfd_exited=lambda _fd:True, original_process=lambda _source:False):
+                result = p.assert_terminal_before_gc(p.deadline)
+            self.assertEqual(p._read_terminal.call_count, 1)
+            self.assertTrue(result['original_prepare_observed'])
+            self.assertTrue(result['original_stop_observed'])
+            self.assertTrue(result['cleanup_sql_ack_pending_at_cut'])
+            self.assertFalse(result['capacity_released'])
+            p.runtime.services.processes.start.assert_called_once_with('host-0')
+
+        def test_cleanup_cut_rejects_retired_rows_acknowledged_cleanup_or_wrong_candidate(self):
+            for mutate in (
+                    lambda snapshot: snapshot.update(resume_actions=[]),
+                    lambda snapshot: snapshot['terminal_actions'].pop(),
+                    lambda snapshot: snapshot['terminal_actions'][1][0]['command']['logical']['command']['CleanupVm'].update(vm=11),
+                    lambda snapshot: snapshot['terminal_actions'][0][2]['outcome']['details']['result']['Stopped'].update(pid=124),
+                    lambda snapshot: snapshot['terminal_actions'].__setitem__(1,
+                        (snapshot['terminal_actions'][1][0], 'receipted', {}))):
+                p, snapshot = self.cleanup_cut_fixture(); mutate(snapshot)
+                with patch.dict(globals(), pidfd_exited=lambda _fd:True, original_process=lambda _source:False):
+                    with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
+                p.runtime.services.processes.start.assert_not_called()
+            p, _ = self.cleanup_cut_fixture(); p.terminal_host.wait.return_value = 0
+            with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
+            p._read_terminal.assert_not_called()
 
     result = unittest.TextTestRunner(verbosity=2).run(
         unittest.defaultTestLoader.loadTestsFromTestCase(IdentityTests))
