@@ -211,11 +211,23 @@ impl CenterState {
             }
             CurrentResumeReadiness::Observed { facts } => {
                 let source = resume_source(session).ok_or(DecisionError::Invalid)?;
+                // A continued Unload preserves the latest applied lifetime,
+                // including a renewal of this same resumed execution. The
+                // captured source remains immutable; it is not a new deadline.
+                let lifetime = if matches!(current.intent.request.operation, LifecycleOperation::Unload { .. })
+                    && current.unloaded.as_ref().is_some_and(|saved| saved.outcome.continued().is_some())
+                {
+                    session.operations.iter().rev()
+                        .take_while(|operation| operation.intent != *origin)
+                        .find(|operation| matches!(operation.intent.request.operation, LifecycleOperation::Renew { .. })
+                            && operation.running.is_some())
+                        .map_or(&current.intent, |operation| &operation.intent)
+                } else { &current.intent };
                 let matches = if matches!(
-                    current.intent.request.operation,
+                    lifetime.request.operation,
                     LifecycleOperation::Renew { .. }
                 ) {
-                    facts.matches_resumed_renewal(origin, &current.intent, source)
+                    facts.matches_resumed_renewal(origin, lifetime, source)
                 } else {
                     facts.matches_resumed(origin, source)
                 };
