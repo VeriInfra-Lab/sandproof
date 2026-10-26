@@ -537,23 +537,23 @@ pub fn begin_compensation(
         next.operations.put(key, ledger);
     }
 
-    if operation.kind == OperationKind::Resume {
-        if let Some(stored) = next.operation_plans.get(&key) {
-            let mut plan = stored.clone();
-            let index = resume_cleanup_index(
-                world,
-                sandbox,
-                plan.generation,
-                crate::ResourceIndex {
-                    vms: plan.stop_vms.clone(),
-                    slots: plan.close_slots.clone(),
-                    snapshots: Vec::new(),
-                },
-            );
-            plan.stop_vms = index.vms;
-            plan.close_slots = index.slots;
-            next.operation_plans.put(key, plan);
-        }
+    if operation.kind == OperationKind::Resume
+        && let Some(stored) = next.operation_plans.get(&key)
+    {
+        let mut plan = stored.clone();
+        let index = resume_cleanup_index(
+            world,
+            sandbox,
+            plan.generation,
+            crate::ResourceIndex {
+                vms: plan.stop_vms.clone(),
+                slots: plan.close_slots.clone(),
+                snapshots: Vec::new(),
+            },
+        );
+        plan.stop_vms = index.vms;
+        plan.close_slots = index.slots;
+        next.operation_plans.put(key, plan);
     }
 
     enqueue(
