@@ -19,6 +19,7 @@ mod restore_exit;
 mod restore_unknown_terminal;
 mod slot_reuse;
 mod terminal_drain;
+mod released_terminal;
 type Evidence = <TestHost as WorkEvidence>::Evidence;
 
 fn config() -> SourceObservationConfig {

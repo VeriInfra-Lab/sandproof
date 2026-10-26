@@ -1925,6 +1925,31 @@ mod tests {
     }
 
     #[test]
+    fn released_unload_terminal_cannot_reopen_or_touch_a_reused_node_position() {
+        let original = context(10, None);
+        let mut row = HostPosition::bind(None, &original, true).unwrap();
+        for input in [
+            SlotInput::BeginRelease { position: original.position, binding: original.binding },
+            SlotInput::ConfirmRelease { position: original.position, binding: original.binding },
+        ] {
+            row.phase = reduce_slot(Some(row.record()), input).unwrap().phase;
+        }
+        let mut terminal = action(core::Command::InstallFence {
+            sandbox: original.binding.sandbox, epoch: 2, terminal: true,
+        });
+        terminal.identity.sandbox = format!("sb-test-{}", original.binding.sandbox.0).try_into().unwrap();
+        terminal.identity.epoch = 2;
+        terminal.identity.resource = super::super::decisions::command_resource(terminal.command.command(), "test").unwrap();
+        assert_eq!(row.phase, HostSlotPhase::Free);
+        assert!(check_occupied_action(std::slice::from_ref(&row), &terminal).is_err());
+        let successor = HostPosition::bind(Some(&row), &context(11, Some(10)), true).unwrap();
+        let unchanged = successor.clone();
+        assert!(check_occupied_action(std::slice::from_ref(&successor), &terminal).is_err());
+        assert_eq!(successor, unchanged);
+        successor.require_occupied(successor.context.binding).unwrap();
+    }
+
+    #[test]
     fn stale_prepare_cleanup_and_reclaim_commands_fail_the_shared_gate() {
         let context = context(10, None);
         let row = HostPosition::bind(None, &context, true).unwrap();
