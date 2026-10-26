@@ -93,6 +93,28 @@ pub(super) fn renewed_facts_match(
         .is_some_and(|source| facts.matches_resumed_renewal(origin, current, source))
 }
 
+fn applied_renewal_after_origin(
+    history: &[LifecycleOperationRecord],
+    origin: &super::AcceptedLifecycleIntent,
+) -> Option<usize> {
+    let mut index = history.len();
+    while index > 0 {
+        index -= 1;
+        let operation = &history[index];
+        if operation.intent == *origin {
+            break;
+        }
+        if matches!(
+            operation.intent.request.operation,
+            LifecycleOperation::Renew { .. }
+        ) && operation.running.is_some()
+        {
+            return Some(index);
+        }
+    }
+    None
+}
+
 impl CenterState {
     pub(super) fn accept_lifecycle_resume(
         &self,
@@ -211,14 +233,30 @@ impl CenterState {
             }
             CurrentResumeReadiness::Observed { facts } => {
                 let source = resume_source(session).ok_or(DecisionError::Invalid)?;
-                let matches = if matches!(
+                // A continued Unload preserves the latest applied lifetime,
+                // including a renewal of this same resumed execution. The
+                // captured source remains immutable; it is not a new deadline.
+                let lifetime = if matches!(
                     current.intent.request.operation,
-                    LifecycleOperation::Renew { .. }
-                ) {
-                    facts.matches_resumed_renewal(origin, &current.intent, source)
+                    LifecycleOperation::Unload { .. }
+                ) && current
+                    .unloaded
+                    .as_ref()
+                    .is_some_and(|saved| saved.outcome.continued().is_some())
+                {
+                    match applied_renewal_after_origin(&session.operations, origin) {
+                        Some(index) => &session.operations[index].intent,
+                        None => &current.intent,
+                    }
                 } else {
-                    facts.matches_resumed(origin, source)
+                    &current.intent
                 };
+                let matches =
+                    if matches!(lifetime.request.operation, LifecycleOperation::Renew { .. }) {
+                        facts.matches_resumed_renewal(origin, lifetime, source)
+                    } else {
+                        facts.matches_resumed(origin, source)
+                    };
                 if current.resume_state_lost || !matches {
                     return Err(DecisionError::Conflict);
                 }

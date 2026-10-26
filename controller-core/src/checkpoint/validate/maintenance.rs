@@ -108,6 +108,7 @@ fn released(world: &World, binding: HostBinding) -> Result<(), Reject> {
                     status,
                     EffectStatus::Dispatched | EffectStatus::OutcomeUnknown
                 )
+                && !crate::maintenance::released_execution::discharged(world, id)
         })
     {
         return Err(Reject::InvalidMaintenance);
@@ -226,6 +227,7 @@ fn released_history(world: &World, binding: HostBinding) -> Result<(), Reject> {
                     status,
                     EffectStatus::Dispatched | EffectStatus::OutcomeUnknown
                 )
+                && !crate::maintenance::released_execution::discharged(world, id)
                 && id.command().epoch().is_none_or(|found| found <= epoch)
         })
     {

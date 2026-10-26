@@ -103,6 +103,56 @@ pub fn initial_operation_plan(
     }
 }
 
+// Terminal Resume compensation does not acquire the already reclaimed predecessor's
+// cleanup work. History stays indexed and all global publication checks still
+// require its original Stop evidence. Missing, live or current-generation
+// resources remain obligations rather than being inferred closed.
+fn resume_cleanup_index(
+    world: &World,
+    sandbox: SandboxId,
+    generation: crate::Generation,
+    mut index: crate::ResourceIndex,
+) -> crate::ResourceIndex {
+    let mut vms = Vec::new();
+    let mut cursor = 0;
+    while cursor < index.vms.len() {
+        let id = index.vms[cursor];
+        let closed_history = world.vm_record(id).is_some_and(|vm| {
+            vm.sandbox == sandbox
+                && vm.generation < generation
+                && vm.status == crate::VmStatus::Reclaimed
+        });
+        if !closed_history {
+            vms.push(id);
+        }
+        cursor += 1;
+    }
+    let mut slots = Vec::new();
+    cursor = 0;
+    while cursor < index.slots.len() {
+        let id = index.slots[cursor];
+        let closed_history = world.slot_record(id).is_some_and(|slot| {
+            slot.sandbox == sandbox
+                && slot.generation < generation
+                && slot.reclaimed
+                && !slot.active
+                && world.vm_record(slot.vm).is_some_and(|vm| {
+                    vm.sandbox == sandbox
+                        && vm.owner == slot.owner
+                        && vm.generation == slot.generation
+                        && vm.status == crate::VmStatus::Reclaimed
+                })
+        });
+        if !closed_history {
+            slots.push(id);
+        }
+        cursor += 1;
+    }
+    index.vms = vms;
+    index.slots = slots;
+    index
+}
+
 pub fn store_new_operation(
     world: &mut World,
     sandbox: SandboxId,
@@ -485,6 +535,25 @@ pub fn begin_compensation(
         ledger.operation = compensating;
         ledger.result = None;
         next.operations.put(key, ledger);
+    }
+
+    if operation.kind == OperationKind::Resume
+        && let Some(stored) = next.operation_plans.get(&key)
+    {
+        let mut plan = stored.clone();
+        let index = resume_cleanup_index(
+            world,
+            sandbox,
+            plan.generation,
+            crate::ResourceIndex {
+                vms: plan.stop_vms.clone(),
+                slots: plan.close_slots.clone(),
+                snapshots: Vec::new(),
+            },
+        );
+        plan.stop_vms = index.vms;
+        plan.close_slots = index.slots;
+        next.operation_plans.put(key, plan);
     }
 
     enqueue(

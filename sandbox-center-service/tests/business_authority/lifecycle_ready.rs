@@ -65,6 +65,7 @@ struct Host {
     create_superseded: Arc<AtomicBool>,
     create_requests: Arc<Mutex<Vec<AcceptedLifecycleIntent>>>,
     resume_requests: Arc<Mutex<Vec<AcceptedLifecycleIntent>>>,
+    apply_renewals: Arc<AtomicBool>,
 }
 impl Host {
     fn new(clock: Arc<Time>) -> Self {
@@ -85,6 +86,7 @@ impl Host {
             create_superseded: Arc::new(AtomicBool::new(false)),
             create_requests: Arc::new(Mutex::new(Vec::new())),
             resume_requests: Arc::new(Mutex::new(Vec::new())),
+            apply_renewals: Arc::new(AtomicBool::new(false)),
         }
     }
     fn block_next(&self, session: SessionId) -> (mpsc::Receiver<()>, Release) {
@@ -135,8 +137,87 @@ impl Host {
             readiness,
         }
     }
+
+    fn apply_controlled_renewal(&self, intent: &AcceptedLifecycleIntent) -> Result<(), PortError> {
+        if !self.apply_renewals.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        } = intent.request.operation
+        else {
+            return Ok(());
+        };
+        let mut stored = self.resumed.lock().unwrap();
+        let mut view = stored.clone().ok_or(PortError::Busy)?;
+        let LifecycleOperation::Resume {
+            target_incarnation, ..
+        } = view.request.request.operation
+        else {
+            return Err(PortError::Busy);
+        };
+        if incarnation != target_incarnation
+            || intent.center != view.request.center
+            || intent.retention != view.request.retention
+            || intent.request.binding.session != view.request.request.binding.session
+            || intent.request.binding.node != view.request.request.binding.node
+            || intent.request.binding.key.owner != view.request.request.binding.key.owner
+            || (view.current_request != *intent
+                && intent.request.binding.expected
+                    != sandproof_protocol::lifecycle::ExpectedSession::Version(
+                        view.current_request.accepted_version,
+                    ))
+        {
+            return Err(PortError::Busy);
+        }
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &mut view.readiness
+        else {
+            return Err(PortError::Busy);
+        };
+        let end = u64::try_from(end_at_ms).map_err(|_| PortError::Busy)?;
+        facts.end_at_ms = if extend_only {
+            facts.end_at_ms.max(end)
+        } else {
+            end
+        };
+        facts.observed_at_ms = self.clock.0.load(Ordering::SeqCst);
+        view.current_request = intent.clone();
+        if !view.matches_request(&view.request) {
+            return Err(PortError::Busy);
+        }
+        *stored = Some(view);
+        Ok(())
+    }
 }
 impl HostPort for Host {
+    fn confirm_lifecycle_renewal(
+        &self,
+        result: &sandproof_protocol::lifecycle::RenewalConfirmation,
+        _: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, PortError> {
+        if !self.apply_renewals.load(Ordering::SeqCst) {
+            return Err(PortError::OutcomeUnknown);
+        }
+        let stored = self.resumed.lock().unwrap();
+        let view = stored.as_ref().ok_or(PortError::Busy)?;
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &view.readiness
+        else {
+            return Err(PortError::Busy);
+        };
+        if view.current_request != result.request
+            || !result.is_sdk_renewal()
+            || u64::try_from(result.effective_end_at_ms).ok() != Some(facts.end_at_ms)
+        {
+            return Err(PortError::Busy);
+        }
+        Ok(sandproof_protocol::lifecycle::ConfirmedRenewal {
+            result: result.clone(),
+        })
+    }
     fn observe_lifecycle_resume(
         &self,
         intent: &AcceptedLifecycleIntent,
@@ -228,6 +309,7 @@ impl HostPort for Host {
         intent: &AcceptedLifecycleIntent,
         _: Duration,
     ) -> Result<RecordedLifecycleIntent, PortError> {
+        self.apply_controlled_renewal(intent)?;
         self.recordings.fetch_add(1, Ordering::SeqCst);
         let mut notify = self.notify_recorded.lock().unwrap();
         if notify

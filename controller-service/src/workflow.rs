@@ -201,6 +201,7 @@ where
     W: FnMut(&WorkAction<core::EffectId>) -> Result<WorkReceipt<E>, WorkerTransportError>,
 {
     operation(journal, sandbox, id, core::OperationKind::Kill)?;
+    journal.close_released_lifecycle_execution(sandbox, &mut NeverCrash)?;
     run(journal, sandbox, worker, |_, _| {
         Err(JournalError::UnsupportedInput)
     })

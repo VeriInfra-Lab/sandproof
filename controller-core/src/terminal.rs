@@ -72,8 +72,10 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
     let Some(plan) = world.operation_plan(original_key) else {
         return false;
     };
+    let restored_prepare = resumed_prepare_origin(world, original, plan, command, record);
     let same_compensation = operation.id == original_key.operation
-        && operation.kind == OperationKind::Create
+        && (operation.kind == OperationKind::Create
+            || operation.kind == OperationKind::Resume && restored_prepare)
         && matches!(operation.status, OperationStatus::Compensating(_))
         && record.epoch == epoch;
     let later_kill = operation.kind == OperationKind::Kill
@@ -83,7 +85,7 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
     record.terminal
         && record.phase == Phase::Revoking
         && (same_compensation || later_kill)
-        && original.operation.kind == OperationKind::Create
+        && (original.operation.kind == OperationKind::Create || restored_prepare)
         && original_key.sandbox == sandbox
         && plan.key == original_key
         && record.generation == generation
@@ -97,6 +99,44 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
             world.effect_status(effect),
             Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
         )
+}
+
+// This accepts only a positive observation of the original load after its
+// fault clears. Unknown Prepare remains unresolved: no Stop/abort exception,
+// new loader, activation, End or material release is created here.
+fn resumed_prepare_origin(
+    world: &World,
+    original: &crate::OperationLedgerRecord,
+    plan: &crate::OperationPlan,
+    command: &Command,
+    record: &crate::SandboxRecord,
+) -> bool {
+    let crate::OperationInput::Resume { source } = original.input else {
+        return false;
+    };
+    let Command::PrepareVm {
+        source: Some(actual),
+        ..
+    } = command
+    else {
+        return false;
+    };
+    original.operation.kind == OperationKind::Resume
+        && plan.restore_from == Some(source)
+        && *actual == source
+        && record.durable_snapshot == Some(source)
+        && world
+            .snapshots
+            .get(&source.snapshot)
+            .is_some_and(|snapshot| {
+                snapshot.owner == record.owner
+                    && snapshot.sandbox == original.sandbox
+                    && snapshot.workspace == record.workspace
+                    && snapshot.source_generation.checked_add(1) == Some(plan.generation)
+                    && snapshot.manifest == source.manifest
+                    && snapshot.stage == crate::SnapshotStage::Durable
+                    && snapshot.immutable
+            })
 }
 
 fn startup_command_matches(

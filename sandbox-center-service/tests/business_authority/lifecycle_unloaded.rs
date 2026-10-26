@@ -9,6 +9,9 @@ use sandproof_protocol::lifecycle::{
 #[path = "lifecycle_continued_reunload.rs"]
 mod continued_reunload;
 
+#[path = "lifecycle_renewed_continued.rs"]
+mod renewed_continued;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,
@@ -17,9 +20,14 @@ fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts
 }
 
 fn accept_unload(app: &Application) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
-    let accepted = app
-        .create_lifecycle("8", &lifecycle_public::request())
-        .unwrap();
+    accept_unload_with_create(app, &lifecycle_public::request())
+}
+
+fn accept_unload_with_create(
+    app: &Application,
+    create: &sandproof_protocol::lifecycle::PublicCreateRequest,
+) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
+    let accepted = app.create_lifecycle("8", create).unwrap();
     assert_eq!(
         app.query_lifecycle("8", &accepted.session).unwrap().phase,
         PublicSessionPhase::Running

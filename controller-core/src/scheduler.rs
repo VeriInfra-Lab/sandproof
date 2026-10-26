@@ -127,10 +127,108 @@ fn current_terminal_fence(world: &World, command: &Command) -> bool {
     record.epoch == *epoch
 }
 
+fn original_restore_prepare(world: &World, effect: &crate::EffectId) -> bool {
+    matches!(
+        effect.command(),
+        Command::PrepareVm {
+            source: Some(_),
+            ..
+        }
+    ) && crate::terminal::startup_effect_in_current_abort(world, effect)
+        && world
+            .logical_effect(&effect.logical)
+            .is_some_and(|logical| {
+                matches!(logical.origin, crate::EffectOrigin::Operation(origin)
+                if world.operation_record(origin).is_some_and(|original|
+                    original.operation.kind == OperationKind::Resume))
+            })
+}
+
+// Revocation must not depend on a positive observation of a still-unknown
+// restore load. This only permits the exact current terminal Fence; the
+// Create-compensation/AbortPrepare predicate above deliberately stays unchanged.
+fn terminal_restore_prepare_fence_allowed(world: &World, command: &Command) -> bool {
+    if !world.controller_up || !current_terminal_fence(world, command) {
+        return false;
+    }
+    let sandbox = command.sandbox();
+    let Some(record) = world.sandbox_record(sandbox) else {
+        return false;
+    };
+    let Some(operation) = record.current_operation else {
+        return false;
+    };
+    let key = operation_key(sandbox, operation.id);
+    let Some(ledger) = world.operation_record(key) else {
+        return false;
+    };
+    let Some(plan) = world.operation_plan(key) else {
+        return false;
+    };
+    let Some(fence) = world.logical_effect(&crate::LogicalEffectId {
+        command: command.clone(),
+    }) else {
+        return false;
+    };
+    if !record.terminal
+        || record.phase != Phase::Revoking
+        || record.desired != crate::Authority::Closed
+        || record.effective != crate::Authority::Closed
+        || record.current_vm.is_some()
+        || record.net_slot.is_some()
+        || operation.kind != OperationKind::Kill
+        || operation.epoch != record.epoch
+        || !matches!(
+            operation.status,
+            OperationStatus::Pending | OperationStatus::OutcomeUnknown
+        )
+        || ledger.sandbox != sandbox
+        || ledger.operation != operation
+        || ledger.input
+            != (crate::OperationInput::Kill {
+                generation: record.generation,
+            })
+        || ledger.result.is_some()
+        || plan.key != key
+        || !plan.sealed
+        || plan.epoch != record.epoch
+        || plan.generation != record.generation
+        || fence.origin != crate::EffectOrigin::Operation(key)
+        || fence.result.is_some()
+    {
+        return false;
+    }
+    let mut original_prepare = false;
+    let mut index = 0;
+    while index < world.effect_ids().len() {
+        let effect = &world.effect_ids()[index];
+        if effect.command().sandbox() == sandbox
+            && crate::effect::outcome_is_unresolved(world, effect)
+        {
+            if effect.command() == command {
+                if effect.attempt != fence.current_attempt {
+                    return false;
+                }
+            } else {
+                let restore_prepare = original_restore_prepare(world, effect);
+                if original_prepare || !restore_prepare {
+                    return false;
+                }
+                original_prepare = true;
+            }
+        }
+        index += 1;
+    }
+    original_prepare
+}
+
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
     if crate::capture::drain::terminal_capture_drain_allowed(world, command) {
+        return true;
+    }
+    if terminal_restore_prepare_fence_allowed(world, command) {
         return true;
     }
     if crate::terminal::only_uncertain_activation_for_abort(world, sandbox) {

@@ -47,6 +47,45 @@ pub fn capture_paused_original(
     limits: FullCaptureLimits,
     read_limits: BundleReadLimits,
 ) -> SealResult<FullCaptureObservation> {
+    require_original(paused, expected)?;
+    let captured = runtime.capture_full_into(
+        paused,
+        layout,
+        capture_directory_key(expected.binding)?,
+        limits,
+    )?;
+    complete_original(runtime, layout, paused, expected, captured, read_limits)
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn capture_paused_original_observed(
+    runtime: &Runtime,
+    layout: &SnapshotLayout,
+    paused: &PausedOriginalVm,
+    expected: &ExpectedFullCapture<'_>,
+    limits: FullCaptureLimits,
+    read_limits: BundleReadLimits,
+    observe: &mut impl FnMut(
+        sandbox_runtime::snapshot_store::SnapshotArtifact,
+        u64,
+        u64,
+    ) -> Result<(), sandbox_runtime::RuntimeError>,
+) -> SealResult<FullCaptureObservation> {
+    require_original(paused, expected)?;
+    let captured = runtime.capture_full_into_observed(
+        paused,
+        layout,
+        capture_directory_key(expected.binding)?,
+        limits,
+        observe,
+    )?;
+    complete_original(runtime, layout, paused, expected, captured, read_limits)
+}
+
+fn require_original(
+    paused: &PausedOriginalVm,
+    expected: &ExpectedFullCapture<'_>,
+) -> SealResult<()> {
     // Reject a handle for another VM before any physical Full effect. The
     // private handle's identity is independent of the expected persisted work.
     if paused.resource_id() != expected.resource_id || paused.source() != expected.source {
@@ -56,12 +95,17 @@ pub fn capture_paused_original(
         .compatibility
         .validate()
         .map_err(super::CaptureManifestError::Manifest)?;
-    let captured = runtime.capture_full_into(
-        paused,
-        layout,
-        capture_directory_key(expected.binding)?,
-        limits,
-    )?;
+    Ok(())
+}
+
+fn complete_original(
+    runtime: &Runtime,
+    layout: &SnapshotLayout,
+    paused: &PausedOriginalVm,
+    expected: &ExpectedFullCapture<'_>,
+    captured: sandbox_runtime::CapturedFullSnapshot,
+    read_limits: BundleReadLimits,
+) -> SealResult<FullCaptureObservation> {
     let sealed = seal_full_capture(captured, expected)?;
     let manifest_digest = *sealed.physical().files().manifest_sha256();
     let stored = observe_stored_capture(layout, expected, Some(manifest_digest), read_limits)?;

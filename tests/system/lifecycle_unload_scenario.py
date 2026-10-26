@@ -688,7 +688,17 @@ def exercise(args):
     from lifecycle_unload_runtime import prepare
     restore_fault=args.scenario in ('restore-activation-loss','restore-candidate-exit')
     continued_exit=args.scenario in ('continued-after-capture-exit','continued-before-admission-exit')
-    if args.scenario!='normal' and not restore_fault and not continued_exit:
+    capture_stages = {
+        'capture-freeze-receipt': 'freeze-receipt',
+        'capture-copy-partial': 'copy-partial',
+        'capture-seal-receipt': 'seal-receipt',
+        'capture-stop-receipt': 'stop-receipt',
+    }
+    capture_stage = capture_stages.get(args.scenario)
+    prepare_destroy = args.scenario == 'restore-prepare-destroy'
+    prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
+    data_drain = args.scenario == 'data-drain'
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -703,6 +713,8 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
+    capture_probe = data_probe = None
+    terminal_destroy_done = False
     failed = False
     try:
         report['measurement_identity']=runtime.measurement_identity()
@@ -723,6 +735,13 @@ def exercise(args):
         client.operation_evidence_completed()
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
+        if data_drain:
+            from lifecycle_unload_data_drain import InflightDataDrain
+            gate = runtime.arm_data_drain(deadline)
+            data_probe = InflightDataDrain(client, report['running'],
+                runtime.services.native_pools[0], runtime.services.host_configs[0],
+                gate, runtime.lease.identity)
+            report['data_drain_begin'] = data_probe.begin()
         report['phase'] = 'public-unload'
         report['unload'] = client.unload(running,concurrent_duplicate=True)
         report['concurrent_unload']=dict(requests=2,distinct_business_keys=1,
@@ -731,6 +750,10 @@ def exercise(args):
             send_control='two HTTP workers and coordinator rendezvous on one barrier; no sleep')
         # This checks new authorization closes at durable Unload acceptance;
         # it does not claim existing holders or physical workers have exited.
+        if data_probe is not None:
+            report['phase'] = 'original-inflight-drain-held'
+            report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
+            data_probe.release()
         client.assert_data_closed()
         saved = client.wait_unloaded()
         client.assert_owner_isolation()
@@ -787,7 +810,48 @@ def exercise(args):
             if cycle==1 and restore_fault:
                 report['phase']='arm-original-restore-activation-gate'
                 runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
+            if cycle == 1 and prepare_fault:
+                from lifecycle_unload_capture_faults import CaptureHandoffProbe
+                capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
+                    'restore-prepare-destroy' if prepare_destroy else 'restore-prepare-receipt')
+                report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
+            if cycle == 1 and prepare_fault:
+                report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted, deadline)
+                if prepare_destroy:
+                    report['phase'] = 'hold-exact-pre-marker-loaded-process'
+                    report['prepare_destroy_pause'] = capture_probe.pause_original_prepare(deadline)
+                    report['phase'] = 'public-destroy-while-original-resume-is-unknown'
+                    pending = client.query()
+                    client.check_view(pending, accepted)
+                    assert pending['phase'] == 'resuming', 'pre-marker Prepare unexpectedly became Running'
+                    client.assert_data_closed(); client.assert_previous_tokens_closed()
+                    report['destroy'] = client.destroy(pending)
+                    report['phase'] = 'original-host-terminal-fence-before-process-continue'
+                    def observe_original_peer():
+                        assert control.query() == control_running, 'other owner lost its original Running observation'
+                        return dict(session=control.session, original_public_running_query_completed=True,
+                                    scope='one existing peer query while original loaded process is stopped')
+                    report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
+                        report['destroy'], deadline, observe_peer=observe_original_peer)
+                    report['phase'] = 'original-prepared-and-stop-receipts-before-gc'
+                    report['prepare_destroy_terminal'] = capture_probe.assert_terminal_before_gc(deadline)
+                    report['phase'] = 'public-destroy-cleaned-and-physical-gc'
+                    client.assert_data_closed(); client.assert_previous_tokens_closed()
+                    client.wait_cleaned()
+                    report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
+                    client.operation_evidence_completed()
+                    assert control.query() == control_running
+                    report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
+                        control.session, control_physical, deadline)
+                    control.destroy(control_running); control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+                    control.operation_evidence_completed()
+                    report['cycles'].append(dict(cycle=cycle, resume=accepted,
+                        destroyed_before_public_running=True, original_prepare_then_stop_observed=True))
+                    terminal_destroy_done = True
+                    break
+                report['capture_handoff_recovery'] = capture_probe.finish(deadline)
             if cycle==1 and restore_fault:
                 report['phase']='original-restore-activation-gate-read'
                 gate_receipt=runtime.wait_resume_gate(client.session,accepted,
@@ -832,6 +896,10 @@ def exercise(args):
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
+            if cycle == 1 and prepare_fault:
+                report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
+            if cycle == 1 and data_probe is not None:
+                report['data_drain_resumed'] = data_probe.assert_resumed()
             client.operation_evidence_completed()
             client.assert_owner_isolation()
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
@@ -916,8 +984,28 @@ def exercise(args):
                 control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+                if capture_stage is not None:
+                    from lifecycle_unload_capture_faults import CaptureHandoffProbe
+                    gate = (Path(runtime.quota['deployment_control']) / 'capture-copy-gate'
+                            if capture_stage == 'copy-partial' else None)
+                    capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
+                        capture_stage, gate)
+                    report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
                 report['phase']='second-public-unload'
-                client.unload(resumed)
+                accepted_unload = client.unload(resumed)
+                if capture_stage is not None:
+                    report['phase'] = 'original-capture-handoff-observation'
+                    report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    report['capture_handoff_recovery'] = capture_probe.finish(deadline)
+                    if capture_stage == 'copy-partial':
+                        resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
+                        report['copy_partial_continued'] = client.assert_continued_workload(resumed, lifetime)
+                        report['copy_partial_same_candidate'] = runtime.confirm_running(
+                            client.session, physical_running, deadline)
+                        client.operation_evidence_completed()
+                        client.assert_original_replay(resumed)
+                        report['cycles'][-1]['continued_after_copy_error'] = copy.deepcopy(resumed)
+                        break
                 client.assert_data_closed()
                 saved=client.wait_unloaded()
                 physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
@@ -926,12 +1014,13 @@ def exercise(args):
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
-        report['phase']='public-destroy-and-physical-gc'
-        report['destroy']=client.destroy(lost if lost is not None else resumed)
-        client.assert_data_closed()
-        client.wait_cleaned()
-        report['final_resources']=runtime.destroy_evidence(client.session,deadline)
-        client.operation_evidence_completed()
+        if not terminal_destroy_done:
+            report['phase']='public-destroy-and-physical-gc'
+            report['destroy']=client.destroy(lost if lost is not None else resumed)
+            client.assert_data_closed()
+            client.wait_cleaned()
+            report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+            client.operation_evidence_completed()
         # Quota settlement and historical refusal-frontier retirement use the
         # original owner-provided persisted accounting oracle; they are never
         # inferred solely from filesystem absence or an HTTP acceptance.
@@ -966,6 +1055,30 @@ def exercise(args):
                 'qualification':stage,
                 'other_cases':'one selected continued death branch; no full fault matrix or formal proof claim',
             }
+        if capture_stage == 'copy-partial':
+            report['acceptance_cases'] = {
+                'E3': 'actual partial Memory copy returned an error; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
+                'E12': 'two owners and actual slot reuse observed before the copy fault',
+                'E14': 'old tokens rejected after the first Resume; original continued authorization preserved',
+                'other_cases': 'one restore cycle and failed second Unload; no second Unloaded or full fault matrix claim',
+            }
+        elif capture_stage or prepare_fault:
+            case = {'freeze-receipt': 'E3', 'seal-receipt': 'E4',
+                    'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
+                        capture_stage or 'restore-prepare-receipt']
+            report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if prepare_destroy:
+            report['acceptance_cases'] = {
+                'E6': 'original pre-marker LoadPaused stayed unknown until actual public Destroy reached Host and terminal fence; same candidate was observed, stopped and collected without another Prepare or Activate',
+                'E8': 'real public Destroy competed with the original unknown LoadPaused Prepare; actual Host terminal fencing preceded continuation of the same candidate',
+                'E12': 'other owner kept its original live candidate across the first owner terminal handoff, then explicit cleanup',
+                'E14': 'original data access and prior execution tokens remained closed during unknown Resume and Destroy',
+                'other_cases': 'one pre-marker cancellation branch; no resumed Running, second Resume, full matrix or formal proof claim',
+            }
+        if data_probe is not None:
+            report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
+        if capture_probe is not None:
+            report['capture_handoff_gate_cleanup'] = capture_probe.cleanup()
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -974,6 +1087,8 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
+        if prepare_destroy and capture_probe is not None:
+            report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1008,6 +1123,13 @@ def exercise(args):
             cpu_rss_disk_peak='unknown:not sampled by this timing instrumentation',
             e16_complete=False)
         try:
+            if data_probe is not None:
+                # Withdraw only this observer's exact relay pause before the
+                # original product failure cleanup. Record uncertainty rather
+                # than leaving an unreported stopped process on any error.
+                report['data_drain_observer_close'] = data_probe.close()
+                if report['data_drain_observer_close']['cleanup_unknown']:
+                    report['complete'] = False
             # Runtime finish preserves exact resources/material on uncertainty;
             # it is not permission for broad cleanup or untested GC.
             runtime.finish(report)
@@ -1017,6 +1139,10 @@ def exercise(args):
             if not failed:
                 raise
         finally:
+            if capture_probe is not None:
+                capture_probe.close()
+            if data_probe is not None:
+                data_probe.close()
             runtime.close_restore_gate()
             runtime.close_capture_cancel_gate()
             report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
@@ -1030,7 +1156,9 @@ def main():
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
-        'continued-after-capture-exit','continued-before-admission-exit'),default='normal')
+        'continued-after-capture-exit','continued-before-admission-exit',
+        'data-drain','capture-freeze-receipt','capture-copy-partial','capture-seal-receipt',
+        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

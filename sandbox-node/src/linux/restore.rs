@@ -82,13 +82,72 @@ fn observe_confirmed_restore_exit(
     Ok(Some(before.process))
 }
 
+fn readonly_restore_prepare(command: &core::Command, observe_only: bool) -> bool {
+    observe_only
+        && matches!(
+            command,
+            core::Command::PrepareVm {
+                source: Some(_),
+                ..
+            }
+        )
+}
+
+fn readonly_prepare_fence_matches(fence: super::Fence, epoch: core::Epoch) -> bool {
+    epoch != 0
+        && (super::decisions::fence_matches(fence, epoch, false)
+            || fence.terminal && fence.epoch >= epoch)
+}
+
+// This consumes only observations; it cannot load, activate, rewrite a fence,
+// acknowledge an outbox action or release a material obligation.
+fn observe_prepared_under_fence(
+    epoch: core::Epoch,
+    mut fence: impl FnMut() -> NodeResult<super::Fence>,
+    mut observe: impl FnMut() -> NodeResult<LoadedSnapshotObservation>,
+) -> NodeResult<LoadedSnapshotObservation> {
+    let original_fence = fence()?;
+    if !readonly_prepare_fence_matches(original_fence, epoch) {
+        return Err("original restore preparation fence differs".into());
+    }
+    let original = require_loaded_candidate(observe()?, true)?;
+    original.process.validate_fields()?;
+    let confirmed = require_loaded_candidate(observe()?, true)?;
+    if confirmed != original || fence()? != original_fence {
+        return Err(
+            "original restore preparation or current fence changed during observation".into(),
+        );
+    }
+    Ok(original)
+}
+
 fn scope(
     action: &WorkAction<core::EffectId>,
     work: &RestoreWorkRequest,
     namespace: &str,
     workspace_vm: Option<core::VmId>,
 ) -> NodeResult<(core::SandboxId, core::Epoch, core::Generation, core::VmId)> {
-    let source_command = work.committed().seal_action().command.command();
+    scope_target(
+        action,
+        work.committed().seal_action(),
+        work.operation(),
+        work.generation(),
+        namespace,
+        workspace_vm,
+    )
+}
+
+// Same source/target checks as the opaque original work; exposed only inside
+// this module so deterministic regressions need not fabricate a journal claim.
+fn scope_target(
+    action: &WorkAction<core::EffectId>,
+    seal: &WorkAction<core::EffectId>,
+    operation: core::OperationId,
+    target_generation: core::Generation,
+    namespace: &str,
+    workspace_vm: Option<core::VmId>,
+) -> NodeResult<(core::SandboxId, core::Epoch, core::Generation, core::VmId)> {
+    let source_command = seal.command.command();
     let core::Command::SealSnapshot {
         sandbox: original_sandbox,
         snapshot,
@@ -139,10 +198,10 @@ fn scope(
         _ => return Err("action is not the original restore chain".into()),
     };
     if sandbox != *original_sandbox
-        || generation != work.generation()
+        || generation != target_generation
         || action.identity.operation.as_str()
-            != format!("op-{namespace}-{}-{}", sandbox.0, work.operation().0)
-        || action.identity.owner != work.committed().seal_action().identity.owner
+            != format!("op-{namespace}-{}-{}", sandbox.0, operation.0)
+        || action.identity.owner != seal.identity.owner
     {
         return Err("restore target operation, sandbox or generation differs".into());
     }
@@ -255,7 +314,9 @@ impl LinuxWorker {
             &work.source().host_bootstrap,
             self.host_bootstrap_inputs(),
         )?;
-        self.require_fence(sandbox, epoch, false)?;
+        if !readonly_restore_prepare(action.command.command(), observe_only) {
+            self.require_fence(sandbox, epoch, false)?;
+        }
         let context = RestoreContext {
             runtime: self.runtime(sandbox, vm)?,
             name: self.vm_name(vm),
@@ -284,7 +345,9 @@ impl LinuxWorker {
             }
             _ => return Err("unsupported restore action".into()),
         };
-        self.require_fence(sandbox, epoch, false)?;
+        if !readonly_restore_prepare(action.command.command(), observe_only) {
+            self.require_fence(sandbox, epoch, false)?;
+        }
         self.validate_action(action)?;
         provider.observe_original(
             &work.source().node,
@@ -306,7 +369,11 @@ impl LinuxWorker {
     ) -> NodeResult<ObservedResult> {
         let observed = if observe_only {
             self.require_slot(context.sandbox, context.generation, context.vm, slot)?;
-            context.observe()?
+            observe_prepared_under_fence(
+                context.action.identity.epoch,
+                || self.fence(context.sandbox),
+                || context.observe(),
+            )?
         } else {
             let template = self
                 .secret(context.sandbox, context.generation)?
@@ -506,3 +573,7 @@ impl LinuxWorker {
 #[cfg(test)]
 #[path = "restore_activation_tests.rs"]
 mod activation_tests;
+
+#[cfg(test)]
+#[path = "restore_prepare_observation_tests.rs"]
+mod prepare_observation_tests;

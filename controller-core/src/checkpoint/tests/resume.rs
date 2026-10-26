@@ -132,6 +132,238 @@ fn resume_reserved() -> World {
     reserve_current(&resume_admitted())
 }
 
+fn unobserved_restore_then_kill() -> (World, EffectId, EffectId) {
+    let world = finish_ready(&resume_reserved());
+    let plan = world
+        .operation_plan(OperationKey {
+            sandbox: SID,
+            operation: OperationId(3),
+        })
+        .unwrap();
+    let world = raw(
+        &world,
+        ControllerInput::Scheduler(SchedulerInput::DispatchPrepare(
+            SID,
+            plan.vm.unwrap(),
+            plan.slot.unwrap(),
+        )),
+    );
+    let prepare = effect(&world, SID, |c| {
+        matches!(c, Command::PrepareVm { epoch: 3, .. })
+    });
+    let world = raw(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(prepare.clone())),
+    );
+    let world = raw(
+        &world,
+        ControllerInput::Request(Request::Kill(KillRequest {
+            actor: Actor::Tenant(OWNER),
+            sandbox: SID,
+            operation: OperationId(4),
+        })),
+    );
+    let fence = effect(&world, SID, |c| {
+        matches!(
+            c,
+            Command::InstallFence {
+                epoch: 4,
+                terminal: true,
+                ..
+            }
+        )
+    });
+    (world, prepare, fence)
+}
+
+#[test]
+fn restore_terminal_fence_precedes_unknown_prepare_without_physical_release() {
+    for unknown in [false, true] {
+        let (world, prepare, fence) = unobserved_restore_then_kill();
+        let world = if unknown {
+            raw(
+                &world,
+                ControllerInput::Effect(EffectInput::Timeout(prepare.clone())),
+            )
+        } else {
+            world
+        };
+        assert!(!crate::scheduler::only_uncertain_prepare_for_abort(
+            &world, SID
+        ));
+        assert!(crate::scheduler::dispatch_allowed_during_abort(
+            &world,
+            fence.command()
+        ));
+        assert_eq!(
+            crate::workflow::next_step(&world, SID),
+            crate::workflow::WorkflowStep::Claim
+        );
+        let original_status = world.effect_status(&prepare);
+        let world = success(&world, fence);
+        assert_eq!(world.effect_status(&prepare), original_status);
+        let row = world.sandbox_record(SID).unwrap();
+        assert!(row.terminal && row.current_vm.is_none() && row.net_slot.is_none());
+        assert_eq!(row.current_operation.unwrap().kind, OperationKind::Kill);
+        assert_eq!(row.phase, Phase::Revoking);
+        assert!(!crate::scheduler::dispatch_allowed_during_abort(
+            &world,
+            prepare.command()
+        ));
+        for command in [
+            Command::ActivateVm {
+                sandbox: SID,
+                epoch: 4,
+                generation: 2,
+                vm: VmId(1),
+            },
+            Command::StopVm {
+                sandbox: SID,
+                epoch: 4,
+                generation: 2,
+                vm: VmId(1),
+            },
+            Command::AbortPrepare {
+                sandbox: SID,
+                epoch: 4,
+                generation: 2,
+                vm: VmId(1),
+                slot: NetSlotId(1),
+            },
+            Command::CleanupVm {
+                sandbox: SID,
+                generation: 2,
+                vm: VmId(1),
+            },
+        ] {
+            assert!(!crate::scheduler::dispatch_allowed_during_abort(
+                &world, &command
+            ));
+        }
+        roundtrip(&world);
+    }
+}
+
+#[test]
+fn restore_terminal_fence_rejects_old_epoch_nonterminal_and_foreign_commands() {
+    let (world, _, fence) = unobserved_restore_then_kill();
+    for command in [
+        Command::InstallFence {
+            sandbox: SID,
+            epoch: 3,
+            terminal: true,
+        },
+        Command::InstallFence {
+            sandbox: SID,
+            epoch: 5,
+            terminal: true,
+        },
+        Command::InstallFence {
+            sandbox: SID,
+            epoch: 4,
+            terminal: false,
+        },
+        Command::InstallFence {
+            sandbox: SandboxId(11),
+            epoch: 4,
+            terminal: true,
+        },
+    ] {
+        assert!(!crate::scheduler::dispatch_allowed_during_abort(
+            &world, &command
+        ));
+    }
+    assert!(crate::scheduler::dispatch_allowed_during_abort(
+        &world,
+        fence.command()
+    ));
+}
+
+#[test]
+fn restore_terminal_fence_rejects_substituted_origin_and_other_unknown_work() {
+    let (world, prepare, fence) = unobserved_restore_then_kill();
+    for variant in 0..12 {
+        let mut altered = world.clone();
+        let mut row = altered.sandbox_record(SID).unwrap().clone();
+        let key = OperationKey {
+            sandbox: SID,
+            operation: OperationId(3),
+        };
+        let mut plan = altered.operation_plan(key).unwrap().clone();
+        match variant {
+            0 => {
+                row.owner = TenantId(99);
+                altered.sandboxes.put(SID, row);
+            }
+            1 => {
+                row.generation = 3;
+                altered.sandboxes.put(SID, row);
+            }
+            2 => {
+                row.terminal = false;
+                altered.sandboxes.put(SID, row);
+            }
+            3 => {
+                plan.vm = Some(VmId(999));
+                altered.operation_plans.put(key, plan);
+            }
+            4 => {
+                plan.slot = Some(NetSlotId(999));
+                altered.operation_plans.put(key, plan);
+            }
+            5 => {
+                plan.restore_from.as_mut().unwrap().manifest.digest = ManifestDigest(999);
+                altered.operation_plans.put(key, plan);
+            }
+            6 => {
+                plan.sealed = false;
+                altered.operation_plans.put(key, plan);
+            }
+            7 => {
+                let mut logical = altered.logical_effect(&prepare.logical).unwrap();
+                logical.current_attempt += 1;
+                altered
+                    .logical_effects
+                    .put(prepare.logical.clone(), logical);
+            }
+            8 => {
+                let mut logical = altered.logical_effect(&fence.logical).unwrap();
+                logical.origin = EffectOrigin::Operation(key);
+                altered.logical_effects.put(fence.logical.clone(), logical);
+            }
+            9 => {
+                let other = EffectId::initial(Command::ApplyFilePolicy {
+                    sandbox: SID,
+                    epoch: 3,
+                    generation: 2,
+                    workspace: row.workspace,
+                    policy: row.file_policy,
+                });
+                altered.effect_keys.push(other.clone());
+                altered.effects.put(other, EffectStatus::Dispatched);
+            }
+            10 => {
+                row.desired = Authority::Paused {
+                    sandbox: SID,
+                    source: row.durable_snapshot.unwrap(),
+                };
+                altered.sandboxes.put(SID, row);
+            }
+            _ => {
+                row.effective = Authority::Paused {
+                    sandbox: SID,
+                    source: row.durable_snapshot.unwrap(),
+                };
+                altered.sandboxes.put(SID, row);
+            }
+        }
+        assert!(
+            !crate::scheduler::dispatch_allowed_during_abort(&altered, fence.command()),
+            "accepted substituted terminal-fence basis {variant}"
+        );
+    }
+}
+
 fn resumed() -> World {
     let world = finish_ready(&resume_reserved());
     let plan = world
@@ -557,4 +789,158 @@ fn snapshot_retirement_still_requires_every_original_quiescence_condition() {
         restore(invalid, LIMITS).is_err(),
         "retained results cannot invent future snapshot identities"
     );
+}
+
+#[test]
+fn resumed_compensation_keeps_live_unknown_and_current_generation_resources() {
+    let world = resume_reserved();
+    let index = world.resource_index(SID);
+    let old_vm = index
+        .vms
+        .iter()
+        .copied()
+        .find(|id| world.vm_record(*id).unwrap().generation == 1)
+        .unwrap();
+    let old_slot = index
+        .slots
+        .iter()
+        .copied()
+        .find(|id| world.slot_record(*id).unwrap().generation == 1)
+        .unwrap();
+    let operation = world
+        .sandbox_record(SID)
+        .unwrap()
+        .current_operation
+        .unwrap();
+    let compensated_plan = |world: &World| {
+        let record = world.sandbox_record(SID).unwrap();
+        let next = crate::transition::begin_compensation(
+            world,
+            SID,
+            record,
+            operation,
+            FailureKind::DeadlineExceeded,
+        );
+        next.operation_plan(crate::transition::operation_key(SID, operation.id))
+            .unwrap()
+            .clone()
+    };
+    let record = world.sandbox_record(SID).unwrap();
+    let compensated = crate::transition::begin_compensation(
+        &world,
+        SID,
+        record,
+        operation,
+        FailureKind::DeadlineExceeded,
+    );
+    assert_eq!(
+        restore(capture(&compensated, LIMITS).unwrap(), LIMITS).unwrap(),
+        compensated
+    );
+    let clean = compensated_plan(&world);
+    assert!(!clean.stop_vms.contains(&old_vm));
+    assert!(!clean.close_slots.contains(&old_slot));
+    for status in [
+        VmStatus::Prepared,
+        VmStatus::Executing,
+        VmStatus::Frozen,
+        VmStatus::Stopped,
+    ] {
+        let mut pending = world.clone();
+        let mut vm = *pending.vm_record(old_vm).unwrap();
+        vm.status = status;
+        pending.vms.put(old_vm, vm);
+        let plan = compensated_plan(&pending);
+        assert!(plan.stop_vms.contains(&old_vm));
+        assert!(plan.close_slots.contains(&old_slot));
+    }
+    let mut active = world.clone();
+    let mut slot = active.slot_record(old_slot).unwrap().clone();
+    slot.active = true;
+    active.net_slots.put(old_slot, slot);
+    assert!(compensated_plan(&active).close_slots.contains(&old_slot));
+    let mut unknown = world.clone();
+    let mut indexed = index;
+    indexed.vms.push(VmId(999));
+    indexed.slots.push(NetSlotId(999));
+    unknown.resource_indexes.put(SID, indexed);
+    let key = crate::transition::operation_key(SID, operation.id);
+    let mut pending_plan = unknown.operation_plan(key).unwrap().clone();
+    pending_plan.stop_vms.push(VmId(999));
+    pending_plan.close_slots.push(NetSlotId(999));
+    unknown.operation_plans.put(key, pending_plan);
+    let plan = compensated_plan(&unknown);
+    assert!(plan.stop_vms.contains(&VmId(999)));
+    assert!(plan.close_slots.contains(&NetSlotId(999)));
+    let mut current = world.clone();
+    let mut vm = *current.vm_record(old_vm).unwrap();
+    vm.generation = 2;
+    current.vms.put(old_vm, vm);
+    assert!(compensated_plan(&current).stop_vms.contains(&old_vm));
+}
+
+#[test]
+fn late_resumed_prepare_rejects_wrong_source_manifest_and_generation() {
+    let world = finish_ready(&resume_reserved());
+    let key = OperationKey {
+        sandbox: SID,
+        operation: OperationId(3),
+    };
+    let plan = world.operation_plan(key).unwrap();
+    let world = raw(
+        &world,
+        ControllerInput::Scheduler(SchedulerInput::DispatchPrepare(
+            SID,
+            plan.vm.unwrap(),
+            plan.slot.unwrap(),
+        )),
+    );
+    let prepare = world
+        .effect_ids()
+        .iter()
+        .find(|id| {
+            matches!(
+                id.command(),
+                Command::PrepareVm {
+                    source: Some(_),
+                    ..
+                }
+            )
+        })
+        .unwrap()
+        .clone();
+    let world = raw(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(prepare.clone())),
+    );
+    let world = raw(
+        &world,
+        ControllerInput::Effect(EffectInput::Timeout(prepare.clone())),
+    );
+    let record = world.sandbox_record(SID).unwrap();
+    let world = crate::transition::begin_compensation(
+        &world,
+        SID,
+        record,
+        record.current_operation.unwrap(),
+        FailureKind::DeadlineExceeded,
+    );
+    assert!(crate::terminal::startup_effect_in_current_abort(
+        &world, &prepare
+    ));
+    let source = world.operation_plan(key).unwrap().restore_from.unwrap();
+    let mut wrong = world.clone();
+    let mut snapshot = *wrong.snapshots.get(&source.snapshot).unwrap();
+    snapshot.manifest.digest = ManifestDigest(9999);
+    wrong.snapshots.put(source.snapshot, snapshot);
+    assert!(!crate::terminal::startup_effect_in_current_abort(
+        &wrong, &prepare
+    ));
+    let mut wrong = world.clone();
+    let mut snapshot = *wrong.snapshots.get(&source.snapshot).unwrap();
+    snapshot.source_generation = 2;
+    wrong.snapshots.put(source.snapshot, snapshot);
+    assert!(!crate::terminal::startup_effect_in_current_abort(
+        &wrong, &prepare
+    ));
 }

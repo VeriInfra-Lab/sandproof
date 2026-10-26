@@ -297,6 +297,33 @@ impl Runtime {
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
+        self.capture_full_copying(paused, layout, directory_key, limits, &mut |_, _, _| Ok(()))
+    }
+
+    /// Observe actual copied blocks only in controlled debug builds. The
+    /// original Full request, identity checks, files and publication are shared.
+    /// # Errors
+    /// An observation failure preserves the same original/partial materials.
+    #[cfg(debug_assertions)]
+    pub fn capture_full_into_observed(
+        &self,
+        paused: &PausedOriginalVm,
+        layout: &SnapshotLayout,
+        directory_key: [u8; 32],
+        limits: FullCaptureLimits,
+        observe: &mut impl FnMut(SnapshotArtifact, u64, u64) -> Result<(), RuntimeError>,
+    ) -> Result<CapturedFullSnapshot, RuntimeError> {
+        self.capture_full_copying(paused, layout, directory_key, limits, observe)
+    }
+
+    fn capture_full_copying(
+        &self,
+        paused: &PausedOriginalVm,
+        layout: &SnapshotLayout,
+        directory_key: [u8; 32],
+        limits: FullCaptureLimits,
+        observe: &mut impl FnMut(SnapshotArtifact, u64, u64) -> Result<(), RuntimeError>,
+    ) -> Result<CapturedFullSnapshot, RuntimeError> {
         if limits.state_bytes == 0
             || limits.disk_bytes == 0
             || limits.api_timeout < Duration::from_secs(1)
@@ -367,23 +394,26 @@ impl Runtime {
         // This profile is exactly the drive configured by stage_and_boot, never
         // a guest-supplied path. Later profiles must enumerate every drive.
         let mut disk = source_at(&paused.original.root, "rootfs.ext4", self.config.vm_uid)?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut state_file,
             self.config.vm_uid,
             SnapshotArtifact::State,
             limits.state_bytes,
+            observe,
         )?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut memory,
             self.config.vm_uid,
             SnapshotArtifact::Memory,
             memory_bytes,
+            observe,
         )?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut disk,
             self.config.vm_uid,
             SnapshotArtifact::Disk(0),
             limits.disk_bytes,
+            observe,
         )?;
         self.verify_original_capture(paused, true)?;
         Ok(CapturedFullSnapshot {
