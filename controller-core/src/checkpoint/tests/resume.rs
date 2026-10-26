@@ -558,3 +558,68 @@ fn snapshot_retirement_still_requires_every_original_quiescence_condition() {
         "retained results cannot invent future snapshot identities"
     );
 }
+
+#[test]
+fn resumed_cleanup_plan_keeps_live_unknown_and_current_generation_resources() {
+    let world = resume_reserved();
+    let index = world.resource_index(SID);
+    let old_vm = index.vms.iter().copied().find(|id| world.vm_record(*id).unwrap().generation == 1).unwrap();
+    let old_slot = index.slots.iter().copied().find(|id| world.slot_record(*id).unwrap().generation == 1).unwrap();
+    let operation = world.sandbox_record(SID).unwrap().current_operation.unwrap();
+    let ledger = world.operation_record(crate::transition::operation_key(SID,operation.id)).unwrap();
+    let clean = crate::transition::initial_operation_plan(&world,SID,operation,&ledger.input);
+    assert!(!clean.stop_vms.contains(&old_vm));
+    assert!(!clean.close_slots.contains(&old_slot));
+    for status in [VmStatus::Prepared, VmStatus::Executing, VmStatus::Frozen, VmStatus::Stopped] {
+        let mut pending = world.clone();
+        let mut vm = *pending.vm_record(old_vm).unwrap();
+        vm.status = status;
+        pending.vms.put(old_vm,vm);
+        let plan = crate::transition::initial_operation_plan(&pending,SID,operation,&ledger.input);
+        assert!(plan.stop_vms.contains(&old_vm));
+        assert!(plan.close_slots.contains(&old_slot));
+    }
+    let mut active = world.clone();
+    let mut slot = active.slot_record(old_slot).unwrap().clone();
+    slot.active = true;
+    active.net_slots.put(old_slot,slot);
+    assert!(crate::transition::initial_operation_plan(&active,SID,operation,&ledger.input).close_slots.contains(&old_slot));
+    let mut unknown = world.clone();
+    let mut indexed = index;
+    indexed.vms.push(VmId(999));
+    indexed.slots.push(NetSlotId(999));
+    unknown.resource_indexes.put(SID,indexed);
+    let plan = crate::transition::initial_operation_plan(&unknown,SID,operation,&ledger.input);
+    assert!(plan.stop_vms.contains(&VmId(999)));
+    assert!(plan.close_slots.contains(&NetSlotId(999)));
+    let mut current = world.clone();
+    let mut vm = *current.vm_record(old_vm).unwrap();
+    vm.generation = 2;
+    current.vms.put(old_vm,vm);
+    assert!(crate::transition::initial_operation_plan(&current,SID,operation,&ledger.input).stop_vms.contains(&old_vm));
+}
+
+#[test]
+fn late_resumed_prepare_rejects_wrong_source_manifest_and_generation() {
+    let world = finish_ready(&resume_reserved());
+    let key = OperationKey { sandbox: SID, operation: OperationId(3) };
+    let plan = world.operation_plan(key).unwrap();
+    let world = raw(&world,ControllerInput::Scheduler(SchedulerInput::DispatchPrepare(SID,plan.vm.unwrap(),plan.slot.unwrap())));
+    let prepare = world.effect_ids().iter().find(|id| matches!(id.command(),Command::PrepareVm { source: Some(_), .. })).unwrap().clone();
+    let world = raw(&world,ControllerInput::Effect(EffectInput::Dispatch(prepare.clone())));
+    let world = raw(&world,ControllerInput::Effect(EffectInput::Timeout(prepare.clone())));
+    let record = world.sandbox_record(SID).unwrap();
+    let world = crate::transition::begin_compensation(&world,SID,record,record.current_operation.unwrap(),FailureKind::DeadlineExceeded);
+    assert!(crate::terminal::startup_effect_in_current_abort(&world,&prepare));
+    let source = world.operation_plan(key).unwrap().restore_from.unwrap();
+    let mut wrong = world.clone();
+    let mut snapshot = *wrong.snapshots.get(&source.snapshot).unwrap();
+    snapshot.manifest.digest = ManifestDigest(9999);
+    wrong.snapshots.put(source.snapshot,snapshot);
+    assert!(!crate::terminal::startup_effect_in_current_abort(&wrong,&prepare));
+    let mut wrong = world.clone();
+    let mut snapshot = *wrong.snapshots.get(&source.snapshot).unwrap();
+    snapshot.source_generation = 2;
+    wrong.snapshots.put(source.snapshot,snapshot);
+    assert!(!crate::terminal::startup_effect_in_current_abort(&wrong,&prepare));
+}
