@@ -192,6 +192,7 @@ fn released_terminal_checkpoint_rejects_a_marker_with_the_wrong_release_sequence
     let (_directory, mut journal, _source, _destroy, basis) = prepared();
     journal.close_released_lifecycle_execution(basis.key.sandbox, &mut NeverCrash).unwrap();
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
+    assert_eq!(crate::controller::storage::load_world(&journal.journal.connection).unwrap(), journal.world().unwrap());
     let payload: Vec<u8> = journal.journal.connection.query_row(
         "SELECT payload FROM controller_checkpoint WHERE id=1", [], |r| r.get(0)).unwrap();
     // Preserve the original typed field order: failure must come from the
@@ -202,7 +203,7 @@ fn released_terminal_checkpoint_rejects_a_marker_with_the_wrong_release_sequence
     let bytes = text.replacen(&needle, &format!("\"release_input_sequence\":{}", basis.release_input_sequence + 1), 1).into_bytes();
     journal.journal.connection.execute("UPDATE controller_checkpoint SET payload=?1,sha256=?2 WHERE id=1",
         rusqlite::params![&bytes, Sha256::digest(&bytes).as_slice()]).unwrap();
-    assert!(matches!(crate::controller::checkpoint::load_world(&journal.journal.connection),
+    assert!(matches!(crate::controller::storage::load_world(&journal.journal.connection),
         Err(JournalError::CorruptStore)));
 }
 
@@ -210,6 +211,7 @@ fn released_terminal_checkpoint_rejects_a_marker_with_the_wrong_release_sequence
 fn released_terminal_tail_rejects_the_wrong_confirm_release_sequence() {
     let (_directory, mut journal, _source, _destroy, basis) = prepared();
     journal.close_released_lifecycle_execution(basis.key.sandbox, &mut NeverCrash).unwrap();
+    assert_eq!(crate::controller::storage::load_world(&journal.journal.connection).unwrap(), journal.world().unwrap());
     let (sequence, input): (i64, Vec<u8>) = journal.journal.connection.query_row(
         "SELECT sequence,input_json FROM controller_inputs ORDER BY sequence DESC LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
     let text = String::from_utf8(input).unwrap();
@@ -219,7 +221,7 @@ fn released_terminal_tail_rejects_the_wrong_confirm_release_sequence() {
     let changed = text.replacen(&needle, &format!("\"release_input_sequence\":{}", basis.release_input_sequence + 1), 1);
     journal.journal.connection.execute("UPDATE controller_inputs SET input_json=?1 WHERE sequence=?2",
         rusqlite::params![changed.into_bytes(), sequence]).unwrap();
-    assert!(matches!(crate::controller::checkpoint::load_world(&journal.journal.connection), Err(JournalError::CorruptStore)));
+    assert!(matches!(crate::controller::storage::load_world(&journal.journal.connection), Err(JournalError::CorruptStore)));
 }
 
 #[test]
