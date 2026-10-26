@@ -59,6 +59,7 @@ def run(output, prepare_only=False):
     started = time.monotonic()
     record = dict(kind='protocol4-own-field-and-conditional-byte-composition',
         a6_instance_adopted=False, full_json_proof=False, full_v3_proof=False,
+        active_lake_view='lakefile.toml', full_v0_proof=False,
         full_acceptance=False, native_checks='delegated-to-ning', commands=[])
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
                LEAN_STACK_SIZE_KB='65536', CARGO_NET_OFFLINE='true')
@@ -165,7 +166,8 @@ def run(output, prepare_only=False):
             command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeBytes'])
             original = module('bytes_actual_formal', ROOT / HERE.parent / 'formal.py')
             resolver = module('bytes_original_closure', ROOT / 'tools/proof_batch.py')
-            files = sorted(resolver.closure(project, [PROOF, *[n for n in generated if n.endswith('.lean')]]))
+            files = sorted(resolver.closure(project, [PROOF, *[n for n in generated if n.endswith('.lean')]],
+                active_view='lakefile.toml'))
             actual = original.actual_files(project, files, output, env, command)
             declared = [n for file in files for n in re.findall(r'^#audit_controller_proof (\S+)$',
                         (project / file).read_text(), re.M)]
