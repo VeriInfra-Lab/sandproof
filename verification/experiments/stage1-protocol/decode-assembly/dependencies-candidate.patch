@@ -1,0 +1,18 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -844,3 +844,15 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++## A6/B4 协议 4 原字段组装来源候选
++
++[有限来源检查](../../verification/experiments/stage1-protocol/decode-assembly/README.md)将原已登记的
++Serde/serde_json 标准派生调用接回同一完整字段表示：原 MapAccess/SeqAccess、字典与返回槽，
++原字段字符串/字节/编号 visitor，TaggedContentVisitor 到五个操作 visitor，以及 ExpectedSession
++原 adjacent seed、ContentDeserializer、Result.map/map_err 和自有叶子回调。
++固定源码和 features 继续复用父包登记；八个透明包装、六个自有转换及已有业务叶子定理不另造模型。
++
++源码接线核对与真实同类型字段交换反例不构成库的机器精化，也不扩大 A6 为整个 parser/handler。
++扫描与解析、正常回调语义、Error/Display、清理/展开和投影有效性仍由原逐符号合同或待证对应提供。
++此来源候选尚未由主控采用；认证、耐久接受、文件/VM 事实与系统结论不由字段相等推出。
