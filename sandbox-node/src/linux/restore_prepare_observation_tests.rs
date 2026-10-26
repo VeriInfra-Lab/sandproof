@@ -28,12 +28,15 @@ fn read_fence(path: &std::path::Path) -> NodeResult<super::super::Fence> {
 #[test]
 fn terminal_fence_keeps_original_prepared_facts_readable_without_execution() {
     let (_root,path) = fence_file();
-    let calls = Cell::new(0);
-    let actual = observe_prepared_under_fence(3, ||read_fence(&path), || {calls.set(calls.get()+1);Ok(candidate())});
-    assert!(actual.is_ok(), "original physically loaded candidate must remain observable after terminal fence: {actual:?}");
-    assert_eq!(actual.unwrap(), candidate());
-    assert_eq!(calls.get(),2);
-    assert_eq!(read_fence(&path).unwrap(), super::super::Fence {epoch:4,terminal:true});
+    for epoch in [3,4] {
+        write_fence(&path,super::super::Fence {epoch,terminal:true});
+        let calls = Cell::new(0);
+        let actual = observe_prepared_under_fence(3, ||read_fence(&path), || {calls.set(calls.get()+1);Ok(candidate())});
+        assert!(actual.is_ok(), "original physically loaded candidate must remain observable after terminal fence: {actual:?}");
+        assert_eq!(actual.unwrap(), candidate());
+        assert_eq!(calls.get(),2);
+        assert_eq!(read_fence(&path).unwrap(), super::super::Fence {epoch,terminal:true});
+    }
 }
 
 #[test]

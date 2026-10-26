@@ -87,7 +87,8 @@ fn readonly_restore_prepare(command: &core::Command, observe_only: bool) -> bool
 }
 
 fn readonly_prepare_fence_matches(fence: super::Fence, epoch: core::Epoch) -> bool {
-    super::decisions::fence_matches(fence, epoch, false)
+    epoch != 0 && (super::decisions::fence_matches(fence, epoch, false)
+        || fence.terminal && fence.epoch >= epoch)
 }
 
 // This consumes only observations; it cannot load, activate, rewrite a fence,
