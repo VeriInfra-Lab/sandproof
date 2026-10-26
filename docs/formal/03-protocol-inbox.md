@@ -87,6 +87,11 @@ CenterId 和五种计数器角色的实际 Deserialize 接回同一 V0 编号/�
 追加。实际 `record` 的新会话组合显式要求没有保留 key、没有相同 session ID；这是容器
 条件，不提供授权或持久性。固定工具所需的迭代/单元素向量改写仅在隔离副本验证，生产
 采用和公共入口登记仍交主控；原版对照测试不等于机器检验的重构等价证明。
-已有会话追加、SQLite 提交/未知结果/恢复、GLOBAL→LOCAL 映射及完整 V3 继续开放。
+已有会话追加由[独立追加候选](../../verification/experiments/stage1-protocol/inbox-append/README.md)
+连接真实 `record_existing` 与 `record`：完整首拒绝顺序、原会话的全部字段更新和整个
+Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的接受版本加一属于前置
+封套校验，不能补作该记录函数自己的检查；SDK 门槛只约束新 Renew，Destroy 保留末槽路径。
+该候选仍需生产采用、公共登记与正式验收；SQLite 提交/未知结果/恢复、GLOBAL→LOCAL
+映射及完整 V3 继续开放。
 尤其协议 Resume 校验允许编号空洞，而当前收件追加路径另检查 `checked_next`，必须分别
 陈述并由对应提供者连接，不能用后者加强公共请求规格。
