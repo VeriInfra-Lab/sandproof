@@ -91,7 +91,11 @@ CenterId 和五种计数器角色的实际 Deserialize 接回同一 V0 编号/�
 连接真实 `record_existing` 与 `record`：完整首拒绝顺序、原会话的全部字段更新和整个
 Inbox 的保持关系，沿用同一全文查找/封套规格。非 Destroy 的接受版本加一属于前置
 封套校验，不能补作该记录函数自己的检查；SDK 门槛只约束新 Renew，Destroy 保留末槽路径。
-该候选仍需生产采用、公共登记与正式验收；SQLite 提交/未知结果/恢复、GLOBAL→LOCAL
+[统一 record 候选](../../verification/experiments/stage1-protocol/inbox-record-total/README.md)
+进一步按原全文查找和首个 session 选择，组合保留重放/冲突、新会话及已有会话的完整
+状态合同，对任意已解码输入陈述，不把分支选择作为外部假设。两种追加错误版沿用原
+合同的反例接到同一个统一合同。该组合仍是纯内存 record，不覆盖实际事务外层。
+这些候选仍需生产采用、公共登记与正式验收；SQLite 提交/未知结果/恢复、GLOBAL→LOCAL
 映射及完整 V3 继续开放。
 尤其协议 Resume 校验允许编号空洞，而当前收件追加路径另检查 `checked_next`，必须分别
 陈述并由对应提供者连接，不能用后者加强公共请求规格。
