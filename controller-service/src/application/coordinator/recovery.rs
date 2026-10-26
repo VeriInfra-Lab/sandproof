@@ -638,6 +638,21 @@ fn epoch_blocked_startups(
         .collect())
 }
 
+fn close_released_executions(
+    journal: &mut ControllerJournal,
+    selected: Option<core::SandboxId>,
+) -> Result<(), ApplicationError> {
+    let originals = journal.world().map_err(map_journal)?;
+    for (sandbox, _) in originals.sandbox_records() {
+        if selected.is_none_or(|id| id == *sandbox) {
+            journal
+                .close_released_lifecycle_execution(*sandbox, &mut NeverCrash)
+                .map_err(map_journal)?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn recover_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     selected: Option<core::SandboxId>,
@@ -651,14 +666,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
             .abort_due_startups(clock.now_ms()?, &mut NeverCrash)
             .map_err(map_admission)?;
     }
-    let originals = journal.world().map_err(map_journal)?;
-    for (sandbox, _) in originals.sandbox_records() {
-        if selected.is_none_or(|id| id == *sandbox) {
-            journal
-                .close_released_lifecycle_execution(*sandbox, &mut NeverCrash)
-                .map_err(map_journal)?;
-        }
-    }
+    close_released_executions(journal, selected)?;
     let initial = journal.world().map_err(map_journal)?;
     // Use the state before reconciliation: work whose last cleanup receipt is
     // recovered in this scan must still finish and be counted once. Already
