@@ -99,20 +99,24 @@ fn current_identity(
     }
 }
 
+fn running_state() -> Arc<std::sync::Mutex<local::State>> {
+    Arc::new(std::sync::Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        source: Some(SourceProcessIdentity {
+            pid: 1234,
+            start_time_ticks: 5678,
+            boot_id: "fixture-boot".into(),
+        }),
+        ..local::State::default()
+    }))
+}
+
 #[tokio::test]
 async fn original_unload_waits_for_both_gateway_body_and_actual_relay_before_first_freeze() {
     for body_first in [false, true] {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("db");
-        let state = Arc::new(std::sync::Mutex::new(local::State {
-            epoch: local::TestEpoch::Matching,
-            source: Some(SourceProcessIdentity {
-                pid: 1234,
-                start_time_ticks: 5678,
-                boot_id: "fixture-boot".into(),
-            }),
-            ..local::State::default()
-        }));
+        let state = running_state();
         let app = lifecycle::application(&path, Arc::clone(&state), true);
         let create = lifecycle::request();
         let context = lifecycle::context();
