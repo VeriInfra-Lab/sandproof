@@ -11,7 +11,9 @@ use std::{
 };
 use v3::fixture::{State, TestEpoch, TestHost};
 mod continue_application;
+mod continued_exit;
 mod end_pipeline;
+mod material_quota;
 mod original_continue;
 mod restore_exit;
 mod slot_reuse;
@@ -815,7 +817,7 @@ fn full_budget_refusal_precedes_pause_and_does_not_leave_half_reservation() {
             10,
             &mut NeverCrash
         ),
-        Err(JournalError::MaintenanceCapacity)
+        Err(JournalError::CaptureMaterialQuotaExceeded)
     ));
     assert_eq!(journal.world().unwrap(), before);
     assert!(

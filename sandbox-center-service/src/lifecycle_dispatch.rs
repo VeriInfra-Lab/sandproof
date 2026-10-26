@@ -601,7 +601,12 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             .map_err(|_| PortError::OutcomeUnknown)?
             .accept_lifecycle_unload_observation(&observation, self.now()?);
         match saved {
-            Ok(()) => Ok(true),
+            Ok(()) => {
+                if observation.outcome.continued().is_some() {
+                    self.reconcile_continued_loss(intent, deadline)?;
+                }
+                Ok(true)
+            }
             Err(AuthorityError::Decision(
                 DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
             )) => Ok(false),

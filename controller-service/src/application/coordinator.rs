@@ -1,6 +1,7 @@
 //! Serialized durable decisions and revocations; slow physical work runs outside the lock.
 mod lifecycle_capture_end;
 mod lifecycle_continue;
+mod lifecycle_continued_exit;
 mod lifecycle_material_retirement;
 mod lifecycle_restore;
 mod lifecycle_restore_exit;
@@ -236,6 +237,7 @@ fn map_journal_at(
             | JournalError::Conflict
             | JournalError::RevisionConflict
             | JournalError::IdentifierExhausted
+            | JournalError::CaptureMaterialQuotaExceeded
     ) {
         FaultRecord::journal(stage, &error, context).emit();
     }
@@ -250,7 +252,9 @@ fn map_journal_at(
             ApplicationError::OutcomeUnknown
         }
         JournalError::OperationFailed => ApplicationError::Failed,
-        JournalError::IdentifierExhausted => ApplicationError::QuotaExceeded,
+        JournalError::IdentifierExhausted | JournalError::CaptureMaterialQuotaExceeded => {
+            ApplicationError::QuotaExceeded
+        }
         _ => ApplicationError::Busy,
     };
     drop(error);

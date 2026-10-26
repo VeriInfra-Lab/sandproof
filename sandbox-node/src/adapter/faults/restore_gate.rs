@@ -63,7 +63,7 @@ struct Observation<'a> {
     namespace: Namespace<'a>,
     token: &'a str,
 }
-struct Directory {
+pub(super) struct Directory {
     path: PathBuf,
     file: File,
     owner: u32,
@@ -75,7 +75,7 @@ pub(crate) struct RestoreActivationGate {
     config_file: File,
 }
 
-fn hex_digest(bytes: &[u8]) -> String {
+pub(super) fn hex_digest(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut value = String::with_capacity(64);
     for byte in Sha256::digest(bytes) {
@@ -83,7 +83,7 @@ fn hex_digest(bytes: &[u8]) -> String {
     }
     value
 }
-fn valid_digest(value: &str) -> bool {
+pub(super) fn valid_digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
@@ -98,7 +98,7 @@ fn identity_matches(directory: &File, name: &str, file: &File) -> Result<()> {
     Ok(())
 }
 impl Directory {
-    fn from_opened(path: PathBuf, file: File, owner: u32) -> Result<Self> {
+    pub(super) fn from_opened(path: PathBuf, file: File, owner: u32) -> Result<Self> {
         let metadata = file.metadata()?;
         if !metadata.is_dir() || metadata.uid() != owner || metadata.mode() & 0o7777 != 0o700 {
             return Err("restore gate requires its original private directory".into());
@@ -107,7 +107,7 @@ impl Directory {
         value.verify()?;
         Ok(value)
     }
-    fn open(path: PathBuf) -> Result<Self> {
+    pub(super) fn open(path: PathBuf) -> Result<Self> {
         sandbox_runtime::check_trusted_path(&path)?;
         let file = File::from(fs::open(
             &path,
@@ -116,7 +116,7 @@ impl Directory {
         )?);
         Self::from_opened(path, file, 0)
     }
-    fn verify(&self) -> Result<()> {
+    pub(super) fn verify(&self) -> Result<()> {
         let current = std::fs::symlink_metadata(&self.path)?;
         let original = self.file.metadata()?;
         if current.file_type().is_symlink()
@@ -128,10 +128,10 @@ impl Directory {
         }
         Ok(())
     }
-    fn read(&self, name: &str) -> Result<Option<Vec<u8>>> {
+    pub(super) fn read(&self, name: &str) -> Result<Option<Vec<u8>>> {
         Ok(self.read_file(name)?.map(|(_, bytes)| bytes))
     }
-    fn read_file(&self, name: &str) -> Result<Option<(File, Vec<u8>)>> {
+    pub(super) fn read_file(&self, name: &str) -> Result<Option<(File, Vec<u8>)>> {
         self.verify()?;
         let file = match fs::openat(
             &self.file,
@@ -164,7 +164,7 @@ impl Directory {
         identity_matches(&self.file, name, &file)?;
         Ok(Some((file, bytes)))
     }
-    fn create(&self, name: &str, bytes: &[u8]) -> Result<File> {
+    pub(super) fn create(&self, name: &str, bytes: &[u8]) -> Result<File> {
         self.verify()?;
         let mut file = File::from(fs::openat(
             &self.file,
@@ -179,7 +179,11 @@ impl Directory {
         self.verify()?;
         Ok(file)
     }
-    fn publish_ready(&self, digest: &str) -> Result<()> {
+    pub(super) fn matches(&self, name: &str, file: &File) -> Result<()> {
+        self.verify()?;
+        identity_matches(&self.file, name, file)
+    }
+    pub(super) fn publish_ready(&self, digest: &str) -> Result<()> {
         let bytes = serde_json::to_vec(&Ready {
             schema_version: 1,
             observation_sha256: digest,

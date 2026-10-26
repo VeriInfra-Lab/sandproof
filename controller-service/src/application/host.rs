@@ -122,6 +122,18 @@ pub trait WorkRecovery: WorkEvidence {
     ) -> Option<WorkReceipt<Self::Evidence>> {
         None
     }
+    /// Positively observe exit of the same successfully continued VM. The
+    /// provider binds the complete action/work and exact original process,
+    /// rechecks the continuation's own fence and protected occupied identity,
+    /// and performs no PATCH, load, guest initialization, stop or cleanup.
+    /// None covers alive, unknown, unsupported or refused observations. The
+    /// controller separately rechecks the current full Unload authority.
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &crate::capture::OriginalContinueWorkRequest,
+    ) -> Option<crate::capture::OriginalContinueExitObservation>;
+
     /// Read an exact bounded physical plan without creating or deleting files.
     /// An old source VMM may already be absent; current CPU/boot readiness is
     /// not a substitute for the original file and native execution identities.

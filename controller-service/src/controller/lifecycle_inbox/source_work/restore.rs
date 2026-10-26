@@ -11,6 +11,7 @@ use sandproof_protocol::{
     lifecycle::{AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation},
 };
 use serde::{Deserialize, Serialize};
+mod continued_exit;
 mod exit;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

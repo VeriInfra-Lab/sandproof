@@ -39,6 +39,166 @@ fn ready(intent: &AcceptedLifecycleIntent) -> ResumeObservation {
     }
 }
 
+fn continued_resume() -> (
+    CenterState,
+    ResumeObservation,
+    sandproof_protocol::lifecycle::UnloadObservation,
+) {
+    let (before, unload) = source();
+    let owner = "1".try_into().unwrap();
+    let (accepted, origin) = before
+        .accept_lifecycle(&owner, &input(&unload), 170)
+        .unwrap();
+    let running = accepted
+        .accept_lifecycle_resume_observation(&ready(&origin))
+        .unwrap();
+    let mut key = origin.request.binding.key.clone();
+    key.sequence = 4.try_into().unwrap();
+    let (pending, current) = running
+        .accept_lifecycle(
+            &owner,
+            &LifecycleSubmission::Unload {
+                key,
+                session: origin.request.binding.session.clone(),
+                expected_version: origin.accepted_version,
+            },
+            181,
+        )
+        .unwrap();
+    let mut facts = running.sandboxes()[0].last_running().unwrap().clone();
+    facts.observed_at_ms = 185;
+    (
+        pending,
+        ResumeObservation {
+            request: origin,
+            current_request: current.clone(),
+            readiness: CurrentResumeReadiness::StateLost,
+        },
+        sandproof_protocol::lifecycle::UnloadObservation {
+            request: current,
+            outcome: sandproof_protocol::lifecycle::UnloadOutcome::OriginalContinued { facts },
+        },
+    )
+}
+
+#[test]
+fn observed_continued_resume_rechecks_facts_without_writing_a_running_field_into_unload() {
+    let (pending, mut observation, continued) = continued_resume();
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
+    let mut facts = continued.outcome.continued().unwrap().clone();
+    facts.observed_at_ms = 186;
+    observation.readiness = CurrentResumeReadiness::Observed {
+        facts: facts.clone(),
+    };
+    assert_eq!(
+        running.accept_lifecycle_resume_observation(&observation),
+        Ok(running.clone())
+    );
+    for field in 0..4 {
+        let mut changed = facts.clone();
+        match field {
+            0 => changed.started_at_ms += 1,
+            1 => changed.end_at_ms += 1,
+            2 => changed.max_end_at_ms += 1,
+            _ => changed.startup_deadline_ms += 1,
+        }
+        observation.readiness = CurrentResumeReadiness::Observed { facts: changed };
+        assert_eq!(
+            running.accept_lifecycle_resume_observation(&observation),
+            Err(DecisionError::Conflict)
+        );
+    }
+}
+
+#[test]
+fn continued_resume_loss_requires_saved_continuation_and_survives_reopen_and_history_replay() {
+    let (pending, loss, continued) = continued_resume();
+    assert!(loss.matches_request(&loss.request));
+    assert_eq!(
+        pending.accept_lifecycle_resume_observation(&loss),
+        Err(DecisionError::Unavailable)
+    );
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
+    let after_exit = running.accept_lifecycle_resume_observation(&loss).unwrap();
+    assert_eq!(after_exit.sandboxes()[0].phase(), SessionPhase::StateLost);
+    assert_eq!(after_exit.reserved(None, None), Some(resources(1)));
+    assert_eq!(
+        after_exit.sandboxes()[0]
+            .operations()
+            .last()
+            .unwrap()
+            .unloaded(),
+        Some(&continued)
+    );
+    let reopened: CenterState =
+        serde_json::from_slice(&serde_json::to_vec(&after_exit).unwrap()).unwrap();
+    assert!(reopened.is_valid());
+    assert_eq!(reopened, after_exit);
+    assert_eq!(
+        reopened.accept_lifecycle_unload_observation(&continued, 185),
+        Ok(after_exit.clone())
+    );
+    let mut old_ready = ready(&loss.request);
+    old_ready.current_request = loss.current_request.clone();
+    assert_eq!(
+        after_exit.accept_lifecycle_resume_observation(&old_ready),
+        Err(DecisionError::Conflict)
+    );
+    let mut corrupted = serde_json::to_value(&after_exit).unwrap();
+    corrupted["sandboxes"][0]["operations"]
+        .as_array_mut()
+        .unwrap()
+        .last_mut()
+        .unwrap()["unloaded"] = serde_json::Value::Null;
+    let corrupted: CenterState = serde_json::from_value(corrupted).unwrap();
+    assert!(
+        !corrupted.is_valid(),
+        "a lost Unload cannot invent its own continuation"
+    );
+}
+
+#[test]
+fn continued_resume_loss_rejects_changed_current_and_cannot_override_destroy() {
+    let (pending, loss, continued) = continued_resume();
+    let running = pending
+        .accept_lifecycle_unload_observation(&continued, 185)
+        .unwrap();
+    let mut changed = loss.clone();
+    changed.current_request.accepted_version += 1;
+    assert_eq!(
+        running.accept_lifecycle_resume_observation(&changed),
+        Err(DecisionError::Stale)
+    );
+    let after_exit = running.accept_lifecycle_resume_observation(&loss).unwrap();
+    let current = &loss.current_request;
+    let mut key = current.request.binding.key.clone();
+    key.sequence = 5.try_into().unwrap();
+    let (terminating, _) = after_exit
+        .accept_lifecycle(
+            &"1".try_into().unwrap(),
+            &LifecycleSubmission::Destroy {
+                key,
+                session: current.request.binding.session.clone(),
+                expected_version: current.accepted_version,
+            },
+            0,
+        )
+        .unwrap();
+    assert!(terminating.is_valid());
+    assert_eq!(
+        terminating.sandboxes()[0].phase(),
+        SessionPhase::Terminating
+    );
+    assert_eq!(
+        terminating.accept_lifecycle_resume_observation(&loss),
+        Err(DecisionError::Stale)
+    );
+}
+
 #[test]
 fn resume_derives_one_candidate_and_reacquires_running_capacity_before_dispatch() {
     let (before, unload) = source();

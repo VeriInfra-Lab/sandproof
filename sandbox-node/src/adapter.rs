@@ -496,6 +496,25 @@ impl WorkRecovery for NodeHost {
             })
     }
 
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        self.worker
+            .observe_original_continue_exit(self.host_epoch_source.as_ref()?, action, work)
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
+            .ok()
+            .flatten()
+    }
+
     fn observe_lifecycle_restore_exit(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -1048,6 +1067,32 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
         self: Box<Self>,
         permit: sandproof_controller_service::capture::FullCaptureLaunchPermit,
     ) -> sandproof_controller_service::capture::FullCaptureResult<HostObservation> {
+        #[cfg(debug_assertions)]
+        {
+            let selected: Result<bool, Box<dyn std::error::Error>> = (|| {
+                let Some(gate) = faults::CaptureCancelGate::configured(permit.action())? else {
+                    return Ok(false);
+                };
+                self.prepared.require_launch_permit(&permit)?;
+                gate.wait(&permit)?;
+                Ok(true)
+            })();
+            if !matches!(selected, Ok(false)) {
+                if let Err(error) = selected {
+                    project(
+                        FaultStage::Observe,
+                        FaultContext::action(permit.action()),
+                        error.as_ref(),
+                    )
+                    .emit();
+                }
+                // Close only this original Ready child's release pipe. Its
+                // own durable NoRequest and actual exit must be observed by
+                // the original service; this result asserts neither fact.
+                self.prepared.cancel();
+                return sandproof_controller_service::capture::FullCaptureResult::UnknownCapture;
+            }
+        }
         self.worker.execute_prepared_full_capture(
             &self.provider,
             &self.profile,

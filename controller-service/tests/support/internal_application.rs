@@ -72,6 +72,7 @@ pub struct State {
     pub terminal_drain_gate: Option<(u64, u64)>,
     pub terminal_drain_observations: usize,
     pub full_proposal_error: Option<ApplicationError>,
+    pub full_proposal: Option<sandproof_controller_service::capture::FullCaptureWorkRequest>,
     pub source_probe: Option<SourceProbe>,
     pub source_calls: usize,
     pub actions: Vec<WorkAction<core::EffectId>>,
@@ -102,6 +103,13 @@ pub struct State {
         sandproof_protocol::lifecycle::ContentDigest,
     )>,
     pub restore_exit_hook: Option<Box<dyn FnOnce() + Send>>,
+    pub continued_exit:
+        Option<sandproof_controller_service::capture::OriginalContinueExitObservation>,
+    pub continued_exit_questions: Vec<(
+        WorkAction<core::EffectId>,
+        sandproof_protocol::lifecycle::ContentDigest,
+    )>,
+    pub continued_exit_hook: Option<Box<dyn FnOnce() + Send>>,
 }
 pub struct TestHost(pub Arc<Mutex<State>>);
 impl WorkEvidence for TestHost {
@@ -137,16 +145,22 @@ impl WorkExecution for TestHost {
     }
     fn propose_lifecycle_full(
         &self,
-        _pause: &sandproof_controller_service::capture::PauseWorkRequest,
-        _source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
     ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest, ApplicationError>
     {
-        Err(self
-            .0
-            .lock()
-            .unwrap()
-            .full_proposal_error
-            .unwrap_or(ApplicationError::Busy))
+        let state = self.0.lock().unwrap();
+        if let Some(error) = state.full_proposal_error {
+            return Err(error);
+        }
+        let full = state.full_proposal.as_ref().ok_or(ApplicationError::Busy)?;
+        if &full.pause != pause
+            || pause.source_resource != source.resource
+            || pause.source != source.source
+        {
+            return Err(ApplicationError::Invalid);
+        }
+        Ok(full.clone())
     }
     fn execute_lifecycle_original_continue(
         &self,
@@ -198,6 +212,27 @@ impl WorkExecution for TestHost {
     }
 }
 impl WorkRecovery for TestHost {
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        let (observed, hook) = {
+            let mut state = self.0.lock().unwrap();
+            state
+                .continued_exit_questions
+                .push((action.clone(), work.binding_digest().ok()?));
+            (
+                state.continued_exit.clone(),
+                state.continued_exit_hook.take(),
+            )
+        };
+        if let Some(hook) = hook {
+            hook();
+        }
+        observed
+    }
+
     fn observe_lifecycle_restore_exit(
         &self,
         action: &WorkAction<core::EffectId>,

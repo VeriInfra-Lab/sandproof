@@ -33,7 +33,7 @@ impl RestoreExitCandidate {
     }
 }
 
-fn eligible(
+pub(super) fn eligible(
     local: InternalLocalBinding,
     native: &NativeCreateSnapshot,
     request: &RestoreWorkRequest,

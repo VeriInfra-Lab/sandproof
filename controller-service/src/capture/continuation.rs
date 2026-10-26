@@ -1,13 +1,25 @@
 //! One original-VM continuation question and its separate dispatch permission.
 //! The journal's end-fact/dispatch producers are connected separately; neither
 //! reading these values nor hashing them proves an API or process has ended.
-use super::{FullCaptureWorkRequest, SourceObservationRequirement};
+use super::{FullCaptureWorkRequest, SourceObservationRequirement, SourceProcessIdentity};
 use sandbox_controller_core::{
     EffectId,
     capture::{CaptureWorkEndReceipt, OriginalContinueIdentity},
 };
 use sandproof_protocol::{WorkAction, lifecycle::ContentDigest};
 use sha2::{Digest, Sha256};
+
+/// Positive exit of the exact original VM named by a saved continuation.
+/// The provider rechecks its action, complete Full/end work, current fence,
+/// occupied slot, protected boot and original PID/start/boot. Missing records,
+/// timeouts and guest/network errors do not establish exit. This observation
+/// grants no continuation, load, cleanup, pin release or material retirement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OriginalContinueExitObservation {
+    pub action: WorkAction<EffectId>,
+    pub work_binding: ContentDigest,
+    pub process: SourceProcessIdentity,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OriginalContinueWorkRequest {

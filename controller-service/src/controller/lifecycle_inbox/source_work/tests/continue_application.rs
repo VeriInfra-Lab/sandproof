@@ -124,6 +124,117 @@ fn pre_native_proposal_failure_retires_readonly_source_and_keeps_fixed_result_se
 }
 
 #[test]
+fn exact_material_quota_closes_before_admission_through_the_actual_application() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, state) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let before = journal.world().unwrap();
+    let executions = state.lock().unwrap().actions.len();
+    let mut full = full_request(&source);
+    full.state_bytes = config().max_material_bytes;
+    state.lock().unwrap().full_proposal = Some(full);
+    drop(journal);
+    let app = reopened(&path, state.clone(), 10);
+    assert!(
+        app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node)
+            .unwrap()
+    );
+    assert_eq!(world(&path), before);
+    assert_eq!(state.lock().unwrap().actions.len(), executions);
+    assert_eq!(retained_sources(&path), 0);
+    let saved = fixed(&app);
+    assert!(
+        app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node)
+            .unwrap()
+    );
+    assert_eq!(fixed(&app), saved);
+    assert_eq!(state.lock().unwrap().actions.len(), executions);
+}
+
+#[test]
+fn busy_and_unknown_proposals_do_not_publish_a_pre_admission_continuation() {
+    for error in [
+        crate::application::ApplicationError::Busy,
+        crate::application::ApplicationError::OutcomeUnknown,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, state) = ready(&path);
+        let source = observed_for_full(&mut journal);
+        let before = journal.world().unwrap();
+        let executions = state.lock().unwrap().actions.len();
+        state.lock().unwrap().full_proposal_error = Some(error);
+        drop(journal);
+        let app = reopened(&path, state.clone(), 10);
+        assert_eq!(
+            app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node),
+            Err(error)
+        );
+        drop(app);
+        let journal = v3::open(&path);
+        assert_eq!(journal.world().unwrap(), before);
+        assert!(
+            journal
+                .lifecycle_original_continued_result(&unload(), &v3::context())
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            journal
+                .lifecycle_capture_record(source.work.anchor.local.sandbox)
+                .unwrap()
+                .unwrap()
+                .capture
+                .is_none()
+        );
+        assert_eq!(state.lock().unwrap().actions.len(), executions);
+        assert_eq!(retained_sources(&path), 1);
+    }
+}
+
+#[test]
+fn an_uncertain_admission_commit_never_becomes_a_material_quota_refusal() {
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, state) = ready(&path);
+        let source = observed_for_full(&mut journal);
+        let before = journal.world().unwrap();
+        let sandbox = source.work.anchor.local.sandbox;
+        state.lock().unwrap().full_proposal = Some(full_request(&source));
+        let executions = state.lock().unwrap().actions.len();
+        drop(journal);
+        let app = reopened(&path, state.clone(), 10);
+        transaction::fail_next_commit(durable);
+        assert_eq!(
+            app.advance_recorded_lifecycle_unload(&unload(), &v3::config().node),
+            Err(crate::application::ApplicationError::OutcomeUnknown)
+        );
+        drop(app);
+        let journal = v3::open(&path);
+        assert!(
+            journal
+                .lifecycle_original_continued_result(&unload(), &v3::context())
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            journal
+                .lifecycle_capture_record(sandbox)
+                .unwrap()
+                .and_then(|record| record.capture)
+                .is_some(),
+            durable
+        );
+        if !durable {
+            assert_eq!(journal.world().unwrap(), before);
+        }
+        assert_eq!(state.lock().unwrap().actions.len(), executions);
+    }
+}
+
+#[test]
 fn pre_native_close_unknown_commit_recovers_gate_and_source_retirement_together() {
     for durable in [false, true] {
         let dir = tempfile::tempdir().unwrap();

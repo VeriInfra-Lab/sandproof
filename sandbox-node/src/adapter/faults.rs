@@ -7,6 +7,8 @@ use std::{fs, os::unix::fs::MetadataExt, path::PathBuf};
 
 mod restore_gate;
 pub(crate) use restore_gate::RestoreActivationGate;
+mod capture_cancel;
+pub(super) use capture_cancel::CaptureCancelGate;
 
 pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
     // Debug-only deterministic crash after the outbox dispatch claim,

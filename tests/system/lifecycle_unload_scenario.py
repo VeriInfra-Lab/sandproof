@@ -264,10 +264,28 @@ class PublicUnloadScenario:
         sample['session']=self.session
         sample['acceptance']=copy.deepcopy(self.current_acceptance)
 
-    def operation_completed(self, phase):
+    def operation_completed(self, phase, *, view=None, acceptance=None):
         if not self.timings:
             return
         sample=self.timings[-1]
+        if sample['operation']=='unload':
+            if (sample['accepted_monotonic'] is None or sample['completed_monotonic'] is not None
+                    or view is None or acceptance is None
+                    or acceptance!=sample['acceptance'] or acceptance!=self.current_acceptance
+                    or acceptance!=self.unload_acceptance):
+                return
+            self.check_view(view,acceptance)
+            outcome=view['unload_outcome']
+            if phase==view['phase']=='unloaded' and outcome['state']=='unloaded':
+                completed='unloaded'
+            elif (phase==view['phase']=='running' and outcome is not None
+                    and outcome['state']=='original_continued'):
+                completed='original_continued'
+            else:
+                return
+            sample['completed_monotonic']=time.monotonic()
+            sample['completion_phase']=completed
+            return
         expected={'create':'running','resume':'running','unload':'unloaded','destroy':'cleaned'}
         if (sample['accepted_monotonic'] is not None and sample['completed_monotonic'] is None
                 and (expected[sample['operation']]==phase
@@ -371,7 +389,9 @@ class PublicUnloadScenario:
             assert type(outcome) is dict and set(outcome)=={'state','facts'}
             assert outcome['state']=='unloaded'
         elif outcome is not None:
-            assert view['phase']=='running'
+            # A current loss does not rewrite a failed Unload's historical
+            # successful continuation. The same result must survive replay.
+            assert view['phase'] in ('running','state_lost')
             assert type(outcome) is dict and set(outcome)=={'state','facts'}
             assert outcome['state']=='original_continued', 'running failed-Unload result required'
         return view
@@ -391,7 +411,7 @@ class PublicUnloadScenario:
             self.check_view(view, acceptance)
             if view['phase'] == complete:
                 self.remaining()
-                self.operation_completed(complete)
+                self.operation_completed(complete,view=view,acceptance=acceptance)
                 return view
             assert view['phase'] in waiting, 'unexpected lifecycle phase; no completion inferred'
             time.sleep(min(.1, self.remaining()))
@@ -622,6 +642,33 @@ class PublicUnloadScenario:
                     headers={'X-Access-Token':token})
                 assert response.status_code==401,'a prior execution token regained authority'
 
+    def assert_continued_workload(self,running,lifetime):
+        self.step('original-continued-workload')
+        self.check_view(running,self.unload_acceptance)
+        assert running['phase']=='running'
+        facts=running['unload_outcome']['facts']
+        assert set(facts)==set(lifetime)|{'observed_at_ms'}
+        assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
+        assert uint(facts['observed_at_ms'])
+        assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
+        previous=copy.deepcopy(self.witness)
+        token=self.data_token
+        sandbox=self.sdk()
+        assert self.data_token==token, 'original continuation changed execution authorization'
+        observed=self.witness_command(sandbox,'read')
+        assert observed==previous, 'failed Unload changed the continued RAM or activation state'
+        assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(previous['counter'])
+        current=self.witness_command(sandbox,'advance')
+        assert {key:current[key] for key in current if key!='counter'}=={
+            key:previous[key] for key in previous if key!='counter'}
+        assert current['counter']==previous['counter']+1
+        assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
+        self.assert_previous_tokens_closed()
+        self.witness=current
+        assert self.query()==running
+        return dict(same_ram_and_activation=True,same_guest_process=True,
+            same_authorization=True,same_lifetime=True,counter=current['counter'])
+
     def assert_data_closed(self):
         import httpx
         self.step('old-data-token', 401)
@@ -639,7 +686,9 @@ class PublicUnloadScenario:
 def exercise(args):
     """Only the sibling helper can start/restart or inspect original resources."""
     from lifecycle_unload_runtime import prepare
-    if args.scenario not in ('normal','restore-activation-loss','restore-candidate-exit'):
+    restore_fault=args.scenario in ('restore-activation-loss','restore-candidate-exit')
+    continued_exit=args.scenario in ('continued-after-capture-exit','continued-before-admission-exit')
+    if args.scenario!='normal' and not restore_fault and not continued_exit:
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -735,11 +784,11 @@ def exercise(args):
         for cycle in (1,2):
             report['phase']='public-resume-'+str(cycle)
             gate_receipt=None
-            if cycle==1 and args.scenario!='normal':
+            if cycle==1 and restore_fault:
                 report['phase']='arm-original-restore-activation-gate'
                 runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
             accepted=client.resume(saved)
-            if cycle==1 and args.scenario!='normal':
+            if cycle==1 and restore_fault:
                 report['phase']='original-restore-activation-gate-read'
                 gate_receipt=runtime.wait_resume_gate(client.session,accepted,
                     copy.deepcopy(client.witness),deadline)
@@ -787,6 +836,75 @@ def exercise(args):
             client.assert_owner_isolation()
             report['cycles'].append(dict(cycle=cycle,resume=accepted,
                 running=physical_running,continuity=continuity))
+            if cycle==1 and continued_exit:
+                assert physical_running['context']['position']!=control_physical['context']['position'], \
+                    'original session did not restore into a different actual slot'
+                report['slot_reuse']['restored_position']=physical_running['context']['position']
+                if args.scenario=='continued-before-admission-exit':
+                    report['phase']='second-owner-original-unload-resume'
+                    report['control_workload']=control.run_public_workload(control_running)
+                    control.unload(control_running)
+                    control_saved=control.wait_unloaded()
+                    control_material=runtime.unload_evidence(control.session,deadline,control.unload_acceptance['key'])
+                    control.assert_unloaded_facts(control_saved,control_material['facts'])
+                    control.operation_evidence_completed()
+                    control_resume=control.resume(control_saved)
+                    control_running=control.wait_running()
+                    control_physical=runtime.record_running(control.session,deadline,resume_acceptance=control_resume)
+                    report['control_continuity']=control.assert_resumed_workload(control_running,
+                        physical_running=control_physical)
+                    control.operation_evidence_completed()
+                report['phase']='arm-original-full-no-request'
+                runtime.arm_capture_cancel_gate(client.session,deadline,args.activation_gate_timeout_ms)
+                continued_acceptance=client.unload(resumed)
+                report['phase']='cancel-original-full-release'
+                report['capture_cancel']=runtime.cancel_original_full(continued_acceptance,deadline)
+                report['phase']='public-after-capture-original-continued'
+                continued=client.wait_phase(continued_acceptance,waiting={'unloading'},complete='running')
+                report['continued_workload']=client.assert_continued_workload(continued,lifetime)
+                stage='after_capture'
+                after=runtime.continued_evidence(continued_acceptance,continued,stage,deadline)
+                report['after_capture_continued']=after
+                client.operation_evidence_completed()
+                if args.scenario=='continued-before-admission-exit':
+                    report['phase']='natural-before-admission-material-refusal'
+                    reservation=runtime.capture_cancel_gate['capture_record']['capture']['reserved_material_bytes']
+                    assert after['source_records']==3
+                    assert after['held_material_bytes']==3*reservation
+                    assert after['held_material_bytes']<=after['max_material_bytes']<after['held_material_bytes']+reservation
+                    report['natural_material_pressure']=dict(held_bytes=after['held_material_bytes'],
+                        next_reservation_bytes=reservation,max_material_bytes=after['max_material_bytes'])
+                    continued_acceptance=client.unload(continued)
+                    continued=client.wait_phase(continued_acceptance,waiting={'unloading'},complete='running')
+                    report['before_admission_workload']=client.assert_continued_workload(continued,lifetime)
+                    stage='before_admission'
+                    report['before_admission_continued']=runtime.continued_evidence(
+                        continued_acceptance,continued,stage,deadline)
+                    client.operation_evidence_completed()
+                client.assert_original_replay(continued)
+                report['phase']='original-continued-candidate-pidfd-exit'
+                report['continued_candidate_exit']=runtime.exit_continued_candidate(
+                    continued_acceptance,continued,stage,deadline)
+                report['phase']='public-continued-state-lost'
+                lost=client.wait_phase(continued_acceptance,waiting={'running'},complete='state_lost')
+                assert lost['unload_outcome']==continued['unload_outcome'], 'loss rewrote historical continued result'
+                client.assert_data_closed();client.assert_previous_tokens_closed();client.assert_owner_isolation()
+                report['continued_lost']=runtime.continued_lost_evidence(continued_acceptance,lost,stage,deadline)
+                client.assert_original_replay(lost)
+                report['phase']='continued-loss-same-manager-config-reopen'
+                report['continued_lost_manager_restart']=runtime.restart_managers(deadline)
+                client.assert_reopened(lost)
+                report['continued_lost_after_restart']=runtime.continued_lost_evidence(
+                    continued_acceptance,lost,stage,deadline)
+                client.assert_data_closed();client.assert_previous_tokens_closed()
+                assert control.query()==control_running
+                report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(control.session,control_physical,deadline)
+                control.destroy(control_running);control.wait_cleaned()
+                report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                control.operation_evidence_completed()
+                report['cycles'][-1]['continued_state_lost']=lost
+                report['cycles'][-1]['continued_stage']=stage
+                break
             if cycle==1:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
@@ -840,6 +958,14 @@ def exercise(args):
                 'E14':'prior and gate activation credentials rejected after StateLost; same credential registration observed',
                 'other_cases':'one death cycle only; no normal two-cycle or full E1-E16 claim',
             }
+        if continued_exit:
+            report['acceptance_cases']={
+                'E7':'failed Unload continued same restored VM, then exact pidfd exit and StateLost with immutable continued history; replay/reopen and Destroy/GC',
+                'E12':'other owner remained on its original current live candidate across continued candidate loss',
+                'E14':'old execution credentials rejected after loss; continued execution kept its original credentials and lifetime',
+                'qualification':stage,
+                'other_cases':'one selected continued death branch; no full fault matrix or formal proof claim',
+            }
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -892,6 +1018,7 @@ def exercise(args):
                 raise
         finally:
             runtime.close_restore_gate()
+            runtime.close_capture_cancel_gate()
             report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
             write_once(root / 'lifecycle-unload-report.json', report)
     return report
@@ -902,7 +1029,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
-    parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit'),default='normal')
+    parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
+        'continued-after-capture-exit','continued-before-admission-exit'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

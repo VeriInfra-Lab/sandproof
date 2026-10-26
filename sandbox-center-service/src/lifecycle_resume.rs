@@ -36,12 +36,6 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         &self,
         intent: &AcceptedLifecycleIntent,
     ) -> Result<bool, PortError> {
-        if matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
-            return Ok(true);
-        }
-        if !matches!(intent.request.operation, LifecycleOperation::Renew { .. }) {
-            return Ok(false);
-        }
         let state = self.snapshot()?;
         let record = state
             .lifecycle_session(
@@ -49,6 +43,15 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 &intent.request.binding.session,
             )
             .ok_or(PortError::NotFound)?;
+        if record
+            .operations()
+            .last()
+            .is_none_or(|current| current.intent() != intent)
+        {
+            return Err(PortError::Busy);
+        }
+        // A failed Unload can keep the resumed execution running. Classify
+        // its actual execution origin, independently of the latest input kind.
         Ok(record.current_execution_origin().is_some_and(|origin| {
             matches!(origin.request.operation, LifecycleOperation::Resume { .. })
         }))
