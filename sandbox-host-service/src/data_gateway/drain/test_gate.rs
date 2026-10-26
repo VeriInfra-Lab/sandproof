@@ -239,7 +239,29 @@ fn record_busy_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::{fs::PermissionsExt, net::UnixStream};
+    use std::{
+        os::unix::{fs::PermissionsExt, net::UnixStream},
+        sync::mpsc,
+    };
+
+    fn connect_selected_socket(
+        socket: &Path,
+        deadline: Instant,
+        mut pending: impl FnMut(io::ErrorKind),
+    ) -> io::Result<UnixStream> {
+        loop {
+            match UnixStream::connect(socket) {
+                Ok(peer) => return Ok(peer),
+                Err(error)
+                    if error.kind() == io::ErrorKind::NotFound && Instant::now() < deadline =>
+                {
+                    pending(error.kind());
+                    std::thread::yield_now();
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
 
     fn private_directory() -> tempfile::TempDir {
         let directory = tempfile::tempdir().unwrap();
@@ -285,17 +307,8 @@ mod tests {
             .path()
             .join(format!("{}.sock", std::process::id()));
         let deadline = Instant::now() + Duration::from_secs(2);
-        let mut peer = loop {
-            match UnixStream::connect(&socket) {
-                Ok(peer) => break peer,
-                Err(error)
-                    if error.kind() == io::ErrorKind::NotFound && Instant::now() < deadline =>
-                {
-                    std::thread::yield_now();
-                }
-                Err(error) => panic!("original selected socket: {error}"),
-            }
-        };
+        let mut peer = connect_selected_socket(&socket, deadline, |_| {})
+            .expect("original selected socket");
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let mut echo = vec![0; bytes.len()];
         peer.read_exact(&mut echo).unwrap();
@@ -305,6 +318,53 @@ mod tests {
         worker.join().unwrap().unwrap();
         assert!(!socket.exists());
         assert!(Path::new(&format!("/proc/{}/stat", std::process::id())).exists());
+    }
+
+    #[tokio::test]
+    async fn selected_socket_fixture_waits_for_listen_after_path_is_bound() {
+        let directory = private_directory();
+        let path = directory.path().join("bound-before-listen.sock");
+        // These are the real bind/listen phases, using the existing Tokio
+        // dependency. The path exists while no listener accepts connections.
+        let bound = tokio::net::UnixSocket::new_stream().unwrap();
+        bound.bind(&path).unwrap();
+        assert!(path.exists());
+        assert_eq!(
+            UnixStream::connect(&path).unwrap_err().kind(),
+            io::ErrorKind::ConnectionRefused
+        );
+        let (pending_tx, pending_rx) = mpsc::sync_channel(1);
+        let (listening_tx, listening_rx) = mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let mut first = Some(pending_tx);
+            connect_selected_socket(&path, Instant::now() + Duration::from_secs(2), |kind| {
+                if let Some(sender) = first.take() {
+                    sender.send(kind).unwrap();
+                    listening_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                }
+            })
+        });
+        assert_eq!(
+            pending_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+            io::ErrorKind::ConnectionRefused
+        );
+        let listener = bound.listen(1).unwrap();
+        listening_tx.send(()).unwrap();
+        let connected = worker.join().unwrap().unwrap();
+        let (accepted, _) = listener.accept().await.unwrap();
+        drop((connected, accepted));
+    }
+
+    #[test]
+    fn selected_socket_fixture_rejects_refusal_after_its_deadline() {
+        let directory = private_directory();
+        let path = directory.path().join("never-listening.sock");
+        let bound = tokio::net::UnixSocket::new_stream().unwrap();
+        bound.bind(&path).unwrap();
+        let result = connect_selected_socket(&path, Instant::now(), |_| {
+            panic!("expired fixture must not wait for listener readiness");
+        });
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::ConnectionRefused);
     }
 
     #[test]
