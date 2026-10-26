@@ -1,0 +1,263 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupSupport
+import SandboxModel.Lifecycle.Protocol.InboxLookupValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxLookup
+
+theorem entry_body_step (values : Slice Entry) (index next : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (key : values.val[index.val].intent.request.binding.key ≠ intent.request.binding.key) :
+    Session.find_entry_loop.body intent (cursor values index) = .ok (.cont (cursor values next)) := by
+  classical
+  unfold Session.find_entry_loop.body
+  rw [next_some values index next bound added]
+  simp [Replay.key_eq, key]
+
+theorem entry_body_hit (values : Slice Entry) (index next : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (full : values.val[index.val].intent = intent) :
+    Session.find_entry_loop.body intent (cursor values index) = .ok (.done (.Ok (some index))) := by
+  classical
+  unfold Session.find_entry_loop.body
+  rw [next_some values index next bound added]
+  simp [Replay.key_eq, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.accepted_eq, full]
+
+theorem entry_body_conflict (values : Slice Entry) (index next : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (key : values.val[index.val].intent.request.binding.key = intent.request.binding.key)
+    (full : values.val[index.val].intent ≠ intent) :
+    Session.find_entry_loop.body intent (cursor values index) = .ok (.done (.Err .Conflict)) := by
+  classical
+  unfold Session.find_entry_loop.body
+  rw [next_some values index next bound added]
+  simp [Replay.key_eq, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.accepted_eq, key, full]
+
+theorem entry_body_none (values : Slice Entry) (index : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : values.val.length ≤ index.val) :
+    Session.find_entry_loop.body intent (cursor values index) = .ok (.done (.Ok none)) := by
+  unfold Session.find_entry_loop.body
+  rw [next_none values index bound]
+  simp
+
+theorem entry_loop_spec (values : Slice Entry) (intent : AcceptedLifecycleIntent)
+    (start : Usize) (start_bound : start.val ≤ values.val.length) :
+    Session.find_entry_loop (cursor values start) intent
+      ⦃ result => observeEntry result = some (entrySpec intent (values.val.drop start.val) start.val) ⦄ := by
+  classical
+  unfold Session.find_entry_loop
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun it => values.val.length - it.count.val)
+    (fun it => ∃ index : Usize, it = cursor values index ∧ index.val ≤ values.val.length ∧
+      entrySpec intent (values.val.drop index.val) index.val =
+        entrySpec intent (values.val.drop start.val) start.val)
+    (fun result => observeEntry result = some (entrySpec intent (values.val.drop start.val) start.val))
+  · rintro it ⟨index, rfl, upper, same⟩
+    by_cases bound : index.val < values.val.length
+    · obtain ⟨next, added, post⟩ := (WP.spec_equiv_exists _ _).mp
+        (Usize.add_bv_spec (x := index) (y := 1#usize) (by have := values.property; scalar_tac))
+      have nextval : next.val = index.val + 1 := by scalar_tac
+      by_cases key : values.val[index.val].intent.request.binding.key = intent.request.binding.key
+      · by_cases full : values.val[index.val].intent = intent
+        · rw [entry_body_hit values index next intent bound nextval full]
+          apply WP.spec.ret
+          rw [List.drop_eq_getElem_cons bound] at same
+          simpa [entrySpec, key, full, observeEntry] using congrArg some same
+        · rw [entry_body_conflict values index next intent bound nextval key full]
+          apply WP.spec.ret
+          rw [List.drop_eq_getElem_cons bound] at same
+          simpa [entrySpec, key, full, observeEntry] using congrArg some same
+      · rw [entry_body_step values index next intent bound nextval key]
+        apply WP.spec.ret
+        constructor
+        · refine ⟨next, rfl, by omega, ?_⟩
+          rw [List.drop_eq_getElem_cons bound] at same
+          simpa [entrySpec, key, nextval] using same
+        · dsimp [cursor]
+          omega
+    · rw [entry_body_none values index intent (Nat.le_of_not_gt bound)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt bound)] at same
+      simpa [entrySpec, observeEntry] using congrArg some same
+  · exact ⟨start, rfl, start_bound, rfl⟩
+
+theorem find_entry_spec (session : Session) (intent : AcceptedLifecycleIntent) :
+    session.find_entry intent
+      ⦃ result => observeEntry result = some (entrySpec intent session.entries.val 0) ⦄ := by
+  have h := entry_loop_spec (alloc.vec.Vec.deref session.entries) intent 0#usize (by simp)
+  simpa [Session.find_entry, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, cursor, alloc.vec.Vec.deref] using h
+
+theorem find_entry_outcome (session : Session) (intent : AcceptedLifecycleIntent) :
+    match entrySpec intent session.entries.val 0 with
+    | .absent => session.find_entry intent = .ok (.Ok none)
+    | .found n => ∃ index : Usize, index.val = n ∧ session.find_entry intent = .ok (.Ok (some index))
+    | .conflict => session.find_entry intent = .ok (.Err .Conflict) := by
+  obtain ⟨result, returned, observed⟩ := WP.spec_imp_exists (find_entry_spec session intent)
+  cases result with
+  | Ok value =>
+    cases value with
+    | none =>
+      have shape : entrySpec intent session.entries.val 0 = .absent := by simpa [observeEntry] using observed.symm
+      simpa [shape] using returned
+    | some index =>
+      have shape : entrySpec intent session.entries.val 0 = .found index.val := by simpa [observeEntry] using observed.symm
+      simp only [shape]
+      exact ⟨index, rfl, returned⟩
+  | Err error =>
+    cases error <;> simp [observeEntry] at observed
+    have shape : entrySpec intent session.entries.val 0 = .conflict := by simpa using observed.symm
+    simpa [shape] using returned
+
+theorem inbox_loop_spec (values : Slice Session) (intent : AcceptedLifecycleIntent)
+    (start : Usize) (start_bound : start.val ≤ values.val.length) :
+    Inbox.find_loop (cursor values start) intent
+      ⦃ result => observeInbox result = some (inboxSpec intent (values.val.drop start.val) start.val) ⦄ := by
+  classical
+  unfold Inbox.find_loop
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun it => values.val.length - it.count.val)
+    (fun it => ∃ index : Usize, it = cursor values index ∧ index.val ≤ values.val.length ∧
+      inboxSpec intent (values.val.drop index.val) index.val =
+        inboxSpec intent (values.val.drop start.val) start.val)
+    (fun result => observeInbox result = some (inboxSpec intent (values.val.drop start.val) start.val))
+  · rintro it ⟨index, rfl, upper, same⟩
+    by_cases bound : index.val < values.val.length
+    · obtain ⟨next, added, post⟩ := (WP.spec_equiv_exists _ _).mp
+        (Usize.add_bv_spec (x := index) (y := 1#usize) (by have := values.property; scalar_tac))
+      have nextval : next.val = index.val + 1 := by scalar_tac
+      have localResult := find_entry_outcome values.val[index.val] intent
+      cases shape : entrySpec intent values.val[index.val].entries.val 0 with
+      | absent =>
+        simp only [shape] at localResult
+        rw [inbox_body_step values index next intent bound nextval localResult]
+        apply WP.spec.ret
+        constructor
+        · refine ⟨next, rfl, by omega, ?_⟩
+          rw [List.drop_eq_getElem_cons bound] at same
+          simpa [inboxSpec, shape, nextval] using same
+        · dsimp [cursor]
+          omega
+      | found n =>
+        simp only [shape] at localResult
+        obtain ⟨entry, entryval, returned⟩ := localResult
+        rw [inbox_body_hit values index next entry intent bound nextval returned]
+        apply WP.spec.ret
+        rw [List.drop_eq_getElem_cons bound] at same
+        simpa [inboxSpec, shape, observeInbox, entryval] using congrArg some same
+      | conflict =>
+        simp only [shape] at localResult
+        rw [inbox_body_conflict values index next intent bound nextval localResult]
+        apply WP.spec.ret
+        rw [List.drop_eq_getElem_cons bound] at same
+        simpa [inboxSpec, shape, observeInbox] using congrArg some same
+    · rw [inbox_body_none values index intent (Nat.le_of_not_gt bound)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt bound)] at same
+      simpa [inboxSpec, observeInbox] using congrArg some same
+  · exact ⟨start, rfl, start_bound, rfl⟩
+
+theorem find_spec (inbox : Inbox) (intent : AcceptedLifecycleIntent) :
+    inbox.find intent
+      ⦃ result => observeInbox result = some (inboxSpec intent inbox.sessions.val 0) ⦄ := by
+  have h := inbox_loop_spec (alloc.vec.Vec.deref inbox.sessions) intent 0#usize (by simp)
+  simpa [Inbox.find, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, cursor, alloc.vec.Vec.deref] using h
+
+/-- Same complete contract for correct and wrong generated lookup implementations. -/
+
+theorem find_contract : FullLookupContract Inbox.find := find_spec
+
+theorem find_outcome (inbox : Inbox) (intent : AcceptedLifecycleIntent) :
+    match inboxSpec intent inbox.sessions.val 0 with
+    | .absent => inbox.find intent = .ok (.Ok none)
+    | .found s e => ∃ si ei : Usize, si.val = s ∧ ei.val = e ∧ inbox.find intent = .ok (.Ok (some (si, ei)))
+    | .conflict => inbox.find intent = .ok (.Err .Conflict) := by
+  obtain ⟨result, returned, observed⟩ := WP.spec_imp_exists (find_spec inbox intent)
+  cases result with
+  | Ok value =>
+    cases value with
+    | none =>
+      have shape : inboxSpec intent inbox.sessions.val 0 = .absent := by simpa [observeInbox] using observed.symm
+      simpa [shape] using returned
+    | some pair =>
+      obtain ⟨si, ei⟩ := pair
+      have shape : inboxSpec intent inbox.sessions.val 0 = .found si.val ei.val := by simpa [observeInbox] using observed.symm
+      simp only [shape]
+      exact ⟨si, ei, rfl, rfl, returned⟩
+  | Err error =>
+    cases error <;> simp [observeInbox] at observed
+    have shape : inboxSpec intent inbox.sessions.val 0 = .conflict := by simpa using observed.symm
+    simpa [shape] using returned
+
+theorem find_none_iff (inbox : Inbox) (intent : AcceptedLifecycleIntent) :
+    inbox.find intent = .ok (.Ok none) ↔
+      ∀ session ∈ inbox.sessions.val, NoKey intent session.entries.val := by
+  rw [← inbox_absent_iff intent inbox.sessions.val 0]
+  constructor
+  · intro absent_return
+    obtain ⟨result, returned, observed⟩ := WP.spec_imp_exists (find_spec inbox intent)
+    rw [absent_return] at returned
+    have result_eq : result = .Ok none := by simpa using returned.symm
+    simpa [result_eq, observeInbox] using observed.symm
+  · intro absent
+    simpa [absent] using find_outcome inbox intent
+
+theorem find_first_key (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (before after : List Session) (session : Session)
+    (earlier later : List Entry) (entry : Entry)
+    (sessions : inbox.sessions.val = before ++ session :: after)
+    (sessions_clear : ∀ s ∈ before, NoKey intent s.entries.val)
+    (entries_clear : NoKey intent earlier)
+    (entries : session.entries.val = earlier ++ entry :: later)
+    (key : entry.intent.request.binding.key = intent.request.binding.key) :
+    (entry.intent = intent →
+      ∃ si ei : Usize, si.val = before.length ∧ ei.val = earlier.length ∧
+        inbox.find intent = .ok (.Ok (some (si, ei)))) ∧
+    (entry.intent ≠ intent → inbox.find intent = .ok (.Err .Conflict)) := by
+  classical
+  have shape := first_key_spec intent before after session earlier later entry sessions_clear entries_clear entries key
+  have actual := find_outcome inbox intent
+  rw [sessions, shape] at actual
+  constructor <;> intro full <;> simpa [full] using actual
+
+end SandboxModel.Stage1Protocol.InboxLookup
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_body_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_body_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_body_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_entry_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_entry_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_none_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.find_first_key
+
+namespace SandboxModel.Stage1Protocol.InboxLookup.Witness
+theorem normal_replay : (inbox 1#u64).find (EnvelopeValues.intent 1#u64) = .ok (.Ok (some (0#usize, 0#usize))) := by
+  have h := find_outcome (inbox 1#u64) (EnvelopeValues.intent 1#u64)
+  rw [normal_spec] at h
+  obtain ⟨si,ei,hs,he,result⟩ := h
+  have se : si = 0#usize := by scalar_tac
+  have ee : ei = 0#usize := by scalar_tac
+  simpa [se,ee] using result
+
+theorem changed_capture_rejected : (inbox 2#u64).find (EnvelopeValues.intent 1#u64) = .ok (.Err .Conflict) := by
+  have h := find_outcome (inbox 2#u64) (EnvelopeValues.intent 1#u64)
+  simpa [conflicting_spec] using h
+end SandboxModel.Stage1Protocol.InboxLookup.Witness
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Witness.changed_capture_rejected

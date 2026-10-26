@@ -1,0 +1,40 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -193,13 +193,8 @@
+         intent: &AcceptedLifecycleIntent,
+     ) -> Result<Option<(usize, usize)>, JournalError> {
+         for (s, session) in self.sessions.iter().enumerate() {
+-            for (e, entry) in session.entries.iter().enumerate() {
+-                if entry.intent.request.binding.key == intent.request.binding.key {
+-                    if entry.intent != *intent {
+-                        return Err(JournalError::Conflict);
+-                    }
+-                    return Ok(Some((s, e)));
+-                }
++            if let Some(e) = session.find_entry(intent)? {
++                return Ok(Some((s, e)));
+             }
+         }
+         Ok(None)
+@@ -619,6 +614,21 @@
+ }
+ 
+ impl Session {
++    fn find_entry(
++        &self,
++        intent: &AcceptedLifecycleIntent,
++    ) -> Result<Option<usize>, JournalError> {
++        for (e, entry) in self.entries.iter().enumerate() {
++            if entry.intent.request.binding.key == intent.request.binding.key {
++                if entry.intent != *intent {
++                    return Err(JournalError::Conflict);
++                }
++                return Ok(Some(e));
++            }
++        }
++        Ok(None)
++    }
++
+     pub(super) fn current_execution_origin(&self) -> Option<&Entry> {
+         self.entries.iter().rev().find(|entry| {
+             matches!(
