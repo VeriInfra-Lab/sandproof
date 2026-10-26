@@ -421,3 +421,60 @@ class CaptureHandoffProbe:
             if descriptor is not None:
                 os.close(descriptor)
                 setattr(self, name, None)
+
+
+def self_test():
+    """The same four pure input checks; no services, Rust build or VM."""
+    import unittest
+    from types import SimpleNamespace as NS
+    class IdentityTests(unittest.TestCase):
+        def fixture(self,stage='freeze-receipt'):
+            p=object.__new__(CaptureHandoffProbe)
+            p.stage=stage;p.prior=dict(local=dict(sandbox=4,owner=7),context=dict(binding=dict(generation=2,vm=8)))
+            p.config=dict(sandbox='sb-0123456789abcdef-4')
+            p.runtime=NS(services=NS(native_pools=[dict(namespace='0123456789abcdef')]))
+            command=STAGES[stage][1];generation=3 if stage=='restore-prepare-receipt' else 2
+            fields=dict(sandbox=4,epoch=9,generation=generation,vm=10 if generation==3 else 8)
+            action=dict(identity=dict(protocol_version=1,operation='op-0123456789abcdef-4-3',sandbox=p.config['sandbox'],
+                generation=generation,owner='tenant-7',epoch=9,attempt=0),command=dict(logical=dict(command={command:fields}),attempt=0))
+            return p,action,dict(local_operation=3)
+        def test_exact_action_and_wrong_identity_are_distinguished(self):
+            p,action,entry=self.fixture()
+            self.assertEqual(p._original_action([(action,'dispatched',None)],entry),action)
+            for field,value in [('protocol_version',2),('operation','op-0123456789abcdef-4-4'),('generation',3),
+                    ('owner','tenant-8'),('sandbox','sb-0123456789abcdef-5'),('epoch',10),('attempt',1)]:
+                wrong=copy.deepcopy(action);wrong['identity'][field]=value
+                with self.subTest(field=field),self.assertRaises(ValueError):p._original_action([(wrong,'dispatched',None)],entry)
+            wrong=copy.deepcopy(action);wrong['command']['logical']['command']['FreezeVm']['vm']=9
+            with self.assertRaises(ValueError):p._original_action([(wrong,'dispatched',None)],entry)
+        def test_missing_duplicate_or_already_receipted_is_not_selected_boundary(self):
+            p,action,entry=self.fixture()
+            for rows in ([],[(action,'ready',None)],[(action,'receipted',b'{}')],[(action,'dispatched',None)]*2):
+                with self.subTest(rows=len(rows)),self.assertRaises(ValueError):p._original_action(rows,entry)
+        def test_restore_uses_next_generation_and_same_candidate(self):
+            p,action,entry=self.fixture('restore-prepare-receipt')
+            self.assertEqual(p._original_action([(action,'dispatched',None)],entry),action)
+            wrong=copy.deepcopy(action);wrong['identity']['generation']=2
+            with self.assertRaises(ValueError):p._original_action([(wrong,'dispatched',None)],entry)
+            p.recovered=True;p.accepted=dict(session='global-session');p.action=action
+            p.candidate=dict(resource_id='vm-0123456789abcdef-10',pid=123,start_time_ticks=456,boot_id='boot')
+            physical=dict(session='global-session',source=copy.deepcopy(p.candidate),context=dict(binding=dict(generation=3,vm=10)))
+            self.assertTrue(p.assert_restored_candidate(physical)['same_loaded_candidate'])
+            for field,value in [('pid',124),('start_time_ticks',457),('resource_id','vm-0123456789abcdef-11')]:
+                wrong=copy.deepcopy(physical);wrong['source'][field]=value
+                with self.subTest(field=field),self.assertRaises(ValueError):p.assert_restored_candidate(wrong)
+        def test_partial_gate_configuration_never_adopts_generation_overflow(self):
+            from lifecycle_unload_runtime import gate_configuration
+            self.assertEqual(gate_configuration('a'*64,'sb-0123456789abcdef-4',3,1000)['generation'],3)
+            for generation in (0,2**64):
+                with self.assertRaises(ValueError):gate_configuration('a'*64,'sb-0123456789abcdef-4',generation,1000)
+    result = unittest.TextTestRunner(verbosity=2).run(
+        unittest.defaultTestLoader.loadTestsFromTestCase(IdentityTests))
+    return 0 if result.wasSuccessful() else 1
+
+
+if __name__ == '__main__':
+    import sys
+    if sys.argv[1:] != ['--self-test']:
+        raise SystemExit('Import from the original lifecycle scenario; only --self-test runs standalone')
+    raise SystemExit(self_test())
