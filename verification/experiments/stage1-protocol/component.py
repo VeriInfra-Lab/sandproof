@@ -22,9 +22,9 @@ def load(name, path):
 
 def admit_native(cache, root):
     from tools.acceptance_receipts import native_case, validate_native
-    validate_native(cache)  # Original seal/receipt integrity, not current docs.
-    native_case('functional', root, None)
-    return native_case('stage1-protocol', root, None)
+    validate_native(cache, scope='stage1-protocol')  # Original seal/receipt integrity, not current docs.
+    native_case('functional', root, None, scope='stage1-protocol')
+    return native_case('stage1-protocol', root, None, scope='stage1-protocol')
 
 
 def run(output, native_only):

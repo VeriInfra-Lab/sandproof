@@ -45,7 +45,7 @@ def run(output, variant, require_native=False, development_native=None, developm
             raise ValueError('development results cannot substitute for ning receipts')
         sys.path.insert(0, str(ROOT))
         from tools.acceptance_receipts import native_case, digest
-        fresh_receipt = native_case('stage1-inbox-record', ROOT, None)
+        fresh_receipt = native_case('stage1-inbox-record', ROOT, None, scope='stage1-protocol')
         evidence = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'commands'/digest(fresh_receipt['key'])/'evidence'
         fresh_result = json.loads((evidence/'result.json').read_text())
     elif development_native is not None or development_record_native is not None:

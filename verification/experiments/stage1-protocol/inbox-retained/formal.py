@@ -129,9 +129,9 @@ def run(output, variant, require_native=False, development_native=None, prepare_
                 raise ValueError('preparation is not formal acceptance')
             sys.path.insert(0, str(ROOT))
             from tools.acceptance_receipts import validate_native, native_case, digest
-            validate_native(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']))
-            native_case('functional', ROOT, None)
-            receipt = native_case('stage1-inbox-retained', ROOT, None)
+            validate_native(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']), scope='stage1-protocol')
+            native_case('functional', ROOT, None, scope='stage1-protocol')
+            receipt = native_case('stage1-inbox-retained', ROOT, None, scope='stage1-protocol')
             record['native_receipt'] = receipt
             evidence = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'commands'/digest(receipt['key'])/'evidence'
             native_result = json.loads((evidence/'result.json').read_text())

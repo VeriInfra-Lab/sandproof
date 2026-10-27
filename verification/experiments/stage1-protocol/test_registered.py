@@ -29,6 +29,9 @@ class Registration(unittest.TestCase):
             labels = {node.args[0].value for node in calls if node.args
                       and isinstance(node.args[0], ast.Constant)}
             self.assertLessEqual(labels-{'functional'}, set(registered.NATIVE_CASES))
+            for call in calls:
+                self.assertEqual({kw.arg: ast.literal_eval(kw.value) for kw in call.keywords},
+                                 {'scope': 'stage1-protocol'})
         self.assertNotIn('stage1-inbox-record-total', registered.NATIVE_CASES)
 
     def test_old_v0_and_retained_component_are_not_replaced(self):
@@ -94,11 +97,14 @@ class Registration(unittest.TestCase):
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
-            shared = SimpleNamespace(validate_native=lambda _: None, native_case=lambda *a: {})
-            if failure == 'seal':
-                shared.validate_native = lambda _: (_ for _ in ()).throw(ValueError('changed seal'))
-            else:
-                shared.native_case = lambda *a: (_ for _ in ()).throw(ValueError('missing native case'))
+            def validate_native(cache, *, scope):
+                self.assertEqual(scope, 'stage1-protocol')
+                if failure == 'seal':
+                    raise ValueError('changed seal')
+            def native_case(*args, scope):
+                self.assertEqual(scope, 'stage1-protocol')
+                raise ValueError('missing native case')
+            shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
             with patch.object(registered, '_shared', return_value=shared), patch.object(registered, '_invoke') as invoke:
                 with patch.dict(os.environ, SANDPROOF_ACCEPTANCE_ROLE='formal', SANDPROOF_NATIVE_EVIDENCE='/unused'):
                     with self.assertRaisesRegex(ValueError, 'seal|native case'):

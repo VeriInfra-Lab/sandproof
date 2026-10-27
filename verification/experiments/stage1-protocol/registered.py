@@ -570,10 +570,10 @@ def run_formal(output, retained_result, *, root=ROOT):
     validate_registration(root)
     shared = _shared()
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
-    shared.validate_native(cache)
+    shared.validate_native(cache, scope='stage1-protocol')
     # Validate the exact current source/rules/runtime of every prerequisite.
     labels = ('functional', 'stage1-protocol', *NATIVE_CASES)
-    receipts = {name: shared.native_case(name, root, None) for name in labels}
+    receipts = {name: shared.native_case(name, root, None, scope='stage1-protocol') for name in labels}
     paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
     for name in NATIVE_CASES:
         _original_file(receipts[name], 'result.json')
@@ -628,7 +628,7 @@ def run_formal(output, retained_result, *, root=ROOT):
             scope='all template declarations; retained component audits also enter the public total gate')
         record['retained_source_files'] = compute_retained_coverage(root, record)
         record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
-        shared.validate_native(cache)
+        shared.validate_native(cache, scope='stage1-protocol')
         if (_sha(cache/'complete.json') != record['shared_seal_sha256']
                 or shared.repository_inputs(root) != source_before):
             raise ValueError('shared native seal or registered source changed during formal execution')
