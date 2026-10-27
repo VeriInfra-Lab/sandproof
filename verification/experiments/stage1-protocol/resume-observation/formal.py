@@ -119,7 +119,7 @@ def run(output, selected, packages):
             (project / '.lake').mkdir()
             # Sequential reuse of this task's package cache under the outer heavy
             # lock; each case always has its own .lake/build and Rust target.
-            (project / '.lake/packages').symlink_to(packages, target_is_directory=True)
+            (project / '.lake/packages').symlink_to(runtime.package_root(ROOT, packages), target_is_directory=True)
             expected = dict(inputs)
             if case != 'correct':
                 mutation = data['mutations'][case]

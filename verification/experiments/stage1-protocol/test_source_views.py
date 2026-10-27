@@ -137,12 +137,31 @@ class StableTools(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'source'
             tools = Path(temporary) / 'fixed-tools'
+            packages = Path(temporary) / 'fixed-packages'
             root.mkdir()
             tools.mkdir()
+            packages.mkdir()
             (root / '.tools').symlink_to(tools, target_is_directory=True)
-            with patch.dict(os.environ, SANDPROOF_PROOF_TOOL_ROOT=str(tools)):
+            (root / '.lake').mkdir()
+            (root / '.lake/packages').symlink_to(packages, target_is_directory=True)
+            settings = dict(SANDPROOF_PROOF_TOOL_ROOT=str(tools),
+                SANDPROOF_FORMAL_PACKAGES=str(packages))
+            runtime_dirs = []
+            for name in ('CARGO_HOME', 'RUSTUP_HOME', 'ELAN_HOME', 'SANDPROOF_PROOF_RUNTIME_ROOT'):
+                directory = Path(temporary) / name.lower()
+                directory.mkdir()
+                runtime_dirs.append(directory)
+                settings[name] = str(directory)
+            with patch.dict(os.environ, **settings):
                 self.assertEqual(runtime.tool_root(root), tools)
-                self.assertEqual(runtime.tool_bind(root), ['--ro-bind', str(tools), str(tools)])
+                self.assertEqual(runtime.package_root(root), packages)
+                expected = [part for path in [tools, packages, *runtime_dirs]
+                            for part in ('--ro-bind', str(path), str(path))]
+                self.assertEqual(runtime.tool_bind(root), expected)
+                other = Path(temporary) / 'other-packages'
+                other.mkdir()
+                with self.assertRaisesRegex(ValueError, 'requested packages differ'):
+                    runtime.package_root(root, other)
 
     def test_another_installation_cannot_replace_the_original(self):
         with tempfile.TemporaryDirectory() as temporary:

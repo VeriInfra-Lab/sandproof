@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,7 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('bytes_formal', HERE / 'formal.py')
 formal = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(formal)
+sys.path.insert(0, str(formal.ROOT))  # The copied resolver uses the real tools package.
 
 
 class Admission(unittest.TestCase):

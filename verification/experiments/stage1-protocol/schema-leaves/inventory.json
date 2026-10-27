@@ -30,7 +30,7 @@
     "verification/experiments/stage1-protocol/schema-leaves/shared-candidate.patch": "e5d35ec768f9a133c0948a75de3cff05911fabae1256d9deb13ed8f57e780879",
     "verification/experiments/stage1-protocol/local_view.py": "6748dfa45b5732d9b7dad4ae2acb8be5fd51d32a286bb6a26f029c6ca966aabf",
     "verification/experiments/stage1-protocol/local-view.toml.in": "a072cd134b9685c32b27b0f8b277140487e66bc5e87093edcf861c34235991f0",
-    "verification/experiments/stage1-protocol/formal_runtime.py": "735064fb65d2ef9335f5b040d8c7f0a1d72c604b08adc1f594f102e64c8f82c2"
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf"
   },
   "audits": [
     "SandboxModel.Stage1Protocol.RoleLeaves.session_refines",

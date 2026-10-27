@@ -142,7 +142,7 @@ def run(output, packages, result_tag, result_bindings, selected):
             runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
             (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
-            (project / '.lake/packages').symlink_to(packages, target_is_directory=True)
+            (project / '.lake/packages').symlink_to(runtime.package_root(ROOT, packages), target_is_directory=True)
             (project / 'artifacts/extract-target').mkdir(parents=True)
             command(project, folder, 'extract', ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev',
                 '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', '/home',

@@ -112,7 +112,7 @@ def run(output, prepare_only=False):
             runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
             (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
-            (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+            (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
             (project / 'artifacts/extract-target').mkdir(parents=True)
             fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())
             for name, relative in [('charon', 'aeneas/charon/bin/charon'), ('aeneas', 'aeneas/bin/aeneas')]:

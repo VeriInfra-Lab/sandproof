@@ -122,7 +122,7 @@ def run(output, selected):
             # Private worktree dependency cache; cases are sequential under the
             # operator's shared proof lock. Every case has its own .lake/build.
             # The original service checks dependency fingerprints in each case.
-            (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+            (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
             (project / 'artifacts/extract-target').mkdir(parents=True)
             expected = dict(inputs)
             if case != 'correct':

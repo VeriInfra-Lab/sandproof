@@ -325,7 +325,7 @@ def replay(output, archive, native, native_archive, selected):
                 runtime = load_module('protocol_stable_tools', ROOT / HERE / 'formal_runtime.py')
                 (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
                 (project / '.lake').mkdir()
-                (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+                (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
                 source = project / mutation['source']
                 text = source.read_text()
                 if text.count(mutation['old']) != 1 or sha(source) != native_rows[name]['original_source_sha256']:

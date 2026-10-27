@@ -110,7 +110,7 @@ def run(output, selected):
             (project / '.lake').mkdir()
             # This task's private dependency cache is shared sequentially under
             # the outer heavy lock. Every source keeps its own .lake/build.
-            (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+            (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
             expected = dict(inputs)
             for name, digest in data['candidate_sources'].items():
                 if sha(project / name) != digest:
