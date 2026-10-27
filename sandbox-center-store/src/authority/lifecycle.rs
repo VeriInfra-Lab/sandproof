@@ -1,4 +1,7 @@
 //! Same original Redis CAS for canonical intent, original reservation and outbox.
+//! Each observation/expiry call confirms once before its pure decision while
+//! holding the same exclusive authority borrow. A no-op reuses that confirmation;
+//! a real update must still commit before success. No host I/O occurs here.
 use super::{AuthorityError, AuthorityState, CenterAuthority};
 use sandproof_center_core::{LifecycleSubmission, Sandbox};
 use sandproof_protocol::TenantId;
@@ -17,9 +20,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_resume_observation(observation)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -35,9 +36,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.confirm_lifecycle_renewal(acknowledgement)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -52,9 +51,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
         let (next, destroy) = self.state()?.accept_lifecycle_create_refusal(observation)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(destroy)
@@ -65,9 +62,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.terminate_expired(now_ms)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -123,9 +118,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_create_observation(observation)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -143,9 +136,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_unload_observation(observation, now_ms)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -163,9 +154,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_terminal_observation(result, now_ms)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())

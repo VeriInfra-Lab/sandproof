@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [项目蓝图](project-blueprint.md) · [模块合同](module-contracts.md) · [验收清单](testing-plan.md)
 
-当前设计面向单固定宿主上的有状态卸载与恢复。正式创建、首次 Full 卸载、原资源释放和重启查询已经接线；恢复执行和卸载材料最终回收尚未闭合。下图同时展示已有组件和目标职责，不能据图推导所有功能已完成；精确实现及验收范围见[覆盖记录](proof-coverage.md)。
+当前设计面向单固定宿主上的有状态卸载与恢复。下图说明唯一产品链路与状态所有权；实现、指定版本实机结果和形式证明进度分别见[覆盖记录的当前摘要](proof-coverage.md#current-status)，不在本页重复维护状态表。
 
 ## 1. 保留唯一产品链路
 
@@ -17,7 +17,7 @@ sandproof-host ↔ 原 SQLite（本地状态、原操作、执行尝试、引用
                     │
           sandbox-node / sandbox-runtime
              │                  │
-      jailer / Firecracker    受保护本地 snapshot store〔已有捕获/发布〕
+      jailer / Firecracker    受保护本地 snapshot store
       当前运行位置/私有盘     全量 RAM、设备状态、匹配磁盘、manifest
              │                  │
        固定来宾 / envd      独立于可复用运行位置，跨管理服务重启
@@ -71,7 +71,7 @@ Redis、SQLite、文件提交和 VMM 动作不是一个事务。先登记计划/
 
 ## 6. 扩展与实现差距
 
-当前业务提交支持 Create/Renew/Unload/Destroy。协议的 Resume 形状和旧纯核心 Resume 不是生产恢复能力：收件与检查点仍拒绝 Resume，真实 `PrepareVm` 对 `source.is_some()` 明确拒绝。还需原库唯一 claim、装载与激活、激活前不可逆标记、运行期间材料引用和最终 GC。普通 Pause 失败已保留原状态；继续原 VM 的安全解冻仍待接通。
+Create/Renew/Unload/Resume/Destroy 共用当前协议和原持久账本。恢复由原 SQL/SourceWork 认领，Node 的 `linux/restore.rs` 消费私有恢复及激活许可，Runtime 先 LoadPaused 再激活；冷启动 `PrepareVm` 对 snapshot source 的拒绝不表示正式恢复被禁用。失败卸载继续沿原 Pause/Full 工作处理，不新建替代会话。详细状态、授权与材料引用规则只在[生命周期合同](module-contracts.md#第一阶段生命周期合同)维护。
 
 会话身份、运行代、capture、operation、物理位置分别编码；manifest 的内容摘要独立于旧逻辑计数器。协议版本和完整源/目标绑定为将来多宿主、增量链或 fork 留接口，但这些扩展不进入本次实现和证明。
 
@@ -123,4 +123,4 @@ sudo systemctl start sandproof-host.service sandproof-center.service
 
 普通 CI 检查解析、组件与工具，不启动产品 VM。两级晋升采用同一个监督器、同一候选双产物/版本清单和固定两题原解答/评分，SDK 只指向中心。成功、失败、取消均核对原全局→本地映射与真实残留，不能用旧单服务报告满足新链路。DK 与两题范围见[验收清单](testing-plan.md)，部署与离线缓存见[CI 运行环境](ci.md)。
 
-原纯本地核心证明只适用指定版本。新增中心、Redis、内部映射、两端网关和组装只有工程检查；后续分别证明决定、存储/派发、接收/执行及组合。并行宿主工作仍归 [P2 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，本次不改变原串行算法。
+证明和工程验收按实际输入版本分别复用；覆盖范围及未完成连接见[覆盖记录](proof-coverage.md#current-status)。并发义务、锁范围和有限工作槽以模块合同及实际实现为准；相关设计背景见 [#284](https://github.com/VeriInfra-Lab/sandproof/issues/284)，不从历史实现推导当前吞吐保证。

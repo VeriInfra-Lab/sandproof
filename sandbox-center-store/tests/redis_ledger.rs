@@ -43,6 +43,8 @@ mod aof;
 mod fixture_identity;
 #[path = "redis_ledger/lifecycle.rs"]
 mod lifecycle;
+#[path = "redis_ledger/lifecycle_confirmation.rs"]
+mod lifecycle_confirmation;
 #[path = "redis_ledger/window.rs"]
 mod window;
 
