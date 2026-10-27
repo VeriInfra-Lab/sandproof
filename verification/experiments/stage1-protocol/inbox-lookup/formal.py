@@ -247,7 +247,7 @@ def run(output, variant, require_native=False):
         command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.'+target])
         files = sorted(resolver.closure(project, [
             'SandboxModel/Lifecycle/Protocol/'+target+'.lean',
-            *[str(GENERATED/n) for n in ('Types.lean','Funs.lean','TypesExternal.lean','FunsExternal.lean')]]))
+            *[str(GENERATED/n) for n in ('Types.lean','Funs.lean','TypesExternal.lean','FunsExternal.lean')]], active_view='lakefile.toml'))
         actual = checker.actual_files(project, files, output, env, command)
         declared = [n for f in files for n in re.findall(r'^#audit_controller_proof (\S+)$', (project/f).read_text(), re.M)]
         if sorted(actual['audits']) != sorted(declared): raise ValueError('incomplete audits')
