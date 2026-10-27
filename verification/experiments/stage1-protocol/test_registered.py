@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -143,6 +144,63 @@ class Registration(unittest.TestCase):
                 patch.object(registered, '_shared', return_value=shared):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
+
+    def prepared_fixture(self, temporary):
+        root = Path(temporary)/'root'
+        root.mkdir()
+        for name in ('verification/extract-foundations/src/lib.rs',
+                     'verification/extract-foundations/Cargo.toml',
+                     str(registered.HERE/'local_view.py'),
+                     str(registered.HERE/'local-view.toml.in'),
+                     str(registered.HERE/'schema-leaves/protocol_leaves.rs.in'),
+                     str(registered.HERE/'schema-leaves/RoleLeaves.lean.in')):
+            path = root/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(registered.ROOT/name, path)
+        (root/'unrelated.rs').write_text('pub const ORIGINAL: u8 = 1;\n')
+        (root/'.cargo').mkdir()
+        (root/'.cargo/config.toml').write_text('[build]\njobs = 4\n')
+        inputs = {str(p.relative_to(root)): registered._sha(p) for p in root.rglob('*') if p.is_file()}
+        output = Path(temporary)/'output'
+        project = output/'preparation/source'
+        shutil.copytree(root, project)
+        helper = root/registered.HERE/'local_view.py'
+        spec = importlib.util.spec_from_file_location('fixture_original_role_installer', helper)
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        installer.install(project, 'schema-leaves')
+        return root, output, project, dict(inputs=inputs, prepared=True, complete=False)
+
+    def test_actual_role_preparation_binds_original_complete_private_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, output, project, prepared = self.prepared_fixture(temporary)
+            changes = registered._role_preparation(root, output, prepared)
+            self.assertEqual(set(changes), {'lakefile.toml', 'verification/extract-foundations/src/lib.rs',
+                'verification/extract-foundations/src/protocol_leaves.rs',
+                'SandboxModel/Lifecycle/Protocol/RoleLeaves.lean'})
+            expected = registered._check_prepared_source(root, project, prepared['inputs'], changes)
+            self.assertEqual(expected['unrelated.rs'], registered._sha(root/'unrelated.rs'))
+
+    def test_any_unpermitted_prepared_source_change_or_extra_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, output, project, prepared = self.prepared_fixture(temporary)
+            changes = registered._role_preparation(root, output, prepared)
+            for name in sorted(set(prepared['inputs'])-set(changes)):
+                with self.subTest(source=name):
+                    path = project/name
+                    before = path.read_bytes()
+                    path.write_bytes(before+b'\nchanged after preparation\n')
+                    with self.assertRaisesRegex(ValueError, 'private prepared source differs'):
+                        registered._check_prepared_source(root, project, prepared['inputs'], changes)
+                    path.write_bytes(before)
+            extra = project/'unregistered.rs'
+            extra.write_text('pub const EXTRA: u8 = 1;\n')
+            with self.assertRaisesRegex(ValueError, 'private prepared source differs'):
+                registered._check_prepared_source(root, project, prepared['inputs'], changes)
+            extra.unlink()
+            extra.symlink_to(root/'unrelated.rs')
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                registered._check_prepared_source(root, project, prepared['inputs'], changes)
 
     def test_incomplete_cases_or_missing_physical_audits_cannot_pass(self):
         job = dict(name='example', args=[], cases=['correct', 'wrong'], actual_files=True)

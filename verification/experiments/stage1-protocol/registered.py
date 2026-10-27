@@ -6,10 +6,12 @@ This module neither implements a proof nor issues a shared native seal.
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -89,6 +91,64 @@ def _original_file(receipt, relative):
     return path
 
 
+def _check_prepared_source(root, project, inputs, changes):
+    """Bind the full private copy, including files untouched by preparation."""
+    if project.is_symlink() or not project.is_dir():
+        raise ValueError('private preparation must be a regular directory')
+    expected = dict(inputs)
+    expected.update(changes)
+    for name, wanted in inputs.items():
+        relative = Path(name)
+        if relative.is_absolute() or '..' in relative.parts:
+            raise ValueError('invalid prepared input path')
+        original = root/relative
+        if original.is_symlink() or not original.is_file() or _sha(original) != wanted:
+            raise ValueError('original preparation input changed: ' + name)
+    actual = {}
+    for path in project.rglob('*'):
+        if path.is_symlink():
+            raise ValueError('private preparation contains a symlink')
+        if path.is_file():
+            actual[str(path.relative_to(project))] = _sha(path)
+    if actual != expected:
+        raise ValueError('private prepared source differs from original inputs and allowed changes')
+    return expected
+
+
+def _role_preparation(root, output, prepared):
+    """Use the original installer to derive its exact permitted changes."""
+    inputs = prepared['inputs']
+    reference = output/'preparation-reference'
+    reference.mkdir(mode=0o700)
+    # These are all inputs read by install(..., 'schema-leaves'). A changed
+    # installer needing more inputs fails rather than silently broadening this.
+    for name in ('verification/extract-foundations/src/lib.rs',
+                 str(HERE/'local-view.toml.in'),
+                 str(HERE/'schema-leaves/protocol_leaves.rs.in'),
+                 str(HERE/'schema-leaves/RoleLeaves.lean.in')):
+        source = root/name
+        if name not in inputs or _sha(source) != inputs[name]:
+            raise ValueError('original role preparation input differs: ' + name)
+        destination = reference/name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    helper = root/HERE/'local_view.py'
+    if str(HERE/'local_view.py') not in inputs or _sha(helper) != inputs[str(HERE/'local_view.py')]:
+        raise ValueError('original role preparation algorithm changed')
+    spec = importlib.util.spec_from_file_location('registered_original_role_installer', helper)
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+    changes = installer.install(reference, 'schema-leaves')
+    allowed = {'lakefile.toml', 'verification/extract-foundations/src/lib.rs',
+               'verification/extract-foundations/src/protocol_leaves.rs',
+               'SandboxModel/Lifecycle/Protocol/RoleLeaves.lean'}
+    if set(changes) != allowed:
+        raise ValueError('unregistered original role preparation changes')
+    project = output/'preparation/source'
+    _check_prepared_source(root, project, inputs, changes)
+    return changes
+
+
 def _crate_native(root, output, name):
     """Original README commands for the slices without a native.py driver."""
     shared = _shared()
@@ -101,6 +161,7 @@ def _crate_native(root, output, name):
         if prepared.get('prepared') is not True or prepared.get('complete') is True:
             raise ValueError('role native preparation must not execute a proof')
         project = preparation/'source'
+        changes = _role_preparation(root, output, prepared)
         manifest = project/'verification/extract-foundations/Cargo.toml'
     else:
         manifest = root/HERE/name/'Cargo.toml'
@@ -115,7 +176,11 @@ def _crate_native(root, output, name):
     records = []
     for label, command in commands:
         log = output/(label+'.log')
+        if name == 'schema-leaves':
+            _check_prepared_source(root, project, prepared['inputs'], changes)
         shared.native_run('stage1-protocol-'+name+'-'+label, command, root, log)
+        if name == 'schema-leaves':
+            _check_prepared_source(root, project, prepared['inputs'], changes)
         if label == 'test':
             count = {'schema-leaves': 8, 'envelope-schema': 7, 'envelope-bytes': 4}[name]
             if not re.search(r'test result: ok\. '+str(count)+r' passed; 0 failed; 0 ignored;', log.read_text()):
@@ -125,9 +190,17 @@ def _crate_native(root, output, name):
                   assertions_run=name != 'json-wire', production_modified=False,
                   role_preparation_only=name == 'schema-leaves')
     if name == 'schema-leaves':
+        result['preparation_result_sha256'] = _sha(preparation/'result.json')
+        result['allowed_preparation_changes'] = changes
+        result['prepared_inputs_sha256'] = shared.digest(prepared['inputs'])
         result['prepared_rust_inputs'] = {name: _sha(project/name) for name in (
+            'verification/extract-foundations/Cargo.toml',
             'verification/extract-foundations/src/lib.rs',
             'verification/extract-foundations/src/protocol_leaves.rs')}
+        template = root/HERE/'schema-leaves/protocol_leaves.rs.in'
+        result['original_eight_test_source'] = dict(path=str(template), sha256=_sha(template),
+            private_path=str(project/'verification/extract-foundations/src/protocol_leaves.rs'),
+            filter='protocol_leaves::tests::', required_passed=8)
     (output/'result.json').write_text(json.dumps(result, indent=2)+'\n')
 
 
