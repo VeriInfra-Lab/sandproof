@@ -94,7 +94,7 @@ def run(output, variant, require_native=False):
     output.mkdir(parents=True, mode=0o700)
     start = time.monotonic()
     record = dict(kind='inbox-lookup-formal-development', variant=variant, complete=False,
-                  production_adopted=False, ning_acceptance=False, shared_acceptance=False,
+                  production_adopted=True, ning_acceptance=False, shared_acceptance=False,
                   full_v3=False, commands=[])
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
                LEAN_STACK_SIZE_KB='65536', CARGO_NET_OFFLINE='true')
@@ -200,18 +200,12 @@ def run(output, variant, require_native=False):
         if original_enum != binding.contract_error(foundations):
             raise ValueError('shared ContractError alias changed the original complete enum')
         record['contract_error'] = original_enum
-        # Keep original failure evidence. It is a translation limitation, not a property refusal.
-        blocked = output / 'original-generated'
-        blocked.mkdir()
-        code = command(project, output, 'original-aeneas', [str(project/'.tools/aeneas/bin/aeneas'),
-            '-backend', 'lean', '-abort-on-error', '-warnings-as-errors', '-split-files',
-            '-namespace', 'SandproofStage1RequestRust', '-subdir', 'SandproofStage1Request',
-            '-dest', str(blocked), str(project/original_path)], expected_code=None)
-        if code == 0 or 'Returns inside of nested loops are not supported yet' not in (output/'original-aeneas.log').read_text():
-            raise ValueError('original translation limitation changed; review required')
+        # Historical unsupported-loop evidence stays with its original commit.
+        # The accepted source already contains the reviewed helper; do not
+        # rewrite it or manufacture an expected translation failure here.
         model_path.write_text(original)
-        command(project, output, 'factorization', ['patch', '-p1', '--fuzz=0', '--batch',
-            '--input='+str(ROOT/HERE/'production-candidate.patch')])
+        if original.count('fn find_entry(') != 1:
+            raise ValueError('adopted production lookup helper missing or duplicated')
         candidate = model_path.read_text()
         if variant == 'key-only':
             old = 'if entry.intent != *intent {'

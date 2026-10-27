@@ -38,7 +38,7 @@ def inventory(root):
     prior.inventory(root)
     data = json.loads((root / HERE / 'inventory.json').read_text())
     if (data.get('schema') != 1 or data.get('a6_instance_adopted') is not False
-            or data.get('production_factorization_adopted') is not False
+            or data.get('production_factorization_adopted') is not True
             or set(data['variants']) != {'correct', 'swallow-error'}):
         raise ValueError('unreviewed Writer boundary or variants')
     for name, expected in data['inputs'].items():
@@ -101,7 +101,7 @@ def run(output, variant, prepare_only=False):
     started = time.monotonic()
     record = dict(kind='current-writer-complete-trace-contract', variant=variant, complete=False,
         full_acceptance=False, full_v3_proof=False, a6_instance_adopted=False,
-        production_factorization_adopted=False, native_checks='delegated-to-ning', commands=[])
+        production_factorization_adopted=True, native_checks='delegated-to-ning', commands=[])
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
                LEAN_STACK_SIZE_KB='65536', CARGO_NET_OFFLINE='true')
     def command(project, folder, name, argv):

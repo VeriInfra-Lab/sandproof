@@ -61,12 +61,8 @@ def run(output):
                 shutil.copy2(ROOT / name, target)
                 if sha(target) != digest:
                     raise ValueError('source changed while copying: ' + name)
-            if variant in ('candidate', 'key-only'):
-                with (folder / 'patch.log').open('xb') as log:
-                    subprocess.run(['patch', '-p1', '--fuzz=0', '--batch',
-                        '--input=' + str(ROOT / HERE / 'production-candidate.patch')],
-                        cwd=project, stdout=log, stderr=subprocess.STDOUT, check=True)
-                expected[MODEL] = sha(project / MODEL)
+            if (project / MODEL).read_text().count('fn find_entry(') != 1:
+                raise ValueError('adopted production lookup helper missing or duplicated')
             if variant == 'key-only':
                 path = project / MODEL
                 text = path.read_text()

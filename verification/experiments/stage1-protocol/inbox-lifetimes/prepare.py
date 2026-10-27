@@ -1,9 +1,4 @@
-"""Private, exact suffix extraction; production files are never changed.
-
-Aeneas cannot translate the original early-return loop under the Option
-prelude. Moving the original suffix into a helper is a candidate refactor,
-not a claimed general equivalence proof.
-"""
+"""Forward to the adopted lifetime checker; mutate copies of its actual body."""
 from hashlib import sha256
 from pathlib import Path
 
@@ -30,21 +25,12 @@ def sha(path):
 
 
 def candidate(source):
-    marker = '    let mut prior_end = Some(initial);'
-    begin = source.index(marker, source.index('pub(super) fn validate_lifetimes('))
-    end = source.index('\n}\n', begin)
-    suffix = source[begin:end]
-    helper = '''fn validate_applied_lifetimes(
-    session: &Session,
-    lifetime: crate::Lifetime,
-    start: i64,
-    initial: i64,
-) -> Result<(), JournalError> {
-'''+suffix+'\n}\n'
-    updated = source[:begin] + '    validate_applied_lifetimes(session, lifetime, start, initial)'
-    updated += source[end:end+3]+'\n'+helper+source[end+3:]
-    return updated, dict(moved_suffix=suffix, helper=helper,
-                        original_equivalence_proved=False, adopted=False)
+    for symbol in ('pub(super) fn validate_lifetimes(', 'fn validate_applied_lifetimes(',
+                   '    validate_applied_lifetimes(session, lifetime, start, initial)'):
+        if source.count(symbol) != 1:
+            raise ValueError('adopted lifetime checker missing or duplicated: ' + symbol)
+    return source, dict(source_rewritten=False, original_equivalence_proved=False,
+                        adopted=True)
 
 
 def prepare(project, variant):

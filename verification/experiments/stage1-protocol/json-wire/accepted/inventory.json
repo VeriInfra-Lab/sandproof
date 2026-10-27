@@ -1,11 +1,11 @@
 {
-  "schema": 1,
-  "kind": "candidate-accepted-body-sequencing-not-complete-json-or-V3",
-  "base_commit": "39577ca1e61f4daa4ba4bbda7db94bf087bdaef0",
-  "production_adopted": false,
+  "schema": 2,
+  "kind": "adopted-accepted-body-sequencing-not-complete-json-or-V3",
+  "base_commit": "d97ac5cbcaad7855706e6467db242a4c4c1fb407",
+  "production_adopted": true,
   "base_sources": {
-    "sandbox-internal/src/lifecycle.rs": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
-    "sandbox-internal/src/server/lifecycle.rs": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261"
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
   },
   "candidate_patch_sha256": "14806193f0f1f37af670243b1ca7d82f394f4e674b66839d3a1cc38a3e0b9824",
   "candidate_sources": {
@@ -44,7 +44,6 @@
     "new": "    let _ = context; // negative variant: the original envelope guard is missing\n"
   },
   "remaining": [
-    "candidate production adoption and exact route binding review",
     "A6 protocol-4 complete schema/own leaf and concrete parser binding",
     "byte budget and actual bounded Writer/client response connection",
     "original context from V7; no authority inferred from field equality",

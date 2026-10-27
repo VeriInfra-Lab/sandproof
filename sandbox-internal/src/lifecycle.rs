@@ -87,6 +87,32 @@ pub fn encode_manifest(
     encode_bounded(manifest, MANIFEST_BODY_BYTES).map_err(CodecError::Encode)
 }
 
+/// The synchronous result distinctions used by the original lifecycle route.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcceptedBodyError {
+    InvalidJson,
+    InvalidIntent,
+}
+
+/// Decode the complete envelope and run its original ordered guard.
+/// The route supplies the fixed parser after collecting its bounded body.
+/// # Errors
+/// A parser refusal precedes an intent refusal; neither grants authorization.
+pub fn decode_accepted_with<F, E>(
+    bytes: &[u8],
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    decode: F,
+) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, AcceptedBodyError>
+where
+    F: FnOnce(&[u8]) -> Result<sandproof_protocol::lifecycle::AcceptedLifecycleIntent, E>,
+{
+    let intent = decode(bytes).map_err(|_| AcceptedBodyError::InvalidJson)?;
+    intent
+        .validate(context)
+        .map_err(|_| AcceptedBodyError::InvalidIntent)?;
+    Ok(intent)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

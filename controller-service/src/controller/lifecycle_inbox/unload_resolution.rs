@@ -34,18 +34,29 @@ impl UnloadResolution {
     }
 }
 
+pub(super) trait UnloadEncoding {
+    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
+}
+struct StandardUnloadEncoding;
+impl UnloadEncoding for StandardUnloadEncoding {
+    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(value)
+    }
+}
+
 pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
+    validate_entry_using::<StandardUnloadEncoding>(entry)
+}
+
+pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {
     let Some(resolution) = &entry.unload_resolution else {
         return Ok(());
     };
-    if !matches!(
-        entry.intent.request.operation,
-        LifecycleOperation::Unload { .. }
-    ) || serde_json::to_vec(resolution)?.len() > 4096
-    {
+    if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096 {
         return Err(JournalError::CorruptStore);
     }
     if let UnloadResolution::BeforeAdmission { original, .. } = resolution {
+        let original = &**original;
         if entry.local_operation.is_some()
             || original.phase != core::Phase::Running
             || original.terminal
@@ -266,4 +277,11 @@ impl ControllerJournal {
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(Some(facts))
     }
+}
+
+fn is_unload_entry(entry: &Entry) -> bool {
+    matches!(
+        entry.intent.request.operation,
+        LifecycleOperation::Unload { .. }
+    )
 }

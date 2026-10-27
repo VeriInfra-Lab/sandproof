@@ -35,8 +35,8 @@ def module(name, path):
 def inventory(root):
     directory = root / TEMPLATES
     data = json.loads((directory / 'inventory.json').read_text())
-    if data.get('schema') != 1 or data.get('production_adopted') is not False:
-        raise ValueError('this driver checks an unadopted candidate only')
+    if data.get('schema') != 2 or data.get('production_adopted') is not True:
+        raise ValueError('this driver requires the adopted production entry')
     actual = {p.name.removesuffix('.lean.in') for p in directory.glob('*.lean.in')}
     if actual != set(data['proof_templates']) or actual != {'AcceptedWireModel', 'AcceptedWire', 'NegativeGuard'}:
         raise ValueError('missing or unregistered proof template')
@@ -71,7 +71,7 @@ def run(output, selected):
     output.mkdir(mode=0o700, parents=True)
     start = time.monotonic()
     record = dict(kind='candidate-accepted-wire-local-formal', cases={}, commands=[],
-        production_adopted=False, full_json_proof=False, full_v3_proof=False,
+        production_adopted=True, full_json_proof=False, full_v3_proof=False,
         native_checks='not-run-by-this-driver', full_acceptance=False)
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4', LEAN_STACK_SIZE_KB='65536')
 
@@ -110,8 +110,6 @@ def run(output, selected):
             # This task's private dependency cache is shared sequentially under
             # the outer heavy lock. Every source keeps its own .lake/build.
             (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
-            command(project, folder, 'candidate-patch', ['patch', '--strip=1', '--fuzz=0', '--batch',
-                '--input=' + str(ROOT / TEMPLATES / 'production-candidate.patch')])
             expected = dict(inputs)
             for name, digest in data['candidate_sources'].items():
                 if sha(project / name) != digest:

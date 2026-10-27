@@ -1,4 +1,4 @@
-"""Private source factorization; original equivalence and adoption remain open."""
+"""Check the adopted production entry and add roots or scoped mutants to copies."""
 from hashlib import sha256
 from pathlib import Path
 import difflib
@@ -27,22 +27,14 @@ def sha(path):
 
 
 def candidate(project):
-    parts = json.loads((project/HERE/'fragments.json').read_text())
     before = (project/SOURCE).read_text()
-    signature = 'pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {'
-    changes = [
-        (parts['first_match_old'], 'checkpoint_entry_invalid(session, confirmed)'),
-        (signature, parts['encoding_interface']),
-        ('serde_json::to_vec(confirmed)?', 'E::encode(confirmed)?'),
-        (parts['frontier_old'], 'contains_accepted_version(session, through)'),
-        (parts['unapplied_old'], 'has_unapplied_sdk_through(session, confirmed.request.accepted_version)'),
-    ]
-    after = before
-    for old, new in changes:
-        if after.count(old) != 1:
-            raise ValueError('source factorization is not unique')
-        after = after.replace(old, new, 1)
-    return before, after+parts['first_match_helper']+parts['any_helpers'], changes
+    for symbol in ('pub(super) trait RenewalEncoding', 'fn validate_session_using<',
+                   'validate_session_using::<StandardRenewalEncoding>(session)',
+                   'fn checkpoint_entry_invalid(', 'fn contains_accepted_version(',
+                   'fn has_unapplied_sdk_through('):
+        if before.count(symbol) != 1:
+            raise ValueError('adopted renewal checker missing or duplicated: ' + symbol)
+    return before, before, []
 
 
 def prepare(project, variant):

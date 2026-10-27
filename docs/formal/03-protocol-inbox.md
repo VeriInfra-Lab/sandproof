@@ -1,22 +1,5 @@
 # V3 高级协议与持久收件
 
-原保留历史的版本关系候选见[收件历史校验](../../verification/experiments/stage1-protocol/inbox-retained/README.md)。
-本边界直接对应 follows_retained 的初始、相邻和压缩空洞条件；保存的压缩位置和确认
-版本不证明删除或确认实际发生。完整 Inbox.validate、原 validate_lifetimes 的循环、
-确认事务保持性与真实读取/提交仍各有义务，不能由此局部成功认领持久收件闭合。
-
-[收件寿命校验候选](../../verification/experiments/stage1-protocol/inbox-lifetimes/README.md)
-将原 validate_lifetimes 的循环及收尾原样移入私有辅助函数，以接通固定工具；生产采用
-与原实现的一般等价仍待完成。值合同覆盖开始时间、首条 Create、转换/加法边界、
-每条 applied deadline 及最终值；版本空洞只断开前驱关系，不证明压缩实际发生。
-真实 read_lifetime 的同一对象/事务、确认保持性与完整 Inbox.validate 继续另列。
-
-[续期会话校验候选](../../verification/experiments/stage1-protocol/inbox-renewal-session/README.md)
-保留完整确认形状、编码及字节上限、首个全文匹配项、压缩边界和未应用续期的检查顺序。
-其值合同覆盖任意编码回调；标准 Serde 实例连接、原函数一般等价、生产候选采用和 V0
-借用 Vec/Result 标签采用仍待完成。local/previous 的存在、保存的压缩标记及完整字段
-相等不证明资源存在、实际删除、授权或耐久接受；完整 Inbox.validate 与持久组合另列。
-
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
 任务：[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
@@ -27,29 +10,7 @@
 
 规范化消息至少绑定 deployment、认证中心/固定节点、owner、session、operation key、全文输入、期望版本、源/目标运行代及 capture。外部用户不指定宿主路径/PID、manifest 成功标志或任意命令；当前模板/配置来源仍受原合同约束。
 
-首批证明固定于 `a9c9967889c4cf298e4378c7106948018835fc64`，从已解码且按生成类型表示的值开始：复用原 `ReplayContract`、`ValidationModel`，连接完整请求重放、请求接受与六类首错，以及 Accepted/Recorded 的完整封套关系。协议版本为 4；正常和错误 Rust 使用同一规格，重新抽取和验收后才迁移适用版本。此切片交给 V1 的是值规格和经实际检查的引理，不要求 V1 等待网络与持久收件证明。
-
-独立认证上下文的连接来源由 V7/连接适配提供；V1/V2 提供当前意图与耐久发送，V4/V5 提供本地接受、耐久结果及调用次序，V6 提供文件/VM 的实际事实。全文相等、slot 形状和版本关系都不提供这些前提。Accepted 的首错依次为 center、部署、内层请求首错、retention slot、接受版本；retention window 不要求等于请求 key window。Recorded 只按完整 intent、版本下界和 current 一致性短路，不检查 terminal 真值。
-
-完整 manifest 任意文件集校验、JSON 字节到值的实际接线、持久收件事务、网络外壳及系统组合另行验收。保留仍适用的 carrier 值往返、manifest 正常见证与局部循环证据；它们不证明任意文件集、哈希计算、材料完整或恢复资格。首批不认领这些后续义务完成，具体候选检查状态仍由覆盖记录和本批 PR 记录。
-
-
-访问身份的[结构校验切片](../../verification/experiments/stage1-protocol/access-identity/README.md)对应实际
-`LifecycleAccessIdentity::validate`：按协议版本、独立 context 的完整 center/node、两种 deployment 关系、非零 accepted version 顺序拒绝。
-这里不查原 journal 的 session/owner/key/incarnation 映射，不授予 Access 权限，也不将外部 incarnation 当作本地 generation。
-这些当前身份、阶段、寿命及权限关系仍由 V4/V5/V7 的实际提供者连接。
-
-Create 观察的[完整值合同与检查输入](../../verification/experiments/stage1-protocol/create-observation/README.md)
-保留实际 Header、Refused、同请求、继续、续租与 NotCurrent 分支。
-派生的完整观察值相等、合法合同见证和原生错误版断言是实现对应的独立支撑，
-不能替代完整 `matches_request` 定理。实际 `u64::try_from(i64)` 的成败/数值与错误载荷表示连接由 V0 提供；
-完整守卫与四个真实错误版可在该表示及 Result tag 的隔离审查候选下检查，
-正反版必须保留同一 `FullContract`、合法见证和原始生成体；正式采用仍等待 V0。
-候选中的任意输入对应和形式反例、ning 原生验收、公共完整入口分别报告，不把转换失败记为性质拒绝。
-历史成功为 false 或 Pending 不能推出没有资源效果，字段匹配不能证明已应用续租或耐久拒绝。
-
 ## 2. 状态与义务
-
 
 | 状态/事件 | 验收义务 |
 |---|---|
@@ -90,13 +51,29 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 
 最多 16 个可写盘是本接口的有限预算，不是 Firecracker 的通用上限或兼容性保证。snapshot_format 和工具/CPU/设备/镜像配置摘要须与原受保护 profile 比较；即使两个任意 profile 相同，也不能据此声明 VMM 兼容。实际文件白名单、原句柄/长度/内容摘要、冻结截面、同步发布及恢复资格分别由 V6/V5 提供，不能让 manifest 自己的字段批准自己。
 
-Manifest 的完整值校验切片以 [独立接受与首错规格](../../SandboxModel/Lifecycle/Protocol/ManifestValidationModel.lean)
-连接真实 `SnapshotManifest::validate`；复用已有文件集合及自然数长度规格。范围包括完整 capture/profile
-比较、任意表示路径和磁盘列表的校验，以及全部文件的有序角色、ID、路径、长度与溢出检查。
-String→str 借用仅使用既有可表示性条件，不预设业务路径合法或材料真实。当前源码适用性、正反证据及
-完整验收仍分别登记；[局部入口](../../verification/experiments/stage1-protocol/manifest-validation/README.md)
-不替代 JSON 字节接线、持久收件、独立认证来源和系统组合义务。
-历史 capture 绑定反例须在当前协议值上否定同一完整清单合同；原 pair 见证与完整任意输入
-证明分别保留，不能用局部循环或一个正常文件集合替代任意文件集的完整校验。
-
 字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
+
+## 5. 同步核心与证明入口的连接
+
+正式请求处理只维护一条实现路径：有界读体后调用 `decode_accepted_with`，传入原固定解析器，
+再按原顺序校验完整封套和独立上下文；解析失败仍为 400，封套拒绝仍为 409。
+收件查找、首个会话选择、顺序拒绝与完整追加使用原同步核心；内层查找拆为具名 helper，
+保持首次命中和首次冲突语义，不要求键或会话列表预先唯一。
+
+寿命检查将原扫描尾部移入 `validate_applied_lifetimes`；续期确认与卸载决议把编码调用
+通过窄接口传入，生产实例继续使用原 `serde_json::to_vec`。不改变首错、4096 字节限额、
+快照阶段、原本地操作或结果时间链条件。证明薄根只转发这些实际函数，正确视图不得
+在私有副本中再次替换业务算法；错误视图才局部修改被检验的真实表达式。
+
+[Resume 完整值合同](../../verification/experiments/stage1-protocol/resume-observation/README.md)
+包含 Continued-Unload 的 StateLost，但同一实例确定退出、原继续资格、材料和授权事实
+仍由 V4/V5/V6/V7 提供。原“允许该 StateLost”错误版随旧合同保留在历史中，当前反例
+检查绕过实际仍必需的原来源绑定。
+
+[完整收件合同](../../verification/experiments/stage1-protocol/inbox-record-total/README.md)、
+[查询组合](../../verification/experiments/stage1-protocol/inbox-position/README.md)、
+[寿命](../../verification/experiments/stage1-protocol/inbox-lifetimes/README.md)、
+[续期确认](../../verification/experiments/stage1-protocol/inbox-renewal-session/README.md)和
+[卸载决议](../../verification/experiments/stage1-protocol/inbox-unload-resolution/README.md)
+分别给出值规格和条件。库模型采用、实际编码实例、同事务接线和完整持久收件的
+未闭合义务必须单列；新增候选、局部通过和当前实现已验收的范围只在覆盖记录维护。

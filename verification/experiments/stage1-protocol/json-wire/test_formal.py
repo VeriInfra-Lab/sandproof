@@ -28,8 +28,8 @@ class Admission(unittest.TestCase):
     def save(self):
         (self.directory / 'inventory.json').write_text(json.dumps(self.data))
 
-    def test_complete_candidate_inventory_is_admitted(self):
-        self.assertFalse(formal.inventory(self.root)['production_adopted'])
+    def test_complete_adopted_inventory_is_admitted(self):
+        self.assertTrue(formal.inventory(self.root)['production_adopted'])
 
     def test_changed_production_source_is_rejected(self):
         (self.root / 'sandbox-internal/src/lifecycle.rs').write_text('changed source\n')
@@ -57,10 +57,10 @@ class Admission(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'duplicate proof audit'):
             formal.inventory(self.root)
 
-    def test_candidate_cannot_claim_production_adoption(self):
-        self.data['production_adopted'] = True
+    def test_unadopted_candidate_is_rejected(self):
+        self.data['production_adopted'] = False
         self.save()
-        with self.assertRaisesRegex(ValueError, 'unadopted candidate only'):
+        with self.assertRaisesRegex(ValueError, 'requires the adopted production entry'):
             formal.inventory(self.root)
 
 

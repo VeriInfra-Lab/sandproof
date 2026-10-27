@@ -1,7 +1,6 @@
-"""Prepare the reviewed private source candidate; production remains read-only."""
+"""Add thin roots and scoped mutants to copies of the adopted production code."""
 from hashlib import sha256
 from pathlib import Path
-import subprocess
 
 HERE = Path('verification/experiments/stage1-protocol/inbox-record')
 MODEL = 'controller-service/src/controller/lifecycle_inbox/model.rs'
@@ -31,10 +30,11 @@ def prepare(project, variant):
     if 'fn proof_record(' in (project/MODEL).read_text():
         raise ValueError('forwarding root already exists')
     mutation = None
-    if variant != 'original':
-        patch = project/HERE/'production-candidate.patch'
-        subprocess.run(['patch', '--batch', '--fuzz=0', '-p1', '-i', str(patch)],
-                       cwd=project, check=True, capture_output=True, text=True)
+    source = (project/MODEL).read_text()
+    for symbol in ('fn find_entry(', 'fn session_index(', 'fn retention_lane_index(',
+                   'fn retention_slot_used(', 'fn last_entry('):
+        if source.count(symbol) != 1:
+            raise ValueError('adopted production helper missing or duplicated: ' + symbol)
     if variant in MUTATIONS:
         path = project/MODEL
         text = path.read_text()

@@ -509,18 +509,38 @@ async fn cache_template<H: CacheReceiver>(
     }
 }
 
+pub trait ProofJsonResponseBuilder {
+    type Response;
+    fn empty_error() -> Self::Response;
+    fn json_ok(encoded: Vec<u8>) -> Self::Response;
+}
+
+pub struct ProofHttpJsonResponseBuilder;
+impl ProofJsonResponseBuilder for ProofHttpJsonResponseBuilder {
+    type Response = Response<Full<Bytes>>;
+    fn empty_error() -> Self::Response {
+        response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new())
+    }
+    fn json_ok(encoded: Vec<u8>) -> Self::Response {
+        let mut answer = response(StatusCode::OK, Bytes::from(encoded));
+        answer.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        answer
+    }
+}
+
 fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<Bytes>> {
-    let Ok(encoded) =
-        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit)
-    else {
-        return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());
-    };
-    let mut answer = response(StatusCode::OK, Bytes::from(encoded));
-    answer.headers_mut().insert(
-        hyper::header::CONTENT_TYPE,
-        hyper::header::HeaderValue::from_static("application/json"),
-    );
-    answer
+    proof_json_response_result::<ProofHttpJsonResponseBuilder>(sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit))
+}
+
+/// The original result-selection body, separated from the library call.
+pub fn proof_json_response_result<P: ProofJsonResponseBuilder>(result: Result<Vec<u8>, sandproof_controller_service::JournalError>) -> P::Response {
+    match result {
+        Ok(encoded) => P::json_ok(encoded),
+        Err(_error) => P::empty_error(),
+    }
 }
 
 async fn validation_evidence<H: ValidationReceiver>(

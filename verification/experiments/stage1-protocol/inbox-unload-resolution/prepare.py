@@ -1,4 +1,4 @@
-"""Isolate the actual unload validator's encoding call; preserve its checks."""
+"""Use the adopted unload validator; add thin roots or scoped mutants to copies."""
 from hashlib import sha256
 from pathlib import Path
 import difflib
@@ -18,33 +18,6 @@ MUTATIONS = {
         '|| { let _ = result.max_end_at_ms; false }'),
 }
 VARIANTS = ('original', 'candidate', *MUTATIONS, 'restored')
-OPERATION_GUARD = '''matches!(
-        entry.intent.request.operation,
-        LifecycleOperation::Unload { .. }
-    )'''
-OPERATION_HELPER = '''
-fn is_unload_entry(entry: &Entry) -> bool {
-    matches!(
-        entry.intent.request.operation,
-        LifecycleOperation::Unload { .. }
-    )
-}
-'''
-INTERFACE = '''pub(super) trait UnloadEncoding {
-    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
-}
-struct StandardUnloadEncoding;
-impl UnloadEncoding for StandardUnloadEncoding {
-    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec(value)
-    }
-}
-
-pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
-    validate_entry_using::<StandardUnloadEncoding>(entry)
-}
-
-pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {'''
 
 
 def sha(path):
@@ -53,22 +26,12 @@ def sha(path):
 
 def candidate(project):
     before = (project / SOURCE).read_text()
-    signature = 'pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {'
-    changes = [(signature, INTERFACE), ('serde_json::to_vec(resolution)?', 'E::encode(resolution)?'),
-               (OPERATION_GUARD, 'is_unload_entry(entry)'),
-               ('if let UnloadResolution::BeforeAdmission { original, .. } = resolution {\n',
-                'if let UnloadResolution::BeforeAdmission { original, .. } = resolution {\n'
-                '        let original = &**original;\n'),
-               ('if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096\n    {',
-                'if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096 {')]
-    after = before
-    for old, new in changes:
-        if after.count(old) != 1:
-            raise ValueError('unload encoding factorization is not unique')
-        after = after.replace(old, new, 1)
-    if 'fn is_unload_entry(' in before:
-        raise ValueError('operation helper already exists')
-    return before, after + OPERATION_HELPER, changes
+    for symbol in ('pub(super) trait UnloadEncoding', 'fn validate_entry_using<',
+                   'validate_entry_using::<StandardUnloadEncoding>(entry)',
+                   'fn is_unload_entry('):
+        if before.count(symbol) != 1:
+            raise ValueError('adopted unload checker missing or duplicated: ' + symbol)
+    return before, before, []
 
 
 def prepare(project, variant):
