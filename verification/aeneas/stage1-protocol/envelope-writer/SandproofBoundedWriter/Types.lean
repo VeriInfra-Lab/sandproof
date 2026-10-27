@@ -253,7 +253,7 @@ inductive sandbox_controller_core.maintenance.retirement.RetirementReject where
   sandbox_controller_core.maintenance.retirement.RetirementReject
 
 /-- [sandbox_controller_core::maintenance::MaintenanceReject]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance.rs', lines 65:0-65:26
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance.rs', lines 69:0-69:26
     Name pattern: [sandbox_controller_core::maintenance::MaintenanceReject]
     Visibility: public -/
 @[discriminant isize, rust_type
@@ -365,6 +365,7 @@ inductive sandproof_controller_service.JournalError where
 | Conflict : sandproof_controller_service.JournalError
 | IdentifierExhausted : sandproof_controller_service.JournalError
 | MaintenanceCapacity : sandproof_controller_service.JournalError
+| CaptureMaterialQuotaExceeded : sandproof_controller_service.JournalError
 | RevisionConflict : sandproof_controller_service.JournalError
 | ReceiptBeforeDispatch : sandproof_controller_service.JournalError
 | ConflictingReceipt : sandproof_controller_service.JournalError
@@ -403,7 +404,7 @@ structure sandproof_controller_service.template_registry.evidence.BoundedBuffer
   allocation_error : Result core.io.error.Error
 
 /-- [sandproof_controller_service::template_registry::evidence::BoundedWriter]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 42:0-42:42
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 58:0-58:42
     Name pattern: [sandproof_controller_service::template_registry::evidence::BoundedWriter]
     Visibility: public -/
 @[rust_type
@@ -415,7 +416,7 @@ structure sandproof_controller_service.template_registry.evidence.BoundedWriter
   exceeded : Bool
 
 /-- [sandproof_controller_service::template_registry::evidence::write_bounded::{closure}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 69:29-69:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 92:21-92:24
     Name pattern: [sandproof_controller_service::template_registry::evidence::write_bounded::closure] -/
 @[reducible, rust_type
   "sandproof_controller_service::template_registry::evidence::write_bounded::closure"]
@@ -424,7 +425,7 @@ def sandproof_controller_service.template_registry.evidence.write_bounded.closur
 Unit
 
 /-- Trait declaration: [sandproof_controller_service::template_registry::evidence::BoundedSerialize]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 87:0-87:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 113:0-113:32
     Name pattern: [sandproof_controller_service::template_registry::evidence::BoundedSerialize]
     Visibility: public -/
 @[rust_trait
@@ -436,7 +437,7 @@ structure
     serde_json.error.Error) × W)
 
 /-- Trait declaration: [sandproof_internal::server::ProofJsonResponseBuilder]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs', lines 505:0-505:34
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs', lines 512:0-512:34
     Name pattern: [sandproof_internal::server::ProofJsonResponseBuilder]
     Visibility: public -/
 @[rust_trait "sandproof_internal::server::ProofJsonResponseBuilder"]

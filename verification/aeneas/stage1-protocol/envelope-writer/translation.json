@@ -11,8 +11,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
-        "begin_line": 232,
-        "end_line": 232
+        "begin_line": 237,
+        "end_line": 237
       },
       "is_opaque": false,
       "can_fail": true,
@@ -28,8 +28,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 69,
-        "end_line": 69
+        "begin_line": 92,
+        "end_line": 92
       },
       "is_opaque": false,
       "can_fail": true,
@@ -45,8 +45,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 56,
-        "end_line": 56
+        "begin_line": 76,
+        "end_line": 79
       },
       "is_opaque": false,
       "can_fail": true,
@@ -62,8 +62,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 77,
-        "end_line": 77
+        "begin_line": 101,
+        "end_line": 104
       },
       "is_opaque": false,
       "can_fail": true,
@@ -79,8 +79,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 97,
-        "end_line": 98
+        "begin_line": 130,
+        "end_line": 133
       },
       "is_opaque": false,
       "can_fail": true,
@@ -96,8 +96,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs",
-        "begin_line": 532,
-        "end_line": 532
+        "begin_line": 542,
+        "end_line": 544
       },
       "is_opaque": false,
       "can_fail": true,
@@ -323,8 +323,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance.rs",
-        "begin_line": 65,
-        "end_line": 65
+        "begin_line": 69,
+        "end_line": 69
       }
     },
     {
@@ -383,8 +383,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 42,
-        "end_line": 42
+        "begin_line": 58,
+        "end_line": 58
       }
     },
     {
@@ -395,8 +395,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 69,
-        "end_line": 69
+        "begin_line": 92,
+        "end_line": 92
       }
     }
   ],
@@ -422,8 +422,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 87,
-        "end_line": 87
+        "begin_line": 113,
+        "end_line": 113
       }
     },
     {
@@ -434,8 +434,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs",
-        "begin_line": 505,
-        "end_line": 505
+        "begin_line": 512,
+        "end_line": 512
       }
     }
   ],
@@ -448,8 +448,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
-        "begin_line": 231,
-        "end_line": 231
+        "begin_line": 236,
+        "end_line": 236
       },
       "impl_trait_def_id": 9,
       "impl_trait_rust_name": "core::convert::From",
@@ -463,8 +463,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
-        "begin_line": 69,
-        "end_line": 69
+        "begin_line": 92,
+        "end_line": 92
       },
       "impl_trait_def_id": 8,
       "impl_trait_rust_name": "core::ops::function::FnOnce",

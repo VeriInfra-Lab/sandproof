@@ -110,10 +110,48 @@ def module_key(name, command, root=ROOT):
     seeds += [n for n in ('lean-toolchain','lake-manifest.json','rust-toolchain.toml') if (root/n).is_file()]
     # Full Rust closure is deliberately conservative. A Rust change can
     # invalidate extra modules, but can never silently miss an indirect use.
-    return dict(schema=1, module=name, command=command, rust=rust_inputs(root),
+    result = dict(schema=1, module=name, command=command, rust=rust_inputs(root),
                 rules=rules(root), inputs=closure(root,seeds),
                 runtime=json.loads(Path(os.environ['SANDPROOF_FORMAL_RUNTIME']).read_text()),
                 native=native_dependencies(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])))
+    if name == 'retained':
+        _, result['scoped_proofs'] = stage1_retained_coverage(root)
+    return result
+
+
+def stage1_retained_coverage(root=ROOT):
+    """Require checked current V3 files in their original generated views.
+
+    A filename list or a development success is insufficient: use the original
+    successful module receipt, its current complete key and every raw artifact.
+    """
+    cache = Path(os.environ['SANDPROOF_FORMAL_CACHE']).resolve()
+    key = module_key('stage1-protocol', ['bash', 'scripts/verify-stage1-protocol.sh'], root)
+    entry = cache/'modules/stage1-protocol'/digest(key)
+    receipt = load_success(entry, key)
+    if receipt is None or not receipt.get('evidence'):
+        raise ValueError('retained V3 files require the current complete stage1 module receipt')
+    for name, expected in receipt['evidence'].items():
+        path = Path(name)
+        if path.is_symlink() or not path.is_file() or sha(path) != expected:
+            raise ValueError('retained V3 original formal evidence changed: ' + name)
+    records = [Path(name) for name in receipt['evidence']
+               if Path(name).parts[-2:] == ('registered', 'registered-result.json')]
+    if len(records) != 1:
+        raise ValueError('one original registered V3 result is required')
+    record_path, = records
+    record = json.loads(record_path.read_text())
+    if record.get('complete') is not True:
+        raise ValueError('registered V3 result is incomplete')
+    spec = importlib.util.spec_from_file_location('stage1_retained_admission',
+        root/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    covered = registered.validate_retained_coverage(root, record)
+    if not covered:
+        raise ValueError('retained V3 file coverage is empty')
+    return covered, dict(module_receipt_sha256=sha(entry/'receipt.json'),
+                         registered_result_sha256=sha(record_path))
 
 
 def native_dependencies(cache):
@@ -468,9 +506,13 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='mode',required=True)
     run=sub.add_parser('run');run.add_argument('--cache',type=Path,required=True);run.add_argument('--recompute',action='store_true')
+    sub.add_parser('retained-protocol-files')
     task=sub.add_parser('step');task.add_argument('name',choices=['foundations-generation','foundations']);task.add_argument('command',nargs=argparse.REMAINDER)
     args=parser.parse_args(argv)
     if args.mode=='run': run_batch(args.cache.resolve(),args.recompute)
+    elif args.mode=='retained-protocol-files':
+        covered, _ = stage1_retained_coverage()
+        print('\n'.join(sorted(covered)))
     else:
         command=args.command
         if command and command[0]=='--': command=command[1:]

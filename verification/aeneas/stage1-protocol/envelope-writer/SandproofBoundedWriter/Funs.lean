@@ -22,7 +22,7 @@ noncomputable section
 namespace SandproofBoundedWriterRust
 
 /-- [sandproof_controller_service::{impl core::convert::From<serde_json::error::Error> for sandproof_controller_service::JournalError}::from]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs', lines 232:4-232:45
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs', lines 237:4-237:45
     Name pattern: [sandproof_controller_service::{core::convert::From<sandproof_controller_service::JournalError, serde_json::error::Error>}::from]
     Visibility: public -/
 @[rust_fun
@@ -34,7 +34,7 @@ def sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from
   ok (sandproof_controller_service.JournalError.Json error)
 
 /-- Trait implementation: [sandproof_controller_service::{impl core::convert::From<serde_json::error::Error> for sandproof_controller_service::JournalError}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs', lines 231:0-231:45
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs', lines 236:0-236:45
     Name pattern: [core::convert::From<sandproof_controller_service::JournalError, serde_json::error::Error>] -/
 @[reducible, rust_trait_impl
   "core::convert::From<sandproof_controller_service::JournalError, serde_json::error::Error>"]
@@ -46,7 +46,7 @@ def sandproof_controller_service.JournalError.Insts.CoreConvertFromError :
 }
 
 /-- [sandproof_controller_service::template_registry::evidence::write_bounded::{impl core::ops::function::FnOnce<(Clause0_ReserveError,), core::io::error::Error> for sandproof_controller_service::template_registry::evidence::write_bounded::{closure}<B, Clause0_ReserveError>}::call_once]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 69:29-69:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 92:21-92:24
     Name pattern: [sandproof_controller_service::template_registry::evidence::write_bounded::{core::ops::function::FnOnce<sandproof_controller_service::template_registry::evidence::write_bounded::closure<@B, @Clause0_ReserveError>, (@Clause0_ReserveError), core::io::error::Error>}::call_once] -/
 @[rust_fun
   "sandproof_controller_service::template_registry::evidence::write_bounded::{core::ops::function::FnOnce<sandproof_controller_service::template_registry::evidence::write_bounded::closure<@B, @Clause0_ReserveError>, (@Clause0_ReserveError), core::io::error::Error>}::call_once"]
@@ -63,7 +63,7 @@ def
   BoundedBufferInst.allocation_error
 
 /-- Trait implementation: [sandproof_controller_service::template_registry::evidence::write_bounded::{impl core::ops::function::FnOnce<(Clause0_ReserveError,), core::io::error::Error> for sandproof_controller_service::template_registry::evidence::write_bounded::{closure}<B, Clause0_ReserveError>}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 69:29-69:32
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 92:21-92:24
     Name pattern: [core::ops::function::FnOnce<sandproof_controller_service::template_registry::evidence::write_bounded::closure<@B, @Clause0_ReserveError>, (@Clause0_ReserveError), core::io::error::Error>] -/
 @[reducible, rust_trait_impl
   "core::ops::function::FnOnce<sandproof_controller_service::template_registry::evidence::write_bounded::closure<@B, @Clause0_ReserveError>, (@Clause0_ReserveError), core::io::error::Error>"]
@@ -80,7 +80,7 @@ def
 }
 
 /-- [sandproof_controller_service::template_registry::evidence::write_bounded]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 56:0-56:104
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 76:0-79:22
     Name pattern: [sandproof_controller_service::template_registry::evidence::write_bounded]
     Visibility: public -/
 @[rust_fun
@@ -135,7 +135,7 @@ def sandproof_controller_service.template_registry.evidence.write_bounded
         ok (core.result.Result.Ok i3, { writer with bytes := t })
 
 /-- [sandproof_controller_service::template_registry::evidence::finish_bounded]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 77:0-77:137
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 101:0-104:34
     Name pattern: [sandproof_controller_service::template_registry::evidence::finish_bounded]
     Visibility: public -/
 @[rust_fun
@@ -168,7 +168,7 @@ def sandproof_controller_service.template_registry.evidence.finish_bounded
         residual
 
 /-- [sandproof_controller_service::template_registry::evidence::encode_bounded_using]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 97:0-98:65
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs', lines 130:0-133:45
     Name pattern: [sandproof_controller_service::template_registry::evidence::encode_bounded_using]
     Visibility: public -/
 @[rust_fun
@@ -195,7 +195,7 @@ def
     BoundedBufferInst writer result
 
 /-- [sandproof_internal::server::proof_json_response_result]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs', lines 532:0-532:146
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs', lines 542:0-544:16
     Name pattern: [sandproof_internal::server::proof_json_response_result]
     Visibility: public -/
 @[rust_fun "sandproof_internal::server::proof_json_response_result"]
