@@ -186,3 +186,13 @@ boot_id 按原 UTF-8 字节计数，None 与未检查的 policy 不提供认证�
 原函数一般等价、生产采用及 String.len/is_empty 两个调用绑定的 V0 采用仍待
 完成；不能把局部候选证明转记成原完整 Inbox.validate、持久收件或 JSON/TLS
 链已证。ning/共享验收、其他成员规则和外部业务提供者继续独立登记。
+
+[原终态观察匹配](../../verification/experiments/stage1-protocol/terminal-binding/README.md)
+从已解码 observation/accepted intent 直接连接未重构的 matches_request：完整 intent
+相等、Destroy、正版本、slot 形状及原 checked_add 版本对应恰为接受条件，覆盖任意
+完整值与所有操作参数。Pending/Cleaned 不影响匹配，Absent→1 在此守卫仍可匹配，
+但可被独立的 accepted.validate 拒绝；该方法不提供认证、物理清理或持久接受。
+历史 carriers 的计数器/摘要值证据保留，同一文件在冻结清单中不表示终态方法已证。
+本片没有新增外部符号或生产重构；lane 的 successor/完整上下文/slot/window/真实
+编码长度、SessionShape、native_retirement、完整 Inbox.validate 和持久/网络连接
+仍分别待证，公共登记及 ning/共享验收由主控采用与完成。
