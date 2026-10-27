@@ -193,6 +193,17 @@ boot_id 按原 UTF-8 字节计数，None 与未检查的 policy 不提供认证�
 完整值与所有操作参数。Pending/Cleaned 不影响匹配，Absent→1 在此守卫仍可匹配，
 但可被独立的 accepted.validate 拒绝；该方法不提供认证、物理清理或持久接受。
 历史 carriers 的计数器/摘要值证据保留，同一文件在冻结清单中不表示终态方法已证。
-本片没有新增外部符号或生产重构；lane 的 successor/完整上下文/slot/window/真实
-编码长度、SessionShape、native_retirement、完整 Inbox.validate 和持久/网络连接
+本片没有新增外部符号或生产重构；lane 的原实现及真实编码连接、SessionShape、
+native_retirement、完整 Inbox.validate 和持久/网络连接
 仍分别待证，公共登记及 ning/共享验收由主控采用与完成。
+
+
+[Retention lane 条件候选](../../verification/experiments/stage1-protocol/retention-lane/README.md)
+从任意已解码 lane、显式上下文和编码计算连接 checked successor、终态及完整封套、
+slot/window 与 8192 字节界限。空 lane 在本方法内不额外检查 slot，最大 floor 的
+successor 为 None；前置拒绝跳过编码，编码错误拒绝，计算失败/发散保持不变。
+它复用现有 Terminal/Validation 规格与逐符号库合同，不由 Cleaned 推导真实清理。
+原 Serde 路径有固定工具抽取障碍，因此此包仅为隔离窄编码候选；原实现的一般等价、
+生产采用和标准 Serde 实例的精确连接仍开放。完整 Inbox.validate、成员及状态保持、
+SessionShape/native_retirement、持久事务/未知提交/重启及实际 JSON/TLS/handler
+继续分别待证，公共登记和正式验收由 ning/主控协调。

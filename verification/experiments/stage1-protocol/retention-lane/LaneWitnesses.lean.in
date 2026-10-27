@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.LaneProofs
+import SandboxModel.Lifecycle.Protocol.LaneValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.RetentionLane
+noncomputable section
+open scoped Classical
+
+theorem normal_witnesses :
+    run Values.small Values.fresh Values.context = .ok true ∧
+    run Values.small Values.normal Values.context = .ok true ∧
+    run Values.small Values.distinctWindow Values.context = .ok true ∧
+    run Values.small Values.highest Values.context = .ok true := by
+  simpa only [run, valid_spec] using Values.model_normal_witnesses
+
+theorem field_omission_rejections :
+    run Values.small Values.wrongSuccessor Values.context = .ok false ∧
+    run Values.small Values.wrongStatus Values.context = .ok false ∧
+    run Values.small Values.normal Values.foreignContext = .ok false ∧
+    run Values.small Values.wrongSlot Values.context = .ok false ∧
+    run Values.small Values.wrongWindow Values.context = .ok false := by
+  simpa only [run, valid_spec] using Values.model_rejections
+
+theorem encoding_size_boundary :
+    run (Values.encode 8192 (by decide)) Values.normal Values.context = .ok true ∧
+    run (Values.encode 8193 (by decide)) Values.normal Values.context = .ok false := by
+  simpa only [run, valid_spec] using Values.model_size_boundary
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoding_size_boundary

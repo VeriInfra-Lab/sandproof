@@ -1,0 +1,56 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -130,6 +130,20 @@
+     pub current_window: Option<sandproof_protocol::lifecycle::RetentionWindowId>,
+     pub last_retired: Option<sandproof_protocol::lifecycle::TerminalLifecycleObservation>,
+ }
++pub(super) trait TerminalEncoding {
++    fn encode(
++        value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++    ) -> Result<Vec<u8>, serde_json::Error>;
++}
++struct StandardTerminalEncoding;
++impl TerminalEncoding for StandardTerminalEncoding {
++    fn encode(
++        value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++    ) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
+ impl LifecycleRetentionLane {
+     pub(super) fn fresh(slot: u16) -> Self {
+         Self {
+@@ -140,6 +154,9 @@
+         }
+     }
+     fn valid(&self, context: &AuthenticatedCenterContext) -> bool {
++        self.valid_using::<StandardTerminalEncoding>(context)
++    }
++    fn valid_using<E: TerminalEncoding>(&self, context: &AuthenticatedCenterContext) -> bool {
+         let successor = self
+             .retired_through
+             .checked_add(1)
+@@ -155,7 +172,7 @@
+                     && last.request.validate(context).is_ok()
+                     && last.request.retention.slot == self.slot
+                     && last.request.retention.window.get() == floor
+-                    && serde_json::to_vec(last).is_ok_and(|bytes| bytes.len() <= 8192)
++                    && terminal_encoded_within_limit::<E>(last)
+             }
+             _ => false,
+         }
+@@ -708,3 +725,13 @@
+         Ok(())
+     }
+ }
++
++fn terminal_encoded_within_limit<E: TerminalEncoding>(
++    value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++) -> bool {
++    let encoded = E::encode(value);
++    match &encoded {
++        Ok(bytes) => bytes.len() <= 8192,
++        Err(_) => false,
++    }
++}
