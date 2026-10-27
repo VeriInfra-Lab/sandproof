@@ -2,6 +2,19 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## Unloaded 查询的单次确认：实现与证明边界（#676）
+
+以 integration `d97ac5cbcaad7855706e6467db242a4c4c1fb407` 为基线，
+`CenterApplication::query_lifecycle` 和共享业务账本的查询接线改为：在原内部互斥锁下
+复用本次已确认包络，完成 Unloaded 到期判断和公开投影。无状态变化为一次 CAS，
+存在原全包络到期更新时最多两次；有更新时须等待原提交确认后才发布结果。
+原 RedisLedger、Lua、到期 reducer、HTTP 映射、超时及后台恢复算法未改。
+
+新增服务接线及纯投影提取尚无 Lean 对应证明；既有中心纯状态机、Redis 或旧 handler
+定理不自动覆盖本次调用组织。组件回归仅覆盖真实 Redis 与受控 Host，不能代替
+物理卸载、存储持续长延迟或整个系统的验收。历史 652b 首次错误关联仍缺失，
+#676 不随本次冗余确认修复关闭，不宣称旧实机 HTTP 500 已被唯一定位或消失。
+
 ## 已卸载执行的专用终止：实现与证明边界
 
 以 `42b07d0a` 为修改基线，在原 Core/Journal 增加 `ReleasedExecution` 终止依据，
