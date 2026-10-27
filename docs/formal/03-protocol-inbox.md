@@ -152,3 +152,11 @@ Inbox.validate、外层事务/重启与真实资源关系仍另行交对应提�
 历史期限的最大值，Resume 仍允许编号空洞。方法自身不保证参数的成员关系，也不把
 相等或字段存在解释成授权、持久接受或资源事实。计数/编码/最大值的隔离重构仍须
 生产采用与原实现等价连接；标准 Serde 实例、完整 Inbox.validate 和持久外层保持待证。
+
+[退役身份校验候选](../../verification/experiments/stage1-protocol/inbox-retired-identities/README.md)
+连接 Inbox::validate_retired_identities 的隔离扫描：每个保留退役记录都与此前所有
+退役记录、活跃 session ID 和所有活跃条目的完整 key 互斥。任意长度扫描和外层
+枚举使用同一完整规格，接受条件不依赖有限见证。该方法不重新验证退役封套、
+slot/window 形状或 Cleaned 状态，也不提供授权、物理清理或持久接受事实。
+具名循环候选仍须原实现一般等价与生产采用；V0 借用 Vec 接线、公共登记及
+ning/共享验收独立完成，完整 Inbox.validate 和持久收件继续保持待证。

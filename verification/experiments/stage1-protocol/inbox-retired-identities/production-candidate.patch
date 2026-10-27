@@ -1,0 +1,59 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -298,0 +299,30 @@
++    fn prior_retired_identity_conflict(
++        &self,
++        index: usize,
++        id: &SessionId,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++    ) -> bool {
++        for other in &self.lanes[..index] {
++            if let Some(last) = &other.last_retired
++                && (last.request.request.binding.session == *id
++                    || last.request.request.binding.key == *key)
++            {
++                return true;
++            }
++        }
++        false
++    }
++
++    fn current_identity_conflict(
++        &self,
++        id: &SessionId,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++    ) -> bool {
++        for session in &self.sessions {
++            if session.id == *id || session.contains_entry_key(key) {
++                return true;
++            }
++        }
++        false
++    }
++
+@@ -305,12 +335,3 @@
+-            if self.lanes[..index].iter().any(|other| {
+-                other.last_retired.as_ref().is_some_and(|last| {
+-                    last.request.request.binding.session == binding.session
+-                        || last.request.request.binding.key == binding.key
+-                })
+-            }) || self.sessions.iter().any(|session| {
+-                session.id == binding.session
+-                    || session
+-                        .entries
+-                        .iter()
+-                        .any(|entry| entry.intent.request.binding.key == binding.key)
+-            }) {
++            if self.prior_retired_identity_conflict(index, &binding.session, &binding.key)
++                || self.current_identity_conflict(&binding.session, &binding.key)
++            {
+@@ -621,0 +643,9 @@
++    fn contains_entry_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> bool {
++        for entry in &self.entries {
++            if entry.intent.request.binding.key == *key {
++                return true;
++            }
++        }
++        false
++    }
++
