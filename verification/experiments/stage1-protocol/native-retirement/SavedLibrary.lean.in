@@ -1,0 +1,94 @@
+import SandboxModel.Lifecycle.Protocol.SavedModel
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.request sandproof_protocol.lifecycle.digest
+open sandbox_controller_core.maintenance.retirement sandbox_controller_core.ids
+namespace SandboxModel.Stage1Protocol.SavedRetirement
+noncomputable section
+open scoped Classical
+
+def run (encoding : Encoding) (session : Session) : CheckResult :=
+  validate_saved_using encoding session
+
+/-- Reuse the existing InboxRecord.last_entry_spec argument for this actual
+transparent query; the underlying Rust is the same bounded last-index idiom. -/
+theorem last_saved_spec (session : Session) :
+    last_saved_entry session = .ok session.entries.val.getLast? := by
+  unfold last_saved_entry
+  simp only [alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    bind_tc_ok, decide_eq_true_eq]
+  by_cases empty : session.entries.val.length = 0
+  · have nil : session.entries.val = [] := by simpa using empty
+    simp [nil]
+  · simp only [empty, ↓reduceIte]
+    obtain ⟨index, subtracted, post⟩ := WP.spec_imp_exists
+      (Usize.sub_spec (x := alloc.vec.Vec.len session.entries) (y := 1#usize) (by simp; omega))
+    have indexval : index.val = session.entries.val.length - 1 := by simpa using post.1
+    rw [subtracted]
+    have inside : index.val < session.entries.val.length := by omega
+    obtain ⟨value, indexed, same⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.index_usize_spec session.entries index inside)
+    simp [indexed, same, List.getLast?_eq_getElem?, ← indexval, List.getElem?_eq_getElem inside]
+
+theorem destroy_spec (operation : LifecycleOperation) :
+    is_destroy_operation operation = .ok (decide (operation = .Destroy)) := by
+  cases operation <;> simp [is_destroy_operation]
+
+theorem local_eq (left right : InternalLocalBinding) :
+    InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq left right =
+      .ok (decide (left = right)) := by
+  cases left
+  cases right
+  simp [InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq,
+    SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+  split_ifs <;> simp_all
+
+theorem local_option_ne (left right : Option InternalLocalBinding) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding) left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      local_eq]
+
+theorem operation_option_ne (left right : Option OperationId) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption OperationId.Insts.CoreCmpPartialEqOperationId)
+      left right = .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+  exact ⟨UScalar.val_eq_of_eq, UScalar.eq_of_val_eq⟩
+
+theorem digest_ne (left right : ContentDigest) :
+    core.cmp.PartialEq.ne.trait_default ContentDigest.Insts.CoreCmpPartialEqContentDigest
+      left right = .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq, Replay.array_eq]
+
+theorem status_ne (left right : QuiescenceStatus) :
+    core.cmp.PartialEq.ne.trait_default QuiescenceStatus.Insts.CoreCmpPartialEqQuiescenceStatus
+      left right = .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      QuiescenceStatus.Insts.CoreCmpPartialEqQuiescenceStatus.eq, QuiescenceStatus.read_discriminant]
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.last_saved_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.destroy_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.local_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.local_option_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.operation_option_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.digest_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.status_ne

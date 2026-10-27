@@ -207,3 +207,14 @@ successor 为 None；前置拒绝跳过编码，编码错误拒绝，计算失�
 生产采用和标准 Serde 实例的精确连接仍开放。完整 Inbox.validate、成员及状态保持、
 SessionShape/native_retirement、持久事务/未知提交/重启及实际 JSON/TLS/handler
 继续分别待证，公共登记和正式验收由 ning/主控协调。
+
+[原生退休收据校验候选](../../verification/experiments/stage1-protocol/native-retirement/README.md)
+从已解码 Session 连接 validate_saved 的完整值守卫：缺收据/缺末项、完整 local、
+Destroy/版本/操作编号、完整 intent 编码的 digest 绑定、收据身份与四个状态字段，
+以及最终编码的 8192 字节界限。任意编码计算的错误、失败/发散和短路顺序均在同一
+合同内；正常 Create→Destroy 封套与真实 Rust 错误版使用相同规格。workspace 和
+retain_until 没有额外值条件，accepted.validate 与完整 SessionShape 属于外层义务。
+生产只读，候选仅提取窄编码/digest 接口及透明末项/Destroy 判断；原实现一般等价、
+标准 Serde/SHA 连接与生产采用仍开放。digest 或 Confirmed 不提供认证、同事务
+Retire、持久接受、原始资源退出或 pin 释放事实。V4/V5/V6 的实际提供者、完整 Inbox、
+持久/未知提交/重启和 JSON/TLS 继续分别登记；公共登记和完整验收由 ning/主控协调。
