@@ -1,0 +1,61 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.OriginSelection
+noncomputable section
+
+def origin (entry : Entry) : Bool :=
+  match entry.intent.request.operation with
+  | .Create .. | .Resume .. => true
+  | _ => false
+
+def selection (entries : List Entry) : Option Entry := entries.reverse.find? origin
+
+theorem selection_step (entries : List Entry) (index : Nat) (bound : index < entries.length) :
+    selection (entries.take (index+1)) =
+      if origin entries[index] then some entries[index] else selection (entries.take index) := by
+  unfold selection
+  rw [List.take_succ_eq_append_getElem bound, List.reverse_append]
+  simp only [List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.cons_append, List.find?_cons]
+  cases origin entries[index] <;> rfl
+
+def FullOriginContract (run : Session → Result (Option Entry)) : Prop :=
+  ∀ session, run session = .ok (selection session.entries.val)
+
+theorem no_origin_iff (entries : List Entry) :
+    selection entries = none ↔ ∀ entry ∈ entries, origin entry = false := by
+  simp [selection, List.find?_eq_none]
+
+def LastOrigin (entries : List Entry) (entry : Entry) : Prop :=
+  origin entry = true ∧ ∃ before after, entries = before ++ entry :: after ∧
+    ∀ later ∈ after, origin later = false
+
+theorem selection_some_iff (entries : List Entry) (entry : Entry) :
+    selection entries = some entry ↔ LastOrigin entries entry := by
+  unfold selection LastOrigin
+  rw [List.find?_eq_some_iff_append]
+  constructor
+  · rintro ⟨hit, front, back, same, excluded⟩
+    refine ⟨hit, back.reverse, front.reverse, ?_, ?_⟩
+    · have reversed := congrArg List.reverse same
+      simpa only [List.reverse_reverse, List.reverse_append, List.reverse_cons,
+        List.append_assoc, List.singleton_append] using reversed
+    · intro later member
+      simpa using excluded later (List.mem_reverse.mp member)
+  · rintro ⟨hit, before, after, same, excluded⟩
+    refine ⟨hit, after.reverse, before.reverse, ?_, ?_⟩
+    · simp only [same, List.reverse_append, List.reverse_cons,
+        List.append_assoc, List.singleton_append]
+    · intro later member
+      simpa using excluded later (List.mem_reverse.mp member)
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.selection_step
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.no_origin_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.selection_some_iff

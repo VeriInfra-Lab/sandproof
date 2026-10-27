@@ -160,3 +160,11 @@ Inbox.validate、外层事务/重启与真实资源关系仍另行交对应提�
 slot/window 形状或 Cleaned 状态，也不提供授权、物理清理或持久接受事实。
 具名循环候选仍须原实现一般等价与生产采用；V0 借用 Vec 接线、公共登记及
 ning/共享验收独立完成，完整 Inbox.validate 和持久收件继续保持待证。
+
+[来源选择候选](../../verification/experiments/stage1-protocol/inbox-origin-selection/README.md)
+连接 Session::current_execution_origin 的隔离反向扫描：任意有限历史返回最后一个
+Create/Resume 的完整 Entry，None 当且仅当没有匹配项。该方法不检查本地操作、
+当前代、版本或 terminal，不能将被选中解释成已附加执行、实际 VM 或持久接受。
+共同完整合同用于正常封套见证与真实字段遗漏错误版，完整返回保留条目全部元数据。
+原 rev/find 的固定工具生命周期限制保留；一般等价、生产采用、ning/共享验收及
+完整 Inbox.validate、持久外层和实际资源关系继续单列。

@@ -1,0 +1,18 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -623,2 +623,5 @@
+-        self.entries.iter().rev().find(|entry| {
+-            matches!(
++        let mut index = self.entries.len();
++        while index > 0 {
++            index -= 1;
++            let entry = &self.entries[index];
++            if matches!(
+@@ -627,2 +630,5 @@
+-            )
+-        })
++            ) {
++                return Some(entry);
++            }
++        }
++        None
