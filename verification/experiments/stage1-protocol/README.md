@@ -6,6 +6,11 @@
 分别生成 request、manifest、carriers 三个视图；不手改生成算法，不增加翻译器规则。
 入口代码和候选冻结存在不等于完成验收，实际通过范围由同一候选的原始记录确认。
 
+当前统一源已经采用收件查找、寿命扫描和窄编码接口的必要重构，生产只维护这一条实现。
+各子包说明中的旧提交和 `*-candidate.patch` 是原 PR 的来源记录，不是另一条生产路径，
+也不是当前正确视图仍须应用的补丁。当前入口直接读取本仓库函数；实际验收状态以覆盖记录
+和精确候选的原始结果为准，不能用历史候选的成功替代当前验收。
+
 ## 接口、保证和限制
 
 | 入口/证明 | 可以复用的结论 | 仍需调用者提供 |
@@ -55,7 +60,9 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 不删选源码、配置、Cargo、fixtures 或规则。归档前后再次核对整个输入。B 批草稿不能被工作树打包带入。
 
 `component.py` 在普通测试机运行原 native/negative CLI，再通过原 `native_case` 回执机制登记；
-证明机必须先取得当前完整共享 native seal，不能拿裸 `success` 替代。仅此新 case 额外保存一个
+证明机必须先取得覆盖本批全部义务的原生验收记录，不能拿裸 `success` 替代。
+记录明确区分 `all` 与 `stage1-protocol`；后者只能提供本 V3 切片的前提，不能交给全局入口
+冒充全部模块通过。仅此新 case 额外保存一个
 明确的原始 `source.tar`，沿原 `receipt.files` 复制和逐字 SHA 校验，缺失、链接或损坏均拒绝；
 不传 Cargo target 或二进制，也不扩大成复制任意归档/目录。
 
@@ -70,13 +77,16 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 
 ## 验收入口
 
-主控在 普通测试机 的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中统一运行完整原生入口：
+主控在普通测试机的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中运行本批入口：
 
 ```sh
-bash scripts/python-entry.sh tools/proof_native_suite.py run --output /private/native-evidence
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-`stage1-protocol` 是其中一个原生 case；原两包全部测试、显式 integration 发现、Clippy、格式、
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 28 个已登记 V3 case。
+任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
+原两包全部测试、显式 integration 发现、Clippy、格式、
 文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
 不要另跑裸 integration 组来代替此入口，不能在证明机跑普通测试。
 原生入口另运行本组件 `test_replay_formal.py`，检查私有抽取目录准备及准确审计清单，
@@ -84,7 +94,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run --output /private/n
 
 `registered.py` 统一登记结果/观察/确认、完整清单、字段与字节、Writer、固定派生来源和
 同步收件切片的原入口。普通检查仍调用各包原命令和同性质错误版；证明入口消费对应的
-完整共享回执。裸开发 `result.json` 不能充当共享回执，未运行的源码/LLBC 来源检查也不能
+完整范围回执。裸开发 `result.json` 不能充当范围回执，未运行的源码/LLBC 来源检查也不能
 由其它包一次构建补齐。没有原生断言的透明抽取 crate 只记编译/静态检查，不计为测试覆盖。
 
 仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
@@ -95,11 +105,14 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run --output /private/n
 将原完整封口与所有 JSON/log 证据交到 证明机，按工作流准备同一 Git 候选、固定工具、独立 `.lake/build`：
 
 ```sh
-export SANDPROOF_NATIVE_EVIDENCE=/private/native-evidence
+export SANDPROOF_NATIVE_EVIDENCE=/private/v3-native-evidence
 bash scripts/verify-stage1-protocol.sh
-# 整套入口由主控统一运行，组件通过不能替代整套通过：
-bash scripts/verify-controller.sh
 ```
+
+不指定 `--scope` 的原生入口继续运行原全项目义务，包含旧首链；
+`verify-controller.sh` 只接受全项目原生记录，并保留全部原冻结、模块和总审计门槛。
+旧模块失败不会因 V3 范围通过而消失，不能把范围记录改名或改标签当作全项目成功。
+全局验收结果与本批结果分别报告；历史首链或冻结的迁移不隐含在本 V3 交付中。
 
 新模块清单与 `frozen.json` 绑定实际源、生成物、模型、检查器、全部审计和导入闭包。
 request 四根变化时，三个 profile 的完整原始 IR 和生成字节都必须重新比较；只规范化原检查器允许的

@@ -1,7 +1,8 @@
 # 协议 4 解码字典与缓冲错误组合
 
 接续 [#707 的编码源接线](../serde-binding/README.md)及
-[完整字段回调合同](../envelope-bytes/README.md)，生产仍固定 a9c9967889c4cf298e4378c7106948018835fc64。
+[完整字段回调合同](../envelope-bytes/README.md)。旧 a9c 提交仅为最初候选来源；
+统一入口读取本仓库当前实现并重新核对完整输入。
 [EnvelopeParser](EnvelopeParser.lean.in)
 复用原 `SliceFieldReader`、原自有叶子回调、`finishDocument`、`closeContainer`，没有另建协议值模型或解析算法。
 八条定理是**显式 A6/B4 条件下的错误/正常值组合**；不是整个 Serde 或 JSON parser 的机器精化，

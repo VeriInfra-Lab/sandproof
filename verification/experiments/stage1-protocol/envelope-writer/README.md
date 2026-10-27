@@ -3,10 +3,10 @@
 [组件入口](../README.md) · [V3 范围](../../../../docs/formal/03-protocol-inbox.md) ·
 [工作流](../../../../docs/proof-workflow.md) · [唯一依赖登记](../../../../docs/formal/dependencies.md)
 
-本切片接续 #705 的完整 Accepted/Recorded 字段、字节条件与大小界，生产仍固定
-`a9c9967889c4cf298e4378c7106948018835fc64`。隔离候选从当前 `encode_bounded`
-移出原初始化、写入和结束判断；先逐字核对历史 Writer 的原写入、结束和响应片段。
-生产文件不修改，旧冻结不刷新。一般旧新等价仍是显式 B4 来源条件。
+本切片接续 #705 的完整 Accepted/Recorded 字段、字节条件与大小界。最初候选固定
+`a9c9967889c4cf298e4378c7106948018835fc64`；统一源已经采用 `encode_bounded`
+的初始化、写入和结束判断拆分，当前正确视图直接读取该实现。历史片段和补丁仅用于
+追踪来源；本批证明当前函数符合合同，不声称已给出旧新实现的一般等价证明。
 
 `EnvelopeWriterContract` 使用既有 `ActualWriter`、`WriteContract`、`RustHistory`、
 `finishSpec` 和普通 Vec 模型，不另建协议值或 Writer 策略。新增 `SerializeTrace`
@@ -53,9 +53,10 @@ foundations 的透明完整枚举；原/共享 LLBC 的全部变体、字段、d
 原工具版本、独立 `.lake/build`、独立 Cargo target 和共享重锁按工作流配置。
 公共接线由主控协调。历史 `shared-candidate.patch` 不再执行；当前检查器在私有副本
 安装包内 `local-view.toml.in`，原公共 V0 目录、提供者和生成脚本不改。
-`public-registration-candidate.patch` 保留为登记来源，
-为原 `verify-stage1-protocol.sh` 增加正/反版并要求对应 ning 回执，公共文件未直接改写。
-覆盖记录也只提供 `coverage-candidate.patch`，不能用局部结果刷新根级旧冻结。
+`public-registration-candidate.patch` 保留为登记来源；其中的正/反登记已由
+`registered.py` 接入原 `verify-stage1-protocol.sh`，要求对应 ning
+范围回执；`coverage-candidate.patch` 同样仅保留原提案来源。当前通过范围只在实际覆盖
+记录与精确候选结果中声明，不能用局部结果刷新不相关的旧冻结。
 
 证明环境分别执行，输出目录必须是新的：
 

@@ -5,10 +5,11 @@
 [V3 范围](../../../../docs/formal/03-protocol-inbox.md) ·
 [依赖登记](../../../../docs/formal/dependencies.md)
 
-基于 #706 的精确提交，生产仍固定 a9c9967889c4cf298e4378c7106948018835fc64。
+最初基于 #706 的精确候选；统一入口现读取本仓库已采用的真实生产函数，旧 a9c 提交只作来源记录。
 本包落实既有 A6/B4 条件的具体使用点，不新增协议模型、编码算法或可信业务判断。
-`candidate.json` 只供主控审查采用；公共依赖登记、覆盖和验收入口提供候选 diff。
-未采用前，原 `StandardCalls`、`NormalRenderer` 和字节组合仍带显式条件。
+`candidate.json` 记录具体来源条件，候选 diff 保留原提案来源；当前公共入口由 `registered.py`
+调用原源码检查器。完成接线不等于标准实例已经机器证明，原 `StandardCalls`、
+`NormalRenderer` 和字节组合仍带显式条件。
 
 ## 原始证据与核对内容
 
