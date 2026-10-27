@@ -27,16 +27,30 @@ pub trait BoundedBuffer: Sized {
 
 impl BoundedBuffer for Vec<u8> {
     type ReserveError = std::collections::TryReserveError;
-    fn new_buffer() -> Self { Vec::new() }
-    fn len(&self) -> usize { Vec::len(self) }
-    fn capacity(&self) -> usize { Vec::capacity(self) }
+    fn new_buffer() -> Self {
+        Vec::new()
+    }
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+    fn capacity(&self) -> usize {
+        Vec::capacity(self)
+    }
     fn try_reserve_exact(&mut self, additional: usize) -> Result<(), Self::ReserveError> {
         Vec::try_reserve_exact(self, additional)
     }
-    fn extend_from_slice(&mut self, bytes: &[u8]) { Vec::extend_from_slice(self, bytes); }
-    fn into_bytes(self) -> Vec<u8> { self }
-    fn capacity_error() -> io::Error { io::Error::other("bounded evidence exceeded") }
-    fn allocation_error() -> io::Error { io::Error::other("bounded evidence allocation failed") }
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        Vec::extend_from_slice(self, bytes);
+    }
+    fn into_bytes(self) -> Vec<u8> {
+        self
+    }
+    fn capacity_error() -> io::Error {
+        io::Error::other("bounded evidence exceeded")
+    }
+    fn allocation_error() -> io::Error {
+        io::Error::other("bounded evidence allocation failed")
+    }
 }
 
 pub struct BoundedWriter<B: BoundedBuffer> {
@@ -49,38 +63,44 @@ impl<B: BoundedBuffer> Write for BoundedWriter<B> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         write_bounded(self, bytes)
     }
-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Original checked write policy; unchanged from the reviewed factorization.
-pub fn write_bounded<B: BoundedBuffer>(writer: &mut BoundedWriter<B>, bytes: &[u8]) -> io::Result<usize> {
-
-            let Some(length) = writer.bytes.len().checked_add(bytes.len()) else {
-                writer.exceeded = true;
-                return Err(B::capacity_error());
-            };
-            if length > writer.limit {
-                writer.exceeded = true;
-                return Err(B::capacity_error());
-            }
-            if writer.bytes.capacity() < length {
-                writer.bytes
-                    .try_reserve_exact(bytes.len())
-                    .map_err(|_| B::allocation_error())?;
-            }
-            writer.bytes.extend_from_slice(bytes);
-            Ok(bytes.len())
-
+pub fn write_bounded<B: BoundedBuffer>(
+    writer: &mut BoundedWriter<B>,
+    bytes: &[u8],
+) -> io::Result<usize> {
+    let Some(length) = writer.bytes.len().checked_add(bytes.len()) else {
+        writer.exceeded = true;
+        return Err(B::capacity_error());
+    };
+    if length > writer.limit {
+        writer.exceeded = true;
+        return Err(B::capacity_error());
+    }
+    if writer.bytes.capacity() < length {
+        writer
+            .bytes
+            .try_reserve_exact(bytes.len())
+            .map_err(|_| B::allocation_error())?;
+    }
+    writer.bytes.extend_from_slice(bytes);
+    Ok(bytes.len())
 }
 
 /// Original exceeded-before-serializer-result decision.
-pub fn finish_bounded<B: BoundedBuffer>(writer: BoundedWriter<B>, result: Result<(), serde_json::Error>) -> Result<Vec<u8>, JournalError> {
+pub fn finish_bounded<B: BoundedBuffer>(
+    writer: BoundedWriter<B>,
+    result: Result<(), serde_json::Error>,
+) -> Result<Vec<u8>, JournalError> {
     if writer.exceeded {
         return Err(JournalError::MaintenanceCapacity);
     }
     result?;
     Ok(writer.bytes.into_bytes())
-
 }
 
 /// Exact standard serialization call, with its original mutable Writer and value.
@@ -88,14 +108,18 @@ pub trait BoundedSerialize<W, T> {
     fn serialize(writer: &mut W, value: &T) -> Result<(), serde_json::Error>;
 }
 pub struct StandardSerialize;
-impl<B: BoundedBuffer, T: serde::Serialize> BoundedSerialize<BoundedWriter<B>, T> for StandardSerialize {
+impl<B: BoundedBuffer, T: serde::Serialize> BoundedSerialize<BoundedWriter<B>, T>
+    for StandardSerialize
+{
     fn serialize(writer: &mut BoundedWriter<B>, value: &T) -> Result<(), serde_json::Error> {
         serde_json::to_writer(writer, value)
     }
 }
 
 pub fn encode_bounded_using<B, T, S>(value: &T, limit: usize) -> Result<Vec<u8>, JournalError>
-where B: BoundedBuffer, S: BoundedSerialize<BoundedWriter<B>, T>,
+where
+    B: BoundedBuffer,
+    S: BoundedSerialize<BoundedWriter<B>, T>,
 {
     let mut writer = BoundedWriter {
         bytes: B::new_buffer(),
@@ -106,14 +130,19 @@ where B: BoundedBuffer, S: BoundedSerialize<BoundedWriter<B>, T>,
     finish_bounded(writer, result)
 }
 
-pub fn encode_bounded_with_buffer<B: BoundedBuffer>(value: &impl serde::Serialize, limit: usize) -> Result<Vec<u8>, JournalError> {
+pub fn encode_bounded_with_buffer<B: BoundedBuffer>(
+    value: &impl serde::Serialize,
+    limit: usize,
+) -> Result<Vec<u8>, JournalError> {
     encode_bounded_using::<B, _, StandardSerialize>(value, limit)
 }
 
-pub fn encode_bounded(value: &impl serde::Serialize, limit: usize) -> Result<Vec<u8>, JournalError> {
+pub fn encode_bounded(
+    value: &impl serde::Serialize,
+    limit: usize,
+) -> Result<Vec<u8>, JournalError> {
     encode_bounded_with_buffer::<Vec<u8>>(value, limit)
 }
-
 
 /// Decode and validate the original publication representation.
 /// # Errors

@@ -532,11 +532,15 @@ impl ProofJsonResponseBuilder for ProofHttpJsonResponseBuilder {
 }
 
 fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<Bytes>> {
-    proof_json_response_result::<ProofHttpJsonResponseBuilder>(sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit))
+    proof_json_response_result::<ProofHttpJsonResponseBuilder>(
+        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit),
+    )
 }
 
 /// The original result-selection body, separated from the library call.
-pub fn proof_json_response_result<P: ProofJsonResponseBuilder>(result: Result<Vec<u8>, sandproof_controller_service::JournalError>) -> P::Response {
+pub fn proof_json_response_result<P: ProofJsonResponseBuilder>(
+    result: Result<Vec<u8>, sandproof_controller_service::JournalError>,
+) -> P::Response {
     match result {
         Ok(encoded) => P::json_ok(encoded),
         Err(_error) => P::empty_error(),

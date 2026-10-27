@@ -101,4 +101,6 @@ impl fmt::Display for TransportError {
 impl Error for TransportError {}
 
 // Private verification candidate only.
-pub use server::{ProofHttpJsonResponseBuilder, ProofJsonResponseBuilder, proof_json_response_result};
+pub use server::{
+    ProofHttpJsonResponseBuilder, ProofJsonResponseBuilder, proof_json_response_result,
+};
