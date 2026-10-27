@@ -1,0 +1,9 @@
+#[cfg(test)]
+pub(super) fn proof_entry_kind(
+    inbox: &Inbox,
+    session: &Session,
+    entry: &Entry,
+    context: &AuthenticatedCenterContext,
+) -> Result<usize, JournalError> {
+    inbox.entry_kind(session, entry, context)
+}

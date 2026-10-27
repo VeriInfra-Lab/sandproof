@@ -1,0 +1,91 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -390,0 +391,8 @@
++    fn count_entry_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> usize {
++        let mut count = 0_usize;
++        for session in &self.sessions {
++            count = session.count_entry_key_from(key, count);
++        }
++        count
++    }
++
+@@ -397 +405,12 @@
+-        super::unload_resolution::validate_entry(entry)?;
++        self.entry_kind_using::<super::unload_resolution::StandardUnloadEncoding>(
++            session, entry, context,
++        )
++    }
++
++    fn entry_kind_using<E: super::unload_resolution::UnloadEncoding>(
++        &self,
++        session: &Session,
++        entry: &Entry,
++        context: &AuthenticatedCenterContext,
++    ) -> Result<usize, JournalError> {
++        super::unload_resolution::validate_entry_using::<E>(entry)?;
+@@ -408,7 +427 @@
+-            || self
+-                .sessions
+-                .iter()
+-                .flat_map(|s| &s.entries)
+-                .filter(|e| e.intent.request.binding.key == binding.key)
+-                .count()
+-                != 1
++            || self.count_entry_key(&binding.key) != 1
+@@ -452,3 +465,7 @@
+-                            entry
+-                                .previous_effective_end_at_ms
+-                                .is_none_or(|previous| end != previous.max(*end_at_ms))
++                            entry.previous_effective_end_at_ms.is_none_or(|previous| {
++                                end != (if previous > *end_at_ms {
++                                    previous
++                                } else {
++                                    *end_at_ms
++                                })
++                            })
+@@ -621,0 +639,13 @@
++    fn count_entry_key_from(
++        &self,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++        mut count: usize,
++    ) -> usize {
++        for entry in &self.entries {
++            if entry.intent.request.binding.key == *key {
++                count += 1;
++            }
++        }
++        count
++    }
++
+--- a/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
++++ b/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
+@@ -37 +37,11 @@
+-pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
++pub(super) trait UnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
++}
++pub(super) struct StandardUnloadEncoding;
++impl UnloadEncoding for StandardUnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
++pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {
+@@ -41,5 +51 @@
+-    if !matches!(
+-        entry.intent.request.operation,
+-        LifecycleOperation::Unload { .. }
+-    ) || serde_json::to_vec(resolution)?.len() > 4096
+-    {
++    if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096 {
+@@ -48,0 +55 @@
++        let original = &**original;
+@@ -269,0 +277,7 @@
++
++fn is_unload_entry(entry: &Entry) -> bool {
++    matches!(
++        entry.intent.request.operation,
++        LifecycleOperation::Unload { .. }
++    )
++}
