@@ -1,0 +1,99 @@
+import SandboxModel.Lifecycle.Protocol.ShapeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.SessionShape.Values
+noncomputable section
+open scoped Classical
+
+theorem model_terminal_reached (encoding : TerminalEncoding Unit) :
+    validateView savedEncoding encoding inbox 0#usize stopped = checkConfirmed encoding stopped := by
+  have receipt : SavedRetirement.validateView savedEncoding stopped = .ok (.Ok ()) := rfl
+  have noRefusal : stopped.refusal = none := rfl
+  simp [validateView, receipt, normal_prefixes.2.1, noRefusal]
+
+theorem model_terminal_size_boundary :
+    validateView savedEncoding (terminalEncoding 8192 (by decide)) inbox 0#usize stopped = .ok (.Ok ()) ∧
+    validateView savedEncoding (terminalEncoding 8193 (by decide)) inbox 0#usize stopped = corrupt := by
+  have present : stopped.confirmed_terminal = some ⟨destroyIntent, .Cleaned⟩ := rfl
+  simp [model_terminal_reached, checkConfirmed, present, terminal_fields,
+    terminalEncoding, SavedRetirement.Values.bytes_length]
+
+theorem model_terminal_error :
+    validateView savedEncoding terminalError inbox 0#usize stopped = .ok (.Err (.Json ⟨9⟩)) := by
+  have present : stopped.confirmed_terminal = some ⟨destroyIntent, .Cleaned⟩ := rfl
+  simp [model_terminal_reached, checkConfirmed, present, terminal_fields, terminalError]
+
+theorem model_first_lane_rejection :
+    validateView savedEncoding small shadowed 0#usize normal = corrupt := by
+  have receipt : SavedRetirement.validateView savedEncoding normal = .ok (.Ok ()) := rfl
+  have first : ¬FirstWindowMatches shadowed normal := by
+    simp [FirstWindowMatches, shadowed, inbox, lane, vector, normal,
+      SavedRetirement.Values.normal, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have invalid : ¬BeforePrior shadowed normal := fun h => first h.2.2.2.1
+  simp [validateView, receipt, invalid]
+
+theorem model_physical_conflict :
+    validateView savedEncoding small conflicted 1#usize physical = corrupt := by
+  have receipt : SavedRetirement.validateView savedEncoding physical = .ok (.Ok ()) := rfl
+  have before : BeforePrior conflicted physical := normal_prefixes.2.2.2
+  have bound : (1#usize).val ≤ conflicted.sessions.val.length := by decide
+  have prior : ∃ old ∈ conflicted.sessions.val.take (1#usize).val, PriorConflict old physical := by
+    refine ⟨previous, ?_, ?_⟩
+    · simp [conflicted, vector]
+    · simp [PriorConflict, previous, physical, SavedRetirement.Values.binding]
+  simp only [validateView, receipt, bind_tc_ok, before, bound, prior, ↓reduceIte]
+
+theorem model_refusal_rejection :
+    validateView savedEncoding small inbox 0#usize wrongRefusal = corrupt := by
+  have receipt : SavedRetirement.validateView savedEncoding wrongRefusal = .ok (.Ok ()) := rfl
+  have invalid : ¬RefusalFields wrongRefusal := by
+    simp [RefusalFields, wrongRefusal, vector, entry]
+  have refusal : wrongRefusal.refusal ≠ none := by simp [wrongRefusal, refused]
+  simp [validateView, receipt, inbox, vector, refusal, invalid]
+
+theorem model_last_intent_rejection :
+    validateView savedEncoding small inbox 0#usize wrongLast = corrupt := by
+  have receipt : SavedRetirement.validateView savedEncoding wrongLast = .ok (.Ok ()) := rfl
+  have noRefusal : wrongLast.refusal = none := rfl
+  have present : wrongLast.confirmed_terminal = some ⟨destroyIntent, .Cleaned⟩ := rfl
+  have invalid : ¬ConfirmedFields wrongLast ⟨destroyIntent, .Cleaned⟩ := by
+    simp [ConfirmedFields, wrongLast, vector, entry, foreignIntent,
+      SavedRetirement.Values.destroyIntent, SavedRetirement.Values.createIntent,
+      EnvelopeValues.intent, EnvelopeValues.center]
+  simp [validateView, receipt, inbox, vector, noRefusal, checkConfirmed, present, invalid]
+
+theorem model_saved_error_precedes_slot :
+    validateView SavedRetirement.Values.intentError terminalError inbox 0#usize invalidSlot =
+      .ok (.Err (.Json ⟨7⟩)) := by
+  have receipt : SavedRetirement.validateView SavedRetirement.Values.intentError invalidSlot =
+      .ok (.Err (.Json ⟨7⟩)) := by
+    simp [SavedRetirement.validateView, SavedRetirement.Values.intentError, invalidSlot,
+      SavedRetirement.Values.normal, SavedRetirement.Values.entries, SavedRetirement.Values.entry,
+      SavedRetirement.Values.receipt, SavedRetirement.Values.binding, SavedRetirement.Values.destroyIntent,
+      SavedRetirement.BeforeBinding, SavedRetirement.checkBinding]
+  simp [validateView, receipt]
+
+theorem model_prior_prefix_only :
+    validateView savedEncoding small { inbox with sessions := vector [normal] (by decide) }
+      0#usize normal = .ok (.Ok ()) ∧
+    validateView savedEncoding small { inbox with sessions := vector [normal] (by decide) }
+      1#usize normal = corrupt := by
+  have receipt : SavedRetirement.validateView savedEncoding normal = .ok (.Ok ()) := rfl
+  have before : BeforePrior { inbox with sessions := vector [normal] (by decide) } normal := normal_prefixes.1
+  simp only [validateView, receipt, bind_tc_ok, before, ↓reduceIte]
+  simp [checkConfirmed, vector, PriorConflict,
+    normal, SavedRetirement.Values.normal]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_terminal_reached
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_terminal_size_boundary
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_terminal_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_first_lane_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_physical_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_refusal_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_last_intent_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_saved_error_precedes_slot
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_prior_prefix_only

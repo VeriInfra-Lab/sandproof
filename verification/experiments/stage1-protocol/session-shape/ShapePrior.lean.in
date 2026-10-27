@@ -1,0 +1,96 @@
+import SandboxModel.Lifecycle.Protocol.ShapeIteration
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem session_id_eq (left right : SessionId) :
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq left right = .ok (decide (left = right)) := by
+  cases left; cases right
+  simp [SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem physical_conflict_spec (old session : Session) :
+    core.option.Option.is_some_and
+      prior_session_conflict.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool
+      session.local old = .ok (decide (∃ binding prior,
+        session.local = some binding ∧ old.local = some prior ∧ prior.sandbox = binding.sandbox)) := by
+  cases present : session.local <;> cases previous : old.local <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      prior_session_conflict.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool.call_once,
+      prior_session_conflict.closure.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool.call_once,
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      previous]
+
+theorem prior_body_end (session : Session) (values : Slice Session) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    prior_session_conflict_loop.body session values index = .ok (.done false) := by
+  simp [prior_session_conflict_loop.body, Slice.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem prior_body_step (session : Session) (values : Slice Session) (index next : Usize)
+    (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    prior_session_conflict_loop.body session values index = .ok
+      (if PriorConflict values.val[index.val] session then .done true else .cont next) := by
+  obtain ⟨old, indexed, same⟩ := WP.spec_imp_exists (Slice.index_usize_spec values index inside)
+  have insideSlice : index < Slice.len values := inside
+  simp only [prior_session_conflict_loop.body, insideSlice, ↓reduceIte]
+  simp only [indexed, same, session_id_eq, physical_conflict_spec,
+    bind_tc_ok, decide_eq_true_eq]
+  simp only [index_add_one index next added, bind_tc_ok, PriorConflict]
+  split_ifs <;> simp_all only [or_false, or_true, true_or, not_true_eq_false]
+
+theorem prior_loop_refines (session : Session) (values : Slice Session) (index : Usize) :
+    prior_session_conflict_loop session values index =
+      .ok ((values.val.drop index.val).any (fun old => decide (PriorConflict old session))) := by
+  unfold prior_session_conflict_loop
+  apply indexed_any_loop values _ _ (prior_body_end session values)
+  intro i next inside added
+  simpa only [decide_eq_true_eq] using prior_body_step session values i next inside added
+
+theorem prior_within_bounds (inbox : Inbox) (index : Usize) (session : Session)
+    (inside : index.val ≤ inbox.sessions.val.length) :
+    prior_session_conflict inbox index session =
+      .ok (decide (∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session)) := by
+  unfold prior_session_conflict
+  obtain ⟨previous, sliced, values, length⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_RangeTo_spec inbox.sessions { «end» := index } (by simpa using inside))
+  rw [sliced]
+  simp only [bind_tc_ok, prior_loop_refines]
+  change Result.ok (previous.val.any (fun old => decide (PriorConflict old session))) = _
+  rw [values, List.slice_zero_j]
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+theorem prior_out_of_bounds (inbox : Inbox) (index : Usize) (session : Session)
+    (outside : inbox.sessions.val.length < index.val) :
+    prior_session_conflict inbox index session = .fail .panic := by
+  have outsideSlice : ¬ index.val ≤ inbox.sessions.slice.val.length := Nat.not_le.mpr outside
+  simp [prior_session_conflict, alloc.vec.Vec.index,
+    core.slice.index.SliceIndexRangeToUsizeSlice.index, outsideSlice]
+
+theorem prior_spec (inbox : Inbox) (index : Usize) (session : Session) :
+    prior_session_conflict inbox index session =
+      if index.val ≤ inbox.sessions.val.length then
+        .ok (decide (∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session))
+      else .fail .panic := by
+  by_cases inside : index.val ≤ inbox.sessions.val.length
+  · simp only [inside, ↓reduceIte, prior_within_bounds inbox index session inside]
+  · simp only [inside, ↓reduceIte, prior_out_of_bounds inbox index session (by omega)]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.session_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.physical_conflict_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_within_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_out_of_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_spec

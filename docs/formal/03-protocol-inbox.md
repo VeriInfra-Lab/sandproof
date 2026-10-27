@@ -218,3 +218,16 @@ retain_until 没有额外值条件，accepted.validate 与完整 SessionShape �
 标准 Serde/SHA 连接与生产采用仍开放。digest 或 Confirmed 不提供认证、同事务
 Retire、持久接受、原始资源退出或 pin 释放事实。V4/V5/V6 的实际提供者、完整 Inbox、
 持久/未知提交/重启和 JSON/TLS 继续分别登记；公共登记和完整验收由 ning/主控协调。
+
+
+会话形状切片另以 `SessionShape.FullShapeContract` 连接 a9c 隔离候选的真实生成入口。
+保存收据先检查；随后为非空/slot/首个匹配 lane/host observation 存在性/操作容量，
+再观察 `sessions[..index]` 的 id、slot 和物理 sandbox 冲突。索引越界的 panic 只在
+先前守卫通过后出现。refusal 约束首条版本/Create 和全部条目的三个原生字段及操作
+类别；confirmed_terminal 则约束 terminal/Cleaned/self-match/末条完整 intent，并在
+这些条件通过后编码、传播 JSON 错误和检查 8192 字节上限。正常与错误 Rust 使用同一
+合同，具体表示、准入和反例见[会话形状候选](../../verification/experiments/stage1-protocol/session-shape/README.md)。
+
+此切片从已解码值和显式编码回调开始；原实现一般等价、标准 Serde/SHA 接线、生产
+采用及共享验收仍独立。它不验证所有 accepted 封套、owner 成员、认证 observation
+来源、完整 Inbox 合法、持久接受或真实资源；这些条件不能由形状和字段相等推出。

@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.SavedProofs
+import SandboxModel.Lifecycle.Protocol.TerminalProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.SessionShape
+
+theorem first_entry_spec (session : Session) :
+    first_session_entry session = .ok session.entries.val.head? := by
+  unfold first_session_entry
+  simp only [alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    bind_tc_ok, decide_eq_true_eq]
+  by_cases empty : session.entries.val.length = 0
+  · have nil : session.entries.val = [] := by simpa using empty
+    simp [nil]
+  · simp only [empty, ↓reduceIte]
+    have inside : (0#usize).val < session.entries.val.length := by simp; omega
+    obtain ⟨value, indexed, same⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.index_usize_spec session.entries 0#usize inside)
+    simp [indexed, same, List.head?_eq_getElem?]
+
+
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.first_entry_spec

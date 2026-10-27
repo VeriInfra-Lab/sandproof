@@ -1,0 +1,11 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_inbox_session_shape<
+    R: super::native_retirement::RetirementEncoding,
+    E: TerminalEncoding,
+>(
+    inbox: &Inbox,
+    index: usize,
+    session: &Session,
+) -> Result<(), JournalError> {
+    inbox.validate_session_shape_using::<R, E>(index, session)
+}
