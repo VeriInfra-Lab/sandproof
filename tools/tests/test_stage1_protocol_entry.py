@@ -153,7 +153,20 @@ class CommittedArchiveTests(unittest.TestCase):
         (self.root/'verification/stage1-protocol-inputs.sha256').write_text(digest+'  fixture.json\n')
         runner = self.root/'entry-path-fixture.py'
         runner.write_text(
-            'from pathlib import Path\nimport importlib.util,sys\n'
+            'from pathlib import Path\nimport importlib.util,json,sys\n'
+            + 'if sys.argv[1]=="verification/experiments/stage1-protocol/registered.py":\n'
+            + '    assert len(sys.argv)==7 and sys.argv[2:4]==["formal","--retained-result"]\n'
+            + '    assert sys.argv[5]=="--output"\n'
+            + '    retained,output=Path(sys.argv[4]),Path(sys.argv[6])\n'
+            + '    assert retained==output.parent/"reproduction/formal/result.json"\n'
+            + '    previous=output.parent/"reproduction/component-result.json"\n'
+            + '    assert json.loads(previous.read_text())["complete"] is False\n'
+            + '    assert not output.exists()\n'
+            + '    output.mkdir()\n'
+            + '    (output/"fixture-call.json").write_text(json.dumps(sys.argv[1:]))\n'
+            + '    print("registered-output-new")\n'
+            + '    sys.exit(0)\n'
+            + 'assert sys.argv[1]=="verification/experiments/stage1-protocol/component.py"\n'
             + 'p=Path(' + repr(str(HERE/'component.py')) + ')\n'
             + 'spec=importlib.util.spec_from_file_location("entry_fixture",p)\n'
             + 'module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n'
@@ -173,9 +186,16 @@ class CommittedArchiveTests(unittest.TestCase):
             env=dict(os.environ, TMPDIR=str(tmp), SANDPROOF_ACCEPTANCE_ROLE='path-fixture-only'))
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn('entry-output-new', result.stdout)
+        self.assertIn('registered-output-new', result.stdout)
         outputs = list(tmp.glob('sandproof-stage1-protocol.*/reproduction/component-result.json'))
         self.assertEqual(len(outputs), 1)
         self.assertFalse(json.loads(outputs[0].read_text())['complete'])
+        registered = outputs[0].parent.parent/'registered'
+        self.assertEqual(json.loads((registered/'fixture-call.json').read_text()), [
+            'verification/experiments/stage1-protocol/registered.py', 'formal',
+            '--retained-result', str(outputs[0].parent/'formal/result.json'),
+            '--output', str(registered)])
+        self.assertFalse((registered/'registered-result.json').exists())
 
     def test_formal_wrapper_cannot_replace_missing_shared_native_seal_with_bare_success(self):
         from tools import acceptance_receipts
@@ -481,7 +501,11 @@ class ProtocolInventoryTests(unittest.TestCase):
             root = Path(temp)
             directory = root/formal.PROOFS
             directory.mkdir(parents=True)
-            for name in formal.POSITIVE:
+            inventory = json.loads((HERE/'retained-protocol.json').read_text())
+            retained = root/'verification/experiments/stage1-protocol/retained-protocol.json'
+            retained.parent.mkdir(parents=True)
+            retained.write_text(json.dumps(inventory))
+            for name in inventory['modules']:
                 (directory/(name+'.lean')).write_text('')
             frozen = {'positive_files': formal.POSITIVE_BY_PROFILE}
             formal.check_inventory(root, frozen)
