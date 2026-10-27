@@ -116,7 +116,7 @@ def run(output, selected):
                 shutil.copy2(ROOT / name, destination)
                 if sha(destination) != digest:
                     raise ValueError('source changed while copying: ' + name)
-            runtime = load('protocol_stable_tools', ROOT / HERE / 'formal_runtime.py')
+            runtime = load('protocol_stable_tools', ROOT / PROTOCOL / 'formal_runtime.py')
             (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
             # Private worktree dependency cache; cases are sequential under the
