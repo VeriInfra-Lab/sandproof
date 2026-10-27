@@ -1,5 +1,6 @@
 """Formal-only module acceptance with checked, conservative result reuse."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -396,6 +397,14 @@ def expected_audits(root=ROOT):
     paths += [p for directory in ('SandboxModel', 'verification/aeneas')
               for p in (root/directory).rglob('*.lean')]
     paths += [root/name for name in EXTRA_AUDIT_FILES]
+    # These proofs have deliberately separate generated-library views. Their
+    # annotated templates must still appear in the total audit inventory;
+    # each registered driver checks the instantiated physical files itself.
+    spec = importlib.util.spec_from_file_location('stage1_registered_audits',
+        root/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    paths += [root/name for name in registered.audit_template_paths(root)]
     return {name for path in paths
             for name in re.findall(r'^#audit_controller_proof (\S+)$', path.read_text(), re.M)}
 

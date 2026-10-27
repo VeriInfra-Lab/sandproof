@@ -193,7 +193,7 @@ def run(output, selected):
                 expected[relative] = sha(project / relative)
                 seeds.append(relative)
             resolver = load('manifest_original_resolver', project / 'tools/proof_batch.py')
-            files = sorted(resolver.closure(project, seeds))
+            files = sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
             actual = original.actual_files(project, files, folder, env, command)
             if sorted(actual['audits']) != sorted(config['audits']):
                 raise ValueError('exact manifest audit inventory differs: ' + case)

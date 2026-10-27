@@ -142,7 +142,7 @@ def run(output, prepare_only=False):
             formal = module('role_original_formal', ROOT / HERE.parent / 'formal.py')
             resolver = module('role_original_closure', ROOT / 'tools/proof_batch.py')
             seeds = [PROOF, *[name for name in generated if name.endswith('.lean')]]
-            files = sorted(resolver.closure(project, seeds))
+            files = sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
             actual = formal.actual_files(project, files, output, env, command)
             declared = [name for file in files for name in re.findall(
                 r'^#audit_controller_proof (\S+)$', (project / file).read_text(), re.M)]
