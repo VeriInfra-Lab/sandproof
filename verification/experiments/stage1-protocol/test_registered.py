@@ -89,7 +89,7 @@ class Registration(unittest.TestCase):
                     registered.run_native(registered.ROOT, Path('/unused'))
             with patch.dict(os.environ, SANDPROOF_ACCEPTANCE_ROLE='native'):
                 with self.assertRaisesRegex(ValueError, 'shared native'):
-                    registered.run_formal(Path('/unused'))
+                    registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
             shared.assert_not_called()
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
@@ -102,7 +102,7 @@ class Registration(unittest.TestCase):
             with patch.object(registered, '_shared', return_value=shared), patch.object(registered, '_invoke') as invoke:
                 with patch.dict(os.environ, SANDPROOF_ACCEPTANCE_ROLE='formal', SANDPROOF_NATIVE_EVIDENCE='/unused'):
                     with self.assertRaisesRegex(ValueError, 'seal|native case'):
-                        registered.run_formal(Path('/unused'))
+                        registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
                 invoke.assert_not_called()
 
     def test_native_archive_and_result_remain_sealed_original_bytes(self):
@@ -258,6 +258,152 @@ class Registration(unittest.TestCase):
                 path.write_text('example : True := True.intro\n')
                 with self.assertRaisesRegex(ValueError, 'missing/extra finite audit'):
                     registered.audit_template_paths(root)
+
+    def test_missing_changed_or_linked_parent_input_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            name = str(registered.HERE/'envelope-schema/inventory.json')
+            metadata = root/name
+            metadata.parent.mkdir(parents=True)
+            parent_name = str(registered.HERE/'frozen.json')
+            parent = root/parent_name
+            parent.write_text('{"original":true}\n')
+            original = parent.read_bytes()
+            metadata.write_text(json.dumps({'inputs': {parent_name: registered._sha(parent)}}))
+            with patch.object(registered, 'audit_template_paths', return_value=(str(
+                    registered.HERE/'envelope-schema/EnvelopeSchema.lean.in'),)), \
+                    patch.object(registered, 'formal_plan', return_value=[]), \
+                    patch.object(registered.subprocess, 'check_output', return_value=(name+'\0').encode()):
+                self.assertEqual(registered.validate_metadata_inputs(root), {name+':inputs': 1})
+                parent.write_bytes(original+b'changed')
+                with self.assertRaisesRegex(ValueError, 'registered source digest differs'):
+                    registered.validate_metadata_inputs(root)
+                parent.unlink()
+                with self.assertRaisesRegex(ValueError, 'registered source digest differs'):
+                    registered.validate_metadata_inputs(root)
+                target = root/'same-bytes.json'
+                target.write_bytes(original)
+                parent.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, 'registered source digest differs'):
+                    registered.validate_metadata_inputs(root)
+
+    def retained_fixture(self, temporary, *, wrong=False):
+        root = Path(temporary)/'root'
+        inventory = root/registered.HERE/'retained-protocol.json'
+        inventory.parent.mkdir(parents=True)
+        names = ['Retained'+str(i) for i in range(62)]
+        inventory.write_text(json.dumps(dict(schema=1, modules=names)))
+        files = {}
+        for name in names:
+            relative = 'SandboxModel/Lifecycle/Protocol/'+name+'.lean'
+            path = root/relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('-- original '+name+'\n')
+            files[relative] = registered._sha(path)
+        folder = Path(temporary)/'proof-output/fixture'
+        service = folder/'physical-files/service.log'
+        service.parent.mkdir(parents=True)
+        service.write_text('controlled validator fixture; no Lean service was invoked\n')
+        result_path = folder/'result.json'
+        actual = dict(files=files, audits=['Fixture.original'], service_log_sha256=registered._sha(service))
+        result = dict(complete=True, actual=actual, variant='wrong' if wrong else 'correct')
+        result_path.write_text(json.dumps(result))
+        job = dict(name='fixture', driver='unused.py', args=['--variant', 'wrong' if wrong else 'correct'],
+                   cases=['wrong' if wrong else 'correct'], actual_files=True)
+        record = dict(kind='registered-stage1-formal-drivers', complete=True,
+            retained_inventory_sha256=registered._sha(inventory), results=[dict(name='fixture',
+                result_path=str(result_path), result_sha256=registered._sha(result_path))])
+        old_path = folder.parent/'retained/formal/result.json'
+        views = {}
+        for profile in ('carriers', 'request', 'manifest'):
+            log = old_path.parent/'correct'/profile/'physical-files/service.log'
+            log.parent.mkdir(parents=True)
+            log.write_text('controlled original-component provenance fixture\n')
+            views[profile] = dict(files={'FixtureUnrelated.lean': '0'*64}, audits=['Fixture.retained'],
+                                  service_log_sha256=registered._sha(log))
+        cases = {name: dict(complete=True) for name in ('correct', 'same-incarnation', 'key-only-replay',
+                  'skip-capture-binding', 'session-only-envelope')}
+        cases['correct']['views'] = views
+        old_path.write_text(json.dumps(dict(complete=True, all_cases_complete=True, cases=cases)))
+        record['retained_result'] = dict(path=str(old_path), sha256=registered._sha(old_path))
+        return root, job, record, result_path, service
+
+    def test_retained_requires_all_62_current_exact_sources_in_correct_view(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, job, record, result_path, _ = self.retained_fixture(temporary)
+            with patch.object(registered, 'formal_plan', return_value=[job]):
+                coverage = registered.compute_retained_coverage(root, record)
+                self.assertEqual(len(coverage), 62)
+                record['retained_source_files'] = coverage
+                self.assertEqual(registered.validate_retained_coverage(root, record), coverage)
+                result = json.loads(result_path.read_text())
+                missing = next(iter(result['actual']['files']))
+                result['actual']['files'].pop(missing)
+                result_path.write_text(json.dumps(result))
+                record['results'][0]['result_sha256'] = registered._sha(result_path)
+                with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
+                    registered.compute_retained_coverage(root, record)
+
+    def test_retained_wrong_view_cannot_back_current_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, job, record, _, _ = self.retained_fixture(temporary, wrong=True)
+            with patch.object(registered, 'formal_plan', return_value=[job]):
+                with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
+                    registered.compute_retained_coverage(root, record)
+
+    def test_original_carriers_view_can_supply_its_own_exact_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, job, record, result_path, _ = self.retained_fixture(temporary)
+            current = json.loads(result_path.read_text())
+            name = next(iter(current['actual']['files']))
+            digest = current['actual']['files'].pop(name)
+            result_path.write_text(json.dumps(current))
+            record['results'][0]['result_sha256'] = registered._sha(result_path)
+            old_path = Path(record['retained_result']['path'])
+            old = json.loads(old_path.read_text())
+            old['cases']['correct']['views']['carriers']['files'][name] = digest
+            old_path.write_text(json.dumps(old))
+            record['retained_result']['sha256'] = registered._sha(old_path)
+            with patch.object(registered, 'formal_plan', return_value=[job]):
+                coverage = registered.compute_retained_coverage(root, record)
+                self.assertEqual(coverage[name]['job'], 'retained-stage1-protocol')
+                self.assertEqual(coverage[name]['view'], 'carriers')
+
+    def test_incomplete_original_component_or_missing_correct_view_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, job, record, _, _ = self.retained_fixture(temporary)
+            path = Path(record['retained_result']['path'])
+            original = json.loads(path.read_text())
+            for field in ('case', 'view', 'complete'):
+                changed = copy.deepcopy(original)
+                if field == 'case':
+                    changed['cases'].pop('same-incarnation')
+                elif field == 'view':
+                    changed['cases']['correct']['views'].pop('carriers')
+                else:
+                    changed['all_cases_complete'] = False
+                path.write_text(json.dumps(changed))
+                record['retained_result']['sha256'] = registered._sha(path)
+                with patch.object(registered, 'formal_plan', return_value=[job]):
+                    with self.assertRaisesRegex(ValueError, 'all original cases and correct views'):
+                        registered.compute_retained_coverage(root, record)
+
+    def test_retained_changed_result_service_source_or_coverage_is_rejected(self):
+        for change in ('result', 'service', 'source', 'coverage'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root, job, record, result_path, service = self.retained_fixture(temporary)
+                with patch.object(registered, 'formal_plan', return_value=[job]):
+                    record['retained_source_files'] = registered.compute_retained_coverage(root, record)
+                    if change == 'result':
+                        result_path.write_text(result_path.read_text()+'\n')
+                    elif change == 'service':
+                        service.write_text('changed original service log')
+                    elif change == 'source':
+                        (root/next(iter(record['retained_source_files']))).write_text('changed source')
+                    else:
+                        record['retained_source_files'].pop(next(iter(record['retained_source_files'])))
+                    with self.assertRaises(ValueError):
+                        registered.validate_retained_coverage(root, record)
 
 
 if __name__ == '__main__':

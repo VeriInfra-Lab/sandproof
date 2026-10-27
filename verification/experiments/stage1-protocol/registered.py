@@ -226,6 +226,40 @@ def _variant_choices(path):
     return tuple(result)
 
 
+def validate_metadata_inputs(root=ROOT):
+    """Check explicit current input digests, not historical patches or globals."""
+    directories = {HERE, Path('verification/experiments/stage1-manifest')}
+    directories.update(Path(path).parent for path in audit_template_paths(root))
+    directories.update(Path(driver).parent for _, driver, _ in NATIVE_DRIVERS)
+    directories.update(Path(job['driver']).parent for job in formal_plan(Path('/unused'), root=root))
+    names = subprocess.check_output(['git', 'ls-files', '-z', '--',
+        str(HERE), 'verification/experiments/stage1-manifest'], cwd=root).decode().split('\0')
+    checked = {}
+    for name in sorted(filter(None, names)):
+        path = Path(name)
+        if path.parent not in directories or path.name not in ('inventory.json', 'candidate.json', 'frozen.json'):
+            continue
+        data = _read(root/path)
+        fields = ('inputs', 'base_sources', 'production_inputs')
+        if path.name == 'frozen.json':
+            fields += ('extraction_inputs', 'native_rust_inputs')
+        for field in fields:
+            if field not in data:
+                continue
+            if not isinstance(data[field], dict):
+                raise ValueError('invalid explicit source digest field: ' + name + ':' + field)
+            for relative, wanted in data[field].items():
+                source = Path(relative)
+                if (source.is_absolute() or '..' in source.parts or not isinstance(wanted, str)
+                        or re.fullmatch('[0-9a-f]{64}', wanted) is None):
+                    raise ValueError('invalid explicit source digest entry: ' + name)
+                actual = root/source
+                if actual.is_symlink() or not actual.is_file() or _sha(actual) != wanted:
+                    raise ValueError('registered source digest differs: ' + name + ':' + field + ':' + relative)
+            checked[name+':'+field] = len(data[field])
+    return checked
+
+
 def validate_registration(root=ROOT):
     """Fail before execution if a required native case or Rust mutant was lost."""
     if len(set(NATIVE_CASES)) != len(NATIVE_CASES):
@@ -248,6 +282,7 @@ def validate_registration(root=ROOT):
                     if set(job['cases']) != set(ast.literal_eval(statement.value)):
                         raise ValueError('missing/extra original CASES: ' + job['name'])
     audit_template_paths(root)
+    validate_metadata_inputs(root)
 
 
 def run_native(root, work):
@@ -427,7 +462,103 @@ def audit_template_paths(root=ROOT):
     return tuple(audit_templates(root))
 
 
-def run_formal(output, *, root=ROOT):
+def _object_sha(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _retained_result(record):
+    saved = record.get('retained_result', {})
+    path = Path(saved.get('path', '/missing-retained-result'))
+    result = _read(path)
+    if _sha(path) != saved.get('sha256'):
+        raise ValueError('original retained component result changed')
+    cases = result.get('cases', {})
+    expected = {'correct', 'same-incarnation', 'key-only-replay', 'skip-capture-binding', 'session-only-envelope'}
+    if (result.get('complete') is not True or result.get('all_cases_complete') is not True
+            or set(cases) != expected or any(case.get('complete') is not True for case in cases.values())
+            or set(cases['correct'].get('views', {})) != {'carriers', 'request', 'manifest'}):
+        raise ValueError('original retained component requires all original cases and correct views')
+    return path, result
+
+
+def compute_retained_coverage(root, record):
+    """Attribute the original 62 sources to this run's exact correct views."""
+    inventory = _read(root/HERE/'retained-protocol.json')
+    names = inventory.get('modules', [])
+    if (inventory.get('schema') != 1 or not isinstance(names, list) or len(names) != 62 or len(set(names)) != 62
+            or any(not isinstance(name, str) or not re.fullmatch('[A-Za-z][A-Za-z0-9_]*', name) for name in names)):
+        raise ValueError('retained Protocol inventory must contain exactly the original 62 modules')
+    sources = {}
+    for name in names:
+        relative = 'SandboxModel/Lifecycle/Protocol/'+name+'.lean'
+        path = root/relative
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('missing current retained Protocol source: ' + relative)
+        sources[relative] = _sha(path)
+    jobs = {job['name']: job for job in formal_plan(Path('/unused'), root=root)}
+    rows = record.get('results', [])
+    if len(rows) != len(jobs) or {row['name'] for row in rows} != set(jobs):
+        raise ValueError('missing/duplicate original registered result')
+    coverage = {}
+
+    def include(actual, folder, job, result_path, result_sha256, view):
+        if not actual.get('files') or not actual.get('audits') or not actual.get('service_log_sha256'):
+            raise ValueError('missing original correct-view physical evidence')
+        log = folder/'physical-files/service.log'
+        if log.is_symlink() or not log.is_file() or _sha(log) != actual['service_log_sha256']:
+            raise ValueError('original retained physical service log changed or missing')
+        for relative, wanted in sources.items():
+            if relative in coverage or actual['files'].get(relative) != wanted:
+                continue
+            coverage[relative] = dict(source_sha256=wanted, job=job, case='correct', view=view,
+                result_path=str(result_path), result_sha256=result_sha256,
+                actual_files_sha256=_object_sha(actual['files']), audits_sha256=_object_sha(actual['audits']),
+                service_log_path=str(log), service_log_sha256=actual['service_log_sha256'])
+
+    retained_path, retained = _retained_result(record)
+    for profile, actual in retained['cases']['correct']['views'].items():
+        include(actual, retained_path.parent/'correct'/profile, 'retained-stage1-protocol',
+                retained_path, record['retained_result']['sha256'], profile)
+    for row in rows:
+        job = jobs[row['name']]
+        result_path = Path(row['result_path'])
+        if result_path.name != 'result.json' or result_path.parent.name != job['name']:
+            raise ValueError('original result belongs to a different registered view')
+        result = _read(result_path)
+        if _sha(result_path) != row['result_sha256']:
+            raise ValueError('original retained producer result changed')
+        _check_actual(result, job)
+        if not job['actual_files']:
+            continue
+        if 'cases' in result:
+            if 'correct' not in result['cases']:
+                continue
+            actual = result['cases']['correct']
+            folder = result_path.parent/'correct'
+        elif job['cases'] == ['correct']:
+            actual = result['actual']
+            folder = result_path.parent
+        else:
+            continue
+        include(actual, folder, job['name'], result_path, row['result_sha256'], job['name'])
+    if set(coverage) != set(sources):
+        raise ValueError('retained Protocol lacks exact correct-view coverage: ' + repr(sorted(set(sources)-set(coverage))))
+    return coverage
+
+
+def validate_retained_coverage(root, record):
+    """The caller must first admit the whole original stage1 module receipt."""
+    if record.get('kind') != 'registered-stage1-formal-drivers' or record.get('complete') is not True:
+        raise ValueError('retained coverage requires a complete registered run')
+    if record.get('retained_inventory_sha256') != _sha(root/HERE/'retained-protocol.json'):
+        raise ValueError('original retained Protocol inventory changed')
+    coverage = compute_retained_coverage(root, record)
+    if record.get('retained_source_files') != coverage:
+        raise ValueError('recorded retained source coverage differs from original results')
+    return coverage
+
+
+def run_formal(output, retained_result, *, root=ROOT):
     """Call after the unchanged retained component, on the proof host only."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('formal registration consumes shared native receipts only')
@@ -450,8 +581,10 @@ def run_formal(output, *, root=ROOT):
                   native_receipts={name: dict(path=str(paths[name].parent/'receipt.json'),
                       sha256=_sha(paths[name].parent/'receipt.json')) for name in receipts},
                   stdout_evidence='original stdout retained by the public module command.log',
+                  retained_result=dict(path=str(retained_result), sha256=_sha(retained_result)),
                   retained_component_replaced=False, whole_V0_acceptance=False)
     try:
+        _retained_result(record)
         for job in formal_plan(output, root=root):
             args = list(job['args'])
             if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
@@ -488,6 +621,8 @@ def run_formal(output, *, root=ROOT):
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
             scope='all template declarations; retained component audits also enter the public total gate')
+        record['retained_source_files'] = compute_retained_coverage(root, record)
+        record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         shared.validate_native(cache)
         if (_sha(cache/'complete.json') != record['shared_seal_sha256']
                 or shared.repository_inputs(root) != source_before):
@@ -502,12 +637,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('native', 'formal', 'plan'))
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--retained-result', type=Path)
     args = parser.parse_args()
     os.umask(0o077)
     if args.mode == 'native':
         run_native(ROOT, args.output.absolute())
     elif args.mode == 'formal':
-        run_formal(args.output.absolute())
+        if args.retained_result is None:
+            parser.error('formal requires --retained-result from the same original component run')
+        run_formal(args.output.absolute(), args.retained_result.absolute())
     else:
         print(json.dumps(dict(native_cases=NATIVE_CASES, native_drivers=NATIVE_DRIVERS,
                               formal_jobs=formal_plan(args.output), audit_templates=audit_templates()), indent=2))
