@@ -168,3 +168,11 @@ Create/Resume 的完整 Entry，None 当且仅当没有匹配项。该方法不�
 共同完整合同用于正常封套见证与真实字段遗漏错误版，完整返回保留条目全部元数据。
 原 rev/find 的固定工具生命周期限制保留；一般等价、生产采用、ning/共享验收及
 完整 Inbox.validate、持久外层和实际资源关系继续单列。
+
+[原配置容量公式](../../verification/experiments/stage1-protocol/inbox-config/README.md)
+从固定 a9c 的已解码 LifecycleInboxConfig 开始，直接连接原 required_bytes。
+范围是任意 u16/u32 容量字段的完整乘加公式、正常返回和无溢出界，不要求 valid
+先成立；零/最大类型值不因此成为合法部署配置。逻辑预算不证明实际 RAM、磁盘
+预留或持久接受。原完整 valid 的 host 区域分析限制另留证，完整短路与 host/
+范围/16 MiB 条件仍待证；不把 host 校验、认证来源或收件事务设为可信。公共
+登记和 ning/共享验收由主控接入，完整 Inbox 与持久/网络义务继续保留。
