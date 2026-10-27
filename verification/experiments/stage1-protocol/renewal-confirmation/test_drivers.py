@@ -33,6 +33,12 @@ class Admissions(unittest.TestCase):
             (root / formal.HERE).mkdir(parents=True)
             shutil.copy2(formal.ROOT / formal.HERE / 'inventory.json', root / formal.HERE / 'inventory.json')
             shutil.copy2(formal.ROOT / formal.HERE.parent / 'formal.py', root / formal.HERE.parent / 'formal.py')
+            data = json.loads((root / formal.HERE / 'inventory.json').read_text())
+            for name in data['base_sources']:
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(formal.ROOT / name, target)
+            formal.inventory(root)  # The unchanged fixture must be admitted first.
             (root / formal.PROOFS / 'RenewalBindings.lean').unlink()
             with self.assertRaisesRegex(ValueError, 'unregistered or missing retained protocol proof'):
                 formal.inventory(root)
