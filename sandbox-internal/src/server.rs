@@ -538,6 +538,7 @@ fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<
 }
 
 /// The original result-selection body, separated from the library call.
+#[must_use]
 pub fn proof_json_response_result<P: ProofJsonResponseBuilder>(
     result: Result<Vec<u8>, sandproof_controller_service::JournalError>,
 ) -> P::Response {

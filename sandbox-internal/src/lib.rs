@@ -100,7 +100,7 @@ impl fmt::Display for TransportError {
 
 impl Error for TransportError {}
 
-// Private verification candidate only.
+// The production response path uses this narrow, synchronous result selector.
 pub use server::{
     ProofHttpJsonResponseBuilder, ProofJsonResponseBuilder, proof_json_response_result,
 };
