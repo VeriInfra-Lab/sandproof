@@ -22,7 +22,8 @@ class NativeScopeTests(unittest.TestCase):
                         'synthetic scope fixture'], cwd=self.source, check=True)
         # These tests isolate packet scope/integrity, not real runtime or
         # source-rule completeness. The general receipt tests cover those.
-        for name, value in [('rules', {'unit-test-fixture': 'not-proof-evidence'}),
+        rule = 'tools/tests/test_native_scopes.py'
+        for name, value in [('rules', {rule: receipts.sha(receipts.ROOT/rule)}),
                             ('contract_inputs', {})]:
             patch = mock.patch.object(receipts, name, return_value=value)
             patch.start(); self.addCleanup(patch.stop)
