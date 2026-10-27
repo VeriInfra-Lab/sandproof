@@ -35,6 +35,7 @@ resolver = module('admission_existing_closure', ROOT / 'tools/proof_batch.py')
 sha = base.sha
 journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
 native_admission = module('inbox_native_admission', ROOT / HERE.parent / 'inbox-lookup/native_admission.py')
+execution = module('inbox_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
 
 
 def admit_ir(raw, opaque):
@@ -161,12 +162,12 @@ def run(output, variant, require_native=False):
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / name, path)
             if sha(path) != digest: raise ValueError('input changed while copying: ' + name)
-        (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+        (project / '.tools').symlink_to(execution.tool_root(ROOT), target_is_directory=True)
         (project / '.lake').mkdir()
-        (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+        (project / '.lake/packages').symlink_to(execution.package_root(ROOT), target_is_directory=True)
         (project / 'artifacts/extract-target').mkdir(parents=True)
         wrapper = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
-            '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
+            '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()), *execution.tool_bind(ROOT),
             '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
             '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
             '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '2',
