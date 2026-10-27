@@ -626,6 +626,9 @@ def run_formal(output, retained_result, *, root=ROOT):
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
             scope='all template declarations; retained component audits also enter the public total gate')
+        if record['template_audits']['missing']:
+            raise ValueError('registered template audit declarations missing: '
+                             + repr(record['template_audits']['missing']))
         record['retained_source_files'] = compute_retained_coverage(root, record)
         record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         shared.validate_native(cache, scope='stage1-protocol')
