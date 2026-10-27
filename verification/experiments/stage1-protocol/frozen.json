@@ -166,7 +166,7 @@
     "verification/experiments/stage1-protocol/source_inventory.py": "4053d47fb0431c89e8f09a2c286f36910af516a5ffac441e6c08f91a378ecffb",
     "verification/experiments/stage1-protocol/src/lib.rs": "fc5a3d135c5c994a66c97393aa279932dedee64cbf696627942d10a2734f5bff",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "tools/tests/test_native_scopes.py": "d02765178dec2319b27576c806f9522182bc8ee139752af5e8c9fbd64d46a46d"
+    "tools/tests/test_native_scopes.py": "85c00536f2d83bb9bf37ad446404adac320bac3c1b8d0b76db5904e6a78ddb03"
   },
   "native_rust_inputs": {
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",

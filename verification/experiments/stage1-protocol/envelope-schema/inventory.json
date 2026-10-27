@@ -300,7 +300,7 @@
     "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
     "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "verification/experiments/stage1-protocol/frozen.json": "48033aad447a27c7dc970b6c8f60306159a7b789ff64ba7599e9b7c84a8ec614",
+    "verification/experiments/stage1-protocol/frozen.json": "6efa2bdcc9b4c8fed0afc64e8361fc94ec0e7bc35e797f0d99ce18354f7e4363",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/aeneas/stage1-protocol/request/translation.json": "e2de8019902a7ebb31032f162b2a938c2886479ac288b24fedace23dcf8b584c",
