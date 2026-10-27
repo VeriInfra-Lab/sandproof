@@ -1,0 +1,108 @@
+import SandboxModel.Lifecycle.Protocol.InboxLanesScan
+import SandboxModel.Lifecycle.Protocol.InboxCompositionSessionBoundary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation.WrongSession
+noncomputable section
+
+abbrev SessionIterator := core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter Session)
+
+def sessionsBody {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (iterator : SessionIterator) :=
+  Inbox.validate_using_loop.body saved terminal renewal unload
+    inbox.config.center inbox.config.node inbox.config.host_epoch inbox.config.max_sessions
+    inbox.config.max_operations_per_session inbox.config.max_options_bytes
+    inbox.config.max_profile_bytes inbox.config.max_manifest_bytes inbox.host_epoch_observation
+    inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes context iterator
+
+def sessionsLoop {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (iterator : SessionIterator) :=
+  Inbox.validate_using_loop saved terminal renewal unload iterator
+    inbox.config.center inbox.config.node inbox.config.host_epoch inbox.config.max_sessions
+    inbox.config.max_operations_per_session inbox.config.max_options_bytes
+    inbox.config.max_profile_bytes inbox.config.max_manifest_bytes inbox.host_epoch_observation
+    inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes context
+
+theorem sessions_body_end {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (values : Slice Session) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    sessionsBody saved terminal renewal unload inbox context (RetiredIdentity.enumCursor values index) =
+      .ok (.done ()) := by
+  simp [sessionsBody, Inbox.validate_using_loop.body, RetiredIdentity.enum_next_none values index outside]
+
+theorem sessions_body_step {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (values : Slice Session) (index next : Usize)
+    (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    sessionsBody saved terminal renewal unload inbox context (RetiredIdentity.enumCursor values index) =
+      (do let _ ← sessionView saved terminal renewal.encode unload.encode inbox index values.val[index.val] context
+          .ok (.cont (RetiredIdentity.enumCursor values next))) := by
+  unfold sessionsBody Inbox.validate_using_loop.body
+  rw [RetiredIdentity.enum_next_some values index next inside added]
+  simp only [bind_tc_ok, one_session_refines]
+  rfl
+
+theorem sessions_loop_end {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (values : Slice Session) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    sessionsLoop saved terminal renewal unload inbox context (RetiredIdentity.enumCursor values index) = .ok () := by
+  change loop (sessionsBody saved terminal renewal unload inbox context) (RetiredIdentity.enumCursor values index) = _
+  rw [loop, sessions_body_end saved terminal renewal unload inbox context values index outside]
+  simp
+
+theorem sessions_loop_step {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (values : Slice Session) (index next : Usize)
+    (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    sessionsLoop saved terminal renewal unload inbox context (RetiredIdentity.enumCursor values index) =
+      (do let _ ← sessionView saved terminal renewal.encode unload.encode inbox index values.val[index.val] context
+          sessionsLoop saved terminal renewal unload inbox context (RetiredIdentity.enumCursor values next)) := by
+  change loop (sessionsBody saved terminal renewal unload inbox context) (RetiredIdentity.enumCursor values index) = _
+  rw [loop, sessions_body_step saved terminal renewal unload inbox context values index next inside added]
+  simp [InboxEntry.bind_then]
+  rfl
+
+theorem rejected_session_ignored (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) :
+    sessionsLoop saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ Values.wrongCurrent
+      (decodedContext Values.wrongCurrent.config)
+      (RetiredIdentity.enumCursor (alloc.vec.Vec.deref Values.wrongCurrent.sessions) 0#usize) = .ok () := by
+  rw [sessions_loop_step saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ Values.wrongCurrent
+    (decodedContext Values.wrongCurrent.config) (alloc.vec.Vec.deref Values.wrongCurrent.sessions)
+    0#usize 1#usize (by decide) (by decide)]
+  change (do
+    let _ ← sessionView saved terminal renewal unload Values.wrongCurrent 0#usize
+      Values.wrongCurrentSession (decodedContext Values.wrongCurrent.config)
+    sessionsLoop saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ Values.wrongCurrent
+      (decodedContext Values.wrongCurrent.config)
+      (RetiredIdentity.enumCursor (alloc.vec.Vec.deref Values.wrongCurrent.sessions) 1#usize)) = _
+  rw [Values.wrong_current_session_model]
+  simp only [rejected, bind_tc_ok]
+  exact sessions_loop_end saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ Values.wrongCurrent
+    (decodedContext Values.wrongCurrent.config) (alloc.vec.Vec.deref Values.wrongCurrent.sessions)
+    1#usize (by decide)
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.WrongSession
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.WrongSession.sessions_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.WrongSession.sessions_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.WrongSession.sessions_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.WrongSession.sessions_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.WrongSession.rejected_session_ignored

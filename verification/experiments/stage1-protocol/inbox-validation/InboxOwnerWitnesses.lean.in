@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.InboxOwners
+import SandboxModel.Lifecycle.Protocol.ShapeValues
+import SandboxModel.Lifecycle.Protocol.ConfigValidationValues
+import SandboxModel.Lifecycle.Protocol.ComposedConfigProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+open SessionShape.Values (vector)
+noncomputable section
+open scoped Classical
+
+def alice : Owner := ⟨"alice", 0#u64⟩
+def bob : Owner := ⟨"bob", 1#u64⟩
+def normal : Inbox := {
+  config := ConfigValidation.Values.fixture,
+  host_epoch_observation := none, owner_high_water := 1#u64,
+  owners := vector [alice, bob] (by decide), sessions := vector [] (by decide),
+  lanes := vector [⟨1#u16, 0#u64, some 1#u64, none⟩, ⟨2#u16, 0#u64, some 1#u64, none⟩] (by decide) }
+def duplicateExternal : Inbox := { normal with owners := vector [alice, ⟨"alice", 1#u64⟩] (by decide) }
+def duplicateInternal : Inbox := { normal with owners := vector [alice, ⟨"bob", 0#u64⟩] (by decide) }
+def aboveWater : Inbox := { normal with owners := vector [⟨"alice", 2#u64⟩] (by decide) }
+def session : Session := { SessionShape.Values.normal with owner := "alice" }
+def crossed : Inbox := { normal with owners := vector [⟨"alice", 1#u64⟩, ⟨"bob", 0#u64⟩] (by decide) }
+
+theorem normal_owner_fields : OwnersValid normal := by
+  simp [OwnersValid, normal, vector, alice, bob]
+
+theorem zero_owner_accepted : Inbox.validate_owners normal = .ok (.Ok ()) :=
+  (owners_accepts_iff normal).mpr normal_owner_fields
+
+theorem omitted_fields_rejected :
+    Inbox.validate_owners duplicateExternal = .ok (.Err .CorruptStore) ∧
+    Inbox.validate_owners duplicateInternal = .ok (.Err .CorruptStore) ∧
+    Inbox.validate_owners aboveWater = .ok (.Err .CorruptStore) := by
+  simp [owners_refines, RetiredIdentity.validationResult, remainingOwnerInvalid, ownerInvalidAt,
+    OwnerConflict, duplicateExternal, duplicateInternal, aboveWater, normal, vector, alice, bob]
+
+theorem paired_owner_required :
+    Inbox.has_local_owner normal session 0#u64 = .ok true ∧
+    Inbox.has_local_owner normal session 1#u64 = .ok false ∧
+    Inbox.has_local_owner normal { session with owner := "other" } 0#u64 = .ok false ∧
+    Inbox.has_local_owner crossed session 0#u64 = .ok false := by
+  simp [local_owner_spec, normal, session, crossed, vector, alice, bob]
+
+theorem normal_configs_accepted : ∀ config ∈
+    [ConfigValidation.Values.small, ConfigValidation.Values.fixture,
+     ConfigValidation.Values.withHost, ConfigValidation.Values.exactLimit],
+    LifecycleInboxConfig.valid_using ComposedConfig.standardGraphic config = .ok true := by
+  intro config member
+  exact (ComposedConfig.config_accepts_iff ComposedConfig.standardGraphic
+    ComposedConfig.standard_graphic_contract config
+    (ConfigValidation.Values.normal_representable config member)).mpr
+      (ConfigValidation.Values.normal_valid config member)
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.normal_owner_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.zero_owner_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.omitted_fields_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.paired_owner_required
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.normal_configs_accepted

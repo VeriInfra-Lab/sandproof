@@ -231,3 +231,18 @@ Retire、持久接受、原始资源退出或 pin 释放事实。V4/V5/V6 的实
 此切片从已解码值和显式编码回调开始；原实现一般等价、标准 Serde/SHA 接线、生产
 采用及共享验收仍独立。它不验证所有 accepted 封套、owner 成员、认证 observation
 来源、完整 Inbox 合法、持久接受或真实资源；这些条件不能由形状和字段相等推出。
+
+完整外层切片使用 `InboxValidation.FullInboxContract`，组合配置、容量、lane 顺序与
+完整校验、退役身份、可选 host、owner 和全部 session。每个 session 依次检查 shape、
+renewal、全部 entry 的严格版本/前驱/种类/五个 checked 计数、lineage 及最终摘要，
+保留提前拒绝、编码失败和 panic。它对任意表示范围内 Inbox 及显式回调成立，正常
+空值、完整 Create 和三个真实 Rust 组合错误版共用同一规格；见
+[完整 Inbox 值校验候选](../../verification/experiments/stage1-protocol/inbox-validation/README.md)。
+本切片没有把示例或单个循环替代完整候选对应。当前 Inbox lineage 要求 checked
+相邻代，请求 Resume 只要求严格增大；该兼容缺口继续登记，不能加强请求合同。
+
+完整候选对应仍以隔离重构及旧叶子候选为输入；生产原实现的一般等价、采用和真实
+Serde/SHA 接线继续独立。独立抽取的 graphic/Result 原语连接不表示整个标准库或
+codec 已证；外部字符串、Vec、Option/字典等逐符号合同仍按依赖登记提供。
+本切片不推出持久接受、事务/未知提交/重启保持、认证来源或文件/VM 真相。公共
+登记与 ning/共享验收由主控协调，不能沿用只覆盖旧根的入口报告本包完成。

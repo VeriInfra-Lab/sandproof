@@ -1,0 +1,90 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryOrderProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+open SessionShape
+
+abbrev DestroyAt (maximum : U64) (entry : Entry) : Prop :=
+  entry.intent.request.operation = .Destroy ∧ entry.intent.accepted_version = maximum
+
+theorem destroy_body_end (session : Session) (maximum : U64) (index : Usize)
+    (outside : session.entries.val.length ≤ index.val) :
+    has_destroy_at_maximum_loop.body session maximum index = .ok (.done false) := by
+  simp [has_destroy_at_maximum_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem destroy_body_step (session : Session) (maximum : U64) (index next : Usize)
+    (inside : index.val < session.entries.val.length) (added : next.val = index.val + 1) :
+    has_destroy_at_maximum_loop.body session maximum index = .ok
+      (if session.entries.val[index.val].intent.request.operation = .Destroy ∧
+        session.entries.val[index.val].intent.accepted_version = maximum then .done true else .cont next) := by
+  obtain ⟨entry, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec session.entries index inside)
+  have insideVec : index < alloc.vec.Vec.len session.entries := inside
+  simp only [has_destroy_at_maximum_loop.body, insideVec, ↓reduceIte,
+    bind_tc_ok, index_add_one index next added]
+  simp [indexed, same]
+  cases operation : session.entries.val[index.val].intent.request.operation <;>
+    simp [← Validation.ok_ite]
+
+theorem destroy_loop_refines (session : Session) (maximum : U64) (index : Usize) :
+    has_destroy_at_maximum_loop session maximum index =
+      .ok ((session.entries.val.drop index.val).any (fun entry => decide (DestroyAt maximum entry))) := by
+  unfold has_destroy_at_maximum_loop
+  apply indexed_any_loop session.entries.slice _ _ (destroy_body_end session maximum)
+  intro current next inside added
+  rw [destroy_body_step session maximum current next inside added]
+  simp [alloc.vec.Vec.val]
+
+theorem destroy_at_maximum_spec (session : Session) (maximum : U64) :
+    has_destroy_at_maximum session maximum =
+      .ok (decide (∃ entry ∈ session.entries.val,
+        entry.intent.request.operation = .Destroy ∧ entry.intent.accepted_version = maximum)) := by
+  rw [has_destroy_at_maximum, destroy_loop_refines]
+  change Result.ok (session.entries.val.any (fun entry => decide (DestroyAt maximum entry))) = _
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp [DestroyAt]
+
+theorem summary_owner_callback {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (session : Session) (binding : InternalLocalBinding) :
+    Inbox.validate_one_session.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool.call_once
+      saved terminal renewal unload (inbox, session) binding =
+      .ok (decide (¬∃ owner ∈ inbox.owners.val,
+        owner.external = session.owner ∧ owner.local = binding.owner)) := by
+  simp [Inbox.validate_one_session.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool.call_once,
+    local_owner_spec, UScalar.eq_equiv]
+
+theorem summary_owner_option {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (session : Session) :
+    core.option.Option.is_some_and
+      (Inbox.validate_one_session.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingBool
+        saved terminal renewal unload) session.local (inbox, session) =
+      .ok (decide (¬∀ binding, session.local = some binding →
+        ∃ owner ∈ inbox.owners.val, owner.external = session.owner ∧ owner.local = binding.owner)) := by
+  cases localState : session.local <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      summary_owner_callback]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.destroy_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.destroy_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.destroy_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.destroy_at_maximum_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.summary_owner_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.summary_owner_option
+
