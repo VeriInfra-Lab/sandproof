@@ -1,18 +1,18 @@
 # 续期会话校验候选
 
 
-当前接线候选采用统一工程提交 `0c8f457a` 的真实生产函数；清单中的 a9c 与旧候选补丁保留为历史来源，不再把该补丁应用到业务实现。验证副本只增加单次调用薄根，错误版只修改目标守卫或字段。当前输入已登记，**重新抽取、原生正反例和 Lean 检查尚待完成**，不能据此声称整套 V3 通过。
+当前接线候选采用统一工程提交 `0c8f457a` 的真实生产函数；清单中的 a9c 与旧候选补丁保留为历史来源，不再把该补丁应用到业务实现。验证副本只增加单次调用薄根，错误版只修改目标守卫或字段。当前输入已登记，**最终统一候选的抽取与整套原生、Lean 验收尚待完成**；局部结果只按原回执的精确提交保留，不能据此声称整套 V3 通过。
 
 实际返回错误的根同时核对完整 `JournalError`，包括新增的 `CaptureMaterialQuotaExceeded`；纯值查询不强迫引入无关错误类型。原完整字段、首次拒绝、短路、负例和实际文件诊断继续保留。
 
 标准编码实例仍调用真实 `serde_json::to_vec`。通用证明只接收同一完整值对应的编码结果，并保留失败、长度及调用顺序；用于标准实例时仍须提供这一次编码调用到结果模型的窄连接。它不假设整个校验函数正确，也不覆盖持久事务或任意 JSON 解析。
 [文档目录](../../../../docs/README.md) · [V3 范围](../../../../docs/formal/03-protocol-inbox.md) · [证明工作流](../../../../docs/proof-workflow.md)
 
-本包针对固定 a9c 的 renewal_confirmation::validate_session，从已解码 Session 和
-RenewalConfirmation 值开始。[生产候选](production-candidate.patch)仅在隔离副本应用：
+旧证明起于 a9c 的 renewal_confirmation::validate_session，从已解码 Session 和
+RenewalConfirmation 值开始。[原重构](production-candidate.patch)已被当前生产采用：
 首次全文查找及两个 any 调用展开为具名循环，编码调用经任意 RenewalEncoding 参数传入。
-标准实现仍调用真实 serde_json::to_vec。生产采用、原实现的一般等价和标准编码实例连接
-尚未完成；原版/候选/恢复版的有限对照不能消除这些义务。
+标准实现仍调用真实 serde_json::to_vec。本轮直接检查已采用实现的合同，不另声称旧实现的一般等价。
+标准编码实例的窄连接仍需落实；有限对照不能消除这项义务。
 
 固定 Charon/Aeneas 对原函数在 Slice.find 的高阶生命周期处失败；仅改首次查找后，
 失败转移到 Serde 参数翻译。进一步展开标准 Slice.any 又遇到不透明 Iter 类型限制。
