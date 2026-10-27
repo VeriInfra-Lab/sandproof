@@ -1,0 +1,13 @@
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -51,0 +52 @@
++    #[must_use]
+@@ -54,4 +55,4 @@
+-            && self
+-                .host_epoch
+-                .as_ref()
+-                .is_none_or(crate::capture::HostEpochRegistration::valid)
++            && match self.host_epoch.as_ref() {
++                None => true,
++                Some(registration) => registration.valid(),
++            }

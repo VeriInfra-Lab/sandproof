@@ -176,3 +176,13 @@ Create/Resume 的完整 Entry，None 当且仅当没有匹配项。该方法不�
 预留或持久接受。原完整 valid 的 host 区域分析限制另留证，完整短路与 host/
 范围/16 MiB 条件仍待证；不把 host 校验、认证来源或收件事务设为可信。公共
 登记和 ning/共享验收由主控接入，完整 Inbox 与持久/网络义务继续保留。
+
+[配置接受条件候选](../../verification/experiments/stage1-protocol/inbox-config-validation/README.md)
+进一步连接完整 deployment、可选 host、五项范围和 16 MiB 预算条件。隔离候选
+只将受固定工具限制的函数项改为显式 Option match，真实 host 校验与标准库范围/
+ASCII 判断透明抽取，原容量公式复用同次类型视图。任意满足表示条件的配置正常
+返回当且仅当完整条件成立；同一完整合同用于三个真实 Rust 放宽检查的反例。
+boot_id 按原 UTF-8 字节计数，None 与未检查的 policy 不提供认证或资源事实。
+原函数一般等价、生产采用及 String.len/is_empty 两个调用绑定的 V0 采用仍待
+完成；不能把局部候选证明转记成原完整 Inbox.validate、持久收件或 JSON/TLS
+链已证。ning/共享验收、其他成员规则和外部业务提供者继续独立登记。

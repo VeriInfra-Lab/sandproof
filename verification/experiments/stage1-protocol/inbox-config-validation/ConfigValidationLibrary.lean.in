@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation
+noncomputable section
+
+theorem graphic_refines (byte : U8) :
+    core.num.U8.is_ascii_graphic byte = .ok (graphicByte byte) := by
+  simp only [core.num.U8.is_ascii_graphic, graphicByte]
+  split <;> simp_all
+
+-- Original generated generic dictionary dispatch is retained.
+theorem range_u16_refines (lo hi value : U16) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      core.cmp.PartialOrdU16 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU16.le]
+  split <;> simp_all
+
+theorem range_u32_refines (lo hi value : U32) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU32 core.cmp.PartialOrdU32
+      core.cmp.PartialOrdU32 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU32.le]
+  split <;> simp_all
+
+theorem graphic_callback_refines (byte : U8) :
+    HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut () byte =
+      .ok (graphicByte byte, ()) := by
+  simp [HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut,
+    graphic_refines]
+
+theorem graphic_all_refines (bytes : List U8) :
+    ∃ rest, allBytes HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      () bytes = .ok (bytes.all graphicByte, rest) := by
+  induction bytes with
+  | nil => exact ⟨[], rfl⟩
+  | cons byte tail ih =>
+    obtain ⟨rest, accepted⟩ := ih
+    cases checked : graphicByte byte with
+    | false => exact ⟨tail, by simp [allBytes, graphic_callback_refines, checked]⟩
+    | true => exact ⟨rest, by simp [allBytes, graphic_callback_refines, checked, accepted]⟩
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.graphic_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.range_u16_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.range_u32_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.graphic_callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.graphic_all_refines
