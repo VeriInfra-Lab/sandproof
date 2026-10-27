@@ -246,3 +246,12 @@ Serde/SHA 接线继续独立。独立抽取的 graphic/Result 原语连接不表
 codec 已证；外部字符串、Vec、Option/字典等逐符号合同仍按依赖登记提供。
 本切片不推出持久接受、事务/未知提交/重启保持、认证来源或文件/VM 真相。公共
 登记与 ning/共享验收由主控协调，不能沿用只覆盖旧根的入口报告本包完成。
+
+保存调用切片另以 `InboxSave.FullSaveContract` 连接隔离 `codec::save_using`：完整
+Inbox 校验先行，编码同一完整值，按实际字节预算拒绝，再将同一字节交给 digest 和
+原 SQL UPDATE，且只接受恰好一行。每一步保留前一回调返回的完整状态，错误和发散
+不提供回滚事实；见[保存调用候选](../../verification/experiments/stage1-protocol/inbox-save/README.md)。
+正常见证与四种实际 Rust 守卫／参数遗漏共用该合同，字面量构造复用已登记的内核
+检查适配，生成体不手改。它仍从已解码值和明确的效果接口开始；标准 Serde/SHA/
+SQL 参数连接、原候选一般等价与采用、同事务接受、未知提交和重启分别待闭合。
+原生 record→save 用例暴露的重复 capture 状态保持边界，不升级为任意转换定理。

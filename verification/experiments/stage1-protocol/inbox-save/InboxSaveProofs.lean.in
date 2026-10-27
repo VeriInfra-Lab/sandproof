@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveRun
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.InboxSave
+noncomputable section
+
+theorem length_cast_exact (bytes : alloc.vec.Vec U8) :
+    (UScalar.cast .U64 (alloc.vec.Vec.len bytes)).val = bytes.val.length := by
+  rw [UScalar.cast_val_eq]
+  simp only [UScalarTy.numBits, alloc.vec.Vec.len_val]
+  apply Nat.mod_eq_of_lt
+  have bound := alloc.vec.Vec.property bytes
+  cases Usize.bounds_eq <;> simp_all [U32.max, U64.max, U32.numBits, U64.numBits] <;> omega
+
+theorem save_refines {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (bounded : ConfigValidation.Representable inbox.config) :
+    save_using saved terminal renewal unload graphic io inbox state =
+      saveView saved terminal renewal.encode unload.encode io inbox state := by
+  unfold save_using saveView
+  rw [InboxValidation.inbox_refines saved terminal renewal unload graphic graphicLaw inbox bounded]
+  apply congrArg (fun continuation => Bind.bind
+    (InboxValidation.inboxView saved terminal renewal.encode unload.encode inbox) continuation)
+  funext validated
+  cases validated with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok value =>
+    cases value
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, encodeAndSave]
+    apply congrArg (fun continuation => Bind.bind (io.encode state inbox) continuation)
+    funext encoded
+    rcases encoded with ⟨result, afterEncode⟩
+    cases result with
+    | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok bytes =>
+      obtain ⟨budget, returned, exactValue⟩ := ConfigBudget.required_bytes_refines inbox.config
+      simp only [bind_tc_ok, lift, returned, UScalar.lt_equiv, length_cast_exact, exactValue]
+      by_cases over : bytes.val.length > ConfigBudget.bytes inbox.config
+      · simp [over]
+      · simp [over]
+        apply congrArg (fun continuation => Bind.bind
+          (io.digest afterEncode (alloc.vec.Vec.deref bytes)) continuation)
+        funext produced
+        rcases produced with ⟨digest, afterDigest⟩
+        simp only [statement]
+        apply congrArg (fun continuation => Bind.bind
+          (io.update afterDigest statement (alloc.vec.Vec.deref bytes) (Array.to_slice digest)) continuation)
+        funext updated
+        rcases updated with ⟨result, afterUpdate⟩
+        cases result with
+        | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok count =>
+          by_cases one : count.val = 1 <;> simp [one]
+
+theorem full_save_contract {E : Type} : FullSaveContract (runSave (E := E)) := by
+  intro saved terminal renewal unload io inbox state bounded
+  exact save_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract io inbox state bounded
+
+end
+end SandboxModel.Stage1Protocol.InboxSave
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.length_cast_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.save_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.full_save_contract

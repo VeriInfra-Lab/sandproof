@@ -1,0 +1,908 @@
+--- a/controller-service/src/capture.rs
++++ b/controller-service/src/capture.rs
+@@ -167,13 +167,31 @@
+     pub node: sandproof_protocol::internal::NodeIdentity,
+     pub registration: HostEpochRegistration,
+ }
++pub(crate) trait GraphicBytes {
++    fn all_graphic(value: &str) -> bool;
++}
++pub(crate) struct StandardGraphicBytes;
++impl GraphicBytes for StandardGraphicBytes {
++    fn all_graphic(value: &str) -> bool {
++        graphic_bytes(value)
++    }
++}
++pub(crate) fn graphic_bytes(value: &str) -> bool {
++    value.bytes().all(|b| b.is_ascii_graphic())
++}
++
+ impl HostEpochRegistration {
+     #[must_use]
+     pub fn valid(&self) -> bool {
++        self.valid_using::<StandardGraphicBytes>()
++    }
++
++    #[must_use]
++    pub(crate) fn valid_using<B: GraphicBytes>(&self) -> bool {
+         self.version == 1
+             && !self.boot_id.is_empty()
+             && self.boot_id.len() <= 128
+-            && self.boot_id.bytes().all(|b| b.is_ascii_graphic())
++            && B::all_graphic(&self.boot_id)
+     }
+ }
+
+--- a/controller-service/src/controller/lifecycle_inbox/model.rs
++++ b/controller-service/src/controller/lifecycle_inbox/model.rs
+@@ -49,12 +49,17 @@
+                 + 4 * 8192)
+             + 8192
+     }
++    #[must_use]
+     pub fn valid(&self) -> bool {
++        self.valid_using::<crate::capture::StandardGraphicBytes>()
++    }
++    #[must_use]
++    fn valid_using<B: crate::capture::GraphicBytes>(&self) -> bool {
+         self.center.deployment == self.node.deployment_id
+-            && self
+-                .host_epoch
+-                .as_ref()
+-                .is_none_or(crate::capture::HostEpochRegistration::valid)
++            && match self.host_epoch.as_ref() {
++                None => true,
++                Some(registration) => registration.valid_using::<B>(),
++            }
+             && (1..=4096).contains(&self.max_sessions)
+             && (8..=128).contains(&self.max_operations_per_session)
+             && (1..=65_536).contains(&self.max_options_bytes)
+@@ -130,6 +135,20 @@
+     pub current_window: Option<sandproof_protocol::lifecycle::RetentionWindowId>,
+     pub last_retired: Option<sandproof_protocol::lifecycle::TerminalLifecycleObservation>,
+ }
++pub(super) trait TerminalEncoding {
++    fn encode(
++        value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++    ) -> Result<Vec<u8>, serde_json::Error>;
++}
++pub(super) struct StandardTerminalEncoding;
++impl TerminalEncoding for StandardTerminalEncoding {
++    fn encode(
++        value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++    ) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
+ impl LifecycleRetentionLane {
+     pub(super) fn fresh(slot: u16) -> Self {
+         Self {
+@@ -139,7 +158,7 @@
+             last_retired: None,
+         }
+     }
+-    fn valid(&self, context: &AuthenticatedCenterContext) -> bool {
++    fn valid_using<E: TerminalEncoding>(&self, context: &AuthenticatedCenterContext) -> bool {
+         let successor = self
+             .retired_through
+             .checked_add(1)
+@@ -155,7 +174,7 @@
+                     && last.request.validate(context).is_ok()
+                     && last.request.retention.slot == self.slot
+                     && last.request.retention.window.get() == floor
+-                    && serde_json::to_vec(last).is_ok_and(|bytes| bytes.len() <= 8192)
++                    && terminal_encoded_within_limit::<E>(last)
+             }
+             _ => false,
+         }
+@@ -222,7 +241,25 @@
+     // Representation/shape validation only. The receiver verifies TLS context
+     // before calling this; constructing context values does not authenticate.
+     pub(super) fn validate(&self) -> Result<(), JournalError> {
+-        if !self.config.valid()
++        self.validate_using::<
++            super::native_retirement::StandardRetirementEncoding,
++            StandardTerminalEncoding,
++            super::renewal_confirmation::StandardRenewalEncoding,
++            super::unload_resolution::StandardUnloadEncoding,
++            crate::capture::StandardGraphicBytes,
++        >()
++    }
++
++    pub(super) fn validate_using<
++        R: super::native_retirement::RetirementEncoding,
++        T: TerminalEncoding,
++        N: super::renewal_confirmation::RenewalEncoding,
++        U: super::unload_resolution::UnloadEncoding,
++        B: crate::capture::GraphicBytes,
++    >(
++        &self,
++    ) -> Result<(), JournalError> {
++        if !self.config.valid_using::<B>()
+             || self.sessions.len() > usize::from(self.config.max_sessions)
+             || self.owners.len() > usize::from(self.config.max_sessions)
+         {
+@@ -230,11 +267,7 @@
+         }
+         let context = self.config.context();
+         if self.lanes.len() != usize::from(self.config.max_sessions)
+-            || self
+-                .lanes
+-                .iter()
+-                .enumerate()
+-                .any(|(index, lane)| usize::from(lane.slot) != index + 1 || !lane.valid(&context))
++            || self.lanes_invalid::<T>(&context)
+         {
+             return Err(JournalError::CorruptStore);
+         }
+@@ -244,56 +277,79 @@
+         }) {
+             return Err(JournalError::CorruptStore);
+         }
++        self.validate_owners()?;
++        for (i, session) in self.sessions.iter().enumerate() {
++            self.validate_one_session::<R, T, N, U>(i, session, &context)?;
++        }
++        Ok(())
++    }
++
++    fn validate_owners(&self) -> Result<(), JournalError> {
+         for (i, owner) in self.owners.iter().enumerate() {
+-            if owner.local.0 > self.owner_high_water
+-                || self.owners[..i]
+-                    .iter()
+-                    .any(|old| old.external == owner.external || old.local == owner.local)
++            if owner.local.0 > self.owner_high_water || self.prior_owner_conflict(i, owner) {
++                return Err(JournalError::CorruptStore);
++            }
++        }
++        Ok(())
++    }
++
++    fn validate_one_session<
++        R: super::native_retirement::RetirementEncoding,
++        T: TerminalEncoding,
++        N: super::renewal_confirmation::RenewalEncoding,
++        U: super::unload_resolution::UnloadEncoding,
++    >(
++        &self,
++        i: usize,
++        session: &Session,
++        context: &AuthenticatedCenterContext,
++    ) -> Result<(), JournalError> {
++        self.validate_session_shape_using::<R, T>(i, session)?;
++        super::renewal_confirmation::validate_session_using::<N>(session)?;
++        let (maximum, kinds) = self.validate_entry_order_using::<U>(session, context)?;
++        session.validate_execution_lineage()?;
++        if session.current_version != maximum
++            || session.terminal != (kinds[2] == 1)
++            || session.local.is_some() && kinds[0] != 1
++            || session.incarnation.is_some() != (kinds[0] == 1)
++            || session.terminal && !has_destroy_at_maximum(session, maximum)
++            || session
++                .local
++                .is_some_and(|local| !self.has_local_owner(session, local.owner))
++        {
++            return Err(JournalError::CorruptStore);
++        }
++        Ok(())
++    }
++
++    fn prior_retired_identity_conflict(
++        &self,
++        index: usize,
++        id: &SessionId,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++    ) -> bool {
++        for other in &self.lanes[..index] {
++            if let Some(last) = &other.last_retired
++                && (last.request.request.binding.session == *id
++                    || last.request.request.binding.key == *key)
+             {
+-                return Err(JournalError::CorruptStore);
+-            }
+-        }
+-        for (i, session) in self.sessions.iter().enumerate() {
+-            self.validate_session_shape(i, session)?;
+-            super::renewal_confirmation::validate_session(session)?;
+-            let mut maximum = 0;
+-            let mut kinds = [0_u16; 5];
+-            for entry in &session.entries {
+-                let intent = &entry.intent;
+-                if intent.accepted_version <= maximum
+-                    || !matches!(intent.request.operation, LifecycleOperation::Destroy {})
+-                        && !super::renewal_confirmation::follows_retained(session, maximum, intent)
+-                {
+-                    return Err(JournalError::CorruptStore);
+-                }
+-                maximum = maximum.max(intent.accepted_version);
+-                let kind = self.entry_kind(session, entry, &context)?;
+-                kinds[kind] += 1;
+-                if (kind == 0 || kind == 2) && kinds[kind] > 1 {
+-                    return Err(JournalError::CorruptStore);
+-                }
+-            }
+-            session.validate_execution_lineage()?;
+-            if session.current_version != maximum
+-                || session.terminal != (kinds[2] == 1)
+-                || session.local.is_some() && kinds[0] != 1
+-                || session.incarnation.is_some() != (kinds[0] == 1)
+-                || session.terminal
+-                    && !session.entries.iter().any(|e| {
+-                        matches!(e.intent.request.operation, LifecycleOperation::Destroy {})
+-                            && e.intent.accepted_version == maximum
+-                    })
+-                || session.local.is_some_and(|local| {
+-                    !self
+-                        .owners
+-                        .iter()
+-                        .any(|o| o.external == session.owner && o.local == local.owner)
+-                })
+-            {
+-                return Err(JournalError::CorruptStore);
+-            }
+-        }
+-        Ok(())
++                return true;
++            }
++        }
++        false
++    }
++
++    fn current_identity_conflict(
++        &self,
++        id: &SessionId,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++    ) -> bool {
++        for session in &self.sessions {
++            if session.id == *id || session.contains_entry_key(key) {
++                return true;
++            }
++        }
++        false
+     }
+
+     fn validate_retired_identities(&self) -> Result<(), JournalError> {
+@@ -302,18 +358,9 @@
+                 continue;
+             };
+             let binding = &retired.request.request.binding;
+-            if self.lanes[..index].iter().any(|other| {
+-                other.last_retired.as_ref().is_some_and(|last| {
+-                    last.request.request.binding.session == binding.session
+-                        || last.request.request.binding.key == binding.key
+-                })
+-            }) || self.sessions.iter().any(|session| {
+-                session.id == binding.session
+-                    || session
+-                        .entries
+-                        .iter()
+-                        .any(|entry| entry.intent.request.binding.key == binding.key)
+-            }) {
++            if self.prior_retired_identity_conflict(index, &binding.session, &binding.key)
++                || self.current_identity_conflict(&binding.session, &binding.key)
++            {
+                 return Err(JournalError::CorruptStore);
+             }
+         }
+@@ -329,47 +376,35 @@
+         })
+     }
+
+-    fn validate_session_shape(&self, index: usize, session: &Session) -> Result<(), JournalError> {
+-        super::native_retirement::validate_saved(session)?;
++    fn validate_session_shape_using<
++        R: super::native_retirement::RetirementEncoding,
++        E: TerminalEncoding,
++    >(
++        &self,
++        index: usize,
++        session: &Session,
++    ) -> Result<(), JournalError> {
++        super::native_retirement::validate_saved_using::<R>(session)?;
+         if session.entries.is_empty()
+             || session.retention.slot == 0
+             || session.retention.slot > self.config.max_sessions
+-            || self
+-                .lanes
+-                .iter()
+-                .find(|lane| lane.slot == session.retention.slot)
+-                .is_none_or(|lane| lane.current_window != Some(session.retention.window))
++            || !first_lane_window_matches(self, session)
+             || session.local.is_some() && self.host_epoch_observation.is_none()
+             || session.entries.len() > usize::from(self.config.max_operations_per_session)
+-            || self.sessions[..index].iter().any(|old| {
+-                old.id == session.id
+-                    || old.retention.slot == session.retention.slot
+-                    || session.local.is_some_and(|local| {
+-                        old.local
+-                            .is_some_and(|prior| prior.sandbox == local.sandbox)
+-                    })
+-            })
++            || prior_session_conflict(self, index, session)
+         {
+             return Err(JournalError::CorruptStore);
+         }
+         if session.refusal.is_some()
+             && (session.local.is_some()
+-                || session.entries.first().is_none_or(|entry| {
++                || first_session_entry(session).is_none_or(|entry| {
+                     entry.intent.accepted_version != 1
+                         || !matches!(
+                             entry.intent.request.operation,
+                             LifecycleOperation::Create { .. }
+                         )
+                 })
+-                || session.entries.iter().any(|entry| {
+-                    entry.local_operation.is_some()
+-                        || entry.applied_deadline.is_some()
+-                        || entry.previous_effective_end_at_ms.is_some()
+-                        || !matches!(
+-                            entry.intent.request.operation,
+-                            LifecycleOperation::Create { .. } | LifecycleOperation::Destroy {}
+-                        )
+-                }))
++                || refusal_entries_invalid(session))
+         {
+             return Err(JournalError::CorruptStore);
+         }
+@@ -377,24 +412,30 @@
+             && (!session.terminal
+                 || confirmed.status != sandproof_protocol::lifecycle::TerminalStatus::Cleaned
+                 || !confirmed.matches_request(&confirmed.request)
+-                || session
+-                    .entries
+-                    .last()
++                || super::native_retirement::last_saved_entry(session)
+                     .is_none_or(|entry| entry.intent != confirmed.request)
+-                || serde_json::to_vec(confirmed)?.len() > 8192)
++                || E::encode(confirmed)?.len() > 8192)
+         {
+             return Err(JournalError::CorruptStore);
+         }
+         Ok(())
+     }
+
+-    fn entry_kind(
++    fn count_entry_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> usize {
++        let mut count = 0_usize;
++        for session in &self.sessions {
++            count = session.count_entry_key_from(key, count);
++        }
++        count
++    }
++
++    fn entry_kind_using<E: super::unload_resolution::UnloadEncoding>(
+         &self,
+         session: &Session,
+         entry: &Entry,
+         context: &AuthenticatedCenterContext,
+     ) -> Result<usize, JournalError> {
+-        super::unload_resolution::validate_entry(entry)?;
++        super::unload_resolution::validate_entry_using::<E>(entry)?;
+         let intent = &entry.intent;
+         let binding = &intent.request.binding;
+         if intent.validate(context).is_err()
+@@ -405,13 +446,7 @@
+             || !matches!(intent.request.operation, LifecycleOperation::Renew { .. })
+                 && (entry.applied_deadline.is_some()
+                     || entry.previous_effective_end_at_ms.is_some())
+-            || self
+-                .sessions
+-                .iter()
+-                .flat_map(|s| &s.entries)
+-                .filter(|e| e.intent.request.binding.key == binding.key)
+-                .count()
+-                != 1
++            || self.count_entry_key(&binding.key) != 1
+         {
+             return Err(JournalError::CorruptStore);
+         }
+@@ -449,9 +484,13 @@
+                         .is_some_and(|end| end < 0)
+                     || entry.applied_deadline.is_some_and(|end| {
+                         if *extend_only {
+-                            entry
+-                                .previous_effective_end_at_ms
+-                                .is_none_or(|previous| end != previous.max(*end_at_ms))
++                            entry.previous_effective_end_at_ms.is_none_or(|previous| {
++                                end != (if previous > *end_at_ms {
++                                    previous
++                                } else {
++                                    *end_at_ms
++                                })
++                            })
+                         } else {
+                             end != *end_at_ms
+                         }
+@@ -619,6 +658,28 @@
+ }
+
+ impl Session {
++    fn count_entry_key_from(
++        &self,
++        key: &sandproof_protocol::lifecycle::OperationKey,
++        mut count: usize,
++    ) -> usize {
++        for entry in &self.entries {
++            if entry.intent.request.binding.key == *key {
++                count += 1;
++            }
++        }
++        count
++    }
++
++    fn contains_entry_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> bool {
++        for entry in &self.entries {
++            if entry.intent.request.binding.key == *key {
++                return true;
++            }
++        }
++        false
++    }
++
+     pub(super) fn current_execution_origin(&self) -> Option<&Entry> {
+         self.entries.iter().rev().find(|entry| {
+             matches!(
+@@ -708,3 +769,161 @@
+         Ok(())
+     }
+ }
++
++fn first_lane_window_matches(inbox: &Inbox, session: &Session) -> bool {
++    let mut position = 0;
++    while position < inbox.lanes.len() {
++        let lane = &inbox.lanes[position];
++        if lane.slot == session.retention.slot {
++            return lane.current_window == Some(session.retention.window);
++        }
++        position += 1;
++    }
++    false
++}
++
++fn prior_session_conflict(inbox: &Inbox, index: usize, session: &Session) -> bool {
++    let previous = &inbox.sessions[..index];
++    let mut position = 0;
++    while position < previous.len() {
++        let old = &previous[position];
++        if old.id == session.id
++            || old.retention.slot == session.retention.slot
++            || session.local.is_some_and(|local| {
++                old.local
++                    .is_some_and(|prior| prior.sandbox == local.sandbox)
++            })
++        {
++            return true;
++        }
++        position += 1;
++    }
++    false
++}
++
++fn refusal_entries_invalid(session: &Session) -> bool {
++    let mut position = 0;
++    while position < session.entries.len() {
++        let entry = &session.entries[position];
++        if entry.local_operation.is_some()
++            || entry.applied_deadline.is_some()
++            || entry.previous_effective_end_at_ms.is_some()
++            || !matches!(
++                entry.intent.request.operation,
++                LifecycleOperation::Create { .. } | LifecycleOperation::Destroy {}
++            )
++        {
++            return true;
++        }
++        position += 1;
++    }
++    false
++}
++
++fn first_session_entry(session: &Session) -> Option<&Entry> {
++    if session.entries.is_empty() {
++        None
++    } else {
++        Some(&session.entries[0])
++    }
++}
++
++fn terminal_encoded_within_limit<E: TerminalEncoding>(
++    value: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
++) -> bool {
++    let encoded = E::encode(value);
++    match &encoded {
++        Ok(bytes) => bytes.len() <= 8192,
++        Err(_) => false,
++    }
++}
++
++impl Inbox {
++    fn lanes_invalid<T: TerminalEncoding>(&self, context: &AuthenticatedCenterContext) -> bool {
++        let mut index = 0;
++        while index < self.lanes.len() {
++            let lane = &self.lanes[index];
++            if usize::from(lane.slot) != index + 1 || !lane.valid_using::<T>(context) {
++                return true;
++            }
++            index += 1;
++        }
++        false
++    }
++
++    fn prior_owner_conflict(&self, index: usize, owner: &Owner) -> bool {
++        let previous = &self.owners[..index];
++        let mut position = 0;
++        while position < previous.len() {
++            let old = &previous[position];
++            if old.external == owner.external || old.local == owner.local {
++                return true;
++            }
++            position += 1;
++        }
++        false
++    }
++
++    fn has_local_owner(
++        &self,
++        session: &Session,
++        local_owner: sandbox_controller_core::TenantId,
++    ) -> bool {
++        let mut position = 0;
++        while position < self.owners.len() {
++            let owner = &self.owners[position];
++            if owner.external == session.owner && owner.local == local_owner {
++                return true;
++            }
++            position += 1;
++        }
++        false
++    }
++}
++
++fn has_destroy_at_maximum(session: &Session, maximum: u64) -> bool {
++    let mut position = 0;
++    while position < session.entries.len() {
++        let entry = &session.entries[position];
++        if matches!(
++            entry.intent.request.operation,
++            LifecycleOperation::Destroy {}
++        ) && entry.intent.accepted_version == maximum
++        {
++            return true;
++        }
++        position += 1;
++    }
++    false
++}
++
++impl Inbox {
++    fn validate_entry_order_using<U: super::unload_resolution::UnloadEncoding>(
++        &self,
++        session: &Session,
++        context: &AuthenticatedCenterContext,
++    ) -> Result<(u64, [u16; 5]), JournalError> {
++        let mut maximum = 0;
++        let mut kinds = [0_u16; 5];
++        for entry in &session.entries {
++            let intent = &entry.intent;
++            if intent.accepted_version <= maximum
++                || !matches!(intent.request.operation, LifecycleOperation::Destroy {})
++                    && !super::renewal_confirmation::follows_retained(session, maximum, intent)
++            {
++                return Err(JournalError::CorruptStore);
++            }
++            maximum = if maximum > intent.accepted_version {
++                maximum
++            } else {
++                intent.accepted_version
++            };
++            let kind = self.entry_kind_using::<U>(session, entry, context)?;
++            kinds[kind] += 1;
++            if (kind == 0 || kind == 2) && kinds[kind] > 1 {
++                return Err(JournalError::CorruptStore);
++            }
++        }
++        Ok((maximum, kinds))
++    }
++}
+--- a/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
++++ b/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
+@@ -34,18 +34,25 @@
+     }
+ }
+
+-pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
++pub(super) trait UnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
++}
++pub(super) struct StandardUnloadEncoding;
++impl UnloadEncoding for StandardUnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
++pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {
+     let Some(resolution) = &entry.unload_resolution else {
+         return Ok(());
+     };
+-    if !matches!(
+-        entry.intent.request.operation,
+-        LifecycleOperation::Unload { .. }
+-    ) || serde_json::to_vec(resolution)?.len() > 4096
+-    {
++    if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096 {
+         return Err(JournalError::CorruptStore);
+     }
+     if let UnloadResolution::BeforeAdmission { original, .. } = resolution {
++        let original = &**original;
+         if entry.local_operation.is_some()
+             || original.phase != core::Phase::Running
+             || original.terminal
+@@ -267,3 +274,10 @@
+         Ok(Some(facts))
+     }
+ }
++
++fn is_unload_entry(entry: &Entry) -> bool {
++    matches!(
++        entry.intent.request.operation,
++        LifecycleOperation::Unload { .. }
++    )
++}
+--- a/controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs
++++ b/controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs
+@@ -53,7 +53,19 @@
+ /// Validate the retained full checkpoint and the actual removed frontier.
+ /// Reachability of this summary is a business proof obligation of the concrete
+ /// transition below; a digest/shape check does not prove a history occurred.
+-pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
++pub(super) trait RenewalEncoding {
++    fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error>;
++}
++pub(super) struct StandardRenewalEncoding;
++impl RenewalEncoding for StandardRenewalEncoding {
++    fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
++pub(super) fn validate_session_using<E: RenewalEncoding>(
++    session: &Session,
++) -> Result<(), JournalError> {
+     let Some(confirmed) = session.confirmed_renewal.as_ref() else {
+         return if session.compacted_sdk_through.is_none() {
+             Ok(())
+@@ -62,29 +74,15 @@
+         };
+     };
+     if !confirmed.is_sdk_renewal()
+-        || serde_json::to_vec(confirmed)?.len() > RENEWAL_CONFIRMATION_BODY_BYTES
++        || E::encode(confirmed)?.len() > RENEWAL_CONFIRMATION_BODY_BYTES
+         || session.local.is_none()
+-        || session
+-            .entries
+-            .iter()
+-            .find(|entry| entry.intent == confirmed.request)
+-            .is_none_or(|entry| {
+-                entry.applied_deadline != Some(confirmed.effective_end_at_ms)
+-                    || entry.previous_effective_end_at_ms.is_none()
+-            })
++        || checkpoint_entry_invalid(session, confirmed)
+         || session.compacted_sdk_through.is_some_and(|through| {
+             through < 2
+                 || through >= confirmed.request.accepted_version
+-                || session
+-                    .entries
+-                    .iter()
+-                    .any(|entry| entry.intent.accepted_version == through)
++                || contains_accepted_version(session, through)
+         })
+-        || session.entries.iter().any(|entry| {
+-            is_sdk_renewal(&entry.intent)
+-                && entry.intent.accepted_version <= confirmed.request.accepted_version
+-                && entry.applied_deadline.is_none()
+-        })
++        || has_unapplied_sdk_through(session, confirmed.request.accepted_version)
+     {
+         return Err(JournalError::CorruptStore);
+     }
+@@ -262,3 +260,34 @@
+         Ok(ack)
+     }
+ }
++
++fn checkpoint_entry_invalid(session: &Session, confirmed: &RenewalConfirmation) -> bool {
++    for entry in &session.entries {
++        if entry.intent == confirmed.request {
++            return entry.applied_deadline != Some(confirmed.effective_end_at_ms)
++                || entry.previous_effective_end_at_ms.is_none();
++        }
++    }
++    true
++}
++
++fn contains_accepted_version(session: &Session, version: u64) -> bool {
++    for entry in &session.entries {
++        if entry.intent.accepted_version == version {
++            return true;
++        }
++    }
++    false
++}
++
++fn has_unapplied_sdk_through(session: &Session, version: u64) -> bool {
++    for entry in &session.entries {
++        if is_sdk_renewal(&entry.intent)
++            && entry.intent.accepted_version <= version
++            && entry.applied_deadline.is_none()
++        {
++            return true;
++        }
++    }
++    false
++}
+--- a/controller-service/src/controller/lifecycle_inbox/native_retirement.rs
++++ b/controller-service/src/controller/lifecycle_inbox/native_retirement.rs
+@@ -23,22 +23,48 @@
+     retirement: RetireRequest,
+ }
+
++pub(super) trait RetirementEncoding {
++    fn encode_intent(
++        value: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
++    ) -> Result<Vec<u8>, serde_json::Error>;
++    fn digest(bytes: &[u8]) -> ContentDigest;
++    fn encode_receipt(value: &NativeRetirementReceipt) -> Result<Vec<u8>, serde_json::Error>;
++}
++
++pub(super) struct StandardRetirementEncoding;
++impl RetirementEncoding for StandardRetirementEncoding {
++    fn encode_intent(
++        value: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
++    ) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++    fn digest(bytes: &[u8]) -> ContentDigest {
++        source_work::digest(bytes)
++    }
++    fn encode_receipt(value: &NativeRetirementReceipt) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
+ pub(super) fn validate_saved(session: &Session) -> Result<(), JournalError> {
++    validate_saved_using::<StandardRetirementEncoding>(session)
++}
++
++pub(super) fn validate_saved_using<E: RetirementEncoding>(
++    session: &Session,
++) -> Result<(), JournalError> {
+     let Some(saved) = &session.native_retirement else {
+         return Ok(());
+     };
+-    let last = session.entries.last().ok_or(JournalError::CorruptStore)?;
++    let last = last_saved_entry(session).ok_or(JournalError::CorruptStore)?;
+     let request = saved.retirement;
+     let qc = request.quiescence;
+     if !session.terminal
+         || session.local != Some(saved.local)
+-        || !matches!(
+-            last.intent.request.operation,
+-            LifecycleOperation::Destroy { .. }
+-        )
++        || !is_destroy_operation(&last.intent.request.operation)
+         || last.intent.accepted_version != session.current_version
+         || last.local_operation != Some(request.operation)
+-        || saved.request_binding != source_work::digest(&serde_json::to_vec(&last.intent)?)
++        || saved.request_binding != E::digest(&E::encode_intent(&last.intent)?)
+         || request.sandbox != saved.local.sandbox
+         || request.owner != saved.local.owner
+         || qc.sandbox != request.sandbox
+@@ -49,7 +75,7 @@
+         || qc.data_connections_drained != QuiescenceStatus::Confirmed
+         || qc.host_resources_reclaimed != QuiescenceStatus::Confirmed
+         || qc.external_pins_released != QuiescenceStatus::Confirmed
+-        || serde_json::to_vec(saved)?.len() > 8192
++        || E::encode_receipt(saved)?.len() > 8192
+     {
+         return Err(JournalError::CorruptStore);
+     }
+@@ -164,3 +190,15 @@
+     validate_saved(session)?;
+     codec::save(connection, &inbox)
+ }
++
++pub(super) fn last_saved_entry(session: &Session) -> Option<&super::model::Entry> {
++    if session.entries.is_empty() {
++        None
++    } else {
++        Some(&session.entries[session.entries.len() - 1])
++    }
++}
++
++fn is_destroy_operation(operation: &LifecycleOperation) -> bool {
++    matches!(operation, LifecycleOperation::Destroy { .. })
++}
+--- a/controller-service/src/controller/lifecycle_inbox/codec.rs
++++ b/controller-service/src/controller/lifecycle_inbox/codec.rs
+@@ -60,15 +60,73 @@
+     }
+     Ok(Some(inbox))
+ }
++pub(super) trait InboxSaveEffects {
++    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError>;
++    fn digest(&mut self, bytes: &[u8]) -> [u8; 32];
++    fn update(
++        &mut self,
++        statement: &str,
++        bytes: &[u8],
++        digest: &[u8],
++    ) -> Result<usize, JournalError>;
++}
++
++struct StandardInboxSave<'a> {
++    connection: &'a Connection,
++}
++
++impl InboxSaveEffects for StandardInboxSave<'_> {
++    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
++        Ok(serde_json::to_vec(inbox)?)
++    }
++    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
++        Sha256::digest(bytes).into()
++    }
++    fn update(
++        &mut self,
++        statement: &str,
++        bytes: &[u8],
++        digest: &[u8],
++    ) -> Result<usize, JournalError> {
++        Ok(self
++            .connection
++            .execute(statement, rusqlite::params![bytes, digest])?)
++    }
++}
++
+ pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {
+-    inbox.validate()?;
+-    let bytes = serde_json::to_vec(inbox)?;
++    let mut effects = StandardInboxSave { connection };
++    save_using::<
++        super::native_retirement::StandardRetirementEncoding,
++        super::model::StandardTerminalEncoding,
++        super::renewal_confirmation::StandardRenewalEncoding,
++        super::unload_resolution::StandardUnloadEncoding,
++        crate::capture::StandardGraphicBytes,
++        _,
++    >(inbox, &mut effects)
++}
++
++pub(super) fn save_using<
++    R: super::native_retirement::RetirementEncoding,
++    T: super::model::TerminalEncoding,
++    N: super::renewal_confirmation::RenewalEncoding,
++    U: super::unload_resolution::UnloadEncoding,
++    B: crate::capture::GraphicBytes,
++    E: InboxSaveEffects,
++>(
++    inbox: &Inbox,
++    effects: &mut E,
++) -> Result<(), JournalError> {
++    inbox.validate_using::<R, T, N, U, B>()?;
++    let bytes = effects.encode(inbox)?;
+     if bytes.len() as u64 > inbox.config.required_bytes() {
+         return Err(JournalError::MaintenanceCapacity);
+     }
+-    if connection.execute(
++    let digest = effects.digest(&bytes);
++    if effects.update(
+         "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1",
+-        rusqlite::params![bytes, Sha256::digest(&bytes).as_slice()],
++        &bytes,
++        &digest,
+     )? != 1
+     {
+         return Err(JournalError::CorruptStore);
