@@ -13,6 +13,92 @@ formal = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(formal)
 
 
+class ResultMapBuild(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.project = Path(temporary.name)
+        self.prefix = 'verification/aeneas/stage1-protocol/schema-result/'
+        self.files = {self.prefix + name: ('generated fixture: ' + name).encode() for name in (
+            'SandproofProtocolResult/Funs.lean', 'SandproofProtocolResult/Types.lean',
+            'translation.json')}
+        self.reviewed = {}
+        for name, content in self.files.items():
+            path = self.project / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+            self.reviewed[name] = formal.sha(path)
+            path.unlink()
+        self.commands = []
+        self.mode = 'correct'
+
+    def command(self, project, output, label, argv):
+        self.assertEqual(project, self.project)
+        self.commands.append(label)
+        if label == 'map-extract':
+            self.assertEqual(argv, ['original-wrapper', 'bash',
+                str(formal.HERE.parent / 'schema-leaves/extract-map.sh')])
+            if self.mode == 'command-failed':
+                raise ValueError('original map command failed')
+            raw = project / 'artifacts/schema-map.llbc'
+            raw.parent.mkdir()
+            raw.write_text(json.dumps(dict(has_errors=self.mode == 'incomplete',
+                translated=dict(target_information=[dict(
+                    key='other-target' if self.mode == 'wrong-target' else 'reviewed-target')]))))
+            for name, content in self.files.items():
+                if self.mode == 'missing' and name.endswith('/Funs.lean'):
+                    continue
+                (project / name).write_bytes(content + (b' stale' if self.mode == 'stale' else b''))
+            if self.mode == 'extra':
+                (project / self.prefix / 'Unexpected.lean').write_text('-- unexpected provider\n')
+        elif label == 'build':
+            self.assertEqual(argv, ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeSchema'])
+            for name, digest in self.reviewed.items():
+                self.assertEqual(formal.sha(project / name), digest)
+        else:
+            self.fail('unexpected command: ' + label)
+
+    def build(self):
+        return formal.build_schema(self.project, self.project, ['original-wrapper'],
+                                   self.command, self.reviewed, 'reviewed-target')
+
+    def test_original_map_is_admitted_before_build(self):
+        result = self.build()
+        self.assertEqual(self.commands, ['map-extract', 'build'])
+        self.assertEqual(result['generated_sha256'], self.reviewed)
+        self.assertEqual(result['llbc_sha256'], formal.sha(self.project / 'artifacts/schema-map.llbc'))
+
+    def test_missing_provider_stops_before_build(self):
+        self.mode = 'missing'
+        with self.assertRaisesRegex(ValueError, 'generation differs'):
+            self.build()
+        self.assertEqual(self.commands, ['map-extract'])
+
+    def test_stale_or_extra_provider_stops_before_build(self):
+        for mode in ('stale', 'extra'):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.mode = mode
+                with self.assertRaisesRegex(ValueError, 'generation differs'):
+                    self.build()
+                self.assertEqual(self.commands, ['map-extract'])
+
+    def test_incomplete_or_wrong_target_ir_stops_before_build(self):
+        for mode in ('incomplete', 'wrong-target'):
+            with self.subTest(mode=mode):
+                self.setUp()
+                self.mode = mode
+                with self.assertRaisesRegex(ValueError, 'wrong-target'):
+                    self.build()
+                self.assertEqual(self.commands, ['map-extract'])
+
+    def test_failed_extractor_stops_before_build(self):
+        self.mode = 'command-failed'
+        with self.assertRaisesRegex(ValueError, 'map command failed'):
+            self.build()
+        self.assertEqual(self.commands, ['map-extract'])
+
+
 class Admission(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

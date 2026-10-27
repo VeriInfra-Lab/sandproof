@@ -56,6 +56,11 @@ def inventory(root):
             raise ValueError('field type/order/coverage changed: ' + name)
     if set(data['operations']) != {'Create', 'Unload', 'Resume', 'Renew', 'Destroy'}:
         raise ValueError('missing actual operation branch')
+    if set(data['map_generation']) != {
+            'verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean',
+            'verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean',
+            'verification/aeneas/stage1-protocol/schema-result/translation.json'}:
+        raise ValueError('incomplete reviewed Result::map generation')
     source = (root / 'sandbox-protocol/src/lifecycle/request.rs').read_text()
     for name, fields in data['operations'].items():
         match = re.search(r'\b' + name + r'\s*\{([^}]+|)\}', source)
@@ -63,6 +68,29 @@ def inventory(root):
         if actual is None or [[key, re.sub(r'\s+', '', ty)] for key, ty in actual] != fields:
             raise ValueError('actual operation fields changed: ' + name)
     return data
+
+
+def build_schema(project, output, wrapper, command, reviewed, target):
+    """Generate and admit the original Result::map provider before its users."""
+    command(project, output, 'map-extract', wrapper + [
+        'bash', str(HERE.parent / 'schema-leaves/extract-map.sh')])
+    raw = project / 'artifacts/schema-map.llbc'
+    ir = json.loads(raw.read_text())
+    if (ir.get('has_errors') is not False
+            or {row['key'] for row in ir['translated']['target_information']} != {target}):
+        raise ValueError('incomplete or wrong-target Result::map extraction')
+    generated = {}
+    directory = project / 'verification/aeneas/stage1-protocol/schema-result'
+    for path in sorted(directory.rglob('*')):
+        if path.is_file():
+            if path.is_symlink():
+                raise ValueError('linked Result::map generation')
+            generated[str(path.relative_to(project))] = sha(path)
+    if generated != reviewed:
+        raise ValueError('fresh Result::map generation differs from reviewed files')
+    result = dict(llbc_sha256=sha(raw), generated_sha256=generated)
+    command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeSchema'])
+    return result
 
 
 def run(output, prepare_only=False):
@@ -165,7 +193,10 @@ def run(output, prepare_only=False):
                     allow_failure=True)
                 record['serde_preflight'][kind] = dict(llbc_sha256=sha(raw),
                     aeneas_exit_code=code, translation_succeeded=code == 0, property_proved=False)
-            command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeSchema'])
+            record['result_map'] = build_schema(project, output, wrapper, command,
+                data['map_generation'], fixed['target'])
+            expected.update(record['result_map']['generated_sha256'])
+            expected['artifacts/schema-map.llbc'] = record['result_map']['llbc_sha256']
             formal = module('envelope_actual_formal', ROOT / HERE.parent / 'formal.py')
             resolver = module('envelope_closure', ROOT / 'tools/proof_batch.py')
             files = sorted(resolver.closure(project, [PROOF], active_view='lakefile.toml'))

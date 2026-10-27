@@ -342,6 +342,11 @@
     "SandboxModel.Stage1Protocol.EnvelopeSchema.retention_window_is_independent",
     "SandboxModel.Stage1Protocol.EnvelopeSchema.all_five_normal_envelopes"
   ],
+  "map_generation": {
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean": "f43c27c35f833ecd8c013cd48ca2c111eff70c1522a315232ea5cdc2c7a194b3",
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean": "d03187059baf5fe9d84dff9b71e8c64c136d8168f27d954bc726b9f9f6ca552e",
+    "verification/aeneas/stage1-protocol/schema-result/translation.json": "052f16b443cec58a6c091216d83422f9cc04241b258e6a7bc42bd580d45039ef"
+  },
   "current_request_generation": {
     "llbc": "9d2f2a450c2e886d69b22895b479ab48e5307406675920548248bec4edcbecd9",
     "generated": {
