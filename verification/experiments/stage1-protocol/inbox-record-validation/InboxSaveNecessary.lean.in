@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.InboxSave
+noncomputable section
+
+theorem successful_save_requires_validation {E : Type}
+    (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : InboxSaveEffects E) (inbox : Inbox) (before after : E)
+    (bounded : ConfigValidation.Representable inbox.config)
+    (returned : runSave saved terminal renewal unload io inbox before = .ok (.Ok (), after)) :
+    InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()) := by
+  rw [full_save_contract saved terminal renewal unload io inbox before bounded] at returned
+  cases checked : InboxValidation.inboxView saved terminal renewal unload inbox using Result.cases with
+  | vis effect continuation => simp [saveView, checked] at returned
+  | div => simp [saveView, checked] at returned
+  | ret result =>
+    cases result with
+    | Err error => simp [saveView, checked] at returned
+    | Ok value => cases value; rfl
+
+end
+end SandboxModel.Stage1Protocol.InboxSave
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.successful_save_requires_validation
