@@ -122,6 +122,7 @@ class ExtractionSelection(unittest.TestCase):
         self.assertNotIn('crate::lane_current', roots)
         for root in role_roots:
             self.assertLess(args.index(root), delimiter)
+            self.assertLess(args.index(root), args.index('crate::json_ids::tenant_decode'))
         self.assertEqual(script, original)
         with self.assertRaisesRegex(ValueError, 'public extraction script'):
             json_extract.selection(script.replace('--start-from crate::lane_current',

@@ -44,9 +44,11 @@ def selection(script):
     roles = ['crate::protocol_leaves::' + role + '_decode' for role in (
         'session', 'center', 'incarnation', 'capture', 'request_window',
         'request_sequence', 'retention_window')]
-    insertion = args.index('--')
+    insertion = args.index('crate::json_ids::tenant_decode') - 1
+    if args[insertion] != '--start-from' or insertion >= args.index('--'):
+        raise ValueError('reviewed transparent root position changed')
     args[insertion:insertion] = [item for role in roles for item in ('--start-from', role)]
-    roots += roles
+    roots = [args[i+1] for i, flag in enumerate(args) if flag == '--start-from']
     return args[1:], roots
 
 

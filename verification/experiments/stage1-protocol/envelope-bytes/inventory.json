@@ -48,7 +48,7 @@
     "verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in": "388c2fbfa292c4305da646b0cb1e18a6dd8328b55b0743dbc0e78bbf50cad2a8",
     "verification/experiments/stage1-protocol/envelope-bytes/README.md": "994e4ab2945a96329827548c1375d9c76defebee6bc93dac2b5f18b57a40f3f8",
     "verification/experiments/stage1-protocol/envelope-bytes/binding.py": "1c215a9a8ddc7150d75fea163dcf1d7f2938aab0b756567ed996fcf6d781a0bb",
-    "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py": "24d873c825bc80c73dd9aa47636c990e1033ceaa17cbf7b3b4b8f0cd8ab00095",
+    "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py": "2ea407342c0e31ff41fc38fd9426a191cdf84c02a8f421391d3fedb17a9e5d11",
     "verification/experiments/stage1-protocol/envelope-bytes/formal.py": "8262207e13865d96ec3ee478996b3f12e8b209bb992c57d2c857007e111053ff",
     "verification/experiments/stage1-protocol/envelope-bytes/roots.rs.in": "01083254ea7f091a27626b18e9052332f605bebc697c94387b06e33373228963",
     "verification/experiments/stage1-protocol/envelope-bytes/shared-candidate.patch": "5ed76caba95835ebb87d3eb044c0e25500e1e9883489b79ace1a0580d3acd4f0",
