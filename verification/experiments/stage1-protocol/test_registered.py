@@ -351,6 +351,15 @@ class Registration(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
                     registered.compute_retained_coverage(root, record)
 
+    def test_extra_unregistered_protocol_source_is_rejected_even_on_reuse(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, job, record, _, _ = self.retained_fixture(temporary)
+            with patch.object(registered, 'formal_plan', return_value=[job]):
+                record['retained_source_files'] = registered.compute_retained_coverage(root, record)
+                (root/'SandboxModel/Lifecycle/Protocol/Unregistered.lean').write_text('-- extra source\n')
+                with self.assertRaisesRegex(ValueError, 'unregistered or missing retained protocol'):
+                    registered.validate_retained_coverage(root, record)
+
     def test_original_carriers_view_can_supply_its_own_exact_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, job, record, result_path, _ = self.retained_fixture(temporary)

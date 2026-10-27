@@ -488,6 +488,11 @@ def compute_retained_coverage(root, record):
     if (inventory.get('schema') != 1 or not isinstance(names, list) or len(names) != 62 or len(set(names)) != 62
             or any(not isinstance(name, str) or not re.fullmatch('[A-Za-z][A-Za-z0-9_]*', name) for name in names)):
         raise ValueError('retained Protocol inventory must contain exactly the original 62 modules')
+    # Same directory-set admission as source_inventory.retained, also on reuse.
+    paths = list((root/'SandboxModel/Lifecycle/Protocol').glob('*.lean'))
+    if (any(path.is_symlink() or not path.is_file() for path in paths)
+            or {path.stem for path in paths} != set(names)):
+        raise ValueError('unregistered or missing retained protocol proof file')
     sources = {}
     for name in names:
         relative = 'SandboxModel/Lifecycle/Protocol/'+name+'.lean'
