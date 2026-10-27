@@ -35,11 +35,13 @@ resolver = module('record_existing_closure', ROOT / 'tools/proof_batch.py')
 binding = module('lineage_enum_binding', ROOT / HERE.parent / 'envelope-writer/binding.py')
 library_binding = module('lineage_library_binding', ROOT / HERE / 'library_binding.py')
 sha = base.sha
+journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
 
 
 def admit_ir(raw, opaque):
     if raw.get('has_errors') is not False:
         raise ValueError('incomplete Charon extraction')
+    journal_binding.admit(raw)
     translated = raw['translated']
     options = translated['options']
     if (options['start_from'] != ROOTS or options['include'] != [
@@ -101,7 +103,7 @@ def run(output, variant, require_native=False, development_native=None, prepare_
     record = dict(kind='inbox-lineage-formal-development', variant=variant, complete=False,
                   ning_acceptance=False, shared_acceptance=False, full_v3=False,
                   production_refactor=False, borrowed_vec_binding_adopted=False, commands=[])
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='2',
                LEAN_STACK_SIZE_KB='65536', CARGO_NET_OFFLINE='true')
 
     def command(project, folder, label, argv):
@@ -190,7 +192,7 @@ def run(output, variant, require_native=False, development_native=None, prepare_
             '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
             '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
             '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL/'artifacts/extract-target'),
-            '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
+            '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '2',
             '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']
         for alias, label in [(False, 'unaliased'), (True, 'aliased')]:
             raw_path = Path('artifacts')/(label+'.llbc')

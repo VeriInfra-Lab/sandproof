@@ -75,7 +75,7 @@ def run(output):
                     source.write('\n#[path = "../../../../verification/experiments/stage1-protocol/inbox-unload-resolution/callback_tests.rs"]\nmod proof_unload_entry_callback;\n')
             expected[TEST_ROOT] = sha(project / TEST_ROOT)
             env = dict(os.environ, CARGO_TARGET_DIR=str(folder / 'target'),
-                       CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='4')
+                       CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='2')
             checks = [('test', ['--lib', '--message-format=json', 'proof_unload_entry::', '--', '--nocapture', '--test-threads=1']),
                                 ('clippy', ['--lib', '--tests', '--', '-D', 'warnings'])]
             if variant not in ('original', 'restored'):

@@ -13,7 +13,7 @@ formal = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(formal)
 
 
-class Admission(unittest.TestCase):
+class Admission(formal.journal_binding.CarrierAdmission, unittest.TestCase):
     raw = None
     translation = None
 

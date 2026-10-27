@@ -33,11 +33,13 @@ binding = module('lookup_existing_enum_binding', ROOT / HERE.parent / 'envelope-
 native = module('lookup_native_inputs', ROOT / HERE / 'native.py')
 resolver = module('lookup_existing_closure', ROOT / 'tools/proof_batch.py')
 sha = base.sha
+journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
 
 
 def admit_ir(raw, opaque):
     if raw.get('has_errors') is not False:
         raise ValueError('incomplete Charon extraction')
+    journal_binding.admit(raw)
     translated = raw['translated']
     options = translated['options']
     if (options['start_from'] != ROOTS or options['include'] != [
@@ -96,7 +98,7 @@ def run(output, variant, require_native=False):
     record = dict(kind='inbox-lookup-formal-development', variant=variant, complete=False,
                   production_adopted=True, ning_acceptance=False, shared_acceptance=False,
                   full_v3=False, commands=[])
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='4',
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', LEAN_NUM_THREADS='2',
                LEAN_STACK_SIZE_KB='65536', CARGO_NET_OFFLINE='true')
 
     def command(project, folder, label, argv, expected_code=0):
@@ -165,7 +167,7 @@ def run(output, variant, require_native=False):
             '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
             '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
             '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
-            '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
+            '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '2',
             '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']
         root_text = (ROOT / HERE / 'extract-root.rs.in').read_text()
         model_path = project / MODEL

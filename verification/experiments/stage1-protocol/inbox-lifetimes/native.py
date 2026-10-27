@@ -72,7 +72,7 @@ def run(output):
                 source.write('\n#[path = "../../../../verification/experiments/stage1-protocol/inbox-lifetimes/native_tests.rs"]\nmod proof_renewal_lifetimes;\n')
             expected[TEST_ROOT] = sha(project / TEST_ROOT)
             env = dict(os.environ, CARGO_TARGET_DIR=str(folder / 'target'),
-                       CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='4')
+                       CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='2')
             for label, args in [('test', ['--lib', '--message-format=json', 'proof_renewal_lifetimes::', '--', '--nocapture', '--test-threads=1']),
                                 ('clippy', ['--lib', '--tests', '--', '-D', 'warnings'])]:
                 argv = ['cargo', label, '-p', 'sandproof-controller-service', '--locked', '--offline', *args]
