@@ -34,6 +34,7 @@ native = module('admission_native_inputs', ROOT / HERE / 'native.py')
 resolver = module('admission_existing_closure', ROOT / 'tools/proof_batch.py')
 sha = base.sha
 journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
+native_admission = module('inbox_native_admission', ROOT / HERE.parent / 'inbox-lookup/native_admission.py')
 
 
 def admit_ir(raw, opaque):
@@ -143,6 +144,8 @@ def run(output, variant, require_native=False):
                 raise ValueError('missing/extra/duplicate candidate audit: '+stem)
         inputs = base.snapshot(ROOT)
         libraries = native.registry_module.registry()
+        native_admission.admit(record, native_result, inputs, libraries, ROOT,
+                               native.registry_module.HERE / 'Cargo.lock')
         record.update(inputs=inputs, registry=libraries, source_commit=subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
         fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())

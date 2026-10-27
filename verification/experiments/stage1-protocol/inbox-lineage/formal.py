@@ -36,6 +36,7 @@ binding = module('lineage_enum_binding', ROOT / HERE.parent / 'envelope-writer/b
 library_binding = module('lineage_library_binding', ROOT / HERE / 'library_binding.py')
 sha = base.sha
 journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
+native_admission = module('inbox_native_admission', ROOT / HERE.parent / 'inbox-lookup/native_admission.py')
 
 
 def admit_ir(raw, opaque):
@@ -156,8 +157,8 @@ def run(output, variant, require_native=False, development_native=None, prepare_
                 raise ValueError('fixed production input differs: '+name)
         record['library_binding'] = library_binding.check(ROOT)
         inputs, libraries = base.snapshot(ROOT), native.registry_module.registry()
-        if native_result is not None and (native_result['inputs'] != inputs or native_result['registry'] != libraries):
-            raise ValueError('native and formal source/registry inputs differ')
+        native_admission.admit(record, native_result, inputs, libraries, ROOT,
+                               native.registry_module.HERE / 'Cargo.lock')
         record.update(inputs=inputs, registry=libraries, source_commit=subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
         fixed = json.loads((ROOT/'verification/foundations-environment.json').read_text())

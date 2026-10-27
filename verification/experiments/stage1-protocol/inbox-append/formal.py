@@ -37,6 +37,7 @@ native = module('record_native_inputs', ROOT / HERE / 'native.py')
 resolver = module('record_existing_closure', ROOT / 'tools/proof_batch.py')
 sha = base.sha
 journal_binding = module('current_journal_binding', ROOT / HERE.parent / 'inbox-lookup/journal_binding.py')
+native_admission = module('inbox_native_admission', ROOT / HERE.parent / 'inbox-lookup/native_admission.py')
 
 
 def admit_ir(raw, opaque):
@@ -194,9 +195,9 @@ def run(output, variant, require_native=False, development_native=None, addition
         record['registered_string_clone'] = dict(symbol=clone_name, path=str(registered_clone.relative_to(ROOT)),
             sha256=sha(registered_clone), binding_sha256=sha(current_clone))
         inputs = base.snapshot(ROOT)
-        if development_native is not None and native_result['inputs'] != inputs:
-            raise ValueError('development native input closure differs')
         libraries = native.registry_module.registry()
+        native_admission.admit(record, native_result, inputs, libraries, ROOT,
+                               native.registry_module.HERE / 'Cargo.lock')
         record.update(inputs=inputs, registry=libraries, source_commit=subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
         fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())

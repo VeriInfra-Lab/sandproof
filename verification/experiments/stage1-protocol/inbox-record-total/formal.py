@@ -71,8 +71,10 @@ def run(output, variant, require_native=False, development_native=None, developm
             result['development_record_native'] = dict(path=str(development_record_native),
                 sha256=parent.sha(development_record_native))
         if result['complete'] and fresh_result is not None:
-            if fresh_result['inputs'] != result['inputs'] or fresh_result['registry'] != result['registry']:
-                raise ValueError('fresh-record native inputs or registry differ')
+            result['fresh_native_admission'] = {}
+            parent.native_admission.admit(result['fresh_native_admission'], fresh_result,
+                result['inputs'], result['registry'], ROOT,
+                parent.native.registry_module.HERE / 'Cargo.lock')
             for name, current in result['business_inputs'].items():
                 expected = result['mutation']['before'] if result['mutation'] and name == parent.MODEL else current
                 for source_variant in ('candidate', 'restored'):
