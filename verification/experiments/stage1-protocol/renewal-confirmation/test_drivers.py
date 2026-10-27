@@ -30,8 +30,7 @@ class Admissions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(formal.ROOT / formal.PROOFS, root / formal.PROOFS)
-            (root / formal.HERE).mkdir(parents=True)
-            shutil.copy2(formal.ROOT / formal.HERE / 'inventory.json', root / formal.HERE / 'inventory.json')
+            shutil.copytree(formal.ROOT / formal.HERE, root / formal.HERE)
             shutil.copy2(formal.ROOT / formal.HERE.parent / 'formal.py', root / formal.HERE.parent / 'formal.py')
             data = json.loads((root / formal.HERE / 'inventory.json').read_text())
             for name in data['base_sources']:

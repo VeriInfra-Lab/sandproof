@@ -2,8 +2,10 @@
 from pathlib import Path
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 
@@ -16,6 +18,7 @@ def load(name):
 
 
 view, inventory = load('local_view'), load('source_inventory')
+runtime = load('formal_runtime')
 spec = importlib.util.spec_from_file_location('protocol_json_extract',
     HERE / 'envelope-bytes/extract-json.py')
 json_extract = importlib.util.module_from_spec(spec)
@@ -127,6 +130,36 @@ class ExtractionSelection(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'public extraction script'):
             json_extract.selection(script.replace('--start-from crate::lane_current',
                 '--start-from crate::protocol_leaves::session_decode --start-from crate::lane_current'))
+
+
+class StableTools(unittest.TestCase):
+    def test_same_installation_is_exposed_read_only_at_a_stable_alias(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'source'
+            tools = Path(temporary) / 'fixed-tools'
+            root.mkdir()
+            tools.mkdir()
+            (root / '.tools').symlink_to(tools, target_is_directory=True)
+            with patch.dict(os.environ, SANDPROOF_PROOF_TOOL_ROOT=str(tools)):
+                self.assertEqual(runtime.tool_root(root), tools)
+                self.assertEqual(runtime.tool_bind(root), ['--ro-bind', str(tools), str(tools)])
+
+    def test_another_installation_cannot_replace_the_original(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'source'
+            root.mkdir()
+            (root / '.tools').mkdir()
+            other = Path(temporary) / 'other-tools'
+            other.mkdir()
+            with patch.dict(os.environ, SANDPROOF_PROOF_TOOL_ROOT=str(other)):
+                with self.assertRaisesRegex(ValueError, 'original fixed installation'):
+                    runtime.tool_root(root)
+
+    def test_rebound_source_alias_is_rejected_before_it_can_form_a_loop(self):
+        with patch.dict(os.environ, SANDPROOF_PROOF_TOOL_ROOT=str(runtime.VIRTUAL / '.tools')):
+            with patch.object(runtime.Path, 'resolve', return_value=runtime.VIRTUAL / '.tools'):
+                with self.assertRaisesRegex(ValueError, 'stable tool alias'):
+                    runtime.tool_root(Path('/unused-source'))
 
 
 if __name__ == '__main__':

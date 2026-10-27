@@ -69,9 +69,10 @@ def copy_source(project, inputs):
 def capture(project, root, output):
     if root not in ('accepted_decode', 'recorded_decode'):
         raise ValueError('unregistered actual decoder root')
+    runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
     tools = project / '.tools'
     if not tools.exists():
-        tools.symlink_to(ROOT / '.tools', target_is_directory=True)
+        tools.symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
     raw_path = project / ('artifacts/bytes-' + root + '.llbc')
     if raw_path.exists():
         raise ValueError('preserve previous extraction; use fresh output')
@@ -81,7 +82,7 @@ def capture(project, root, output):
         raise ValueError('fixed Charon changed')
     wrapper = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
         '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
-        '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
+        *runtime.tool_bind(ROOT), '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
         '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
         '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
         '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']

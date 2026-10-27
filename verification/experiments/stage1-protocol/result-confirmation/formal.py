@@ -118,7 +118,8 @@ def run(output, selected, packages):
                 shutil.copy2(ROOT / name, destination)
                 if sha(destination) != digest:
                     raise ValueError('source changed while copying: ' + name)
-            (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+            runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
+            (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
             # Sequential reuse of this task's package cache under the outer heavy
             # lock; each case always has its own .lake/build and Rust target.
@@ -135,7 +136,7 @@ def run(output, selected, packages):
             (project / 'artifacts/extract-target').mkdir(parents=True)
             command(project, folder, 'extract', ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev',
                 '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', '/home',
-                '--ro-bind', str(Path.home()), str(Path.home()), '--bind', str(project), str(VIRTUAL_ROOT),
+                '--ro-bind', str(Path.home()), str(Path.home()), *runtime.tool_bind(ROOT), '--bind', str(project), str(VIRTUAL_ROOT),
                 '--chdir', str(VIRTUAL_ROOT), '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL_ROOT / 'artifacts/extract-target'),
                 '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
                 '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--', sys.executable,

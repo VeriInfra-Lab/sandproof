@@ -57,7 +57,8 @@ def run(output):
             shutil.copy2(ROOT / name, target)
             if base.sha(target) != wanted:
                 raise ValueError('source changed while copying: ' + name)
-        (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+        runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
+        (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
         (project / 'artifacts/extract-target').mkdir(parents=True)
         fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())
         for name, path in [('charon', 'aeneas/charon/bin/charon'), ('aeneas', 'aeneas/bin/aeneas')]:
@@ -66,7 +67,7 @@ def run(output):
         record['tools'] = {name: fixed[name] for name in ('charon', 'aeneas')}
         wrapper = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
             '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
-            '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
+            *runtime.tool_bind(ROOT), '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
             '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
             '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
             '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']

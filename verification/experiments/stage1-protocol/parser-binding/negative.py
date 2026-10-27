@@ -78,9 +78,10 @@ def run(native, output):
         for name, wanted in source_inputs.items():
             if admit.base.sha(project / name) != wanted:
                 raise ValueError('actual tested source changed: ' + name)
+        runtime = admit.module('protocol_stable_tools', admit.ROOT / admit.HERE.parent / 'formal_runtime.py')
         tools = project / '.tools'
         if not tools.exists():
-            tools.symlink_to(admit.ROOT / '.tools', target_is_directory=True)
+            tools.symlink_to(runtime.tool_root(admit.ROOT), target_is_directory=True)
         raw_path = project / 'artifacts/bytes-recorded_decode.llbc'
         if raw_path.exists():
             raise ValueError('preserve previous extraction; use fresh output')
@@ -90,7 +91,7 @@ def run(native, output):
             raise ValueError('fixed Charon changed')
         wrapper = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
             '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
-            '--bind', str(project), str(admit.VIRTUAL), '--chdir', str(admit.VIRTUAL),
+            *runtime.tool_bind(admit.ROOT), '--bind', str(project), str(admit.VIRTUAL), '--chdir', str(admit.VIRTUAL),
             '--setenv', 'CARGO_TARGET_DIR', str(admit.VIRTUAL / 'artifacts/extract-target'),
             '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
             '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']

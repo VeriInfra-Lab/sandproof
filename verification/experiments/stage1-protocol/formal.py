@@ -322,7 +322,8 @@ def replay(output, archive, native, native_archive, selected):
                 with tarfile.open(archive) as tar:
                     tar.extractall(project, filter='data')
                 check_inputs(project)
-                (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+                runtime = load_module('protocol_stable_tools', ROOT / HERE / 'formal_runtime.py')
+                (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
                 (project / '.lake').mkdir()
                 (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
                 source = project / mutation['source']

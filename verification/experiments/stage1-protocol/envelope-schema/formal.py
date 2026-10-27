@@ -107,7 +107,8 @@ def run(output, prepare_only=False):
         if prepare_only:
             record.update(prepared=True, complete=False)
         else:
-            (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+            runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
+            (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
             (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
             (project / 'artifacts/extract-target').mkdir(parents=True)
@@ -118,7 +119,7 @@ def run(output, prepare_only=False):
             record['tools'] = {name: fixed[name] for name in ('charon', 'aeneas')}
             wrapper = ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc',
                 '--tmpfs', '/tmp', '--tmpfs', '/home', '--ro-bind', str(Path.home()), str(Path.home()),
-                '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
+                *runtime.tool_bind(ROOT), '--bind', str(project), str(VIRTUAL), '--chdir', str(VIRTUAL),
                 '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
                 '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
                 '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']

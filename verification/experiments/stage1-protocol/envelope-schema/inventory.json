@@ -293,15 +293,15 @@
     "verification/experiments/stage1-protocol/envelope-schema/Cargo.toml": "4b142e10a18438c660ad24cd6ec184d88926a20661c7eef9376f9d81376c8839",
     "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
     "verification/experiments/stage1-protocol/envelope-schema/README.md": "10fccc9d736c851fd7d77daa8bbb20a71bd3aac0fd10da06fc4f45e6f1377d1a",
-    "verification/experiments/stage1-protocol/envelope-schema/formal.py": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be",
+    "verification/experiments/stage1-protocol/envelope-schema/formal.py": "2201752ee4dfdd838c96b731c73f7986bc54afd970a5e2d6db7c449548351530",
     "verification/experiments/stage1-protocol/envelope-schema/roots.rs.in": "c305d5b7e31da1177df460f9248b5eaf578533d57078b2c5ba4447897b5a8fa2",
     "verification/experiments/stage1-protocol/envelope-schema/shared-candidate.patch": "f30cf33f3506ec023614d8c63a6157ff78ed0df028d9e5b8f992ac9b707d8388",
     "verification/experiments/stage1-protocol/envelope-schema/test_formal.py": "fd40d051d86b68c8b798ffc6facba8b6273cce4c1c6f5f21a1a2158b081e4940",
     "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
-    "verification/experiments/stage1-protocol/formal.py": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e",
+    "verification/experiments/stage1-protocol/formal.py": "d418ced6fa43e1b92817625eb4b263ca9b3caa34c83563b2a777c84b14529854",
     "verification/experiments/stage1-protocol/frozen.json": "65ee11cce02f59126fdd2119f5c6de9e515593b87503504b8b1eeb78a4e0fb09",
-    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "865ed833078113ada1ef1d3e3d02c8490ccd44e307f5acd1837819187f76c6a1",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/aeneas/stage1-protocol/request/translation.json": "e2de8019902a7ebb31032f162b2a938c2886479ac288b24fedace23dcf8b584c",
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request.lean": "85c9dffb144833059d5780f43dab050150c864579446ffa76a89d9edc327f96a",
@@ -313,7 +313,8 @@
     "verification/experiments/stage1-protocol/local-view.toml.in": "a072cd134b9685c32b27b0f8b277140487e66bc5e87093edcf861c34235991f0",
     "verification/experiments/stage1-protocol/schema-leaves/protocol_leaves.rs.in": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5",
     "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
-    "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4"
+    "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "735064fb65d2ef9335f5b040d8c7f0a1d72c604b08adc1f594f102e64c8f82c2"
   },
   "audits": [
     "SandboxModel.Stage1Protocol.EnvelopeSchema.unsigned_value_eq_iff",

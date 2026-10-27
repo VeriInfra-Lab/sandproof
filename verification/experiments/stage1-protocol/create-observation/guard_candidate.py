@@ -139,13 +139,14 @@ def run(output, packages, result_tag, result_bindings, selected):
             if case != 'correct':
                 mutation = mutate(project, parent['mutations'][case])
                 expected[mutation['source']] = mutation['after_sha256']
-            (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+            runtime = module('protocol_stable_tools', ROOT / HERE.parent / 'formal_runtime.py')
+            (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
             (project / '.lake').mkdir()
             (project / '.lake/packages').symlink_to(packages, target_is_directory=True)
             (project / 'artifacts/extract-target').mkdir(parents=True)
             command(project, folder, 'extract', ['bwrap', '--ro-bind', '/', '/', '--dev', '/dev',
                 '--proc', '/proc', '--tmpfs', '/tmp', '--tmpfs', '/home',
-                '--ro-bind', str(Path.home()), str(Path.home()), '--bind', str(project), str(VIRTUAL),
+                '--ro-bind', str(Path.home()), str(Path.home()), *runtime.tool_bind(ROOT), '--bind', str(project), str(VIRTUAL),
                 '--chdir', str(VIRTUAL), '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL / 'artifacts/extract-target'),
                 '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
                 '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--', sys.executable,
