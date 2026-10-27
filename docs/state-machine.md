@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [系统验证设计](formal-verification-design.md) · [产品范围](project-blueprint.md) · [证明覆盖](proof-coverage.md)
 
-本文解释既有本地协议模型，不定义当前整体产品或中心/节点分布式模型。它包含未启用的暂停/恢复及快照步骤；其状态与定理必须按[覆盖记录](proof-coverage.md)的适用版本解释。当前中心、消息、两层持久化、网关和真实资源如何建模/组合见[系统验证设计](formal-verification-design.md)，不能用本页历史模型替代新系统证明。
+本文解释既有本地协议模型，不定义当前整体产品或中心/节点分布式模型。它包含历史模型中的暂停/恢复及快照步骤，不能据此判断正式产品能力是否启用；其状态与定理必须按[覆盖记录](proof-coverage.md)的适用版本解释。当前中心、消息、两层持久化、网关和真实资源如何建模/组合见[系统验证设计](formal-verification-design.md)，不能用本页历史模型替代新系统证明。
 
 研究方法是从 issue 与实现中提取重复的失败形态，再明确身份、状态、授权和失败语义，写成 Lean 的 `World → Step → World` 及安全定理。issue 是需求证据，不是自动成立的规范；实际 Rust 经 Charon/Aeneas 抽取后再证明对应。
 

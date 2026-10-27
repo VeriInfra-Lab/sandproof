@@ -64,19 +64,19 @@ SourceWork 绑定原完整 Unload、Create 映射、VM/运行代/epoch、寿命�
 
 来源 GET 配置、摘要和长度是观察事实，不是捕获许可、固定硬件兼容证明或物理预算。提交未知保留原责任；manager 重启、worker 完成及部分文件发布仍按原身份对账。已发布 Full 的有限恢复不能代替所有准备阶段故障恢复。
 
-## 8. 恢复、失败继续与剩余收尾
+## 8. 恢复、失败继续的实现连接与待证义务
 
-恢复已在原 SQL/SourceWork 接入唯一后继、材料使用责任、候选身份、激活前持久记录及多轮工作；不再将 Resume 描述为收件模型一律拒绝。当前恢复相关组件有指定版本证据，但实际服务、Node、网关及虚拟机组合仍须统一验收，完整 SQL 与真实 Rust 对应证明尚未完成。
+恢复已在原 SQL/SourceWork 接入唯一后继、材料使用责任、候选身份、激活前持久记录及多轮工作；不再将 Resume 描述为收件模型一律拒绝。相关正式组合已有指定版本的正常与部分故障实机证据，适用版本和未覆盖场景见覆盖记录；完整 SQL 与真实 Rust 对应证明仍须逐项完成。
 
 普通 Pause 失败沿唯一原 Pause/Full 工作推进：`prepare_lifecycle_original_continue` 在原 `WorldTransaction` 验证当前 Unload、原寿命、源身份和 typed End，封住后续捕获放行，并将 End、核心 `PrepareOriginalContinue` 及 outbox 一起提交。提交未知不返回执行许可，重开后按原工作查询。SQL End 区分 `NeverReleased` 与 `WorkerEnded`；后者保存原工作器的 `NoRequest / Returned` 互斥结果，分别对应明确未发送或真实 API 结束，并要求原 worker 退出，不以摘要、缺席或一次 Running 查询代替。原未决 Seal 可按核心的精确结束规则退休，但 Freeze/Commit 未知仍须解决。原始 `apply(Capture)` 不能绕过这条事务准入。具体核心条件见[V4](04-local-core.md)。
 
 Node 已有原实例执行/只观察方法：实际执行要求原 action 与完整工作摘要的私有许可，只继续同一 VM，不加载快照、不重新初始化来宾、不替换凭据；前后核对原配置、进程、位置、网络及文件授权。外层 `application/coordinator/lifecycle_continue.rs` 已接原许可、实际调用、观察与继续结果发布；源码接线和组件通过不代表完整实现对应或真实 VM 组合已验收。
 
-仍需闭合：
+仍需证明或补足故障验收：
 
 - 验证已接入原后台的事务、私有执行许可、实际调用、原回执及新鲜授权观察；准入前尚无 native Pause 的失败已沿 `close_failed_unadmitted_unload` 关闭原 Inbox 并观察原执行，仍须证明无捕获 SourceWork 的退休和结果发布，不得伪造 Full 工作。
 - Full 已放行而 API 结束记录丢失时，不能由 worker 缺席或新连接 GET 推定旧调用已经结束。安全继续原 VM 的充分观察尚未闭合；显式 Destroy/TTL 的原终止计划也须能停止精确原 VMM、排空写者后收尾，不能被同一个未知 Full 永久挡住。
-- 原持久退休计划、精确删除许可、物理回执结算及 `maintain` 的材料/元数据收尾已有接线；卸载后 Destroy、终止和多轮恢复的引用关闭与最终退额仍须组合证明及真实回收验收。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
+- 原持久退休计划、精确删除许可、物理回执结算及 `maintain` 的材料/元数据收尾已有接线；卸载后 Destroy、终止和多轮恢复的引用关闭与最终退额仍须组合证明，真实回收证据按覆盖记录的具体场景复用。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
 - 禁止新引用与退休在原事务决定，File backing、loader、VMM 和写者的责任分别结束，才能按实际删除结果结算；TTL 不直接 unlink。
 
-当前已实现内容及检查范围以[覆盖记录](../proof-coverage.md)的精确版本为准。可先认领稳定同步入口的证明，不能把上述待接线、物理事实或未交付收尾作为已证业务前提。
+当前已实现内容及检查范围以[覆盖记录](../proof-coverage.md)的精确版本为准。可先认领稳定同步入口的证明，不能把工程接线、受控物理输入或尚未验证的故障收尾作为已证业务前提。

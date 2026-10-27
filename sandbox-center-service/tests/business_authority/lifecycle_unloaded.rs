@@ -12,6 +12,9 @@ mod continued_reunload;
 #[path = "lifecycle_renewed_continued.rs"]
 mod renewed_continued;
 
+#[path = "unloaded_query_confirmation.rs"]
+mod query_confirmation;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,
@@ -465,8 +468,10 @@ async fn original_background_round_and_public_queries_keep_unloaded_without_stor
     let revision_cost = revision_after.checked_sub(revision_before).unwrap();
     eprintln!("unloaded_query_reaffirm_revision_delta={revision_cost}");
     // Measure the real original Redis CAS path without injecting any fault.
-    // Do not make a future safe reduction in redundant reaffirms a failure.
-    assert!(revision_cost > 0, "public authority is durably reaffirmed");
+    assert_eq!(
+        revision_cost, 1,
+        "one current confirmation supplies the view"
+    );
     assert_eq!(completed.0, 200);
     let completed: sandproof_protocol::lifecycle::PublicSessionView =
         serde_json::from_value(completed.1).unwrap();
@@ -556,12 +561,13 @@ fn original_continued_result_restores_running_without_unloaded_material() {
     );
 }
 
-async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
+async fn assert_timeout_recovered_by_original_round(expire: bool) {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = lifecycle_public::setup(&fixture, &proxy);
-    let (app, host, _) = application(&authority);
+    let (app, host, clock) = application(&authority);
     let (session, _, observation) = accept_unload(&app);
+    let end_at_ms = observation.outcome.unloaded().unwrap().end_at_ms;
     *host.unloaded.lock().unwrap() = Some(observation);
     app.reconcile_once().unwrap();
     let node = authority.snapshot().unwrap().center.nodes()[0].clone();
@@ -576,7 +582,23 @@ async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
     .unwrap();
     let before = public_query(&router, &session).await;
     assert_eq!(before.0, 200);
-    proxy.timeout_after(preceding_writes);
+    let mut expected = before.clone();
+    if expire {
+        let mut view: sandproof_protocol::lifecycle::PublicSessionView =
+            serde_json::from_value(before.1.clone()).unwrap();
+        view.operation = authority
+            .snapshot()
+            .unwrap()
+            .center
+            .next_sdk_operation_key(&"8".try_into().unwrap())
+            .unwrap();
+        view.current_version += 1;
+        view.phase = PublicSessionPhase::Terminating;
+        view.unload_outcome = None;
+        expected.1 = serde_json::to_value(view).unwrap();
+        clock.0.store(end_at_ms, Ordering::SeqCst);
+    }
+    proxy.timeout_after(usize::from(expire));
     let failed = public_query(&router, &session).await;
     proxy.release_timeout();
     assert_eq!(
@@ -594,24 +616,20 @@ async fn assert_timeout_recovered_by_original_round(preceding_writes: usize) {
         authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit)
     });
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-    assert_eq!(public_query(&router, &session).await, before);
+    assert_eq!(public_query(&router, &session).await, expected);
     app.lifecycle_background_round(|| {
         authority.refresh_node(&node.identity, node.healthy_until_ms, node.limit)
     });
-    assert_eq!(public_query(&router, &session).await, before);
+    assert_eq!(public_query(&router, &session).await, expected);
 }
 
 #[tokio::test]
 async fn lookup_transport_timeout_recovers_through_original_background_round() {
-    assert_timeout_recovered_by_original_round(0).await;
+    assert_timeout_recovered_by_original_round(false).await;
 }
 #[tokio::test]
 async fn expiry_transport_timeout_recovers_through_original_background_round() {
-    assert_timeout_recovered_by_original_round(1).await;
-}
-#[tokio::test]
-async fn projection_transport_timeout_recovers_through_original_background_round() {
-    assert_timeout_recovered_by_original_round(3).await;
+    assert_timeout_recovered_by_original_round(true).await;
 }
 
 #[test]

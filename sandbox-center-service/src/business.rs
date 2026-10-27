@@ -25,3 +25,13 @@ pub use publication::{
     ValidationSettlement,
 };
 pub use templates::BusinessTemplates;
+
+/// A completed ledger-only view or the original input for the existing
+/// observation path. No authority guard may escape to host I/O.
+pub(crate) enum LifecycleQuery {
+    Ready(sandproof_protocol::lifecycle::PublicSessionView),
+    Current {
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        phase: sandproof_center_core::SessionPhase,
+    },
+}
