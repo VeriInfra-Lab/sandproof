@@ -6,7 +6,8 @@ use crate::application::diagnostics::{
 use crate::application::tenant_id;
 use crate::lifecycle_dispatch::CurrentObservationError;
 use crate::{
-    CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
+    CenterApplication, CenterPort, HostPort, TemplateProvider,
+    business::{LifecycleQuery, SharedBusinessAuthority},
 };
 use sandproof_api::{PortError, lifecycle::LifecyclePort};
 use sandproof_center_core::SessionPhase;
@@ -192,18 +193,23 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             sandproof_center_store::DiagnosticStep::Lookup,
         );
         let owner = tenant_id(owner)?;
-        let (intent, phase) = self
+        let prepared = self
             .authority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryLookup))?
-            .public_lifecycle_intent(&owner, session)
+            .begin_lifecycle_query(&owner, session, || self.now())
             .inspect_err(|error| {
                 diagnostics::emit(
                     DiagnosticStage::LifecycleQueryLookup,
                     DiagnosticFailure::Port(*error),
                 );
             })?;
-        self.query_lifecycle_projection(&owner, session, &intent, phase)
+        match prepared {
+            LifecycleQuery::Ready(view) => Ok(view),
+            LifecycleQuery::Current { intent, phase } => {
+                self.query_lifecycle_projection(&owner, session, &intent, phase)
+            }
+        }
     }
 
     fn query_lifecycle_projection(
@@ -216,9 +222,6 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         let _projection = sandproof_center_store::DiagnosticScope::step(
             sandproof_center_store::DiagnosticStep::Projection,
         );
-        if phase == SessionPhase::Unloaded {
-            return self.query_unloaded(owner, session);
-        }
         if phase == SessionPhase::Running
             && matches!(intent.request.operation, LifecycleOperation::Unload { .. })
         {
@@ -313,46 +316,6 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         self.authority
             .lock()
             .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?
-            .query_public_lifecycle(owner, session)
-            .inspect_err(|error| {
-                diagnostics::emit(
-                    DiagnosticStage::LifecycleQueryResult,
-                    DiagnosticFailure::Port(*error),
-                );
-            })
-    }
-
-    fn query_unloaded(
-        &self,
-        owner: &sandproof_protocol::TenantId,
-        session: &SessionId,
-    ) -> Result<PublicSessionView, PortError> {
-        let expiry_scope = sandproof_center_store::DiagnosticScope::step(
-            sandproof_center_store::DiagnosticStep::Expiry,
-        );
-        let mut authority = self
-            .authority
-            .lock()
-            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryExpiry))?;
-        let now = self.now().inspect_err(|error| {
-            diagnostics::emit(
-                DiagnosticStage::LifecycleQueryExpiry,
-                DiagnosticFailure::Port(*error),
-            );
-        })?;
-        crate::AuthorityPort::expire_current(&mut *authority, now)
-            .inspect_err(|error| {
-                diagnostics::emit(
-                    DiagnosticStage::LifecycleQueryExpiry,
-                    DiagnosticFailure::Authority(*error),
-                );
-            })
-            .map_err(crate::application::authority_error)?;
-        drop(expiry_scope);
-        let _projection = sandproof_center_store::DiagnosticScope::step(
-            sandproof_center_store::DiagnosticStep::Projection,
-        );
-        authority
             .query_public_lifecycle(owner, session)
             .inspect_err(|error| {
                 diagnostics::emit(
