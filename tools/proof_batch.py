@@ -52,7 +52,7 @@ def tracked_inputs(root=ROOT):
     return {n:file_digest(root/n) for n in names if n}
 
 
-def closure(root, seeds):
+def closure(root, seeds, *, active_view=None):
     """Resolve every local Lean import, including imports omitted by roots.
 
     External packages and the installed compiler/stdlib are covered by the
@@ -60,7 +60,11 @@ def closure(root, seeds):
     """
     import tomllib
     libraries = {'SandboxModel': root}
-    for view in root.glob('lake*.toml'):
+    if active_view is not None and (Path(active_view).name != active_view
+            or not (root / active_view).is_file()):
+        raise ValueError('missing or non-local active Lake view')
+    views = root.glob('lake*.toml') if active_view is None else [root / active_view]
+    for view in views:
         for lib in tomllib.loads(view.read_text()).get('lean_lib', []):
             libraries[lib['name']] = root / lib.get('srcDir', '.')
     result = {}
