@@ -7,17 +7,19 @@ use crate::{
 use sandbox_controller_core as core;
 use std::io::{self, Write};
 
-/// Encode without first allocating an unbounded response buffer.
-/// # Errors
-/// Oversized evidence fails closed; malformed serialization remains explicit.
-
-/// Fixed library operations only; the bounded policy remains in write_bounded.
-/// Actual use is Vec<u8>; arbitrary resource-owning implementations are excluded.
+/// Fixed library operations only; the bounded policy remains in `write_bounded`.
+/// Actual use is `Vec<u8>`; arbitrary resource-owning implementations are excluded.
+#[expect(
+    clippy::len_without_is_empty,
+    reason = "this narrow buffer contract exposes only operations used by the writer policy"
+)]
 pub trait BoundedBuffer: Sized {
     type ReserveError;
     fn new_buffer() -> Self;
     fn len(&self) -> usize;
     fn capacity(&self) -> usize;
+    /// # Errors
+    /// Returns the underlying allocation refusal without changing the written prefix.
     fn try_reserve_exact(&mut self, additional: usize) -> Result<(), Self::ReserveError>;
     fn extend_from_slice(&mut self, bytes: &[u8]);
     fn into_bytes(self) -> Vec<u8>;
@@ -69,6 +71,8 @@ impl<B: BoundedBuffer> Write for BoundedWriter<B> {
 }
 
 /// Original checked write policy; unchanged from the reviewed factorization.
+/// # Errors
+/// Rejects size overflow, the configured byte limit or an allocation failure.
 pub fn write_bounded<B: BoundedBuffer>(
     writer: &mut BoundedWriter<B>,
     bytes: &[u8],
@@ -92,6 +96,8 @@ pub fn write_bounded<B: BoundedBuffer>(
 }
 
 /// Original exceeded-before-serializer-result decision.
+/// # Errors
+/// A recorded size refusal takes priority; otherwise preserves the serializer error.
 pub fn finish_bounded<B: BoundedBuffer>(
     writer: BoundedWriter<B>,
     result: Result<(), serde_json::Error>,
@@ -105,6 +111,8 @@ pub fn finish_bounded<B: BoundedBuffer>(
 
 /// Exact standard serialization call, with its original mutable Writer and value.
 pub trait BoundedSerialize<W, T> {
+    /// # Errors
+    /// Preserves serialization and writer errors returned by the concrete serializer.
     fn serialize(writer: &mut W, value: &T) -> Result<(), serde_json::Error>;
 }
 pub struct StandardSerialize;
@@ -116,6 +124,9 @@ impl<B: BoundedBuffer, T: serde::Serialize> BoundedSerialize<BoundedWriter<B>, T
     }
 }
 
+/// Encode through the same writer and finish with the original error priority.
+/// # Errors
+/// Returns the size refusal or the original serializer error.
 pub fn encode_bounded_using<B, T, S>(value: &T, limit: usize) -> Result<Vec<u8>, JournalError>
 where
     B: BoundedBuffer,
@@ -130,6 +141,9 @@ where
     finish_bounded(writer, result)
 }
 
+/// Encode with the fixed serializer and an explicit buffer implementation.
+/// # Errors
+/// Returns the size refusal or the original serializer error.
 pub fn encode_bounded_with_buffer<B: BoundedBuffer>(
     value: &impl serde::Serialize,
     limit: usize,
@@ -137,6 +151,9 @@ pub fn encode_bounded_with_buffer<B: BoundedBuffer>(
     encode_bounded_using::<B, _, StandardSerialize>(value, limit)
 }
 
+/// Encode complete evidence with a bounded ordinary byte buffer.
+/// # Errors
+/// Oversized evidence fails closed; malformed serialization remains explicit.
 pub fn encode_bounded(
     value: &impl serde::Serialize,
     limit: usize,
