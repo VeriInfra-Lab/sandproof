@@ -27,14 +27,9 @@
     "verification/experiments/stage1-protocol/schema-leaves/protocol_leaves.rs.in": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5",
     "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
     "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
-    "verification/experiments/stage1-protocol/schema-leaves/shared-candidate.patch": "e5d35ec768f9a133c0948a75de3cff05911fabae1256d9deb13ed8f57e780879"
-  },
-  "candidate_sources": {
-    "lakefile.toml": "36d20e59422d23774960ec52b17919b9d9be4af765de7b565c29487d4aa8e590",
-    "verification/extract-foundations/src/lib.rs": "0a666fbb494d133b68ba1cfa25a1aba2adae71c9a7785c89c401d4ab49ff8626",
-    "scripts/regenerate-foundations-lean.sh": "155c8912415a72384e16613af2054de8fffa2f13e1784272b0b126f91bdc8ff0",
-    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "a9c52346fd263930488e651cbca696af8b0351757c0d0392dc9ef0b165cd711d",
-    "verification/extract-foundations/src/protocol_leaves.rs": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5"
+    "verification/experiments/stage1-protocol/schema-leaves/shared-candidate.patch": "e5d35ec768f9a133c0948a75de3cff05911fabae1256d9deb13ed8f57e780879",
+    "verification/experiments/stage1-protocol/local_view.py": "6748dfa45b5732d9b7dad4ae2acb8be5fd51d32a286bb6a26f029c6ca966aabf",
+    "verification/experiments/stage1-protocol/local-view.toml.in": "a072cd134b9685c32b27b0f8b277140487e66bc5e87093edcf861c34235991f0"
   },
   "audits": [
     "SandboxModel.Stage1Protocol.RoleLeaves.session_refines",
@@ -60,5 +55,6 @@
     "SandboxModel.Stage1Protocol.RoleLeaves.invalid_identifier_witnesses",
     "SandboxModel.Stage1Protocol.RoleLeaves.normal_counter_witnesses",
     "SandboxModel.Stage1Protocol.RoleLeaves.invalid_counter_witnesses"
-  ]
+  ],
+  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed"
 }

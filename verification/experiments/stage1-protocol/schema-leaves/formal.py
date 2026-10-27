@@ -28,6 +28,9 @@ def module(name, path):
     return result
 
 
+view = module('protocol_independent_view', ROOT / HERE.parent / 'local_view.py')
+
+
 def inventory(root):
     data = json.loads((root / HERE / 'inventory.json').read_text())
     if data.get('schema') != 1 or data.get('v0_adopted') is not False:
@@ -90,13 +93,8 @@ def run(output, prepare_only=False):
             shutil.copy2(ROOT / name, destination)
             if sha(destination) != digest:
                 raise ValueError('source changed while copying: ' + name)
-        command(project, output, 'candidate-patch', ['patch', '--strip=1', '--fuzz=0', '--batch',
-            '--input=' + str(ROOT / HERE / 'shared-candidate.patch')])
         expected = dict(inputs)
-        for name, digest in data['candidate_sources'].items():
-            if sha(project / name) != digest:
-                raise ValueError('applied shared candidate differs: ' + name)
-            expected[name] = digest
+        expected.update(view.install(project, 'schema-leaves'))
         if prepare_only:
             record.update(prepared=True, complete=False)
         else:
@@ -115,8 +113,9 @@ def run(output, prepare_only=False):
                 '--setenv', 'CARGO_TARGET_DIR', str(VIRTUAL_ROOT / 'artifacts/extract-target'),
                 '--setenv', 'CARGO_NET_OFFLINE', 'true', '--setenv', 'CARGO_BUILD_JOBS', '4',
                 '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--', 'bash', '-c',
-                'bash ' + str(HERE / 'extract-map.sh') + ' && bash scripts/regenerate-foundations-lean.sh'])
-            irs = ['artifacts/schema-map.llbc', 'verification/aeneas/llbc/sandproof_foundations.llbc']
+                'bash ' + str(HERE / 'extract-map.sh') + ' && ' +
+                'python3 ' + str(HERE.parent / 'envelope-bytes/extract-json.py')])
+            irs = ['artifacts/schema-map.llbc', 'artifacts/envelope-json-foundations.llbc']
             record['llbc_sha256'] = {}
             for name in irs:
                 ir = json.loads((project / name).read_text())
@@ -127,7 +126,7 @@ def run(output, prepare_only=False):
                     raise ValueError('wrong extraction target')
                 record['llbc_sha256'][name] = sha(project / name)
             generated = {}
-            for directory in ['verification/aeneas/foundations',
+            for directory in ['verification/aeneas/stage1-protocol/json-foundations',
                               'verification/aeneas/stage1-protocol/schema-result']:
                 for path in sorted((project / directory).rglob('*')):
                     if path.is_file():

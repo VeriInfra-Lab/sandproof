@@ -27,9 +27,8 @@ def inventory(root):
         raise ValueError('value support must not claim the full Create guard')
     parent = module('create_original_inventory', root / HERE.parent / 'formal.py')
     resume = module('create_resume_inventory', root / HERE.parent / 'resume-observation/formal.py')
-    actual = {p.stem for p in (root / PROOFS).glob('*.lean')}
-    if actual != set(parent.POSITIVE) | set(resume.INHERITED) | resume.NEW_PROOFS | NEW_PROOFS:
-        raise ValueError('unregistered or missing retained protocol proof')
+    source_inventory = module('unified_protocol_source_inventory', root / HERE.parent / 'source_inventory.py')
+    source_inventory.retained(root, set(parent.POSITIVE) | set(resume.INHERITED) | resume.NEW_PROOFS | NEW_PROOFS)
     if set(data['audits']) != NEW_PROOFS:
         raise ValueError('incomplete value proof audit inventory')
     audits = []

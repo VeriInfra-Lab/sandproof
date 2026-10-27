@@ -41,8 +41,9 @@ def inventory(root):
         renewal = module('registered_renewal_inventory', sibling)
         renewal.inventory(root)
         extra = renewal.NEW_PROOFS
-    actual = {p.stem for p in (root / PROOFS).glob('*.lean')}
-    if data.get('schema') != 1 or actual != set(parent.POSITIVE) | NEW_PROOFS | extra:
+    source_inventory = module('unified_protocol_source_inventory', root / HERE.parent / 'source_inventory.py')
+    actual = source_inventory.retained(root, set(parent.POSITIVE) | NEW_PROOFS | extra)
+    if data.get('schema') != 1:
         raise ValueError('unregistered or missing retained protocol proof')
     templates = {p.name.removesuffix('.lean.in') for p in (root / HERE).glob('*.lean.in')}
     if templates != {m['template'] for m in data['mutations'].values()}:

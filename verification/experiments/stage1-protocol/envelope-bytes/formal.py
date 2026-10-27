@@ -96,15 +96,7 @@ def run(output, prepare_only=False):
             if sha(destination) != expected:
                 raise ValueError('source changed while copying: ' + name)
         expected = dict(inputs)
-        for component in ['schema-leaves', 'envelope-schema', 'envelope-bytes']:
-            candidate = ROOT / HERE.parent / component
-            command(project, output, component + '-patch', ['patch', '-p1', '--fuzz=0', '--batch',
-                '--input=' + str(candidate / 'shared-candidate.patch')])
-            changes = json.loads((candidate / 'inventory.json').read_text())['candidate_sources']
-            for name, wanted in changes.items():
-                if sha(project / name) != wanted:
-                    raise ValueError('candidate diff differs: ' + name)
-                expected[name] = wanted
+        expected.update(base.view.install(project, 'envelope-bytes'))
         for component, stem in [('schema-leaves', 'RoleLeaves'), ('envelope-schema', 'EnvelopeSchema'),
                                 ('envelope-bytes', 'EnvelopeBytes')]:
             target = project / ('SandboxModel/Lifecycle/Protocol/' + stem + '.lean')

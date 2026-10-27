@@ -122,16 +122,13 @@ def run(output, variant, prepare_only=False):
             raise ValueError('prior exact private preparation failed/changed')
         project = output / 'preparation/source'
         expected = dict(inputs)
-        for part in ['schema-leaves', 'envelope-schema', 'envelope-bytes', 'envelope-budget']:
-            expected.update(json.loads((ROOT / HERE.parent / part / 'inventory.json').read_text())['candidate_sources'])
+        for name in prepared['prepared_changes']:
+            expected[name] = sha(project / name)
         for part, stem in [('schema-leaves','RoleLeaves'),('envelope-schema','EnvelopeSchema'),
                            ('envelope-bytes','EnvelopeBytes'),('envelope-budget','EnvelopeBudget')]:
             expected['SandboxModel/Lifecycle/Protocol/' + stem + '.lean'] = sha(project / HERE.parent / part / (stem+'.lean.in'))
-        command(project, output, 'writer-lake-patch', ['patch','-p1','--fuzz=0','--batch',
-            '--input=' + str(ROOT / HERE / 'shared-candidate.patch')])
-        expected['lakefile.toml'] = data['lake_candidate_sha256']
-        if sha(project / 'lakefile.toml') != expected['lakefile.toml']:
-            raise ValueError('incorrect active Lake view')
+        if sha(project / 'lakefile.toml') != sha(ROOT / HERE.parent / 'local-view.toml.in'):
+            raise ValueError('incorrect independent Lake view')
         target = 'EnvelopeWriter' if variant == 'correct' else 'EnvelopeWriterWrong'
         for stem in ['EnvelopeWriterContract', 'EnvelopeWriterWitnesses', target]:
             name = 'SandboxModel/Lifecycle/Protocol/' + stem + '.lean'

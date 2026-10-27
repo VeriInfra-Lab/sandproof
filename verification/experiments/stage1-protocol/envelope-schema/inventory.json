@@ -279,8 +279,8 @@
     "lakefile.toml": "19b74b43bcaf5191e4ffd93ed39e494dc703cb3defc09fbd4b5512779288610a",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
-    "sandbox-internal/src/lifecycle.rs": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
-    "sandbox-internal/src/server/lifecycle.rs": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261",
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0",
     "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
     "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
@@ -293,25 +293,27 @@
     "verification/experiments/stage1-protocol/envelope-schema/Cargo.toml": "4b142e10a18438c660ad24cd6ec184d88926a20661c7eef9376f9d81376c8839",
     "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
     "verification/experiments/stage1-protocol/envelope-schema/README.md": "10fccc9d736c851fd7d77daa8bbb20a71bd3aac0fd10da06fc4f45e6f1377d1a",
-    "verification/experiments/stage1-protocol/envelope-schema/formal.py": "131b47a4f7075f27ee4b7088c7cdce19b4d8398560eca8d6cc69ac4eb09095cc",
+    "verification/experiments/stage1-protocol/envelope-schema/formal.py": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be",
     "verification/experiments/stage1-protocol/envelope-schema/roots.rs.in": "c305d5b7e31da1177df460f9248b5eaf578533d57078b2c5ba4447897b5a8fa2",
     "verification/experiments/stage1-protocol/envelope-schema/shared-candidate.patch": "f30cf33f3506ec023614d8c63a6157ff78ed0df028d9e5b8f992ac9b707d8388",
     "verification/experiments/stage1-protocol/envelope-schema/test_formal.py": "fd40d051d86b68c8b798ffc6facba8b6273cce4c1c6f5f21a1a2158b081e4940",
     "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
-    "verification/experiments/stage1-protocol/formal.py": "cb577c5177197395891deb560dd8593ee308ed7af2856bb32e47836cac588b41",
+    "verification/experiments/stage1-protocol/formal.py": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e",
     "verification/experiments/stage1-protocol/frozen.json": "65ee11cce02f59126fdd2119f5c6de9e515593b87503504b8b1eeb78a4e0fb09",
-    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "0e6aa4bc9b62618b95b028569ffd49efb6d73c4cf127ff63c37db3bfdaf0bfe2",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/aeneas/stage1-protocol/request/translation.json": "e2de8019902a7ebb31032f162b2a938c2886479ac288b24fedace23dcf8b584c",
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request.lean": "85c9dffb144833059d5780f43dab050150c864579446ffa76a89d9edc327f96a",
     "verification/aeneas/stage1-protocol/request/original.llbc": "9af03959971ffb35ef0e25901e0b9557ed7c824b21aeab2082fc946b11297a1e",
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": "00fdd7431b3c304ea3d19ade4bc1d543433445260dd637d7f3ffe2f17dd9a8ba",
-    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": "8e166ea90a3b4bfe578239f6fa3804bb53f8ea1f7559fdfb9db306669bdbdf10"
-  },
-  "candidate_sources": {
-    "SandboxModel/Boundaries/JsonRequest/Encoding.lean": "14f1ed466d1ee650dcaf81c6d97360dbff81609e9fb01e2c6da6ebc15fb2093d"
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": "8e166ea90a3b4bfe578239f6fa3804bb53f8ea1f7559fdfb9db306669bdbdf10",
+    "verification/experiments/stage1-protocol/local_view.py": "6748dfa45b5732d9b7dad4ae2acb8be5fd51d32a286bb6a26f029c6ca966aabf",
+    "verification/experiments/stage1-protocol/local-view.toml.in": "a072cd134b9685c32b27b0f8b277140487e66bc5e87093edcf861c34235991f0",
+    "verification/experiments/stage1-protocol/schema-leaves/protocol_leaves.rs.in": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5",
+    "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
+    "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4"
   },
   "audits": [
     "SandboxModel.Stage1Protocol.EnvelopeSchema.unsigned_value_eq_iff",
@@ -349,5 +351,6 @@
     "templates": {
       "SandproofStage1Request/FunsExternal_Template.lean": "a2ffd483dfa0debcceb035c0f3416c34c2f14b94e514ca5a4bc0c091a89bff35"
     }
-  }
+  },
+  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed"
 }

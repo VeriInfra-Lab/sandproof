@@ -47,12 +47,13 @@ def component_files(project, names, profile, extra=()):
     seeds += [str(p.relative_to(project)) for p in sorted((project / LIBRARY / profile).rglob('*.lean'))
               if '_Template' not in p.name]
     seeds += list(extra)
-    return sorted(resolver.closure(project, seeds))
+    return sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
 
 
 def check_inventory(project, frozen):
-    actual = {p.stem for p in (project / PROOFS).glob('*.lean')}
-    if actual != set(POSITIVE) or frozen['positive_files'] != POSITIVE_BY_PROFILE:
+    inventory = load_module('unified_protocol_source_inventory', project / HERE / 'source_inventory.py')
+    inventory.retained(project, POSITIVE)
+    if frozen['positive_files'] != POSITIVE_BY_PROFILE:
         raise ValueError('unregistered or missing retained protocol proof file')
 
 

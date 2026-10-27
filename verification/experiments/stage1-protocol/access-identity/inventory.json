@@ -18,12 +18,14 @@
     "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
     "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
     "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
-    "sandbox-protocol/src/lifecycle/resume.rs": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
-    "sandbox-protocol/src/lifecycle/resume_tests.rs": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+    "sandbox-protocol/src/lifecycle/resume.rs": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad",
+    "sandbox-protocol/src/lifecycle/resume_tests.rs": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7",
     "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
     "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
     "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
-    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94"
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+    "verification/experiments/stage1-protocol/source_inventory.py": "d5832f164e376d622270164d66bdc06bed9766efdaa109fa6acf27a8844dbd26",
+    "verification/experiments/stage1-protocol/retained-protocol.json": "58575a5b113e8178b7d1e327068236ce2a1abf9cd7836aa753c0ad7c840fdde6"
   },
   "mutations": {
     "access-node-id-only": {

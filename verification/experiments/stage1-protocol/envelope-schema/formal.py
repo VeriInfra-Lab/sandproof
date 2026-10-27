@@ -99,13 +99,8 @@ def run(output, prepare_only=False):
             shutil.copy2(ROOT / name, target)
             if sha(target) != digest:
                 raise ValueError('source changed while copying: ' + name)
-        command(project, output, 'candidate-patch', ['patch', '-p1', '--fuzz=0', '--batch',
-            '--input=' + str(ROOT / HERE / 'shared-candidate.patch')])
         expected = dict(inputs)
-        for name, digest in data['candidate_sources'].items():
-            if sha(project / name) != digest:
-                raise ValueError('candidate patch differs: ' + name)
-            expected[name] = digest
+        expected.update(base.view.install(project, 'envelope-schema'))
         (project / PROOF).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / HERE / 'EnvelopeSchema.lean.in', project / PROOF)
         expected[PROOF] = sha(project / PROOF)
@@ -172,7 +167,7 @@ def run(output, prepare_only=False):
             command(project, output, 'build', ['lake', 'build', 'SandboxModel.Lifecycle.Protocol.EnvelopeSchema'])
             formal = module('envelope_actual_formal', ROOT / HERE.parent / 'formal.py')
             resolver = module('envelope_closure', ROOT / 'tools/proof_batch.py')
-            files = sorted(resolver.closure(project, [PROOF]))
+            files = sorted(resolver.closure(project, [PROOF], active_view='lakefile.toml'))
             actual = formal.actual_files(project, files, output, env, command)
             if not set(data['audits']).issubset(actual['audits']):
                 raise ValueError('missing representation dependency audits')

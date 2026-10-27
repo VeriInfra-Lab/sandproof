@@ -15,7 +15,7 @@
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
     "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
     "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
-    "controller-service/src/template_registry/evidence.rs": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+    "controller-service/src/template_registry/evidence.rs": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae",
     "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
     "verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in": "388c2fbfa292c4305da646b0cb1e18a6dd8328b55b0743dbc0e78bbf50cad2a8",
     "verification/experiments/stage1-protocol/envelope-budget/EnvelopeBudget.lean.in": "db488bba4334faceb41c75ca58e7ab89646b419836e6e8c6155952f2b291531d",

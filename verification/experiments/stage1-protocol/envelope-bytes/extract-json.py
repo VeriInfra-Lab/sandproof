@@ -7,6 +7,7 @@ except lane_current; no translated definition is edited or replaced.
 """
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import os
 import shlex
@@ -38,15 +39,21 @@ def selection(script):
         raise ValueError('unexpected original Charon destination')
     args[target] = '../../' + str(IR)
     roots = [args[i+1] for i, flag in enumerate(args) if flag == '--start-from']
-    if len([r for r in roots if r.startswith('crate::protocol_leaves::')]) != 7:
-        raise ValueError('all actual role roots are required')
+    if any(r.startswith('crate::protocol_leaves::') for r in roots):
+        raise ValueError('the public extraction script must stay unchanged')
+    roles = ['crate::protocol_leaves::' + role + '_decode' for role in (
+        'session', 'center', 'incarnation', 'capture', 'request_window',
+        'request_sequence', 'retention_window')]
+    insertion = args.index('--')
+    args[insertion:insertion] = [item for role in roles for item in ('--start-from', role)]
+    roots += roles
     return args[1:], roots
 
 
 def run():
     data = json.loads((ROOT / HERE / 'inventory.json').read_text())
     source = ROOT / 'scripts/regenerate-foundations-lean.sh'
-    if sha(source) != data['patched_foundation_script_sha256']:
+    if sha(source) != data['inputs']['scripts/regenerate-foundations-lean.sh']:
         raise ValueError('unreviewed original generation script')
     args, roots = selection(source.read_text())
     fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())
@@ -76,6 +83,12 @@ def run():
     for name in ['FunsExternal.lean', 'TypesExternal.lean', 'IdentifierLibrary.lean']:
         original = ROOT / 'verification/aeneas/foundations/SandproofFoundations' / name
         shutil.copy2(original, destination / 'SandproofFoundations' / name)
+    spec = importlib.util.spec_from_file_location('protocol_independent_view',
+        ROOT / HERE.parent / 'local_view.py')
+    view = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(view)
+    original = ROOT / 'verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean'
+    (destination / 'SandproofFoundations/FunsExternal.lean').write_text(view.role_provider(original))
     templates = list(destination.rglob('*_Template.lean'))
     archive = ROOT / 'artifacts/envelope-json-templates'
     archive.mkdir()

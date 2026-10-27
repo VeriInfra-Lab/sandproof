@@ -37,8 +37,9 @@ def module(name, path):
 def inventory(root):
     data = json.loads((root / HERE / 'inventory.json').read_text())
     parent = module('confirmation_inventory_parent', root / HERE.parent / 'formal.py')
-    actual = {p.stem for p in (root / PROOFS).glob('*.lean')}
-    if data.get('schema') != 1 or actual != set(parent.POSITIVE) | RETAINED | NEW_PROOFS:
+    source_inventory = module('unified_protocol_source_inventory', root / HERE.parent / 'source_inventory.py')
+    actual = source_inventory.retained(root, set(parent.POSITIVE) | RETAINED | NEW_PROOFS)
+    if data.get('schema') != 1:
         raise ValueError('unregistered or missing retained protocol proof')
     templates = {p.name.removesuffix('.lean.in') for p in (root / HERE).glob('*.lean.in')}
     if templates != {m['template'] for m in data['mutations'].values()}:
