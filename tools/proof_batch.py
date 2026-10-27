@@ -164,7 +164,7 @@ def native_dependencies(cache):
             commands[identity]=value
     # The full functional gate is mandatory admission for every batch, but a
     # Markdown-only change to that gate's inputs does not change a Lean module.
-    return dict(schema=seal.get('schema'),rules=seal.get('rules'),rust=seal.get('rust'),
+    return dict(schema=seal.get('schema'),scope=seal.get('scope'),rules=seal.get('rules'),rust=seal.get('rust'),
                 contracts=seal.get('contracts'),source_archives=seal.get('source_archives'),
                 runtime=seal.get('runtime'),commands=commands)
 

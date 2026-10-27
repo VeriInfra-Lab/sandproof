@@ -39,7 +39,8 @@ class ReceiptTests(unittest.TestCase):
         receipts.native_run('fixture',command,self.source,self.log,expected=expected)
         key=receipts.native_key('fixture',command,self.source)
         entry=self.cache/'commands'/receipts.digest(key)
-        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,complete=True,exit_code=0,
+        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,
+            scope='all',scope_complete=True,full_native_suite_complete=True,complete=True,exit_code=0,
             rules=receipts.rules(),runtime={'unit_test_fixture':True},
             contracts=receipts.contract_inputs(receipts.ROOT),source_archives=receipts.source_archive_inputs(),
             commands={entry.name:receipts.sha(entry/'receipt.json')}))
@@ -340,7 +341,7 @@ class ClosureTests(unittest.TestCase):
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
-                admit.assert_called_once_with(case, proof_native_suite.ROOT, None)
+                admit.assert_called_once_with(case, proof_native_suite.ROOT, None, scope='all')
 
     def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
         from tools.check_sqlite_extraction import audit_surface

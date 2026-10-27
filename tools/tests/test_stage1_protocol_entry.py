@@ -207,7 +207,7 @@ class CommittedArchiveTests(unittest.TestCase):
                                   side_effect=ValueError('missing native seal')) as validate, \
                 mock.patch.object(acceptance_receipts, 'native_case') as admit:
             result = component.run(self.base/'formal', False)
-        validate.assert_called_once_with(cache)
+        validate.assert_called_once_with(cache, scope='stage1-protocol')
         admit.assert_not_called()
         self.assertFalse(result['complete'])
         self.assertIn('missing native seal', result['error'])
@@ -243,7 +243,8 @@ class Stage1ReceiptReuseTests(unittest.TestCase):
                                          **{name: '' for name in acceptance_receipts.SOURCE_ARCHIVES}}):
             first = invoke('first-case')
             entry = cache/'commands'/acceptance_receipts.digest(first['key'])
-            seal = dict(schema=acceptance_receipts.NATIVE_SCHEMA, rules=first['key']['rules'],
+            seal = dict(schema=acceptance_receipts.NATIVE_SCHEMA, scope='all',
+                        scope_complete=True, full_native_suite_complete=True, rules=first['key']['rules'],
                         rust=first['key']['rust'], contracts=first['key']['contracts'],
                         source_archives=first['key']['source_archives'], runtime=runtime,
                         commands={entry.name: acceptance_receipts.sha(entry/'receipt.json')})
@@ -292,10 +293,22 @@ class Stage1ReceiptReuseTests(unittest.TestCase):
 
         def seal(functional, stage):
             commands = {}
-            for receipt in (functional, stage):
+            # The all-scope fixture can serve V3 only with every actual
+            # registered component receipt, never just a claimed case list.
+            components = [functional, stage]
+            for label in acceptance_receipts.stage1_native_labels():
+                if label in ('functional', 'stage1-protocol'):
+                    continue
+                out = self.base/('scope-fixture-'+label)
+                def action(out=out):
+                    out.mkdir()
+                    (out/'fixture.log').write_text('synthetic scope admission fixture\n')
+                components.append(acceptance_receipts.native_case(label, self.root, out, action))
+            for receipt in components:
                 entry = cache/'commands'/acceptance_receipts.digest(receipt['key'])
                 commands[entry.name] = acceptance_receipts.sha(entry/'receipt.json')
-            record = dict(schema=acceptance_receipts.NATIVE_SCHEMA, complete=True, exit_code=0,
+            record = dict(schema=acceptance_receipts.NATIVE_SCHEMA, scope='all',
+                scope_complete=True, full_native_suite_complete=True, complete=True, exit_code=0,
                 rules=stage['key']['rules'], rust=stage['key']['rust'], runtime=runtime,
                 contracts=stage['key']['contracts']['review'],
                 source_archives=stage['key']['source_archives'], commands=commands)

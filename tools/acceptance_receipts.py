@@ -5,8 +5,10 @@ Only an operator-controlled cache may be admitted. Source/command/tool changes,
 missing logs and interrupted executions never produce reusable success.
 """
 from contextlib import contextmanager
+from collections import Counter
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -19,6 +21,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
+NATIVE_SCOPES = ('all', 'stage1-protocol')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -151,9 +154,46 @@ def source_archive_inputs(environment=None):
     return result
 
 
-def current_native_seal(seal, runtime):
+def check_native_scope(scope):
+    if scope not in NATIVE_SCOPES:
+        raise ValueError('unknown native acceptance scope: ' + str(scope))
+
+
+def stage1_native_labels():
+    """The retained component and every registered original V3 case."""
+    spec = importlib.util.spec_from_file_location('native_scope_registration',
+        ROOT/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    labels = tuple(registered.native_labels())
+    if len(labels) != 28 or len(set(labels)) != 28:
+        raise ValueError('stage1 native scope requires the exact 28 registered cases')
+    result = ('functional', 'stage1-protocol', *labels)
+    if len(set(result)) != 30:
+        raise ValueError('stage1 native scope has duplicate component labels')
+    return result
+
+
+def check_native_components(keys, *, scope='all', allow_additional=False):
+    check_native_scope(scope)
+    if scope == 'all':
+        return
+    expected = set(stage1_native_labels())
+    labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
+    counts = Counter(labels)
+    if (not expected <= counts.keys() or any(counts[label] != 1 for label in expected)
+            or (not allow_additional and set(counts) != expected)):
+        raise ValueError('stage1 native scope requires exactly its 30 complete components')
+
+
+def current_native_seal(seal, runtime, *, scope='all'):
+    check_native_scope(scope)
+    actual_scope = seal.get('scope')
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
+            and actual_scope in ('all', scope)
+            and seal.get('scope_complete') is True
+            and seal.get('full_native_suite_complete') is (actual_scope == 'all')
             and seal.get('rules') == rules() and seal.get('runtime') == runtime
             and seal.get('contracts') == contract_inputs(ROOT)
             and seal.get('source_archives') == source_archive_inputs())
@@ -215,12 +255,14 @@ def load_success(directory, key):
         return None
 
 
-def validate_native(cache):
+def validate_native(cache, *, scope='all'):
+    check_native_scope(scope)
     cache = Path(cache)
     seal = json.loads((cache/'complete.json').read_text())
-    if (not current_native_seal(seal,json.loads((cache/'runtime.json').read_text()))
+    if (not current_native_seal(seal,json.loads((cache/'runtime.json').read_text()),scope=scope)
             or not seal.get('commands')):
         raise ValueError('native suite is missing, incomplete or has changed rules/tools')
+    keys = []
     for identity, expected in seal['commands'].items():
         if len(identity)!=64 or set(identity)-set('0123456789abcdef'):
             raise ValueError('invalid native entry identity')
@@ -230,6 +272,8 @@ def validate_native(cache):
         receipt=json.loads((entry/'receipt.json').read_text())
         if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
+        keys.append(receipt['key'])
+    check_native_components(keys, scope=scope, allow_additional=seal['scope']=='all')
     return seal
 
 
@@ -309,8 +353,11 @@ def native_run(label, command, source, log, environment=None, expected=0):
     return code
 
 
-def native_case(label, source, output, action=None):
+def native_case(label, source, output, action=None, *, scope='all'):
     """Keep a component's existing fresh-binary and assertion checks together."""
+    check_native_scope(scope)
+    if scope == 'stage1-protocol' and label not in stage1_native_labels():
+        raise ValueError('component is outside requested native scope: ' + label)
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
     key = native_key(label, ['component-case'], Path(source).resolve())
     entry = cache / 'commands' / digest(key)
@@ -320,12 +367,13 @@ def native_case(label, source, output, action=None):
                 or not archive.parent.resolve().is_relative_to(entry.resolve())):
             raise ValueError('stage1 cached source.tar must be inside its regular evidence directory')
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
-        seal = json.loads((cache / 'complete.json').read_text())
+        seal = (validate_native(cache, scope=scope) if scope != 'all'
+                else json.loads((cache / 'complete.json').read_text()))
         receipt = load_success(entry, key)
         if (label == 'stage1-protocol' and receipt is not None
                 and 'evidence/source.tar' not in receipt['files']):
             receipt = None
-        if (not current_native_seal(seal,key['runtime']) or receipt is None
+        if (not current_native_seal(seal,key['runtime'],scope=scope) or receipt is None
                 or seal['commands'].get(entry.name) != sha(entry / 'receipt.json')):
             raise ValueError('missing/incomplete/changed native component: ' + label)
         return receipt
