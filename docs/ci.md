@@ -104,7 +104,7 @@ python3 -B -m tools.ci_retention --root /var/lib/sandproof-retention/$(id -un) r
 
 ### 中心与宿主拆分的 CI 扩展
 
-[#292](https://github.com/ningZhang-cs/sandproof/issues/292) 使用同仓库、两套独立服务产物。普通 PR 四项检查及 test/main 后的 Rust 检查节奏保持；此扩展不增设 root runner，也不要求每 PR 真题或完整 Lean 证明。
+[#292](https://github.com/VeriInfra-Lab/sandproof/issues/292) 使用同仓库、两套独立服务产物。普通 PR 四项检查及 test/main 后的 Rust 检查节奏保持；此扩展不增设 root runner，也不要求每 PR 真题或完整 Lean 证明。
 
 | 环境 | 待增加的工作 | 权限与通过依据 |
 |---|---|---|
