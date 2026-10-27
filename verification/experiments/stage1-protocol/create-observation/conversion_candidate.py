@@ -205,7 +205,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--packages', required=True, type=Path)
-    parser.add_argument('--result-tag-source', required=True, type=Path)
+    parser.add_argument('--result-tag-source', type=Path,
+        default=ROOT / PROOFS / 'RenewalResultTag.lean')
     args = parser.parse_args()
     os.umask(0o077)
     result = run(args.output.absolute(), args.packages.absolute(), args.result_tag_source.absolute())

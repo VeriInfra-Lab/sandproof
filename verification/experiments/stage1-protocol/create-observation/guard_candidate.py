@@ -237,8 +237,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--packages', required=True, type=Path)
-    parser.add_argument('--result-tag-source', required=True, type=Path)
-    parser.add_argument('--result-bindings-source', required=True, type=Path)
+    parser.add_argument('--result-tag-source', type=Path,
+        default=ROOT / PROOFS / 'RenewalResultTag.lean')
+    parser.add_argument('--result-bindings-source', type=Path,
+        default=ROOT / PROOFS / 'RenewalResultBindings.lean')
     parser.add_argument('--case', choices=['all', *CASES], default='all')
     args = parser.parse_args()
     os.umask(0o077)

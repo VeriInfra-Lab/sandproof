@@ -20,16 +20,15 @@ Version、retention slot 等普通整数并不因此变成非零计数器；后�
 
 ## 共享候选与固定工具
 
-`shared-candidate.patch` 只在私有副本应用，供 V0/主控审查。它登记七根及薄 Rust 根、
+`shared-candidate.patch` 保留为历史来源，当前驱动不再应用。独立视图登记七根及薄 Rust 根、
 独立 Result 生成库和指向其真实生成函数的别名。固定后端没有可用 Result::map 入口；
 直接在原 V0 生成该标准函数又会被已有 Result::ok 的名字遮蔽。因此 `extract-map.sh`
 用同一固定 Charon/Aeneas 独立抽取原标准函数体，再让包装的既有调用名引用它。
 没有手写 Result::map 算法、导入外部模板公理、修改工具或删改生成函数体。
 
-标准 derive 产生的 21 个生成声明带 `__`，会触发 mathlib 的名称风格提示。
-Lake 候选只对 SandproofFoundations 生成库配置 `weak.linter.style.nameCheck=false`；
-保留生成名称与正文，内核、全部业务警告/错误、完整性及依赖审计仍由原严格服务拒绝。
-该配置属于待主控审查的公共候选，不是修改全项目或检查器的准入标准。
+历史候选曾因标准 derive 的生成名称配置名称风格豁免。当前独立
+`local-view.toml.in` 不包含该豁免，不改生成名称或正文，也不放宽原严格服务的警告、
+错误与依赖拒绝。如果固定工具的原产物仍触发风格诊断，必须保留为未通过的阻断。
 
 V0 候选尚未公共接纳。使用已有逐符号字符串、counter、Serde 默认 visitor、错误格式化、
 FnOnce 与效果合同；固定 preset 的 Drop 擦除条件继续适用。泛型 D/E 及实际 SliceRead
@@ -46,7 +45,7 @@ FnOnce 与效果合同；固定 preset 的 Drop 擦除条件继续适用。泛�
 python3 verification/experiments/stage1-protocol/schema-leaves/formal.py --output /private/role-formal
 ```
 
-驱动复制完整候选输入，应用精确 diff，重新生成七根及 Result 根，使用独立 Rust target
+驱动复制当前完整输入，安装独立视图及透明根，重新生成七根及 Result 根，使用独立 Rust target
 和 `.lake/build`，构建后由原 strict 物理文件服务检查全部生成文件、证明导入闭包和准确
 审计。`complete=true` 仅表示本候选局部形式检查，不是公共接纳或完整验收。
 

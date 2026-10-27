@@ -36,8 +36,9 @@ A6/B4 范围；OOM/abort、任意有状态 Serialize、异步取消及真实 HTT
 结果和 unwind；完整 LLBC 另外按原规则冻结，不删去不利字段。实际 client/server
 位置作为来源输入保留；这里不证明外层路由、handler 或持久收件。
 
-`prepare.py` 只在复制的源码内复用历史已审查的 Buffer/response 拆分，并增加静态
-`BoundedSerialize<W,T>` 薄接缝。实际实例仍是原 `serde_json::to_writer(writer,value)`。
+`prepare.py` 直接读取当前已经采用的 Buffer/response 与静态
+`BoundedSerialize<W,T>` 拆分，不重写正确版。实际实例仍是原
+`serde_json::to_writer(writer,value)`；错误版仅在私有副本丢弃唯一的序列化结果。
 初次 FnOnce 翻译漏掉可变借用返回值，带关联 Buffer 界的 trait 又触发固定 Aeneas
 参数类型限制；失败源码、LLBC、生成物和日志留在 artifacts，均不计为性质反例。
 通用 W 接口通过原固定工具，不修改工具或生成体。
@@ -50,8 +51,9 @@ foundations 的透明完整枚举；原/共享 LLBC 的全部变体、字段、d
 ## 复现与验收交接
 
 原工具版本、独立 `.lake/build`、独立 Cargo target 和共享重锁按工作流配置。
-主控先协调采用父切片的公共候选，再审查本包 `shared-candidate.patch`；本包检查器
-只在私有源码应用这些候选。`public-registration-candidate.patch` 接续父包的登记候选，
+公共接线由主控协调。历史 `shared-candidate.patch` 不再执行；当前检查器在私有副本
+安装包内 `local-view.toml.in`，原公共 V0 目录、提供者和生成脚本不改。
+`public-registration-candidate.patch` 保留为登记来源，
 为原 `verify-stage1-protocol.sh` 增加正/反版并要求对应 ning 回执，公共文件未直接改写。
 覆盖记录也只提供 `coverage-candidate.patch`，不能用局部结果刷新根级旧冻结。
 

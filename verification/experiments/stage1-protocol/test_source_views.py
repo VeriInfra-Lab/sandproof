@@ -16,6 +16,10 @@ def load(name):
 
 
 view, inventory = load('local_view'), load('source_inventory')
+spec = importlib.util.spec_from_file_location('protocol_json_extract',
+    HERE / 'envelope-bytes/extract-json.py')
+json_extract = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(json_extract)
 
 
 class PrivateView(unittest.TestCase):
@@ -104,6 +108,24 @@ class RetainedInventory(unittest.TestCase):
             (directory / 'Extra.lean').write_text('-- extra\n')
             with self.assertRaisesRegex(ValueError, 'unregistered or missing'):
                 inventory.retained(root, ['One'])
+
+
+class ExtractionSelection(unittest.TestCase):
+    def test_only_lane_is_omitted_and_roles_precede_the_cargo_delimiter(self):
+        script = (HERE.parents[2] / 'scripts/regenerate-foundations-lean.sh').read_text()
+        original = script
+        args, roots = json_extract.selection(script)
+        delimiter = args.index('--')
+        role_roots = [r for r in roots if r.startswith('crate::protocol_leaves::')]
+        self.assertEqual(len(role_roots), 7)
+        self.assertEqual(len(set(role_roots)), 7)
+        self.assertNotIn('crate::lane_current', roots)
+        for root in role_roots:
+            self.assertLess(args.index(root), delimiter)
+        self.assertEqual(script, original)
+        with self.assertRaisesRegex(ValueError, 'public extraction script'):
+            json_extract.selection(script.replace('--start-from crate::lane_current',
+                '--start-from crate::protocol_leaves::session_decode --start-from crate::lane_current'))
 
 
 if __name__ == '__main__':

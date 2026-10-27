@@ -1,17 +1,17 @@
-# V3 真实封套字节入口的隔离候选
+# V3 真实封套字节入口
 
 [V3 义务](../../../../docs/formal/03-protocol-inbox.md) · [工作流](../../../../docs/proof-workflow.md) · [上级组件](../README.md)
 
-本目录固定 #686 的 `39577ca1e61f4daa4ba4bbda7db94bf087bdaef0`，不跟随工程分支。
-真实 `server/lifecycle.rs::respond` 在有限 body 收集后直接解析 `AcceptedLifecycleIntent`，
-随后调用原 `validate(context)`。它没有调用 `lifecycle.rs` 中独立的 request/manifest codec。
+本目录使用当前源码中的唯一 `decode_accepted_with`。真实
+`server/lifecycle.rs::respond` 在有限 body 收集后调用该核心，并传入原
+`serde_json::from_slice` 和原 context。它没有调用独立的 request/manifest codec。
 这些独立函数的抽取根保留在本 crate；不能用其结果宣称真实 HTTP 收件接线已证。
 
 固定 Charon 能捕获原 codec，完整 Aeneas 翻译遇到 Serde 递归 trait、visitor 和部分移动障碍。
-`accepted/production-candidate.patch` 是供主控审查的两文件生产候选：只把实际路由的
-解析后守卫顺序移入同步回调核心，路由仍提供原 `serde_json::from_slice`、原 bytes/context，
-并保持解析拒绝为 400、封套拒绝为 409。原有限读体、后续 handler、完整 recorded 匹配和响应
-保持原位置。生产工作树不应用此补丁；驱动只修改独立源码副本。
+`accepted/production-candidate.patch` 保留为已采用拆分的历史来源，驱动不再应用它。
+当前生产路由保持解析拒绝为 400、封套拒绝为 409；有限读体、后续 handler、完整
+recorded 匹配和响应仍按真实调用核对。正确版读取当前生产体，错误版只在私有副本
+移除唯一守卫；不能把旧候选的结果自动认作当前实现已经通过。
 
 ## 候选对应合同
 
