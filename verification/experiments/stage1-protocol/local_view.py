@@ -2,7 +2,8 @@
 
 All business functions remain the copied current Rust. The extra Rust module
 contains only transparent extraction roots. The active Lake view is independent
-of the public V0 view, with the same tool/dependency revision and lint settings.
+of the public V0 view, with the same tool/dependency revision. Its generated
+Foundations library retains the narrow original Rust-name style setting.
 """
 from pathlib import Path
 import hashlib

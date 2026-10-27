@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -45,7 +46,7 @@ class PrivateView(unittest.TestCase):
             target.write_text(text)
         return files
 
-    def test_private_view_preserves_public_provider_generator_and_lints(self):
+    def test_private_view_preserves_providers_and_limits_generated_name_style_setting(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             before = self.prepare(root)
@@ -55,7 +56,15 @@ class PrivateView(unittest.TestCase):
                     self.assertEqual((root / name).read_text(), before[name])
             self.assertEqual((root / 'lakefile.toml').read_bytes(),
                              (HERE / 'local-view.toml.in').read_bytes())
-            self.assertNotIn('linter', (root / 'lakefile.toml').read_text())
+            config = tomllib.loads((root / 'lakefile.toml').read_text())
+            self.assertNotIn('leanOptions', config)
+            configured = {lib['name']: lib['leanOptions'] for lib in config['lean_lib']
+                          if 'leanOptions' in lib}
+            self.assertEqual(configured, {'SandproofFoundations':
+                {'weak': {'linter': {'style': {'nameCheck': False}}}}})
+            generated, = [lib for lib in config['lean_lib'] if lib['name'] == 'SandproofFoundations']
+            self.assertEqual(generated['srcDir'],
+                             'verification/aeneas/stage1-protocol/json-foundations')
             self.assertNotIn('tools/proof_batch.py', changed)
             self.assertIn('  | signed (value : Int)', (root / view.ENCODING).read_text())
             self.assertIn('  | boolean (value : Bool)', (root / view.ENCODING).read_text())

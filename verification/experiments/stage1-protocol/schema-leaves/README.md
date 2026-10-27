@@ -26,9 +26,11 @@ Version、retention slot 等普通整数并不因此变成非零计数器；后�
 用同一固定 Charon/Aeneas 独立抽取原标准函数体，再让包装的既有调用名引用它。
 没有手写 Result::map 算法、导入外部模板公理、修改工具或删改生成函数体。
 
-历史候选曾因标准 derive 的生成名称配置名称风格豁免。当前独立
-`local-view.toml.in` 不包含该豁免，不改生成名称或正文，也不放宽原严格服务的警告、
-错误与依赖拒绝。如果固定工具的原产物仍触发风格诊断，必须保留为未通过的阻断。
+固定工具将 Rust 匿名实现生成成含 `__1`、`__3` 的声明名，会触发 Mathlib 的命名风格
+检查。独立 `local-view.toml.in` 沿用原候选的库内设置，仅对本视图的
+`SandproofFoundations` 生成库关闭 `linter.style.nameCheck`；公共 V0 配置、其它库和
+`SandboxModel` 证明库的设置不变。原生成名称和正文逐字保留，所有物理文件仍执行内核与服务检查；
+任何剩余 warning/error、不完整诊断及依赖审计不符仍按原规则拒绝。
 
 V0 候选尚未公共接纳。使用已有逐符号字符串、counter、Serde 默认 visitor、错误格式化、
 FnOnce 与效果合同；固定 preset 的 Drop 擦除条件继续适用。泛型 D/E 及实际 SliceRead

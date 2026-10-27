@@ -28,8 +28,8 @@
     "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
     "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
     "verification/experiments/stage1-protocol/schema-leaves/shared-candidate.patch": "e5d35ec768f9a133c0948a75de3cff05911fabae1256d9deb13ed8f57e780879",
-    "verification/experiments/stage1-protocol/local_view.py": "6748dfa45b5732d9b7dad4ae2acb8be5fd51d32a286bb6a26f029c6ca966aabf",
-    "verification/experiments/stage1-protocol/local-view.toml.in": "a072cd134b9685c32b27b0f8b277140487e66bc5e87093edcf861c34235991f0",
+    "verification/experiments/stage1-protocol/local_view.py": "95a41883b5d545de373bdfab2f9c013a37fc5178324cb841c33016254d480d03",
+    "verification/experiments/stage1-protocol/local-view.toml.in": "f38d6b65feaaaa8d64bcfffb4bf962790045f0ee162663b4dddf2deddebc67f2",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf"
   },
   "audits": [

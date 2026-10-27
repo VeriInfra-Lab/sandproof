@@ -8,6 +8,9 @@ name = "SandboxModel"
 [[lean_lib]]
 name = "SandproofFoundations"
 srcDir = "verification/aeneas/stage1-protocol/json-foundations"
+# Original Rust anonymous implementation names contain __1/__3. Keep the
+# generator's names intact; only this generated library's naming style is exempt.
+leanOptions = { weak.linter.style.nameCheck = false }
 
 [[lean_lib]]
 name = "SandproofProtocolResult"
