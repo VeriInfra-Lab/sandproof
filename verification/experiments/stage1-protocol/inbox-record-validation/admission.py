@@ -5,9 +5,14 @@ import json
 HERE = Path(__file__).resolve().parent
 PROTOCOL_ROOTS = ['crate::'+n for n in ('request_validate','replay_matches','accepted_validate',
     'recorded_matches','terminal_matches','renewal_valid','renewal_matches','renewal_confirmed_matches')]
-ROOTS = PROTOCOL_ROOTS + ['sandproof_controller_service::controller::lifecycle_inbox::model::proof_inbox_validate_using',
+BASE_ROOTS = PROTOCOL_ROOTS + ['sandproof_controller_service::controller::lifecycle_inbox::model::proof_inbox_validate_using',
     'sandproof_controller_service::controller::lifecycle_inbox::codec::proof_inbox_save_using',
     'sandproof_controller_service::controller::lifecycle_inbox::model::proof_record']
+ROOTS = BASE_ROOTS + [
+    'sandproof_controller_service::controller::lifecycle_inbox::codec::proof_inbox_load_using',
+    'sandproof_controller_service::controller::lifecycle_inbox::model::proof_authenticated',
+    'sandproof_controller_service::controller::lifecycle_inbox::model::proof_state',
+]
 PRIMITIVE_ROOTS = ['sandproof_controller_service::capture::proof_standard_graphic_bytes',
     'sandproof_controller_service::capture::proof_result_is_error']
 COMMON_INCLUDE = ['sandproof_protocol','sandbox_controller_core','sandproof_controller_service',
@@ -18,11 +23,15 @@ PRIMITIVE_INCLUDE = COMMON_INCLUDE + ['core::result::*::is_err']
 OPAQUE = ['rusqlite::error::Error']
 
 
-def admit_ir(raw, opaque=OPAQUE, primitive=False):
+def roots(variant):
+    return ROOTS if variant == 'correct' else BASE_ROOTS
+
+
+def admit_ir(raw, opaque=OPAQUE, primitive=False, variant='correct'):
     if raw.get('has_errors') is not False:
         raise ValueError('incomplete Charon extraction')
     translated = raw['translated']; options = translated['options']
-    if (options['start_from'] != (PRIMITIVE_ROOTS if primitive else ROOTS)
+    if (options['start_from'] != (PRIMITIVE_ROOTS if primitive else roots(variant))
             or options['include'] != (PRIMITIVE_INCLUDE if primitive else INCLUDE)
             or opaque != OPAQUE or options['opaque'] != OPAQUE or options['exclude']
             or options['skip_borrowck'] or options['no_typecheck'] or options['monomorphize']):
@@ -54,12 +63,22 @@ def admit_ir(raw, opaque=OPAQUE, primitive=False):
     if primitive:
         return [single_call('proof_standard_graphic_bytes','all_graphic',['sandproof_controller_service','capture']),
                 single_call('proof_result_is_error','is_err',['core','result'])]
-    return [single_call('proof_inbox_validate_using','validate_using',
+    links = [single_call('proof_inbox_validate_using','validate_using',
         ['sandproof_controller_service','controller','lifecycle_inbox','model']),
         single_call('proof_inbox_save_using','save_using',
         ['sandproof_controller_service','controller','lifecycle_inbox','codec']),
         single_call('proof_record','record',
         ['sandproof_controller_service','controller','lifecycle_inbox','model'])]
+    if variant == 'correct':
+        links += [
+            single_call('proof_inbox_load_using', 'load_using',
+                ['sandproof_controller_service', 'controller', 'lifecycle_inbox', 'codec']),
+            single_call('proof_authenticated', 'authenticated',
+                ['sandproof_controller_service', 'controller', 'lifecycle_inbox']),
+            single_call('proof_state', 'state',
+                ['sandproof_controller_service', 'controller', 'lifecycle_inbox', 'model']),
+        ]
+    return links
 
 
 def admit_generated(directory, variant='correct'):

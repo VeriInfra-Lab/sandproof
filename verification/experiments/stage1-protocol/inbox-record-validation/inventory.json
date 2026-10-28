@@ -442,82 +442,82 @@
   },
   "providers": {
     "Accepted": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/Accepted.lean",
       "installed_sha256": "a8dcb590fb3fbf54a2fe5d39a801abf35308ec0b96b38cf45a228537271c100b"
     },
     "ComposedConfigHost": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigHost.lean.in",
       "installed_sha256": "7618567baa22841d57312782c5e21f3241f9c9beb93f160d333fa63893cd1a50"
     },
     "ComposedConfigLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigLibrary.lean.in",
       "installed_sha256": "798cafe9eccc1637b2a14810886e29767d971f5e80aa536c23f26c31375722ed"
     },
     "ComposedConfigProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigProofs.lean.in",
       "installed_sha256": "478aff811f1389d25a439ad4c89fdc44bb95368d52126ea6f0afc03fe3b15f19"
     },
     "ConfigBudgetModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetModel.lean.in",
       "installed_sha256": "3ff225e93c79269c769e63f5eaa1a4eec18a98e11ba5f27200166c151d20cdfb"
     },
     "ConfigBudgetProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetProofs.lean.in",
       "installed_sha256": "e261cbc21354f68a1411f9036dc6674ca5db75eba5dd616852ff786938f74b43"
     },
     "ConfigBudgetValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetValues.lean.in",
       "installed_sha256": "4097987bdb450ca2ed76d8f153730b70dd9076aaf99cbcebf90f8bcf602c0182"
     },
     "ConfigValidationModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationModel.lean.in",
       "installed_sha256": "443c875f93d2946bc636f61f90673822f19c06f8b323b33d03726102096603b7"
     },
     "ConfigValidationValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationValues.lean.in",
       "installed_sha256": "5e2a96defb363ea31b6e3c17181614ff24af85fbcb5ca7a1cbd61cc2505e103c"
     },
     "EnvelopeValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
       "installed_sha256": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e"
     },
     "GraphicProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/GraphicProofs.lean.in",
       "installed_sha256": "a598a86c0f625aa6651ae41ff513842a94727a178f076848559d8c5fa5aa2a5d"
     },
     "InboxAppendArithmetic": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxAppendArithmetic.lean.in",
       "installed_sha256": "31c33fcc1c61e0e9f944f29f9aec51a8e7d7afabc3c3438448d147169887c67a"
     },
     "InboxCompositionBoundaryValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionBoundaryValues.lean.in",
       "installed_sha256": "7828ca45b59c0c299352af33f636954cc2c8c5f0ece2852e5a86e4e9a7b2d33c"
     },
     "InboxCompositionModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionModel.lean.in",
       "installed_sha256": "63c3fe4b4de4a8e6afa47e2cee7cdc41b7707ca2497a5ff5751f04896e1d26fb"
     },
     "InboxCompositionProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionProofs.lean.in",
       "installed_sha256": "4bb33dee098e0e8c8b10848f1dec0ab6f30fd0cfa3bc195694a00ad6d7ca63d5"
     },
     "InboxCompositionValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionValues.lean.in",
       "installed_sha256": "d0d0d93a4bde6c403065aa45e833c1551bd33b90aad6b5e7859c1321a8a53f0d"
     },
@@ -527,377 +527,377 @@
       "installed_sha256": "27bf8987ce513c573eaf37ed157f1507e677b10dea62b9f83adfe1c7baef13a3"
     },
     "InboxCounterRepresentation": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterRepresentation.lean.in",
       "installed_sha256": "7502aa9c11ef741a59e17158c48c1577b833af91954383b42952eb5bc6d93fbd"
     },
     "InboxCounterStep": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterStep.lean.in",
       "installed_sha256": "8487922009630d9bf58c9484f6fd651ffb84fb3f04714ce2898f8f042ab4baed"
     },
     "InboxEntryArithmetic": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryArithmetic.lean.in",
       "installed_sha256": "3b3052e43355d0f7a48f25c73b32a18de565836c9002b86d4a06e3d71fdc8ba3"
     },
     "InboxEntryCount": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCount.lean.in",
       "installed_sha256": "e5c6fc2296bff070247dce42df78a6836a7e1af107904a4a200cae8bde77b054"
     },
     "InboxEntryCountModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCountModel.lean.in",
       "installed_sha256": "b576284071879f631c0f66f21b4ba3a729faa002005f912aa7bbb0ebf6cfcdc1"
     },
     "InboxEntryLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryLibrary.lean.in",
       "installed_sha256": "4a007ba99d0bd741d5c1ec55627006476c8e52c681234a7b4801ca22a417e9f7"
     },
     "InboxEntryModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryModel.lean.in",
       "installed_sha256": "d5fd8e54910d609cbc0f4be76b7e4ab33bb03644801f1206e463f56f02923c45"
     },
     "InboxEntryOrderLoop": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderLoop.lean.in",
       "installed_sha256": "605f0372de78eeea15cb7f4241275dc523d0b709b8f09de5f54c0da35873a8ee"
     },
     "InboxEntryOrderProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderProofs.lean.in",
       "installed_sha256": "6f1f550d987359180c8753ff5b7dbc7507456edf1655f668bbc16aa2dde117ca"
     },
     "InboxEntryOrderStep": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderStep.lean.in",
       "installed_sha256": "76d7b0727a54c3b1c317ff9621f4c85f083d512a23a93e33aebfdafb5fa4f152"
     },
     "InboxEntryProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryProofs.lean.in",
       "installed_sha256": "033d802e87b476a873065a2802e175338bf4a31dacf30adbdb3ce58733004944"
     },
     "InboxHost": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxHost.lean.in",
       "installed_sha256": "770c32e5d8a65be74a23c84d9b52e1a3ceb592785ccd0cc5502b9f2418cc8318"
     },
     "InboxLanesScan": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxLanesScan.lean.in",
       "installed_sha256": "db81f157aafa578013dc7fb4936c3519d9dd8baaa5879bf45997af45fce55d7d"
     },
     "InboxLineage": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineage.lean.in",
       "installed_sha256": "cc9a8a9579f614f460a51e13600c06f27f4313a75b4e7e28c6829d2465170b8d"
     },
     "InboxLineageLoop": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageLoop.lean.in",
       "installed_sha256": "d864daafa68b30dc2bbbccc6190c4495ec1bfeaba95fa569d77f342e68a4f387"
     },
     "InboxLineageModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageModel.lean.in",
       "installed_sha256": "1719ab7b6eb5e53d00cec69961ce736dfcd7b729a48bea9f9d9fb7beaffa90cb"
     },
     "InboxLineageStep": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageStep.lean.in",
       "installed_sha256": "9206544e55569be6f9d65444f6db573cc6860bc2034e5c59c39190831029a115"
     },
     "InboxLineageSupport": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageSupport.lean.in",
       "installed_sha256": "53bc310cf60d96d9cf51446f01fe94c0c3d05816607d2416ac899cae7f7562f4"
     },
     "InboxOwnerQueries": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxOwnerQueries.lean.in",
       "installed_sha256": "dec64df4c241327ec97a6d4753de8319626c4c4b4e5eb04170f456123f43beaf"
     },
     "InboxOwnerWitnesses": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxOwnerWitnesses.lean.in",
       "installed_sha256": "0a2a18be65d8c43deb70b5e69181a02016c209d1ff879cdae3e95ef0b031e821"
     },
     "InboxOwners": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxOwners.lean.in",
       "installed_sha256": "c3c97d5d79cce057b537fdc75f098ceb5e94f421676e8dc228510d3ff886b508"
     },
     "InboxRenewalCheckpoint": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalCheckpoint.lean.in",
       "installed_sha256": "f092b56116347865905291eefd0a4a41bc36130da30894e3ac07eda7473c9c92"
     },
     "InboxRenewalClassifier": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalClassifier.lean.in",
       "installed_sha256": "48cd214595d37d07ae8aab0bb099c8327aec2f0c6acb8e059749732fa4f052ea"
     },
     "InboxRenewalComposition": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalComposition.lean.in",
       "installed_sha256": "f2cf27024cc33df320d26b30e129eda2f3cbfe867c6f1f81048181937a435804"
     },
     "InboxRenewalContains": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalContains.lean.in",
       "installed_sha256": "74a93d08394a0ccf67668b1801ef502af70923dae6c3e70ce904f810598960bf"
     },
     "InboxRenewalModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalModel.lean.in",
       "installed_sha256": "d9cc165aeae48d5260d7d0786cabd858a3e4ddcfce2aac044e026114f76b5c4c"
     },
     "InboxRenewalReduction": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalReduction.lean.in",
       "installed_sha256": "cc28b52d4bfed1268ddacc80d10918fa4473310ddef4351dd5ffb6693aab7d5e"
     },
     "InboxRenewalUnapplied": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalUnapplied.lean.in",
       "installed_sha256": "0d2cbe4751b038f7264b03bb1f6724a1288ae62550d753fff627d6d40ebcbce8"
     },
     "InboxRetained": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retained/InboxRetained.lean.in",
       "installed_sha256": "0ce0b45c66195290ef338f039fc735c07b1645353404620d5cd8516de2dc7787"
     },
     "InboxRetainedModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retained/InboxRetainedModel.lean.in",
       "installed_sha256": "1e25e2161187534313d1d23042163220609d8c76e01065f225f23862970a8f2b"
     },
     "InboxRetiredModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredModel.lean.in",
       "installed_sha256": "9e4fe9686de63e8a1acae6b93fb06e96216a6bfc9f84b427e39ed95c51d81134"
     },
     "InboxRetiredProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredProofs.lean.in",
       "installed_sha256": "64aaaca51306856c2947b1a5daf70738e96576d808232a74924135bc8bcb535a"
     },
     "InboxRetiredScans": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredScans.lean.in",
       "installed_sha256": "a515f9d7e3c4ddcdcdf8e70da55afd49908171e7f0ec67af9f5cea47f9bea362"
     },
     "InboxRetiredSupport": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredSupport.lean.in",
       "installed_sha256": "eda8295444b08cacacc4652d06349b6b2213b2a6538c28aa80005bfc352da66e"
     },
     "InboxSessionComposition": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionComposition.lean.in",
       "installed_sha256": "1e8685879f366d10489b379599269407eafc63e3ee8484d611c92b7b1f54ad4e"
     },
     "InboxSessionsScan": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionsScan.lean.in",
       "installed_sha256": "0aaad1d160b3460f3aa0736bb430f008e1cff5dfa0e169f2270c71531c169e91"
     },
     "InboxSummaryQueries": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/InboxSummaryQueries.lean.in",
       "installed_sha256": "b9c5e951949a226447880a66daf7c4a97b37f4fa46432a94a3c7893425db37ed"
     },
     "LaneLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/retention-lane/LaneLibrary.lean.in",
       "installed_sha256": "178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1"
     },
     "LaneModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/retention-lane/LaneModel.lean.in",
       "installed_sha256": "b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d"
     },
     "LaneProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/retention-lane/LaneProofs.lean.in",
       "installed_sha256": "3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343"
     },
     "Library": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/Library.lean",
       "installed_sha256": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c"
     },
     "Model": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/Model.lean",
       "installed_sha256": "dfada1e9591aa7aea3d9298ecd34fb8ae2701a5f1b46c18267ab845ca4a16083"
     },
     "PrimitiveResultProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/PrimitiveResultProofs.lean.in",
       "installed_sha256": "c720f9702b17a1983503c4c277ec66f3bcc63f8a3398dd2e45d34b64fb7abe32"
     },
     "RenewalBindings": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/RenewalBindings.lean.in",
       "installed_sha256": "e4d6ce511ea9913fb757841da030a97a920f4d6e296c06d56efbef24e8fb2f99"
     },
     "RenewalEquality": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/RenewalEquality.lean.in",
       "installed_sha256": "eae6e25652eb2d01e49a19ef5e43505868b5e126d6e1e6138a252a309e3b0e6b"
     },
     "RenewalLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/RenewalLibrary.lean.in",
       "installed_sha256": "930993cf6da23733f7b7d587dfab3dd38cda62047b59a90918f61e25103b9e72"
     },
     "RenewalModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/RenewalModel.lean.in",
       "installed_sha256": "5f09fa5ab06ff13c3d4b658ebac7848e4365b6606127c41e810461ee4fd2a109"
     },
     "RenewalResultBindings": {
-      "kind": "existing-or-tested-component",
+      "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-validation/RenewalResultBindings.lean.in",
       "installed_sha256": "2565fc75178c3cf2492b7d0623b078c65ab0e2f980206f6e2f4f44b489562ce3"
     },
     "RenewalResultTag": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-renewal-session/RenewalResultTag.lean.in",
       "installed_sha256": "8237a9b238eb4fc2ebc9ab358ec343f6238f981b1f62849e424f97131d7c0b15"
     },
     "ReplayContract": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
       "installed_sha256": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f"
     },
     "ReplayEquality": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
       "installed_sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef"
     },
     "RequestValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/RequestValues.lean",
       "installed_sha256": "b92c5131933fe2e626157f9a7485f73544f13820a3cbec7b09457b0ea38b317a"
     },
     "SavedLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/native-retirement/SavedLibrary.lean.in",
       "installed_sha256": "3bb1905eb7ec93c22ae8e8d6a8602ccc7a68326c32bed8eff3833f71c183b247"
     },
     "SavedModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/native-retirement/SavedModel.lean.in",
       "installed_sha256": "4ab14c836eddb76e11b01fe8c3aad99c7aff827e7cb216ebccf00a499ae8977c"
     },
     "SavedProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/native-retirement/SavedProofs.lean.in",
       "installed_sha256": "b67e5157f81c7199331e41f70c4b93b239cf7e3ac079bc72a75a482d33271291"
     },
     "SavedValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/native-retirement/SavedValues.lean.in",
       "installed_sha256": "105ae78b5682ed5ac0d339a41b32883d6bb6c6512d6bb05b20d41eedaa653831"
     },
     "ShapeAssembly": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeAssembly.lean.in",
       "installed_sha256": "859239e88ba50c2b1f5b7b36584fb9e4dc6b4168b9a5cce9ecae3c433f6e6215"
     },
     "ShapeIteration": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeIteration.lean.in",
       "installed_sha256": "ff9ee6056dc8b0fe19d4c8e82ca80c110d9e444f10bc91015e64aea1b913d9e5"
     },
     "ShapeLane": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeLane.lean.in",
       "installed_sha256": "1fcad87616daabb44c3b3a3a7d2d70deeab1c1f9aff49f314b07cd3cf6c15f91"
     },
     "ShapeLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeLibrary.lean.in",
       "installed_sha256": "00d8decef5bf7a29b59b47166d148efc4ca9b20a330e46ad6cee4cda7c4562f9"
     },
     "ShapeModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeModel.lean.in",
       "installed_sha256": "a1b6e1c0c01617f6e5978355f43ff57899fa179dc7fb1fb1757de7620cf10837"
     },
     "ShapePrior": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapePrior.lean.in",
       "installed_sha256": "ee8ff7326353f3a41dbb61c18299f5dd6cd1e93556b53e160549363a933c2ba5"
     },
     "ShapeProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeProofs.lean.in",
       "installed_sha256": "07a1cbc41a4e320316327ce8535c950703a1d0c1fe636c8eaed54d96895cf5a0"
     },
     "ShapeRefusal": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeRefusal.lean.in",
       "installed_sha256": "83175d4db45ff5b815af39c2f7430863bfaeb8c1a6012ddacdcbca26aa82d990"
     },
     "ShapeTerminal": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeTerminal.lean.in",
       "installed_sha256": "6f4adb508a6edd140bc158d60dbe6d7538d77bf3d4a5ce401596c44fb25268ae"
     },
     "ShapeValues": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/session-shape/ShapeValues.lean.in",
       "installed_sha256": "93f30e19230cfc791107f02239ea5bea1e86106891ba692b58fcf6e4fb7138ba"
     },
     "TerminalModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/terminal-binding/TerminalModel.lean.in",
       "installed_sha256": "6981041caf19b6337b4f8d698f7c89fdc0a07001fc47d2f8d339d33809769a10"
     },
     "TerminalProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/terminal-binding/TerminalProofs.lean.in",
       "installed_sha256": "4eab7a6b86efb3a29c0fb238123aa9076d831e6e7687191782f7ba62c38f2678"
     },
     "UnloadLibrary": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadLibrary.lean.in",
       "installed_sha256": "6e63e219d7bdb8c60b191ea556fb5fe7057efab9191298b436991fe0adedbc41"
     },
     "UnloadModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadModel.lean.in",
       "installed_sha256": "83efbd21b70020edc3505ce7f18ecf4937b54cd677ceb88f6b735fef36728a5f"
     },
     "UnloadPhase": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadPhase.lean.in",
       "installed_sha256": "7ce99e3b1ccade682ee49e8ba06a1f4efed1e4534fb081a412af58ded1e67c1d"
     },
     "UnloadProofs": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-parent-template",
       "path": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadProofs.lean.in",
       "installed_sha256": "8eb506814c0976b5995e238965551a5cc59acf69d649a716de02888dfb1477fd"
     },
     "Validation": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/Validation.lean",
       "installed_sha256": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19"
     },
     "ValidationExamples": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean",
       "installed_sha256": "db7507109a9511d416ad1c519821b0ef28e73cc567acc323eb3392ff9f7bd488"
     },
     "ValidationModel": {
-      "kind": "existing-or-tested-component",
+      "kind": "unchanged-root",
       "path": "SandboxModel/Lifecycle/Protocol/ValidationModel.lean",
       "installed_sha256": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d"
     },
@@ -1115,6 +1115,278 @@
       "kind": "existing-or-tested-component",
       "path": "verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordValidationValues.lean.in",
       "installed_sha256": "a671b3351b5c826197f5258de7b84ded79be216427db5e919afb667ec7541997"
+    },
+    "InboxLoadConfigNormalValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigNormalValues.lean.in",
+      "installed_sha256": "0d5f550d952b6a7a1f69ac4f47b7dee5b07b36fd7a8ac98a6b3a2395b22ea2b3"
+    },
+    "InboxLoadCheckedArithmetic": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCheckedArithmetic.lean.in",
+      "installed_sha256": "af79dbb31d69bc987e74c06d2651d2d8eef0a7774a869768be9ca23951d28db3"
+    },
+    "InboxLoadValueLibrary": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in",
+      "installed_sha256": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d"
+    },
+    "InboxLoadConfigValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigValues.lean.in",
+      "installed_sha256": "0c999a2b930b3a53cb8b75ba4b32e9af90a8dd6963487406c8ac0bd2d39c0a34"
+    },
+    "InboxLoadConfigComposition": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigComposition.lean.in",
+      "installed_sha256": "314e46db3afa3ecd0e603a675c9d36665ee77786db046ab05044f57c6213039b"
+    },
+    "InboxLoadConfigRead": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigRead.lean.in",
+      "installed_sha256": "6269285f8ba7081a08353db5d7673b8b5c95cd0272fc3214ae1c360b8873067d"
+    },
+    "InboxLoadMaintenanceBounds": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadMaintenanceBounds.lean.in",
+      "installed_sha256": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1"
+    },
+    "InboxLoadCapacityBounds": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityBounds.lean.in",
+      "installed_sha256": "a9e601d67f52e9926be1e451025cdec44b7181f03ba58238c416449c94ecae22"
+    },
+    "InboxLoadCapacityValidation": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityValidation.lean.in",
+      "installed_sha256": "bcd588310545097bc0d5185d2b4a0372e06e4c9160b0f340a869d0339a7db250"
+    },
+    "InboxLoadWitnesses": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnesses.lean.in",
+      "installed_sha256": "6934921c2e09fdb9d54cbdc5e2df48b8bf7050e188a9ef1e84949546a11261f1"
+    },
+    "InboxLoadComposition": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadComposition.lean.in",
+      "installed_sha256": "10a8bf576c5cda3f431a81f591981ea8a3abe4dc6fceeb70a106230db5c71a18"
+    },
+    "InboxLoadControlFlow": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadControlFlow.lean.in",
+      "installed_sha256": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3"
+    },
+    "InboxLoadDigestLibrary": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestLibrary.lean.in",
+      "installed_sha256": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808"
+    },
+    "InboxLoadLibrary": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in",
+      "installed_sha256": "a2a89c1446567cf740bbfa6ffc48d4ff33736042f515265ebaeb21c620aa1aa1"
+    },
+    "InboxLoadModel": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in",
+      "installed_sha256": "8d887da51f8af264279d3574c76130e10d4723fac54ffa860cad4089653945c6"
+    },
+    "InboxLoadRawCorrespondence": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in",
+      "installed_sha256": "c98e3dd9d21756f71eb637fde18e8e50491bf19c52e121865e5e52d00f719bb2"
+    },
+    "InboxLoadHeader": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in",
+      "installed_sha256": "9c5529da229947e5a99dec6b8e5aa5571858f7143da333f2232e27abfc8f4133"
+    },
+    "InboxLoadEarlyErrors": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadEarlyErrors.lean.in",
+      "installed_sha256": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43"
+    },
+    "InboxLoadContextual": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadContextual.lean.in",
+      "installed_sha256": "b03b7ca7f97eb787bbddbd05ed15b1e4b372b50b17351efb7100eb53d4c9de41"
+    },
+    "InboxLoadPositiveFullValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in",
+      "installed_sha256": "41ae2cabfa0a0064bfe0a442418555ad4792b7337c32a810a4221029962d4c00"
+    },
+    "InboxLoadPositiveBodyValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveBodyValues.lean.in",
+      "installed_sha256": "a12d616031051e18d902780dc52c6c346a58737b9fa3d43c332ffb21118b6853"
+    },
+    "InboxLoadWitnessValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnessValues.lean.in",
+      "installed_sha256": "1f56c9ac588e61e65729de5dede4b75da04cdc527ea43f964bdf9d43b4167aac"
+    },
+    "InboxLoadLifecycleConfigValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadLifecycleConfigValues.lean.in",
+      "installed_sha256": "54e82e929f3e6a611432ec809de4ec1d2cf63fbb8f8b831f7b61b326961c225a"
+    },
+    "InboxLoadDigestCounterexample": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestCounterexample.lean.in",
+      "installed_sha256": "946e6da18c76896fec69e587440228614669a57471fa52edd10b8ee921d55273"
+    },
+    "InboxLoadFixturePrefix": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadFixturePrefix.lean.in",
+      "installed_sha256": "2806d4e87de37615c2da95f5bf391a069d80f91e587d951fc1b8e76512aaf6eb"
+    },
+    "InboxLoadDigestAcceptance": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestAcceptance.lean.in",
+      "installed_sha256": "707ed30d6d9ee9e300f54dd292ad84de1a0e97c70104ea40798877bf48b55efe"
+    },
+    "InboxLoadCanonicalCounterexample": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalCounterexample.lean.in",
+      "installed_sha256": "f344a6108ba18de5e41167a9ab21c1b0fec24a2db64274bfa13e03be5cb9c307"
+    },
+    "InboxLoadCanonicalAcceptance": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalAcceptance.lean.in",
+      "installed_sha256": "e4bbc2c790b6df67e908216d4c8255db8c4d5a3913c7db9e7bf90766cbc6ed4e"
+    },
+    "InboxLoadValidationCounterexample": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationCounterexample.lean.in",
+      "installed_sha256": "d4200b950fe1e38b39b1c7828b97a6c1589e7048345d1ab88c9d86099f7eac60"
+    },
+    "InboxLoadValidationAcceptance": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in",
+      "installed_sha256": "daaaa9cc54ee94cd37f1eb931b90d630f74f4f870992b3a20a41533ccae8d184"
+    },
+    "InboxLoadPolicyCounterexample": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyCounterexample.lean.in",
+      "installed_sha256": "0b4b40a87fe40de59a092dcfae8fef0d93f1c4d4be097ae867b0e46b37fa7ef4"
+    },
+    "InboxLoadPolicyAcceptance": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyAcceptance.lean.in",
+      "installed_sha256": "df32e3cdf185f5fab32a93f8c5c59c5afc234a32b6507df14313cee7e7f98605"
+    },
+    "InboxLoadPolicyThreeValues": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyThreeValues.lean.in",
+      "installed_sha256": "f08e6577bbfcb1f939efdb7750bd406650a7b1c9b5e19b0f1304561ed597c66c"
+    },
+    "InboxLoadSuccess": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in",
+      "installed_sha256": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b"
+    },
+    "InboxAdmissionValues": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionValues.lean.in",
+      "installed_sha256": "320735a200d3fb0b5239ace8f56c0575465ac2c989ec659ac634a306d7654c1e"
+    },
+    "InboxAdmissionModel": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionModel.lean.in",
+      "installed_sha256": "d7dd3cb6ba4ff385786a0ab9d44f535e380294205653d77f7eccdbcd66d9d3bc"
+    },
+    "InboxAdmission": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmission.lean.in",
+      "installed_sha256": "5d28ecc0b032e74843174b5b19348bcd68f594864d4e74e96c62bca447b61044"
+    },
+    "InboxAdmissionWrongEnvelope": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionWrongEnvelope.lean.in",
+      "installed_sha256": "c17ea2980e2148a597b15b923db5e3afa5b8e0a376b0dd589daa58f8b84d1bbc"
+    },
+    "InboxAdmissionSupport": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionSupport.lean.in",
+      "installed_sha256": "3dbe2459b7535af1a7254b21e81eb0553ee2100035f40e3307cb68479d53c15d"
+    },
+    "InboxAdmissionWrongNode": {
+      "path": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionWrongNode.lean.in",
+      "installed_sha256": "829de1d5cb95d2bafbe06a4a84b720df9238d0dec1d74e29d50e1973d9ec041e"
+    },
+    "InboxPosition": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPosition.lean.in",
+      "installed_sha256": "c0b3b9e30d44fc3b785cb57c0980a550245ccd1e82b9d5616805685ce06ea49f"
+    },
+    "InboxPositionModel": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionModel.lean.in",
+      "installed_sha256": "1040248336d57638ba1c61636dc333812a70b14ce1e274e99fe388f56b1e842c"
+    },
+    "InboxPositionContract": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionContract.lean.in",
+      "installed_sha256": "0914555c868cd0e4c6764aefae49a43acd567e8835cb515255be1b168c0bb650"
+    },
+    "InboxPositionReplay": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionReplay.lean.in",
+      "installed_sha256": "f003c22258efc502212420083db75ef598edf914a8f14f10b731b51516ce1785"
+    },
+    "InboxPositionWrongCurrent": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionWrongCurrent.lean.in",
+      "installed_sha256": "ab1023ba2ad70c25b136e62de1ff6a187b91c80de423ede6633d299e245be3d6"
+    },
+    "InboxPositionWitnesses": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionWitnesses.lean.in",
+      "installed_sha256": "3e41e1b03a9d707f3227d355a6cb89bf903e8b5e1345fc0ff3e44c882d38ddb8"
+    },
+    "InboxPositionPost": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionPost.lean.in",
+      "installed_sha256": "dde0eeddd86317d7e104261ca7bfb71267058fe64a1fc81460eb43cd20eca172"
+    },
+    "InboxPositionAppend": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionAppend.lean.in",
+      "installed_sha256": "58d2c5f453f216a4d695a9804555c9606c3ce4e9ef00c9b60c8f8936b464ede8"
+    },
+    "InboxPositionLookup": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionLookup.lean.in",
+      "installed_sha256": "39ceb1aa5becb63d0613402cfb08aa10901d3c1393809ed325aec40ed443ac75"
+    },
+    "InboxPositionWrongOperation": {
+      "path": "verification/experiments/stage1-protocol/inbox-position/InboxPositionWrongOperation.lean.in",
+      "installed_sha256": "001bbb14eb898f112d005238ca4884ad0ff6c6df7a3471d9ab0fbd7e7f24c3b3"
+    },
+    "InboxStateModel": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxStateModel.lean.in",
+      "installed_sha256": "41d327031459ebcea834c632e8c2f85471b6ef41b9eaa31a6e62bdbc23d0eb91"
+    },
+    "InboxStateWrongCurrent": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxStateWrongCurrent.lean.in",
+      "installed_sha256": "ae1d769dc381bc49489b8516656a77b127f4af2476c4ac80e392581160bb6f2b"
+    },
+    "InboxStateValues": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxStateValues.lean.in",
+      "installed_sha256": "71a3e27d8b2547de7b72992f4553226c8cfa797df87fcee82ada0b8fd05a2561"
+    },
+    "InboxStateWitnesses": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxStateWitnesses.lean.in",
+      "installed_sha256": "155ff0493910617ea3a671d252a275e7521f74d8081fe0b50105bcf4e6dba8f7"
+    },
+    "FunsExternal": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/FunsExternal.lean.in",
+      "installed_sha256": "1cf8a2bf8242cfd10bee010195e3a8758a8b10cf08e88e8baa6f78d5a84801fd"
+    },
+    "InboxStateWrongOperation": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxStateWrongOperation.lean.in",
+      "installed_sha256": "e9a0de3e70efa3c4de429429eba7e3e64bb2a601bd5ec0848d752fbf5808fcce"
+    },
+    "InboxState": {
+      "path": "verification/experiments/stage1-protocol/inbox-state/InboxState.lean.in",
+      "installed_sha256": "9d71d36e5e76c080d2a4ebf58d01e3bf14abd2188a1c873f4fdb915331141177"
+    },
+    "InboxRecordConfigFrame": {
+      "kind": "tested-current-synchronous-view",
+      "path": "verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordConfigFrame.lean.in",
+      "installed_sha256": "76fff5e569b9d2c1aa9f8b25361ea0f65a02446c103af2a968f7c77e4cd201da"
+    },
+    "InboxSynchronous": {
+      "kind": "tested-current-synchronous-view",
+      "path": "verification/experiments/stage1-protocol/inbox-record-validation/InboxSynchronous.lean.in",
+      "installed_sha256": "64193ee0671f710ce29ca9514eb78579dd61e30dbbf7526b37489f6cedddfe08"
     }
   },
   "views": {
@@ -1125,7 +1397,13 @@
         "InboxSaveBoundaries",
         "InboxAppendWitnesses",
         "InboxRecordValidationProofs",
-        "InboxSaveNecessary"
+        "InboxSaveNecessary",
+        "InboxLoadSuccess",
+        "InboxLoadConfigNormalValues",
+        "InboxAdmission",
+        "InboxPositionWitnesses",
+        "InboxRecordConfigFrame",
+        "InboxSynchronous"
       ],
       "files": [
         "SandboxModel/Foundations/Cloning.lean",
@@ -1141,6 +1419,10 @@
         "SandboxModel/Lifecycle/Protocol/ConfigValidationValues.lean",
         "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
         "SandboxModel/Lifecycle/Protocol/GraphicProofs.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxAdmission.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxAdmissionModel.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxAdmissionSupport.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxAdmissionValues.lean",
         "SandboxModel/Lifecycle/Protocol/InboxAppend.lean",
         "SandboxModel/Lifecycle/Protocol/InboxAppendArithmetic.lean",
         "SandboxModel/Lifecycle/Protocol/InboxAppendCallerModel.lean",
@@ -1175,6 +1457,30 @@
         "SandboxModel/Lifecycle/Protocol/InboxLineageModel.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLineageStep.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLineageSupport.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityBounds.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityValidation.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadCheckedArithmetic.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadComposition.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadConfigComposition.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadConfigNormalValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadConfigRead.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadConfigValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadContextual.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadControlFlow.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadDigestLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadEarlyErrors.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadHeader.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadLifecycleConfigValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadMaintenanceBounds.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadModel.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveBodyValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveFullValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadRawCorrespondence.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadSuccess.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadValueLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadWitnessValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadWitnesses.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLookup.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLookupModel.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLookupSupport.lean",
@@ -1182,7 +1488,15 @@
         "SandboxModel/Lifecycle/Protocol/InboxOwnerQueries.lean",
         "SandboxModel/Lifecycle/Protocol/InboxOwnerWitnesses.lean",
         "SandboxModel/Lifecycle/Protocol/InboxOwners.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPosition.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionAppend.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionContract.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionLookup.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionModel.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionPost.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionWitnesses.lean",
         "SandboxModel/Lifecycle/Protocol/InboxRecordCloning.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxRecordConfigFrame.lean",
         "SandboxModel/Lifecycle/Protocol/InboxRecordFresh.lean",
         "SandboxModel/Lifecycle/Protocol/InboxRecordFreshModel.lean",
         "SandboxModel/Lifecycle/Protocol/InboxRecordFreshSupport.lean",
@@ -1221,7 +1535,10 @@
         "SandboxModel/Lifecycle/Protocol/InboxSaveWitnesses.lean",
         "SandboxModel/Lifecycle/Protocol/InboxSessionComposition.lean",
         "SandboxModel/Lifecycle/Protocol/InboxSessionsScan.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxState.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxStateModel.lean",
         "SandboxModel/Lifecycle/Protocol/InboxSummaryQueries.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxSynchronous.lean",
         "SandboxModel/Lifecycle/Protocol/LaneLibrary.lean",
         "SandboxModel/Lifecycle/Protocol/LaneModel.lean",
         "SandboxModel/Lifecycle/Protocol/LaneProofs.lean",
@@ -1296,7 +1613,23 @@
         "SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from",
         "SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochRegistration.Insts.CoreCmpPartialEqHostEpochRegistration.eq",
         "SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochRegistration.valid_using",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.CapacityConfig.validate",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.add",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.config_using",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.invalid_capacity_values",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.invalid_capacity_values_loop",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.invalid_capacity_values_loop.body",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.capacity.mul",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig.validate",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig.validate_loop",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig.validate_loop.body",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.read_using",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated.closure.Insts.CoreOpsFunctionFnOnceTupleAcceptedIntentErrorJournalError.call_once",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.load_using",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.load_using.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError.call_once",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.count_entry_key",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.count_entry_key_loop",
@@ -1340,6 +1673,7 @@
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.session_index",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.session_index_loop",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.session_index_loop.body",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_entry_order_using",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_entry_order_using_loop",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_entry_order_using_loop.body",
@@ -1358,6 +1692,7 @@
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedHostEpochObservationBool.call_once",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_using_loop",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_using_loop.body",
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.verify_context",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig.context",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig.required_bytes",
         "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig.valid_using",
@@ -1513,6 +1848,13 @@
         "core.option.Option.is_some_and",
         "core.result.Result.is_err",
         "core.result.Result.ok"
+      ],
+      "required_audits": [
+        "SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.post_config",
+        "SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.record_config_frame",
+        "SandboxModel.Stage1Protocol.InboxSynchronous.loaded_representable",
+        "SandboxModel.Stage1Protocol.InboxSynchronous.load_record_save_connected",
+        "SandboxModel.Stage1Protocol.InboxSynchronous.normal_load_guard"
       ]
     },
     "wrong-validation": {
@@ -3126,12 +3468,22 @@
     ],
     "InboxSaveNecessary": [
       "SandboxModel.Stage1Protocol.InboxSave.successful_save_requires_validation"
+    ],
+    "InboxRecordConfigFrame": [
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.post_config",
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.record_config_frame"
+    ],
+    "InboxSynchronous": [
+      "SandboxModel.Stage1Protocol.InboxSynchronous.loaded_representable",
+      "SandboxModel.Stage1Protocol.InboxSynchronous.load_record_save_connected",
+      "SandboxModel.Stage1Protocol.InboxSynchronous.normal_load_guard"
     ]
   },
   "migration": {
     "integration_base": "9be262ea99f59726df1572ec5e76345da0ec0f3c",
     "adopted_source_pending_validation": true,
     "new_baseline_formal_complete": false,
-    "ning_acceptance": false
+    "ning_acceptance": false,
+    "current_synchronous_view_preflight": "240 transparent functions, 14 existing externals, six actual thin callees; full acceptance pending"
   }
 }

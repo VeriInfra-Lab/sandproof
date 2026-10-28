@@ -149,7 +149,7 @@ def run(output, variant, require_native=False, development_native=None, prepare_
             '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']
         generated_views = {}
         for label, roots, includes, namespace, destination in [
-                ('request', ROOTS, INCLUDE, 'SandproofStage1Request', GENERATED),
+                ('request', admission.roots(variant), INCLUDE, 'SandproofStage1Request', GENERATED),
                 ('primitive', admission.PRIMITIVE_ROOTS, admission.PRIMITIVE_INCLUDE,
                  'SandproofStage1Graphic', GRAPHIC)]:
             raw_path = Path('artifacts')/(label+'.llbc')
@@ -163,7 +163,7 @@ def run(output, variant, require_native=False, development_native=None, prepare_
             command(project, output, label+'-charon', wrapper+args)
             raw = json.loads((project/raw_path).read_text())
             record.setdefault('llbc', {})[label] = dict(path=str(raw_path), sha256=sha(project/raw_path),
-                binding=admit_ir(raw, primitive=label=='primitive'))
+                binding=admit_ir(raw, primitive=label=='primitive', variant=variant))
             record.setdefault('result_tags', {})[label] = library_binding.result_tags(raw)
             generated = output/('generated-'+label)
             generated.mkdir()
@@ -214,6 +214,9 @@ def run(output, variant, require_native=False, development_native=None, prepare_
             declared = [n for f in files for n in re.findall(r'^#audit_controller_proof (\S+)$', (project/f).read_text(), re.M)]
             if sorted(actual['audits']) != sorted(declared):
                 raise ValueError('incomplete audits')
+            if any(name not in actual['audits'] for name in
+                   inventory['views'][variant].get('required_audits', ())):
+                raise ValueError('missing required synchronous connection audit')
             theorem = 'SandboxModel.Stage1Protocol.InboxSave.' + {
                 'correct':'full_save_contract',
                 'wrong-validation':'Values.wrong_validation_contract_rejected',

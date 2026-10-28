@@ -18,7 +18,7 @@ class Admission(unittest.TestCase):
     variant='correct'
 
     def ir(self,raw):
-        return formal.admit_ir(raw,primitive=self.variant=='primitive')
+        return formal.admit_ir(raw,primitive=self.variant=='primitive',variant=self.variant)
 
     def generated(self,value):
         with tempfile.TemporaryDirectory(prefix='inbox-admission-') as name:
@@ -132,6 +132,19 @@ class Admission(unittest.TestCase):
                     f['item_meta']['name'][0]=={'Ident':['sandproof_controller_service',0]})
                 function['item_meta'][attribute]=value
                 with self.assertRaisesRegex(ValueError,'actual transparent'):self.ir(changed)
+
+    def test_synchronous_callees_are_required_and_transparent(self):
+        if self.variant != 'correct':
+            return
+        for name in ('load_using', 'authenticated', 'state'):
+            with self.subTest(callee=name):
+                changed=deepcopy(self.raw)
+                function=next(f for f in changed['translated']['fun_decls'] if f and
+                    f['item_meta']['name'][-1]=={'Ident':[name,0]} and
+                    f['item_meta']['name'][0]=={'Ident':['sandproof_controller_service',0]})
+                function['item_meta']['opacity']='Opaque'
+                with self.assertRaisesRegex(ValueError,'actual transparent'):
+                    self.ir(changed)
 
     def test_result_tags_are_admitted(self):
         formal.library_binding.result_tags(self.raw)

@@ -61,8 +61,8 @@ NATIVE_DRIVERS = (
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 327
-AUDIT_DECLARATION_COUNT = 1333
+AUDIT_TEMPLATE_COUNT = 329
+AUDIT_DECLARATION_COUNT = 1338
 
 
 def native_labels():
