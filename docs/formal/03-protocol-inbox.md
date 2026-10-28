@@ -52,3 +52,35 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 最多 16 个可写盘是本接口的有限预算，不是 Firecracker 的通用上限或兼容性保证。snapshot_format 和工具/CPU/设备/镜像配置摘要须与原受保护 profile 比较；即使两个任意 profile 相同，也不能据此声明 VMM 兼容。实际文件白名单、原句柄/长度/内容摘要、冻结截面、同步发布及恢复资格分别由 V6/V5 提供，不能让 manifest 自己的字段批准自己。
 
 字节适配位于 [lifecycle](../../sandbox-internal/src/lifecycle.rs)：先检查原始字节预算，再调用固定 serde_json，最后调用上述真实守卫；原 JSON 错误及行列保留。输出复用已有 encode_bounded，不使用普通 to_vec 参考冒充服务器 Writer。该接线仍需本批实际生成体/库条件与正式验收；尚未宣称完整 serde、异步外壳或新端点已证明。实际证据与剩余条件只在覆盖记录和本批 PR 维护。
+
+## 5. 同步核心与证明入口的连接
+
+正式请求处理只维护一条实现路径：有界读体后调用 `decode_accepted_with`，传入原固定解析器，
+再按原顺序校验完整封套和独立上下文；解析失败仍为 400，封套拒绝仍为 409。
+收件查找、首个会话选择、顺序拒绝与完整追加使用原同步核心；内层查找拆为具名 helper，
+保持首次命中和首次冲突语义，不要求键或会话列表预先唯一。
+
+寿命检查将原扫描尾部移入 `validate_applied_lifetimes`；续期确认与卸载决议把编码调用
+通过窄接口传入，生产实例继续使用原 `serde_json::to_vec`。不改变首错、续期确认的
+8192 字节限额、卸载决议的 4096 字节限额、
+快照阶段、原本地操作或结果时间链条件。证明薄根只转发这些实际函数，正确视图不得
+在私有副本中再次替换业务算法；错误视图才局部修改被检验的真实表达式。
+
+[Resume 完整值合同](../../verification/experiments/stage1-protocol/resume-observation/README.md)
+包含 Continued-Unload 的 StateLost，但同一实例确定退出、原继续资格、材料和授权事实
+仍由 V4/V5/V6/V7 提供。原“允许该 StateLost”错误版随旧合同保留在历史中，当前反例
+检查绕过实际仍必需的原来源绑定。
+
+[完整收件合同](../../verification/experiments/stage1-protocol/inbox-record-total/README.md)、
+[查询组合](../../verification/experiments/stage1-protocol/inbox-position/README.md)、
+[寿命](../../verification/experiments/stage1-protocol/inbox-lifetimes/README.md)、
+[续期确认](../../verification/experiments/stage1-protocol/inbox-renewal-session/README.md)和
+[卸载决议](../../verification/experiments/stage1-protocol/inbox-unload-resolution/README.md)
+分别给出值规格和条件。库模型采用、实际编码实例、同事务接线和完整持久收件的
+未闭合义务必须单列；新增候选、局部通过和当前实现已验收的范围只在覆盖记录维护。
+
+这些同步合同从调用时的完整值开始，不要求列表预先去重或历史已经可达。它们证明
+函数怎样选择、检查和返回；V5 仍须证明读到的这些值属于同一个持久事务，检查后的
+结果确实保存，未知提交没有被当成未执行。外部库与薄接线的具体条件见
+[V3 使用点](dependencies.md#v3-同步协议与收件的具体使用点)，不能以整个 handler
+正确作为输入前提，也不能从一次纯校验成功推出系统已经完成卸载或恢复。

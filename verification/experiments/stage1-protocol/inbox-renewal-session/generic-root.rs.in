@@ -1,0 +1,6 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_renewal_session_using<E: super::renewal_confirmation::RenewalEncoding>(
+    session: &Session,
+) -> Result<(), JournalError> {
+    super::renewal_confirmation::validate_session_using::<E>(session)
+}

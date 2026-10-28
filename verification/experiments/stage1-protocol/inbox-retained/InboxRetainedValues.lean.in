@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetainedModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRetained.Values
+
+def renewal (version previous : U64) : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with
+  accepted_version := version,
+  request := { (EnvelopeValues.intent 1#u64).request with
+    operation := .Renew 1#u64 100#i64 false,
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with
+      expected := .Version previous,
+      key := { (EnvelopeValues.intent 1#u64).request.binding.key with
+        window := 2#u64, sequence := version } } } }
+
+def initial : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    operation := .Create Validation.Examples.createPayload 1#u64,
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent } } }
+
+def checkpoint (version previous : U64) : RenewalConfirmation :=
+  ⟨renewal version previous, 100#i64⟩
+
+/-- Only fields consumed by this pure checker matter. The empty entries make
+explicit that these fixtures are not claims of a reachable/valid whole Inbox. -/
+def session (through : Option U64) (confirmed : Option RenewalConfirmation) : Session := {
+  id := initial.request.binding.session, retention := initial.retention,
+  owner := initial.request.binding.key.owner, current_version := 0#u64,
+  terminal := false, refusal := none, incarnation := none, «local» := none,
+  entries := alloc.vec.Vec.from [] (by scalar_tac), confirmed_terminal := none,
+  confirmed_renewal := confirmed, compacted_sdk_through := through, native_retirement := none }
+
+def gap := session (some 3#u64) (some (checkpoint 4#u64 3#u64))
+def pastCompaction := session (some 3#u64) (some (checkpoint 5#u64 4#u64))
+def pastConfirmation := session (some 4#u64) (some (checkpoint 4#u64 3#u64))
+def empty := session none none
+
+theorem valid_requests :
+    Validation.ValidEnvelope initial EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 1#u64 0#u64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 2#u64 1#u64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 4#u64 3#u64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 5#u64 4#u64) EnvelopeValues.context := by
+  have add0 : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  have add1 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  have add3 : U64.checked_add 3#u64 1#u64 = some 4#u64 := by decide
+  have add4 : U64.checked_add 4#u64 1#u64 = some 5#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK,
+    Validation.versionOK, initial, renewal,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.node, EnvelopeValues.center,
+    Validation.Examples.createPayload, Validation.createView, Validation.resourceView,
+    SandboxModel.Foundations.CreatePlan.valid, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter, add0, add1, add3, add4]
+
+theorem expected_outcomes :
+    expected empty 0#u64 initial = true ∧
+    expected empty 1#u64 (renewal 2#u64 1#u64) = true ∧
+    expected gap 1#u64 (renewal 4#u64 3#u64) = true ∧
+    expected pastCompaction 1#u64 (renewal 5#u64 4#u64) = false ∧
+    expected pastConfirmation 1#u64 (renewal 5#u64 4#u64) = false ∧
+    expected empty 0#u64 (renewal 1#u64 0#u64) = false := by
+  decide
+
+end SandboxModel.Stage1Protocol.InboxRetained.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.Values.valid_requests
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.Values.expected_outcomes

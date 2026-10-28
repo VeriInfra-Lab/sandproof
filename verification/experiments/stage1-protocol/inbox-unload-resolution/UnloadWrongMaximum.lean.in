@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.UnloadLibrary
+import SandboxModel.Lifecycle.Protocol.UnloadValues
+import SandboxModel.Lifecycle.Protocol.UnloadPhase
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.UnloadResolution
+open scoped Classical
+noncomputable section
+
+theorem wrong_maximum_accepts : run Values.encode Values.wrongMaximum = .ok (.Ok ()) := by
+  simp [run, validate_entry_using, operation_spec, result_spec, resultOf, unload,
+    Values.wrongMaximum, Values.before, Values.after, Values.snapshot, Values.facts, Values.intent,
+    EnvelopeValues.intent, Values.encode, Values.bytes,
+    core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.is_none,
+    alloc.vec.Vec.len]
+
+theorem maximum_omission_refutes_full_contract : ¬ FullUnloadContract run := by
+  intro contract
+  have same := contract Values.encode Values.wrongMaximum
+  rw [wrong_maximum_accepts, Values.expected_outcomes.2.2.2.2.2.1] at same
+  simp [corrupt] at same
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution
+
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.wrong_maximum_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.maximum_omission_refutes_full_contract

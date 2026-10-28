@@ -1,0 +1,59 @@
+import SandboxModel.Boundaries.BoundedWriter.Refinement
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std
+open SandproofBoundedWriterRust
+open sandproof_controller_service.template_registry.evidence
+open SandboxModel.Boundaries.BoundedWriter
+open SandboxModel.Boundaries.BoundedWriter.Refinement
+namespace SandboxModel.Stage1Protocol.EnvelopeWriter
+
+abbrev JsonResult := core.result.Result Unit serde_json.error.Error
+
+abbrev Encoded := core.result.Result (alloc.vec.Vec U8) sandproof_controller_service.JournalError
+
+abbrev Serializer (S B R T : Type) := BoundedSerialize S (ActualWriter B R) T
+
+def chunkBytes (chunks : List (Slice U8)) : WireBytes := (chunks.map Slice.val).flatten
+
+/-- The fixed library's ordered calls; this does not implement JSON rendering.
+The failure constructor ends the call history at the first refused write. -/
+inductive SerializeTrace {B R : Type} (write : ActualWrite B R) :
+    ActualWriter B R → List (Slice U8) → JsonResult → ActualWriter B R → Prop where
+  | done (state) : SerializeTrace write state [] (.Ok ()) state
+  | accepted {initial middle final chunk count tail result}
+      (head : write initial chunk = .ok (.Ok count, middle))
+      (rest : SerializeTrace write middle tail result final) :
+      SerializeTrace write initial (chunk :: tail) result final
+  | refused {initial final chunk rest ioError jsonError}
+      (head : write initial chunk = .ok (.Err ioError, final)) :
+      SerializeTrace write initial (chunk :: rest) (.Err jsonError) final
+
+/-- This is the explicit, per-schema A6/B4 call condition. It constrains the
+original serializer's successful normal call to complete actual write calls.
+It contains no validator, authorization, durability or protocol-state premise. -/
+structure StandardCalls {B R S T : Type} (ops : BoundedBuffer B R)
+    (serializer : Serializer S B R T) (rendered : T → WireBytes) : Prop where
+  traced : ∀ initial value result final,
+    serializer.serialize initial value = .ok (result, final) →
+    ∃ chunks, chunkBytes chunks = rendered value ∧
+      SerializeTrace (write_bounded ops) initial chunks result final
+
+/-- Partial-correctness contract for all serializer results and the original
+finish priority. It is shared unchanged by correct and wrong Rust candidates. -/
+def EncodeResultContract {B R S T : Type} (ops : BoundedBuffer B R) (view : B → WireBytes)
+    (serializer : Serializer S B R T) (encode : T → Usize → Result Encoded) : Prop :=
+  ∀ value limit buffer result final output,
+    ops.new_buffer = .ok buffer →
+    serializer.serialize ⟨buffer, limit, false⟩ value = .ok (result, final) →
+    encode value limit = .ok output →
+    finishedView output = some (finishSpec (writerView view final) (serializationView result))
+
+def EncoderContract {B R S T : Type} (ops : BoundedBuffer B R) (view : B → WireBytes)
+    (serializer : Serializer S B R T) (rendered : T → WireBytes)
+    (encode : T → Usize → Result Encoded) : Prop :=
+  EncodeResultContract ops view serializer encode ∧
+    (∀ value limit bytes, encode value limit = .ok (.Ok bytes) →
+      bytes.val = rendered value ∧ bytes.val.length ≤ limit.val)
+
+end SandboxModel.Stage1Protocol.EnvelopeWriter

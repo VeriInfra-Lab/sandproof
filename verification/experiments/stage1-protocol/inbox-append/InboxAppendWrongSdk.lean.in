@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendWitnessSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxAppend.WrongSdk
+open Values InboxRecord
+
+theorem unconfirmed_inserted :
+    ∃ (entries : alloc.vec.Vec Entry) (index : Usize),
+      (withSession waitingSdk).record_existing 0#usize laterRenew =
+        .ok (.Ok (0#usize, index), replaceSession (withSession waitingSdk) 0#usize
+          (appendedSession waitingSdk laterRenew false entries)) ∧
+      index.val = 2 ∧ entries.val = waitingSdk.entries.val ++ [pendingEntry laterRenew] := by
+  obtain ⟨entries, index, pushed, subtracted, indexval, contents⟩ :=
+    append_push_outcome waitingSdk laterRenew 8#u16 (by decide)
+  obtain ⟨next, added, nextval⟩ := reserve_add_total waitingSdk 8#u16 (by decide)
+  refine ⟨entries, index, ?_, indexval, contents⟩
+  dsimp [pendingEntry] at pushed
+  simp [waitingSdk, runningSession, InboxLookup.Witness.singleton,
+    laterRenew, firstRenew, operationIntent, EnvelopeValues.intent, createEntry, pendingEntry,
+    InboxRecord.Values.createIntent] at added nextval pushed
+  unfold Inbox.record_existing
+  rw [alloc.vec.Vec.index_mut_slice_index, fixture_mutable_zero]
+  simp [withSession, waitingSdk, runningSession, InboxLookup.Witness.session,
+    laterRenew, firstRenew, operationIntent, EnvelopeValues.intent,
+    InboxLookup.Witness.inbox, InboxLookup.Witness.singleton,
+    can_follow_running_spec, entryAllowsRunning, has_unconfirmed_sdk_spec,
+    createEntry, pendingEntry, InboxRecord.Values.createIntent,
+    added, nextval, pushed, subtracted, replaceSession, appendedSession, lift,
+    UScalar.le_equiv, IScalar.le_equiv]
+
+theorem unconfirmed_violates_post :
+    ¬ ((withSession waitingSdk).record_existing 0#usize laterRenew ⦃ out =>
+      ExistingPost (withSession waitingSdk) 0#usize waitingSdk laterRenew
+        (existingDecision (withSession waitingSdk) waitingSdk laterRenew) out ⦄) := by
+  intro contract
+  obtain ⟨entries, index, actual, _, _⟩ := unconfirmed_inserted
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  rw [actual] at returned
+  have same : out = (.Ok (0#usize, index), replaceSession (withSession waitingSdk) 0#usize
+      (appendedSession waitingSdk laterRenew false entries)) := by simpa using returned.symm
+  rw [same] at post
+  simp [renewal_decisions.2, ExistingPost] at post
+
+theorem rejects_same_full_existing_contract : ¬ FullExistingContract Inbox.record_existing := by
+  intro contract
+  exact unconfirmed_violates_post (contract (withSession waitingSdk) 0#usize laterRenew (by decide))
+
+theorem rejects_same_full_record_contract : ¬ FullRecordExistingContract Inbox.record := by
+  intro contract
+  have post := contract (withSession waitingSdk) laterRenew 0#usize renewal_selections.2
+  rw [record_existing_path _ _ _ renewal_selections.2] at post
+  exact unconfirmed_violates_post post
+
+end SandboxModel.Stage1Protocol.InboxAppend.WrongSdk
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongSdk.unconfirmed_inserted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongSdk.unconfirmed_violates_post
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongSdk.rejects_same_full_existing_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongSdk.rejects_same_full_record_contract

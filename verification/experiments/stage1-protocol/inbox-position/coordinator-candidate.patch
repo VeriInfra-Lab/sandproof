@@ -1,0 +1,31 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -176,0 +177,3 @@
++    target = work / 'stage1-inbox-position'
++    native_case('stage1-inbox-position', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-position/native.py', '--output', p]))
+@@ -254 +257 @@
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position'])
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -20,0 +21,4 @@
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-position
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-position/formal.py --require-native --variant correct --output "$EVIDENCE/position-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-position/formal.py --require-native --variant always-current --output "$EVIDENCE/position-always-current"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-position/formal.py --require-native --variant drop-operation --output "$EVIDENCE/position-drop-operation"
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -55,0 +56 @@
++| V3 记录位置与查询组合候选 | 同一生成视图中，从完整 RecordPost 推出任意成功返回位置可读、完整 intent 与七字段 state；同合同 current/operation 真实 Rust 反例，见[候选范围](../verification/experiments/stage1-protocol/inbox-position/README.md) | 隔离 record 重构候选；生产采用/原版等价、ning/native、V0 调用采用及共享验收未完成；不覆盖 record 与查询之间的 Destroy 效果或持久事务 |
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -877,0 +878,8 @@
++
++### 待采用的 V3 记录位置与查询组合接线
++
++[位置组合候选](../../verification/experiments/stage1-protocol/inbox-position/README.md)
++在同一原 record 候选生成视图中复用九个逐符号绑定、完整 RecordPost 和原 query 值合同；
++从所有成功分支推导 Vec 索引界和完整 intent，不新增 Rust 库假设。
++V0/主控仍负责本调用采用及 record 重构原版等价；外层 Destroy 本地变化、认证来源、
++codec/提交与资源事实分别由实际提供者闭合，不由纯 record→state 组合承担。

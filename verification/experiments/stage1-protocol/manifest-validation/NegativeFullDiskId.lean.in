@@ -1,0 +1,17 @@
+namespace SandboxModel.Stage1Protocol.ManifestFiles.Negative
+open SandboxModel.Stage1Protocol.ManifestValidation
+open SandboxModel.Stage1Protocol.ManifestValidation.Values
+open SandboxModel.Stage1Protocol.ManifestChecks
+open SandboxModel.Stage1Protocol.ManifestFiles.Values
+
+theorem skipped_disk_id_not_validation_contract : ¬ ValidationContract manifest_validate := by
+  intro contract
+  have accepted := contract_acceptance manifest_validate contract
+    (manifestWith profile (filesWithDisk "foreign" "disk-0.img")) original profile represented_profile
+    3#u64 mutant_accepts_foreign_disk
+  rcases accepted with ⟨_, _, _, _, _, complete, _, _, _⟩
+  have disk := complete.2 2 (by simp [manifestWith, filesWithDisk])
+  simp [FileAt, manifestWith, filesWithDisk, profile] at disk
+end SandboxModel.Stage1Protocol.ManifestFiles.Negative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ManifestFiles.Negative.skipped_disk_id_not_validation_contract

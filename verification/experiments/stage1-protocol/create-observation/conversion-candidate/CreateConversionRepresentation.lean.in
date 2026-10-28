@@ -1,0 +1,9 @@
+import SandproofStage1Request.Types
+
+/-! Isolated V0 review candidate: preserve the single actual LLBC field of
+TryFromIntError. This local namespace alias is not a change to the fixed
+backend's global Unit model, and it is not registered or adopted globally.
+The generated Types/Funs are untouched. -/
+namespace SandproofStage1RequestRust
+abbrev core.num.error.TryFromIntError := core.num.error.IntErrorKind
+end SandproofStage1RequestRust

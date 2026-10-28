@@ -193,13 +193,8 @@ impl Inbox {
         intent: &AcceptedLifecycleIntent,
     ) -> Result<Option<(usize, usize)>, JournalError> {
         for (s, session) in self.sessions.iter().enumerate() {
-            for (e, entry) in session.entries.iter().enumerate() {
-                if entry.intent.request.binding.key == intent.request.binding.key {
-                    if entry.intent != *intent {
-                        return Err(JournalError::Conflict);
-                    }
-                    return Ok(Some((s, e)));
-                }
+            if let Some(e) = session.find_entry(intent)? {
+                return Ok(Some((s, e)));
             }
         }
         Ok(None)
@@ -320,13 +315,51 @@ impl Inbox {
         Ok(())
     }
 
+    #[expect(
+        clippy::explicit_iter_loop,
+        reason = "fixed extraction uses the registered slice iterator"
+    )]
     fn recently_retired_identity(&self, intent: &AcceptedLifecycleIntent) -> bool {
-        self.lanes.iter().any(|lane| {
-            lane.last_retired.as_ref().is_some_and(|last| {
+        for lane in self.lanes.iter() {
+            if lane.last_retired.as_ref().is_some_and(|last| {
                 last.request.request.binding.session == intent.request.binding.session
                     || last.request.request.binding.key == intent.request.binding.key
-            })
-        })
+            }) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn session_index(&self, id: &SessionId) -> Option<usize> {
+        for (index, session) in self.sessions.iter().enumerate() {
+            if session.id == *id {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    fn retention_lane_index(&self, slot: u16) -> Option<usize> {
+        for (index, lane) in self.lanes.iter().enumerate() {
+            if lane.slot == slot {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    #[expect(
+        clippy::explicit_iter_loop,
+        reason = "fixed extraction uses the registered slice iterator"
+    )]
+    fn retention_slot_used(&self, slot: u16) -> bool {
+        for session in self.sessions.iter() {
+            if session.retention.slot == slot {
+                return true;
+            }
+        }
+        false
     }
 
     fn validate_session_shape(&self, index: usize, session: &Session) -> Result<(), JournalError> {
@@ -473,10 +506,7 @@ impl Inbox {
             return Ok(found);
         }
         let request = &intent.request;
-        let existing = self
-            .sessions
-            .iter()
-            .position(|s| s.id == request.binding.session);
+        let existing = self.session_index(&request.binding.session);
         if let Some(s) = existing {
             return self.record_existing(s, intent);
         }
@@ -520,7 +550,7 @@ impl Inbox {
             } if session.local.is_some()
                 && session.incarnation == Some(*source_incarnation)
                 && source_incarnation.checked_next().ok() == Some(*target_incarnation)
-                && session.entries.last().is_some_and(|prior| {
+                && session.last_entry().is_some_and(|prior| {
                     matches!(prior.intent.request.operation,
                         LifecycleOperation::Unload { source_incarnation: old, capture: old_capture }
                         if old == *source_incarnation && old_capture == *capture)
@@ -556,6 +586,10 @@ impl Inbox {
         Ok((s, session.entries.len() - 1))
     }
 
+    #[expect(
+        clippy::vec_init_then_push,
+        reason = "fixed extraction cannot lower vec! MaybeUninit construction"
+    )]
     fn record_fresh(
         &mut self,
         intent: &AcceptedLifecycleIntent,
@@ -567,19 +601,15 @@ impl Inbox {
         if intent.retention.slot == 0 || intent.retention.slot > self.config.max_sessions {
             return Err(JournalError::Conflict);
         }
-        let lane = self
-            .lanes
-            .iter()
-            .find(|lane| lane.slot == intent.retention.slot)
+        let lane_index = self
+            .retention_lane_index(intent.retention.slot)
             .ok_or(JournalError::Conflict)?;
+        let lane = &self.lanes[lane_index];
         if lane.current_window != Some(intent.retention.window) {
             return Err(JournalError::Conflict);
         }
         if self.sessions.len() >= usize::from(self.config.max_sessions)
-            || self
-                .sessions
-                .iter()
-                .any(|session| session.retention.slot == intent.retention.slot)
+            || self.retention_slot_used(intent.retention.slot)
         {
             return Err(JournalError::MaintenanceCapacity);
         }
@@ -602,13 +632,17 @@ impl Inbox {
             refusal: None,
             incarnation,
             local: None,
-            entries: vec![Entry {
-                intent: intent.clone(),
-                local_operation: None,
-                applied_deadline: None,
-                previous_effective_end_at_ms: None,
-                unload_resolution: None,
-            }],
+            entries: {
+                let mut entries = Vec::with_capacity(1);
+                entries.push(Entry {
+                    intent: intent.clone(),
+                    local_operation: None,
+                    applied_deadline: None,
+                    previous_effective_end_at_ms: None,
+                    unload_resolution: None,
+                });
+                entries
+            },
             confirmed_terminal: None,
             confirmed_renewal: None,
             compacted_sdk_through: None,
@@ -619,6 +653,18 @@ impl Inbox {
 }
 
 impl Session {
+    fn find_entry(&self, intent: &AcceptedLifecycleIntent) -> Result<Option<usize>, JournalError> {
+        for (e, entry) in self.entries.iter().enumerate() {
+            if entry.intent.request.binding.key == intent.request.binding.key {
+                if entry.intent != *intent {
+                    return Err(JournalError::Conflict);
+                }
+                return Ok(Some(e));
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) fn current_execution_origin(&self) -> Option<&Entry> {
         self.entries.iter().rev().find(|entry| {
             matches!(
@@ -628,9 +674,16 @@ impl Session {
         })
     }
 
+    fn last_entry(&self) -> Option<&Entry> {
+        if self.entries.is_empty() {
+            None
+        } else {
+            Some(&self.entries[self.entries.len() - 1])
+        }
+    }
+
     fn can_follow_running(&self) -> bool {
-        self.entries
-            .last()
+        self.last_entry()
             .is_some_and(|entry| match entry.intent.request.operation {
                 LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. } => {
                     entry.local_operation.is_some()

@@ -1,0 +1,35 @@
+--- a/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
++++ b/controller-service/src/controller/lifecycle_inbox/unload_resolution.rs
+@@ -36,0 +37,10 @@
++pub(super) trait UnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
++}
++struct StandardUnloadEncoding;
++impl UnloadEncoding for StandardUnloadEncoding {
++    fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
++        serde_json::to_vec(value)
++    }
++}
++
+@@ -37,0 +48,4 @@
++    validate_entry_using::<StandardUnloadEncoding>(entry)
++}
++
++pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {
+@@ -41,5 +55 @@
+-    if !matches!(
+-        entry.intent.request.operation,
+-        LifecycleOperation::Unload { .. }
+-    ) || serde_json::to_vec(resolution)?.len() > 4096
+-    {
++    if !is_unload_entry(entry) || E::encode(resolution)?.len() > 4096 {
+@@ -48,0 +59 @@
++        let original = &**original;
+@@ -269,0 +281,7 @@
++
++fn is_unload_entry(entry: &Entry) -> bool {
++    matches!(
++        entry.intent.request.operation,
++        LifecycleOperation::Unload { .. }
++    )
++}

@@ -1,0 +1,84 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.admission
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxLifetimes.Values
+
+def create : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent },
+    operation := .Create { Validation.Examples.createPayload with
+      timeout_ms := 100#u64, max_lifetime_ms := 1000#u64 } 1#u64 } }
+
+def renewal (version previous : U64) (deadline : I64) : AcceptedLifecycleIntent := { create with
+  accepted_version := version,
+  request := { create.request with
+    operation := .Renew 1#u64 deadline false,
+    binding := { create.request.binding with
+      expected := .Version previous,
+      key := { create.request.binding.key with sequence := version } } } }
+
+def entry (intent : AcceptedLifecycleIntent) (previous applied : Option I64) : Entry :=
+  ⟨intent, none, applied, previous, none⟩
+
+def session (entries : alloc.vec.Vec Entry) : Session := {
+  id := create.request.binding.session, retention := create.retention,
+  owner := create.request.binding.key.owner,
+  current_version := (entries.val.getLast?.map (·.intent.accepted_version)).getD 0#u64,
+  terminal := false, refusal := none, incarnation := some 1#u64, «local» := none,
+  entries := entries, confirmed_terminal := none, confirmed_renewal := none,
+  compacted_sdk_through := none, native_retirement := none }
+
+def lifetime (deadline : I64) : Lifetime := ⟨some 10#i64, deadline, 1000#i64, 20#i64, 4096#u64⟩
+
+def applied (previous deadline : I64) : Session := session
+  (alloc.vec.Vec.from [entry create none none,
+    entry (renewal 2#u64 1#u64 deadline) (some previous) (some deadline)] (by scalar_tac))
+
+def gap : Session := session
+  (alloc.vec.Vec.from [entry create none none,
+    entry (renewal 4#u64 3#u64 400#i64) (some 300#i64) (some 400#i64)] (by scalar_tac))
+
+def unapplied : Session := session
+  (alloc.vec.Vec.from [entry create none none,
+    entry (renewal 2#u64 1#u64 500#i64) (some (-100)#i64) none,
+    entry (renewal 3#u64 2#u64 200#i64) (some 110#i64) (some 200#i64)] (by scalar_tac))
+
+def created : Session := session
+  (alloc.vec.Vec.from [entry create none none] (by scalar_tac))
+
+theorem valid_envelopes :
+    Validation.ValidEnvelope create EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 2#u64 1#u64 200#i64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (renewal 4#u64 3#u64 400#i64) EnvelopeValues.context := by
+  have add1 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  have add3 : U64.checked_add 3#u64 1#u64 = some 4#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK,
+    Validation.versionOK, create, renewal,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.node, EnvelopeValues.center,
+    Validation.Examples.createPayload, Validation.createView, Validation.resourceView,
+    SandboxModel.Foundations.CreatePlan.valid, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter, add1, add3]
+
+theorem expected_outcomes :
+    validateView (applied 110#i64 200#i64) (lifetime 200#i64) = .ok () ∧
+    validateView (applied 111#i64 200#i64) (lifetime 200#i64) = .error .previousMismatch ∧
+    validateView gap (lifetime 400#i64) = .ok () ∧
+    validateView (applied 110#i64 200#i64) (lifetime 201#i64) = .error .finalMismatch ∧
+    validateView unapplied (lifetime 200#i64) = .ok () ∧
+    validateView created (lifetime (-1)#i64) = .ok () := by
+  have sum : I64.checked_add 10#i64 (UScalar.hcast .I64 100#u64) = some 110#i64 := by decide
+  simp [validateView, initialDeadline, fromEntry, duration, applied, gap, unapplied, created,
+    session, entry, create, renewal, lifetime, initial, scan, step, predecessor, different,
+    EnvelopeValues.intent, I64.max_eq, sum]
+
+end SandboxModel.Stage1Protocol.InboxLifetimes.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.Values.valid_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.Values.expected_outcomes

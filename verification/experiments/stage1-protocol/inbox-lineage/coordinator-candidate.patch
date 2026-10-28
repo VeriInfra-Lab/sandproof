@@ -1,0 +1,36 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -179,0 +180,3 @@
++    target = work / 'stage1-inbox-lineage'
++    native_case('stage1-inbox-lineage', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-lineage/native.py', '--output', p]))
+@@ -257 +260 @@
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage'])
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -24,0 +25,5 @@
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-lineage
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lineage/formal.py --require-native --variant correct --output "$EVIDENCE/lineage-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lineage/formal.py --require-native --variant advance-unattached-resume --output "$EVIDENCE/lineage-advance-unattached-resume"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lineage/formal.py --require-native --variant repeat-capture --output "$EVIDENCE/lineage-repeat-capture"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lineage/formal.py --require-native --variant skip-final-incarnation --output "$EVIDENCE/lineage-skip-final-incarnation"
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -56,0 +57 @@
++| V3 原执行谱系校验候选 | 任意长度列表的原 validate_execution_lineage 循环、完整结果合同及三个真实 Rust 同合同反例；见[范围](../verification/experiments/stage1-protocol/inbox-lineage/README.md) | 借用 Vec 入口的 V0 采用、ning/native 和公共验收待完成；只从解码值开始，不代表完整 Inbox.validate、原执行来源选择、附加事务或 VM 事实 |
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -885,0 +886,12 @@
++
++### 待采用的 V3 执行谱系借用 Vec 接线
++
++[执行谱系候选](../../verification/experiments/stage1-protocol/inbox-lineage/README.md)
++复用六个已登记外部符号及固定 Vec/Slice/算术模型。新增待 V0 核对的逐符号调用为
++SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter；原生产/抽取
++std 源中的薄体均为 self.iter()。BorrowedVecBinding 只要求完整原 Vec 内容对应
++零游标的同一 Slice，显式进入 caller_with_binding，不以业务校验结论作为前提。
++候选绑定委托原 Vec.deref/Slice.iter，源码/模型指纹检查不等于 stdlib 机器证明或
++批准采用。原直接透明抽取因固定 Vec 表示不兼容而失败，未改工具或导入公理模板。
++V7、V1/V2、V4/V5、V6 的认证、当前意图/耐久发送、本地接受/结果和资源事实仍分别开放；
++尤其 local_operation 非空仅是解码值，不能从本检查推出附加事务或 VM 切换已发生。

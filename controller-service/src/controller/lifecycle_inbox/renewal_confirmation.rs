@@ -21,13 +21,21 @@ pub(super) fn is_sdk_renewal(intent: &AcceptedLifecycleIntent) -> bool {
         && matches!(intent.request.operation, LifecycleOperation::Renew { .. })
 }
 
+#[expect(
+    clippy::explicit_iter_loop,
+    reason = "fixed extraction uses the registered slice iterator"
+)]
 pub(super) fn has_unconfirmed_sdk(session: &Session) -> bool {
-    session.entries.iter().any(|entry| {
-        is_sdk_renewal(&entry.intent)
+    for entry in session.entries.iter() {
+        if is_sdk_renewal(&entry.intent)
             && session.confirmed_renewal.as_ref().is_none_or(|confirmed| {
                 entry.intent.accepted_version > confirmed.request.accepted_version
             })
-    })
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// The exact deletion decision, independent of SQL or a network callback.
@@ -53,7 +61,23 @@ fn discard_previous(
 /// Validate the retained full checkpoint and the actual removed frontier.
 /// Reachability of this summary is a business proof obligation of the concrete
 /// transition below; a digest/shape check does not prove a history occurred.
+pub(super) trait RenewalEncoding {
+    fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error>;
+}
+struct StandardRenewalEncoding;
+impl RenewalEncoding for StandardRenewalEncoding {
+    fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(value)
+    }
+}
+
 pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
+    validate_session_using::<StandardRenewalEncoding>(session)
+}
+
+pub(super) fn validate_session_using<E: RenewalEncoding>(
+    session: &Session,
+) -> Result<(), JournalError> {
     let Some(confirmed) = session.confirmed_renewal.as_ref() else {
         return if session.compacted_sdk_through.is_none() {
             Ok(())
@@ -62,29 +86,15 @@ pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
         };
     };
     if !confirmed.is_sdk_renewal()
-        || serde_json::to_vec(confirmed)?.len() > RENEWAL_CONFIRMATION_BODY_BYTES
+        || E::encode(confirmed)?.len() > RENEWAL_CONFIRMATION_BODY_BYTES
         || session.local.is_none()
-        || session
-            .entries
-            .iter()
-            .find(|entry| entry.intent == confirmed.request)
-            .is_none_or(|entry| {
-                entry.applied_deadline != Some(confirmed.effective_end_at_ms)
-                    || entry.previous_effective_end_at_ms.is_none()
-            })
+        || checkpoint_entry_invalid(session, confirmed)
         || session.compacted_sdk_through.is_some_and(|through| {
             through < 2
                 || through >= confirmed.request.accepted_version
-                || session
-                    .entries
-                    .iter()
-                    .any(|entry| entry.intent.accepted_version == through)
+                || contains_accepted_version(session, through)
         })
-        || session.entries.iter().any(|entry| {
-            is_sdk_renewal(&entry.intent)
-                && entry.intent.accepted_version <= confirmed.request.accepted_version
-                && entry.applied_deadline.is_none()
-        })
+        || has_unapplied_sdk_through(session, confirmed.request.accepted_version)
     {
         return Err(JournalError::CorruptStore);
     }
@@ -141,6 +151,15 @@ pub(super) fn validate_lifetimes(
     if initial > lifetime.max_deadline_ms {
         return Err(JournalError::CorruptStore);
     }
+    validate_applied_lifetimes(session, lifetime, start, initial)
+}
+
+fn validate_applied_lifetimes(
+    session: &Session,
+    lifetime: crate::Lifetime,
+    start: i64,
+    initial: i64,
+) -> Result<(), JournalError> {
     let mut prior_end = Some(initial);
     let mut prior_version = 0;
     let mut last_applied = None;
@@ -261,4 +280,35 @@ impl ControllerJournal {
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(ack)
     }
+}
+
+fn checkpoint_entry_invalid(session: &Session, confirmed: &RenewalConfirmation) -> bool {
+    for entry in &session.entries {
+        if entry.intent == confirmed.request {
+            return entry.applied_deadline != Some(confirmed.effective_end_at_ms)
+                || entry.previous_effective_end_at_ms.is_none();
+        }
+    }
+    true
+}
+
+fn contains_accepted_version(session: &Session, version: u64) -> bool {
+    for entry in &session.entries {
+        if entry.intent.accepted_version == version {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_unapplied_sdk_through(session: &Session, version: u64) -> bool {
+    for entry in &session.entries {
+        if is_sdk_renewal(&entry.intent)
+            && entry.intent.accepted_version <= version
+            && entry.applied_deadline.is_none()
+        {
+            return true;
+        }
+    }
+    false
 }

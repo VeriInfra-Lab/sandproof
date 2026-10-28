@@ -1,4 +1,4 @@
-"""Run all proof-batch native obligations on ning; consume them on a6000."""
+"""Run proof-batch native obligations on the test host for the proof host."""
 import argparse
 import importlib.util
 import json
@@ -15,7 +15,8 @@ import stat
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
-    contract_inputs, source_archive_inputs, NATIVE_SCHEMA)
+    contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
+    check_native_scope, check_native_components)
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
                          'check_json_identifiers_negative.py',
@@ -86,13 +87,15 @@ def trusted_checkout(root):
             raise ValueError('untrusted checkout ancestry; prepare a private checkout with umask 077: '+str(path))
 
 
-def run_suite(output):
+def run_suite(output, *, scope='all'):
+    check_native_scope(scope)
     output.mkdir(parents=True,exist_ok=True,mode=0o700)
     with locked(output/'batch-lock'):
-        return run_locked_suite(output)
+        return run_locked_suite(output, scope=scope)
 
 
-def run_locked_suite(output):
+def run_locked_suite(output, *, scope='all'):
+    check_native_scope(scope)
     trusted_checkout(ROOT)
     os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
@@ -125,7 +128,10 @@ def run_locked_suite(output):
         subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
-    native_case('functional', ROOT, work / 'functional', lambda: functional(work))
+    native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
+    if scope == 'stage1-protocol':
+        run_stage1_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope)
     # These are the exact commands previously embedded in proof shell entries.
     # Identical commands/inputs execute once even when several modules ask.
     for cmd in [['cargo','fmt','--all','--','--check'],['cargo','test','--workspace'],
@@ -161,10 +167,7 @@ def run_locked_suite(output):
         call(['verification/experiments/protected-directory/test_checks.py'])
         call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
     native_case('protected-directory',ROOT,target,protected_directory_native)
-    target = work / 'stage1-protocol'
-    native_case('stage1-protocol', ROOT, target, lambda p=target:
-        call(['verification/experiments/stage1-protocol/component.py',
-              '--native-only', '--output', p]))
+    run_stage1_native(work)
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
         call(['verification/experiments/schema-domains/native.py', '--output', p]))
@@ -205,11 +208,28 @@ def run_locked_suite(output):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
+    return publish_suite(output, work, initial, started, scope=scope)
+
+
+def run_stage1_native(work, *, scope='all'):
+    target = work / 'stage1-protocol'
+    def retained():
+        subprocess.run([sys.executable,
+            'verification/experiments/stage1-protocol/component.py',
+            '--native-only', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('stage1-protocol', ROOT, target, retained, scope=scope)
+    registered = load('stage1_registered_components',
+                      ROOT / 'verification/experiments/stage1-protocol/registered.py')
+    registered.run_native(ROOT, work / 'stage1-v3')
+
+
+def publish_suite(output, work, initial, started, *, scope='all'):
+    check_native_scope(scope)
     if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
             contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
     trusted_checkout(ROOT)
-    commands={};uses=[]
+    commands={};uses=[];keys={}
     for line in (work/'commands-used.jsonl').read_text().splitlines():
         row=json.loads(line);identity=row['identity'];value=row['sha256']
         uses.append(row)
@@ -220,12 +240,17 @@ def run_locked_suite(output):
         if sha(entry/'receipt.json')!=value or load_success(entry,receipt['key']) is None:
             raise ValueError('native evidence lost before complete publication')
         commands[identity]=value
-    result = dict(schema=NATIVE_SCHEMA, complete=True, exit_code=0, rules=initial['rules'],
+        keys[identity]=receipt['key']
+    check_native_components(keys.values(), scope=scope)
+    result = dict(schema=NATIVE_SCHEMA, scope=scope, scope_complete=True,
+                  full_native_suite_complete=scope=='all',
+                  complete=True, exit_code=0, rules=initial['rules'],
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
                   contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
     write_json(output / 'complete.json', result)
-    print(json.dumps(dict(native_suite_complete=True, seconds=round(time.monotonic()-started,3),
+    print(json.dumps(dict(scope=scope, scope_complete=True, full_native_suite_complete=scope=='all',
+                         native_suite_complete=scope=='all', seconds=round(time.monotonic()-started,3),
                          commands=len(commands), evidence=str(output))))
 
 
@@ -242,13 +267,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol'])
+    run.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
+    registered = load('stage1_registered_components',
+                      ROOT / 'verification/experiments/stage1-protocol/registered.py')
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol', *registered.native_labels()])
+    req.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':
-        run_suite(args.output.resolve())
+        run_suite(args.output.resolve(), scope=args.scope)
     elif args.mode == 'require':
-        native_case(args.case, ROOT, None)
+        native_case(args.case, ROOT, None, scope=args.scope)
     else:
         if not args.command:
             parser.error('missing native command')

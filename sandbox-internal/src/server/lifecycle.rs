@@ -79,12 +79,17 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     if matches!(call, Call::Confirm | Call::Close) {
         return terminal_command(&body.to_bytes(), context, handler, call).await;
     }
-    let Ok(intent) = serde_json::from_slice::<AcceptedLifecycleIntent>(&body.to_bytes()) else {
-        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    let intent = match crate::lifecycle::decode_accepted_with(&body.to_bytes(), &context, |input| {
+        serde_json::from_slice::<AcceptedLifecycleIntent>(input)
+    }) {
+        Ok(intent) => intent,
+        Err(crate::lifecycle::AcceptedBodyError::InvalidJson) => {
+            return response(StatusCode::BAD_REQUEST, Bytes::new());
+        }
+        Err(crate::lifecycle::AcceptedBodyError::InvalidIntent) => {
+            return response(StatusCode::CONFLICT, Bytes::new());
+        }
     };
-    if intent.validate(&context).is_err() {
-        return response(StatusCode::CONFLICT, Bytes::new());
-    }
     if matches!(call, Call::ResumeObservation) {
         return resume_observation(intent, context, handler).await;
     }

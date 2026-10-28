@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionPost
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxRecord InboxRecordTotal InboxState
+
+/-- Keep the full record postcondition and obtain the complete subsequent query
+from the returned position. This does not model the durable transaction wrapper. -/
+noncomputable def RecordStatePost
+    (query : Inbox → Usize → Usize → Result LifecycleWorkState)
+    (inbox : Inbox) (intent : AcceptedLifecycleIntent) (out : RecordReturn) : Prop :=
+  RecordPost inbox intent out ∧
+    ∀ s e, out.1 = .Ok (s, e) →
+      ∃ (sb : s.val < out.2.sessions.val.length)
+        (eb : e.val < (out.2.sessions.val[s.val]'sb).entries.val.length),
+        ((out.2.sessions.val[s.val]'sb).entries.val[e.val]'eb).intent = intent ∧
+        query out.2 s e = .ok (workState
+          (out.2.sessions.val[s.val]'sb)
+          ((out.2.sessions.val[s.val]'sb).entries.val[e.val]'eb))
+
+def FullRecordStateContract
+    (record : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (query : Inbox → Usize → Usize → Result LifecycleWorkState) : Prop :=
+  ∀ inbox intent, record inbox intent ⦃ out => RecordStatePost query inbox intent out ⦄
+
+theorem contracts_compose
+    (record : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (query : Inbox → Usize → Usize → Result LifecycleWorkState)
+    (record_contract : FullRecordContract record) (query_contract : FullStateContract query) :
+    FullRecordStateContract record query := by
+  intro inbox intent
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists (record_contract inbox intent)
+  rw [returned]
+  refine WP.spec.ret ⟨post, ?_⟩
+  intro s e success
+  have stored := record_post_stores_intent inbox intent out s e post success
+  obtain ⟨sb, eb, full⟩ := stored_intent_bounds out.2 s e intent stored
+  exact ⟨sb, eb, full, query_contract out.2 s e sb eb⟩
+
+theorem composed_implies_record
+    (record : Inbox → AcceptedLifecycleIntent → Result RecordReturn)
+    (query : Inbox → Usize → Usize → Result LifecycleWorkState)
+    (contract : FullRecordStateContract record query) : FullRecordContract record := by
+  intro inbox intent
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists (contract inbox intent)
+  rw [returned]
+  exact WP.spec.ret post.1
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.contracts_compose
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.composed_implies_record

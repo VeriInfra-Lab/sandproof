@@ -1,4 +1,5 @@
 import SandboxModel.Lifecycle.Protocol.Validation
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
 import SandboxModel.ProofAuditCommand
 open Aeneas Aeneas.Std SandproofStage1RequestRust
 open sandproof_protocol.internal sandproof_protocol.lifecycle.authority
@@ -70,6 +71,20 @@ theorem envelope_accepts_iff (intent : AcceptedLifecycleIntent)
   rw [envelope_refines]
   simpa using expectedAccepted_success_iff intent context
 
+theorem expectedAccepted_error_iff (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (error : AcceptedIntentError) :
+    expectedAccepted intent context = .Err error ↔ FirstAcceptedError intent context error := by
+  classical
+  cases error <;> cases hr : expectedResult intent.request context.expected_node <;>
+    simp [expectedAccepted, FirstAcceptedError, ← expected_success_iff,
+      ← expected_error_iff, hr, ite_eq_iff]
+
+theorem envelope_error_iff (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (error : AcceptedIntentError) :
+    accepted_validate intent context = .ok (.Err error) ↔ FirstAcceptedError intent context error := by
+  rw [envelope_refines]
+  simpa using expectedAccepted_error_iff intent context error
+
 theorem envelope_keeps_context_center (intent : AcceptedLifecycleIntent)
     (context : AuthenticatedCenterContext)
     (accepted : accepted_validate intent context = .ok (.Ok ())) : intent.center = context.center :=
@@ -97,6 +112,28 @@ theorem foreign_center_rejected_first (intent : AcceptedLifecycleIntent)
   rw [envelope_refines]
   simp [expectedAccepted, foreign]
 
+theorem normal_envelope_accepted :
+    accepted_validate (EnvelopeValues.intent 1#u64) EnvelopeValues.context = .ok (.Ok ()) :=
+  (envelope_accepts_iff _ _).mpr EnvelopeValues.both_inputs_have_valid_shape.1
+
+/-- Retention has its own window; equality with the client key is not a guard. -/
+theorem distinct_retention_window_accepted :
+    accepted_validate
+      { EnvelopeValues.intent 1#u64 with retention := ⟨1#u16, 9#u64⟩ }
+      EnvelopeValues.context = .ok (.Ok ()) := by
+  apply (envelope_accepts_iff _ _).mpr
+  have valid := EnvelopeValues.both_inputs_have_valid_shape.1
+  simpa [ValidEnvelope, retentionOK, versionOK, EnvelopeValues.intent] using valid
+
+theorem invalid_retention_precedes_invalid_version :
+    accepted_validate
+      { EnvelopeValues.intent 1#u64 with retention := ⟨0#u16, 9#u64⟩, accepted_version := 0#u64 }
+      EnvelopeValues.context = .ok (.Err .InvalidRetention) := by
+  apply (envelope_error_iff _ _ _).mpr
+  have valid := EnvelopeValues.both_inputs_have_valid_shape.1
+  simpa [FirstAcceptedError, retentionOK, EnvelopeValues.intent] using
+    And.intro valid.1 (And.intro valid.2.1 valid.2.2.1)
+
 end SandboxModel.Stage1Protocol.Validation
 
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.retention_valid
@@ -117,3 +154,9 @@ end SandboxModel.Stage1Protocol.Validation
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.envelope_version_condition
 
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.foreign_center_rejected_first
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.expectedAccepted_error_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.envelope_error_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.normal_envelope_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.distinct_retention_window_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.invalid_retention_precedes_invalid_version

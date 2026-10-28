@@ -1,0 +1,62 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordFreshSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open scoped Classical
+
+def replaceSession (inbox : Inbox) (index : Usize) (session : Session) : Inbox :=
+  { inbox with sessions := inbox.sessions.set index session }
+
+theorem replace_read_preserves_all (inbox : Inbox) (index : Usize)
+    (bound : index.val < inbox.sessions.val.length) :
+    replaceSession inbox index inbox.sessions.val[index.val] = inbox := by
+  unfold replaceSession
+  have restored := alloc.vec.Vec.set_getElem_eq Session inbox.sessions index bound
+  simpa using congrArg (fun sessions => {inbox with sessions := sessions}) restored
+
+theorem replace_preserves_other_fields (inbox : Inbox) (index : Usize) (session : Session) :
+    (replaceSession inbox index session).sessions.val = inbox.sessions.val.set index.val session ∧
+    (replaceSession inbox index session).sessions.val.length = inbox.sessions.val.length ∧
+    replaceSession inbox index session =
+      { inbox with sessions := (replaceSession inbox index session).sessions } := by
+  simp [replaceSession]
+
+@[simp] theorem owner_ne (left right : sandproof_protocol.TenantId) :
+    core.cmp.PartialEq.ne.trait_default sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+@[simp] theorem retention_ne (left right : RetentionBinding) :
+    core.cmp.PartialEq.ne.trait_default RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.retention_eq]
+
+@[simp] theorem expected_ne (left right : ExpectedSession) :
+    core.cmp.PartialEq.ne.trait_default ExpectedSession.Insts.CoreCmpPartialEqExpectedSession left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.expected_eq]
+
+theorem foreign_owner_rejected_unchanged (inbox : Inbox) (index : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < inbox.sessions.val.length)
+    (foreign : inbox.sessions.val[index.val].owner ≠ intent.request.binding.key.owner) :
+    inbox.record_existing index intent = .ok (.Err .Conflict, inbox) := by
+  obtain ⟨⟨session, back⟩, indexed, same, callback⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec inbox.sessions index bound)
+  unfold Inbox.record_existing
+  rw [alloc.vec.Vec.index_mut_slice_index, indexed]
+  simp [owner_ne, foreign, callback, same, Inbox.record_existing.closure]
+  exact replace_read_preserves_all inbox index bound
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.replace_read_preserves_all
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.replace_preserves_other_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.owner_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.retention_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.expected_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.foreign_owner_rejected_unchanged

@@ -1,0 +1,31 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.ResultValues
+import SandboxModel.Lifecycle.Protocol.Accepted
+import SandboxModel.Lifecycle.Protocol.ResultEquality
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal sandproof_protocol.lifecycle.confirmation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Confirmation
+open SandboxModel.Stage1Protocol.ConfirmationValues
+namespace SandboxModel.Stage1Protocol.NegativeCloseFrontier
+
+theorem actual_mutant_accepts : closed_matches (closed 2#u64) close = .ok true := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [closed_matches, ClosedLifecycleWindow.matches, LifecycleWindowClose.is_terminal_result,
+    TerminalLifecycleObservation.matches_request, Replay.accepted_eq, observation_eq, status_eq,
+    Validation.retention_valid, Validation.version_comparison, closed, close, terminal, intent,
+    EnvelopeValues.intent, Validation.retentionOK, Validation.versionOK, checked,
+    RetentionWindowId.get, sandproof_protocol.internal.PositiveCounter.get]
+
+theorem violates_same_full_contract : ¬ FullClosedContract closed_matches := by
+  classical
+  intro contract
+  have exact_result := contract (closed 2#u64) close
+  rw [actual_mutant_accepts] at exact_result
+  simp [ClosedMatches, closed, close, terminal, intent, EnvelopeValues.intent] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeCloseFrontier
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCloseFrontier.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCloseFrontier.violates_same_full_contract

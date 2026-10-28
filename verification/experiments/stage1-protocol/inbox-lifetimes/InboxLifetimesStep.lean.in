@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.admission
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+open scoped Classical
+
+theorem body_end (values : Slice Entry) (index : Nat) (lifetime : Lifetime)
+    (start : I64) (state : LifetimeState) (outside : values.val.length ≤ index) :
+    validate_applied_lifetimes_loop.body lifetime start (cursor values index)
+      state.priorEnd state.priorVersion state.lastApplied =
+      .ok (.done (observed (scan lifetime start [] state))) := by
+  unfold validate_applied_lifetimes_loop.body
+  rw [next_none values index outside]
+  simp [scan, observed]
+  split <;> rfl
+
+theorem body_next (values : Slice Entry) (index : Nat) (lifetime : Lifetime)
+    (start : I64) (state : LifetimeState) (inside : index < values.val.length) :
+    validate_applied_lifetimes_loop.body lifetime start (cursor values index)
+      state.priorEnd state.priorVersion state.lastApplied =
+      .ok (bodyResult values index lifetime start state values.val[index]) := by
+  unfold validate_applied_lifetimes_loop.body
+  rw [next_some values index inside]
+  simp only [bind_tc_ok]
+  by_cases positive : state.priorVersion > 0#u64 <;>
+    by_cases same : values.val[index].intent.request.binding.expected =
+      sandproof_protocol.lifecycle.identity.ExpectedSession.Version state.priorVersion <;>
+    simp [positive, same, bodyResult,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.expected_eq]
+  all_goals cases applied : values.val[index].applied_deadline <;>
+    simp [applied, step, predecessor, positive, same]
+  all_goals cases previous : values.val[index].previous_effective_end_at_ms <;>
+    simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.convert.FromSame.from]
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.body_next

@@ -39,7 +39,8 @@ class ReceiptTests(unittest.TestCase):
         receipts.native_run('fixture',command,self.source,self.log,expected=expected)
         key=receipts.native_key('fixture',command,self.source)
         entry=self.cache/'commands'/receipts.digest(key)
-        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,complete=True,exit_code=0,
+        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,
+            scope='all',scope_complete=True,full_native_suite_complete=True,complete=True,exit_code=0,
             rules=receipts.rules(),runtime={'unit_test_fixture':True},
             contracts=receipts.contract_inputs(receipts.ROOT),source_archives=receipts.source_archive_inputs(),
             commands={entry.name:receipts.sha(entry/'receipt.json')}))
@@ -340,7 +341,7 @@ class ClosureTests(unittest.TestCase):
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
-                admit.assert_called_once_with(case, proof_native_suite.ROOT, None)
+                admit.assert_called_once_with(case, proof_native_suite.ROOT, None, scope='all')
 
     def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
         from tools.check_sqlite_extraction import audit_surface
@@ -378,13 +379,63 @@ class ClosureTests(unittest.TestCase):
                 'verification/ProofAudit.lean':'Root.accepts',
                 'SandboxModel/Actual/Audit.lean':'Actual.safe',
                 'verification/aeneas/Actual/Audit.lean':'Generated.refines',
+                'verification/experiments/stage1-protocol/ScopedWrong.lean.in':'ScopedWrong.rejected',
                 **{name:'Wrong.rejected'+str(index) for index,name in enumerate(proof_batch.EXTRA_AUDIT_FILES)}}
             for name, declaration in fixtures.items():
                 path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('#audit_controller_proof '+declaration+'\n')
+            (root/'verification/experiments/stage1-protocol/registered.py').write_text(
+                'def audit_template_paths(root):\n'
+                '    return ("verification/experiments/stage1-protocol/ScopedWrong.lean.in",)\n')
             self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
             (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
             with self.assertRaises(OSError):proof_batch.expected_audits(root)
+
+
+class ScopedRetainedReceiptTests(unittest.TestCase):
+    """Operator-local admission fixtures, never real proof success records."""
+
+    def test_scoped_files_need_current_seal_and_unchanged_original_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base/'source'; root.mkdir()
+            cache = base/'cache'
+            key = {'test_fixture': 'current-inputs'}
+            entry = cache/'modules/stage1-protocol'/receipts.digest(key)
+            entry.mkdir(parents=True)
+            (entry/'command.log').write_text('fixture command completed\n')
+            result = base/'original/registered/registered-result.json'
+            result.parent.mkdir(parents=True)
+            receipts.write_json(result, {'complete': True})
+            original = base/'original/actual-service.log'
+            original.write_text('fixture raw diagnostic bytes\n')
+            receipt = dict(complete=True, exit_code=0, key=key,
+                files={'command.log': receipts.sha(entry/'command.log')},
+                evidence={str(result): receipts.sha(result), str(original): receipts.sha(original)})
+            receipts.write_json(entry/'receipt.json', receipt)
+            helper = root/'verification/experiments/stage1-protocol/registered.py'
+            helper.parent.mkdir(parents=True)
+            helper.write_text('def validate_retained_coverage(root, record):\n'
+                              '    return {"SandboxModel/Scoped.lean": {"fixture": True}}\n')
+            with mock.patch.dict(os.environ, SANDPROOF_FORMAL_CACHE=str(cache)), \
+                    mock.patch.object(proof_batch, 'module_key', return_value=key):
+                covered, binding = proof_batch.stage1_retained_coverage(root)
+                self.assertEqual(set(covered), {'SandboxModel/Scoped.lean'})
+                self.assertEqual(binding['registered_result_sha256'], receipts.sha(result))
+                self.assertEqual(binding['module_receipt_sha256'], receipts.sha(entry/'receipt.json'))
+                saved = original.read_bytes()
+                for value in (b'changed raw diagnostics', None):
+                    if value is None:
+                        original.unlink()
+                    else:
+                        original.write_bytes(value)
+                    with self.assertRaisesRegex(ValueError, 'original formal evidence changed'):
+                        proof_batch.stage1_retained_coverage(root)
+                    original.write_bytes(saved)
+                receipt['key'] = {'test_fixture': 'older-inputs'}
+                receipts.write_json(entry/'receipt.json', receipt)
+                with self.assertRaisesRegex(ValueError, 'current complete stage1 module receipt'):
+                    proof_batch.stage1_retained_coverage(root)
 
 
 class ExecutionMappingTests(unittest.TestCase):
