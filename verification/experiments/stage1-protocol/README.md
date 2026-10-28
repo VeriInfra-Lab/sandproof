@@ -84,7 +84,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 28 个已登记 V3 case。
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 41 个已登记 V3 case。
 任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
 原两包全部测试、显式 integration 发现、Clippy、格式、
 文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；

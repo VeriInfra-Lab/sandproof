@@ -13,7 +13,7 @@
     "SandboxModel/Boundaries/JsonRequest/Encoding.lean": "122261da7c498c78bc8f9b8cb950c47a7775c3fea8ea57a76cc7583dfc8e936f",
     "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
     "controller-service/src/template_registry/evidence.rs": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae",
-    "docs/formal/03-protocol-inbox.md": "c04df33417d1936993dd10f754b335f20dc8faebb0ab91559e7346c1a7b51fb5",
+    "docs/formal/03-protocol-inbox.md": "2102465b46e3bbab6abf89a992912f0cc15ded742a7f3d384a774c1b431ae27a",
     "docs/formal/dependencies.md": "705cedcfa6d4bfa3acda03294102f4b27e11874cf063f6d59cc63479f1d9c433",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "lakefile.toml": "19b74b43bcaf5191e4ffd93ed39e494dc703cb3defc09fbd4b5512779288610a",
@@ -71,7 +71,7 @@
     "verification/experiments/stage1-protocol/envelope-bytes/binding.py": "1c215a9a8ddc7150d75fea163dcf1d7f2938aab0b756567ed996fcf6d781a0bb",
     "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py": "2ea407342c0e31ff41fc38fd9426a191cdf84c02a8f421391d3fedb17a9e5d11",
     "verification/experiments/stage1-protocol/envelope-bytes/formal.py": "d92bb68a311a6c567baf97f0e6f2b9019367744f65ae7fe5d0a01e7df7833ea2",
-    "verification/experiments/stage1-protocol/envelope-bytes/inventory.json": "a9ff08f2181e405b91600f59aa3d2ae2b379a78883568aeec5852897f1c7cf63",
+    "verification/experiments/stage1-protocol/envelope-bytes/inventory.json": "c5ac96169643078897fa3d48ee0591a7d0c398acbbc4fee10736cef5aa3bf603",
     "verification/experiments/stage1-protocol/envelope-bytes/roots.rs.in": "01083254ea7f091a27626b18e9052332f605bebc697c94387b06e33373228963",
     "verification/experiments/stage1-protocol/envelope-bytes/shared-candidate.patch": "5ed76caba95835ebb87d3eb044c0e25500e1e9883489b79ace1a0580d3acd4f0",
     "verification/experiments/stage1-protocol/envelope-bytes/test_formal.py": "787ec8eefbec49522457ca8334b6a4b5e7dd044d90f42a882d423901ae9c8a49",
@@ -81,14 +81,14 @@
     "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
     "verification/experiments/stage1-protocol/envelope-schema/README.md": "10fccc9d736c851fd7d77daa8bbb20a71bd3aac0fd10da06fc4f45e6f1377d1a",
     "verification/experiments/stage1-protocol/envelope-schema/formal.py": "a93756ba1c1d182db35749f5fe0e81274a6f9609cbde24ff1236791ee77f664a",
-    "verification/experiments/stage1-protocol/envelope-schema/inventory.json": "f0c635cb3973f67753fe2717dacc281502127a69c1f7825a99fd277617ba621b",
+    "verification/experiments/stage1-protocol/envelope-schema/inventory.json": "7f878c41bad115c9f200eb70ff83618328943e77085125343ecaff92dc78e26b",
     "verification/experiments/stage1-protocol/envelope-schema/roots.rs.in": "c305d5b7e31da1177df460f9248b5eaf578533d57078b2c5ba4447897b5a8fa2",
     "verification/experiments/stage1-protocol/envelope-schema/shared-candidate.patch": "f30cf33f3506ec023614d8c63a6157ff78ed0df028d9e5b8f992ac9b707d8388",
     "verification/experiments/stage1-protocol/envelope-schema/test_formal.py": "3a57ee941e1d16c51a410114336c256dfffd8e28b1e4592b4445d246d2d49837",
     "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
     "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "verification/experiments/stage1-protocol/frozen.json": "6efa2bdcc9b4c8fed0afc64e8361fc94ec0e7bc35e797f0d99ce18354f7e4363",
+    "verification/experiments/stage1-protocol/frozen.json": "6cb3f834cc6c7a5a4f713dc49d6afedb42f89244dd6d218dbaeeac5bdabda854",
     "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
     "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
@@ -148,5 +148,13 @@
     "SandboxModel.Stage1Protocol.EnvelopeBudget.all_five_normal_bounded_roundtrips",
     "SandboxModel.Stage1Protocol.EnvelopeBudget.omitted_options_bound_fails"
   ],
-  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed"
+  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed",
+  "migration": {
+    "integration_base": "9be262ea99f59726df1572ec5e76345da0ec0f3c",
+    "current_rust_source_anchor": "9300cc74be807c703d55e2bbca5fe56b351257b6",
+    "candidate_inputs_only": true,
+    "new_baseline_formal_complete": false,
+    "ning_acceptance": false,
+    "shared_acceptance": false
+  }
 }
