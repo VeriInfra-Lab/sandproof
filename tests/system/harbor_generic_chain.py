@@ -835,7 +835,7 @@ def parser():
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
-                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 200 GiB')
+                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,

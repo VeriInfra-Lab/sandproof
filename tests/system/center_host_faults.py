@@ -29,6 +29,7 @@ sys.path.insert(0,str(ROOT))
 from tools import ci_e2e_artifacts, service_cgroup
 from tools.check_kvm_host import trusted_path
 from tools.system_acceptance import digest, json_file, private_path, write_once
+from tools.runtime_acceptance_budget import MAX_ACTIVATION_BYTES, PREPARED_CI_MAX_ACTIVATION_BYTES
 
 GROUP_SECONDS=7200
 
@@ -46,6 +47,8 @@ def parser():
     value.add_argument('--rounds',type=int,required=True)
     value.add_argument('--checkpoint-tail-inputs',type=int,required=True)
     value.add_argument('--wait-seconds',type=int,default=90)
+    value.add_argument('--activation-ceiling-bytes',type=int,default=MAX_ACTIVATION_BYTES,
+                       help='explicit complete dual-activation bound; default remains 200 GiB')
     value.add_argument('--check-arguments',action='store_true',
                        help='parse the complete command only; no host, service or VM actions')
     # Private test launcher protocol, NOT another product entry or deployment.
@@ -54,6 +57,9 @@ def parser():
 
 
 def validate(args):
+    ceiling=getattr(args,'activation_ceiling_bytes',MAX_ACTIVATION_BYTES)
+    if type(ceiling) is not int or not 0<ceiling<=PREPARED_CI_MAX_ACTIVATION_BYTES:
+        raise ValueError('explicit DK activation ceiling at most 384 GiB required')
     if sys.platform!='linux' or os.geteuid()!=0:
         raise ValueError('isolated root Linux/KVM environment required')
     if importlib.metadata.version('e2b')!='2.51.0':

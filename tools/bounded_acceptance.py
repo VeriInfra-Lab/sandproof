@@ -18,6 +18,7 @@ import time
 from .template_build_config import validate_acceptance_build_policy
 from .template_build_store import TERMINAL
 from .template_physical_storage import MAXIMUM, envelope
+from .runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 
 
 def completion_build_observation(row, *, read_build):
@@ -162,8 +163,8 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
     Rust still activates the same profile with twice its complete envelope.
     """
     profile = copy.deepcopy(_acceptance_profile(policy))
-    if type(disk_budget_bytes) is not int or not 0 < disk_budget_bytes <= 200 * 1024**3:
-        raise ValueError("explicit prepared CI disk ceiling at most 200 GiB required")
+    if type(disk_budget_bytes) is not int or not 0 < disk_budget_bytes <= PREPARED_CI_MAX_ACTIVATION_BYTES:
+        raise ValueError("explicit prepared CI disk ceiling at most 384 GiB required")
     pool = next(pool for pool in profile["pools"] if pool["role"] == "runtime")
     for field, actual in (("kernel_copy_bytes", kernel_bytes), ("runtime_copy_bytes", runtime_bytes)):
         if type(actual) is not int or not 0 < actual <= pool[field]:

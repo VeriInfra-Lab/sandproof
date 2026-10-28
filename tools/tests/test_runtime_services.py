@@ -585,7 +585,8 @@ class RuntimeServicesTests(unittest.TestCase):
                 profile=bind(1)
                 native['bounded_host']['physical_storage']['service_data']=[]
                 native['bounded_host']['physical_storage']['host_template_caches']=[]
-                for invalid in (0,True,services.MAX_ACTIVATION_BYTES+1):
+                from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
+                for invalid in (0,True,PREPARED_CI_MAX_ACTIVATION_BYTES+1):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
                 generic_profile=bind(2,None)
@@ -595,6 +596,44 @@ class RuntimeServicesTests(unittest.TestCase):
             # envelope and actual free-space check, not the two-task CI ceiling.
             self.assertGreater(2*services.envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(generic_profile['pools'],original)
+
+    def test_explicit_capture_bytes_and_inodes_still_require_the_full_double_envelope(self):
+        from tools.runtime_acceptance_budget import profile_declaration
+        gib=1024**3
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as directory:
+            root=Path(directory).resolve()
+            native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel='/fixed/kernel',
+                rootfs='/fixed/rootfs',firecracker='/fixed/firecracker',uid_base=3200000,
+                max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=41*gib,
+                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=gib),slots=2,
+                inbox_sessions=3,file_size=lambda _:1024)
+            catalog=dict(templates=[dict(kernel=dict(size_bytes=1024),rootfs=dict(size_bytes=10*gib))])
+            layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
+            kwargs=dict(registry=dict(max_artifact_bytes_global=10*gib+1024,max_templates_global=1),
+                service_peaks=[dict(root=str(root/'p/s'),owner_uid=0,peak_bytes=88*gib,inode_budget=65536)])
+            with self.assertRaisesRegex(ValueError,'inode provision'):
+                profile_declaration([native],[catalog],layout,**copy.deepcopy(kwargs))
+            for value in (True,0,native['bounded_host']['physical_storage']['filesystem_overhead_inodes']-1):
+                with self.subTest(inodes=value),self.assertRaisesRegex(ValueError,'inode provision'):
+                    profile_declaration([native],[catalog],layout,physical_inodes=value,**copy.deepcopy(kwargs))
+            with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling'):
+                profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                    activation_ceiling_bytes=200*gib,**copy.deepcopy(kwargs))
+            expected=profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                        activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            needed,inodes=services.envelope(expected)
+            for free,files in ((2*needed-1,2*inodes),(2*needed,2*inodes-1)):
+                with self.subTest(free=free,files=files),patch.object(services.os,'statvfs',
+                        return_value=SimpleNamespace(f_bavail=free,f_frsize=1,f_favail=files)), \
+                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes'):
+                    services._bind_profile([native],[catalog],layout,physical_inodes=131072,
+                        activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
+                    f_bavail=2*needed,f_frsize=1,f_favail=2*inodes)):
+                actual=services._bind_profile([native],[catalog],layout,physical_inodes=131072,
+                    activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            self.assertEqual(actual,expected)
 
     def test_role_cleanup_requires_original_exit_and_parent_identity(self):
         instance=services.RuntimeServices()

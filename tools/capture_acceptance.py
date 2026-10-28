@@ -83,6 +83,33 @@ def bind_settings(profile, pool_roots):
     return hosts
 
 
+def instantiate_copy_limits(capture, native, catalog):
+    """Use the actual registered VM shapes within the approved copy ceilings.
+
+    This changes neither the material project quota nor its tools, deadlines,
+    state limit or layout identity. Artifact bytes/identities are independently
+    verified by the original runtime preparation before registration/use.
+    """
+    value = copy.deepcopy(capture)
+    shapes = [(native['memory_mib'], Path(native['rootfs']).stat().st_size)]
+    for template in catalog['templates']:
+        disk = template['rootfs']['size_bytes']
+        if (disk != template['resources']['disk_bytes']
+                or Path(template['rootfs']['path']).stat().st_size != disk):
+            raise ValueError('capture shape differs from the original registered disk')
+        shapes.append((template['resources']['memory_mib'], disk))
+    if (not catalog['templates'] or any(type(memory) is not int or type(disk) is not int
+            or not 0 < memory <= (2**63-1)//1024**2 or not 0 < disk < 2**63
+            for memory, disk in shapes)):
+        raise ValueError('complete bounded original VM shapes required')
+    memory = max(shape[0] for shape in shapes)*1024**2
+    disk = max(shape[1] for shape in shapes)
+    if memory > value['memory_copy_bytes'] or disk > value['disk_copy_bytes']:
+        raise ValueError('actual VM shape exceeds approved capture copy ceilings')
+    value.update(memory_copy_bytes=memory, disk_copy_bytes=disk)
+    return value
+
+
 def require_capacity(capture, native, slots):
     """Check the payload floor for a second capture with live File backing.
 

@@ -9,6 +9,7 @@ from tools.template_physical_storage import envelope
 
 MIB=1024**2
 MAX_ACTIVATION_BYTES=200*1024**3
+PREPARED_CI_MAX_ACTIVATION_BYTES=384*1024**3
 
 def static_cache(pool, catalog, root):
     sizes = [item['kernel']['size_bytes'] + item['rootfs']['size_bytes'] for item in catalog['templates']]
@@ -20,12 +21,18 @@ def static_cache(pool, catalog, root):
         metadata_bytes=4096+entries*2*(65536+4096),inode_budget=4+entries*5+5)
 
 
-def profile_declaration(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
+def profile_declaration(native_pools, catalogs, layout, *, registry, service_peaks,
+                        activation_ceiling_bytes=None, physical_inodes=None):
     """Derive the exact declaration; this performs no physical admission."""
     profiles = [native['bounded_host']['physical_storage'] for native in native_pools]
     if any(profile != profiles[0] for profile in profiles[1:]):
         raise ValueError('one original shared physical declaration required')
     profile = copy.deepcopy(profiles[0])
+    if physical_inodes is not None:
+        if (type(physical_inodes) is not int
+                or not profile['filesystem_overhead_inodes'] <= physical_inodes <= 2**63-1):
+            raise ValueError('explicit inode provision cannot undercut the original profile')
+        profile['filesystem_overhead_inodes'] = physical_inodes
     caches = profile['host_template_caches']
     if not caches:
         if len(native_pools) != 1:
@@ -60,8 +67,8 @@ def profile_declaration(native_pools, catalogs, layout, *, registry, service_pea
     peak,inodes=envelope(profile)
     if activation_ceiling_bytes is not None:
         if (type(activation_ceiling_bytes) is not int
-                or not 0<activation_ceiling_bytes<=MAX_ACTIVATION_BYTES):
-            raise ValueError('explicit prepared CI activation ceiling at most 200 GiB required')
+                or not 0<activation_ceiling_bytes<=PREPARED_CI_MAX_ACTIVATION_BYTES):
+            raise ValueError('explicit prepared CI activation ceiling at most 384 GiB required')
         if 2*peak>activation_ceiling_bytes:
             raise ValueError('complete dual-service activation exceeds prepared CI ceiling; no quota is reduced')
     return profile

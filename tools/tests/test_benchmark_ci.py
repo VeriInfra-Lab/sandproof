@@ -337,7 +337,7 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(result['fixture_sha256'], 'e'*64)
         self.assertFalse(result['original_oracle_verifier'])
         self.assertFalse(result['original_environment'])
-        for field, value in (('disk_budget_bytes', 201 * 1024**3), ('activation_bytes', 200 * 1024**3 + 1),
+        for field, value in (('disk_budget_bytes', 385 * 1024**3), ('activation_bytes', 200 * 1024**3 + 1),
                              ('activation_bytes', True), ('pool_roles', ['runtime','builder']),
                              ('builder_dispatched', True), ('public_build', True)):
             changed = copy.deepcopy(original)
@@ -345,6 +345,7 @@ class BenchmarkCITests(unittest.TestCase):
             (self.root / 'report.json').write_text(json.dumps(changed))
             with self.subTest(physical_field=field), self.assertRaises(ValueError):
                 self.batch_result(self.root, **args)
+
         changed = copy.deepcopy(original)
         del changed['prepared_ci_physical']
         (self.root / 'report.json').write_text(json.dumps(changed))
@@ -381,6 +382,19 @@ class BenchmarkCITests(unittest.TestCase):
         (self.root / 'report.json').write_text(json.dumps(original))
         with self.assertRaises(ValueError):
             self.batch_result(self.root, **args)
+
+    def test_explicit_prepared_ceiling_accepts_complete_capture_envelope_but_not_old_200_limit(self):
+        original = self.prepared_report()
+        original['prepared_ci_physical'].update(disk_budget_bytes=384*1024**3,
+                                                activation_bytes=358*1024**3)
+        (self.root / 'report.json').write_text(json.dumps(original))
+        self.assertTrue(self.batch_result(self.root, **self.prepared_args())['passed'])
+        for budget, actual in ((200*1024**3,358*1024**3),(384*1024**3,384*1024**3+1)):
+            changed=copy.deepcopy(original)
+            changed['prepared_ci_physical'].update(disk_budget_bytes=budget,activation_bytes=actual)
+            (self.root / 'report.json').write_text(json.dumps(changed))
+            with self.subTest(budget=budget,actual=actual),self.assertRaises(ValueError):
+                self.batch_result(self.root, **self.prepared_args())
 
     def test_prepared_ci_failure_remains_failed_and_does_not_waive_template_identity(self):
         report = self.prepared_report()
@@ -575,6 +589,7 @@ class BenchmarkCITests(unittest.TestCase):
             path.chmod(0o600)
             config['host_assets'][str(path)] = file_digest(path)
         config['prepared_ci_disk_budget_bytes'] = 200 * 1024**3
+        config['physical_inode_budget'] = 131072
         for key in ('kernel','rootfs','firecracker','jailer','policy_template','budget_profile','ci_fixtures','uv','cargo'):
             path = self.root / (key + '.json')
             path.write_text('{}')
@@ -619,7 +634,8 @@ class BenchmarkCITests(unittest.TestCase):
                             {key:value for key,value in config.items() if key != 'dk_checkpoint_tail_inputs'},
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
-                            dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
+                            dict(config, prepared_ci_disk_budget_bytes=385 * 1024**3),
+                            *[dict(config, physical_inode_budget=value) for value in (None,True,0,2**32)],
                             dict(config, dataset='terminal-bench@2.1'),
                             dict(config, check_name='E2E / terminal-bench-2.0-compat'),
                             dict(config, host_assets={k:v for k,v in config['host_assets'].items()

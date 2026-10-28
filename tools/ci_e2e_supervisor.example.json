@@ -47,6 +47,7 @@
   "tools": "/opt/sandproof-e2e/tools",
   "budget_profile": "/etc/sandproof-ci/e2e-budgets.json",
   "capture_profile": "/etc/sandproof-ci/e2e-capture.json",
+  "physical_inode_budget": 131072,
   "policy_template": "/etc/sandproof-ci/e2e-policy.json",
   "source_kind": "prepared-ci",
   "prepared_ci_disk_budget_bytes": 214748364800,
