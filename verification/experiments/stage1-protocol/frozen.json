@@ -116,7 +116,7 @@
     "scripts/verify-stage1-protocol.sh": "746247e6005ad3d7773073effdc0ef553555dd8c3cf590d98ac32435c30fb612",
     "tools/acceptance_receipts.py": "08d02eb2c26de844261d4f28ccac87db93775826751def996e1e7b93bdc4636d",
     "tools/check_foundations_extraction.py": "30e4591ee7d227b0204f37df13e570602b594fa589a578abefab5943c7ab9e1f",
-    "tools/ci_retention.py": "14bd1cf486fa4b8a1105bee03dffa65b93ade237ffa15e266fc732068f7e983d",
+    "tools/ci_retention.py": "855dc4868970fce0b116bdab724092a42ac907f2999a5c422c92840ca7595245",
     "tools/lean-mcp-requirements.txt": "2cf52b612090fddedde8a0c6278d572d53217f7651a497320666372658427fec",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "tools/proof_batch.py": "d1b6a07575e5096681d1e3ce22032368f0402f7d2420d2d26af9d44eee4aa989",
