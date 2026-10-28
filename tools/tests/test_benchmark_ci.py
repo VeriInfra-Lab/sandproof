@@ -733,9 +733,11 @@ class BenchmarkCITests(unittest.TestCase):
             build_timeout_sec=600, agent_timeout_sec=900, verifier_timeout_sec=900)} for name in names},
             batches=[batch])
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}), \
-                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest):
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare(batch, 0)
         args = batch['command']
+        preflight.assert_called_once_with(args, config)
         self.assertEqual(args[args.index('--ci-fixtures') + 1], config['ci_fixtures'])
         self.assertEqual(args[args.index('--source-kind') + 1], 'prepared-ci')
         self.assertEqual(args[args.index('--prepared-ci-disk-budget-bytes') + 1], str(200 * 1024**3))
@@ -758,8 +760,10 @@ class BenchmarkCITests(unittest.TestCase):
         supervisor.state['id'] = 'c'*64
         old_batch = dict(names=names, oracle_mode='original', phase='new')
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}), \
-                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest):
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare(old_batch, 0)
+        preflight.assert_called_once_with(old_batch['command'], old)
         self.assertNotIn('--ci-fixtures', old_batch['command'])
         self.assertNotIn('--prepared-ci-disk-budget-bytes', old_batch['command'])
         self.assertIn('--proxy-binary', old_batch['command'])
@@ -1312,12 +1316,14 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'validate_host_inputs'), \
                 patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
                 patch.object(ci, 'trusted_path', side_effect=lambda path: path), \
-                patch.object(ci, 'launch') as launch:
+                patch.object(ci, 'launch') as launch, \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare_dk()
         launch.assert_not_called()
         saved = json.loads((self.root / 'state.json').read_text())['dk']
         self.assertEqual(saved['phase'], 'launching')
         command = saved['command']
+        preflight.assert_called_once_with(command, supervisor.config)
         self.assertEqual(command[0], str(self.root / 'benchmarks/.venv/bin/python'))
         for flag, value in (('--cgroup-parent', supervisor.config['cgroup_parent']),
                             ('--service-cgroup-parent', supervisor.config['service_cgroup_parent']),

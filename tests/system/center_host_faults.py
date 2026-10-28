@@ -46,6 +46,8 @@ def parser():
     value.add_argument('--rounds',type=int,required=True)
     value.add_argument('--checkpoint-tail-inputs',type=int,required=True)
     value.add_argument('--wait-seconds',type=int,default=90)
+    value.add_argument('--check-arguments',action='store_true',
+                       help='parse the complete command only; no host, service or VM actions')
     # Private test launcher protocol, NOT another product entry or deployment.
     value.add_argument('--worker',action='store_true',help=argparse.SUPPRESS)
     return value
@@ -184,6 +186,9 @@ def worker(args):
 def main(argv=None):
     argv=list(sys.argv[1:] if argv is None else argv)
     args=parser().parse_args(argv)
+    if args.check_arguments:
+        print(json.dumps(dict(entry=Path(__file__).name, arguments_valid=True)))
+        return 0
     budget=validate(args)
     if args.worker:
         def interrupted(_number,_frame):

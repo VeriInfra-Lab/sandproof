@@ -479,6 +479,8 @@ class Supervisor:
             '--stale-probe',config['stale_probe'],'--stale-probe-sha256',stale_sha,
             '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds']),
             '--checkpoint-tail-inputs',str(config['dk_checkpoint_tail_inputs'])])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(command, config)
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
         self.save()  # A lost launch acknowledgement never permits another group.
@@ -607,6 +609,8 @@ class Supervisor:
             args.extend(['--docker-hub-mirror', config['docker_hub_mirror']])
         for name in batch['names']:
             args.extend(['--task', name])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(args, config)
         batch.update(root=str(root), command=args, checkout=str(checkout),
             services=service_artifacts.public_identity(manifest),
             deadline_seconds=int(sum(sum(self.state['task_inputs'][name]['requirements'][key]
