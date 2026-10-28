@@ -31,6 +31,7 @@ from tools.capture_acceptance import bind_settings as bind_capture_settings, val
 from tools import ci_e2e_artifacts as service_artifacts
 from tools.ci_redis import check_material as redis_material
 from tools.service_cgroup import service_identity
+from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 
 PREFIX = '/repos/' + REPOSITORY + '/'
 REPO = 'https://github.com/' + REPOSITORY + '.git'
@@ -79,6 +80,9 @@ def validate_host_inputs(config):
         if flag not in config:
             raise ValueError('explicit approved deployment input required: ' + flag)
         private_path(config[flag])
+    if (type(config.get('physical_inode_budget')) is not int
+            or not 0 < config['physical_inode_budget'] <= 2**32-1):
+        raise ValueError('explicit bounded complete filesystem inode provision required')
     captures = validate_capture_profile(json_file(Path(config['capture_profile'])), len(host_roles))
     for path, expected in config['host_assets'].items():
         artifact = trusted_path(Path(path))
@@ -103,8 +107,8 @@ def validate_host_inputs(config):
         private_path(config['ci_fixtures'])
         required.add(config['ci_fixtures'])
         ceiling = config.get('prepared_ci_disk_budget_bytes')
-        if type(ceiling) is not int or not 0 < ceiling <= 200 * 1024**3:
-            raise ValueError('explicit prepared CI total disk ceiling at most 200 GiB required')
+        if type(ceiling) is not int or not 0 < ceiling <= PREPARED_CI_MAX_ACTIVATION_BYTES:
+            raise ValueError('explicit prepared CI total disk ceiling at most 384 GiB required')
     else:
         if config.get('ci_fixtures') is not None:
             raise ValueError('CI fixtures require the explicit prepared-ci mode')
@@ -474,11 +478,16 @@ class Supervisor:
             command.extend(['--'+flag.replace('_','-'),str(config[flag])])
         command.extend(['--candidate-manifest',self.state['candidate_manifest'],
             '--capture-settings',str(capture_file),
+            '--physical-inodes',str(config['physical_inode_budget']),
             '--run-root',str(root),'--run-identity',self.state['id'],
             '--service-cgroup-record',str(root/'service-cgroup.json'),
             '--stale-probe',config['stale_probe'],'--stale-probe-sha256',stale_sha,
             '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds']),
             '--checkpoint-tail-inputs',str(config['dk_checkpoint_tail_inputs'])])
+        if config.get('source_kind') == 'prepared-ci':
+            command.extend(['--activation-ceiling-bytes',str(config['prepared_ci_disk_budget_bytes'])])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(command, config)
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
         self.save()  # A lost launch acknowledgement never permits another group.
@@ -587,6 +596,7 @@ class Supervisor:
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
         args.extend(['--candidate-manifest', self.state['candidate_manifest'],
                      '--capture-settings',str(capture_file),
+                     '--physical-inodes',str(config['physical_inode_budget']),
                      '--run-identity', self.state['id'],
                      '--service-cgroup-record',str(root/'service-cgroup.json')])
         if config.get('source_kind') == 'prepared-ci':
@@ -607,6 +617,8 @@ class Supervisor:
             args.extend(['--docker-hub-mirror', config['docker_hub_mirror']])
         for name in batch['names']:
             args.extend(['--task', name])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(args, config)
         batch.update(root=str(root), command=args, checkout=str(checkout),
             services=service_artifacts.public_identity(manifest),
             deadline_seconds=int(sum(sum(self.state['task_inputs'][name]['requirements'][key]

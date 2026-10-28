@@ -39,7 +39,7 @@ from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
 from tools.template_physical_storage import envelope
-from tools.capture_acceptance import require_capacity, validate_settings
+from tools.capture_acceptance import instantiate_copy_limits, require_capacity, validate_settings
 from tools.runtime_acceptance_budget import profile_declaration as _profile_declaration, service_declarations
 
 MIB = 1024**2
@@ -56,6 +56,8 @@ def add_arguments(parser, *, required=True):
         parser.add_argument('--' + name, type=int, required=required)
     parser.add_argument('--redis-operation-timeout-ms',type=_redis_operation_timeout_argument,
         default=1000,help='Explicit deployment-only Redis wait budget, 1..60000 ms (default: 1000)')
+    parser.add_argument('--physical-inodes',type=int,
+        help='explicit complete filesystem inode provision; cannot reduce the original declaration')
 
 
 def _redis_operation_timeout_argument(value):
@@ -126,10 +128,12 @@ def _wait_redis(config,process):
 
 
 
-def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
+def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks,
+                  activation_ceiling_bytes=None, physical_inodes=None):
     """Validate the full original physical admission before any large copy."""
     profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
-        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes)
+        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,
+        physical_inodes=physical_inodes)
     peak,inodes=envelope(profile)
     free=os.statvfs(layout['hosts'][0])
     if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
@@ -197,6 +201,8 @@ class RuntimeServices:
         manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,
             paths={role:str(path) for role,path in paths.items()},versions=versions)
         captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
+        captures=[instantiate_copy_limits(capture,native,catalog)
+                  for capture,native,catalog in zip(captures,pools,registered_catalogs)]
         for native,capture in zip(pools,captures):
             pool_root=Path(native['database']).parent.parent
             parent=Path(capture['layout_parent'])
@@ -258,7 +264,8 @@ class RuntimeServices:
         redis_bin=layout['redis']/'redis-server'
         service_peaks=service_declarations(layout,ids,paths,asset_bytes,redis_receipt,private_builds,captures)
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
-                              activation_ceiling_bytes=activation_ceiling_bytes)
+                              activation_ceiling_bytes=activation_ceiling_bytes,
+                              physical_inodes=getattr(args,'physical_inodes',None))
         # Complete original byte/inode activation is checked BEFORE any large
         # disk copy. Rust checks the same final profile independently at init.
         for source,target,checksum in pending_copies:

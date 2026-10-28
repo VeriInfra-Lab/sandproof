@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -75,6 +76,37 @@ class Registration(unittest.TestCase):
         retained = next(j for j in inbox if j['name'] == 'inbox-retained-correct')
         self.assertNotIn('--fresh-native', retained['args'])
 
+    def test_expanded_schedule_preserves_all_original_63_jobs(self):
+        legacy_variants = {
+            'inbox-lookup': ('correct', 'key-only'),
+            'inbox-admission': ('correct', 'skip-node', 'skip-envelope'),
+            'inbox-record': ('correct', 'skip-retention-window', 'wrong-recorded-version'),
+            'inbox-record-total': ('correct', 'skip-sdk-gate', 'skip-prior-capture'),
+            'inbox-state': ('correct', 'always-current', 'drop-operation'),
+            'inbox-position': ('correct', 'always-current', 'drop-operation'),
+            'inbox-lineage': ('correct', 'advance-unattached-resume', 'repeat-capture', 'skip-final-incarnation'),
+            'inbox-retained': ('correct', 'reverse-compaction-bound', 'reverse-confirmation-bound', 'zero-version-adjacency'),
+            'inbox-lifetimes': ('correct', 'skip-predecessor', 'keep-gap-predecessor', 'skip-final-deadline'),
+            'inbox-renewal-session': ('correct', 'key-only-checkpoint', 'ignore-retained-frontier', 'ignore-unapplied-sdk'),
+            'inbox-unload-resolution': ('correct', 'ignore-snapshot-phase', 'ignore-capture-operation', 'ignore-result-maximum'),
+        }
+        jobs = registered.formal_plan(Path('/unused'))
+        legacy_names = {name+'-'+variant for name, variants in legacy_variants.items()
+                        for variant in variants}
+        legacy_names.update(('replay-replay', 'replay-validation', 'replay-envelope',
+            'manifest-validation', 'result-confirmation', 'observation-bindings',
+            'resume-observation', 'unload-observation', 'access-identity',
+            'renewal-confirmation', 'create-observation', 'create-conversion', 'create-guard',
+            'json-wire', 'schema-leaves', 'envelope-schema', 'envelope-bytes', 'envelope-budget',
+            'envelope-writer-correct', 'envelope-writer-swallow-error',
+            'serde-binding', 'serde-binding-negative', 'parser-binding', 'parser-binding-negative',
+            'decode-assembly', 'decode-assembly-negative'))
+        self.assertEqual(len(legacy_names), 63)
+        self.assertLessEqual(legacy_names, {job['name'] for job in jobs})
+        self.assertLessEqual({'stage1-'+name for name in legacy_variants
+                             if name != 'inbox-record-total'} | {'stage1-inbox-append'},
+                            set(registered.NATIVE_CASES))
+
     def test_lost_native_or_variant_registration_is_refused(self):
         registered.validate_registration()
         with patch.object(registered, 'NATIVE_CASES', tuple(
@@ -100,6 +132,22 @@ class Registration(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'shared native'):
                     registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
             shared.assert_not_called()
+
+    def test_formal_execution_environment_is_strict_and_explicit_arguments_win(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='2',
+                        SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+            options = registered._execution_options()
+            self.assertEqual(options['workers'],2)
+            self.assertEqual(options['resume_from'],'/original/registered-result.json')
+            self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
+            self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
+        with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2 or 4'):
+                registered._execution_options()
+            self.assertEqual(registered._execution_options(1)['workers'],1)
+        with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):
+            with self.assertRaisesRegex(ValueError,'absolute original record'):
+                registered._execution_options(1)
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
@@ -480,6 +528,483 @@ class Registration(unittest.TestCase):
                         record['retained_source_files'].pop(next(iter(record['retained_source_files'])))
                     with self.assertRaises(ValueError):
                         registered.validate_retained_coverage(root, record)
+
+
+class CheckpointExecution(unittest.TestCase):
+    """Controlled child processes/service records; no proof tools invoked."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        self.shared = registered._shared()
+        self.helper = registered._execution_helper(registered.ROOT)
+        self.context = dict(schema=1, reuse_scope='same-source-tree', source_tree='fixture',
+                            runtime={'fixed-tool':'original'}, native={'seal':'original'})
+        self.called = []
+        self.environments = {}
+        self.mutex = threading.Lock()
+        self.defect = None
+        self.hook = None
+
+    def plan(self, output, names=('fixture-first', 'fixture-second')):
+        return [dict(name=name, driver='fixture.py', args=['--variant', 'correct'],
+                     output=str(output/name), native=[], cases=['correct'], actual_files=True)
+                for name in names]
+
+    def invoke(self, root, driver, args, env=None, *, log=None):
+        output = Path(args[args.index('--output')+1])
+        name = output.name
+        with self.mutex:
+            self.called.append(name)
+            self.environments[name] = dict(env)
+        if self.hook is not None:
+            self.hook(name)
+        output.mkdir(mode=0o700)
+        project = output/'source'
+        (project/'artifacts').mkdir(parents=True)
+        (project/'artifacts/original.llbc').write_text('{"controlled_fixture":true}')
+        source = project/'Fixture.lean'
+        audit = 'Fixture.'+name.replace('-', '_')
+        source.write_text('-- Controlled bytes: no Lean service was invoked.\n'
+                          '#audit_controller_proof '+audit+'\n')
+        files = {'Fixture.lean':registered._sha(source)}
+        physical = output/'physical-files'
+        physical.mkdir()
+        request = dict(tool='lean_diagnostic_messages', arguments={'file_path':'Fixture.lean'},
+                       expected_sha256=files['Fixture.lean'])
+        (physical/'requests.jsonl').write_text(json.dumps(request)+'\n{"tool":"exit"}\n')
+        response = dict(request=request, revision={'file_sha256':files['Fixture.lean']}, stale=False,
+            result=dict(success=True, partial=self.defect == 'partial', timed_out=False,
+                        failed_dependencies=[], still_elaborating_lines=[], items=[dict(
+                            severity='information', message='Checked '+audit+': 3 standard logical dependencies')]))
+        (physical/'service.log').write_text(json.dumps(response)+'\n')
+        kernel = output/'kernel-0.log'
+        kernel.write_text('Controlled successful kernel fixture; no Lean invocation.\n')
+        result = dict(complete=True, variant='correct', actual=dict(files=files, audits=[audit],
+            service_log_sha256=registered._sha(physical/'service.log')), commands=[dict(
+                argv=['lake','env','lean','Fixture.lean'], cwd=str(project), exit_code=0,
+                log_sha256=registered._sha(kernel))])
+        (output/'result.json').write_text(json.dumps(result))
+        Path(log).write_text('Controlled child fixture.\nChecked '+audit+': 3 standard logical dependencies\n')
+        return ['controlled-python',str(root/driver),*map(str,args)]
+
+    def execute(self, label, *, jobs=1, resume=None, names=('fixture-first','fixture-second'), progress=None,
+                runtime_seed=None, report_fixture=False):
+        output = self.directory/label
+        output.mkdir()
+        plan = self.state_plan(output) if report_fixture else self.plan(output,names)
+        with patch.object(registered,'formal_plan',return_value=plan), \
+                patch.object(registered,'_invoke',side_effect=self.invoke_state if report_fixture else self.invoke):
+            rows, failures = registered.execute_formal_jobs(registered.ROOT,output,plan,
+                self.context,{},jobs=jobs,resume=resume,progress=progress,runtime_seed=runtime_seed)
+        parent = output/'registered-result.json'
+        self.shared.write_json(parent,dict(kind='registered-stage1-formal-drivers',
+            execution_schema=1,complete=not failures,results=rows))
+        return output, rows, failures, parent
+
+    def state_plan(self, output):
+        return [dict(name='inbox-state-'+variant, driver=str(registered.HERE/'inbox-state/formal.py'),
+            args=['--require-native','--variant',variant], output=str(output/('inbox-state-'+variant)),
+            native=['stage1-inbox-state'], cases=[variant], actual_files=True)
+            for variant in ('correct','always-current')]
+
+    def invoke_state(self, root, driver, args, env=None, *, log=None):
+        command = self.invoke(root,driver,args,env,log=log)
+        path = Path(args[args.index('--output')+1])/'result.json'
+        value = registered._read(path)
+        value.update(kind='inbox-state-formal-development', variant=args[args.index('--variant')+1],
+                     inputs=copy.deepcopy(self.context['repository']['files']))
+        self.shared.write_json(path,value)
+        return command
+
+    def report_context(self, *, report='original report', tree='original-tree'):
+        files = {'docs/proof-coverage.md':registered._object_sha(report),
+            'controller-service/src/controller/lifecycle_inbox/model.rs':'b'*64,
+            'docs/proof-workflow.md':'c'*64}
+        key = dict(label='functional', command=['component-case'], repository=copy.deepcopy(files))
+        return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
+            repository=dict(files=files,modes={name:'100644' for name in files}),
+            rust={'model':'original'}, rules={'driver':'original'}, contracts={'contract':'original'},
+            source_archives={'archive':'original'}, runtime={'tool':'original'},
+            driver_python={'executable':'original'},
+            native=dict(seal_sha256=registered._object_sha(key),receipts={
+                'functional':dict(key=key,sha256=registered._object_sha(key)),
+                'stage1-inbox-state':dict(key={'state':'original'},sha256='d'*64)}))
+
+    def test_current_context_captures_regular_source_modes_and_requires_fresh_functional_inputs(self):
+        root = self.directory/'source'
+        report = root/'docs/proof-coverage.md'
+        report.parent.mkdir(parents=True)
+        report.write_text('controlled report fixture\n')
+        report.chmod(0o600)
+        files = {'docs/proof-coverage.md':registered._sha(report)}
+        cache = self.directory/'native'
+        evidence = cache/'commands/functional/evidence'
+        evidence.mkdir(parents=True)
+        (cache/'complete.json').write_text('controlled seal')
+        (evidence.parent/'receipt.json').write_text('controlled complete receipt')
+        receipts = {'functional':{'key':{'repository':dict(files)}}}
+        shared = SimpleNamespace(repository_inputs=lambda root:dict(files),
+            rust_inputs=lambda root:{},rules=lambda root:{},contract_inputs=lambda root:{},
+            source_archive_inputs=lambda:{})
+        helper = SimpleNamespace(runtime=lambda:{'tools':'controlled fixture'})
+        def git(args, **kwargs):
+            if args[1] == 'rev-parse': return 'controlled-tree\n'
+            if args[1] == 'status': return b''
+            self.assertEqual(args,['git','ls-files','--stage','-z'])
+            return b'100644 0000000000000000000000000000000000000000 0\tdocs/proof-coverage.md\0'
+        with patch.object(registered.subprocess,'check_output',side_effect=git), \
+                patch.object(registered,'_evidence',return_value=evidence), \
+                patch.dict(os.environ,SANDPROOF_NATIVE_EVIDENCE=str(cache)):
+            context = registered._execution_context(root,shared,helper,receipts)
+            self.assertEqual(context['schema'],2)
+            self.assertEqual(context['repository'],dict(files=files,modes={'docs/proof-coverage.md':'100644'}))
+            receipts['functional']['key']['repository'] = {'docs/proof-coverage.md':'old-digest'}
+            with self.assertRaisesRegex(ValueError,'current complete functional admission'):
+                registered._execution_context(root,shared,helper,receipts)
+            receipts['functional']['key']['repository'] = dict(files)
+            report.chmod(0o700)
+            with self.assertRaisesRegex(ValueError,'regular committed files'):
+                registered._execution_context(root,shared,helper,receipts)
+
+    def test_reviewed_report_only_continuation_reuses_both_without_launching_a_driver(self):
+        self.context = self.report_context()
+        _, before, failures, parent = self.execute('state-original',report_fixture=True)
+        self.assertFalse(failures)
+        saved = registered._read(parent)
+        saved['complete'] = False
+        self.shared.write_json(parent,saved)
+        original_bytes = parent.read_bytes()
+        self.context = self.report_context(report='updated coverage report',tree='updated-tree')
+        self.called.clear()
+        _, rows, failures, _ = self.execute('report-only',resume=parent,report_fixture=True)
+        self.assertFalse(failures)
+        self.assertEqual(self.called,[])
+        self.assertEqual([row['use'] for row in rows],['REUSE','REUSE'])
+        self.assertEqual([row['result_path'] for row in rows],[row['result_path'] for row in before])
+        self.assertEqual(parent.read_bytes(),original_bytes)
+        for row in rows:
+            self.assertEqual(row['reuse_basis']['kind'],'reviewed-state-coverage-report-only')
+            self.assertFalse(row['reuse_basis']['report_checks_reused'])
+            self.assertEqual(row['reuse_basis']['current_tree'],'updated-tree')
+
+    def test_report_only_reuse_refuses_every_other_source_or_execution_change(self):
+        original = self.report_context()
+        accepted = self.report_context(report='new report',tree='new-tree')
+        job = self.state_plan(self.directory)[0]
+        result = dict(kind='inbox-state-formal-development',variant='correct',
+                      inputs=original['repository']['files'])
+        for change in ('rust','rules','contracts','source_archives','runtime','driver_python',
+                'native-case','semantic-file','other-doc','new-file','deleted-file','mode',
+                'report-mode','stale-functional','missing-snapshot','legacy-schema','wrong-inputs'):
+            with self.subTest(change=change):
+                current = copy.deepcopy(accepted)
+                checked = copy.deepcopy(result)
+                if change in ('rust','rules','contracts','source_archives','runtime','driver_python'):
+                    current[change] = {'changed':'input'}
+                elif change == 'native-case':
+                    current['native']['receipts']['stage1-inbox-state']['sha256'] = 'e'*64
+                elif change in ('semantic-file','other-doc'):
+                    name = ('controller-service/src/controller/lifecycle_inbox/model.rs'
+                            if change == 'semantic-file' else 'docs/proof-workflow.md')
+                    current['repository']['files'][name] = 'e'*64
+                    current['native']['receipts']['functional']['key']['repository'][name] = 'e'*64
+                elif change == 'new-file':
+                    current['repository']['files']['new.rs'] = 'e'*64
+                    current['repository']['modes']['new.rs'] = '100644'
+                    current['native']['receipts']['functional']['key']['repository']['new.rs'] = 'e'*64
+                elif change == 'deleted-file':
+                    current['repository']['files'].pop('docs/proof-workflow.md')
+                    current['repository']['modes'].pop('docs/proof-workflow.md')
+                    current['native']['receipts']['functional']['key']['repository'].pop('docs/proof-workflow.md')
+                elif change in ('mode','report-mode'):
+                    name = 'docs/proof-coverage.md' if change == 'report-mode' else 'docs/proof-workflow.md'
+                    current['repository']['modes'][name] = '100755'
+                elif change == 'stale-functional':
+                    current['native']['receipts']['functional'] = copy.deepcopy(original['native']['receipts']['functional'])
+                elif change == 'missing-snapshot':
+                    current['repository'] = []
+                elif change == 'legacy-schema':
+                    current['schema'] = 1
+                else:
+                    checked['inputs'] = {}
+                with self.assertRaises((ValueError,KeyError)):
+                    registered._context_reuse_basis(original,current,job,checked)
+
+    def test_report_scope_does_not_extend_to_another_producer_or_variant(self):
+        original = self.report_context()
+        current = self.report_context(report='new report',tree='new-tree')
+        baseline = self.state_plan(self.directory)[0]
+        result = dict(kind='inbox-state-formal-development',variant='correct',
+                      inputs=original['repository']['files'])
+        for field, value in [('name','inbox-state-drop-operation'),('driver','another.py'),
+                ('args',['--require-native','--variant','drop-operation']),
+                ('native',[]),('cases',['wrong']),('actual_files',False)]:
+            with self.subTest(field=field):
+                job = dict(baseline,**{field:value})
+                with self.assertRaisesRegex(ValueError,'no reviewed report-independent closure'):
+                    registered._context_reuse_basis(original,current,job,result)
+
+    def test_report_change_does_not_relabel_a_damaged_proof_as_reusable(self):
+        self.context = self.report_context()
+        output, _, _, parent = self.execute('state-before-damage',report_fixture=True)
+        original_bytes = parent.read_bytes()
+        (output/'inbox-state-correct/source/artifacts/original.llbc').unlink()
+        self.context = self.report_context(report='new report',tree='new-tree')
+        self.called.clear()
+        def require_current_native(name):
+            raise ValueError('native and formal source inputs differ; current case evidence required')
+        self.hook = require_current_native
+        after, rows, failures, _ = self.execute('state-damaged',resume=parent,report_fixture=True)
+        self.assertEqual(self.called,['inbox-state-correct'])
+        self.assertEqual([(row['name'],row['use']) for row in rows],[('inbox-state-always-current','REUSE')])
+        self.assertIn('current case evidence required',failures['inbox-state-correct']['error'])
+        self.assertFalse((after/'execution/inbox-state-correct/checkpoint.json').exists())
+        self.assertEqual(parent.read_bytes(),original_bytes)
+
+    def test_same_candidate_checkpoints_resume_even_when_parent_aggregate_failed(self):
+        output, rows, failures, parent = self.execute('first')
+        self.assertFalse(failures)
+        self.assertEqual([row['use'] for row in rows],['RUN','RUN'])
+        old = registered._read(parent)
+        old['complete'] = False
+        self.shared.write_json(parent,old)
+        original = parent.read_bytes()
+        self.called.clear()
+        _, reused, failures, _ = self.execute('resume',resume=parent)
+        self.assertEqual(self.called,[])
+        self.assertFalse(failures)
+        self.assertEqual([row['use'] for row in reused],['REUSE','REUSE'])
+        self.assertEqual(parent.read_bytes(),original)
+        self.assertEqual([row['result_path'] for row in rows],[row['result_path'] for row in reused])
+
+    def test_damaged_evidence_only_reruns_the_affected_job(self):
+        for defect in ('raw','service','kernel','checkpoint','result','context'):
+            with self.subTest(defect=defect):
+                output, rows, _, parent = self.execute('first-'+defect)
+                first = rows[0]
+                if defect == 'raw': (output/'fixture-first/source/artifacts/original.llbc').unlink()
+                elif defect == 'service': (output/'fixture-first/physical-files/service.log').write_text('changed')
+                elif defect == 'kernel': (output/'fixture-first/kernel-0.log').unlink()
+                elif defect == 'checkpoint': Path(first['checkpoint_path']).unlink()
+                elif defect == 'result': Path(first['result_path']).write_text('{"complete":false}')
+                else:
+                    receipt = registered._read(Path(first['checkpoint_path']))
+                    # The context is a shared immutable input: its damage invalidates both jobs.
+                    Path(receipt['context_path']).write_text('{}')
+                self.called.clear()
+                _, after, failures, _ = self.execute('again-'+defect,resume=parent)
+                self.assertFalse(failures)
+                expected = ['fixture-first','fixture-second'] if defect == 'context' else ['fixture-first']
+                self.assertEqual(sorted(self.called),expected)
+                self.assertEqual(after[0]['use'],'RUN')
+                self.assertEqual(after[1]['use'],'RUN' if defect == 'context' else 'REUSE')
+
+    def test_changed_runtime_native_or_input_context_never_hits_old_checkpoint(self):
+        _, _, _, parent = self.execute('original')
+        for field in ('runtime','native','source_tree'):
+            with self.subTest(field=field):
+                before = copy.deepcopy(self.context)
+                self.context[field] = 'changed'
+                self.called.clear()
+                _, rows, failures, _ = self.execute('changed-'+field,resume=parent)
+                self.assertFalse(failures)
+                self.assertEqual([row['use'] for row in rows],['RUN','RUN'])
+                self.context = before
+
+    def test_nonobject_saved_records_rerun_instead_of_aborting_resume(self):
+        for defect in ('checkpoint', 'result', 'context'):
+            with self.subTest(defect=defect):
+                _, rows, _, parent = self.execute('nonobject-'+defect)
+                first = rows[0]
+                checkpoint = Path(first['checkpoint_path'])
+                receipt = registered._read(checkpoint)
+                path = (checkpoint if defect == 'checkpoint' else
+                        Path(first['result_path']) if defect == 'result' else
+                        Path(receipt['context_path']))
+                path.write_text('[]')
+                # Keep the outer digest coherent to exercise validation of the
+                # saved record itself, rather than the earlier digest gate.
+                if defect == 'checkpoint':
+                    first['checkpoint_sha256'] = registered._sha(path)
+                else:
+                    field = 'result_sha256' if defect == 'result' else 'context_sha256'
+                    receipt[field] = registered._sha(path)
+                    if defect == 'result':
+                        first[field] = receipt[field]
+                    self.shared.write_json(checkpoint, receipt)
+                    first['checkpoint_sha256'] = registered._sha(checkpoint)
+                saved = registered._read(parent)
+                saved['results'][0] = first
+                self.shared.write_json(parent, saved)
+                self.called.clear()
+                _, after, failures, _ = self.execute('repaired-'+defect, resume=parent)
+                self.assertFalse(failures)
+                expected = ['fixture-first', 'fixture-second'] if defect == 'context' else ['fixture-first']
+                self.assertEqual(sorted(self.called), expected)
+                self.assertEqual(after[0]['use'], 'RUN')
+                self.assertEqual(after[1]['use'], 'RUN' if defect == 'context' else 'REUSE')
+
+    def test_partial_service_cannot_publish_a_successful_checkpoint(self):
+        self.defect = 'partial'
+        output, rows, failures, _ = self.execute('partial')
+        self.assertEqual(rows,[])
+        self.assertIn('fixture-first',failures)
+        self.assertFalse((output/'execution/fixture-first/checkpoint.json').exists())
+        self.assertTrue((output/'execution/fixture-first/failure.json').is_file())
+        self.assertEqual(self.called,['fixture-first'])
+
+    def test_two_workers_have_private_state_and_aggregate_in_original_order(self):
+        barrier = threading.Barrier(2)
+        second_admitted = threading.Event()
+        def hook(name):
+            barrier.wait(timeout=5)
+            if name == 'fixture-first':
+                self.assertTrue(second_admitted.wait(timeout=5))
+        def progress(rows, failures, misses):
+            if any(row['name']=='fixture-second' for row in rows): second_admitted.set()
+        self.hook = hook
+        before = dict(os.environ)
+        _, rows, failures, _ = self.execute('parallel',jobs=2,progress=progress)
+        self.assertFalse(failures)
+        self.assertEqual([row['name'] for row in rows],['fixture-first','fixture-second'])
+        self.assertEqual(os.environ,before)
+        for variable in ('SANDPROOF_FORMAL_CACHE','CARGO_TARGET_DIR'):
+            self.assertEqual(len({env[variable] for env in self.environments.values()}),2)
+
+    def test_failure_stops_dispatch_but_an_inflight_success_remains_resumable(self):
+        second_started, release_second = threading.Event(), threading.Event()
+        def hook(name):
+            if name == 'fixture-first':
+                self.assertTrue(second_started.wait(timeout=5))
+                raise ValueError('controlled first child failure')
+            second_started.set()
+            self.assertTrue(release_second.wait(timeout=5))
+        def progress(rows, failures, misses):
+            if failures: release_second.set()
+        self.hook = hook
+        names = ('fixture-first','fixture-second','fixture-third')
+        output, rows, failures, parent = self.execute('failed',jobs=2,names=names,progress=progress)
+        self.assertEqual(set(self.called),{'fixture-first','fixture-second'})
+        self.assertEqual([row['name'] for row in rows],['fixture-second'])
+        self.assertEqual(set(failures),{'fixture-first'})
+        failed_bytes = (output/'execution/fixture-first/failure.json').read_bytes()
+        self.hook = None
+        self.called.clear()
+        _, rows, failures, _ = self.execute('recovered',jobs=2,names=names,resume=parent)
+        self.assertFalse(failures)
+        self.assertEqual(set(self.called),{'fixture-first','fixture-third'})
+        self.assertEqual([row['use'] for row in rows],['RUN','REUSE','RUN'])
+        self.assertEqual((output/'execution/fixture-first/failure.json').read_bytes(),failed_bytes)
+
+    def test_four_worker_limit_and_private_outputs(self):
+        barrier = threading.Barrier(4)
+        self.hook = lambda name: barrier.wait(timeout=5)
+        names = ('fixture-first','fixture-second','fixture-third','fixture-fourth')
+        _, rows, failures, _ = self.execute('four',jobs=4,names=names)
+        self.assertFalse(failures)
+        self.assertEqual(len(rows),4)
+        self.assertEqual(len(set(row['result_path'] for row in rows)),4)
+
+    def test_verified_parent_runtime_metadata_seeds_private_caches_without_rewriting_it(self):
+        seed = self.directory/'runtime-file-hashes.json'
+        seed.write_text('{"schema":1,"files":{"controlled":{"sha256":"original"}}}')
+        original = seed.read_bytes()
+        _, rows, failures, _ = self.execute('seeded',jobs=2,runtime_seed=seed)
+        self.assertFalse(failures)
+        copies = [Path(env['SANDPROOF_FORMAL_CACHE'])/'runtime-file-hashes.json'
+                  for env in self.environments.values()]
+        self.assertEqual(len(set(copies)),2)
+        self.assertTrue(all(path.read_bytes()==original for path in copies))
+        copies[0].write_text('{"schema":1,"files":{}}')
+        self.assertEqual(copies[1].read_bytes(),original)
+        self.assertEqual(seed.read_bytes(),original)
+        self.assertTrue(all(row['runtime_seed_sha256']==registered._sha(seed) for row in rows))
+
+    def test_original_public_cli_forwards_environment_configuration_to_the_executor(self):
+        self.public_cli_fixture()
+
+    def test_public_final_write_failure_preserves_the_original_progress_index(self):
+        self.public_cli_fixture(interrupt_final=True)
+
+    def test_public_source_guard_rejects_mode_change_even_when_bytes_and_seal_are_unchanged(self):
+        self.public_cli_fixture(change_modes=True)
+
+    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False):
+        cache = self.directory/'native'
+        evidence = cache/'commands/fixture/evidence'
+        evidence.mkdir(parents=True)
+        (cache/'complete.json').write_text('{"controlled_fixture":true}')
+        (evidence.parent/'receipt.json').write_text('{"controlled_fixture":true}')
+        retained = self.directory/'retained.json'
+        retained.write_text('{"controlled_fixture":true}')
+        output = self.directory/'public'
+        shared = SimpleNamespace(validate_native=lambda *a,**k: None,
+            native_case=lambda *a,**k: {'key':{'label':a[0]}},
+            repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
+            write_json=self.shared.write_json)
+        original_replace = os.replace
+        progress_bytes = []
+        writes = []
+        context = dict(self.context,repository=dict(modes={'Fixture.rs':'100644'}))
+        def replace(source, destination):
+            if interrupt_final and Path(destination) == output/'registered-result.json' and progress_bytes:
+                raise OSError('controlled final replacement failure')
+            return original_replace(source, destination)
+        def write_json(path, value):
+            writes.append(Path(path))
+            return self.shared.write_json(path, value)
+        shared.write_json = write_json
+        def execute_boundary(*args, **kwargs):
+            if change_modes:
+                kwargs['source_guard']()
+                raise AssertionError('changed modes passed the public source guard')
+            if interrupt_final:
+                kwargs['progress']([dict(name='fixture', checkpoint_path='retained-original')], {}, {})
+                progress_bytes.append((output/'registered-result.json').read_bytes())
+            raise ValueError('controlled executor boundary')
+        argv = ['registered.py','formal','--output',str(output),'--retained-result',str(retained)]
+        before_umask = os.umask(0o077)
+        try:
+            with patch.object(registered,'validate_registration'), \
+                    patch.object(registered,'_shared',return_value=shared), \
+                    patch.object(registered,'_evidence',return_value=evidence), \
+                    patch.object(registered,'_original_file'), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_execution_helper',return_value=self.helper), \
+                    patch.object(registered,'_execution_context',return_value=context), \
+                    patch.object(registered,'_source_modes',return_value={'Fixture.rs':'100755' if change_modes else '100644'}), \
+                    patch.object(registered,'formal_plan',return_value=[]), \
+                    patch.object(registered,'execute_formal_jobs',side_effect=execute_boundary) as execute, \
+                    patch.object(os,'replace',side_effect=replace), \
+                    patch.object(registered.sys,'argv',argv), \
+                    patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal',SANDPROOF_NATIVE_EVIDENCE=str(cache),
+                        SANDPROOF_FORMAL_CACHE=str(self.directory/'runtime-cache'), SANDPROOF_STAGE1_JOBS='2',
+                        SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+                error = OSError if interrupt_final else ValueError
+                message = 'controlled final replacement failure' if interrupt_final else 'controlled executor boundary'
+                if change_modes:
+                    message = 'shared native seal or registered source changed'
+                with self.assertRaisesRegex(error,message):
+                    registered.main()
+                self.assertEqual(execute.call_args.kwargs['jobs'],2)
+                self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
+        finally:
+            os.umask(before_umask)
+        saved = registered._read(output/'registered-result.json')
+        self.assertFalse(saved['complete'])
+        self.assertEqual(saved['execution']['workers'],2)
+        self.assertEqual(saved['execution']['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
+        self.assertEqual(writes, [output/'registered-result.json'] * (2 if interrupt_final else 1))
+        if interrupt_final:
+            self.assertEqual((output/'registered-result.json').read_bytes(),progress_bytes[0])
+            self.assertEqual(saved['results'],[dict(name='fixture',checkpoint_path='retained-original')])
+            self.assertEqual(list(output.glob('.receipt-*')),[])
+
+    def test_old_raw_parent_cannot_silently_become_checkpoint_evidence(self):
+        path = self.directory/'legacy.json'
+        path.write_text('{"kind":"registered-stage1-formal-drivers","complete":true,"results":[]}')
+        with self.assertRaisesRegex(ValueError,'checkpoint-producing'):
+            self.execute('legacy',resume=path)
 
 
 if __name__ == '__main__':

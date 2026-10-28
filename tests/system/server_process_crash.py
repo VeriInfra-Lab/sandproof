@@ -106,7 +106,8 @@ def interrupted_host_request(
 
 
 def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=4,
-                           extra_credentials=None, shared_template=False, checkpoint_tail_inputs=1000):
+                           extra_credentials=None, shared_template=False, checkpoint_tail_inputs=1000,
+                           activation_ceiling_bytes=None):
     """Construct fresh explicit native/catalog inputs for the one real fixture.
 
     No retired public-host field is translated or accepted. The production
@@ -151,7 +152,8 @@ def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=
     return RuntimeServices.prepare(args, root=root, native_pools=[native],
         registered_catalogs=[catalog], key=key, public_address=f"127.0.0.1:{port}",
         record=args.service_cgroup_record, retained_sessions=(job_count) + native['max_active_global'],
-        private_builds=None, registry_config=registry, extra_credentials=extra_credentials)
+        private_builds=None, registry_config=registry, extra_credentials=extra_credentials,
+        activation_ceiling_bytes=activation_ceiling_bytes)
 
 
 def original_create_identity(services, metadata):

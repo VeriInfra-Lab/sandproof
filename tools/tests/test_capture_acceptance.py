@@ -16,6 +16,47 @@ def profile():
 
 
 class CaptureAcceptanceTests(unittest.TestCase):
+    def test_actual_registered_shapes_instantiate_one_profile_without_shrinking_project_quota(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            approved=capture.bind_settings(profile(),[root])[0]
+            approved.update(memory_copy_bytes=2*1024**3,disk_copy_bytes=10*1024**3)
+            approved['material_project']['hard_bytes']=88*1024**3
+            saved=copy.deepcopy(approved)
+            disk=root/'disk'
+            for memory,size,retained in ((256,1024**3,4),(2048,10*1024**3,3)):
+                with self.subTest(memory=memory,disk=size):
+                    with disk.open('wb') as stream:
+                        stream.truncate(size)  # Metadata only; never allocate a VM disk.
+                    native=dict(memory_mib=memory,rootfs=str(disk))
+                    catalog=dict(templates=[dict(rootfs=dict(path=str(disk),size_bytes=size),
+                        resources=dict(memory_mib=memory,disk_bytes=size))])
+                    value=capture.instantiate_copy_limits(approved,native,catalog)
+                    self.assertEqual(value['memory_copy_bytes'],memory*1024**2)
+                    self.assertEqual(value['disk_copy_bytes'],size)
+                    for key in approved.keys()-{'memory_copy_bytes','disk_copy_bytes'}:
+                        self.assertEqual(value[key],approved[key])
+                    self.assertEqual(approved,saved)
+                    self.assertLess(capture.require_capacity(value,native,retained),88*1024**3)
+
+    def test_changed_or_underdeclared_original_shapes_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);disk=root/'disk';disk.write_bytes(bytes(4096))
+            approved=capture.bind_settings(profile(),[root])[0]
+            native=dict(memory_mib=1,rootfs=str(disk))
+            original=dict(templates=[dict(rootfs=dict(path=str(disk),size_bytes=4096),
+                resources=dict(memory_mib=1,disk_bytes=4096))])
+            for change in ({'memory_copy_bytes':1024**2-1},{'disk_copy_bytes':4095}):
+                with self.subTest(change=change),self.assertRaisesRegex(ValueError,'approved capture'):
+                    capture.instantiate_copy_limits(approved|change,native,original)
+            for field,value in (('memory_mib',2),('disk_bytes',4097)):
+                catalog=copy.deepcopy(original);catalog['templates'][0]['resources'][field]=value
+                with self.subTest(field=field),self.assertRaises(ValueError):
+                    capture.instantiate_copy_limits(approved,native,catalog)
+            disk.write_bytes(bytes(4097))
+            with self.assertRaisesRegex(ValueError,'original registered disk'):
+                capture.instantiate_copy_limits(approved,native,original)
+
     def test_per_run_binding_keeps_approved_limits_and_uses_exact_private_parent(self):
         source=profile()
         saved=copy.deepcopy(source)

@@ -1,9 +1,12 @@
 import json
+from contextlib import ExitStack
 import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools import ci_retention as gc
 
@@ -279,6 +282,345 @@ class RetentionTests(unittest.TestCase):
         with patch.object(gc.time, 'time', return_value=self.now), patch('builtins.print'):
             gc.main(['--root', str(self.store.root), 'collect'])
         self.assertTrue(path.exists())
+
+    def test_explicit_current_and_rollback_floor_survives_age_and_byte_pressure(self):
+        old, rollback, current = [self.allocate(age=age) for age in (12, 11, 10)]
+        plan = self.store.collect(now=self.now, apply=True, keep_days=1,
+            max_count=0, max_bytes=0, keep_latest=2)
+        self.assertEqual([row['id'] for row in plan], [old.name])
+        self.assertFalse(old.exists())
+        self.assertTrue(rollback.exists())
+        self.assertTrue(current.exists())
+        for bad in (-1, True, 1001):
+            with self.assertRaises(ValueError):
+                self.store.collect(now=self.now, keep_latest=bad)
+
+    def native_fixture(self, number=0):
+        work = self.parent / ('native-run-' + str(number))
+        work.mkdir(mode=0o700)
+        run = gc.NativeBuildRun(work, self.candidate)
+        folder = work / 'correct'
+        folder.mkdir(mode=0o700)
+        target = folder / 'target'
+        target.mkdir(mode=0o700)
+        (target / 'CACHEDIR.TAG').write_text('Signature: 8a477f597d28d172789f06886806bc55\n')
+        (target / '.rustc_info.json').write_text('{}\n')
+        (target / 'rebuildable-binary').write_bytes(b'x' * 8192)
+        (folder / 'source.rs').write_text('// preserved fixture source\n')
+        (folder / 'original.log').write_text('synthetic native fixture, not a proof\n')
+        uses = [dict(identity='fixture-command', sha256='b' * 64)]
+        (work / 'commands-used.jsonl').write_text(json.dumps(uses[0]) + '\n')
+        (work / 'commands-used.jsonl').chmod(0o600)
+        evidence = work / 'native-complete.json'
+        gc.write_once(evidence, dict(complete=True, exit_code=0, scope_complete=True, uses=uses))
+        return run, target, evidence
+
+    def native_store(self):
+        root = self.parent / 'native-builds'
+        root.mkdir(mode=0o700, exist_ok=True)
+        return gc.Store(root)
+
+    def native_handoff(self, run, completion, *, now, observation=None, manifest=None, status='passed'):
+        manifest = manifest or run.work / 'build-targets.json'
+        if not manifest.exists():
+            manifest = run.finish(completion)
+        number = getattr(self, 'handoff_count', 0)
+        self.handoff_count = number + 1
+        evidence = self.parent / ('operator-observation-' + str(number) + '.json')
+        # Synthetic trusted-operator observations exercise the handoff contract;
+        # these fixtures do not claim a real host-wide process/resource audit.
+        report = dict(manifest_sha256=gc.digest(manifest), references_absent=True,
+            mounts_absent=True, observation_complete=True, observation_error=None)
+        report.update(observation or {})
+        gc.write_once(evidence, report)
+        receipt = self.parent / ('operator-receipt-' + str(number) + '.json')
+        gc.write_once(receipt, dict(candidate=self.candidate, status=status,
+            resource_cleanup_confirmed=True, evidence_sha256=gc.digest(evidence)))
+        store = self.native_store()
+        with store.lock():
+            return gc.handoff_native_builds(store, manifest, receipt, evidence, now=now)
+
+    def test_native_handoff_retains_inputs_logs_and_original_completion(self):
+        run, target, evidence = self.native_fixture()
+        before = evidence.read_bytes()
+        manifest = run.finish(evidence)
+        self.assertTrue(target.exists())  # Publishing native success never moves/deletes it.
+        self.assertFalse((self.parent / 'native-builds').exists())
+        payload = self.native_handoff(run, evidence, now=self.now)
+        self.assertFalse(target.exists())
+        self.assertEqual(evidence.read_bytes(), before)
+        self.assertTrue((target.parent / 'source.rs').is_file())
+        self.assertTrue((target.parent / 'original.log').is_file())
+        store = self.native_store()
+        row, = list(store.record_paths())
+        payload, _, value = store.read(row.stem)
+        self.assertEqual(value['state'], 'retired')
+        self.assertTrue((payload / '0/rebuildable-binary').exists())
+        original = json.loads(manifest.read_text())
+        self.assertFalse(original['product_resource_cleanup_claimed'])
+        self.assertEqual(original['completion_sha256'], gc.digest(evidence))
+
+    def test_native_three_successes_collect_only_old_builds_and_keep_every_report(self):
+        runs = [self.native_fixture(n) for n in range(3)]
+        for n, (run, _, evidence) in enumerate(runs):
+            self.native_handoff(run, evidence, now=self.now + n * 2 * gc.DAY)
+        store = self.native_store()
+        self.assertTrue(all(store.read(path.stem)[2]['state']=='retired' for path in store.record_paths()))
+        # Collection remains a separate explicit operator action.
+        store.collect(now=self.now + 4 * gc.DAY, apply=True, keep_latest=2, max_count=2)
+        states = [store.read(path.stem)[2]['state'] for path in store.record_paths()]
+        self.assertEqual(sorted(states), ['removed', 'retired', 'retired'])
+        for run, _, evidence in runs:
+            self.assertTrue(evidence.exists())
+            self.assertTrue((run.work / 'correct/source.rs').exists())
+            self.assertTrue((run.work / 'correct/original.log').exists())
+
+    def terminal_fixture(self, number=0, status='failed'):
+        run, target, success = self.native_fixture(number)
+        # This fixture models a failed run, not a previously sealed success.
+        success.unlink()
+        record = run.work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status=status, exit_code=1 if status == 'failed' else -15,
+            processes_exited=True, observation_complete=True, observation_error=None))
+        return run, target, record
+
+    def test_failed_and_cancelled_manual_cli_preserves_status_and_all_original_evidence(self):
+        from tools.acceptance_receipts import current_native_seal
+        for n, status in enumerate(('failed', 'cancelled')):
+            with self.subTest(status=status):
+                run, target, record = self.terminal_fixture(n, status)
+                before = record.read_bytes()
+                store = self.native_store()
+                with patch('builtins.print'):
+                    gc.main(['--root', str(store.root), 'record-native-terminal',
+                        '--work', str(run.work), '--exit-record', str(record)])
+                manifest = run.work / 'build-terminal-targets.json'
+                value = json.loads(manifest.read_text())
+                self.assertEqual(value['kind'], 'native-terminal-cargo-targets-v1')
+                self.assertEqual(value['terminal_status'], status)
+                self.assertTrue(target.exists())  # Explicit inventory never moves anything.
+                self.assertFalse(current_native_seal(value, {}))
+                for name in ('native-complete.json', 'complete.json', 'build-targets.json'):
+                    self.assertFalse((run.work / name).exists())
+                with self.assertRaisesRegex(ValueError, 'cannot become native success'):
+                    run.finish(record)
+                payload = self.native_handoff(run, record, now=self.now + n,
+                    manifest=manifest, status=status)
+                store.collect(now=self.now + 9 * gc.DAY, apply=True)
+                self.assertEqual(store.read(payload.name)[2]['receipt']['status'], status)
+                self.assertFalse(payload.exists())
+                self.assertEqual(record.read_bytes(), before)
+                self.assertTrue(manifest.exists())
+                self.assertTrue((run.work / 'commands-used.jsonl').exists())
+                self.assertTrue((target.parent / 'source.rs').exists())
+                self.assertTrue((target.parent / 'original.log').exists())
+
+    def test_failure_before_any_target_or_command_is_an_empty_inventory_not_success(self):
+        work = self.parent / 'early-failure'
+        work.mkdir(mode=0o700)
+        run = gc.NativeBuildRun(work, self.candidate)
+        record = work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status='failed', exit_code=2, processes_exited=True,
+            observation_complete=True, observation_error=None))
+        manifest = gc.record_native_terminal(work, record)
+        value = json.loads(manifest.read_text())
+        self.assertEqual(value['targets'], [])
+        self.assertIsNone(value['commands_used_sha256'])
+        with self.assertRaisesRegex(ValueError, 'nonempty build list'):
+            self.native_handoff(run, record, now=self.now, manifest=manifest, status='failed')
+        self.assertEqual(list(self.native_store().record_paths()), [])
+        self.assertFalse((work / 'complete.json').exists())
+
+    def test_terminal_exit_requires_exact_status_nonzero_integer_and_complete_observation(self):
+        mutations = [('exit_code', 0), ('exit_code', True), ('exit_code', '1'),
+            ('exit_code', None), ('status', 'passed'), ('status', 'running'),
+            ('processes_exited', False), ('processes_exited', 1),
+            ('observation_complete', False), ('observation_error', 'PermissionError'),
+            ('candidate', 'b' * 40), ('identity', [0, 0])]
+        for n, (key, value) in enumerate(mutations):
+            with self.subTest(key=key, value=value):
+                run, target, record = self.terminal_fixture(n)
+                changed = json.loads(record.read_text())
+                changed[key] = value
+                record.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    gc.record_native_terminal(run.work, record)
+                self.assertTrue(target.exists())
+                self.assertFalse((run.work / 'build-terminal-targets.json').exists())
+
+    def test_cancelled_parent_with_live_child_cannot_register_terminal_builds(self):
+        run, target, record = self.terminal_fixture(status='cancelled')
+        with (target / 'rebuildable-binary').open('rb') as stream:
+            child = subprocess.Popen([sys.executable, '-B', '-c',
+                "import sys; print('ready',flush=True); sys.stdin.readline()"],
+                pass_fds=(stream.fileno(),), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+                changed = json.loads(record.read_text())
+                changed['processes_exited'] = False
+                record.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'complete child termination'):
+                    gc.record_native_terminal(run.work, record)
+                self.assertIsNone(child.poll())
+                self.assertTrue(target.exists())
+            finally:
+                child.communicate('\n', timeout=10)
+
+    def test_terminal_handoff_rechecks_original_exit_uses_and_exact_failed_status(self):
+        for n, mutation in enumerate(('exit', 'uses', 'receipt', 'unknown')):
+            with self.subTest(mutation=mutation):
+                run, target, record = self.terminal_fixture(n)
+                manifest = gc.record_native_terminal(run.work, record)
+                if mutation == 'exit':
+                    record.write_text(record.read_text() + '\n')
+                elif mutation == 'uses':
+                    (run.work / 'commands-used.jsonl').write_text('{}\n')
+                with self.assertRaises(ValueError):
+                    self.native_handoff(run, record, now=self.now, manifest=manifest,
+                        status='passed' if mutation == 'receipt' else 'failed',
+                        observation={'references_absent': None} if mutation == 'unknown' else None)
+                self.assertTrue(target.exists())
+                self.assertEqual(list(self.native_store().record_paths()), [])
+
+    def test_terminal_inventory_refuses_unregistered_success_or_incomplete_cargo_target(self):
+        run, target, record = self.terminal_fixture()
+        (target / '.rustc_info.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            gc.record_native_terminal(run.work, record)
+        self.assertFalse((run.work / 'build-terminal-targets.json').exists())
+        self.assertTrue(target.exists())
+        (run.work / 'build-allocation.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            gc.record_native_terminal(run.work, record)
+        run, target, success = self.native_fixture(1)
+        record = run.work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status='failed', exit_code=1, processes_exited=True,
+            observation_complete=True, observation_error=None))
+        with self.assertRaisesRegex(ValueError, 'success and failure records'):
+            gc.record_native_terminal(run.work, record)
+        self.assertTrue(success.exists())
+
+    def test_nonprivate_command_record_cannot_authorize_terminal_inventory_or_handoff(self):
+        run, target, record = self.terminal_fixture()
+        used = run.work / 'commands-used.jsonl'
+        used.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'owner-only'):
+            gc.record_native_terminal(run.work, record)
+        used.chmod(0o600)
+        manifest = gc.record_native_terminal(run.work, record)
+        used.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'owner-only'):
+            self.native_handoff(run, record, now=self.now, manifest=manifest, status='failed')
+        self.assertTrue(target.exists())
+        self.assertFalse((run.work / 'build-handoff.json').exists())
+
+    def test_native_failure_changed_uses_and_changed_allocation_never_move_builds(self):
+        for n, mutation in enumerate(('incomplete', 'failed', 'bool_exit', 'changed_uses', 'allocation')):
+            with self.subTest(mutation=mutation):
+                run, target, evidence = self.native_fixture(n)
+                value = json.loads(evidence.read_text())
+                if mutation == 'incomplete': value['complete'] = False
+                elif mutation == 'failed': value['exit_code'] = 1
+                elif mutation == 'bool_exit': value['exit_code'] = False
+                elif mutation == 'changed_uses': value['uses'] = []
+                else: run.allocation.write_text('{}\n')
+                evidence.write_text(json.dumps(value))
+                with self.assertRaises(ValueError):
+                    run.finish(evidence)
+                self.assertTrue(target.exists())
+                self.assertFalse((run.work / 'build-handoff.json').exists())
+        old = self.parent / 'old-unregistered'
+        old.mkdir(mode=0o700)
+        (old / 'original.log').write_text('unfinished\n')
+        with self.assertRaises(ValueError):
+            gc.NativeBuildRun(old, self.candidate)
+
+    def test_live_child_and_rejected_operator_observation_preserve_builds(self):
+        run, target, evidence = self.native_fixture()
+        with (target / 'rebuildable-binary').open('rb') as stream:
+            child = subprocess.Popen([sys.executable, '-B', '-c',
+                "import sys; print('ready',flush=True); sys.stdin.readline()"],
+                pass_fds=(stream.fileno(),), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+                stream.close()  # Only the live child's inherited fd retains it.
+                # The new default path just inventories targets, even when a
+                # nonprivileged host-wide /proc observation is unavailable.
+                run.finish(evidence)
+                with self.assertRaisesRegex(ValueError, 'unknown references'):
+                    self.native_handoff(run, evidence, now=self.now,
+                        observation={'references_absent': False})
+                self.assertIsNone(child.poll())
+                self.assertTrue(target.exists())
+            finally:
+                child.communicate('\n', timeout=10)
+        self.native_handoff(run, evidence, now=self.now)
+        self.assertFalse(target.exists())
+
+    def test_unknown_process_observation_symlink_or_mount_never_hands_off(self):
+        run, target, evidence = self.native_fixture()
+        run.finish(evidence)
+        for report in ({'observation_error':'PermissionError: /proc/1494/fd'},
+                       {'observation_complete':False}, {'mounts_absent':False},
+                       {'references_absent':None}, {'manifest_sha256':'a'*64}):
+            with self.subTest(report=report), self.assertRaises(ValueError):
+                self.native_handoff(run, evidence, now=self.now, observation=report)
+        with patch.object(gc, 'reject_mounts', side_effect=ValueError('live mount')):
+            with self.assertRaises(ValueError): self.native_handoff(run, evidence, now=self.now)
+        saved = target.with_name('saved-build')
+        target.rename(saved)
+        target.symlink_to(saved, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            self.native_handoff(run, evidence, now=self.now)
+        self.assertTrue((saved / 'rebuildable-binary').exists())
+
+    def test_manual_same_second_handoff_cannot_guess_latest_and_rollback(self):
+        first, _, first_evidence = self.native_fixture(0)
+        second, target, second_evidence = self.native_fixture(1)
+        self.native_handoff(first, first_evidence, now=self.now)
+        with self.assertRaisesRegex(ValueError, 'time must follow'):
+            self.native_handoff(second, second_evidence, now=self.now)
+        self.assertTrue(target.exists())
+
+    def test_interrupted_native_target_move_remains_active_and_cannot_be_collected(self):
+        run, target, evidence = self.native_fixture()
+        with patch.object(Path, 'rename', side_effect=OSError('injected handoff interruption')):
+            with self.assertRaises(OSError): self.native_handoff(run, evidence, now=self.now)
+        store = self.native_store()
+        row, = list(store.record_paths())
+        self.assertEqual(store.read(row.stem)[2]['state'], 'active')
+        self.assertEqual(store.collect(now=self.now + 10 * gc.DAY, apply=True,
+            max_count=0, max_bytes=0), [])
+        self.assertTrue(target.exists())
+        self.assertTrue((run.work / 'build-handoff.json').exists())
+
+    def test_invalid_native_inventory_does_not_publish_outer_success(self):
+        from tools import proof_native_suite as suite
+        run, _, _ = self.native_fixture()
+        output = self.parent / 'native-evidence'
+        entry = output / 'commands' / ('a' * 64)
+        entry.mkdir(parents=True, mode=0o700)
+        gc.write_once(entry / 'receipt.json', {'key': {'fixture': True}})
+        used = dict(identity=entry.name, sha256=gc.digest(entry / 'receipt.json'))
+        (run.work / 'commands-used.jsonl').write_text(json.dumps(used) + '\n')
+        names = ('rust_inputs', 'rules', 'runtime', 'repository_inputs',
+                 'contract_inputs', 'source_archive_inputs')
+        initial = dict(rust={}, rules={}, runtime={}, repository={}, contracts={}, source_archives={})
+        builds = Mock()
+        builds.finish.side_effect = ValueError('changed Cargo target identity')
+        with ExitStack() as stack:
+            for name in names:
+                stack.enter_context(patch.object(suite, name, return_value={}))
+            stack.enter_context(patch.object(suite, 'trusted_checkout'))
+            stack.enter_context(patch.object(suite, 'load_success', return_value={'key': {'fixture': True}}))
+            stack.enter_context(patch.object(suite, 'check_native_components'))
+            with self.assertRaisesRegex(ValueError, 'changed Cargo target identity'):
+                suite.publish_suite(output, run.work, initial, 0, builds=builds)
+        self.assertFalse((output / 'complete.json').exists())
+        self.assertTrue(json.loads((run.work / 'native-complete.json').read_text())['complete'])
 
 
 if __name__ == '__main__':

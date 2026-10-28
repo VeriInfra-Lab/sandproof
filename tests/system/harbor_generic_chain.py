@@ -809,7 +809,7 @@ def exercise(args):
             raise RuntimeError('service cleanup incomplete; retain recorded resources')
 
 
-if __name__ == '__main__':
+def parser():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--run-identity',required=True,help='approved supervisor run SHA256')
@@ -835,7 +835,7 @@ if __name__ == '__main__':
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
-                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 200 GiB')
+                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,
@@ -864,13 +864,26 @@ if __name__ == '__main__':
     parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,
                         help='bounded expanded image layers; default 8 GiB, service maximum 32 GiB')
     add_artifact_arguments(parser)
-    args = parser.parse_args()
+    parser.add_argument('--check-arguments', action='store_true',
+                        help='parse the complete command only; no host, service or VM actions')
+    return parser
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
+    if args.check_arguments:
+        print(json.dumps(dict(entry=Path(__file__).name, arguments_valid=True)))
+        return 0
     args.artifact_limits = artifact_limits_from_args(args)
     forward = Path('/proc/sys/net/ipv4/ip_forward').read_text().strip()
     try:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=1'], check=True)
-        sys.exit(exercise(args))
+        return exercise(args)
     finally:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
