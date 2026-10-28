@@ -1028,7 +1028,7 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
             raise ValueError('actual formal tools/libraries/options changed during execution')
         record['complete'] = True
     finally:
-        (output/'registered-result.json').write_text(json.dumps(record, indent=2)+'\n')
+        shared.write_json(output/'registered-result.json', record)
     return record
 
 

@@ -692,6 +692,12 @@ class CheckpointExecution(unittest.TestCase):
         self.assertTrue(all(row['runtime_seed_sha256']==registered._sha(seed) for row in rows))
 
     def test_original_public_cli_forwards_environment_configuration_to_the_executor(self):
+        self.public_cli_fixture()
+
+    def test_public_final_write_failure_preserves_the_original_progress_index(self):
+        self.public_cli_fixture(interrupt_final=True)
+
+    def public_cli_fixture(self, *, interrupt_final=False):
         cache = self.directory/'native'
         evidence = cache/'commands/fixture/evidence'
         evidence.mkdir(parents=True)
@@ -704,6 +710,22 @@ class CheckpointExecution(unittest.TestCase):
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
             repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
             write_json=self.shared.write_json)
+        original_replace = os.replace
+        progress_bytes = []
+        writes = []
+        def replace(source, destination):
+            if interrupt_final and Path(destination) == output/'registered-result.json' and progress_bytes:
+                raise OSError('controlled final replacement failure')
+            return original_replace(source, destination)
+        def write_json(path, value):
+            writes.append(Path(path))
+            return self.shared.write_json(path, value)
+        shared.write_json = write_json
+        def execute_boundary(*args, **kwargs):
+            if interrupt_final:
+                kwargs['progress']([dict(name='fixture', checkpoint_path='retained-original')], {}, {})
+                progress_bytes.append((output/'registered-result.json').read_bytes())
+            raise ValueError('controlled executor boundary')
         argv = ['registered.py','formal','--output',str(output),'--retained-result',str(retained)]
         before_umask = os.umask(0o077)
         try:
@@ -714,12 +736,15 @@ class CheckpointExecution(unittest.TestCase):
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=self.context), \
                     patch.object(registered,'formal_plan',return_value=[]), \
-                    patch.object(registered,'execute_formal_jobs',side_effect=ValueError('controlled executor boundary')) as execute, \
+                    patch.object(registered,'execute_formal_jobs',side_effect=execute_boundary) as execute, \
+                    patch.object(os,'replace',side_effect=replace), \
                     patch.object(registered.sys,'argv',argv), \
                     patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal',SANDPROOF_NATIVE_EVIDENCE=str(cache),
                         SANDPROOF_FORMAL_CACHE=str(self.directory/'runtime-cache'), SANDPROOF_STAGE1_JOBS='2',
                         SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
-                with self.assertRaisesRegex(ValueError,'controlled executor boundary'):
+                error = OSError if interrupt_final else ValueError
+                message = 'controlled final replacement failure' if interrupt_final else 'controlled executor boundary'
+                with self.assertRaisesRegex(error,message):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)
                 self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
@@ -729,6 +754,11 @@ class CheckpointExecution(unittest.TestCase):
         self.assertFalse(saved['complete'])
         self.assertEqual(saved['execution']['workers'],2)
         self.assertEqual(saved['execution']['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
+        self.assertEqual(writes, [output/'registered-result.json'] * (2 if interrupt_final else 1))
+        if interrupt_final:
+            self.assertEqual((output/'registered-result.json').read_bytes(),progress_bytes[0])
+            self.assertEqual(saved['results'],[dict(name='fixture',checkpoint_path='retained-original')])
+            self.assertEqual(list(output.glob('.receipt-*')),[])
 
     def test_old_raw_parent_cannot_silently_become_checkpoint_evidence(self):
         path = self.directory/'legacy.json'
