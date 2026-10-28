@@ -5,6 +5,7 @@ This module neither implements a proof nor issues a shared native seal.
 """
 import argparse
 import ast
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import hashlib
 import importlib.util
 import json
@@ -14,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path('verification/experiments/stage1-protocol')
@@ -71,10 +73,15 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _invoke(root, driver, args, env=None):
+def _invoke(root, driver, args, env=None, *, log=None):
     # Inherit stdout: only the original actual_files checker emits Checked lines.
     argv = [sys.executable, str(root/driver), *map(str, args)]
-    subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, check=True)
+    if log is None:
+        subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, check=True)
+    else:
+        with Path(log).open('xb') as stream:
+            subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL,
+                           stdout=stream, stderr=subprocess.STDOUT, check=True)
     return argv
 
 
@@ -586,10 +593,355 @@ def validate_retained_coverage(root, record):
     return coverage
 
 
-def run_formal(output, retained_result, *, root=ROOT):
+def _execution_helper(root):
+    spec = importlib.util.spec_from_file_location('stage1_execution_helpers', root/'tools/proof_batch.py')
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    if helper.ROOT.resolve() != root.resolve():
+        raise ValueError('execution helper belongs to another source root')
+    # A private module instance in the parent, never shared driver globals.
+    helper.MODULES = ('stage1-protocol',)
+    return helper
+
+
+def _job_description(job):
+    return {name: job[name] for name in ('name', 'driver', 'args', 'native', 'cases', 'actual_files')}
+
+
+def _execution_context(root, shared, helper, receipts):
+    """Conservative same-source-tree resume, not a cross-module cache claim."""
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, text=True).strip()
+    if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root):
+        raise ValueError('checkpoint execution requires a clean committed source')
+    return dict(schema=1, reuse_scope='same-source-tree', source_tree=tree,
+        rust=shared.rust_inputs(root), rules=shared.rules(root),
+        contracts=shared.contract_inputs(root), source_archives=shared.source_archive_inputs(),
+        runtime=helper.runtime(), driver_python=dict(version=sys.version,
+            executable_sha256=_sha(Path(sys.executable).resolve())),
+        native=dict(seal_sha256=_sha(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'complete.json'),
+            receipts={name: dict(key=receipt['key'], sha256=_sha(
+                _evidence(receipt).parent/'receipt.json')) for name, receipt in receipts.items()}))
+
+
+def _actual_views(value):
+    if isinstance(value, dict):
+        if {'files', 'audits', 'service_log_sha256'} <= value.keys():
+            yield value
+        else:
+            for child in value.values():
+                yield from _actual_views(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _actual_views(child)
+
+
+def _kernel_commands(value):
+    if isinstance(value, dict):
+        if value.get('argv', [])[:3] == ['lake', 'env', 'lean']:
+            yield value
+        for child in value.values():
+            yield from _kernel_commands(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _kernel_commands(child)
+
+
+def _saved_physical_view(actual, project, physical, commands):
+    """Read the same complete/fresh diagnostic predicates as proof_services.
+
+    No service is replayed or invoked here; these are original saved messages.
+    Kernel logs, physical bytes and exact source audit declarations are bound.
+    """
+    for name in ('requests.jsonl', 'service.log'):
+        if (physical/name).is_symlink() or not (physical/name).is_file():
+            raise ValueError('missing or linked original service evidence')
+    requests = [json.loads(line) for line in (physical/'requests.jsonl').read_text().splitlines()]
+    if not requests or requests.pop() != {'tool': 'exit'}:
+        raise ValueError('missing original service exit request')
+    files = actual['files']
+    expected_requests = [dict(tool='lean_diagnostic_messages', arguments={'file_path':name},
+                              expected_sha256=digest) for name, digest in files.items()]
+    if requests != expected_requests or _sha(physical/'service.log') != actual['service_log_sha256']:
+        raise ValueError('original physical service inventory or log changed')
+    rows = []
+    for line in (physical/'service.log').read_text().splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get('request', {}).get('tool') == 'lean_diagnostic_messages':
+            rows.append(row)
+    if len(rows) != len(requests):
+        raise ValueError('missing original physical service response')
+    expected_audits, observed_audits = [], []
+    for index, (request, row) in enumerate(zip(requests, rows)):
+        name = request['arguments']['file_path']
+        if Path(name).is_absolute() or '..' in Path(name).parts:
+            raise ValueError('physical source must stay within its original project')
+        source = project/name
+        if (source.is_symlink() or not source.is_file() or _sha(source) != files[name]
+                or row.get('request') != request or row.get('stale') is not False
+                or row.get('revision', {}).get('file_sha256') != files[name]):
+            raise ValueError('changed or stale original physical proof')
+        kernel = physical.parent/('kernel-'+str(index)+'.log')
+        if kernel.is_symlink() or not kernel.is_file() or not any(
+                command.get('argv') == ['lake', 'env', 'lean', name]
+                and command.get('cwd') == str(project) and command.get('exit_code') == 0
+                and command.get('log_sha256') == _sha(kernel) for command in commands):
+            raise ValueError('missing original successful kernel log: '+name)
+        result = row['result']
+        for _ in range(3):
+            if 'success' in result:
+                break
+            result = result.get('structuredContent', result.get('result', {}))
+        if (result.get('success') is not True or result.get('partial') is not False
+                or result.get('timed_out') is not False or result.get('failed_dependencies')
+                or result.get('still_elaborating_lines') not in (None, [])
+                or any(item.get('severity') in ('warning', 'error') for item in result.get('items', []))):
+            raise ValueError('original saved diagnostics incomplete or rejected')
+        expected = re.findall(r'^#audit_controller_proof (\S+)$', source.read_text(), re.M)
+        checked = []
+        for item in result.get('items', []):
+            match = re.fullmatch(r'Checked ([\w.]+): \d+ standard logical dependencies',
+                                 str(item.get('message', item.get('data', ''))))
+            if match:
+                checked.append(match[1])
+        if set(expected) != set(checked):
+            raise ValueError('original service audit differs from physical source')
+        expected_audits.extend(expected)
+        observed_audits.extend(checked)
+    if (len(set(expected_audits)) != len(expected_audits)
+            or sorted(expected_audits) != sorted(observed_audits)
+            or sorted(expected_audits) != sorted(actual['audits'])):
+        raise ValueError('missing/duplicate original component audit')
+
+
+def _checkpoint_evidence(helper, job, result, result_path, log):
+    """Require the original output tree, not merely files a receipt self-reports."""
+    folder = result_path.parent.resolve()
+    evidence = helper.evidence_files(folder, include_sources=True)
+    for parent, dirs, names in os.walk(folder):
+        dirs[:] = [name for name in dirs if not ('target' in name or name in ('.git', '.lake', '.tools', 'node_modules'))]
+        for name in names:
+            path = Path(parent)/name
+            if path.suffix in ('.in', '.stdout'):
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError('linked original proof input')
+                evidence[str(path.resolve())] = _sha(path)
+    if not any(Path(name).suffix == '.llbc' and 'artifacts' in Path(name).relative_to(folder).parts
+               for name in evidence):
+        raise ValueError('missing original raw LLBC evidence')
+    commands = list(_kernel_commands(result))
+    views = list(_actual_views(result))
+    if job['actual_files'] and not views:
+        raise ValueError('missing original actual-file views')
+    service_paths = [Path(name) for name in evidence if name.endswith('/physical-files/service.log')]
+    for actual in views:
+        projects = dict.fromkeys(command['cwd'] for command in commands)
+        project = next((Path(name) for name in projects if all(
+            (Path(name)/file).is_file() and not (Path(name)/file).is_symlink()
+            and _sha(Path(name)/file) == digest for file, digest in actual['files'].items())), None)
+        physical = next((path.parent for path in service_paths
+                         if evidence[str(path)] == actual['service_log_sha256']), None)
+        if project is None or physical is None or not project.resolve().is_relative_to(folder.resolve()):
+            raise ValueError('original physical project/service evidence is missing')
+        _saved_physical_view(actual, project, physical, commands)
+        for name, digest in actual['files'].items():
+            if evidence.get(str((project/name).resolve())) != digest:
+                raise ValueError('physical proof is absent from the complete evidence inventory')
+    if log.is_symlink() or not log.is_file():
+        raise ValueError('missing original command log')
+    evidence[str(log.resolve())] = _sha(log)
+    return evidence
+
+
+def _resume_rows(path):
+    if path is None:
+        return {}
+    record = _read(Path(path))
+    rows = record.get('results', [])
+    if (record.get('kind') != 'registered-stage1-formal-drivers'
+            or record.get('execution_schema') != 1
+            or len({row['name'] for row in rows}) != len(rows)):
+        raise ValueError('resume requires an original checkpoint-producing registered run')
+    return {row['name']: row for row in rows}
+
+
+def _reuse_job(helper, job, context, previous):
+    if previous is None:
+        return None, 'no prior successful checkpoint'
+    try:
+        receipt_path = Path(previous['checkpoint_path'])
+        if _sha(receipt_path) != previous['checkpoint_sha256']:
+            raise ValueError('checkpoint digest changed')
+        receipt = _read(receipt_path)
+        if (receipt.get('schema') != 1 or receipt.get('complete') is not True
+                or type(receipt.get('exit_code')) is not int or receipt['exit_code'] != 0
+                or receipt.get('job') != _job_description(job)):
+            raise ValueError('checkpoint does not describe this complete job')
+        saved_context = Path(receipt['context_path'])
+        if _sha(saved_context) != receipt['context_sha256'] or _read(saved_context) != context:
+            raise ValueError('source/rules/native/tool execution inputs differ')
+        result_path = Path(previous['result_path'])
+        result = _read(result_path)
+        if (_sha(result_path) != previous['result_sha256']
+                or receipt['result_path'] != str(result_path)
+                or receipt['result_sha256'] != previous['result_sha256']
+                or receipt['command_log'] != previous['command_log']
+                or receipt['argv'] != previous['argv']
+                or result_path.parent.name != job['name']):
+            raise ValueError('original result digest or location changed')
+        _check_actual(result, job)
+        if _checkpoint_evidence(helper, job, result, result_path,
+                Path(receipt['command_log'])) != receipt['evidence']:
+            raise ValueError('original evidence inventory changed')
+        row = dict(previous, use='REUSE', reuse_seconds=0)
+        return row, None
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return None, repr(error)
+
+
+def _launch_job(root, job, directory, paths, runtime_seed=None):
+    started = time.monotonic()
+    directory.mkdir(mode=0o700, parents=True)
+    for name in ('runtime-cache', 'cargo-target'):
+        (directory/name).mkdir(mode=0o700)
+    seed_sha256 = None
+    if runtime_seed is not None:
+        if runtime_seed.is_symlink() or not runtime_seed.is_file():
+            raise ValueError('missing original verified runtime metadata seed')
+        content = runtime_seed.read_bytes()
+        seed = json.loads(content)
+        if seed.get('schema') != 1 or not isinstance(seed.get('files'), dict):
+            raise ValueError('invalid original runtime metadata seed')
+        # Copy only the parent's verified metadata, never a caller's runtime
+        # profile. The original helper still rechecks stat/content in the child.
+        with (directory/'runtime-cache/runtime-file-hashes.json').open('xb') as stream:
+            stream.write(content)
+        seed_sha256 = hashlib.sha256(content).hexdigest()
+    args = list(job['args'])
+    if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
+        args += ['--native-evidence', str(paths[job['native'][0]])]
+    args += ['--output', job['output']]
+    env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
+               CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
+    argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log')
+    return dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
+                seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
+                runtime_seed_sha256=seed_sha256)
+
+
+def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=None, recompute=False,
+                        source_guard=None, progress=None, runtime_seed=None):
+    """Fixed-plan jobs only. Threads launch independent Python processes.
+
+    The parent alone validates and publishes checkpoints. Failures stop new
+    dispatch; already-started independent jobs finish and retain their evidence.
+    """
+    if jobs not in (1, 2, 4):
+        raise ValueError('registered worker count must be 1, 2 or 4')
+    if len({job['name'] for job in plan}) != len(plan):
+        raise ValueError('duplicate registered execution job')
+    expected = {job['name']:_job_description(job) for job in formal_plan(output, root=root)}
+    for job in plan:
+        if (re.fullmatch('[a-z][a-z0-9-]*', job['name']) is None
+                or expected.get(job['name']) != _job_description(job)
+                or Path(job['output']).resolve() != (output/job['name']).resolve()
+                or Path(job['output']).exists()):
+            raise ValueError('job must use its original descriptor and new private output')
+    helper, shared = _execution_helper(root), _shared()
+    context_path = output/'execution-inputs.json'
+    shared.write_json(context_path, context)
+    old = _resume_rows(resume)
+    results, failures, misses = {}, {}, {}
+    pending = []
+    for job in plan:
+        started = time.monotonic()
+        row, reason = _reuse_job(helper, job, context, old.get(job['name'])) if not recompute else (None, 'explicit recompute')
+        if row is not None:
+            row['reuse_seconds'] = time.monotonic()-started
+            results[job['name']] = row
+        else:
+            misses[job['name']] = reason
+            pending.append(job)
+    def publish():
+        if progress is not None:
+            progress([results[job['name']] for job in plan if job['name'] in results], dict(failures), dict(misses))
+    publish()
+    stopped = False
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
+        inflight = {}
+        while pending or inflight:
+            while pending and len(inflight) < jobs and not stopped:
+                job = pending.pop(0)
+                future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
+                                         runtime_seed)
+                inflight[future] = job
+            if not inflight:
+                break
+            done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+            for future in done:
+                job = inflight.pop(future)
+                directory = output/'execution'/job['name']
+                try:
+                    row = future.result()
+                    result_path = Path(row['result_path'])
+                    result = _read(result_path)
+                    _check_actual(result, job)
+                    evidence = _checkpoint_evidence(helper, job, result, result_path, Path(row['command_log']))
+                    if source_guard is not None:
+                        source_guard()
+                    receipt = dict(schema=1, complete=True, exit_code=0, job=_job_description(job),
+                        context_path=str(context_path), context_sha256=_sha(context_path),
+                        result_path=str(result_path), result_sha256=_sha(result_path),
+                        command_log=row['command_log'], argv=row['argv'],
+                        evidence=evidence, seconds=row['seconds'])
+                    checkpoint = directory/'checkpoint.json'
+                    shared.write_json(checkpoint, receipt)
+                    row.update(use='RUN', result_sha256=receipt['result_sha256'],
+                        checkpoint_path=str(checkpoint), checkpoint_sha256=_sha(checkpoint))
+                    results[job['name']] = row
+                except Exception as error:
+                    stopped = True
+                    failures[job['name']] = dict(complete=False, error=repr(error), output=job['output'],
+                        command_log=str(directory/'command.log'), context_sha256=_sha(context_path))
+                    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    shared.write_json(directory/'failure.json', failures[job['name']])
+            publish()
+    return [results[job['name']] for job in plan if job['name'] in results], failures
+
+
+def _execution_options(jobs=None, resume_from=None, recompute=False):
+    sources = dict(workers='argument' if jobs is not None else 'default',
+                   resume_from='argument' if resume_from is not None else 'default')
+    if jobs is None:
+        value = os.environ.get('SANDPROOF_STAGE1_JOBS')
+        if value is not None:
+            if value not in ('1', '2', '4'):
+                raise ValueError('SANDPROOF_STAGE1_JOBS must be 1, 2 or 4')
+            jobs = int(value)
+            sources['workers'] = 'SANDPROOF_STAGE1_JOBS'
+        else:
+            jobs = 1
+    if type(jobs) is not int or jobs not in (1, 2, 4):
+        raise ValueError('registered worker count must be 1, 2 or 4')
+    if resume_from is None and os.environ.get('SANDPROOF_STAGE1_RESUME_FROM'):
+        resume_from = Path(os.environ['SANDPROOF_STAGE1_RESUME_FROM'])
+        sources['resume_from'] = 'SANDPROOF_STAGE1_RESUME_FROM'
+        if not resume_from.is_absolute():
+            raise ValueError('SANDPROOF_STAGE1_RESUME_FROM must be an absolute original record path')
+    if resume_from is not None:
+        resume_from = Path(resume_from).absolute()
+    return dict(workers=jobs, resume_from=str(resume_from) if resume_from is not None else None,
+                recompute=recompute or os.environ.get('SANDPROOF_PROOF_RECOMPUTE') == '1', sources=sources)
+
+
+def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=None, recompute=False):
     """Call after the unchanged retained component, on the proof host only."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('formal registration consumes shared native receipts only')
+    options = _execution_options(jobs, resume_from, recompute)
+    jobs, resume_from = options['workers'], options['resume_from']
     validate_registration(root)
     shared = _shared()
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
@@ -610,28 +962,44 @@ def run_formal(output, retained_result, *, root=ROOT):
                       sha256=_sha(paths[name].parent/'receipt.json')) for name in receipts},
                   stdout_evidence='original stdout retained by the public module command.log',
                   retained_result=dict(path=str(retained_result), sha256=_sha(retained_result)),
-                  retained_component_replaced=False, whole_V0_acceptance=False)
+                  retained_component_replaced=False, whole_V0_acceptance=False,
+                  execution_schema=1, execution=dict(**options, reuse_scope='same-source-tree',
+                    affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
+                    private_worker_caches=True, outer_coordination_lock='retained by the calling operator'))
+    def source_guard():
+        if (_sha(cache/'complete.json') != record['shared_seal_sha256']
+                or shared.repository_inputs(root) != source_before):
+            raise ValueError('shared native seal or registered source changed during execution')
+    def progress(rows, failures, misses):
+        record.update(results=rows, execution_failures=failures, reuse_misses=misses)
+        shared.write_json(output/'registered-result.json', record)
     try:
         _retained_result(record)
-        for job in formal_plan(output, root=root):
-            args = list(job['args'])
-            if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
-                args += ['--native-evidence', str(paths[job['native'][0]])]
-            args += ['--output', job['output']]
-            argv = _invoke(root, Path(job['driver']), args)
-            path = Path(job['output'])/'result.json'
-            result = _read(path)
-            _check_actual(result, job)
-            record['results'].append(dict(name=job['name'], argv=argv, result_path=str(path),
-                                          result_sha256=_sha(path)))
+        helper = _execution_helper(root)
+        context = _execution_context(root, shared, helper, receipts)
+        plan = formal_plan(output, root=root)
+        rows, failures = execute_formal_jobs(root, output, plan, context, paths, jobs=jobs,
+            resume=resume_from, recompute=options['recompute'],
+            source_guard=source_guard, progress=progress,
+            runtime_seed=Path(os.environ['SANDPROOF_FORMAL_CACHE'])/'runtime-file-hashes.json')
+        record['results'] = rows
+        # Only original admitted child output is forwarded, in original plan order.
+        for row in rows:
+            sys.stdout.write(Path(row['command_log']).read_text())
+        if failures or len(rows) != len(plan):
+            raise ValueError('registered jobs incomplete; successful checkpoints retained: ' + repr(failures))
+        for job, row in zip(plan, rows):
+            if row['name'] != job['name']:
+                raise ValueError('registered result order differs from the original plan')
             if job['name'].startswith('inbox-record-total-'):
-                record['covered'].append(_append_coverage(result, job['cases'][0], root=root))
+                record['covered'].append(_append_coverage(_read(Path(row['result_path'])), job['cases'][0], root=root))
         # These are the original LLBC/receipt admission regressions, not Rust
         # unit tests. Their required original captures are never optional.
         record['source_admission_regressions'] = []
         for name, suffix in [('serde-binding', 'encode'), ('parser-binding', 'decode'),
                              ('decode-assembly', 'decode')]:
-            capture = output/name/'source/artifacts'/('bytes-recorded_'+suffix+'.llbc')
+            producer, = [row for row in rows if row['name'] == name]
+            capture = Path(producer['result_path']).parent/'source/artifacts'/('bytes-recorded_'+suffix+'.llbc')
             if capture.is_symlink() or not capture.is_file():
                 raise ValueError('missing original LLBC for admission regressions: ' + name)
             prefix = 'SANDPROOF_' + name.upper().replace('-', '_')
@@ -655,9 +1023,9 @@ def run_formal(output, retained_result, *, root=ROOT):
         record['retained_source_files'] = compute_retained_coverage(root, record)
         record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         shared.validate_native(cache, scope='stage1-protocol')
-        if (_sha(cache/'complete.json') != record['shared_seal_sha256']
-                or shared.repository_inputs(root) != source_before):
-            raise ValueError('shared native seal or registered source changed during formal execution')
+        source_guard()
+        if helper.runtime() != context['runtime']:
+            raise ValueError('actual formal tools/libraries/options changed during execution')
         record['complete'] = True
     finally:
         (output/'registered-result.json').write_text(json.dumps(record, indent=2)+'\n')
@@ -669,6 +1037,9 @@ def main():
     parser.add_argument('mode', choices=('native', 'formal', 'plan'))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--retained-result', type=Path)
+    parser.add_argument('--jobs', type=int, choices=(1, 2, 4))
+    parser.add_argument('--resume-from', type=Path)
+    parser.add_argument('--recompute', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     if args.mode == 'native':
@@ -676,7 +1047,9 @@ def main():
     elif args.mode == 'formal':
         if args.retained_result is None:
             parser.error('formal requires --retained-result from the same original component run')
-        run_formal(args.output.absolute(), args.retained_result.absolute())
+        run_formal(args.output.absolute(), args.retained_result.absolute(), jobs=args.jobs,
+                   resume_from=args.resume_from.absolute() if args.resume_from is not None else None,
+                   recompute=args.recompute)
     else:
         print(json.dumps(dict(native_cases=NATIVE_CASES, native_drivers=NATIVE_DRIVERS,
                               formal_jobs=formal_plan(args.output), audit_templates=audit_templates()), indent=2))

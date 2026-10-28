@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -94,6 +95,22 @@ class Registration(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'shared native'):
                     registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
             shared.assert_not_called()
+
+    def test_formal_execution_environment_is_strict_and_explicit_arguments_win(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='2',
+                        SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+            options = registered._execution_options()
+            self.assertEqual(options['workers'],2)
+            self.assertEqual(options['resume_from'],'/original/registered-result.json')
+            self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
+            self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
+        with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2 or 4'):
+                registered._execution_options()
+            self.assertEqual(registered._execution_options(1)['workers'],1)
+        with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):
+            with self.assertRaisesRegex(ValueError,'absolute original record'):
+                registered._execution_options(1)
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
@@ -474,6 +491,250 @@ class Registration(unittest.TestCase):
                         record['retained_source_files'].pop(next(iter(record['retained_source_files'])))
                     with self.assertRaises(ValueError):
                         registered.validate_retained_coverage(root, record)
+
+
+class CheckpointExecution(unittest.TestCase):
+    """Controlled child processes/service records; no proof tools invoked."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+        self.shared = registered._shared()
+        self.helper = registered._execution_helper(registered.ROOT)
+        self.context = dict(schema=1, reuse_scope='same-source-tree', source_tree='fixture',
+                            runtime={'fixed-tool':'original'}, native={'seal':'original'})
+        self.called = []
+        self.environments = {}
+        self.mutex = threading.Lock()
+        self.defect = None
+        self.hook = None
+
+    def plan(self, output, names=('fixture-first', 'fixture-second')):
+        return [dict(name=name, driver='fixture.py', args=['--variant', 'correct'],
+                     output=str(output/name), native=[], cases=['correct'], actual_files=True)
+                for name in names]
+
+    def invoke(self, root, driver, args, env=None, *, log=None):
+        output = Path(args[args.index('--output')+1])
+        name = output.name
+        with self.mutex:
+            self.called.append(name)
+            self.environments[name] = dict(env)
+        if self.hook is not None:
+            self.hook(name)
+        output.mkdir(mode=0o700)
+        project = output/'source'
+        (project/'artifacts').mkdir(parents=True)
+        (project/'artifacts/original.llbc').write_text('{"controlled_fixture":true}')
+        source = project/'Fixture.lean'
+        audit = 'Fixture.'+name.replace('-', '_')
+        source.write_text('-- Controlled bytes: no Lean service was invoked.\n'
+                          '#audit_controller_proof '+audit+'\n')
+        files = {'Fixture.lean':registered._sha(source)}
+        physical = output/'physical-files'
+        physical.mkdir()
+        request = dict(tool='lean_diagnostic_messages', arguments={'file_path':'Fixture.lean'},
+                       expected_sha256=files['Fixture.lean'])
+        (physical/'requests.jsonl').write_text(json.dumps(request)+'\n{"tool":"exit"}\n')
+        response = dict(request=request, revision={'file_sha256':files['Fixture.lean']}, stale=False,
+            result=dict(success=True, partial=self.defect == 'partial', timed_out=False,
+                        failed_dependencies=[], still_elaborating_lines=[], items=[dict(
+                            severity='information', message='Checked '+audit+': 3 standard logical dependencies')]))
+        (physical/'service.log').write_text(json.dumps(response)+'\n')
+        kernel = output/'kernel-0.log'
+        kernel.write_text('Controlled successful kernel fixture; no Lean invocation.\n')
+        result = dict(complete=True, variant='correct', actual=dict(files=files, audits=[audit],
+            service_log_sha256=registered._sha(physical/'service.log')), commands=[dict(
+                argv=['lake','env','lean','Fixture.lean'], cwd=str(project), exit_code=0,
+                log_sha256=registered._sha(kernel))])
+        (output/'result.json').write_text(json.dumps(result))
+        Path(log).write_text('Controlled child fixture.\nChecked '+audit+': 3 standard logical dependencies\n')
+        return ['controlled-python',str(root/driver),*map(str,args)]
+
+    def execute(self, label, *, jobs=1, resume=None, names=('fixture-first','fixture-second'), progress=None,
+                runtime_seed=None):
+        output = self.directory/label
+        output.mkdir()
+        plan = self.plan(output,names)
+        with patch.object(registered,'formal_plan',return_value=plan), \
+                patch.object(registered,'_invoke',side_effect=self.invoke):
+            rows, failures = registered.execute_formal_jobs(registered.ROOT,output,plan,
+                self.context,{},jobs=jobs,resume=resume,progress=progress,runtime_seed=runtime_seed)
+        parent = output/'registered-result.json'
+        self.shared.write_json(parent,dict(kind='registered-stage1-formal-drivers',
+            execution_schema=1,complete=not failures,results=rows))
+        return output, rows, failures, parent
+
+    def test_same_candidate_checkpoints_resume_even_when_parent_aggregate_failed(self):
+        output, rows, failures, parent = self.execute('first')
+        self.assertFalse(failures)
+        self.assertEqual([row['use'] for row in rows],['RUN','RUN'])
+        old = registered._read(parent)
+        old['complete'] = False
+        self.shared.write_json(parent,old)
+        original = parent.read_bytes()
+        self.called.clear()
+        _, reused, failures, _ = self.execute('resume',resume=parent)
+        self.assertEqual(self.called,[])
+        self.assertFalse(failures)
+        self.assertEqual([row['use'] for row in reused],['REUSE','REUSE'])
+        self.assertEqual(parent.read_bytes(),original)
+        self.assertEqual([row['result_path'] for row in rows],[row['result_path'] for row in reused])
+
+    def test_damaged_evidence_only_reruns_the_affected_job(self):
+        for defect in ('raw','service','kernel','checkpoint','result','context'):
+            with self.subTest(defect=defect):
+                output, rows, _, parent = self.execute('first-'+defect)
+                first = rows[0]
+                if defect == 'raw': (output/'fixture-first/source/artifacts/original.llbc').unlink()
+                elif defect == 'service': (output/'fixture-first/physical-files/service.log').write_text('changed')
+                elif defect == 'kernel': (output/'fixture-first/kernel-0.log').unlink()
+                elif defect == 'checkpoint': Path(first['checkpoint_path']).unlink()
+                elif defect == 'result': Path(first['result_path']).write_text('{"complete":false}')
+                else:
+                    receipt = registered._read(Path(first['checkpoint_path']))
+                    # The context is a shared immutable input: its damage invalidates both jobs.
+                    Path(receipt['context_path']).write_text('{}')
+                self.called.clear()
+                _, after, failures, _ = self.execute('again-'+defect,resume=parent)
+                self.assertFalse(failures)
+                expected = ['fixture-first','fixture-second'] if defect == 'context' else ['fixture-first']
+                self.assertEqual(sorted(self.called),expected)
+                self.assertEqual(after[0]['use'],'RUN')
+                self.assertEqual(after[1]['use'],'RUN' if defect == 'context' else 'REUSE')
+
+    def test_changed_runtime_native_or_input_context_never_hits_old_checkpoint(self):
+        _, _, _, parent = self.execute('original')
+        for field in ('runtime','native','source_tree'):
+            with self.subTest(field=field):
+                before = copy.deepcopy(self.context)
+                self.context[field] = 'changed'
+                self.called.clear()
+                _, rows, failures, _ = self.execute('changed-'+field,resume=parent)
+                self.assertFalse(failures)
+                self.assertEqual([row['use'] for row in rows],['RUN','RUN'])
+                self.context = before
+
+    def test_partial_service_cannot_publish_a_successful_checkpoint(self):
+        self.defect = 'partial'
+        output, rows, failures, _ = self.execute('partial')
+        self.assertEqual(rows,[])
+        self.assertIn('fixture-first',failures)
+        self.assertFalse((output/'execution/fixture-first/checkpoint.json').exists())
+        self.assertTrue((output/'execution/fixture-first/failure.json').is_file())
+        self.assertEqual(self.called,['fixture-first'])
+
+    def test_two_workers_have_private_state_and_aggregate_in_original_order(self):
+        barrier = threading.Barrier(2)
+        second_admitted = threading.Event()
+        def hook(name):
+            barrier.wait(timeout=5)
+            if name == 'fixture-first':
+                self.assertTrue(second_admitted.wait(timeout=5))
+        def progress(rows, failures, misses):
+            if any(row['name']=='fixture-second' for row in rows): second_admitted.set()
+        self.hook = hook
+        before = dict(os.environ)
+        _, rows, failures, _ = self.execute('parallel',jobs=2,progress=progress)
+        self.assertFalse(failures)
+        self.assertEqual([row['name'] for row in rows],['fixture-first','fixture-second'])
+        self.assertEqual(os.environ,before)
+        for variable in ('SANDPROOF_FORMAL_CACHE','CARGO_TARGET_DIR'):
+            self.assertEqual(len({env[variable] for env in self.environments.values()}),2)
+
+    def test_failure_stops_dispatch_but_an_inflight_success_remains_resumable(self):
+        second_started, release_second = threading.Event(), threading.Event()
+        def hook(name):
+            if name == 'fixture-first':
+                self.assertTrue(second_started.wait(timeout=5))
+                raise ValueError('controlled first child failure')
+            second_started.set()
+            self.assertTrue(release_second.wait(timeout=5))
+        def progress(rows, failures, misses):
+            if failures: release_second.set()
+        self.hook = hook
+        names = ('fixture-first','fixture-second','fixture-third')
+        output, rows, failures, parent = self.execute('failed',jobs=2,names=names,progress=progress)
+        self.assertEqual(set(self.called),{'fixture-first','fixture-second'})
+        self.assertEqual([row['name'] for row in rows],['fixture-second'])
+        self.assertEqual(set(failures),{'fixture-first'})
+        failed_bytes = (output/'execution/fixture-first/failure.json').read_bytes()
+        self.hook = None
+        self.called.clear()
+        _, rows, failures, _ = self.execute('recovered',jobs=2,names=names,resume=parent)
+        self.assertFalse(failures)
+        self.assertEqual(set(self.called),{'fixture-first','fixture-third'})
+        self.assertEqual([row['use'] for row in rows],['RUN','REUSE','RUN'])
+        self.assertEqual((output/'execution/fixture-first/failure.json').read_bytes(),failed_bytes)
+
+    def test_four_worker_limit_and_private_outputs(self):
+        barrier = threading.Barrier(4)
+        self.hook = lambda name: barrier.wait(timeout=5)
+        names = ('fixture-first','fixture-second','fixture-third','fixture-fourth')
+        _, rows, failures, _ = self.execute('four',jobs=4,names=names)
+        self.assertFalse(failures)
+        self.assertEqual(len(rows),4)
+        self.assertEqual(len(set(row['result_path'] for row in rows)),4)
+
+    def test_verified_parent_runtime_metadata_seeds_private_caches_without_rewriting_it(self):
+        seed = self.directory/'runtime-file-hashes.json'
+        seed.write_text('{"schema":1,"files":{"controlled":{"sha256":"original"}}}')
+        original = seed.read_bytes()
+        _, rows, failures, _ = self.execute('seeded',jobs=2,runtime_seed=seed)
+        self.assertFalse(failures)
+        copies = [Path(env['SANDPROOF_FORMAL_CACHE'])/'runtime-file-hashes.json'
+                  for env in self.environments.values()]
+        self.assertEqual(len(set(copies)),2)
+        self.assertTrue(all(path.read_bytes()==original for path in copies))
+        copies[0].write_text('{"schema":1,"files":{}}')
+        self.assertEqual(copies[1].read_bytes(),original)
+        self.assertEqual(seed.read_bytes(),original)
+        self.assertTrue(all(row['runtime_seed_sha256']==registered._sha(seed) for row in rows))
+
+    def test_original_public_cli_forwards_environment_configuration_to_the_executor(self):
+        cache = self.directory/'native'
+        evidence = cache/'commands/fixture/evidence'
+        evidence.mkdir(parents=True)
+        (cache/'complete.json').write_text('{"controlled_fixture":true}')
+        (evidence.parent/'receipt.json').write_text('{"controlled_fixture":true}')
+        retained = self.directory/'retained.json'
+        retained.write_text('{"controlled_fixture":true}')
+        output = self.directory/'public'
+        shared = SimpleNamespace(validate_native=lambda *a,**k: None,
+            native_case=lambda *a,**k: {'key':{'label':a[0]}},
+            repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
+            write_json=self.shared.write_json)
+        argv = ['registered.py','formal','--output',str(output),'--retained-result',str(retained)]
+        before_umask = os.umask(0o077)
+        try:
+            with patch.object(registered,'validate_registration'), \
+                    patch.object(registered,'_shared',return_value=shared), \
+                    patch.object(registered,'_evidence',return_value=evidence), \
+                    patch.object(registered,'_original_file'), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_execution_helper',return_value=self.helper), \
+                    patch.object(registered,'_execution_context',return_value=self.context), \
+                    patch.object(registered,'formal_plan',return_value=[]), \
+                    patch.object(registered,'execute_formal_jobs',side_effect=ValueError('controlled executor boundary')) as execute, \
+                    patch.object(registered.sys,'argv',argv), \
+                    patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal',SANDPROOF_NATIVE_EVIDENCE=str(cache),
+                        SANDPROOF_FORMAL_CACHE=str(self.directory/'runtime-cache'), SANDPROOF_STAGE1_JOBS='2',
+                        SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+                with self.assertRaisesRegex(ValueError,'controlled executor boundary'):
+                    registered.main()
+                self.assertEqual(execute.call_args.kwargs['jobs'],2)
+                self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
+        finally:
+            os.umask(before_umask)
+        saved = registered._read(output/'registered-result.json')
+        self.assertFalse(saved['complete'])
+        self.assertEqual(saved['execution']['workers'],2)
+        self.assertEqual(saved['execution']['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
+
+    def test_old_raw_parent_cannot_silently_become_checkpoint_evidence(self):
+        path = self.directory/'legacy.json'
+        path.write_text('{"kind":"registered-stage1-formal-drivers","complete":true,"results":[]}')
+        with self.assertRaisesRegex(ValueError,'checkpoint-producing'):
+            self.execute('legacy',resume=path)
 
 
 if __name__ == '__main__':
