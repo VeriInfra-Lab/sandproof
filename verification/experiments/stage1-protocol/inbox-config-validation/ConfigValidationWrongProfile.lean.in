@@ -11,7 +11,7 @@ theorem actual_return : LifecycleInboxConfig.valid Values.noProfile = .ok true :
     (ConfigBudget.required_bytes_iff _ _).mpr (by decide)
   have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
   have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
-  simp only [LifecycleInboxConfig.valid,
+  simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
     sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
     alloc.string.String.Insts.CoreCmpPartialEqString.eq,
     SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,

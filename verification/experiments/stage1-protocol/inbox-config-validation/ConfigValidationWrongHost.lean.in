@@ -8,7 +8,7 @@ open SandproofFoundationsRust.IdentifierLibrary
 namespace SandboxModel.Stage1Protocol.ConfigValidation.WrongHost
 noncomputable section
 
-theorem host_return : HostEpochRegistration.valid { Values.host with version := 2#u16 } = .ok true := by
+theorem host_return : HostEpochRegistration.valid_using graphicEncoding { Values.host with version := 2#u16 } = .ok true := by
   have bounded : StringRepresentable "!~" := by
     change 2 ≤ Usize.max
     scalar_tac
@@ -16,7 +16,8 @@ theorem host_return : HostEpochRegistration.valid { Values.host with version := 
   have nonempty : stringBytes "!~" ≠ [] := by decide
   have length : (stringBytes "!~").length ≤ 128 := by decide
   have accepted : (stringBytes "!~").all graphicByte = true := by decide
-  simp [HostEpochRegistration.valid, Values.host,
+  simp [HostEpochRegistration.valid_using,
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic, graphic_bytes, Values.host,
     alloc.string.String.is_empty, alloc.string.String.len,
     alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
     SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
@@ -31,7 +32,7 @@ theorem actual_return : LifecycleInboxConfig.valid Values.badHostVersion = .ok t
     (ConfigBudget.required_bytes_iff _ _).mpr (by decide)
   have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
   have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
-  simp only [LifecycleInboxConfig.valid,
+  simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
     sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
     alloc.string.String.Insts.CoreCmpPartialEqString.eq,
     SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
