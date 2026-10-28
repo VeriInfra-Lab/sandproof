@@ -310,6 +310,7 @@ class RetentionTests(unittest.TestCase):
         (folder / 'original.log').write_text('synthetic native fixture, not a proof\n')
         uses = [dict(identity='fixture-command', sha256='b' * 64)]
         (work / 'commands-used.jsonl').write_text(json.dumps(uses[0]) + '\n')
+        (work / 'commands-used.jsonl').chmod(0o600)
         evidence = work / 'native-complete.json'
         gc.write_once(evidence, dict(complete=True, exit_code=0, scope_complete=True, uses=uses))
         return run, target, evidence
@@ -501,6 +502,20 @@ class RetentionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'success and failure records'):
             gc.record_native_terminal(run.work, record)
         self.assertTrue(success.exists())
+
+    def test_nonprivate_command_record_cannot_authorize_terminal_inventory_or_handoff(self):
+        run, target, record = self.terminal_fixture()
+        used = run.work / 'commands-used.jsonl'
+        used.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'owner-only'):
+            gc.record_native_terminal(run.work, record)
+        used.chmod(0o600)
+        manifest = gc.record_native_terminal(run.work, record)
+        used.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'owner-only'):
+            self.native_handoff(run, record, now=self.now, manifest=manifest, status='failed')
+        self.assertTrue(target.exists())
+        self.assertFalse((run.work / 'build-handoff.json').exists())
 
     def test_native_failure_changed_uses_and_changed_allocation_never_move_builds(self):
         for n, mutation in enumerate(('incomplete', 'failed', 'bool_exit', 'changed_uses', 'allocation')):
