@@ -35,7 +35,7 @@
  echo 'Typed pure guards and complete value binding only; not whole lifecycle, bytes/TLS, async or ledger truth.'
 --- a/tools/proof_batch.py
 +++ b/tools/proof_batch.py
-@@ -31,6 +31,42 @@
+@@ -31,6 +31,43 @@
      *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
        ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
         'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))
@@ -69,6 +69,7 @@
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveBodyValues.lean.in',
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in',
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in',
++    'verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in',
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in',
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationCounterexample.lean.in',
 +    'verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in',

@@ -1060,12 +1060,17 @@
       "kind": "component-template",
       "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyThreeValues.lean.in",
       "installed_sha256": "f08e6577bbfcb1f939efdb7750bd406650a7b1c9b5e19b0f1304561ed597c66c"
+    },
+    "InboxLoadSuccess": {
+      "kind": "component-template",
+      "path": "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in",
+      "installed_sha256": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b"
     }
   },
   "views": {
     "correct": {
       "stems": [
-        "InboxLoadWitnesses",
+        "InboxLoadSuccess",
         "InboxLoadConfigNormalValues"
       ],
       "files": [
@@ -1123,6 +1128,7 @@
         "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveBodyValues.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveFullValues.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLoadRawCorrespondence.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLoadSuccess.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLoadValueLibrary.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLoadWitnessValues.lean",
         "SandboxModel/Lifecycle/Protocol/InboxLoadWitnesses.lean",
@@ -1513,7 +1519,21 @@
         "SandboxModel.Stage1Protocol.InboxLoad.Values.policy_read",
         "SandboxModel.Stage1Protocol.InboxLoad.Values.capacity_read",
         "SandboxModel.Stage1Protocol.InboxLoad.Values.final_policy_accepts",
-        "SandboxModel.Stage1Protocol.InboxLoad.Values.normal_loaded"
+        "SandboxModel.Stage1Protocol.InboxLoad.Values.normal_loaded",
+        "SandboxModel.Stage1Protocol.InboxLoad.bind_success_value",
+        "SandboxModel.Stage1Protocol.InboxLoad.attempt_success_value",
+        "SandboxModel.Stage1Protocol.InboxLoad.finish_success_same_value",
+        "SandboxModel.Stage1Protocol.InboxLoad.validated_success_details",
+        "SandboxModel.Stage1Protocol.InboxLoad.canonical_success_details",
+        "SandboxModel.Stage1Protocol.InboxLoad.digest_success_details",
+        "SandboxModel.Stage1Protocol.InboxLoad.body_success_details",
+        "SandboxModel.Stage1Protocol.InboxLoad.limits_success_body",
+        "SandboxModel.Stage1Protocol.InboxLoad.capacity_success_body",
+        "SandboxModel.Stage1Protocol.InboxLoad.current_success_body",
+        "SandboxModel.Stage1Protocol.InboxLoad.load_success_body",
+        "SandboxModel.Stage1Protocol.InboxLoad.full_load_success_body",
+        "SandboxModel.Stage1Protocol.InboxLoad.successful_load_requires_validation",
+        "SandboxModel.Stage1Protocol.InboxLoad.normal_load_body_evidence"
       ]
     },
     "wrong-digest": {
@@ -3466,6 +3486,22 @@
     ],
     "InboxLoadWitnesses": [
       "SandboxModel.Stage1Protocol.InboxLoad.Values.normal_loaded"
+    ],
+    "InboxLoadSuccess": [
+      "SandboxModel.Stage1Protocol.InboxLoad.bind_success_value",
+      "SandboxModel.Stage1Protocol.InboxLoad.attempt_success_value",
+      "SandboxModel.Stage1Protocol.InboxLoad.finish_success_same_value",
+      "SandboxModel.Stage1Protocol.InboxLoad.validated_success_details",
+      "SandboxModel.Stage1Protocol.InboxLoad.canonical_success_details",
+      "SandboxModel.Stage1Protocol.InboxLoad.digest_success_details",
+      "SandboxModel.Stage1Protocol.InboxLoad.body_success_details",
+      "SandboxModel.Stage1Protocol.InboxLoad.limits_success_body",
+      "SandboxModel.Stage1Protocol.InboxLoad.capacity_success_body",
+      "SandboxModel.Stage1Protocol.InboxLoad.current_success_body",
+      "SandboxModel.Stage1Protocol.InboxLoad.load_success_body",
+      "SandboxModel.Stage1Protocol.InboxLoad.full_load_success_body",
+      "SandboxModel.Stage1Protocol.InboxLoad.successful_load_requires_validation",
+      "SandboxModel.Stage1Protocol.InboxLoad.normal_load_body_evidence"
     ]
   }
 }

@@ -33,6 +33,12 @@
 计算结果。合同允许每次读取返回不同状态，也没有补上原实现未检查的
 `length(state_json) = bytes.len()` 条件；同一数据库快照的连贯性另由提供者建立。
 
+加载成功的必要后置条件由同一 `FullLoadContract` 推出：`full_load_success_body`
+保留读取、解码、摘要和重编码的效果状态，并证明返回的同一 Inbox 对应完整摘要值
+和完整编码字节相等、精确预算及完整校验成功。`successful_load_requires_validation`
+供调用方直接复用完整校验结论；正常见证沿用上述合法 Inbox。`BodyEvidence` 只记录
+这些必要事实，不替换完整合同，也不增加 JSON、SHA、同快照读取或持久接受假设。
+
 ## 表示关系与提供者
 
 本包使用依赖登记中已有的字符串、Vec、比较、算术和 Result 逐符号合同；独立抽取
