@@ -589,18 +589,178 @@ class CheckpointExecution(unittest.TestCase):
         return ['controlled-python',str(root/driver),*map(str,args)]
 
     def execute(self, label, *, jobs=1, resume=None, names=('fixture-first','fixture-second'), progress=None,
-                runtime_seed=None):
+                runtime_seed=None, report_fixture=False):
         output = self.directory/label
         output.mkdir()
-        plan = self.plan(output,names)
+        plan = self.state_plan(output) if report_fixture else self.plan(output,names)
         with patch.object(registered,'formal_plan',return_value=plan), \
-                patch.object(registered,'_invoke',side_effect=self.invoke):
+                patch.object(registered,'_invoke',side_effect=self.invoke_state if report_fixture else self.invoke):
             rows, failures = registered.execute_formal_jobs(registered.ROOT,output,plan,
                 self.context,{},jobs=jobs,resume=resume,progress=progress,runtime_seed=runtime_seed)
         parent = output/'registered-result.json'
         self.shared.write_json(parent,dict(kind='registered-stage1-formal-drivers',
             execution_schema=1,complete=not failures,results=rows))
         return output, rows, failures, parent
+
+    def state_plan(self, output):
+        return [dict(name='inbox-state-'+variant, driver=str(registered.HERE/'inbox-state/formal.py'),
+            args=['--require-native','--variant',variant], output=str(output/('inbox-state-'+variant)),
+            native=['stage1-inbox-state'], cases=[variant], actual_files=True)
+            for variant in ('correct','always-current')]
+
+    def invoke_state(self, root, driver, args, env=None, *, log=None):
+        command = self.invoke(root,driver,args,env,log=log)
+        path = Path(args[args.index('--output')+1])/'result.json'
+        value = registered._read(path)
+        value.update(kind='inbox-state-formal-development', variant=args[args.index('--variant')+1],
+                     inputs=copy.deepcopy(self.context['repository']['files']))
+        self.shared.write_json(path,value)
+        return command
+
+    def report_context(self, *, report='original report', tree='original-tree'):
+        files = {'docs/proof-coverage.md':registered._object_sha(report),
+            'controller-service/src/controller/lifecycle_inbox/model.rs':'b'*64,
+            'docs/proof-workflow.md':'c'*64}
+        key = dict(label='functional', command=['component-case'], repository=copy.deepcopy(files))
+        return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
+            repository=dict(files=files,modes={name:'100644' for name in files}),
+            rust={'model':'original'}, rules={'driver':'original'}, contracts={'contract':'original'},
+            source_archives={'archive':'original'}, runtime={'tool':'original'},
+            driver_python={'executable':'original'},
+            native=dict(seal_sha256=registered._object_sha(key),receipts={
+                'functional':dict(key=key,sha256=registered._object_sha(key)),
+                'stage1-inbox-state':dict(key={'state':'original'},sha256='d'*64)}))
+
+    def test_current_context_captures_regular_source_modes_and_requires_fresh_functional_inputs(self):
+        root = self.directory/'source'
+        report = root/'docs/proof-coverage.md'
+        report.parent.mkdir(parents=True)
+        report.write_text('controlled report fixture\n')
+        report.chmod(0o600)
+        files = {'docs/proof-coverage.md':registered._sha(report)}
+        cache = self.directory/'native'
+        evidence = cache/'commands/functional/evidence'
+        evidence.mkdir(parents=True)
+        (cache/'complete.json').write_text('controlled seal')
+        (evidence.parent/'receipt.json').write_text('controlled complete receipt')
+        receipts = {'functional':{'key':{'repository':dict(files)}}}
+        shared = SimpleNamespace(repository_inputs=lambda root:dict(files),
+            rust_inputs=lambda root:{},rules=lambda root:{},contract_inputs=lambda root:{},
+            source_archive_inputs=lambda:{})
+        helper = SimpleNamespace(runtime=lambda:{'tools':'controlled fixture'})
+        def git(args, **kwargs):
+            if args[1] == 'rev-parse': return 'controlled-tree\n'
+            if args[1] == 'status': return b''
+            self.assertEqual(args,['git','ls-files','--stage','-z'])
+            return b'100644 0000000000000000000000000000000000000000 0\tdocs/proof-coverage.md\0'
+        with patch.object(registered.subprocess,'check_output',side_effect=git), \
+                patch.object(registered,'_evidence',return_value=evidence), \
+                patch.dict(os.environ,SANDPROOF_NATIVE_EVIDENCE=str(cache)):
+            context = registered._execution_context(root,shared,helper,receipts)
+            self.assertEqual(context['schema'],2)
+            self.assertEqual(context['repository'],dict(files=files,modes={'docs/proof-coverage.md':'100644'}))
+            receipts['functional']['key']['repository'] = {'docs/proof-coverage.md':'old-digest'}
+            with self.assertRaisesRegex(ValueError,'current complete functional admission'):
+                registered._execution_context(root,shared,helper,receipts)
+            receipts['functional']['key']['repository'] = dict(files)
+            report.chmod(0o700)
+            with self.assertRaisesRegex(ValueError,'regular committed files'):
+                registered._execution_context(root,shared,helper,receipts)
+
+    def test_reviewed_report_only_continuation_reuses_both_without_launching_a_driver(self):
+        self.context = self.report_context()
+        _, before, failures, parent = self.execute('state-original',report_fixture=True)
+        self.assertFalse(failures)
+        saved = registered._read(parent)
+        saved['complete'] = False
+        self.shared.write_json(parent,saved)
+        original_bytes = parent.read_bytes()
+        self.context = self.report_context(report='updated coverage report',tree='updated-tree')
+        self.called.clear()
+        _, rows, failures, _ = self.execute('report-only',resume=parent,report_fixture=True)
+        self.assertFalse(failures)
+        self.assertEqual(self.called,[])
+        self.assertEqual([row['use'] for row in rows],['REUSE','REUSE'])
+        self.assertEqual([row['result_path'] for row in rows],[row['result_path'] for row in before])
+        self.assertEqual(parent.read_bytes(),original_bytes)
+        for row in rows:
+            self.assertEqual(row['reuse_basis']['kind'],'reviewed-state-coverage-report-only')
+            self.assertFalse(row['reuse_basis']['report_checks_reused'])
+            self.assertEqual(row['reuse_basis']['current_tree'],'updated-tree')
+
+    def test_report_only_reuse_refuses_every_other_source_or_execution_change(self):
+        original = self.report_context()
+        accepted = self.report_context(report='new report',tree='new-tree')
+        job = self.state_plan(self.directory)[0]
+        result = dict(kind='inbox-state-formal-development',variant='correct',
+                      inputs=original['repository']['files'])
+        for change in ('rust','rules','contracts','source_archives','runtime','driver_python',
+                'native-case','semantic-file','other-doc','new-file','deleted-file','mode',
+                'report-mode','stale-functional','missing-snapshot','legacy-schema','wrong-inputs'):
+            with self.subTest(change=change):
+                current = copy.deepcopy(accepted)
+                checked = copy.deepcopy(result)
+                if change in ('rust','rules','contracts','source_archives','runtime','driver_python'):
+                    current[change] = {'changed':'input'}
+                elif change == 'native-case':
+                    current['native']['receipts']['stage1-inbox-state']['sha256'] = 'e'*64
+                elif change in ('semantic-file','other-doc'):
+                    name = ('controller-service/src/controller/lifecycle_inbox/model.rs'
+                            if change == 'semantic-file' else 'docs/proof-workflow.md')
+                    current['repository']['files'][name] = 'e'*64
+                    current['native']['receipts']['functional']['key']['repository'][name] = 'e'*64
+                elif change == 'new-file':
+                    current['repository']['files']['new.rs'] = 'e'*64
+                    current['repository']['modes']['new.rs'] = '100644'
+                    current['native']['receipts']['functional']['key']['repository']['new.rs'] = 'e'*64
+                elif change == 'deleted-file':
+                    current['repository']['files'].pop('docs/proof-workflow.md')
+                    current['repository']['modes'].pop('docs/proof-workflow.md')
+                    current['native']['receipts']['functional']['key']['repository'].pop('docs/proof-workflow.md')
+                elif change in ('mode','report-mode'):
+                    name = 'docs/proof-coverage.md' if change == 'report-mode' else 'docs/proof-workflow.md'
+                    current['repository']['modes'][name] = '100755'
+                elif change == 'stale-functional':
+                    current['native']['receipts']['functional'] = copy.deepcopy(original['native']['receipts']['functional'])
+                elif change == 'missing-snapshot':
+                    current['repository'] = []
+                elif change == 'legacy-schema':
+                    current['schema'] = 1
+                else:
+                    checked['inputs'] = {}
+                with self.assertRaises((ValueError,KeyError)):
+                    registered._context_reuse_basis(original,current,job,checked)
+
+    def test_report_scope_does_not_extend_to_another_producer_or_variant(self):
+        original = self.report_context()
+        current = self.report_context(report='new report',tree='new-tree')
+        baseline = self.state_plan(self.directory)[0]
+        result = dict(kind='inbox-state-formal-development',variant='correct',
+                      inputs=original['repository']['files'])
+        for field, value in [('name','inbox-state-drop-operation'),('driver','another.py'),
+                ('args',['--require-native','--variant','drop-operation']),
+                ('native',[]),('cases',['wrong']),('actual_files',False)]:
+            with self.subTest(field=field):
+                job = dict(baseline,**{field:value})
+                with self.assertRaisesRegex(ValueError,'no reviewed report-independent closure'):
+                    registered._context_reuse_basis(original,current,job,result)
+
+    def test_report_change_does_not_relabel_a_damaged_proof_as_reusable(self):
+        self.context = self.report_context()
+        output, _, _, parent = self.execute('state-before-damage',report_fixture=True)
+        original_bytes = parent.read_bytes()
+        (output/'inbox-state-correct/source/artifacts/original.llbc').unlink()
+        self.context = self.report_context(report='new report',tree='new-tree')
+        self.called.clear()
+        def require_current_native(name):
+            raise ValueError('native and formal source inputs differ; current case evidence required')
+        self.hook = require_current_native
+        after, rows, failures, _ = self.execute('state-damaged',resume=parent,report_fixture=True)
+        self.assertEqual(self.called,['inbox-state-correct'])
+        self.assertEqual([(row['name'],row['use']) for row in rows],[('inbox-state-always-current','REUSE')])
+        self.assertIn('current case evidence required',failures['inbox-state-correct']['error'])
+        self.assertFalse((after/'execution/inbox-state-correct/checkpoint.json').exists())
+        self.assertEqual(parent.read_bytes(),original_bytes)
 
     def test_same_candidate_checkpoints_resume_even_when_parent_aggregate_failed(self):
         output, rows, failures, parent = self.execute('first')

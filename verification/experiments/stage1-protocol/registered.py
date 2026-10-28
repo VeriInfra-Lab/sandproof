@@ -5,6 +5,7 @@ This module neither implements a proof nor issues a shared native seal.
 """
 import argparse
 import ast
+import copy
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import hashlib
 import importlib.util
@@ -639,11 +640,26 @@ def _job_description(job):
 
 
 def _execution_context(root, shared, helper, receipts):
-    """Conservative same-source-tree resume, not a cross-module cache claim."""
+    """Keep full admission inputs, including the report and Git file modes."""
     tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, text=True).strip()
     if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root):
         raise ValueError('checkpoint execution requires a clean committed source')
-    return dict(schema=1, reuse_scope='same-source-tree', source_tree=tree,
+    repository = shared.repository_inputs(root)
+    modes = {}
+    for entry in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], cwd=root).decode().split('\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split('\t', 1)
+        mode, _, stage = metadata.split()
+        path = root/name
+        if (stage != '0' or mode not in ('100644', '100755') or path.is_symlink()
+                or not path.is_file() or bool(path.stat().st_mode & 0o100) != (mode == '100755')):
+            raise ValueError('checkpoint source requires regular committed files: ' + name)
+        modes[name] = mode
+    if set(modes) != set(repository) or receipts['functional']['key'].get('repository') != repository:
+        raise ValueError('current complete functional admission must match every tracked input')
+    return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
+        repository=dict(files=repository, modes=modes),
         rust=shared.rust_inputs(root), rules=shared.rules(root),
         contracts=shared.contract_inputs(root), source_archives=shared.source_archive_inputs(),
         runtime=helper.runtime(), driver_python=dict(version=sys.version,
@@ -651,6 +667,73 @@ def _execution_context(root, shared, helper, receipts):
         native=dict(seal_sha256=_sha(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'complete.json'),
             receipts={name: dict(key=receipt['key'], sha256=_sha(
                 _evidence(receipt).parent/'receipt.json')) for name, receipt in receipts.items()}))
+
+
+def _context_reuse_basis(previous, current, job, result):
+    if previous == current:
+        return dict(kind='same-source-tree')
+    # Reviewed only for this producer's correct/always-current variants:
+    # inbox-state/formal.py admits the transparent Inbox::state root and exactly
+    # five value-only external functions (Bool/Option/String equality, clone,
+    # Vec.is_empty). Its report bytes enter snapshot/hash/copy guards, not that
+    # Rust body or the generated/Lean import closure. ProofAuditCommand inspects
+    # theorem axioms; proof_services/lean_session read actual Lean files.
+    # Do not extend this to other drivers, report names, or arbitrary docs.
+    variants = {'inbox-state-correct':'correct', 'inbox-state-always-current':'always-current'}
+    variant = variants.get(job['name'])
+    if (variant is None or job['driver'] != str(HERE/'inbox-state/formal.py')
+            or job['args'] != ['--require-native', '--variant', variant]
+            or job['native'] != ['stage1-inbox-state'] or job['cases'] != [variant]
+            or job['actual_files'] is not True
+            or result.get('kind') != 'inbox-state-formal-development'
+            or result.get('variant') != variant):
+        raise ValueError('changed inputs: producer has no reviewed report-independent closure')
+    report = 'docs/proof-coverage.md'
+    normalized = []
+    inventories = []
+    for original in (previous, current):
+        if original.get('schema') != 2:
+            raise ValueError('report continuation requires original schema-2 source/mode evidence')
+        context = copy.deepcopy(original)
+        inventory = context.pop('repository')
+        if not isinstance(inventory, dict):
+            raise ValueError('missing original full source inventory')
+        files, modes = inventory['files'], inventory['modes']
+        if (not isinstance(files, dict) or not isinstance(modes, dict)
+                or set(files) != set(modes) or modes.get(report) != '100644'):
+            raise ValueError('report continuation requires the same regular tracked report')
+        # Functional checks include report/link checks, so their CURRENT native
+        # receipt is still mandatory. Only that receipt may be replaced; all
+        # non-functional prerequisites, rules, tools and contracts remain exact.
+        native = context['native']
+        if not isinstance(native, dict) or not isinstance(native.get('receipts'), dict):
+            raise ValueError('missing original native receipt identity')
+        functional = native['receipts']['functional']
+        if not isinstance(functional, dict) or not isinstance(functional.get('key'), dict):
+            raise ValueError('missing original complete functional admission')
+        key = functional['key']
+        if (key.get('label') != 'functional' or key.get('command') != ['component-case']
+                or key.get('repository') != files):
+            raise ValueError('functional receipt does not admit its complete source inventory')
+        key.pop('repository')
+        functional.pop('sha256')
+        native.pop('seal_sha256')
+        context.pop('source_tree')
+        inventories.append(inventory)
+        normalized.append(context)
+    old, new = inventories
+    if (set(old['files']) != set(new['files']) or old['modes'] != new['modes']
+            or {name for name in old['files'] if old['files'][name] != new['files'][name]} != {report}
+            or normalized[0] != normalized[1]):
+        raise ValueError('source/rules/native/tool change exceeds the reviewed report-only scope')
+    if result.get('inputs') != old['files']:
+        raise ValueError('original state proof does not bind the full saved source inventory')
+    return dict(kind='reviewed-state-coverage-report-only', report=report,
+        original_tree=previous['source_tree'], current_tree=current['source_tree'],
+        original_report_sha256=old['files'][report], current_report_sha256=new['files'][report],
+        original_functional_sha256=previous['native']['receipts']['functional']['sha256'],
+        current_functional_sha256=current['native']['receipts']['functional']['sha256'],
+        report_checks_reused=False)
 
 
 def _actual_views(value):
@@ -810,8 +893,9 @@ def _reuse_job(helper, job, context, previous):
                 or receipt.get('job') != _job_description(job)):
             raise ValueError('checkpoint does not describe this complete job')
         saved_context = Path(receipt['context_path'])
-        if _sha(saved_context) != receipt['context_sha256'] or _read(saved_context) != context:
-            raise ValueError('source/rules/native/tool execution inputs differ')
+        if _sha(saved_context) != receipt['context_sha256']:
+            raise ValueError('original execution context digest changed')
+        original_context = _read(saved_context)
         result_path = Path(previous['result_path'])
         result = _read(result_path)
         if (_sha(result_path) != previous['result_sha256']
@@ -822,10 +906,11 @@ def _reuse_job(helper, job, context, previous):
                 or result_path.parent.name != job['name']):
             raise ValueError('original result digest or location changed')
         _check_actual(result, job)
+        basis = _context_reuse_basis(original_context, context, job, result)
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        row = dict(previous, use='REUSE', reuse_seconds=0)
+        row = dict(previous, use='REUSE', reuse_seconds=0, reuse_basis=basis)
         return row, None
     except (OSError, ValueError, KeyError, TypeError) as error:
         return None, repr(error)
@@ -993,7 +1078,7 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
                   stdout_evidence='original stdout retained by the public module command.log',
                   retained_result=dict(path=str(retained_result), sha256=_sha(retained_result)),
                   retained_component_replaced=False, whole_V0_acceptance=False,
-                  execution_schema=1, execution=dict(**options, reuse_scope='same-source-tree',
+                  execution_schema=1, execution=dict(**options, reuse_scope='same-tree-or-reviewed-state-report',
                     affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
                     private_worker_caches=True, outer_coordination_lock='retained by the calling operator'))
     def source_guard():
