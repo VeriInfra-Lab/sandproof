@@ -3,16 +3,65 @@ use crate::JournalError;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
+pub(super) trait InboxLoadEffects: super::super::checkpoint::ReadConfigEffects {
+    fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError>;
+    fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError>;
+    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError>;
+    fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError>;
+    fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError>;
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32];
+}
+
+impl InboxLoadEffects for super::super::checkpoint::StandardConfigRead<'_> {
+    fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
+        Ok(self.connection.query_row(statement, [], |r| r.get(0))?)
+    }
+    fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError> {
+        Ok(self
+            .connection
+            .query_row(statement, [], |r| Ok((r.get(0)?, r.get(1)?)))?)
+    }
+    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+        Ok(self
+            .connection
+            .query_row(statement, [], |r| Ok((r.get(0)?, r.get(1)?)))?)
+    }
+    fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
+        Ok(serde_json::from_slice(bytes)?)
+    }
+    fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        Ok(serde_json::to_vec(inbox)?)
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        Sha256::digest(bytes).into()
+    }
+}
+
 pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbox>, JournalError> {
-    let exists:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_lifecycle_inbox')",[],|r|r.get(0))?;
-    let version: i64 =
-        connection.query_row("SELECT version FROM controller_meta WHERE id=1", [], |r| {
-            r.get(0)
-        })?;
-    let source_table: bool = connection.query_row(
+    load_using::<
+        super::native_retirement::StandardRetirementEncoding,
+        super::model::StandardTerminalEncoding,
+        super::renewal_confirmation::StandardRenewalEncoding,
+        super::unload_resolution::StandardUnloadEncoding,
+        crate::capture::StandardGraphicBytes,
+        _,
+    >(&mut super::super::checkpoint::StandardConfigRead { connection })
+}
+
+pub(super) fn load_using<
+    R: super::native_retirement::RetirementEncoding,
+    T: super::model::TerminalEncoding,
+    N: super::renewal_confirmation::RenewalEncoding,
+    U: super::unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: InboxLoadEffects,
+>(
+    effects: &mut E,
+) -> Result<Option<Inbox>, JournalError> {
+    let exists:bool=effects.query_bool("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_lifecycle_inbox')")?;
+    let version: i64 = effects.query_i64("SELECT version FROM controller_meta WHERE id=1")?;
+    let source_table: bool = effects.query_bool(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_source_work')",
-        [],
-        |r| r.get(0),
     )?;
     if source_table != (version == crate::LIFECYCLE_STORE_FORMAT_VERSION) {
         return Err(JournalError::CorruptStore);
@@ -27,48 +76,110 @@ pub(in crate::controller) fn load(connection: &Connection) -> Result<Option<Inbo
     if !matches!(version, crate::LIFECYCLE_STORE_FORMAT_VERSION) {
         return Err(JournalError::CorruptStore);
     }
-    if connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_internal_inbox')",[],|r|r.get::<_,bool>(0))?
+    if effects.query_bool("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_internal_inbox')")?
     {return Err(JournalError::CorruptStore);}
-    let cap = super::super::capacity::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
-    let (length, reserve): (i64, i64) = connection.query_row(
+    let cap =
+        super::super::capacity::config_using(effects)?.ok_or(JournalError::UnsupportedStore)?;
+    let (length, reserve): (i64, i64) = effects.query_i64_pair(
         "SELECT length(state_json),reserve_bytes FROM controller_lifecycle_inbox WHERE id=1",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    let length = u64::try_from(length).map_err(|_| JournalError::CorruptStore)?;
-    let reserve = u64::try_from(reserve).map_err(|_| JournalError::CorruptStore)?;
+    if length < 0 {
+        return Err(JournalError::CorruptStore);
+    }
+    let length = length.cast_unsigned();
+    if reserve < 0 {
+        return Err(JournalError::CorruptStore);
+    }
+    let reserve = reserve.cast_unsigned();
     if reserve < length || reserve > cap.max_sql_value_bytes || reserve > 16 * 1024 * 1024 {
         return Err(JournalError::CorruptStore);
     }
-    let (bytes, sha): (Vec<u8>, Vec<u8>) = connection.query_row(
-        "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
-    let inbox: Inbox = serde_json::from_slice(&bytes).map_err(|_| JournalError::CorruptStore)?;
-    if Sha256::digest(&bytes).as_slice() != sha
-        || serde_json::to_vec(&inbox)? != bytes
+    let (bytes, sha): (Vec<u8>, Vec<u8>) = effects
+        .query_bytes_pair("SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1")?;
+    let inbox: Inbox = effects
+        .decode_inbox(&bytes)
+        .map_err(|_| JournalError::CorruptStore)?;
+    if effects.digest(&bytes).as_slice() != &*sha
+        || effects.encode_inbox(&inbox)? != bytes
         || inbox.config.required_bytes() != reserve
     {
         return Err(JournalError::CorruptStore);
     }
-    inbox.validate()?;
+    inbox.validate_using::<R, T, N, U, B>()?;
     let policy =
-        super::super::checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+        super::super::checkpoint::config_using(effects)?.ok_or(JournalError::UnsupportedStore)?;
     if u64::from(inbox.config.max_operations_per_session) > policy.max_operations_per_sandbox {
         return Err(JournalError::CorruptStore);
     }
     Ok(Some(inbox))
 }
+pub(super) trait InboxSaveEffects {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError>;
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32];
+    fn update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError>;
+}
+
+struct StandardInboxSave<'a> {
+    connection: &'a Connection,
+}
+
+impl InboxSaveEffects for StandardInboxSave<'_> {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        Ok(serde_json::to_vec(inbox)?)
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        Sha256::digest(bytes).into()
+    }
+    fn update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        Ok(self
+            .connection
+            .execute(statement, rusqlite::params![bytes, digest])?)
+    }
+}
+
 pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {
-    inbox.validate()?;
-    let bytes = serde_json::to_vec(inbox)?;
+    let mut effects = StandardInboxSave { connection };
+    save_using::<
+        super::native_retirement::StandardRetirementEncoding,
+        super::model::StandardTerminalEncoding,
+        super::renewal_confirmation::StandardRenewalEncoding,
+        super::unload_resolution::StandardUnloadEncoding,
+        crate::capture::StandardGraphicBytes,
+        _,
+    >(inbox, &mut effects)
+}
+
+pub(super) fn save_using<
+    R: super::native_retirement::RetirementEncoding,
+    T: super::model::TerminalEncoding,
+    N: super::renewal_confirmation::RenewalEncoding,
+    U: super::unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: InboxSaveEffects,
+>(
+    inbox: &Inbox,
+    effects: &mut E,
+) -> Result<(), JournalError> {
+    inbox.validate_using::<R, T, N, U, B>()?;
+    let bytes = effects.encode(inbox)?;
     if bytes.len() as u64 > inbox.config.required_bytes() {
         return Err(JournalError::MaintenanceCapacity);
     }
-    if connection.execute(
+    let digest = effects.digest(&bytes);
+    if effects.update(
         "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1",
-        rusqlite::params![bytes, Sha256::digest(&bytes).as_slice()],
+        &bytes,
+        &digest,
     )? != 1
     {
         return Err(JournalError::CorruptStore);

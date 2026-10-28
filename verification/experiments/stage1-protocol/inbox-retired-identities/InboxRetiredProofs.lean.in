@@ -1,0 +1,129 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredScans
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open scoped Classical
+noncomputable section
+
+theorem outer_end (inbox : Inbox) (index : Usize) (bound : inbox.lanes.val.length ≤ index.val) :
+    outerBody inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) index) = .ok (.done (.Ok ())) := by
+  unfold outerBody Inbox.validate_retired_identities_loop.body
+  rw [enum_next_none _ index (by simpa [alloc.vec.Vec.deref] using bound)]
+  simp
+
+theorem outer_step (entries : BorrowedVecBinding Entry) (sessions : BorrowedVecBinding Session)
+    (inbox : Inbox) (index next : Usize) (bound : index.val < inbox.lanes.val.length)
+    (added : next.val = index.val+1) :
+    outerBody inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) index) = .ok
+      (if conflictAt inbox index.val inbox.lanes.val[index.val] then .done (.Err .CorruptStore)
+       else .cont (enumCursor (alloc.vec.Vec.deref inbox.lanes) next)) := by
+  unfold outerBody Inbox.validate_retired_identities_loop.body
+  rw [enum_next_some _ index next (by simpa [alloc.vec.Vec.deref] using bound) added]
+  cases last : inbox.lanes.val[index.val].last_retired with
+  | none => simp [alloc.vec.Vec.deref, last, conflictAt]
+  | some retired =>
+    have before := prior_refines inbox index retired.request.request.binding.session
+      retired.request.request.binding.key (by omega)
+    have active := current_refines entries sessions inbox retired.request.request.binding.session
+      retired.request.request.binding.key
+    cases priorHit : (inbox.lanes.val.take index.val).any
+      (laneHit retired.request.request.binding.session retired.request.request.binding.key) <;>
+      cases currentHit : inbox.sessions.val.any
+        (sessionHit retired.request.request.binding.session retired.request.request.binding.key) <;>
+      simp [alloc.vec.Vec.deref, last, conflictAt, before, active, priorHit, currentHit,
+        -List.any_eq_true, -List.any_eq_false]
+
+theorem remaining_step (inbox : Inbox) (index : Nat) (bound : index < inbox.lanes.val.length) :
+    remainingConflict inbox index =
+      (conflictAt inbox index inbox.lanes.val[index] || remainingConflict inbox (index+1)) := by
+  unfold remainingConflict
+  rw [List.drop_eq_getElem_cons bound, List.zipIdx_cons, List.any_cons]
+
+theorem result_or (a b : Bool) :
+    validationResult (a || b) = if a then .Err .CorruptStore else validationResult b := by
+  cases a <;> rfl
+
+theorem outer_loop_end (inbox : Inbox) (index : Usize) (bound : inbox.lanes.val.length ≤ index.val) :
+    outerLoop inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) index) = .ok (.Ok ()) := by
+  unfold outerLoop Inbox.validate_retired_identities_loop
+  rw [loop]
+  have body := outer_end inbox index bound
+  unfold outerBody at body
+  rw [body]
+  simp only [bind_ok]
+
+theorem outer_loop_step (entries : BorrowedVecBinding Entry) (sessions : BorrowedVecBinding Session)
+    (inbox : Inbox) (index next : Usize) (bound : index.val < inbox.lanes.val.length)
+    (added : next.val = index.val+1) :
+    outerLoop inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) index) =
+      if conflictAt inbox index.val inbox.lanes.val[index.val] then .ok (.Err .CorruptStore)
+      else outerLoop inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) next) := by
+  unfold outerLoop Inbox.validate_retired_identities_loop
+  conv_lhs => rw [loop]
+  have body := outer_step entries sessions inbox index next bound added
+  unfold outerBody at body
+  rw [body]
+  split <;> simp only [bind_ok]
+
+theorem outer_loop_refines (entries : BorrowedVecBinding Entry) (sessions : BorrowedVecBinding Session)
+    (inbox : Inbox) (index : Usize) :
+    outerLoop inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) index) =
+      .ok (validationResult (remainingConflict inbox index.val)) := by
+  induction remaining : inbox.lanes.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    by_cases bound : index.val < inbox.lanes.val.length
+    · let next := Usize.ofNatCore (index.val+1) (by scalar_tac)
+      have added : next.val = index.val+1 := by rfl
+      rw [outer_loop_step entries sessions inbox index next bound added]
+      have later := ih (inbox.lanes.val.length - next.val) (by omega) next rfl
+      rw [later, remaining_step inbox index.val bound, result_or, added]
+      split <;> rfl
+    · rw [outer_loop_end inbox index (by omega)]
+      simp [remainingConflict, List.drop_eq_nil_of_le (by omega : inbox.lanes.val.length ≤ index.val),
+        validationResult]
+
+theorem retired_with_bindings (entries : BorrowedVecBinding Entry) (sessions : BorrowedVecBinding Session) :
+    FullRetiredIdentityContract Inbox.validate_retired_identities := by
+  intro inbox
+  unfold Inbox.validate_retired_identities
+  simp only [core.slice.Slice.iter, core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, bind_tc_ok]
+  change outerLoop inbox (enumCursor (alloc.vec.Vec.deref inbox.lanes) 0#usize) = _
+  rw [outer_loop_refines entries sessions]
+  rfl
+
+theorem candidate_iterator_binding (α : Type) : BorrowedVecBinding α := by
+  intro values
+  rfl
+
+theorem candidate_retired_contract : FullRetiredIdentityContract Inbox.validate_retired_identities :=
+  retired_with_bindings (candidate_iterator_binding Entry) (candidate_iterator_binding Session)
+
+theorem candidate_accepts_iff (inbox : Inbox) :
+    inbox.validate_retired_identities = .ok (.Ok ()) ↔ IdentitiesSeparated inbox := by
+  rw [candidate_retired_contract inbox]
+  simp only [Result.ok.injEq, specification_accepts_iff]
+
+theorem candidate_rejects_iff (inbox : Inbox) :
+    inbox.validate_retired_identities = .ok (.Err .CorruptStore) ↔ ¬IdentitiesSeparated inbox := by
+  rw [candidate_retired_contract inbox, ← specification_accepts_iff]
+  cases remainingConflict inbox 0 <;> simp [validationResult]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.outer_end
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.outer_step
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.remaining_step
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.result_or
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.outer_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.outer_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.outer_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.retired_with_bindings
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.candidate_iterator_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.candidate_retired_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.candidate_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.candidate_rejects_iff

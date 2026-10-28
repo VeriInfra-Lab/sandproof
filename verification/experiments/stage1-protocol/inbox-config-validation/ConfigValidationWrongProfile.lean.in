@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationLibrary
+import SandboxModel.Lifecycle.Protocol.ConfigValidationValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigValidation.WrongProfile
+noncomputable section
+
+theorem actual_return : LifecycleInboxConfig.valid Values.noProfile = .ok true := by
+  have budget : LifecycleInboxConfig.required_bytes Values.noProfile = .ok 106502#u64 :=
+    (ConfigBudget.required_bytes_iff _ _).mpr (by decide)
+  have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
+  have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
+  simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.ops.range.RangeInclusive.new, bind_tc_ok,
+    range_u16_refines, range_u32_refines, budget, kib, mib]
+  simp [Values.noProfile, Values.small, ConfigBudget.Values.small,
+    EnvelopeValues.center, EnvelopeValues.node]
+
+theorem refutes_full_contract : ¬ FullConfigContract LifecycleInboxConfig.valid := by
+  intro full
+  have bounded : Representable Values.noProfile := by
+    simp [Representable, Values.noProfile, Values.small, ConfigBudget.Values.small]
+  have result := full Values.noProfile bounded
+  rw [actual_return] at result
+  have invalid := Values.rejected_shapes.2.1
+  simp [invalid] at result
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation.WrongProfile
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongProfile.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongProfile.refutes_full_contract

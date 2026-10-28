@@ -13,6 +13,7 @@ use super::{
 };
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
+pub(super) use config::{ReadConfigEffects, StandardConfigRead};
 pub use retirement::RetirementCandidate;
 pub(super) use retirement::material_retirement_pins_closed;
 pub(super) use retirement::original_binding;
@@ -118,6 +119,12 @@ fn map_core(error: core::checkpoint::CheckpointReject) -> JournalError {
 
 pub(super) fn config(connection: &Connection) -> Result<Option<MaintenanceConfig>, JournalError> {
     config::read(connection)
+}
+
+pub(super) fn config_using<E: ReadConfigEffects>(
+    effects: &mut E,
+) -> Result<Option<MaintenanceConfig>, JournalError> {
+    config::read_using(effects)
 }
 pub(super) fn initialize(
     tx: &Transaction<'_>,

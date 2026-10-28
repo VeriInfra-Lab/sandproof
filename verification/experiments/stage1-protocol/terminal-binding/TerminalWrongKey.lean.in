@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.TerminalValues
+import SandboxModel.Lifecycle.Protocol.Accepted
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.Terminal.WrongKey
+
+theorem actual_return :
+    terminal_matches (Values.observation Values.foreignCenter .Cleaned) Values.original = .ok true := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [terminal_matches, TerminalLifecycleObservation.matches_request,
+    Replay.key_eq, Validation.retention_valid,
+    AcceptedLifecycleIntent.accepted_version_for_request, Library.option_u64_eq,
+    Values.observation, Values.original, Values.foreignCenter,  EnvelopeValues.intent,
+    EnvelopeValues.center, EnvelopeValues.node, Validation.retentionOK, checked]
+
+theorem refutes_full_contract : ¬ FullTerminalContract terminal_matches := by
+  intro full
+  have returned := full (Values.observation Values.foreignCenter .Cleaned) Values.original
+  rw [actual_return] at returned
+  have invalid := Values.rejected_shapes.1
+  simp [expected, invalid] at returned
+
+end SandboxModel.Stage1Protocol.Terminal.WrongKey
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.WrongKey.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.WrongKey.refutes_full_contract

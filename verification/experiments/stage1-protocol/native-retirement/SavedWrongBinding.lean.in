@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.SavedLibrary
+import SandboxModel.Lifecycle.Protocol.SavedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandbox_controller_core.ids
+namespace SandboxModel.Stage1Protocol.SavedRetirement.WrongBinding
+noncomputable section
+open scoped Classical
+
+theorem wrong_accepts : run Values.small Values.wrongBinding = .ok (.Ok ()) := by
+  simp only [run, validate_saved_using, last_saved_spec, local_option_ne, operation_option_ne,
+    destroy_spec, digest_ne, status_ne, bind_tc_ok]
+  simp [Values.wrongBinding, Values.changed, Values.normal, Values.entries, Values.entry, Values.receipt,
+    Values.binding, Values.destroyIntent, Values.small, Values.encoding, Values.bytes_length,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+
+theorem violates_full_contract : ¬FullSavedContract run := by
+  intro contract
+  have mismatch := contract Values.small Values.wrongBinding
+  rw [wrong_accepts, Values.model_rejections.2.2.1] at mismatch
+  simp [corrupt] at mismatch
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement.WrongBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongBinding.wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongBinding.violates_full_contract

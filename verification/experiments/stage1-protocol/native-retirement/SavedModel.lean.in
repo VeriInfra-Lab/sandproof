@@ -1,0 +1,69 @@
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandbox_controller_core.maintenance.retirement
+namespace SandboxModel.Stage1Protocol.SavedRetirement
+noncomputable section
+open scoped Classical
+
+abbrev CheckResult := Result (core.result.Result Unit JournalError)
+abbrev Encoding := RetirementEncoding Unit
+
+def corrupt : CheckResult := .ok (.Err .CorruptStore)
+
+/-- Exact value checks before the first encoding call. No source authorization. -/
+def BeforeBinding (session : Session) (saved : NativeRetirementReceipt) (last : Entry) : Prop :=
+  session.terminal = true ∧ session.local = some saved.local ∧
+  last.intent.request.operation = .Destroy ∧ last.intent.accepted_version = session.current_version ∧
+  last.local_operation = some saved.retirement.operation
+
+/-- All checks after digest equality, before receipt encoding. Neither workspace
+nor retain_until is observed here; the four labels are not physical facts. -/
+def ReceiptFields (saved : NativeRetirementReceipt) : Prop :=
+  saved.retirement.sandbox = saved.local.sandbox ∧
+  saved.retirement.owner = saved.local.owner ∧
+  saved.retirement.quiescence.sandbox = saved.retirement.sandbox ∧
+  saved.retirement.quiescence.owner = saved.retirement.owner ∧
+  saved.retirement.quiescence.epoch = saved.retirement.epoch ∧
+  saved.retirement.quiescence.operation = saved.retirement.operation ∧
+  saved.retirement.quiescence.worker_drained = .Confirmed ∧
+  saved.retirement.quiescence.data_connections_drained = .Confirmed ∧
+  saved.retirement.quiescence.host_resources_reclaimed = .Confirmed ∧
+  saved.retirement.quiescence.external_pins_released = .Confirmed
+
+def checkReceipt {E : Type} (encoding : RetirementEncoding E)
+    (saved : NativeRetirementReceipt) : CheckResult := do
+  let encoded ← encoding.encode_receipt saved
+  match encoded with
+  | .Err error => .ok (.Err (.Json error))
+  | .Ok bytes => if bytes.val.length ≤ 8192 then .ok (.Ok ()) else corrupt
+
+def checkBinding {E : Type} (encoding : RetirementEncoding E)
+    (saved : NativeRetirementReceipt) (last : Entry) : CheckResult := do
+  let encoded ← encoding.encode_intent last.intent
+  match encoded with
+  | .Err error => .ok (.Err (.Json error))
+  | .Ok bytes =>
+    let digest ← encoding.digest (alloc.vec.Vec.deref bytes)
+    if saved.request_binding = digest ∧ ReceiptFields saved then checkReceipt encoding saved
+    else corrupt
+
+/-- One shared contract for correct and wrong Rust. Arbitrary callback results,
+including outer failure/divergence, are preserved at their actual call stages. -/
+def validateView {E : Type} (encoding : RetirementEncoding E) (session : Session) : CheckResult :=
+  match session.native_retirement with
+  | none => .ok (.Ok ())
+  | some saved =>
+    match session.entries.val.getLast? with
+    | none => corrupt
+    | some last =>
+      if BeforeBinding session saved last then checkBinding encoding saved last else corrupt
+
+def FullSavedContract (run : Encoding → Session → CheckResult) : Prop :=
+  ∀ encoding session, run encoding session = validateView encoding session
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement

@@ -1,0 +1,83 @@
+import SandboxModel.Lifecycle.Protocol.ShapeTerminal
+import SandboxModel.Lifecycle.Protocol.ShapeRefusal
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem before_prior_guard (inbox : Inbox) (session : Session) (next : CheckResult) :
+    (if session.entries.val.length = 0 then corrupt
+     else if session.retention.slot = 0#u16 then corrupt
+     else if inbox.config.max_sessions.val < session.retention.slot.val then corrupt
+     else if FirstWindowMatches inbox session then
+       if session.local ≠ none then
+         if inbox.host_epoch_observation = none then corrupt
+         else if inbox.config.max_operations_per_session.val < session.entries.val.length then corrupt else next
+       else if inbox.config.max_operations_per_session.val < session.entries.val.length then corrupt else next
+     else corrupt) = (if BeforePrior inbox session then next else corrupt) := by
+  by_cases empty : session.entries.val = []
+  · simp [BeforePrior, empty]
+  by_cases zero : session.retention.slot = 0#u16
+  · simp [BeforePrior, zero, List.length_eq_zero_iff]
+  by_cases slot : session.retention.slot.val ≤ inbox.config.max_sessions.val
+  · by_cases lane : FirstWindowMatches inbox session
+    · by_cases localNone : session.local = none <;>
+        by_cases hostNone : inbox.host_epoch_observation = none <;>
+        by_cases capacity : session.entries.val.length ≤ inbox.config.max_operations_per_session.val <;>
+        simp [BeforePrior, empty, zero, slot, lane, localNone, hostNone, capacity,
+          List.length_eq_zero_iff, Nat.not_lt.mpr, Nat.lt_of_not_ge]
+    · simp [BeforePrior, empty, zero, slot, lane, List.length_eq_zero_iff, Nat.not_lt.mpr]
+  · simp [BeforePrior, empty, zero, slot, List.length_eq_zero_iff, Nat.lt_of_not_ge]
+
+theorem refusal_guard (session : Session) (next : CheckResult) :
+    (if session.refusal ≠ none then
+       if session.local ≠ none then corrupt
+       else if ¬∃ first, session.entries.val.head? = some first ∧
+           first.intent.accepted_version = 1#u64 ∧ IsCreate first.intent.request.operation then corrupt
+       else if ¬∀ entry ∈ session.entries.val, RefusalEntryOK entry then corrupt else next
+     else next) = (if session.refusal = none ∨ RefusalFields session then next else corrupt) := by
+  have logic (r l f a : Prop) [Decidable r] [Decidable l] [Decidable f] [Decidable a] :
+      (if ¬r then if ¬l then corrupt else if ¬f then corrupt else if ¬a then corrupt else next
+       else next) = (if r ∨ (l ∧ f ∧ a) then next else corrupt) := by
+    by_cases hr : r <;> by_cases hl : l <;> by_cases hf : f <;> by_cases ha : a <;>
+      simp only [hr, hl, hf, ha, not_false_eq_true, not_true_eq_false,
+        false_or, true_or, and_true, and_false, ↓reduceIte]
+  convert (logic (session.refusal = none) (session.local = none)
+      (∃ first, session.entries.val.head? = some first ∧
+        first.intent.accepted_version = 1#u64 ∧ IsCreate first.intent.request.operation)
+      (∀ entry ∈ session.entries.val, RefusalEntryOK entry)) using 1
+  simp only [RefusalFields, RefusalEntryOK, ite_eq_ite]
+
+theorem confirmed_guard {E : Type} (encoding : TerminalEncoding E) (session : Session) :
+    (match session.confirmed_terminal with
+    | none => Result.ok (.Ok ())
+    | some confirmed =>
+      if session.terminal = true then
+        if confirmed.status ≠ .Cleaned then corrupt
+        else if Terminal.Matches confirmed confirmed.request then
+          if ¬∃ last, session.entries.val.getLast? = some last ∧ last.intent = confirmed.request then corrupt
+          else encodedTerminal encoding confirmed
+        else corrupt
+      else corrupt) = checkConfirmed encoding session := by
+  rw [confirmed_model_unfold]
+  cases confirmed : session.confirmed_terminal with
+  | none => rfl
+  | some value =>
+    simp only [ConfirmedFields]
+    by_cases terminal : session.terminal = true <;>
+      by_cases status : value.status = .Cleaned <;>
+      by_cases matching : Terminal.Matches value value.request <;>
+      by_cases last : ∃ entry, session.entries.val.getLast? = some entry ∧ entry.intent = value.request <;>
+      simp [terminal, status, matching, last]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.before_prior_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.confirmed_guard

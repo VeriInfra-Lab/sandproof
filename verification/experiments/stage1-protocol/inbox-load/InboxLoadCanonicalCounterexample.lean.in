@@ -1,0 +1,92 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadCanonicalAcceptance
+import SandboxModel.Lifecycle.Protocol.InboxLoadFixturePrefix
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem canonical_values_different : wrongCanonicalBytes.val ≠ bytes.val := by decide
+
+theorem canonical_lengths_equal : wrongCanonicalBytes.val.length = bytes.val.length := by decide
+
+theorem wrong_canonical_represented : DecodedStringsRepresentable wrongCanonicalEffects := by
+  intro state input inbox after returned
+  change normalEffects.decode_inbox state input = .ok (.Ok inbox, after) at returned
+  exact normal_represented state input inbox after returned
+
+theorem canonical_mismatch_rejected (trace : Trace) :
+    canonicalView wrongCanonicalEffects validation budget InboxValidation.Values.normal bytes 286720#u64 trace =
+      corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.normal]) := by
+  simp only [canonicalView, wrongCanonicalEffects, attempt, bind_tc_ok]
+  change (do
+    let different ← alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 wrongCanonicalBytes bytes
+    if different then corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.normal])
+    else
+      validatedView wrongCanonicalEffects validation budget InboxValidation.Values.normal 286720#u64
+        (trace ++ [Event.encodedInbox InboxValidation.Values.normal])) = _
+  rw [InboxLoadLibrary.vec_ne]
+  have different : wrongCanonicalBytes ≠ bytes := by
+    intro same
+    exact canonical_values_different (congrArg (fun value : alloc.vec.Vec U8 => value.val) same)
+  simp [different]
+
+theorem canonical_digest_passes (trace : Trace) :
+    digestView wrongCanonicalEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64 trace =
+      corrupt (trace ++ [Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal]) := by
+  simp only [digestView, wrongCanonicalEffects, normalEffects, effects, bind_tc_ok]
+  change (if digest.val ≠ storedDigest.val then corrupt (trace ++ [Event.digested bytes.val])
+    else canonicalView wrongCanonicalEffects validation budget InboxValidation.Values.normal bytes 286720#u64
+      (trace ++ [Event.digested bytes.val])) = _
+  have same : digest.val = storedDigest.val := rfl
+  simp only [same, ne_eq, not_true_eq_false, ↓reduceIte]
+  rw [canonical_mismatch_rejected]
+  simp [corrupt, List.append_assoc]
+
+theorem wrong_canonical_body_rejected (trace : Trace) :
+    bodyView wrongCanonicalEffects validation budget 286720#u64 trace =
+      corrupt (trace ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal]) := by
+  simp only [bodyView, wrongCanonicalEffects, normalEffects, effects, attempt, bind_tc_ok]
+  change digestView wrongCanonicalEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64
+    ((trace ++ [Event.bodyQuery bodyStatement]) ++ [Event.decodedInbox bytes.val]) = _
+  rw [canonical_digest_passes]
+  simp [corrupt, List.append_assoc]
+
+def rejectedCanonicalTrace : Trace :=
+  beforeBody ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal]
+
+theorem wrong_canonical_model_rejected (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongCanonicalEffects trace =
+      .ok (.Err .CorruptStore, trace ++ rejectedCanonicalTrace) := by
+  change fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    (effects (.Ok InboxValidation.Values.normal) wrongCanonicalBytes bytes storedDigest 286720#i64
+      InboxLoadConfig.LifecycleValues.normal) trace = _
+  rw [fixture_to_body]
+  change bodyView wrongCanonicalEffects validation budget 286720#u64 (trace ++ beforeBody) = _
+  rw [wrong_canonical_body_rejected]
+  simp [corrupt, rejectedCanonicalTrace, List.append_assoc]
+
+theorem wrong_canonical_contract_rejected : ¬ FullLoadContract load_using := by
+  intro contract
+  have contradiction := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongCanonicalEffects ComposedConfig.standard_graphic_contract
+    wrong_canonical_represented []
+  change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongCanonicalEffects [] =
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongCanonicalEffects [] at contradiction
+  rw [actual_wrong_canonical_accepts, wrong_canonical_model_rejected] at contradiction
+  simp [Result.ok.injEq] at contradiction
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.canonical_values_different
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.canonical_lengths_equal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_canonical_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.canonical_mismatch_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.canonical_digest_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_canonical_body_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_canonical_model_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_canonical_contract_rejected

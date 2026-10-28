@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation
+noncomputable section
+
+theorem host_refines (host : HostEpochRegistration) (bounded : StringRepresentable host.boot_id) :
+    HostEpochRegistration.valid_using graphicEncoding host = .ok (decide (validHost host)) := by
+  obtain ⟨rest, checked⟩ := graphic_all_refines (stringBytes host.boot_id)
+  simp only [HostEpochRegistration.valid_using,
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic, graphic_bytes]
+  by_cases version : host.version = 1#u16
+  · simp only [version, ↓reduceIte]
+    simp only [alloc.string.String.is_empty,
+      SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+      bounded, ↓reduceDIte, bind_tc_ok, SandproofFoundationsRust.core.str.Str.is_empty]
+    by_cases empty : (stringBytes host.boot_id).length = 0
+    · simp [empty, validHost]
+    · have positive : 0 < (stringBytes host.boot_id).length := by omega
+      have nonempty : stringBytes host.boot_id ≠ [] := by
+        intro zero
+        simp [zero] at empty
+      simp only [alloc.string.String.len,
+        SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+        bounded, ↓reduceDIte, bind_tc_ok, SandproofFoundationsRust.core.str.Str.len]
+      by_cases limit : (stringBytes host.boot_id).length ≤ 128
+      · simp [limit, validHost, version, positive, nonempty,
+          alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          bounded, core.str.Str.bytes, SandproofFoundationsRust.core.str.Str.bytes,
+          core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+          SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+          checked]
+        apply Bool.eq_iff_iff.mpr
+        simp
+      · simp [limit, validHost]
+  · simp [version, validHost]
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.host_refines

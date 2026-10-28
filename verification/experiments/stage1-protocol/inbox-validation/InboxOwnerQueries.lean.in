@@ -1,0 +1,119 @@
+import SandboxModel.Lifecycle.Protocol.ShapeIteration
+import SandboxModel.Lifecycle.Protocol.InboxEntryLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation
+open SessionShape
+noncomputable section
+open scoped Classical
+
+def OwnerConflict (old owner : Owner) : Prop :=
+  old.external = owner.external ∨ old.local = owner.local
+
+def OwnsLocal (session : Session) (localOwner : sandbox_controller_core.ids.TenantId) (owner : Owner) : Prop :=
+  owner.external = session.owner ∧ owner.local = localOwner
+
+theorem internal_owner_eq (left right : sandbox_controller_core.ids.TenantId) :
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (decide (left = right)) := by
+  cases left; cases right
+  simp [sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq]
+
+theorem local_body_end (inbox : Inbox) (session : Session)
+    (localOwner : sandbox_controller_core.ids.TenantId) (index : Usize)
+    (outside : inbox.owners.val.length ≤ index.val) :
+    Inbox.has_local_owner_loop.body inbox session localOwner index = .ok (.done false) := by
+  simp [Inbox.has_local_owner_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem local_body_step (inbox : Inbox) (session : Session)
+    (localOwner : sandbox_controller_core.ids.TenantId) (index next : Usize)
+    (inside : index.val < inbox.owners.val.length) (added : next.val = index.val + 1) :
+    Inbox.has_local_owner_loop.body inbox session localOwner index = .ok
+      (if OwnsLocal session localOwner inbox.owners.val[index.val] then .done true else .cont next) := by
+  obtain ⟨owner, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.owners index inside)
+  have insideVec : index < alloc.vec.Vec.len inbox.owners := inside
+  simp only [Inbox.has_local_owner_loop.body, insideVec, ↓reduceIte, InboxEntry.owner_eq, internal_owner_eq,
+    bind_tc_ok, decide_eq_true_eq, index_add_one index next added, OwnsLocal]
+  split_ifs <;> simp_all
+
+theorem local_loop_refines (inbox : Inbox) (session : Session)
+    (localOwner : sandbox_controller_core.ids.TenantId) (index : Usize) :
+    Inbox.has_local_owner_loop inbox session localOwner index =
+      .ok ((inbox.owners.val.drop index.val).any (fun owner => decide (OwnsLocal session localOwner owner))) := by
+  unfold Inbox.has_local_owner_loop
+  apply indexed_any_loop inbox.owners.slice _ _ (local_body_end inbox session localOwner)
+  intro i next inside added
+  rw [local_body_step inbox session localOwner i next inside added]
+  simp [alloc.vec.Vec.val]
+
+theorem local_owner_spec (inbox : Inbox) (session : Session)
+    (localOwner : sandbox_controller_core.ids.TenantId) :
+    Inbox.has_local_owner inbox session localOwner =
+      .ok (decide (∃ owner ∈ inbox.owners.val, owner.external = session.owner ∧ owner.local = localOwner)) := by
+  rw [Inbox.has_local_owner, local_loop_refines]
+  change Result.ok (inbox.owners.val.any (fun owner => decide (OwnsLocal session localOwner owner))) = _
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp [OwnsLocal]
+
+theorem owner_prior_end (owner : Owner) (values : Slice Owner) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    Inbox.prior_owner_conflict_loop.body owner values index = .ok (.done false) := by
+  simp [Inbox.prior_owner_conflict_loop.body, Slice.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem owner_prior_step (owner : Owner) (values : Slice Owner) (index next : Usize)
+    (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    Inbox.prior_owner_conflict_loop.body owner values index = .ok
+      (if OwnerConflict values.val[index.val] owner then .done true else .cont next) := by
+  obtain ⟨old, indexed, same⟩ := WP.spec_imp_exists (Slice.index_usize_spec values index inside)
+  have insideSlice : index < Slice.len values := inside
+  simp only [Inbox.prior_owner_conflict_loop.body, insideSlice, ↓reduceIte,
+    indexed, same, InboxEntry.owner_eq, internal_owner_eq, bind_tc_ok, decide_eq_true_eq,
+    index_add_one index next added, OwnerConflict]
+  split_ifs <;> simp_all
+
+theorem owner_prior_loop (owner : Owner) (values : Slice Owner) (index : Usize) :
+    Inbox.prior_owner_conflict_loop owner values index =
+      .ok ((values.val.drop index.val).any (fun old => decide (OwnerConflict old owner))) := by
+  unfold Inbox.prior_owner_conflict_loop
+  apply indexed_any_loop values _ _ (owner_prior_end owner values)
+  intro i next inside added
+  simpa only [decide_eq_true_eq] using owner_prior_step owner values i next inside added
+
+theorem owner_prior_in_bounds (inbox : Inbox) (index : Usize) (owner : Owner)
+    (inside : index.val ≤ inbox.owners.val.length) :
+    Inbox.prior_owner_conflict inbox index owner =
+      .ok (decide (∃ old ∈ inbox.owners.val.take index.val, OwnerConflict old owner)) := by
+  unfold Inbox.prior_owner_conflict
+  obtain ⟨previous, sliced, values, length⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_RangeTo_spec inbox.owners { «end» := index } (by simpa using inside))
+  rw [sliced]
+  simp only [bind_tc_ok, owner_prior_loop]
+  change Result.ok (previous.val.any (fun old => decide (OwnerConflict old owner))) = _
+  rw [values, List.slice_zero_j]
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+theorem owner_prior_out_of_bounds (inbox : Inbox) (index : Usize) (owner : Owner)
+    (outside : inbox.owners.val.length < index.val) :
+    Inbox.prior_owner_conflict inbox index owner = .fail .panic := by
+  have outsideSlice : ¬ index.val ≤ inbox.owners.slice.val.length := Nat.not_le.mpr outside
+  simp [Inbox.prior_owner_conflict, alloc.vec.Vec.index,
+    core.slice.index.SliceIndexRangeToUsizeSlice.index, outsideSlice]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.internal_owner_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.local_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.local_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.local_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.local_owner_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_prior_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_prior_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_prior_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_prior_in_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_prior_out_of_bounds

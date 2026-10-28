@@ -1,0 +1,20 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.OriginSelection
+noncomputable section
+
+theorem subtract_one (index previous : Usize) (positive : 0 < index.val)
+    (decreased : previous.val+1 = index.val) :
+    ((index - 1#usize) : Result Usize) = .ok previous := by
+  obtain ⟨value, equality, post⟩ := (WP.spec_equiv_exists _ _).mp
+    (Usize.sub_bv_spec (x := index) (y := 1#usize) (by scalar_tac))
+  have same : value = previous := by scalar_tac
+  simpa [same] using equality
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.subtract_one

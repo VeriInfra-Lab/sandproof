@@ -20,8 +20,8 @@ spec.loader.exec_module(registered)
 
 class Registration(unittest.TestCase):
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 28)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 28)
+        self.assertEqual(len(registered.NATIVE_CASES), 41)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 41)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -47,6 +47,7 @@ class Registration(unittest.TestCase):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
+        self.assertEqual(len(jobs), 126)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -64,7 +65,7 @@ class Registration(unittest.TestCase):
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
         inbox = [job for job in jobs if Path(job['driver']).parent.name.startswith('inbox-')]
-        self.assertEqual(len(inbox), 37)
+        self.assertEqual(len(inbox), 76)
         self.assertFalse(any(j['name'].startswith('inbox-append-') for j in inbox))
         for variant in registered.INBOX_CASES['inbox-append']:
             job, = [j for j in inbox if j['name'] == 'inbox-record-total-'+variant]
@@ -75,16 +76,52 @@ class Registration(unittest.TestCase):
         retained = next(j for j in inbox if j['name'] == 'inbox-retained-correct')
         self.assertNotIn('--fresh-native', retained['args'])
 
+    def test_expanded_schedule_preserves_all_original_63_jobs(self):
+        legacy_variants = {
+            'inbox-lookup': ('correct', 'key-only'),
+            'inbox-admission': ('correct', 'skip-node', 'skip-envelope'),
+            'inbox-record': ('correct', 'skip-retention-window', 'wrong-recorded-version'),
+            'inbox-record-total': ('correct', 'skip-sdk-gate', 'skip-prior-capture'),
+            'inbox-state': ('correct', 'always-current', 'drop-operation'),
+            'inbox-position': ('correct', 'always-current', 'drop-operation'),
+            'inbox-lineage': ('correct', 'advance-unattached-resume', 'repeat-capture', 'skip-final-incarnation'),
+            'inbox-retained': ('correct', 'reverse-compaction-bound', 'reverse-confirmation-bound', 'zero-version-adjacency'),
+            'inbox-lifetimes': ('correct', 'skip-predecessor', 'keep-gap-predecessor', 'skip-final-deadline'),
+            'inbox-renewal-session': ('correct', 'key-only-checkpoint', 'ignore-retained-frontier', 'ignore-unapplied-sdk'),
+            'inbox-unload-resolution': ('correct', 'ignore-snapshot-phase', 'ignore-capture-operation', 'ignore-result-maximum'),
+        }
+        jobs = registered.formal_plan(Path('/unused'))
+        legacy_names = {name+'-'+variant for name, variants in legacy_variants.items()
+                        for variant in variants}
+        legacy_names.update(('replay-replay', 'replay-validation', 'replay-envelope',
+            'manifest-validation', 'result-confirmation', 'observation-bindings',
+            'resume-observation', 'unload-observation', 'access-identity',
+            'renewal-confirmation', 'create-observation', 'create-conversion', 'create-guard',
+            'json-wire', 'schema-leaves', 'envelope-schema', 'envelope-bytes', 'envelope-budget',
+            'envelope-writer-correct', 'envelope-writer-swallow-error',
+            'serde-binding', 'serde-binding-negative', 'parser-binding', 'parser-binding-negative',
+            'decode-assembly', 'decode-assembly-negative'))
+        self.assertEqual(len(legacy_names), 63)
+        self.assertLessEqual(legacy_names, {job['name'] for job in jobs})
+        self.assertLessEqual({'stage1-'+name for name in legacy_variants
+                             if name != 'inbox-record-total'} | {'stage1-inbox-append'},
+                            set(registered.NATIVE_CASES))
+
     def test_lost_native_or_variant_registration_is_refused(self):
         registered.validate_registration()
         with patch.object(registered, 'NATIVE_CASES', tuple(
                 name for name in registered.NATIVE_CASES if name != 'stage1-inbox-state')):
             with self.assertRaisesRegex(ValueError, 'missing native registration'):
                 registered.validate_registration()
-        variants = dict(registered.INBOX_CASES, **{'inbox-state': ('correct', 'always-current')})
-        with patch.object(registered, 'INBOX_CASES', variants):
-            with self.assertRaisesRegex(ValueError, 'missing/extra original variant'):
-                registered.validate_registration()
+        for name, dropped in (('inbox-state', 'drop-operation'),
+                              ('inbox-save', 'wrong-budget'),
+                              ('retention-lane', 'oversize-encoding')):
+            with self.subTest(package=name):
+                variants = dict(registered.INBOX_CASES)
+                variants[name] = tuple(value for value in variants[name] if value != dropped)
+                with patch.object(registered, 'INBOX_CASES', variants):
+                    with self.assertRaisesRegex(ValueError, 'missing/extra original variant'):
+                        registered.validate_registration()
 
     def test_wrong_machine_role_fails_before_any_work(self):
         with patch.object(registered, '_shared') as shared:
@@ -614,6 +651,39 @@ class CheckpointExecution(unittest.TestCase):
                 self.assertFalse(failures)
                 self.assertEqual([row['use'] for row in rows],['RUN','RUN'])
                 self.context = before
+
+    def test_nonobject_saved_records_rerun_instead_of_aborting_resume(self):
+        for defect in ('checkpoint', 'result', 'context'):
+            with self.subTest(defect=defect):
+                _, rows, _, parent = self.execute('nonobject-'+defect)
+                first = rows[0]
+                checkpoint = Path(first['checkpoint_path'])
+                receipt = registered._read(checkpoint)
+                path = (checkpoint if defect == 'checkpoint' else
+                        Path(first['result_path']) if defect == 'result' else
+                        Path(receipt['context_path']))
+                path.write_text('[]')
+                # Keep the outer digest coherent to exercise validation of the
+                # saved record itself, rather than the earlier digest gate.
+                if defect == 'checkpoint':
+                    first['checkpoint_sha256'] = registered._sha(path)
+                else:
+                    field = 'result_sha256' if defect == 'result' else 'context_sha256'
+                    receipt[field] = registered._sha(path)
+                    if defect == 'result':
+                        first[field] = receipt[field]
+                    self.shared.write_json(checkpoint, receipt)
+                    first['checkpoint_sha256'] = registered._sha(checkpoint)
+                saved = registered._read(parent)
+                saved['results'][0] = first
+                self.shared.write_json(parent, saved)
+                self.called.clear()
+                _, after, failures, _ = self.execute('repaired-'+defect, resume=parent)
+                self.assertFalse(failures)
+                expected = ['fixture-first', 'fixture-second'] if defect == 'context' else ['fixture-first']
+                self.assertEqual(sorted(self.called), expected)
+                self.assertEqual(after[0]['use'], 'RUN')
+                self.assertEqual(after[1]['use'], 'RUN' if defect == 'context' else 'REUSE')
 
     def test_partial_service_cannot_publish_a_successful_checkpoint(self):
         self.defect = 'partial'

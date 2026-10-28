@@ -1,0 +1,105 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryModel
+import SandboxModel.Lifecycle.Protocol.InboxEntryArithmetic
+import SandboxModel.Lifecycle.Protocol.Accepted
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxEntry.Values
+open scoped Classical
+noncomputable section
+
+def singleton (value : α) : alloc.vec.Vec α := alloc.vec.Vec.from [value] (by scalar_tac)
+def pair (first second : α) : alloc.vec.Vec α := alloc.vec.Vec.from [first, second] (by scalar_tac)
+def empty (α : Type) : alloc.vec.Vec α := alloc.vec.Vec.from [] (by simp)
+def intentFor (operation : LifecycleOperation) : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected :=
+      match operation with | .Create _ _ => .Absent | _ => .Version 0#u64 },
+    operation := operation } }
+
+def createEntry : Entry :=
+  ⟨intentFor (.Create Validation.Examples.createPayload 1#u64), none, none, none, none⟩
+def unloadEntry : Entry := ⟨intentFor (.Unload 1#u64 1#u64), none, none, none, none⟩
+def destroyEntry : Entry := ⟨intentFor .Destroy, none, none, none, none⟩
+def resumeGap : Entry := ⟨intentFor (.Resume 1#u64 1#u64 9#u64 Request.digest), none, none, none, none⟩
+def renewEntry : Entry := ⟨intentFor (.Renew 1#u64 10#i64 true), some 30#u64, some 20#i64, some 20#i64, none⟩
+def wrongMaximum : Entry := { renewEntry with applied_deadline := some 10#i64 }
+
+def sessionFor (entry : Entry) : Session := {
+  id := entry.intent.request.binding.session, retention := entry.intent.retention,
+  owner := entry.intent.request.binding.key.owner, current_version := 1#u64,
+  terminal := false, refusal := none, incarnation := some 1#u64,
+  «local» := some ⟨10#u64, 20#u64, 30#u64⟩, entries := singleton entry,
+  confirmed_terminal := none, confirmed_renewal := none, compacted_sdk_through := none,
+  native_retirement := none }
+def inboxFor (entry : Entry) : Inbox := {
+  config := ⟨EnvelopeValues.center, EnvelopeValues.node, none, 2#u16, 8#u16, 1024#u32, 1024#u32, 1024#u32⟩,
+  host_epoch_observation := none, owner_high_water := 0#u64, owners := empty _,
+  sessions := singleton (sessionFor entry), lanes := empty _ }
+
+def duplicated : Inbox := { inboxFor createEntry with
+  sessions := pair (sessionFor createEntry) (sessionFor createEntry) }
+def changedOwner : Entry := { createEntry with intent := { createEntry.intent with
+  request := { createEntry.intent.request with binding := { createEntry.intent.request.binding with
+    key := { createEntry.intent.request.binding.key with owner := "other" } } } } }
+def distinctKeys : Inbox := { inboxFor createEntry with
+  sessions := pair (sessionFor createEntry) (sessionFor changedOwner) }
+
+/-- Arbitrary encoded computation is ignored for these entries with no resolution. -/
+def encode : UnloadResolution.Encoding := fun _ => .fail .panic
+
+theorem normal_envelopes :
+    Validation.ValidEnvelope createEntry.intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope unloadEntry.intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroyEntry.intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope resumeGap.intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope renewEntry.intent EnvelopeValues.context := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    createEntry, unloadEntry, destroyEntry, resumeGap, renewEntry, intentFor,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center, EnvelopeValues.node,
+    Validation.Examples.createPayload, Validation.createView, SandboxModel.Foundations.CreatePlan.valid,
+    Validation.resourceView, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter, checked]
+
+theorem expected_outcomes :
+    entryView encode (inboxFor createEntry) (sessionFor createEntry) createEntry EnvelopeValues.context = .ok (.Ok 0#usize) ∧
+    entryView encode (inboxFor unloadEntry) (sessionFor unloadEntry) unloadEntry EnvelopeValues.context = .ok (.Ok 1#usize) ∧
+    entryView encode (inboxFor destroyEntry) (sessionFor destroyEntry) destroyEntry EnvelopeValues.context = .ok (.Ok 2#usize) ∧
+    entryView encode (inboxFor renewEntry) (sessionFor renewEntry) renewEntry EnvelopeValues.context = .ok (.Ok 3#usize) ∧
+    entryView encode (inboxFor resumeGap) (sessionFor resumeGap) resumeGap EnvelopeValues.context = .ok (.Ok 4#usize) ∧
+    entryView encode duplicated (sessionFor createEntry) createEntry EnvelopeValues.context = .ok corrupt ∧
+    entryView encode distinctKeys (sessionFor createEntry) createEntry EnvelopeValues.context = .ok (.Ok 0#usize) ∧
+    entryView encode (inboxFor wrongMaximum) (sessionFor wrongMaximum) wrongMaximum EnvelopeValues.context = .ok corrupt := by
+  have createOK := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.1
+  have unloadOK := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.2.1
+  have destroyOK := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.2.2.1
+  have resumeOK := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.2.2.2.1
+  have renewOK := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.2.2.2.2
+  have checkedOne : countResult 1 = .ok 1#usize := count_result_val 1#usize
+  have checkedTwo : countResult 2 = .ok 2#usize := count_result_val 2#usize
+  simp only [entryView, UnloadResolution.validateView,
+    show createEntry.unload_resolution = none from rfl,
+    show unloadEntry.unload_resolution = none from rfl,
+    show destroyEntry.unload_resolution = none from rfl,
+    show resumeGap.unload_resolution = none from rfl,
+    show renewEntry.unload_resolution = none from rfl,
+    show wrongMaximum.unload_resolution = none from rfl, bind_tc_ok]
+  simp only [prefixInvalid, show wrongMaximum.intent = renewEntry.intent from rfl,
+    createOK, unloadOK, destroyOK, resumeOK, renewOK]
+  simp [wrongMaximum,
+    RenewalResultTag.IsError, isRenew, countSessions, countEntries,
+    inboxFor, sessionFor, singleton, pair, empty, duplicated, distinctKeys, changedOwner,
+    operationResult, renewInvalid, deadlineMismatch, corrupt,
+    createEntry, unloadEntry, destroyEntry, resumeGap, renewEntry, intentFor,
+    EnvelopeValues.intent, Validation.Examples.createPayload, checkedOne, checkedTwo]
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.Values.expected_outcomes

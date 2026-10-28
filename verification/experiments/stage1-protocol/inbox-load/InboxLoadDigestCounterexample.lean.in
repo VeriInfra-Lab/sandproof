@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadDigestAcceptance
+import SandboxModel.Lifecycle.Protocol.InboxLoadFixturePrefix
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem digest_values_different : digest.val ≠ wrongDigest.val := by decide
+
+theorem digest_lengths_equal : digest.val.length = wrongDigest.val.length := by decide
+
+theorem wrong_digest_represented : DecodedStringsRepresentable wrongDigestEffects := by
+  intro state input inbox after returned
+  change normalEffects.decode_inbox state input = .ok (.Ok inbox, after) at returned
+  exact normal_represented state input inbox after returned
+
+theorem digest_mismatch_rejected (trace : Trace) :
+    digestView wrongDigestEffects validation budget InboxValidation.Values.normal bytes wrongDigest 286720#u64 trace =
+      corrupt (trace ++ [Event.digested bytes.val]) := by
+  simp only [digestView, wrongDigestEffects, normalEffects, effects, bind_tc_ok]
+  change (if digest.val ≠ wrongDigest.val then corrupt (trace ++ [Event.digested bytes.val])
+    else canonicalView wrongDigestEffects validation budget InboxValidation.Values.normal bytes 286720#u64
+      (trace ++ [Event.digested bytes.val])) = _
+  exact if_pos digest_values_different
+
+theorem wrong_digest_body_rejected (trace : Trace) :
+    bodyView wrongDigestEffects validation budget 286720#u64 trace =
+      corrupt (trace ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val]) := by
+  simp only [bodyView, wrongDigestEffects, normalEffects, effects, attempt, bind_tc_ok]
+  change digestView wrongDigestEffects validation budget InboxValidation.Values.normal bytes wrongDigest 286720#u64
+    ((trace ++ [Event.bodyQuery bodyStatement]) ++ [Event.decodedInbox bytes.val]) = _
+  rw [digest_mismatch_rejected]
+  simp [corrupt, List.append_assoc]
+
+def rejectedDigestTrace : Trace :=
+  beforeBody ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val]
+
+theorem wrong_digest_model_rejected (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongDigestEffects trace =
+      .ok (.Err .CorruptStore, trace ++ rejectedDigestTrace) := by
+  change fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    (effects (.Ok InboxValidation.Values.normal) bytes bytes wrongDigest 286720#i64
+      InboxLoadConfig.LifecycleValues.normal) trace = _
+  rw [fixture_to_body]
+  change bodyView wrongDigestEffects validation budget 286720#u64 (trace ++ beforeBody) = _
+  rw [wrong_digest_body_rejected]
+  simp [corrupt, rejectedDigestTrace, List.append_assoc]
+
+theorem wrong_digest_contract_rejected : ¬ FullLoadContract load_using := by
+  intro contract
+  have contradiction := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongDigestEffects ComposedConfig.standard_graphic_contract
+    wrong_digest_represented []
+  change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongDigestEffects [] =
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongDigestEffects [] at contradiction
+  rw [actual_wrong_digest_accepts, wrong_digest_model_rejected] at contradiction
+  simp [Result.ok.injEq] at contradiction
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.digest_values_different
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.digest_lengths_equal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_digest_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.digest_mismatch_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_digest_body_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_digest_model_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_digest_contract_rejected

@@ -1,0 +1,46 @@
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigBudget.Values
+noncomputable section
+
+def small : LifecycleInboxConfig := {
+  center := EnvelopeValues.center, node := EnvelopeValues.node, host_epoch := none,
+  max_sessions := 1#u16, max_operations_per_session := 8#u16,
+  max_options_bytes := 1#u32, max_profile_bytes := 1#u32, max_manifest_bytes := 1#u32 }
+def fixture : LifecycleInboxConfig := { small with
+  max_sessions := 2#u16, max_options_bytes := 1024#u32,
+  max_profile_bytes := 4096#u32, max_manifest_bytes := 16384#u32 }
+def emptyBudget : LifecycleInboxConfig := { small with
+  max_sessions := 0#u16, max_operations_per_session := 0#u16,
+  max_options_bytes := 0#u32, max_profile_bytes := 0#u32, max_manifest_bytes := 0#u32 }
+def maximum : LifecycleInboxConfig := { small with
+  max_sessions := 65535#u16, max_operations_per_session := 65535#u16,
+  max_options_bytes := 4294967295#u32, max_profile_bytes := 4294967295#u32,
+  max_manifest_bytes := 4294967295#u32 }
+
+-- Actual config.valid correspondence is separate. These are explicit shape facts;
+-- native tests additionally call the original validator for the normal witnesses.
+theorem normal_fields : ∀ config ∈ [small, fixture],
+    config.center.deployment = config.node.deployment_id ∧ config.host_epoch = none ∧
+    1 ≤ config.max_sessions.val ∧ config.max_sessions.val ≤ 4096 ∧
+    8 ≤ config.max_operations_per_session.val ∧ config.max_operations_per_session.val ≤ 128 ∧
+    1 ≤ config.max_options_bytes.val ∧ config.max_options_bytes.val ≤ 65536 ∧
+    1 ≤ config.max_profile_bytes.val ∧ config.max_profile_bytes.val ≤ 65536 ∧
+    1 ≤ config.max_manifest_bytes.val ∧ config.max_manifest_bytes.val ≤ 262144 ∧
+    bytes config ≤ 16777216 := by
+  intro config member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl <;> decide
+
+theorem expected_values :
+    bytes small = 106503 ∧ bytes fixture = 286720 ∧
+    bytes emptyBudget = 8192 ∧ bytes maximum = 2005480217559047 := by decide
+
+end
+end SandboxModel.Stage1Protocol.ConfigBudget.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.Values.normal_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.Values.expected_values

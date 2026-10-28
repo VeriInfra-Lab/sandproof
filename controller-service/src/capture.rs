@@ -169,13 +169,31 @@ pub struct HostEpochObservation {
     pub node: sandproof_protocol::internal::NodeIdentity,
     pub registration: HostEpochRegistration,
 }
+pub(crate) trait GraphicBytes {
+    fn all_graphic(value: &str) -> bool;
+}
+pub(crate) struct StandardGraphicBytes;
+impl GraphicBytes for StandardGraphicBytes {
+    fn all_graphic(value: &str) -> bool {
+        graphic_bytes(value)
+    }
+}
+pub(crate) fn graphic_bytes(value: &str) -> bool {
+    value.bytes().all(|b| b.is_ascii_graphic())
+}
+
 impl HostEpochRegistration {
     #[must_use]
     pub fn valid(&self) -> bool {
+        self.valid_using::<StandardGraphicBytes>()
+    }
+
+    #[must_use]
+    pub(crate) fn valid_using<B: GraphicBytes>(&self) -> bool {
         self.version == 1
             && !self.boot_id.is_empty()
             && self.boot_id.len() <= 128
-            && self.boot_id.bytes().all(|b| b.is_ascii_graphic())
+            && B::all_graphic(&self.boot_id)
     }
 }
 

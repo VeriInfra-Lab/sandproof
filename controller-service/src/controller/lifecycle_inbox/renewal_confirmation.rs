@@ -64,15 +64,11 @@ fn discard_previous(
 pub(super) trait RenewalEncoding {
     fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error>;
 }
-struct StandardRenewalEncoding;
+pub(super) struct StandardRenewalEncoding;
 impl RenewalEncoding for StandardRenewalEncoding {
     fn encode(value: &RenewalConfirmation) -> Result<Vec<u8>, serde_json::Error> {
         serde_json::to_vec(value)
     }
-}
-
-pub(super) fn validate_session(session: &Session) -> Result<(), JournalError> {
-    validate_session_using::<StandardRenewalEncoding>(session)
 }
 
 pub(super) fn validate_session_using<E: RenewalEncoding>(

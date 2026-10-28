@@ -1,0 +1,82 @@
+import SandboxModel.Lifecycle.Protocol.SavedModel
+import SandboxModel.Lifecycle.Protocol.TerminalModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.request sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+abbrev CheckResult := SavedRetirement.CheckResult
+abbrev corrupt := SavedRetirement.corrupt
+
+/-- First matching lane, even when a later lane has the same slot. -/
+def FirstWindowMatches (inbox : Inbox) (session : Session) : Prop :=
+  ∃ lane, inbox.lanes.val.find? (fun lane => decide (lane.slot = session.retention.slot)) = some lane ∧
+    lane.current_window = some session.retention.window
+
+def BeforePrior (inbox : Inbox) (session : Session) : Prop :=
+  session.entries.val ≠ [] ∧ session.retention.slot ≠ 0#u16 ∧
+  session.retention.slot.val ≤ inbox.config.max_sessions.val ∧ FirstWindowMatches inbox session ∧
+  (session.local = none ∨ inbox.host_epoch_observation ≠ none) ∧
+  session.entries.val.length ≤ inbox.config.max_operations_per_session.val
+
+def PriorConflict (old session : Session) : Prop :=
+  old.id = session.id ∨ old.retention.slot = session.retention.slot ∨
+  ∃ binding prior, session.local = some binding ∧ old.local = some prior ∧ prior.sandbox = binding.sandbox
+
+def IsCreate (operation : LifecycleOperation) : Prop :=
+  match operation with
+  | .Create _ _ => True
+  | _ => False
+
+def RefusalFields (session : Session) : Prop :=
+  session.local = none ∧
+  (∃ first, session.entries.val.head? = some first ∧
+    first.intent.accepted_version = 1#u64 ∧ IsCreate first.intent.request.operation) ∧
+  ∀ entry ∈ session.entries.val, entry.local_operation = none ∧ entry.applied_deadline = none ∧
+    entry.previous_effective_end_at_ms = none ∧
+    (IsCreate entry.intent.request.operation ∨ entry.intent.request.operation = .Destroy)
+
+def ConfirmedFields (session : Session) (confirmed : TerminalLifecycleObservation) : Prop :=
+  session.terminal = true ∧ confirmed.status = .Cleaned ∧
+  Terminal.Matches confirmed confirmed.request ∧
+  ∃ last, session.entries.val.getLast? = some last ∧ last.intent = confirmed.request
+
+def checkConfirmed {E : Type} (encoding : TerminalEncoding E) (session : Session) : CheckResult :=
+  match session.confirmed_terminal with
+  | none => .ok (.Ok ())
+  | some confirmed =>
+    if ConfirmedFields session confirmed then do
+      let bytes ← encoding.encode confirmed
+      match bytes with
+      | .Err error => .ok (.Err (.Json error))
+      | .Ok value => if value.val.length ≤ 8192 then .ok (.Ok ()) else corrupt
+    else corrupt
+
+/-- The saved-receipt contract runs first, including callback errors/failure/divergence.
+Index failure is observed only after every earlier shape guard accepts. -/
+def validateView {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session) : CheckResult := do
+  let receipt ← SavedRetirement.validateView saved session
+  match receipt with
+  | .Err error => .ok (.Err error)
+  | .Ok () =>
+    if BeforePrior inbox session then
+      if index.val ≤ inbox.sessions.val.length then
+        if ∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session then corrupt
+        else if session.refusal = none ∨ RefusalFields session then checkConfirmed terminal session
+        else corrupt
+      else .fail .panic
+    else corrupt
+
+def FullShapeContract
+    (run : RetirementEncoding Unit → TerminalEncoding Unit → Inbox → Usize → Session → CheckResult) : Prop :=
+  ∀ saved terminal inbox index session,
+    run saved terminal inbox index session = validateView saved terminal inbox index session
+
+end
+end SandboxModel.Stage1Protocol.SessionShape

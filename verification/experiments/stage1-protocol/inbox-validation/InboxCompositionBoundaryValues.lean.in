@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+
+variable (saved : sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit)
+    (terminal : TerminalEncoding Unit) (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+
+theorem owner_model_counterexamples :
+    inboxView saved terminal renewal unload duplicateExternal = rejected ∧
+    inboxView saved terminal renewal unload duplicateInternal = rejected ∧
+    inboxView saved terminal renewal unload aboveWater = rejected := by
+  have valid := ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  simp only [inboxView, duplicateExternal, duplicateInternal, aboveWater]
+  simp only [show normal.config = ConfigValidation.Values.fixture from rfl, valid, not_true_eq_false, ↓reduceIte]
+  simp [normal, vector, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture,
+    ConfigBudget.Values.small, laneScan, RetentionLane.validateView, checked,
+    RetiredIdentity.validationResult, RetiredIdentity.remainingConflict, RetiredIdentity.conflictAt,
+    HostMatches, OwnersValid, alice, bob]
+
+def wrongLaneOrder : Inbox := { normal with lanes := vector [⟨2#u16, 0#u64, some 1#u64, none⟩, ⟨1#u16, 0#u64, some 1#u64, none⟩] (by decide) }
+def missingLane : Inbox := { normal with lanes := vector [⟨1#u16, 0#u64, some 1#u64, none⟩] (by decide) }
+
+theorem lane_model_counterexamples :
+    inboxView saved terminal renewal unload wrongLaneOrder = rejected ∧
+    inboxView saved terminal renewal unload missingLane = rejected := by
+  have valid := ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  simp only [inboxView, wrongLaneOrder, missingLane]
+  simp only [show normal.config = ConfigValidation.Values.fixture from rfl, valid, not_true_eq_false, ↓reduceIte]
+  simp [normal, vector, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture,
+    ConfigBudget.Values.small, laneScan]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.owner_model_counterexamples
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.lane_model_counterexamples
