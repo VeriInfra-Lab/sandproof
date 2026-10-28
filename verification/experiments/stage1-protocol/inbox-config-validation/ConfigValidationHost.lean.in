@@ -7,9 +7,10 @@ namespace SandboxModel.Stage1Protocol.ConfigValidation
 noncomputable section
 
 theorem host_refines (host : HostEpochRegistration) (bounded : StringRepresentable host.boot_id) :
-    HostEpochRegistration.valid host = .ok (decide (validHost host)) := by
+    HostEpochRegistration.valid_using graphicEncoding host = .ok (decide (validHost host)) := by
   obtain ⟨rest, checked⟩ := graphic_all_refines (stringBytes host.boot_id)
-  simp only [HostEpochRegistration.valid]
+  simp only [HostEpochRegistration.valid_using,
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic, graphic_bytes]
   by_cases version : host.version = 1#u16
   · simp only [version, ↓reduceIte]
     simp only [alloc.string.String.is_empty,

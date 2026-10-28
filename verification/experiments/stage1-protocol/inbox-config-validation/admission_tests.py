@@ -41,7 +41,10 @@ class Admission(unittest.TestCase):
         self.missing_function('.model.LifecycleInboxConfig.required_bytes')
 
     def test_missing_host_validator_is_rejected(self):
-        self.missing_function('.capture.HostEpochRegistration.valid')
+        self.missing_function('.capture.HostEpochRegistration.valid_using')
+
+    def test_actual_graphic_helper_is_required(self):
+        self.missing_function('.capture.graphic_bytes')
 
     def test_missing_graphic_body_is_rejected(self):
         self.missing_function('core.num.U8.is_ascii_graphic')

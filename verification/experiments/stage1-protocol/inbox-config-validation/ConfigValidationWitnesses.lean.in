@@ -18,7 +18,7 @@ theorem normal_returns : ∀ config ∈ [Values.small, Values.fixture, Values.wi
 theorem host_policy_ignored (host : HostEpochRegistration)
     (policy : sandproof_protocol.lifecycle.digest.ContentDigest)
     (bounded : StringRepresentable host.boot_id) :
-    HostEpochRegistration.valid { host with policy := policy } = HostEpochRegistration.valid host := by
+    HostEpochRegistration.valid_using graphicEncoding { host with policy := policy } = HostEpochRegistration.valid_using graphicEncoding host := by
   rw [host_refines host bounded, host_refines { host with policy := policy } bounded]
   rfl
 

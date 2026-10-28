@@ -10,7 +10,7 @@ noncomputable section
 theorem optional_host_refines (config : LifecycleInboxConfig) (bounded : Representable config) :
     (match config.host_epoch with
       | none => Result.ok true
-      | some host => HostEpochRegistration.valid host) =
+      | some host => HostEpochRegistration.valid_using graphicEncoding host) =
         .ok (decide (hostAccepted config.host_epoch)) := by
   cases found : config.host_epoch with
   | none => rfl
@@ -25,7 +25,7 @@ theorem config_refines (config : LifecycleInboxConfig) (bounded : Representable 
   have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
   have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
   cases found : config.host_epoch <;> simp only [found] at host
-  all_goals simp only [LifecycleInboxConfig.valid,
+  all_goals simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
     sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
     alloc.string.String.Insts.CoreCmpPartialEqString.eq,
     SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,

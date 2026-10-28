@@ -6,6 +6,8 @@ open SandproofFoundationsRust.IdentifierLibrary
 namespace SandboxModel.Stage1Protocol.ConfigValidation
 noncomputable section
 
+abbrev graphicEncoding := StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes
+
 theorem graphic_refines (byte : U8) :
     core.num.U8.is_ascii_graphic byte = .ok (graphicByte byte) := by
   simp only [core.num.U8.is_ascii_graphic, graphicByte]
@@ -33,13 +35,13 @@ theorem range_u32_refines (lo hi value : U32) :
   split <;> simp_all
 
 theorem graphic_callback_refines (byte : U8) :
-    HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut () byte =
+    graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut () byte =
       .ok (graphicByte byte, ()) := by
-  simp [HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut,
+  simp [graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut,
     graphic_refines]
 
 theorem graphic_all_refines (bytes : List U8) :
-    ∃ rest, allBytes HostEpochRegistration.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+    ∃ rest, allBytes graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
       () bytes = .ok (bytes.all graphicByte, rest) := by
   induction bytes with
   | nil => exact ⟨[], rfl⟩

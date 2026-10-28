@@ -85,7 +85,10 @@ def admit_generated(directory, variant='correct'):
     required = {'request_validate', 'replay_matches', 'accepted_validate', 'recorded_matches'}
     required |= {'sandproof_controller_service.controller.lifecycle_inbox.model.'+name
         for name in ('LifecycleInboxConfig.required_bytes', 'LifecycleInboxConfig.valid')}
-    required |= {'sandproof_controller_service.capture.HostEpochRegistration.valid',
+    required |= {'sandproof_controller_service.capture.HostEpochRegistration.valid_using',
+        'sandproof_controller_service.capture.graphic_bytes',
+        'sandproof_controller_service.capture.StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic',
+        'sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig.valid_using',
         'core.num.U8.is_ascii_graphic', 'core.ops.range.RangeInclusive.contains',
         'core.ops.range.RangeBounds.contains.default',
         'core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound',
