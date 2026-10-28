@@ -481,6 +481,29 @@ def _retained_result(record):
     return path, result
 
 
+def retained_audits(record):
+    """Include original positive and negative views, bound to their service logs."""
+    path, retained = _retained_result(record)
+    observed = set()
+    for case, row in retained['cases'].items():
+        views = row.get('views' if case == 'correct' else 'proofs', {})
+        if not views:
+            raise ValueError('missing original retained audit views: ' + case)
+        for view, actual in views.items():
+            if (not re.fullmatch('[A-Za-z][A-Za-z0-9_-]*', view)
+                    or not actual.get('files') or not actual.get('audits')):
+                raise ValueError('missing original retained physical audit evidence')
+            log = path.parent/case/view/'physical-files/service.log'
+            if (log.is_symlink() or not log.is_file()
+                    or _sha(log) != actual.get('service_log_sha256')):
+                raise ValueError('original retained audit service log changed or missing')
+            messages = set(re.findall(r'Checked ([\w.]+): \d+ standard logical dependencies', log.read_text()))
+            if not set(actual['audits']) <= messages:
+                raise ValueError('original retained audit absent from service log')
+            observed.update(actual['audits'])
+    return observed
+
+
 def compute_retained_coverage(root, record):
     """Attribute the original 62 sources to this run's exact correct views."""
     inventory = _read(root/HERE/'retained-protocol.json')
@@ -618,7 +641,7 @@ def run_formal(output, retained_result, *, root=ROOT):
             record['source_admission_regressions'].append(dict(name=name, argv=argv,
                                                                llbc_sha256=_sha(capture)))
         expected_audits = {audit for audits in audit_templates(root).values() for audit in audits}
-        observed_audits = set()
+        observed_audits = retained_audits(record)
         for checked in record['results']:
             result = _read(Path(checked['result_path']))
             for actual in _actuals(result):

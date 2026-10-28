@@ -350,6 +350,61 @@ class Registration(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
                     registered.compute_retained_coverage(root, record)
 
+    def retained_audit_fixture(self, temporary):
+        _, _, record, _, _ = self.retained_fixture(temporary)
+        path = Path(record['retained_result']['path'])
+        result = json.loads(path.read_text())
+        expected = set()
+        for case, row in result['cases'].items():
+            field = 'views' if case == 'correct' else 'proofs'
+            if field == 'proofs':
+                row[field] = {'Negative': {}}
+            for view in row[field]:
+                audit = 'Fixture.' + case.replace('-', '_') + '.' + view
+                expected.add(audit)
+                log = path.parent/case/view/'physical-files/service.log'
+                log.parent.mkdir(parents=True, exist_ok=True)
+                log.write_text('Controlled fixture; no Lean service invoked.\n'
+                    + 'Checked ' + audit + ': 3 standard logical dependencies\n')
+                row[field][view] = dict(files={'Fixture.lean': '0'*64}, audits=[audit],
+                                       service_log_sha256=registered._sha(log))
+        path.write_text(json.dumps(result))
+        record['retained_result']['sha256'] = registered._sha(path)
+        return record, path, result, expected
+
+    def test_retained_positive_and_negative_service_audits_are_both_collected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            record, _, _, expected = self.retained_audit_fixture(temporary)
+            self.assertEqual(registered.retained_audits(record), expected)
+            self.assertIn('Fixture.same_incarnation.Negative', expected)
+            self.assertIn('Fixture.key_only_replay.Negative', expected)
+
+    def test_retained_audit_record_does_not_replace_missing_or_changed_service(self):
+        for change in ('missing', 'changed', 'linked', 'missing-message', 'missing-files', 'missing-views'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                record, path, result, _ = self.retained_audit_fixture(temporary)
+                row = result['cases']['key-only-replay']
+                log = path.parent/'key-only-replay/Negative/physical-files/service.log'
+                if change == 'missing':
+                    log.unlink()
+                elif change == 'changed':
+                    log.write_text('changed service')
+                elif change == 'linked':
+                    target = log.with_suffix('.original')
+                    log.rename(target)
+                    log.symlink_to(target)
+                elif change == 'missing-message':
+                    log.write_text('No target audit was actually reported.\n')
+                    row['proofs']['Negative']['service_log_sha256'] = registered._sha(log)
+                elif change == 'missing-files':
+                    row['proofs']['Negative']['files'] = {}
+                else:
+                    row['proofs'] = {}
+                path.write_text(json.dumps(result))
+                record['retained_result']['sha256'] = registered._sha(path)
+                with self.assertRaisesRegex(ValueError, 'retained'):
+                    registered.retained_audits(record)
+
     def test_retained_wrong_view_cannot_back_current_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, job, record, _, _ = self.retained_fixture(temporary, wrong=True)
