@@ -300,7 +300,7 @@
     "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
     "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "verification/experiments/stage1-protocol/frozen.json": "6efa2bdcc9b4c8fed0afc64e8361fc94ec0e7bc35e797f0d99ce18354f7e4363",
+    "verification/experiments/stage1-protocol/frozen.json": "6cb3f834cc6c7a5a4f713dc49d6afedb42f89244dd6d218dbaeeac5bdabda854",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
@@ -359,5 +359,13 @@
       "SandproofStage1Request/FunsExternal_Template.lean": "a2ffd483dfa0debcceb035c0f3416c34c2f14b94e514ca5a4bc0c091a89bff35"
     }
   },
-  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed"
+  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed",
+  "migration": {
+    "integration_base": "9be262ea99f59726df1572ec5e76345da0ec0f3c",
+    "current_rust_source_anchor": "9300cc74be807c703d55e2bbca5fe56b351257b6",
+    "candidate_inputs_only": true,
+    "new_baseline_formal_complete": false,
+    "ning_acceptance": false,
+    "shared_acceptance": false
+  }
 }

@@ -1,0 +1,98 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryModel
+import SandboxModel.Lifecycle.Protocol.Accepted
+import SandboxModel.Lifecycle.Protocol.RenewalResultBindings
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.request sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+theorem session_eq (a b : SessionId) :
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem owner_eq (a b : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem accepted_body (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) :
+    AcceptedLifecycleIntent.validate intent context = .ok (Validation.expectedAccepted intent context) :=
+  Validation.envelope_refines intent context
+
+theorem max_choice (previous requested : I64) :
+    (if previous > requested then previous else requested).val = max previous.val requested.val := by
+  split <;> rename_i h
+  · have hval : requested.val < previous.val := h
+    simp [max_eq_left (by omega : requested.val ≤ previous.val)]
+  · have hval : ¬ requested.val < previous.val := h
+    simp [max_eq_right (by omega : previous.val ≤ requested.val)]
+
+theorem scalar_bne (a b : I64) : (a != b) = decide (a.val ≠ b.val) := by
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+theorem deadline_callback {E : Type} (encoding : UnloadEncoding E)
+    (applied requested previous : I64) :
+    Inbox.entry_kind_using.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once
+      encoding (applied, requested) previous =
+      .ok (decide (applied.val ≠ max previous.val requested.val)) := by
+  unfold Inbox.entry_kind_using.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once
+  simp only [← Validation.ok_ite, bind_tc_ok]
+  rw [← max_choice previous requested]
+  simp [scalar_bne]
+
+theorem applied_callback {E : Type} (encoding : UnloadEncoding E) (entry : Entry)
+    (requested applied : I64) (extendOnly : Bool) :
+    Inbox.entry_kind_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once
+      encoding (extendOnly, entry, requested) applied =
+      .ok (deadlineMismatch entry requested extendOnly applied) := by
+  cases extendOnly <;> cases previous : entry.previous_effective_end_at_ms <;>
+    simp [Inbox.entry_kind_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+      deadlineMismatch, core.option.Option.is_none_or,
+      SandproofFoundationsRust.core.option.Option.is_none_or, previous, deadline_callback, scalar_bne]
+
+theorem previous_option {E : Type} (encoding : UnloadEncoding E) (previous : Option I64) :
+    core.option.Option.is_some_and
+      (Inbox.entry_kind_using.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool encoding)
+      previous () = .ok (previous.any (fun value => decide (value < 0#i64))) := by
+  cases previous <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      Inbox.entry_kind_using.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once]
+
+theorem applied_option {E : Type} (encoding : UnloadEncoding E) (entry : Entry)
+    (requested : I64) (extendOnly : Bool) (applied : Option I64) :
+    core.option.Option.is_some_and
+      (Inbox.entry_kind_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool encoding)
+      applied (extendOnly, entry, requested) =
+      .ok (applied.any (deadlineMismatch entry requested extendOnly)) := by
+  cases applied <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      applied_callback]
+
+
+theorem incarnation_zero (value : IncarnationId) : value = 0#u64 ↔ value.val = 0 := by
+  scalar_tac
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.session_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.owner_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.accepted_body
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.max_choice
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.scalar_bne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.deadline_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.applied_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.previous_option
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.applied_option
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.incarnation_zero

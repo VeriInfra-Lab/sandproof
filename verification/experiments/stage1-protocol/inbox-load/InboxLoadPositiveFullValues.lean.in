@@ -1,0 +1,111 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveBodyValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem sql_literal_length (value : String) (bound : value.toByteArray.size ≤ U32.max) :
+    (SandproofStage1RequestRust.toStr value bound).val.length = value.toByteArray.size := by
+  simp only [SandproofStage1RequestRust.toStr, Aeneas.Std.toStr, Slice.from_val,
+    List.length_map, Aeneas.Std.ByteArray.length_toList]
+
+theorem sql_literal_ne_of_lengths (left right : String)
+    (leftBound : left.toByteArray.size ≤ U32.max) (rightBound : right.toByteArray.size ≤ U32.max)
+    (different : left.toByteArray.size ≠ right.toByteArray.size) :
+    SandproofStage1RequestRust.toStr left leftBound ≠ SandproofStage1RequestRust.toStr right rightBound := by
+  intro same
+  exact different (by simpa only [sql_literal_length] using congrArg (fun value : Str => value.val.length) same)
+
+theorem limits_normal (trace : Trace) :
+    limitsView normalEffects validation budget InboxLoadConfig.LifecycleValues.capacity
+      2#i64 286720#i64 trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ bodyTrace InboxValidation.Values.normal) := by
+  unfold limitsView
+  rw [if_neg (by decide : ¬ (2#i64 < 0#i64))]
+  rw [show core.num.I64.cast_unsigned 2#i64 = .ok 2#u64 from rfl]
+  simp only [bind_tc_ok]
+  rw [if_neg (by decide : ¬ (286720#i64 < 0#i64))]
+  rw [show core.num.I64.cast_unsigned 286720#i64 = .ok 286720#u64 from rfl]
+  simp only [bind_tc_ok]
+  rw [if_neg (by decide : ¬ (286720#u64 < 2#u64))]
+  rw [if_neg (by decide : ¬ (286720#u64 > InboxLoadConfig.LifecycleValues.capacity.max_sql_value_bytes))]
+  rw [if_neg (by decide : ¬ (286720#u64 > maximumBytes))]
+  exact body_normal trace
+
+def capacityTrace (inbox : controller.lifecycle_inbox.model.Inbox) : Trace :=
+  policyTrace ++ ([.lengthQuery lengthsStatement] ++ bodyTrace inbox)
+
+theorem capacity_normal (trace : Trace) :
+    capacityView normalEffects validation budget trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ capacityTrace InboxValidation.Values.normal) := by
+  simp only [capacityView, normalEffects, effects, capacity_read, attempt, bind_tc_ok]
+  change limitsView normalEffects validation budget InboxLoadConfig.LifecycleValues.capacity
+    2#i64 286720#i64 ((trace ++ policyTrace) ++ [Event.lengthQuery lengthsStatement]) = _
+  rw [limits_normal]
+  apply congrArg (fun finalTrace : Trace =>
+    (Result.ok (.Ok (some InboxValidation.Values.normal), finalTrace) : Outcome Trace))
+  exact (List.append_assoc (trace ++ policyTrace) [Event.lengthQuery lengthsStatement]
+    (bodyTrace InboxValidation.Values.normal)).trans
+    (List.append_assoc trace policyTrace
+      ([Event.lengthQuery lengthsStatement] ++ bodyTrace InboxValidation.Values.normal))
+
+def currentTrace (inbox : controller.lifecycle_inbox.model.Inbox) : Trace :=
+  [.boolQuery internalStatement] ++ capacityTrace inbox
+
+theorem current_normal (trace : Trace) :
+    currentView normalEffects validation budget trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ currentTrace InboxValidation.Values.normal) := by
+  have internalFalse : decide (internalStatement ≠ internalStatement) = false := by simp
+  simp only [currentView, normalEffects, effects, attempt, bind_tc_ok, internalFalse]
+  change capacityView normalEffects validation budget (trace ++ [Event.boolQuery internalStatement]) = _
+  rw [capacity_normal]
+  apply congrArg (fun finalTrace : Trace =>
+    (Result.ok (.Ok (some InboxValidation.Values.normal), finalTrace) : Outcome Trace))
+  exact List.append_assoc trace [Event.boolQuery internalStatement] (capacityTrace InboxValidation.Values.normal)
+
+theorem normal_model_loaded (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ normalEffects trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ completeTrace InboxValidation.Values.normal) := by
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have existsTrue : decide (existsStatement ≠ internalStatement) = true := by simp [existsDifferent]
+  have sourceTrue : decide (sourceStatement ≠ internalStatement) = true := by simp [sourceDifferent]
+  have existsReturns (state : Trace) : normalEffects.query_bool state existsStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery existsStatement]) := by
+    simp only [normalEffects, effects, existsTrue]
+  have sourceReturns (state : Trace) : normalEffects.query_bool state sourceStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery sourceStatement]) := by
+    simp only [normalEffects, effects, sourceTrue]
+  have versionReturns (state : Trace) : normalEffects.checkpointconfigReadConfigEffectsInst.query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp only [normalEffects, effects, policyEffects, versionDifferent, ↓reduceIte]
+  change loadView normalEffects validation budget trace = _
+  simp only [loadView, existsReturns, versionReturns, sourceReturns, attempt, bind_tc_ok]
+  simp [LIFECYCLE_STORE_FORMAT_VERSION]
+  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv, current_normal, completeTrace,
+    currentTrace, capacityTrace, bodyTrace, afterDigest, afterEncoding, List.append_assoc]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.limits_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.capacity_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.current_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.normal_model_loaded
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.sql_literal_length
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.sql_literal_ne_of_lengths

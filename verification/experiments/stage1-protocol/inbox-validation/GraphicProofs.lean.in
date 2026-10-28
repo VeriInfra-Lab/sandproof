@@ -1,0 +1,60 @@
+import SandproofStage1Graphic.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1GraphicRust
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.GraphicPrimitive
+noncomputable section
+
+-- The byte predicate is exactly ConfigValidation.graphicByte, written inline
+-- here to keep this library-only view independent of business types.
+theorem byte_refines (byte : U8) :
+    core.num.U8.is_ascii_graphic byte = .ok (decide (33 ≤ byte.val ∧ byte.val ≤ 126)) := by
+  simp only [core.num.U8.is_ascii_graphic]
+  split <;> simp_all
+
+theorem callback_refines (byte : U8) :
+    graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut () byte =
+      .ok (decide (33 ≤ byte.val ∧ byte.val ≤ 126), ()) := by
+  simp [graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut, byte_refines]
+
+theorem all_refines (bytes : List U8) :
+    ∃ rest, allBytes graphic_bytes.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      () bytes = .ok (bytes.all (fun byte => decide (33 ≤ byte.val ∧ byte.val ≤ 126)), rest) := by
+  induction bytes with
+  | nil => exact ⟨[], rfl⟩
+  | cons byte tail ih =>
+    obtain ⟨rest, accepted⟩ := ih
+    by_cases graphic : 33 ≤ byte.val ∧ byte.val ≤ 126
+    · exact ⟨rest, by simp [allBytes, callback_refines, graphic, accepted]⟩
+    · exact ⟨tail, by simp [allBytes, callback_refines, graphic]⟩
+
+theorem primitive_refines (text : Str) :
+    graphic_bytes text =
+      .ok (text.val.all (fun byte => decide (33 ≤ byte.val ∧ byte.val ≤ 126))) := by
+  obtain ⟨rest, checked⟩ := all_refines text.val
+  simp [graphic_bytes, core.str.Str.bytes, SandproofFoundationsRust.core.str.Str.bytes,
+    core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    checked]
+
+theorem standard_refines (text : Str) :
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic text =
+      .ok (text.val.all (fun byte => decide (33 ≤ byte.val ∧ byte.val ≤ 126))) := by
+  exact primitive_refines text
+
+theorem standard_empty (text : Str) (empty : text.val = []) :
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic text =
+      .ok true := by
+  simpa only [empty, List.all_nil] using standard_refines text
+
+end
+end SandboxModel.Stage1Protocol.GraphicPrimitive
+
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.byte_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.all_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.primitive_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.standard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.GraphicPrimitive.standard_empty

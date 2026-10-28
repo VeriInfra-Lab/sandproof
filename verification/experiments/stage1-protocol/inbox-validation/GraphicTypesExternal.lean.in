@@ -1,0 +1,4 @@
+import SandproofFoundations.TypesExternal
+namespace SandproofStage1GraphicRust
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+end SandproofStage1GraphicRust

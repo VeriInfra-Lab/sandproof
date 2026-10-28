@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationProofs
+import SandboxModel.Lifecycle.Protocol.ConfigValidationValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation
+noncomputable section
+
+theorem normal_returns : ∀ config ∈ [Values.small, Values.fixture, Values.withHost, Values.exactLimit],
+    LifecycleInboxConfig.valid config = .ok true := by
+  intro config member
+  exact (config_accepts_iff config (Values.normal_representable config member)).mpr
+    (Values.normal_valid config member)
+
+-- This is a value-level non-observation, never evidence of authorization.
+theorem host_policy_ignored (host : HostEpochRegistration)
+    (policy : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (bounded : StringRepresentable host.boot_id) :
+    HostEpochRegistration.valid_using graphicEncoding { host with policy := policy } = HostEpochRegistration.valid_using graphicEncoding host := by
+  rw [host_refines host bounded, host_refines { host with policy := policy } bounded]
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.normal_returns
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.host_policy_ignored

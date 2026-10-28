@@ -1,0 +1,4 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_execution_origin(session: &Session) -> Option<&Entry> {
+    session.current_execution_origin()
+}

@@ -37,15 +37,11 @@ impl UnloadResolution {
 pub(super) trait UnloadEncoding {
     fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error>;
 }
-struct StandardUnloadEncoding;
+pub(super) struct StandardUnloadEncoding;
 impl UnloadEncoding for StandardUnloadEncoding {
     fn encode(value: &UnloadResolution) -> Result<Vec<u8>, serde_json::Error> {
         serde_json::to_vec(value)
     }
-}
-
-pub(super) fn validate_entry(entry: &Entry) -> Result<(), JournalError> {
-    validate_entry_using::<StandardUnloadEncoding>(entry)
 }
 
 pub(super) fn validate_entry_using<E: UnloadEncoding>(entry: &Entry) -> Result<(), JournalError> {

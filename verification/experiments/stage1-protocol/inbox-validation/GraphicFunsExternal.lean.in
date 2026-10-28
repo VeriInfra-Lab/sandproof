@@ -1,0 +1,15 @@
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+import SandproofStage1Request.SharedValueBindings
+import SandproofStage1Graphic.Types
+open Aeneas Aeneas.Std
+namespace SandproofStage1GraphicRust
+
+def core.str.Str.bytes (value : Str) : Result core.str.iter.Bytes :=
+  SandproofFoundationsRust.core.str.Str.bytes value
+
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all {F : Type}
+    (callback : core.ops.function.FnMut F U8 Bool)
+    (bytes : core.str.iter.Bytes) (state : F) : Result (Bool × core.str.iter.Bytes) :=
+  SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all callback bytes state
+
+end SandproofStage1GraphicRust

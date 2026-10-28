@@ -1,0 +1,67 @@
+import SandboxModel.Lifecycle.Protocol.ComposedConfigHost
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ComposedConfig
+open ConfigValidation
+noncomputable section
+
+theorem optional_host_refines {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) (config : LifecycleInboxConfig) (bounded : Representable config) :
+    (match config.host_epoch with
+      | none => Result.ok true
+      | some host => HostEpochRegistration.valid_using graphic host) =
+        .ok (decide (hostAccepted config.host_epoch)) := by
+  cases found : config.host_epoch with
+  | none => rfl
+  | some host =>
+    have representable : StringRepresentable host.boot_id := bounded host (by simp [found])
+    exact host_refines graphic law host representable
+
+theorem config_refines {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid_using graphic config = .ok (decide (Valid config)) := by
+  obtain ⟨budget, returned, exactValue⟩ := ConfigBudget.required_bytes_refines config
+  have host := optional_host_refines graphic law config bounded
+  have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
+  have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
+  cases found : config.host_epoch <;> simp only [found] at host
+  all_goals simp only [LifecycleInboxConfig.valid_using,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.ops.range.RangeInclusive.new, bind_tc_ok, found,
+    range_u16_refines, range_u32_refines, returned, kib, mib]
+  case none => split_ifs <;> simp_all [Valid, hostAccepted]
+  case some registration =>
+    rw [host]
+    simp only [bind_tc_ok]
+    split_ifs <;> simp_all [Valid, hostAccepted]
+
+theorem config_full_contract {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) :
+    FullConfigContract (LifecycleInboxConfig.valid_using graphic) := config_refines graphic law
+
+theorem standard_config_contract : FullConfigContract (LifecycleInboxConfig.valid_using standardGraphic) :=
+  config_full_contract standardGraphic standard_graphic_contract
+
+theorem config_accepts_iff {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid_using graphic config = .ok true ↔ Valid config := by
+  rw [config_refines graphic law config bounded]
+  simp
+
+theorem config_rejects_iff {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid_using graphic config = .ok false ↔ ¬ Valid config := by
+  rw [config_refines graphic law config bounded]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.ComposedConfig
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.optional_host_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.config_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.config_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.config_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.config_rejects_iff
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.standard_config_contract

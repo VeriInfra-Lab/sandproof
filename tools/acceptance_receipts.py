@@ -166,10 +166,10 @@ def stage1_native_labels():
     registered = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(registered)
     labels = tuple(registered.native_labels())
-    if len(labels) != 28 or len(set(labels)) != 28:
-        raise ValueError('stage1 native scope requires the exact 28 registered cases')
+    if len(labels) != 41 or len(set(labels)) != 41:
+        raise ValueError('stage1 native scope requires the exact 41 registered cases')
     result = ('functional', 'stage1-protocol', *labels)
-    if len(set(result)) != 30:
+    if len(set(result)) != 43:
         raise ValueError('stage1 native scope has duplicate component labels')
     return result
 
@@ -183,7 +183,7 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
     counts = Counter(labels)
     if (not expected <= counts.keys() or any(counts[label] != 1 for label in expected)
             or (not allow_additional and set(counts) != expected)):
-        raise ValueError('stage1 native scope requires exactly its 30 complete components')
+        raise ValueError('stage1 native scope requires exactly its 43 complete components')
 
 
 def current_native_seal(seal, runtime, *, scope='all'):

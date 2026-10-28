@@ -19,8 +19,8 @@ spec.loader.exec_module(registered)
 
 class Registration(unittest.TestCase):
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 28)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 28)
+        self.assertEqual(len(registered.NATIVE_CASES), 41)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 41)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -46,6 +46,7 @@ class Registration(unittest.TestCase):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
+        self.assertEqual(len(jobs), 126)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -63,7 +64,7 @@ class Registration(unittest.TestCase):
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
         inbox = [job for job in jobs if Path(job['driver']).parent.name.startswith('inbox-')]
-        self.assertEqual(len(inbox), 37)
+        self.assertEqual(len(inbox), 76)
         self.assertFalse(any(j['name'].startswith('inbox-append-') for j in inbox))
         for variant in registered.INBOX_CASES['inbox-append']:
             job, = [j for j in inbox if j['name'] == 'inbox-record-total-'+variant]
@@ -80,10 +81,15 @@ class Registration(unittest.TestCase):
                 name for name in registered.NATIVE_CASES if name != 'stage1-inbox-state')):
             with self.assertRaisesRegex(ValueError, 'missing native registration'):
                 registered.validate_registration()
-        variants = dict(registered.INBOX_CASES, **{'inbox-state': ('correct', 'always-current')})
-        with patch.object(registered, 'INBOX_CASES', variants):
-            with self.assertRaisesRegex(ValueError, 'missing/extra original variant'):
-                registered.validate_registration()
+        for name, dropped in (('inbox-state', 'drop-operation'),
+                              ('inbox-save', 'wrong-budget'),
+                              ('retention-lane', 'oversize-encoding')):
+            with self.subTest(package=name):
+                variants = dict(registered.INBOX_CASES)
+                variants[name] = tuple(value for value in variants[name] if value != dropped)
+                with patch.object(registered, 'INBOX_CASES', variants):
+                    with self.assertRaisesRegex(ValueError, 'missing/extra original variant'):
+                        registered.validate_registration()
 
     def test_wrong_machine_role_fails_before_any_work(self):
         with patch.object(registered, '_shared') as shared:

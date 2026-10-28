@@ -36,6 +36,19 @@ INBOX_CASES = {
     'inbox-lifetimes': ('correct', 'skip-predecessor', 'keep-gap-predecessor', 'skip-final-deadline'),
     'inbox-renewal-session': ('correct', 'key-only-checkpoint', 'ignore-retained-frontier', 'ignore-unapplied-sdk'),
     'inbox-unload-resolution': ('correct', 'ignore-snapshot-phase', 'ignore-capture-operation', 'ignore-result-maximum'),
+    'inbox-entry-validation': ('correct', 'duplicate-cap', 'key-sequence-only', 'requested-deadline-only'),
+    'inbox-retired-identities': ('correct', 'key-sequence-only', 'ignore-active-conflicts', 'ignore-prior-session'),
+    'inbox-origin-selection': ('correct', 'skip-resume', 'require-local-operation', 'return-first-slot'),
+    'inbox-config': ('correct', 'halve-options-reservation', 'omit-manifest-copy', 'omit-global-reserve'),
+    'inbox-config-validation': ('correct', 'host-version-range', 'omit-profile-bound', 'double-budget-limit'),
+    'terminal-binding': ('correct', 'key-only-observation', 'allow-unload', 'omit-retention-shape', 'omit-version-relation'),
+    'retention-lane': ('correct', 'ignore-successor', 'allow-pending', 'ignore-context', 'omit-slot', 'omit-window', 'oversize-encoding'),
+    'native-retirement': ('correct', 'local-presence-only', 'omit-intent-binding', 'omit-worker-status', 'omit-quiescence-epoch', 'early-intent-encoding', 'oversize-encoding'),
+    'session-shape': ('correct', 'wrong-first-lane', 'wrong-physical', 'wrong-refusal-field', 'wrong-last-session'),
+    'inbox-validation': ('correct', 'wrong-owner-result', 'wrong-lane-guard', 'wrong-session-result'),
+    'inbox-save': ('correct', 'wrong-validation', 'wrong-budget', 'wrong-zero-row', 'wrong-hash'),
+    'inbox-record-validation': ('correct', 'wrong-validation', 'wrong-budget', 'wrong-zero-row', 'wrong-hash'),
+    'inbox-load': ('correct', 'wrong-digest', 'wrong-canonical', 'wrong-validation', 'wrong-policy'),
 }
 NATIVE_DRIVERS = (
     ('stage1-protocol-manifest', 'verification/experiments/stage1-manifest/native.py', True),
@@ -48,8 +61,8 @@ NATIVE_DRIVERS = (
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 162
-AUDIT_DECLARATION_COUNT = 623
+AUDIT_TEMPLATE_COUNT = 329
+AUDIT_DECLARATION_COUNT = 1338
 
 
 def native_labels():
@@ -215,11 +228,25 @@ def _variant_choices(path):
     for node in choices.elts:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             result.append(node.value)
-        elif isinstance(node, ast.Starred) and isinstance(node.value, ast.Attribute) and node.value.attr == 'MUTATIONS':
-            preparation = ast.parse((path.parent/'prepare.py').read_text())
+        elif (isinstance(node, ast.Starred) and isinstance(node.value, ast.Attribute)
+                and node.value.attr in ('MUTATIONS', 'FAILURES')):
+            # The complete inbox drivers keep their real mutation cases beside
+            # the Rust mutation function; record-validation uses that same save
+            # mutation set, with additional assertions for its composition.
+            sources = {
+                'inbox-validation': HERE/'inbox-validation/mutations.py',
+                'inbox-save': HERE/'inbox-save/mutations.py',
+                'inbox-record-validation': HERE/'inbox-save/mutations.py',
+                'inbox-load': HERE/'inbox-load/mutations.py',
+            }
+            source = (path.parents[4]/sources[path.parent.name]
+                      if path.parent.name in sources else path.parent/'prepare.py')
+            preparation = ast.parse(source.read_text())
             mutations, = [statement.value for statement in preparation.body
                           if isinstance(statement, ast.Assign) and any(
-                              isinstance(t, ast.Name) and t.id == 'MUTATIONS' for t in statement.targets)]
+                              isinstance(t, ast.Name) and t.id == node.value.attr for t in statement.targets)]
+            if not isinstance(mutations, ast.Dict):
+                raise ValueError('mutation cases must remain an explicit dictionary: ' + str(source))
             result += [ast.literal_eval(key) for key in mutations.keys]
         else:
             raise ValueError('unregistered original variant declaration: ' + str(path))

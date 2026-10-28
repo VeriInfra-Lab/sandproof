@@ -20,7 +20,34 @@
 这里维护跨文档唯一的实现/验收状态摘要。目标和优先级见蓝图，接口规则见模块合同，
 故障矩阵与验收入口见测试清单；这些页面链接本节，不重复维护阶段状态表。
 
-## V3 统一集成：同步合同与本批续验范围
+## V3 同步收件链采用：开发中的适用范围
+
+基于 integration `9be262ea99f59726df1572ec5e76345da0ec0f3c`，
+`codex/proof/635-inbox-integration`（[采用 PR #741](https://github.com/VeriInfra-Lab/sandproof/pull/741)）收拢 #723–#728、#731、#733–#738、#740
+自身增量，继承 #739 已采用的实现；历史源码与回执不改写。完整切片为 load、全文
+查找/重放/record、完整 validate、编码/预算/digest/save 结果分类，规格和未闭合条件见
+[V3 采用边界](formal/03-protocol-inbox.md#6-同步收件链的采用边界)。
+
+本分支采用完整校验所需具名循环、Graphic/Terminal/Retirement 编码接口及 load/save
+效果接口，标准实例继续调用原 JSON/SHA/SQLite。保留当前全文查找与 record 辅助函数，
+收据/shape 与 record 共用原 Session.last_entry；没有第二条业务算法或备用写入口。
+Maintenance/Capacity 的必要改动限配置读取与纯值校验表达，不改状态、事务或物理算法。
+
+开发证据绑定 `5d88c98062e0ad99b91639c7c210dfc0606035cd` 的采用源码：
+controller-service 局部编译、87 个准备视图的源变更核对及登记回归通过。
+公共 load/authenticated/record/validate/save/state 共同视图重新抽取后，
+184 个真实文件的内核检查通过；原同服务诊断及 743 项唯一审计也已完成。
+首次服务初始化超时的 `complete=false` 报告保留，成功服务续验另记，未重写原失败。
+执行来源的正确版和三个实际 Rust 错误版均完成原驱动检查；错误版在编译、抽取后
+以同一完整合同取得反例。配置改动文件及其三个实际错误版的局部检查也已通过。
+这些结果是限定的开发证据，不能代替登记的全部正式义务或 ning 封口。
+
+[本包根级输入清单](../verification/stage1-protocol-inputs.sha256) 已补齐本批组件，
+仅作为新批验收的准入输入；模块清单迁移字段也不充当成功回执。ning 普通/原生、
+完整 V3 入口及共享受影响验收尚未完成，原始证据可读交接仍待确认。
+旧候选通过不迁记为本分支通过；全局冻结与旧首链阻断及本分支新增影响分别报告。
+
+## V3 统一集成：#739 历史续验范围
 
 本批从 integration `d97ac5cb` 导入 #686–#722 中冻结的 34 个 V3 PR 自身增量，
 并合并 integration `054d9f04` 的中心确认更新；不导入旧工程基线。采用 #698 的现行

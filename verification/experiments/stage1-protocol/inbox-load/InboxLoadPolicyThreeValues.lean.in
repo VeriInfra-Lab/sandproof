@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+def policyThree : MaintenanceConfig := {
+  InboxLoadConfig.LifecycleValues.normal with max_operations_per_sandbox := 3#u64 }
+
+theorem policy_three_accepted : MaintenanceConfig.validate policyThree = .ok (.Ok ()) := by
+  rw [InboxLoadConfig.maintenance_full_refines]
+  unfold InboxLoadConfig.maintenanceResult
+  rw [if_pos (show 3 ≤ policyThree.max_operations_per_sandbox.val ∧
+      policyThree.max_operations_per_sandbox.val ≤ 128 from by decide)]
+  have fields : ∀ value ∈ InboxLoadMaintenance.fields policyThree,
+      InboxLoadCapacity.ScalarValid value := InboxLoadConfig.LifecycleValues.normal_maintenance_fields
+  rw [if_pos fields]
+  rw [if_neg (show ¬ policyThree.max_input_bytes.val > policyThree.max_tail_bytes.val from by decide)]
+  change InboxLoadCapacity.capacityView InboxLoadConfig.LifecycleValues.capacity policyThree = .ok (.Ok ())
+  exact InboxLoadConfig.LifecycleValues.normal_capacity_accepted
+
+theorem policy_three_read (trace : Trace) :
+    InboxLoadConfig.readFullView (policyEffects policyThree) trace =
+      .ok (.Ok (some policyThree), trace ++ policyTrace) := by
+  have accepted : InboxLoadConfig.maintenanceResult policyThree = .ok (.Ok ()) := by
+    rw [← InboxLoadConfig.maintenance_full_refines]
+    exact policy_three_accepted
+  simp [InboxLoadConfig.readFullView, policyEffects, accepted, policyTrace,
+    alloc.vec.Vec.deref, List.append_assoc]
+
+theorem policy_three_capacity_read (trace : Trace) :
+    InboxLoadConfig.capacityReadView (policyEffects policyThree) trace =
+      .ok (.Ok (some InboxLoadConfig.LifecycleValues.capacity), trace ++ policyTrace) := by
+  simp only [InboxLoadConfig.capacityReadView, policy_three_read, bind_tc_ok]
+  rfl
+
+def wrongPolicyEffects : InboxLoadEffects Trace :=
+  effects (.Ok InboxValidation.Values.normal) bytes bytes storedDigest 286720#i64 policyThree
+
+theorem policy_three_rejects_normal (trace : Trace) :
+    finishView wrongPolicyEffects InboxValidation.Values.normal trace =
+      corrupt (trace ++ policyTrace) := by
+  simp only [finishView, wrongPolicyEffects, effects, policy_three_read, attempt, bind_tc_ok]
+  change (if InboxValidation.Values.normal.config.max_operations_per_session.val >
+      policyThree.max_operations_per_sandbox.val
+    then corrupt (trace ++ policyTrace)
+    else .ok (.Ok (some InboxValidation.Values.normal), trace ++ policyTrace)) = _
+  exact if_pos (by decide)
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_three_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_three_read
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_three_capacity_read
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_three_rejects_normal

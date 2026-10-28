@@ -29,7 +29,7 @@ def sha(path):
 def candidate(project):
     before = (project/SOURCE).read_text()
     for symbol in ('pub(super) trait RenewalEncoding', 'fn validate_session_using<',
-                   'validate_session_using::<StandardRenewalEncoding>(session)',
+                   'pub(super) struct StandardRenewalEncoding;',
                    'fn checkpoint_entry_invalid(', 'fn contains_accepted_version(',
                    'fn has_unapplied_sdk_through('):
         if before.count(symbol) != 1:

@@ -1,0 +1,106 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadConfigComposition
+import SandboxModel.Lifecycle.Protocol.InboxLoadCheckedArithmetic
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.capacity
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues
+noncomputable section
+
+-- Exact synthetic configuration in controller-service/tests/support/lifecycle_application.rs::maintenance (over complete_fixture.rs).
+-- Acceptance is a value-level validation fact, not evidence of provisioned storage.
+def capacity : CapacityConfig := {
+  max_live_sandboxes := 64#u64
+  max_sql_rows := 4096#u64
+  max_sql_bytes := 67108864#u64
+  max_sql_value_bytes := 4194304#u64
+  max_receipt_bytes := 16384#u64
+  max_transaction_inputs := 4#u64
+  max_transaction_bytes := 32768#u64
+  max_database_bytes := 1073741824#u64
+  max_wal_bytes := 1090519040#u64
+  max_shm_bytes := 4194304#u64
+  checkpoint_scratch_bytes := 33554432#u64
+  max_online_storage_bytes := 2202009600#u64 }
+
+def normal : MaintenanceConfig := {
+  max_operations_per_sandbox := 8#u64
+  capacity := some capacity
+  retention_ms := 100#u64
+  max_checkpoint_bytes := 16777216#u64
+  max_records := 10000#u64
+  max_references := 1000000#u64
+  max_tail_inputs := 1000#u64
+  max_tail_bytes := 4194304#u64
+  max_input_bytes := 8192#u64
+  prune_batch_rows := 7#u64 }
+
+theorem normal_maintenance_fields :
+    ∀ value ∈ InboxLoadMaintenance.fields normal, InboxLoadCapacity.ScalarValid value := by
+  simp [InboxLoadMaintenance.fields, InboxLoadCapacity.ScalarValid, normal]
+  scalar_tac
+
+theorem normal_capacity_fields :
+    ∀ value ∈ InboxLoadCapacity.fields capacity, InboxLoadCapacity.ScalarValid value := by
+  simp [InboxLoadCapacity.fields, InboxLoadCapacity.ScalarValid, capacity]
+  scalar_tac
+
+theorem normal_capacity_accepted : InboxLoadCapacity.capacityView capacity normal = .ok (.Ok ()) := by
+  have transaction := InboxLoadLibrary.checked_mul_exact 4#u64 8192#u64 32768#u64 (by rfl)
+  have triple := InboxLoadLibrary.checked_mul_exact 3#u64 8192#u64 24576#u64 (by rfl)
+  have sql := InboxLoadLibrary.checked_add_exact 24576#u64 4096#u64 28672#u64 (by rfl)
+  have receipt := InboxLoadLibrary.checked_add_exact 8192#u64 4096#u64 12288#u64 (by rfl)
+  have scratch := InboxLoadLibrary.checked_mul_exact 2#u64 16777216#u64 33554432#u64 (by rfl)
+  have databaseWal := InboxLoadLibrary.checked_add_exact 1073741824#u64 1090519040#u64 2164260864#u64 (by rfl)
+  have withShm := InboxLoadLibrary.checked_add_exact 2164260864#u64 4194304#u64 2168455168#u64 (by rfl)
+  have total := InboxLoadLibrary.checked_add_exact 2168455168#u64 33554432#u64 2202009600#u64 (by rfl)
+  unfold InboxLoadCapacity.capacityView
+  rw [if_neg (fun invalid => invalid normal_capacity_fields)]
+  simp only [capacity, normal]
+  rw [if_neg (by decide : ¬ ((4#u64).val < 4))]
+  rw [if_neg (by decide : ¬ ((4#u64).val > (1000#u64).val))]
+  rw [transaction]
+  simp only [InboxLoadCapacity.checkedCapacity]
+  rw [if_neg (by decide : ¬ ((32768#u64).val < (32768#u64).val))]
+  rw [if_neg (by decide : ¬ ((32768#u64).val > (4194304#u64).val))]
+  rw [if_neg (by decide : ¬ ((8192#u64).val < 4105))]
+  rw [triple]
+  simp only
+  rw [sql]
+  simp only
+  rw [if_neg (by decide : ¬ ((4194304#u64).val < max (28672#u64).val 135168))]
+  rw [receipt]
+  simp only
+  rw [if_neg (by decide : ¬ ((16384#u64).val < (12288#u64).val))]
+  rw [if_neg (by decide : ¬ ((16384#u64).val > (4194304#u64).val))]
+  rw [scratch]
+  simp only
+  rw [if_neg (by decide : ¬ ((33554432#u64).val < (33554432#u64).val))]
+  rw [databaseWal]
+  simp only
+  rw [withShm]
+  simp only
+  rw [total]
+  simp only
+  rw [if_neg (by decide : ¬ ((2202009600#u64).val > (2202009600#u64).val))]
+
+theorem normal_accepted : MaintenanceConfig.validate normal = .ok (.Ok ()) := by
+  rw [maintenance_full_refines]
+  unfold maintenanceResult
+  rw [if_pos (show 3 ≤ normal.max_operations_per_sandbox.val ∧
+      normal.max_operations_per_sandbox.val ≤ 128 from by decide)]
+  rw [if_pos normal_maintenance_fields]
+  rw [if_neg (show ¬ normal.max_input_bytes.val > normal.max_tail_bytes.val from by decide)]
+  change InboxLoadCapacity.capacityView capacity normal = .ok (.Ok ())
+  exact normal_capacity_accepted
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues.normal_capacity_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues.normal_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues.normal_maintenance_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.LifecycleValues.normal_capacity_fields

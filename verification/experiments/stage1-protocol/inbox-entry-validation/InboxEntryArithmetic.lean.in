@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryCountModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+theorem count_result_ok (n : Nat) (h : n < 2^UScalarTy.Usize.numBits) :
+    countResult n = .ok (UScalar.ofNatCore n h) := by
+  change n < 2^System.Platform.numBits at h
+  simp [countResult, UScalar.tryMk, UScalar.tryMkOpt, h, Result.ofOption]
+
+theorem count_result_overflow (n : Nat) (h : 2^UScalarTy.Usize.numBits ≤ n) :
+    countResult n = .fail .integerOverflow := by
+  change 2^System.Platform.numBits ≤ n at h
+  simp [countResult, UScalar.tryMk, UScalar.tryMkOpt, Nat.not_lt.mpr h, Result.ofOption]
+
+theorem count_result_val (c : Usize) : countResult c.val = .ok c := by
+  rw [count_result_ok c.val c.hBounds]
+  congr 1
+
+theorem count_result_bind (n m : Nat) :
+    (do let c ← countResult n; countResult (c.val + m)) = countResult (n + m) := by
+  by_cases h : n < 2^UScalarTy.Usize.numBits
+  · rw [count_result_ok n h]
+    simp only [bind_tc_ok, UScalar.ofNatCore_val_eq]
+  · have large : 2^UScalarTy.Usize.numBits ≤ n := Nat.le_of_not_lt h
+    rw [count_result_overflow n large, count_result_overflow (n+m) (by omega)]
+    simp
+
+theorem count_add_one (c : Usize) : c + 1#usize = countResult (c.val + 1) := rfl
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_result_ok
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_result_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_result_val
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_result_bind
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_add_one

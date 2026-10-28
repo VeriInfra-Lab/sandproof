@@ -1,0 +1,133 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveModel
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionBoundaryValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.InboxSave.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+
+abbrev saved := SavedRetirement.Values.small
+abbrev terminal := SessionShape.Values.small
+def renewal : InboxRenewal.Encoding := fun _ => .ok (.Ok (vector [] (by decide)))
+def unload : UnloadResolution.Encoding := fun _ => .ok (.Ok (vector [] (by decide)))
+
+inductive Event where
+  | encoded (inbox : Inbox)
+  | digested (bytes : List U8)
+  | updated (sql : Str) (bytes digest : List U8)
+
+abbrev Trace := List Event
+
+def bytes : alloc.vec.Vec U8 := vector [17#u8, 29#u8] (by decide)
+def digest : Array U8 32#usize := Array.from (List.replicate 32 165#u8) (by decide)
+
+-- Every callback observes its entire actual argument and keeps prior events.
+-- This provider is a consistency witness, not a claim about Serde, SHA or SQL.
+def effects (bytes : alloc.vec.Vec U8) (reply : core.result.Result Usize JournalError) :
+    InboxSaveEffects Trace := {
+  encode := fun trace inbox => .ok (.Ok bytes, trace ++ [.encoded inbox])
+  digest := fun trace input => .ok (digest, trace ++ [.digested input.val])
+  update := fun trace sql input hash => .ok (reply, trace ++ [.updated sql input.val hash.val]) }
+
+def completeTrace (inbox : Inbox) (bytes : alloc.vec.Vec U8) : Trace :=
+  [.encoded inbox, .digested bytes.val, .updated statement bytes.val digest.val]
+
+theorem normal_accepted :
+    InboxValidation.inboxView saved terminal renewal unload InboxValidation.Values.normal = .ok (.Ok ()) :=
+  InboxValidation.Values.normal_model_accepted _ _ _ _
+
+theorem recorded_accepted :
+    InboxValidation.inboxView saved terminal renewal unload InboxValidation.Values.recorded = .ok (.Ok ()) :=
+  InboxValidation.Values.recorded_model_accepted _ _ _ _
+
+def sizedBytes (n : Nat) (bound : n ≤ 300000) : alloc.vec.Vec U8 :=
+  alloc.vec.Vec.from (List.replicate n 0#u8) (by simp only [List.length_replicate]; scalar_tac)
+
+theorem sized_bytes_length (n : Nat) (bound : n ≤ 300000) :
+    (sizedBytes n bound).val.length = n := by simp [sizedBytes]
+
+theorem fixture_budget : ConfigBudget.bytes InboxValidation.Values.normal.config = 286720 := by decide
+
+theorem bytes_fit : bytes.val.length ≤ ConfigBudget.bytes InboxValidation.Values.normal.config := by
+  rw [fixture_budget]
+  decide
+
+theorem encode_and_save_exact (inbox : Inbox) (data : alloc.vec.Vec U8)
+    (fits : data.val.length ≤ ConfigBudget.bytes inbox.config)
+    (reply : core.result.Result Usize JournalError) (trace : Trace) :
+    encodeAndSave (effects data reply) inbox trace =
+      .ok ((match reply with
+        | .Err error => .Err error
+        | .Ok count => if count.val = 1 then .Ok () else .Err .CorruptStore),
+        trace ++ completeTrace inbox data) := by
+  have under : ¬data.val.length > ConfigBudget.bytes inbox.config := by omega
+  cases reply <;>
+    simp [encodeAndSave, effects, under, completeTrace, alloc.vec.Vec.deref,
+      Array.to_slice, List.append_assoc]
+
+theorem normal_model_saved (trace : Trace) :
+    saveView saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.normal bytes) := by
+  simp only [saveView, normal_accepted, bind_tc_ok]
+  simpa using encode_and_save_exact InboxValidation.Values.normal bytes bytes_fit (.Ok 1#usize) trace
+
+theorem recorded_model_saved (trace : Trace) :
+    saveView saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.recorded trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.recorded bytes) := by
+  simp only [saveView, recorded_accepted, bind_tc_ok]
+  simpa using encode_and_save_exact InboxValidation.Values.recorded bytes bytes_fit (.Ok 1#usize) trace
+
+-- Zero affected rows is an error even though the update callback already ran.
+theorem zero_rows_model_rejected (trace : Trace) :
+    saveView saved terminal renewal unload (effects bytes (.Ok 0#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Err .CorruptStore, trace ++ completeTrace InboxValidation.Values.normal bytes) := by
+  simp only [saveView, normal_accepted, bind_tc_ok]
+  simpa using encode_and_save_exact InboxValidation.Values.normal bytes bytes_fit (.Ok 0#usize) trace
+
+-- Use a symbolic replicate length, without evaluating hundreds of thousands of bytes.
+theorem budget_model_rejected (trace : Trace) :
+    saveView saved terminal renewal unload (effects (sizedBytes 286721 (by decide)) (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Err .MaintenanceCapacity, trace ++ [.encoded InboxValidation.Values.normal]) := by
+  simp [saveView, normal_accepted, encodeAndSave, effects, sized_bytes_length, fixture_budget]
+
+theorem exact_budget_model_saved (trace : Trace) :
+    saveView saved terminal renewal unload (effects (sizedBytes 286720 (by decide)) (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.normal (sizedBytes 286720 (by decide))) := by
+  simp only [saveView, normal_accepted, bind_tc_ok]
+  have fits : (sizedBytes 286720 (by decide)).val.length ≤ ConfigBudget.bytes InboxValidation.Values.normal.config := by
+    rw [sized_bytes_length, fixture_budget]
+  simpa using encode_and_save_exact InboxValidation.Values.normal (sizedBytes 286720 (by decide)) fits (.Ok 1#usize) trace
+
+theorem invalid_model_rejected (trace : Trace) :
+    saveView saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.duplicateExternal trace = .ok (.Err .CorruptStore, trace) := by
+  have rejected := (InboxValidation.Values.owner_model_counterexamples saved terminal renewal unload).1
+  simp [saveView, rejected, InboxValidation.rejected]
+
+end
+end SandboxModel.Stage1Protocol.InboxSave.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.recorded_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.fixture_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.bytes_fit
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.encode_and_save_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.normal_model_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.recorded_model_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.zero_rows_model_rejected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.sized_bytes_length
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.budget_model_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.exact_budget_model_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.invalid_model_rejected

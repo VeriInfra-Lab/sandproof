@@ -27,7 +27,7 @@ def sha(path):
 def candidate(project):
     before = (project / SOURCE).read_text()
     for symbol in ('pub(super) trait UnloadEncoding', 'fn validate_entry_using<',
-                   'validate_entry_using::<StandardUnloadEncoding>(entry)',
+                   'pub(super) struct StandardUnloadEncoding;',
                    'fn is_unload_entry('):
         if before.count(symbol) != 1:
             raise ValueError('adopted unload checker missing or duplicated: ' + symbol)

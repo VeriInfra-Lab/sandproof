@@ -84,3 +84,32 @@ V0 提供数值/JSON/TLS 结果基础；V1/V2 提供当前授权意图和耐久�
 结果确实保存，未知提交没有被当成未执行。外部库与薄接线的具体条件见
 [V3 使用点](dependencies.md#v3-同步协议与收件的具体使用点)，不能以整个 handler
 正确作为输入前提，也不能从一次纯校验成功推出系统已经完成卸载或恢复。
+
+## 6. 同步收件链的采用边界
+
+后续同步切片沿当前唯一实现连接
+[load](../../verification/experiments/stage1-protocol/inbox-load/README.md) →
+[完整查找与 record](../../verification/experiments/stage1-protocol/inbox-record-total/README.md) →
+[完整 validate](../../verification/experiments/stage1-protocol/inbox-validation/README.md) →
+[save](../../verification/experiments/stage1-protocol/inbox-save/README.md)，复用原
+FullLoad / FullRecord / FullInbox / FullSave 合同。正确视图只追加透明调用根；
+不重新应用历史业务候选。当前源、局部检查与正式验收状态由覆盖记录分别登记。
+
+load 的正文、完整摘要、重编码、预算及完整校验必须属于同一返回 Inbox。两次配置读取
+各自保留，不能假定它们一致，也不补上原实现没有检查的 length 查询与正文长度等式。
+标准读取/编码/摘要实例的逐接口结果、SQL 列与参数顺序仍须显式连接。
+
+record 成功本身不保证后态通过完整校验。已有 capture frontier 的相同或更旧 Unload
+可被 record 追加，随后由 lineage/save 拒绝；严格更大的 capture 允许编号空洞。
+公共 Resume 请求只要求目标代严格更大，当前 record/lineage 还检查 checked successor
+及前一个对应 Unload；两层支持域必须分别保留。组合要证明实际拒绝/后态，或落实精确
+业务前提，不能把未解的 V3 保持命题交给外部提供者，也不能收窄公共请求合同。
+
+save 对完整同一 Inbox 先校验、再编码、检查输出容量、摘要、原 SQL UPDATE，最后检查
+更新恰好一行。当前使用 to_vec 后检查长度，有界输出不等于编码分配上界已证明。
+预算拒绝保留编码效果；SQL/行数错误保留已发生的更新效果。外层失败、重放时未调用
+save、BeforeCommit 或 AfterCommit 错误都不能独自推出事务没有效果或已经耐久接受。
+
+同步效果接口不替代具体 JSON、SHA、SQL、同事务快照、提交未知和重启证明。认证来源、
+当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。完整
+manifest 文件集、真实字节/网络外壳和系统结论继续是独立义务。

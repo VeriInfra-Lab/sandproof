@@ -1,4 +1,6 @@
 #[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
 pub(super) fn proof_unload_entry(entry: &Entry) -> Result<(), JournalError> {
-    super::unload_resolution::validate_entry(entry)
+    super::unload_resolution::validate_entry_using::<
+        super::unload_resolution::StandardUnloadEncoding,
+    >(entry)
 }

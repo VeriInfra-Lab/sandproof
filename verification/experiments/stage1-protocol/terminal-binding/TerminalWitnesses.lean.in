@@ -1,0 +1,33 @@
+import SandboxModel.Lifecycle.Protocol.TerminalProofs
+import SandboxModel.Lifecycle.Protocol.TerminalValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.Terminal
+
+theorem normal_returns : ∀ request ∈ [Values.original, Values.retained, Values.highest], ∀ status,
+    terminal_matches (Values.observation request status) request = .ok true := by
+  intro request member status
+  exact (terminal_accepts_iff _ _).mpr (Values.normal_matches request member status)
+
+theorem overflow_rejected :
+    terminal_matches (Values.observation Values.overflow .Cleaned) Values.overflow = .ok false :=
+  (terminal_rejects_iff _ _).mpr Values.rejected_shapes.2.2.2.2
+
+/-- Full matching does not invoke the request's operation/ExpectedSession validator. -/
+theorem invalid_expectation_can_match :
+    terminal_matches (Values.observation Values.absentDestroy .Pending) Values.absentDestroy = .ok true ∧
+    accepted_validate Values.absentDestroy EnvelopeValues.context = .ok (.Err (.Request .InvalidExpectation)) := by
+  constructor
+  · exact (terminal_accepts_iff _ _).mpr Values.absent_destroy_matches
+  · rw [Validation.envelope_refines]
+    simp [Validation.expectedAccepted, Validation.expectedResult, Values.absentDestroy,
+      Values.original, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+      EnvelopeValues.node, Validation.expectationOK]
+
+end SandboxModel.Stage1Protocol.Terminal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.normal_returns
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.overflow_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.invalid_expectation_can_match

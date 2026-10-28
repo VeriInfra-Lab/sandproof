@@ -87,6 +87,8 @@ def native(output, target):
         record['source_sha256'] = before
         run('driver-tests', [sys.executable,
                             'verification/experiments/stage1-protocol/test_replay_formal.py'])
+        run('adopted-source-views', [sys.executable,
+                                   'verification/experiments/stage1-protocol/source_views_tests.py'])
         run('format', ['cargo', 'fmt', '-p', 'sandproof-protocol', '-p', 'sandproof-internal', '--check'])
         run('extract-format', ['cargo', 'fmt', '--manifest-path',
                               'verification/experiments/stage1-protocol/Cargo.toml', '--check'])
