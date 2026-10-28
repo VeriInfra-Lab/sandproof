@@ -7,6 +7,7 @@ This is storage housekeeping, never a test result or resource-cleanup proof.
 import argparse
 from contextlib import contextmanager
 import fcntl
+import json
 import os
 from pathlib import Path
 import re
@@ -111,10 +112,12 @@ class Store:
                 raise ValueError('unknown retention record; inspect without deletion')
             yield path
 
-    def collect(self, *, now, apply=False, keep_days=7, max_count=20, max_bytes=100 * 1024**3):
+    def collect(self, *, now, apply=False, keep_days=7, max_count=20, max_bytes=100 * 1024**3,
+                keep_latest=0):
         if (type(now) is not int or now <= 0 or type(keep_days) is not int or not 1 <= keep_days <= 365
                 or type(max_count) is not int or not 0 <= max_count <= 1000
-                or type(max_bytes) is not int or not 0 <= max_bytes <= 1024**5):
+                or type(max_bytes) is not int or not 0 <= max_bytes <= 1024**5
+                or type(keep_latest) is not int or not 0 <= keep_latest <= 1000):
             raise ValueError('finite retention policy required; minimum age is one day')
         rows = []
         for path in self.record_paths():
@@ -140,7 +143,7 @@ class Store:
         plan = []
         for index, (payload, record, value, size) in enumerate(rows):
             age = now - value['finished']
-            eligible = (value['state'] == 'deleting' or age >= DAY and
+            eligible = (value['state'] == 'deleting' or index >= keep_latest and age >= DAY and
                         (age >= keep_days * DAY or index >= max_count or retained + size > max_bytes))
             if not eligible:
                 retained += size
@@ -222,6 +225,143 @@ def fsync_directory(path):
         os.close(fd)
 
 
+class NativeBuildRun:
+    """Record Cargo targets born inside one new native run, retaining its inputs.
+
+    Existing run-* directories cannot be adopted. Only a successful original
+    native seal produces a manifest; publishing it never moves or deletes data.
+    The trusted operator must separately establish complete reference/mount
+    absence and supply an exact cleanup receipt before an explicit handoff.
+    """
+
+    def __init__(self, work, candidate):
+        self.work = private_path(work, directory=True)
+        if list(self.work.iterdir()):
+            raise ValueError('only a newly allocated empty native run can be registered')
+        if not re.fullmatch('[0-9a-f]{40}', candidate):
+            raise ValueError('exact native candidate required')
+        self.candidate = candidate
+        self.identity = [self.work.stat().st_dev, self.work.stat().st_ino]
+        self.allocation = self.work / 'build-allocation.json'
+        write_once(self.allocation, dict(candidate=candidate, identity=self.identity))
+        self.allocation_sha = digest(self.allocation)
+
+    def finish(self, evidence):
+        if ([self.work.stat().st_dev, self.work.stat().st_ino] != self.identity
+                or digest(self.allocation) != self.allocation_sha):
+            raise ValueError('native run allocation changed')
+        evidence = private_path(evidence)
+        if evidence.parent != self.work:
+            raise ValueError('original native completion must remain in the run')
+        complete = json_file(evidence, limit=16 * 1024**2)
+        used = [json.loads(line) for line in (self.work / 'commands-used.jsonl').read_text().splitlines()]
+        if (complete.get('complete') is not True or type(complete.get('exit_code')) is not int
+                or complete['exit_code'] != 0 or complete.get('scope_complete') is not True
+                or not used or complete.get('uses') != used):
+            raise ValueError('original successful native completion and exact command uses required')
+        reject_mounts(self.work)
+        targets = []
+        for directory, dirs, _ in os.walk(self.work, followlinks=False):
+            for name in list(dirs):
+                path = Path(directory) / name
+                if name in ('.git', '.lake') or path.is_symlink():
+                    if name == 'target':
+                        raise ValueError('Cargo target replaced by symlink')
+                    dirs.remove(name)
+                elif name == 'target':
+                    private_path(path, directory=True)
+                    for marker in ('CACHEDIR.TAG', '.rustc_info.json'):
+                        info = (path / marker).lstat()
+                        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                            raise ValueError('original Cargo target markers required')
+                    if not (path / 'CACHEDIR.TAG').read_bytes().startswith(
+                            b'Signature: 8a477f597d28d172789f06886806bc55'):
+                        raise ValueError('original Cargo cache signature required')
+                    info = path.stat()
+                    targets.append(dict(path=str(path), identity=[info.st_dev, info.st_ino],
+                                        allocated_bytes=allocated_bytes(path)))
+                    dirs.remove(name)
+        manifest = self.work / 'build-targets.json'
+        write_once(manifest, dict(kind='native-cargo-targets-v1', candidate=self.candidate,
+            work=str(self.work), identity=self.identity, allocation_sha256=self.allocation_sha,
+            completion=str(evidence), completion_sha256=digest(evidence),
+            commands_used_sha256=digest(self.work / 'commands-used.jsonl'), targets=targets,
+            source_and_logs_retained=True, product_resource_cleanup_claimed=False))
+        return manifest
+
+
+def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, now):
+    """Explicit trusted-operator handoff under Store.lock; never automatic GC.
+
+    Reference absence is supplied by the original trusted operator, not inferred
+    from a test exit or an incomplete nonprivileged /proc view. Unknown/failed
+    observations cannot authorize a move. No subprocess, sudo or process signal
+    is used here. This settles only disposable build-byte custody.
+    """
+    manifest_path = private_path(manifest_path)
+    value = json_file(manifest_path, limit=16 * 1024**2)
+    if (value.get('kind') != 'native-cargo-targets-v1'
+            or not re.fullmatch('[0-9a-f]{40}', str(value.get('candidate')))):
+        raise ValueError('original native target manifest required')
+    work = private_path(Path(value['work']), directory=True)
+    if manifest_path.parent != work or [work.stat().st_dev, work.stat().st_ino] != value['identity']:
+        raise ValueError('native run identity changed')
+    allocation = work / 'build-allocation.json'
+    completion = private_path(Path(value['completion']))
+    if (digest(allocation) != value['allocation_sha256']
+            or json_file(allocation) != dict(candidate=value['candidate'], identity=value['identity'])
+            or completion.parent != work or digest(completion) != value['completion_sha256']
+            or digest(work / 'commands-used.jsonl') != value['commands_used_sha256']):
+        raise ValueError('native allocation, original completion or command uses changed')
+    receipt_path = private_path(receipt_path)
+    receipt = json_file(receipt_path, limit=4096)
+    Store.receipt(receipt, value)
+    evidence_path = private_path(evidence_path)
+    observed = json_file(evidence_path)
+    if (set(observed) != {'manifest_sha256', 'references_absent', 'mounts_absent',
+                         'observation_complete', 'observation_error'}
+            or receipt['status'] != 'passed' or evidence_path.is_relative_to(store.root)
+            or digest(evidence_path) != receipt['evidence_sha256']
+            or observed.get('manifest_sha256') != digest(manifest_path)
+            or observed.get('references_absent') is not True
+            or observed.get('mounts_absent') is not True
+            or observed.get('observation_complete') is not True
+            or observed.get('observation_error') is not None):
+        raise ValueError('complete trusted cleanup observation required; unknown references stay active')
+    if type(now) is not int or now <= 0:
+        raise ValueError('finite positive retirement time required')
+    if any(store.read(path.stem)[2]['finished'] >= now for path in store.record_paths()):
+        # Do not choose the latest/rollback by UUID when completion seconds tie
+        # or the host clock moves backwards. The operator keeps both in place.
+        raise ValueError('native handoff time must follow earlier retirements')
+    targets = []
+    for item in value['targets']:
+        path = private_path(Path(item['path']), directory=True)
+        info = path.stat()
+        if (path.name != 'target' or not path.is_relative_to(work)
+                or any(part in ('.lake', '.git') for part in path.relative_to(work).parts)
+                or [info.st_dev, info.st_ino] != item['identity']):
+            raise ValueError('Cargo target identity changed before handoff')
+        allocated_bytes(path)  # Existing owner/type/mount checks, before any move.
+        targets.append(path)
+    if not targets or any(evidence_path.is_relative_to(path) or receipt_path.is_relative_to(path)
+                          for path in targets):
+        raise ValueError('nonempty build list and independently preserved cleanup evidence required')
+    if len(set(targets)) != len(targets) or any(
+            a != b and a.is_relative_to(b) for a in targets for b in targets):
+        raise ValueError('duplicate or overlapping Cargo targets')
+    payload = store.allocate(kind='build', candidate=value['candidate'])
+    handoff = work / 'build-handoff.json'
+    write_once(handoff, dict(manifest_sha256=digest(manifest_path), payload=str(payload),
+        receipt_sha256=digest(receipt_path), trusted_evidence_sha256=digest(evidence_path)))
+    for index, path in enumerate(targets):
+        path.rename(payload / str(index))
+        fsync_directory(path.parent)
+    fsync_directory(payload)
+    store.retire(payload.name, receipt_path, evidence_path, now=now)
+    return payload
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', required=True, type=Path)
@@ -233,11 +373,16 @@ def main(argv=None):
     retire.add_argument('--id', required=True)
     retire.add_argument('--receipt', type=Path, required=True)
     retire.add_argument('--evidence', type=Path, required=True)
+    handoff = commands.add_parser('handoff-native')
+    handoff.add_argument('--manifest', type=Path, required=True)
+    handoff.add_argument('--receipt', type=Path, required=True)
+    handoff.add_argument('--evidence', type=Path, required=True)
     collect = commands.add_parser('collect')
     collect.add_argument('--apply', action='store_true')
     collect.add_argument('--keep-days', type=int, default=7)
     collect.add_argument('--max-count', type=int, default=20)
     collect.add_argument('--max-bytes', type=int, default=100 * 1024**3)
+    collect.add_argument('--keep-latest', type=int, default=0)
     args = parser.parse_args(argv)
     store = Store(args.root)
     with store.lock():
@@ -245,10 +390,14 @@ def main(argv=None):
             print(store.allocate(kind=args.kind, candidate=args.candidate))
         elif args.command == 'retire':
             store.retire(args.id, args.receipt, args.evidence, now=int(time.time()))
+        elif args.command == 'handoff-native':
+            print(handoff_native_builds(store, args.manifest, args.receipt, args.evidence,
+                now=int(time.time())))
         else:
             import json
             print(json.dumps(store.collect(now=int(time.time()), apply=args.apply,
-                keep_days=args.keep_days, max_count=args.max_count, max_bytes=args.max_bytes)))
+                keep_days=args.keep_days, max_count=args.max_count, max_bytes=args.max_bytes,
+                keep_latest=args.keep_latest)))
 
 
 if __name__ == '__main__':

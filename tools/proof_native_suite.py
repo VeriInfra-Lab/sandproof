@@ -17,6 +17,7 @@ from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
     contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
     check_native_scope, check_native_components)
+from tools.ci_retention import NativeBuildRun
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
                          'check_json_identifiers_negative.py',
@@ -117,6 +118,8 @@ def run_locked_suite(output, *, scope='all'):
     write_json(output / 'runtime.json', initial['runtime'])
     started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=output))
+    builds = NativeBuildRun(work, subprocess.check_output(
+        ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
     previous=work/'previous-complete.json'
     if (output/'complete.json').exists():
         previous.write_bytes((output/'complete.json').read_bytes())
@@ -131,7 +134,7 @@ def run_locked_suite(output, *, scope='all'):
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
     if scope == 'stage1-protocol':
         run_stage1_native(work, scope=scope)
-        return publish_suite(output, work, initial, started, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # These are the exact commands previously embedded in proof shell entries.
     # Identical commands/inputs execute once even when several modules ask.
     for cmd in [['cargo','fmt','--all','--','--check'],['cargo','test','--workspace'],
@@ -208,7 +211,7 @@ def run_locked_suite(output, *, scope='all'):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
-    return publish_suite(output, work, initial, started, scope=scope)
+    return publish_suite(output, work, initial, started, scope=scope, builds=builds)
 
 
 def run_stage1_native(work, *, scope='all'):
@@ -223,7 +226,7 @@ def run_stage1_native(work, *, scope='all'):
     registered.run_native(ROOT, work / 'stage1-v3')
 
 
-def publish_suite(output, work, initial, started, *, scope='all'):
+def publish_suite(output, work, initial, started, *, scope='all', builds=None):
     check_native_scope(scope)
     if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
             contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
@@ -248,6 +251,12 @@ def publish_suite(output, work, initial, started, *, scope='all'):
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
                   contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
+    # Keep the original completion plus a precise target inventory. Publication
+    # never moves/deletes build bytes or guesses resource cleanup from exit 0.
+    original = work / 'native-complete.json'
+    write_json(original, result)
+    if builds is not None:
+        builds.finish(original)
     write_json(output / 'complete.json', result)
     print(json.dumps(dict(scope=scope, scope_complete=True, full_native_suite_complete=scope=='all',
                          native_suite_complete=scope=='all', seconds=round(time.monotonic()-started,3),
