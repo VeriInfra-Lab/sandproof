@@ -927,7 +927,10 @@ class CheckpointExecution(unittest.TestCase):
     def test_public_final_write_failure_preserves_the_original_progress_index(self):
         self.public_cli_fixture(interrupt_final=True)
 
-    def public_cli_fixture(self, *, interrupt_final=False):
+    def test_public_source_guard_rejects_mode_change_even_when_bytes_and_seal_are_unchanged(self):
+        self.public_cli_fixture(change_modes=True)
+
+    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False):
         cache = self.directory/'native'
         evidence = cache/'commands/fixture/evidence'
         evidence.mkdir(parents=True)
@@ -943,6 +946,7 @@ class CheckpointExecution(unittest.TestCase):
         original_replace = os.replace
         progress_bytes = []
         writes = []
+        context = dict(self.context,repository=dict(modes={'Fixture.rs':'100644'}))
         def replace(source, destination):
             if interrupt_final and Path(destination) == output/'registered-result.json' and progress_bytes:
                 raise OSError('controlled final replacement failure')
@@ -952,6 +956,9 @@ class CheckpointExecution(unittest.TestCase):
             return self.shared.write_json(path, value)
         shared.write_json = write_json
         def execute_boundary(*args, **kwargs):
+            if change_modes:
+                kwargs['source_guard']()
+                raise AssertionError('changed modes passed the public source guard')
             if interrupt_final:
                 kwargs['progress']([dict(name='fixture', checkpoint_path='retained-original')], {}, {})
                 progress_bytes.append((output/'registered-result.json').read_bytes())
@@ -964,7 +971,8 @@ class CheckpointExecution(unittest.TestCase):
                     patch.object(registered,'_evidence',return_value=evidence), \
                     patch.object(registered,'_original_file'), patch.object(registered,'_retained_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
-                    patch.object(registered,'_execution_context',return_value=self.context), \
+                    patch.object(registered,'_execution_context',return_value=context), \
+                    patch.object(registered,'_source_modes',return_value={'Fixture.rs':'100755' if change_modes else '100644'}), \
                     patch.object(registered,'formal_plan',return_value=[]), \
                     patch.object(registered,'execute_formal_jobs',side_effect=execute_boundary) as execute, \
                     patch.object(os,'replace',side_effect=replace), \
@@ -974,6 +982,8 @@ class CheckpointExecution(unittest.TestCase):
                         SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
                 error = OSError if interrupt_final else ValueError
                 message = 'controlled final replacement failure' if interrupt_final else 'controlled executor boundary'
+                if change_modes:
+                    message = 'shared native seal or registered source changed'
                 with self.assertRaisesRegex(error,message):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)

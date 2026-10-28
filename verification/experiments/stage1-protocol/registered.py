@@ -639,12 +639,8 @@ def _job_description(job):
     return {name: job[name] for name in ('name', 'driver', 'args', 'native', 'cases', 'actual_files')}
 
 
-def _execution_context(root, shared, helper, receipts):
-    """Keep full admission inputs, including the report and Git file modes."""
-    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, text=True).strip()
-    if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root):
-        raise ValueError('checkpoint execution requires a clean committed source')
-    repository = shared.repository_inputs(root)
+def _source_modes(root):
+    """Bind tracked Git modes and the actual regular file's executable bit."""
     modes = {}
     for entry in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], cwd=root).decode().split('\0'):
         if not entry:
@@ -656,6 +652,16 @@ def _execution_context(root, shared, helper, receipts):
                 or not path.is_file() or bool(path.stat().st_mode & 0o100) != (mode == '100755')):
             raise ValueError('checkpoint source requires regular committed files: ' + name)
         modes[name] = mode
+    return modes
+
+
+def _execution_context(root, shared, helper, receipts):
+    """Keep full admission inputs, including the report and Git file modes."""
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, text=True).strip()
+    if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root):
+        raise ValueError('checkpoint execution requires a clean committed source')
+    repository = shared.repository_inputs(root)
+    modes = _source_modes(root)
     if set(modes) != set(repository) or receipts['functional']['key'].get('repository') != repository:
         raise ValueError('current complete functional admission must match every tracked input')
     return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
@@ -1083,7 +1089,8 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
                     private_worker_caches=True, outer_coordination_lock='retained by the calling operator'))
     def source_guard():
         if (_sha(cache/'complete.json') != record['shared_seal_sha256']
-                or shared.repository_inputs(root) != source_before):
+                or shared.repository_inputs(root) != source_before
+                or _source_modes(root) != context['repository']['modes']):
             raise ValueError('shared native seal or registered source changed during execution')
     def progress(rows, failures, misses):
         record.update(results=rows, execution_failures=failures, reuse_misses=misses)
