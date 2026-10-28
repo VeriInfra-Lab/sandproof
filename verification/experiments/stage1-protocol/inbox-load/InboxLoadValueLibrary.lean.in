@@ -1,0 +1,73 @@
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+
+namespace SandboxModel.Stage1Protocol.InboxLoadLibrary
+noncomputable section
+
+theorem bytes_ne (left right : List U8) (sameLength : left.length = right.length) :
+    List.anyM (fun (pair : U8 × U8) => (.ok (decide (pair.1 ≠ pair.2)) : Result Bool))
+      (List.zip left right) = .ok (decide (left ≠ right)) := by
+  simp only [ne_eq, decide_not]
+  induction left generalizing right with
+  | nil => cases right <;> simp_all [pure]
+  | cons head tail ih =>
+    cases right with
+    | nil => simp at sameLength
+    | cons other others =>
+      have rest : tail.length = others.length := by simpa using sameLength
+      by_cases equal : head = other <;> simp [pure, ih others rest, equal]
+
+theorem vec_ne (left right : alloc.vec.Vec U8) :
+    alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 left right =
+      .ok (decide (left ≠ right)) := by
+  have scalarEq : ∀ x y : U8, (x.val = y.val) ↔ x = y := by intro x y; scalar_tac
+  by_cases sameLength : left.length = right.length
+  · simp only [alloc.vec.partial_eq.PartialEqVec.ne, sameLength, ↓reduceIte]
+    simpa [scalarEq, ← alloc.vec.Vec.eq_iff] using bytes_ne left.val right.val sameLength
+  · have different : left ≠ right := by intro same; subst right; exact sameLength rfl
+    simp [alloc.vec.partial_eq.PartialEqVec.ne, sameLength, different]
+
+theorem slice_eq (left right : Slice U8) :
+    core.slice.cmp.PartialEqSlice.eq core.cmp.PartialEqU8 left right =
+      .ok (decide (left = right)) := by
+  obtain ⟨value, returned, exactValue⟩ := WP.spec_imp_exists
+    (core.slice.cmp.PartialEqSlice.eq_homo_spec core.cmp.PartialEqU8 left right
+      (by intro x y; simp [WP.spec_ok]))
+  have same : value = decide (left = right) := by cases value <;> simp_all
+  simpa only [same] using returned
+
+
+theorem nonnegative_cast (value : I64) (nonnegative : 0 ≤ value.val) :
+    ∃ unsigned, core.num.I64.cast_unsigned value = .ok unsigned ∧
+      unsigned.val = value.val.toNat := by
+  refine ⟨⟨value.bv⟩, rfl, ?_⟩
+  have sign := @BitVec.msb_eq_toInt _ value.bv
+  have representation := @BitVec.toInt_eq_msb_cond _ value.bv
+  simp only [IScalar.val] at nonnegative
+  simp only [not_lt.mpr nonnegative, decide_false] at sign
+  simp only [sign, Bool.false_eq_true, ↓reduceIte] at representation
+  change value.bv.toNat = value.bv.toInt.toNat
+  rw [representation]
+  simp
+
+-- This helper substitutes the already proved arbitrary-U16 budget formula.
+-- It does not strengthen it to a storage or allocation guarantee.
+theorem budget_comparison {α : Type} (config : LifecycleInboxConfig) (reserve : U64)
+    (rejected accepted : Result α) :
+    (do let required ← LifecycleInboxConfig.required_bytes config
+        if required ≠ reserve then rejected else accepted) =
+      if ConfigBudget.bytes config ≠ reserve.val then rejected else accepted := by
+  obtain ⟨required, returned, exactValue⟩ := ConfigBudget.required_bytes_refines config
+  simp only [returned, bind_tc_ok, ne_eq, UScalar.eq_equiv, exactValue]
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadLibrary
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.bytes_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.vec_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.slice_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.nonnegative_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.budget_comparison

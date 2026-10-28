@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadValueLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxLoadLibrary
+noncomputable section
+
+theorem digest_ne (digest : Array U8 32#usize) (stored : alloc.vec.Vec U8) :
+    core.cmp.impls.PartialEqShared.ne
+      (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      (Array.to_slice digest) (alloc.vec.Vec.deref stored) =
+      .ok (decide (digest.val ≠ stored.val)) := by
+  simp [core.cmp.impls.PartialEqShared.ne,
+    core.cmp.PartialEq.ne.default, slice_eq, Slice.eq_iff, Array.to_slice, alloc.vec.Vec.deref]
+
+theorem digest_boundary_normalization {α : Type} (digest : Array U8 32#usize)
+    (stored : alloc.vec.Vec U8) (rejected accepted : Result α) :
+    (do let different ← core.cmp.impls.PartialEqShared.ne
+          (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+          (Array.to_slice digest) (alloc.vec.Vec.deref stored)
+        if different then rejected else accepted) =
+      (if digest.val ≠ stored.val then rejected else accepted) := by
+  rw [digest_ne]
+  simp only [bind_tc_ok, decide_eq_true_eq]
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadLibrary
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.digest_ne
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.digest_boundary_normalization

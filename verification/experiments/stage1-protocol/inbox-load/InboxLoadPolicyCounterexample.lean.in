@@ -1,0 +1,133 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPolicyAcceptance
+import SandboxModel.Lifecycle.Protocol.InboxLoadFixturePrefix
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem wrong_policy_represented : DecodedStringsRepresentable wrongPolicyEffects := by
+  intro state input inbox after returned
+  change normalEffects.decode_inbox state input = .ok (.Ok inbox, after) at returned
+  exact normal_represented state input inbox after returned
+
+theorem policy_validated_rejected (trace : Trace) :
+    validatedView wrongPolicyEffects validation budget InboxValidation.Values.normal 286720#u64 trace =
+      corrupt (trace ++ policyTrace) := by
+  have checked := InboxValidation.Values.normal_model_accepted saved terminal renewal unload
+  simp only [validatedView, budget, normal_budget, bind_tc_ok,
+    ne_eq, not_true_eq_false, ↓reduceIte, validation, checked]
+  exact policy_three_rejects_normal trace
+
+theorem policy_canonical_passes (trace : Trace) :
+    canonicalView wrongPolicyEffects validation budget InboxValidation.Values.normal bytes 286720#u64 trace =
+      corrupt ((trace ++ [Event.encodedInbox InboxValidation.Values.normal]) ++ policyTrace) := by
+  simp only [canonicalView, wrongPolicyEffects, effects, attempt, bind_tc_ok]
+  change (do
+    let different ← alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 bytes bytes
+    if different then corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.normal])
+    else
+      validatedView wrongPolicyEffects validation budget InboxValidation.Values.normal 286720#u64
+        (trace ++ [Event.encodedInbox InboxValidation.Values.normal])) = _
+  rw [InboxLoadLibrary.vec_ne]
+  simp only [ne_eq, not_true_eq_false, decide_false, bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+  exact policy_validated_rejected _
+
+theorem policy_digest_passes (trace : Trace) :
+    digestView wrongPolicyEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64 trace =
+      corrupt (trace ++ ([Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal] ++ policyTrace)) := by
+  simp only [digestView, wrongPolicyEffects, effects, bind_tc_ok]
+  change (if digest.val ≠ storedDigest.val then corrupt (trace ++ [Event.digested bytes.val])
+    else canonicalView wrongPolicyEffects validation budget InboxValidation.Values.normal bytes 286720#u64
+      (trace ++ [Event.digested bytes.val])) = _
+  have same : digest.val = storedDigest.val := rfl
+  simp only [same, ne_eq, not_true_eq_false, ↓reduceIte]
+  rw [policy_canonical_passes]
+  simp [corrupt, List.append_assoc]
+
+theorem wrong_policy_body_rejected (trace : Trace) :
+    bodyView wrongPolicyEffects validation budget 286720#u64 trace =
+      corrupt (trace ++ ([Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal] ++ policyTrace)) := by
+  simp only [bodyView, wrongPolicyEffects, effects, attempt, bind_tc_ok]
+  change digestView wrongPolicyEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64
+    ((trace ++ [Event.bodyQuery bodyStatement]) ++ [Event.decodedInbox bytes.val]) = _
+  rw [policy_digest_passes]
+  simp [corrupt, List.append_assoc]
+
+def rejectedPolicyTrace : Trace :=
+  beforeBody ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.normal] ++ policyTrace
+
+theorem policy_fixture_to_body (decoded : core.result.Result Inbox JournalError)
+    (encoded hash : alloc.vec.Vec U8) (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      (effects decoded encoded bytes hash 286720#i64 policyThree) trace =
+    bodyView (effects decoded encoded bytes hash 286720#i64 policyThree)
+      validation budget 286720#u64 (trace ++ beforeBody) := by
+  let io := effects decoded encoded bytes hash 286720#i64 policyThree
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have existsReturns (state : Trace) : io.query_bool state existsStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery existsStatement]) := by
+    simp [io, effects, existsDifferent]
+  have sourceReturns (state : Trace) : io.query_bool state sourceStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery sourceStatement]) := by
+    simp [io, effects, sourceDifferent]
+  have versionReturns (state : Trace) : io.checkpointconfigReadConfigEffectsInst.query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp [io, effects, policyEffects, versionDifferent]
+  have internalReturns (state : Trace) : io.query_bool state internalStatement =
+      .ok (.Ok false, state ++ [Event.boolQuery internalStatement]) := by
+    simp [io, effects]
+  change loadView io validation budget trace = _
+  rw [header_to_current io validation budget _ _ _ _ (existsReturns trace) (versionReturns _) (sourceReturns _)]
+  rw [current_to_capacity io validation budget _ _ (internalReturns _)]
+  rw [capacity_to_limits io validation budget _ _ _ (policy_three_capacity_read _) (by rfl)]
+  rw [limits_to_body]
+  apply congrArg (bodyView io validation budget 286720#u64)
+  simp [beforeBody, List.append_assoc]
+
+theorem wrong_policy_model_rejected (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongPolicyEffects trace =
+      .ok (.Err .CorruptStore, trace ++ rejectedPolicyTrace) := by
+  change fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    (effects (.Ok InboxValidation.Values.normal) bytes bytes storedDigest 286720#i64
+      policyThree) trace = _
+  rw [policy_fixture_to_body]
+  change bodyView wrongPolicyEffects validation budget 286720#u64 (trace ++ beforeBody) = _
+  rw [wrong_policy_body_rejected]
+  simp [corrupt, rejectedPolicyTrace, List.append_assoc]
+
+theorem wrong_policy_contract_rejected : ¬ FullLoadContract load_using := by
+  intro contract
+  have contradiction := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongPolicyEffects ComposedConfig.standard_graphic_contract
+    wrong_policy_represented []
+  change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongPolicyEffects [] =
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongPolicyEffects [] at contradiction
+  rw [actual_wrong_policy_accepts, wrong_policy_model_rejected] at contradiction
+  simp [Result.ok.injEq] at contradiction
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_policy_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_validated_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_canonical_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_digest_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_policy_body_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_fixture_to_body
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_policy_model_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_policy_contract_rejected
