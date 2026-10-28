@@ -116,7 +116,42 @@ SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tool
 4. 原执行器确认所有自有进程、挂载和资源已收尾，再按原成功、失败或取消状态调用 `retire`。实验资源收尾仍未知时不能退休；是否已经合 PR 也不能替代资源收尾。业务未知状态保留在独立记录，不由文件回收改为成功或 Cleaned；原始证据不得随临时产物一起删除。
 5. 普通 CI 只常驻现役黄金盘、一个已核对的回退黄金盘及必要基础盘。切换后保存对应 pins；删除其他代际前核对镜像依赖链、在途任务和受保护配置引用。固定 KVM 模板、尚未解决问题的唯一材料另行核对，不能套用黄金盘数量策略。
 
-原生证明测试入口为新建 run 记录分配身份；原验收成功封口后，另写 `build-targets.json`，只列本 run 的 Cargo `target`，不移动源码、日志或 JSON。清单不等于收尾证明，也不会自动扫描 `/proc` 或提权。原执行者完成完整进程和挂载观察、留下绑定该清单摘要的独立可信记录后，才能显式调用 `handoff-native --manifest … --receipt … --evidence …` 交给原回收工具；权限错误、未知引用或不完整观察均不能交接。历史 run 不会自动纳入，现役与回退共享缓存继续留在清单之外。
+原生证明测试入口为新建 run 记录分配身份；原验收成功封口后，自动另写 `build-targets.json`，只列本 run 的 Cargo `target`，不移动源码、日志或 JSON。失败或取消不会自动生成这份成功清单，也不会自动回收。原执行者可按下述人工步骤登记已经结束的失败/取消构建；不得将尚在运行、只收到取消请求或退出未知的工作登记为结束。历史未分配身份的 run 不会自动纳入，现役与回退共享缓存继续留在清单之外。
+
+失败/取消的原执行者须在原 run 内保存 `executor-exit.json`，其唯一字段如下。`identity` 和 `candidate` 必须与该 run 原有的 `build-allocation.json` 一致；`exit_code` 是实际非零整数，包括进程因信号退出的负数，不接受字符串、布尔值或用取消请求代替退出码。
+
+```json
+{
+  "kind": "native-process-exit-v1",
+  "candidate": "<原40位提交>",
+  "identity": [0, 0],
+  "status": "failed",
+  "exit_code": 1,
+  "processes_exited": true,
+  "observation_complete": true,
+  "observation_error": null
+}
+```
+
+此处零身份和退出码仅为格式示例，不能照抄作为实测。`status` 只允许 `failed` 或 `cancelled`；`processes_exited=true` 表示原执行者已经确认本任务及全部子工作实际退出，不是只有顶层 shell 退出。退出记录与原日志一起保留。真实退出和完整观察由可信操作者提供，工具检查记录及身份绑定，不自行扫描特权进程空间，也不替操作者补造观察。这是存储交接条件，不是机器证明的进程收尾性质。
+
+随后显式运行以下命令；它只写 `build-terminal-targets.json`（类型为 `native-terminal-cargo-targets-v1`），不会写 `complete.json`、成功验收收据或移动任何目录：
+
+```sh
+python3 -B -m tools.ci_retention --root <原账号私有回收根> record-native-terminal \
+  --work <原run目录> --exit-record <原run目录>/executor-exit.json
+```
+
+失败发生在首次命令或 Cargo 目标生成前时，可以登记空清单，但不能据此分配回收副本或移动其他文件。目标目录缺少原 Cargo 标记时保留原位等待人工核查，不能把部分生成误认作已登记缓存。成功与失败清单不能互相替代；失败清单不供形式证明准入消费。此人工入口不改变原生套件的异常/取消处理，不表示所有失败已自动收尾。
+
+两类清单都不等于收尾证明。原执行者还须完成完整进程引用和挂载观察，在回收根与目标目录之外保存观察 JSON，其唯一字段为 `manifest_sha256`、`references_absent=true`、`mounts_absent=true`、`observation_complete=true`、`observation_error=null`；摘要绑定所交接的原清单。另提供上述四字段收尾收据，`status` 必须保留原清单的成功、失败或取消结果，`evidence_sha256` 绑定这份独立观察。权限错误、未知引用、不完整观察、原退出记录或命令登记变化均拒绝交接。原执行者确认无并发使用后，显式运行：
+
+```sh
+python3 -B -m tools.ci_retention --root <原账号私有回收根> handoff-native \
+  --manifest <原run目录>/<对应构建清单> --receipt <独立收尾收据> --evidence <独立完整观察>
+```
+
+交接只移动清单列出的 Cargo 构建目录；原源码、退出记录、日志和独立观察继续保留。删除仍须后续单独执行原 `collect` 策略，最新两份保留规则不变。不能把人工可信观察或受控夹具回归说成工具已完成真实宿主全进程审计。
 
 调用示例（替换为真实提交和当前账号，`retire` 使用上述独立保存的报告及可信收尾收据）：
 

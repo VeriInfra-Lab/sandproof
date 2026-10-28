@@ -228,8 +228,9 @@ def fsync_directory(path):
 class NativeBuildRun:
     """Record Cargo targets born inside one new native run, retaining its inputs.
 
-    Existing run-* directories cannot be adopted. Only a successful original
-    native seal produces a manifest; publishing it never moves or deletes data.
+    Existing run-* directories cannot be adopted. A successful original native
+    seal produces its own manifest; failed/cancelled runs require the separate
+    explicit operator CLI. Publishing either never moves or deletes data.
     The trusted operator must separately establish complete reference/mount
     absence and supply an exact cleanup receipt before an explicit handoff.
     """
@@ -247,6 +248,8 @@ class NativeBuildRun:
         self.allocation_sha = digest(self.allocation)
 
     def finish(self, evidence):
+        if (self.work / 'build-terminal-targets.json').exists():
+            raise ValueError('failed/cancelled build record cannot become native success')
         if ([self.work.stat().st_dev, self.work.stat().st_ino] != self.identity
                 or digest(self.allocation) != self.allocation_sha):
             raise ValueError('native run allocation changed')
@@ -259,28 +262,7 @@ class NativeBuildRun:
                 or complete['exit_code'] != 0 or complete.get('scope_complete') is not True
                 or not used or complete.get('uses') != used):
             raise ValueError('original successful native completion and exact command uses required')
-        reject_mounts(self.work)
-        targets = []
-        for directory, dirs, _ in os.walk(self.work, followlinks=False):
-            for name in list(dirs):
-                path = Path(directory) / name
-                if name in ('.git', '.lake') or path.is_symlink():
-                    if name == 'target':
-                        raise ValueError('Cargo target replaced by symlink')
-                    dirs.remove(name)
-                elif name == 'target':
-                    private_path(path, directory=True)
-                    for marker in ('CACHEDIR.TAG', '.rustc_info.json'):
-                        info = (path / marker).lstat()
-                        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
-                            raise ValueError('original Cargo target markers required')
-                    if not (path / 'CACHEDIR.TAG').read_bytes().startswith(
-                            b'Signature: 8a477f597d28d172789f06886806bc55'):
-                        raise ValueError('original Cargo cache signature required')
-                    info = path.stat()
-                    targets.append(dict(path=str(path), identity=[info.st_dev, info.st_ino],
-                                        allocated_bytes=allocated_bytes(path)))
-                    dirs.remove(name)
+        targets = native_targets(self.work)
         manifest = self.work / 'build-targets.json'
         write_once(manifest, dict(kind='native-cargo-targets-v1', candidate=self.candidate,
             work=str(self.work), identity=self.identity, allocation_sha256=self.allocation_sha,
@@ -288,6 +270,88 @@ class NativeBuildRun:
             commands_used_sha256=digest(self.work / 'commands-used.jsonl'), targets=targets,
             source_and_logs_retained=True, product_resource_cleanup_claimed=False))
         return manifest
+
+
+def native_targets(work):
+    """Inventory only marked Cargo targets; never include source or evidence."""
+    reject_mounts(work)
+    targets = []
+    for directory, dirs, _ in os.walk(work, followlinks=False):
+        for name in list(dirs):
+            path = Path(directory) / name
+            if name in ('.git', '.lake') or path.is_symlink():
+                if name == 'target':
+                    raise ValueError('Cargo target replaced by symlink')
+                dirs.remove(name)
+            elif name == 'target':
+                private_path(path, directory=True)
+                for marker in ('CACHEDIR.TAG', '.rustc_info.json'):
+                    info = (path / marker).lstat()
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                        raise ValueError('original Cargo target markers required')
+                if not (path / 'CACHEDIR.TAG').read_bytes().startswith(
+                        b'Signature: 8a477f597d28d172789f06886806bc55'):
+                    raise ValueError('original Cargo cache signature required')
+                info = path.stat()
+                targets.append(dict(path=str(path), identity=[info.st_dev, info.st_ino],
+                                    allocated_bytes=allocated_bytes(path)))
+                dirs.remove(name)
+    return targets
+
+
+def terminal_exit(work, candidate, identity, record_path):
+    """Read a trusted original executor record, not a cancellation request.
+
+    The operator must have waited for ALL original work, including descendants.
+    This tool neither observes a privileged process namespace nor stops work.
+    """
+    record_path = private_path(record_path)
+    record = json_file(record_path, limit=4096)
+    if (record_path.parent != work
+            or set(record) != {'kind', 'candidate', 'identity', 'status', 'exit_code',
+                               'processes_exited', 'observation_complete', 'observation_error'}
+            or record['kind'] != 'native-process-exit-v1' or record['candidate'] != candidate
+            or record['identity'] != identity or record['status'] not in ('failed', 'cancelled')
+            or type(record['exit_code']) is not int or record['exit_code'] == 0
+            or record['processes_exited'] is not True
+            or record['observation_complete'] is not True or record['observation_error'] is not None):
+        raise ValueError('original failed/cancelled exit and complete child termination required')
+    if any((work / name).exists() for name in ('native-complete.json', 'build-targets.json')):
+        raise ValueError('native success and failure records must remain separate')
+    return record['status']
+
+
+def command_uses_digest(work):
+    path = work / 'commands-used.jsonl'
+    # Early failure may precede the first command-use registration. Pin absence
+    # too: a new record appearing later invalidates the terminal inventory.
+    return digest(private_path(path)) if path.exists() or path.is_symlink() else None
+
+
+def record_native_terminal(work, exit_record_path):
+    """Explicit operator inventory for an already registered failed/cancelled run.
+
+    No success seal, automatic recovery/adoption, move or collection is performed.
+    Even an empty inventory is recorded truthfully; it cannot be handed off.
+    """
+    work = private_path(work, directory=True)
+    allocation = private_path(work / 'build-allocation.json')
+    value = json_file(allocation, limit=4096)
+    identity = [work.stat().st_dev, work.stat().st_ino]
+    if (set(value) != {'candidate', 'identity'} or value['identity'] != identity
+            or not re.fullmatch('[0-9a-f]{40}', str(value['candidate']))):
+        raise ValueError('original native run allocation required')
+    exit_record_path = private_path(exit_record_path)
+    status = terminal_exit(work, value['candidate'], identity, exit_record_path)
+    targets = native_targets(work)
+    manifest = work / 'build-terminal-targets.json'
+    write_once(manifest, dict(kind='native-terminal-cargo-targets-v1',
+        candidate=value['candidate'], work=str(work), identity=identity,
+        allocation_sha256=digest(allocation), terminal_status=status,
+        exit_record=str(exit_record_path), exit_record_sha256=digest(exit_record_path),
+        commands_used_sha256=command_uses_digest(work), targets=targets,
+        source_and_logs_retained=True, product_resource_cleanup_claimed=False))
+    return manifest
 
 
 def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, now):
@@ -300,19 +364,27 @@ def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, 
     """
     manifest_path = private_path(manifest_path)
     value = json_file(manifest_path, limit=16 * 1024**2)
-    if (value.get('kind') != 'native-cargo-targets-v1'
+    if (value.get('kind') not in ('native-cargo-targets-v1', 'native-terminal-cargo-targets-v1')
             or not re.fullmatch('[0-9a-f]{40}', str(value.get('candidate')))):
         raise ValueError('original native target manifest required')
     work = private_path(Path(value['work']), directory=True)
     if manifest_path.parent != work or [work.stat().st_dev, work.stat().st_ino] != value['identity']:
         raise ValueError('native run identity changed')
     allocation = work / 'build-allocation.json'
-    completion = private_path(Path(value['completion']))
     if (digest(allocation) != value['allocation_sha256']
             or json_file(allocation) != dict(candidate=value['candidate'], identity=value['identity'])
-            or completion.parent != work or digest(completion) != value['completion_sha256']
-            or digest(work / 'commands-used.jsonl') != value['commands_used_sha256']):
+            or command_uses_digest(work) != value['commands_used_sha256']):
         raise ValueError('native allocation, original completion or command uses changed')
+    status = 'passed'
+    if value['kind'] == 'native-cargo-targets-v1':
+        completion = private_path(Path(value['completion']))
+        if completion.parent != work or digest(completion) != value['completion_sha256']:
+            raise ValueError('original native completion changed')
+    else:
+        exit_record = private_path(Path(value['exit_record']))
+        status = terminal_exit(work, value['candidate'], value['identity'], exit_record)
+        if digest(exit_record) != value['exit_record_sha256'] or status != value['terminal_status']:
+            raise ValueError('original native failed/cancelled exit changed')
     receipt_path = private_path(receipt_path)
     receipt = json_file(receipt_path, limit=4096)
     Store.receipt(receipt, value)
@@ -320,7 +392,7 @@ def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, 
     observed = json_file(evidence_path)
     if (set(observed) != {'manifest_sha256', 'references_absent', 'mounts_absent',
                          'observation_complete', 'observation_error'}
-            or receipt['status'] != 'passed' or evidence_path.is_relative_to(store.root)
+            or receipt['status'] != status or evidence_path.is_relative_to(store.root)
             or digest(evidence_path) != receipt['evidence_sha256']
             or observed.get('manifest_sha256') != digest(manifest_path)
             or observed.get('references_absent') is not True
@@ -373,6 +445,9 @@ def main(argv=None):
     retire.add_argument('--id', required=True)
     retire.add_argument('--receipt', type=Path, required=True)
     retire.add_argument('--evidence', type=Path, required=True)
+    terminal = commands.add_parser('record-native-terminal')
+    terminal.add_argument('--work', type=Path, required=True)
+    terminal.add_argument('--exit-record', type=Path, required=True)
     handoff = commands.add_parser('handoff-native')
     handoff.add_argument('--manifest', type=Path, required=True)
     handoff.add_argument('--receipt', type=Path, required=True)
@@ -390,6 +465,8 @@ def main(argv=None):
             print(store.allocate(kind=args.kind, candidate=args.candidate))
         elif args.command == 'retire':
             store.retire(args.id, args.receipt, args.evidence, now=int(time.time()))
+        elif args.command == 'record-native-terminal':
+            print(record_native_terminal(args.work, args.exit_record))
         elif args.command == 'handoff-native':
             print(handoff_native_builds(store, args.manifest, args.receipt, args.evidence,
                 now=int(time.time())))

@@ -319,8 +319,8 @@ class RetentionTests(unittest.TestCase):
         root.mkdir(mode=0o700, exist_ok=True)
         return gc.Store(root)
 
-    def native_handoff(self, run, completion, *, now, observation=None):
-        manifest = run.work / 'build-targets.json'
+    def native_handoff(self, run, completion, *, now, observation=None, manifest=None, status='passed'):
+        manifest = manifest or run.work / 'build-targets.json'
         if not manifest.exists():
             manifest = run.finish(completion)
         number = getattr(self, 'handoff_count', 0)
@@ -333,7 +333,7 @@ class RetentionTests(unittest.TestCase):
         report.update(observation or {})
         gc.write_once(evidence, report)
         receipt = self.parent / ('operator-receipt-' + str(number) + '.json')
-        gc.write_once(receipt, dict(candidate=self.candidate, status='passed',
+        gc.write_once(receipt, dict(candidate=self.candidate, status=status,
             resource_cleanup_confirmed=True, evidence_sha256=gc.digest(evidence)))
         store = self.native_store()
         with store.lock():
@@ -373,6 +373,134 @@ class RetentionTests(unittest.TestCase):
             self.assertTrue(evidence.exists())
             self.assertTrue((run.work / 'correct/source.rs').exists())
             self.assertTrue((run.work / 'correct/original.log').exists())
+
+    def terminal_fixture(self, number=0, status='failed'):
+        run, target, success = self.native_fixture(number)
+        # This fixture models a failed run, not a previously sealed success.
+        success.unlink()
+        record = run.work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status=status, exit_code=1 if status == 'failed' else -15,
+            processes_exited=True, observation_complete=True, observation_error=None))
+        return run, target, record
+
+    def test_failed_and_cancelled_manual_cli_preserves_status_and_all_original_evidence(self):
+        from tools.acceptance_receipts import current_native_seal
+        for n, status in enumerate(('failed', 'cancelled')):
+            with self.subTest(status=status):
+                run, target, record = self.terminal_fixture(n, status)
+                before = record.read_bytes()
+                store = self.native_store()
+                with patch('builtins.print'):
+                    gc.main(['--root', str(store.root), 'record-native-terminal',
+                        '--work', str(run.work), '--exit-record', str(record)])
+                manifest = run.work / 'build-terminal-targets.json'
+                value = json.loads(manifest.read_text())
+                self.assertEqual(value['kind'], 'native-terminal-cargo-targets-v1')
+                self.assertEqual(value['terminal_status'], status)
+                self.assertTrue(target.exists())  # Explicit inventory never moves anything.
+                self.assertFalse(current_native_seal(value, {}))
+                for name in ('native-complete.json', 'complete.json', 'build-targets.json'):
+                    self.assertFalse((run.work / name).exists())
+                with self.assertRaisesRegex(ValueError, 'cannot become native success'):
+                    run.finish(record)
+                payload = self.native_handoff(run, record, now=self.now + n,
+                    manifest=manifest, status=status)
+                store.collect(now=self.now + 9 * gc.DAY, apply=True)
+                self.assertEqual(store.read(payload.name)[2]['receipt']['status'], status)
+                self.assertFalse(payload.exists())
+                self.assertEqual(record.read_bytes(), before)
+                self.assertTrue(manifest.exists())
+                self.assertTrue((run.work / 'commands-used.jsonl').exists())
+                self.assertTrue((target.parent / 'source.rs').exists())
+                self.assertTrue((target.parent / 'original.log').exists())
+
+    def test_failure_before_any_target_or_command_is_an_empty_inventory_not_success(self):
+        work = self.parent / 'early-failure'
+        work.mkdir(mode=0o700)
+        run = gc.NativeBuildRun(work, self.candidate)
+        record = work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status='failed', exit_code=2, processes_exited=True,
+            observation_complete=True, observation_error=None))
+        manifest = gc.record_native_terminal(work, record)
+        value = json.loads(manifest.read_text())
+        self.assertEqual(value['targets'], [])
+        self.assertIsNone(value['commands_used_sha256'])
+        with self.assertRaisesRegex(ValueError, 'nonempty build list'):
+            self.native_handoff(run, record, now=self.now, manifest=manifest, status='failed')
+        self.assertEqual(list(self.native_store().record_paths()), [])
+        self.assertFalse((work / 'complete.json').exists())
+
+    def test_terminal_exit_requires_exact_status_nonzero_integer_and_complete_observation(self):
+        mutations = [('exit_code', 0), ('exit_code', True), ('exit_code', '1'),
+            ('exit_code', None), ('status', 'passed'), ('status', 'running'),
+            ('processes_exited', False), ('processes_exited', 1),
+            ('observation_complete', False), ('observation_error', 'PermissionError'),
+            ('candidate', 'b' * 40), ('identity', [0, 0])]
+        for n, (key, value) in enumerate(mutations):
+            with self.subTest(key=key, value=value):
+                run, target, record = self.terminal_fixture(n)
+                changed = json.loads(record.read_text())
+                changed[key] = value
+                record.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    gc.record_native_terminal(run.work, record)
+                self.assertTrue(target.exists())
+                self.assertFalse((run.work / 'build-terminal-targets.json').exists())
+
+    def test_cancelled_parent_with_live_child_cannot_register_terminal_builds(self):
+        run, target, record = self.terminal_fixture(status='cancelled')
+        with (target / 'rebuildable-binary').open('rb') as stream:
+            child = subprocess.Popen([sys.executable, '-B', '-c',
+                "import sys; print('ready',flush=True); sys.stdin.readline()"],
+                pass_fds=(stream.fileno(),), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'ready')
+                changed = json.loads(record.read_text())
+                changed['processes_exited'] = False
+                record.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'complete child termination'):
+                    gc.record_native_terminal(run.work, record)
+                self.assertIsNone(child.poll())
+                self.assertTrue(target.exists())
+            finally:
+                child.communicate('\n', timeout=10)
+
+    def test_terminal_handoff_rechecks_original_exit_uses_and_exact_failed_status(self):
+        for n, mutation in enumerate(('exit', 'uses', 'receipt', 'unknown')):
+            with self.subTest(mutation=mutation):
+                run, target, record = self.terminal_fixture(n)
+                manifest = gc.record_native_terminal(run.work, record)
+                if mutation == 'exit':
+                    record.write_text(record.read_text() + '\n')
+                elif mutation == 'uses':
+                    (run.work / 'commands-used.jsonl').write_text('{}\n')
+                with self.assertRaises(ValueError):
+                    self.native_handoff(run, record, now=self.now, manifest=manifest,
+                        status='passed' if mutation == 'receipt' else 'failed',
+                        observation={'references_absent': None} if mutation == 'unknown' else None)
+                self.assertTrue(target.exists())
+                self.assertEqual(list(self.native_store().record_paths()), [])
+
+    def test_terminal_inventory_refuses_unregistered_success_or_incomplete_cargo_target(self):
+        run, target, record = self.terminal_fixture()
+        (target / '.rustc_info.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            gc.record_native_terminal(run.work, record)
+        self.assertFalse((run.work / 'build-terminal-targets.json').exists())
+        self.assertTrue(target.exists())
+        (run.work / 'build-allocation.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            gc.record_native_terminal(run.work, record)
+        run, target, success = self.native_fixture(1)
+        record = run.work / 'executor-exit.json'
+        gc.write_once(record, dict(kind='native-process-exit-v1', candidate=self.candidate,
+            identity=run.identity, status='failed', exit_code=1, processes_exited=True,
+            observation_complete=True, observation_error=None))
+        with self.assertRaisesRegex(ValueError, 'success and failure records'):
+            gc.record_native_terminal(run.work, record)
+        self.assertTrue(success.exists())
 
     def test_native_failure_changed_uses_and_changed_allocation_never_move_builds(self):
         for n, mutation in enumerate(('incomplete', 'failed', 'bool_exit', 'changed_uses', 'allocation')):
