@@ -90,6 +90,9 @@ def instantiate_copy_limits(capture, native, catalog):
     state limit or layout identity. Artifact bytes/identities are independently
     verified by the original runtime preparation before registration/use.
     """
+    if (type(catalog) is not dict or type(catalog.get('templates')) is not list
+            or not catalog['templates']):
+        raise ValueError('complete original registered VM shapes required')
     value = copy.deepcopy(capture)
     shapes = [(native['memory_mib'], Path(native['rootfs']).stat().st_size)]
     for template in catalog['templates']:

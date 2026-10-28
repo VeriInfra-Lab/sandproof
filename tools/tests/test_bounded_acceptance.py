@@ -225,7 +225,8 @@ class PreparedCIDiskBudgetTests(unittest.TestCase):
             self.profile(disk_budget_bytes=2 * peak - 1)
 
     def test_invalid_ceiling_artifacts_and_oversized_runtime_are_rejected(self):
-        for value in (None, True, 0, 201 * GIB):
+        self.assertEqual(self.profile(disk_budget_bytes=384 * GIB),self.profile())
+        for value in (None, True, 0, 385 * GIB):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.profile(disk_budget_bytes=value)
         for field, value in (('kernel_bytes', True), ('kernel_bytes', 21 * GIB),

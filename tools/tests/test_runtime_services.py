@@ -248,6 +248,8 @@ class RuntimeServicesTests(unittest.TestCase):
             native=dict(uid_base=3200000,database=str(root/'db/controller.db'),
                 node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),
                 max_active_global=1,memory_mib=1,rootfs=str(disk))
+            catalog=dict(templates=[dict(rootfs=dict(path=str(disk),size_bytes=512),
+                                        resources=dict(memory_mib=1,disk_bytes=512))])
             tool=dict(path='/approved/project-tool',sha256=[1]*32)
             captures=[dict(layout_parent=str(root/'p'),layout_binding=[1]*32,
                 state_copy_bytes=32,memory_copy_bytes=1024**2,disk_copy_bytes=512,
@@ -267,7 +269,7 @@ class RuntimeServicesTests(unittest.TestCase):
                     patch.object(services,'check_material',return_value={}), \
                     patch.object(services,'stage_role_directories',side_effect=BeforeStaging) as stage, \
                     self.assertRaises(BeforeStaging):
-                services.RuntimeServices.prepare(args,root,[native],[{}],'test-key',
+                services.RuntimeServices.prepare(args,root,[native],[catalog],'test-key',
                     '127.0.0.1:12345',root/'record.json',(2) + native['max_active_global'],registry_config={})
             stage.assert_called_once()
 
