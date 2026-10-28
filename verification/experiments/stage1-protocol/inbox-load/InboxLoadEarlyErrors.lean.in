@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+variable {R T N U B E : Type}
+variable (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+variable (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+variable (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+
+
+
+
+theorem first_query_error (state after : E) (error : JournalError)
+    (first : io.query_bool state existsStatement = .ok (.Err error, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err error, after) := by
+  simp [existsStatement] at first
+  simp [load_using, first, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem version_query_error (state afterExists after : E) (hasInbox : Bool) (error : JournalError)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Err error, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err error, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [load_using, first, second, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem source_query_error (state afterExists afterVersion after : E)
+    (hasInbox : Bool) (version : I64) (error : JournalError)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok version, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Err error, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err error, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [load_using, first, second, third, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.first_query_error
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.version_query_error
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.source_query_error

@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationModel
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation.Values
+noncomputable section
+
+def host : HostEpochRegistration := {
+  version := 1#u16, boot_id := "!~", policy := Array.from (List.replicate 32 (0#u8)) (by simp) }
+def small : LifecycleInboxConfig := ConfigBudget.Values.small
+def fixture : LifecycleInboxConfig := ConfigBudget.Values.fixture
+def withHost : LifecycleInboxConfig := { small with host_epoch := some host }
+def exactLimit : LifecycleInboxConfig := { small with
+  max_sessions := 128#u16, max_profile_bytes := 32698#u32 }
+def overLimit : LifecycleInboxConfig := { exactLimit with max_profile_bytes := 32699#u32 }
+def noProfile : LifecycleInboxConfig := { small with max_profile_bytes := 0#u32 }
+def badHostVersion : LifecycleInboxConfig := { withHost with
+  host_epoch := some { host with version := 2#u16 } }
+
+theorem normal_valid : ∀ config ∈ [small, fixture, withHost, exactLimit], Valid config := by
+  intro config member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl <;> decide
+
+theorem normal_representable : ∀ config ∈ [small, fixture, withHost, exactLimit], Representable config := by
+  intro config member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl
+  all_goals simp [Representable, small, fixture, withHost, exactLimit,
+    ConfigBudget.Values.small, ConfigBudget.Values.fixture, host, StringRepresentable, stringBytes]
+  change 2 ≤ Usize.max
+  scalar_tac
+
+theorem rejected_shapes : ¬ Valid overLimit ∧ ¬ Valid noProfile ∧ ¬ Valid badHostVersion := by decide
+
+theorem exact_limit_budget : ConfigBudget.bytes exactLimit = 16777216 ∧
+    ConfigBudget.bytes overLimit = 16777344 := by decide
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.Values.normal_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.Values.normal_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.Values.rejected_shapes
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.Values.exact_limit_budget

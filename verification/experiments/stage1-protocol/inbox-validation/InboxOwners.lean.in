@@ -1,0 +1,113 @@
+import SandboxModel.Lifecycle.Protocol.InboxOwnerQueries
+import SandboxModel.Lifecycle.Protocol.InboxRetiredProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation
+open RetiredIdentity (enumCursor enum_next_none enum_next_some validationResult result_or)
+noncomputable section
+open scoped Classical
+
+-- Zero is permitted here: the actual owner-table validator has no nonzero guard.
+def ownerInvalidAt (inbox : Inbox) (index : Nat) (owner : Owner) : Bool :=
+  decide (owner.local > inbox.owner_high_water) ||
+    decide (∃ old ∈ inbox.owners.val.take index, OwnerConflict old owner)
+
+def remainingOwnerInvalid (inbox : Inbox) (index : Nat) : Bool :=
+  ((inbox.owners.val.drop index).zipIdx index).any (fun pair => ownerInvalidAt inbox pair.2 pair.1)
+
+abbrev ownerBody (inbox : Inbox) := Inbox.validate_owners_loop.body
+  inbox.config inbox.host_epoch_observation inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes
+abbrev ownerLoop (inbox : Inbox) (index : Usize) := Inbox.validate_owners_loop
+  (enumCursor (alloc.vec.Vec.deref inbox.owners) index)
+  inbox.config inbox.host_epoch_observation inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes
+
+def OwnersValid (inbox : Inbox) : Prop :=
+  ∀ pair ∈ inbox.owners.val.zipIdx,
+    pair.1.local ≤ inbox.owner_high_water ∧
+    ∀ old ∈ inbox.owners.val.take pair.2, old.external ≠ pair.1.external ∧ old.local ≠ pair.1.local
+
+theorem owner_remaining_step (inbox : Inbox) (index : Nat) (inside : index < inbox.owners.val.length) :
+    remainingOwnerInvalid inbox index =
+      (ownerInvalidAt inbox index inbox.owners.val[index] || remainingOwnerInvalid inbox (index+1)) := by
+  unfold remainingOwnerInvalid
+  rw [List.drop_eq_getElem_cons inside, List.zipIdx_cons, List.any_cons]
+
+theorem owner_body_end (inbox : Inbox) (index : Usize) (outside : inbox.owners.val.length ≤ index.val) :
+    ownerBody inbox (enumCursor (alloc.vec.Vec.deref inbox.owners) index) = .ok (.done (.Ok ())) := by
+  unfold ownerBody Inbox.validate_owners_loop.body
+  rw [enum_next_none _ index (by simpa [alloc.vec.Vec.deref] using outside)]
+  simp
+
+theorem owner_body_step (inbox : Inbox) (index next : Usize)
+    (inside : index.val < inbox.owners.val.length) (added : next.val = index.val+1) :
+    ownerBody inbox (enumCursor (alloc.vec.Vec.deref inbox.owners) index) = .ok
+      (if ownerInvalidAt inbox index.val inbox.owners.val[index.val] then .done (.Err .CorruptStore)
+       else .cont (enumCursor (alloc.vec.Vec.deref inbox.owners) next)) := by
+  unfold ownerBody Inbox.validate_owners_loop.body
+  rw [enum_next_some _ index next (by simpa [alloc.vec.Vec.deref] using inside) added]
+  have prior := owner_prior_in_bounds inbox index inbox.owners.val[index.val] (by omega)
+  simp only [bind_tc_ok, alloc.vec.Vec.deref, ownerInvalidAt, Bool.or_eq_true, decide_eq_true_eq]
+  split_ifs <;> simp_all <;> grind
+
+theorem owner_loop_end (inbox : Inbox) (index : Usize) (outside : inbox.owners.val.length ≤ index.val) :
+    ownerLoop inbox index = .ok (.Ok ()) := by
+  unfold ownerLoop Inbox.validate_owners_loop
+  rw [loop]
+  have body := owner_body_end inbox index outside
+  unfold ownerBody at body
+  rw [body]
+  simp only [bind_ok]
+
+theorem owner_loop_step (inbox : Inbox) (index next : Usize)
+    (inside : index.val < inbox.owners.val.length) (added : next.val = index.val+1) :
+    ownerLoop inbox index = if ownerInvalidAt inbox index.val inbox.owners.val[index.val] then
+      .ok (.Err .CorruptStore) else ownerLoop inbox next := by
+  unfold ownerLoop Inbox.validate_owners_loop
+  conv_lhs => rw [loop]
+  have body := owner_body_step inbox index next inside added
+  unfold ownerBody at body
+  rw [body]
+  split <;> simp only [bind_ok]
+
+theorem owner_loop_refines (inbox : Inbox) (index : Usize) :
+    ownerLoop inbox index = .ok (validationResult (remainingOwnerInvalid inbox index.val)) := by
+  induction remaining : inbox.owners.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    by_cases inside : index.val < inbox.owners.val.length
+    · let next := Usize.ofNatCore (index.val+1) (by scalar_tac)
+      have added : next.val = index.val+1 := by rfl
+      rw [owner_loop_step inbox index next inside added]
+      have later := ih (inbox.owners.val.length - next.val) (by omega) next rfl
+      rw [later, owner_remaining_step inbox index.val inside, result_or, added]
+      split <;> rfl
+    · rw [owner_loop_end inbox index (by omega)]
+      simp [remainingOwnerInvalid, List.drop_eq_nil_of_le (by omega : inbox.owners.val.length ≤ index.val),
+        validationResult]
+
+theorem owners_refines (inbox : Inbox) :
+    Inbox.validate_owners inbox = .ok (validationResult (remainingOwnerInvalid inbox 0)) := by
+  unfold Inbox.validate_owners
+  simp only [core.slice.Slice.iter, core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, bind_tc_ok]
+  change ownerLoop inbox 0#usize = _
+  rw [owner_loop_refines]
+  rfl
+
+theorem owners_accepts_iff (inbox : Inbox) :
+    Inbox.validate_owners inbox = .ok (.Ok ()) ↔ OwnersValid inbox := by
+  rw [owners_refines]
+  simp [validationResult, remainingOwnerInvalid, ownerInvalidAt, OwnersValid, OwnerConflict]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_remaining_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owner_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owners_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.owners_accepts_iff

@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredWitnessSupport
+import SandboxModel.Lifecycle.Protocol.InboxRetiredValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.RetiredIdentity.WrongPrior
+open Values
+open scoped Classical
+noncomputable section
+
+theorem ignored_prior_session :
+    priorConflict.prior_retired_identity_conflict 1#usize
+      changedOwner.request.binding.session changedOwner.request.binding.key = .ok false := by
+  obtain ⟨part, extracted, partVal, partLen⟩ := (WP.spec_equiv_exists _ _).mp
+    (alloc.vec.Vec.index_RangeTo_spec priorConflict.lanes ⟨1#usize⟩ (by decide))
+  have partList : part.val = [lane retired] := by
+    simpa [priorConflict, Values.pair, List.slice] using partVal
+  have represented : part = Slice.from [lane retired] (by scalar_tac) :=
+    Slice.ext _ _ (by simpa using partList)
+  rw [represented] at extracted
+  unfold Inbox.prior_retired_identity_conflict
+  rw [extracted]
+  simp only [bind_tc_ok, SharedSlice.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter]
+  unfold Inbox.prior_retired_identity_conflict_loop
+  rw [loop]
+  simp [Inbox.prior_retired_identity_conflict_loop.body,
+    core.slice.iter.IteratorSliceIter.next, Slice.len, lane, retired,
+    session_eq, Replay.key_eq, changedOwner, intent, EnvelopeValues.intent]
+  rw [loop]
+  simp
+
+theorem actual_return : priorConflict.validate_retired_identities = .ok (.Ok ()) := by
+  let values := alloc.vec.Vec.deref priorConflict.lanes
+  have active (id key) : priorConflict.current_identity_conflict id key = .ok false :=
+    current_empty_sessions _ _ _ (by rfl)
+  have first : outerBody priorConflict (enumCursor values 0#usize) =
+      .ok (.cont (enumCursor values 1#usize)) := by
+    unfold outerBody Inbox.validate_retired_identities_loop.body
+    rw [enum_next_some values 0#usize 1#usize (by decide) (by rfl)]
+    have selected : values.val[0] = lane retired := by rfl
+    simp [selected, lane, retired, prior_empty_prefix, active]
+  have second : outerBody priorConflict (enumCursor values 1#usize) =
+      .ok (.cont (enumCursor values 2#usize)) := by
+    unfold outerBody Inbox.validate_retired_identities_loop.body
+    rw [enum_next_some values 1#usize 2#usize (by decide) (by rfl)]
+    have selected : values.val[1] = lane ⟨changedOwner, .Cleaned⟩ := by rfl
+    simp [selected, lane, active]
+    change (do
+      let hit ← priorConflict.prior_retired_identity_conflict 1#usize
+        changedOwner.request.binding.session changedOwner.request.binding.key
+      if hit then .ok (.done (.Err .CorruptStore)) else .ok (.cont (enumCursor values 2#usize))
+      : Result (ControlFlow (EnumIter LifecycleRetentionLane) Return)) = _
+    rw [ignored_prior_session]
+    simp
+  have last : outerBody priorConflict (enumCursor values 2#usize) = .ok (.done (.Ok ())) := by
+    unfold outerBody Inbox.validate_retired_identities_loop.body
+    rw [enum_next_none values 2#usize (by decide)]
+    simp
+  have completed : loop (outerBody priorConflict) (enumCursor values 0#usize) = .ok (.Ok ()) := by
+    rw [loop_continue _ _ _ first, loop_continue _ _ _ second]
+    exact loop_done _ _ _ last
+  simpa [Inbox.validate_retired_identities, Inbox.validate_retired_identities_loop,
+    core.slice.Slice.iter, core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, enumCursor, outerBody, values] using completed
+
+theorem refutes_full_contract : ¬FullRetiredIdentityContract Inbox.validate_retired_identities := by
+  intro contract
+  have required := contract priorConflict
+  rw [actual_return, expected_outcomes.2.2.2] at required
+  cases (Result.ok_injective required)
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity.WrongPrior
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongPrior.ignored_prior_session
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongPrior.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongPrior.refutes_full_contract

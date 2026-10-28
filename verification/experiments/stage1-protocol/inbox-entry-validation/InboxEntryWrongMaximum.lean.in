@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryValues
+import SandboxModel.Lifecycle.Protocol.InboxEntryCount
+import SandboxModel.Lifecycle.Protocol.UnloadProofs
+import SandboxModel.Lifecycle.Protocol.RenewalResultBindings
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+open Values
+noncomputable section
+
+theorem wrong_maximum_count :
+    (inboxFor wrongMaximum).count_entry_key wrongMaximum.intent.request.binding.key = .ok 1#usize := by
+  rw [candidate_count_contract]
+  simpa [countSessions, countEntries, inboxFor, sessionFor, Values.singleton] using count_result_val 1#usize
+
+theorem wrong_maximum_accepts :
+    run encode (inboxFor wrongMaximum) (sessionFor wrongMaximum) wrongMaximum EnvelopeValues.context = .ok (.Ok 3#usize) := by
+  have accepted := Validation.envelope_refines wrongMaximum.intent EnvelopeValues.context
+  have legal := (Validation.expectedAccepted_success_iff _ _).mpr normal_envelopes.2.2.2.2
+  change Validation.expectedAccepted wrongMaximum.intent EnvelopeValues.context = .Ok () at legal
+  simp only [accepted_validate, legal] at accepted
+  unfold run Inbox.entry_kind_using
+  rw [UnloadResolution.validate_entry_spec]
+  simp only [show UnloadResolution.validateView encode wrongMaximum = .ok (.Ok ()) from rfl,
+    bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, accepted,
+    RenewalResultTag.actual_is_err, RenewalResultTag.IsError]
+  simp only [wrong_maximum_count]
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.retention_eq,
+    sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    sessionFor, wrongMaximum, renewEntry, intentFor, EnvelopeValues.intent, inboxFor,
+    core.option.Option.is_none, core.option.Option.is_some,
+    core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+    core.option.Option.is_none_or, SandproofFoundationsRust.core.option.Option.is_none_or,
+    sandproof_protocol.lifecycle.identity.IncarnationId.get, sandproof_protocol.internal.PositiveCounter.get,
+    Inbox.entry_kind_using.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    Inbox.entry_kind_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    Inbox.entry_kind_using.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once]
+
+theorem requested_only_refutes_full_contract : ¬ FullEntryContract run := by
+  intro contract
+  have same := contract encode (inboxFor wrongMaximum) (sessionFor wrongMaximum) wrongMaximum EnvelopeValues.context
+  rw [wrong_maximum_accepts, expected_outcomes.2.2.2.2.2.2.2] at same
+  simp [corrupt] at same
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.wrong_maximum_count
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.wrong_maximum_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.requested_only_refutes_full_contract

@@ -1,0 +1,125 @@
+import SandboxModel.Lifecycle.Protocol.LaneLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.internal sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetentionLane
+noncomputable section
+open scoped Classical
+
+theorem encoding_spec {E : Type} (encoding : TerminalEncoding E) (last : TerminalLifecycleObservation) :
+    terminal_encoded_within_limit encoding last = encodedWithin encoding.encode last := by
+  unfold terminal_encoded_within_limit encodedWithin
+  apply congrArg (fun next => Bind.bind (encoding.encode last) next)
+  funext result
+  cases result <;> simp [alloc.vec.Vec.len]
+
+
+theorem valid_spec {E : Type} (encoding : TerminalEncoding E)
+    (lane : LifecycleRetentionLane) (context : AuthenticatedCenterContext) :
+    LifecycleRetentionLane.valid_using encoding lane context =
+      validateView encoding.encode lane context := by
+  unfold LifecycleRetentionLane.valid_using
+  simp only [Aeneas.Std.lift, bind_tc_ok, next_spec, window_option_ne]
+  by_cases current : lane.current_window = successor lane.retired_through
+  · simp only [current, ne_eq, not_true_eq_false, decide_false, Bool.false_eq_true, ↓reduceIte]
+    cases present : lane.last_retired with
+    | none =>
+      by_cases zero : lane.retired_through = 0#u64 <;>
+        simp [validateView, current, present, zero]
+      all_goals split <;> simp_all
+      all_goals have literal : (0#64#uscalar : U64).val = 0 := rfl
+      all_goals simp_all only [not_true_eq_false]
+    | some last =>
+      simp only [status_cleaned, terminal_body, envelope_body, envelope_ok,
+        bind_tc_ok, encoding_spec, RetentionWindowId.get, PositiveCounter.get]
+      simp only [validateView, current, ne_eq, not_true_eq_false, ↓reduceIte, present, Prefix, gt_iff_lt]
+      split_ifs <;> simp_all
+  · simp [current, validateView]
+
+theorem full_contract : FullLaneContract run := by
+  intro encode lane context
+  exact valid_spec ⟨encode⟩ lane context
+
+
+theorem wrong_successor_skips_encoding (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext)
+    (wrong : lane.current_window ≠ successor lane.retired_through) :
+    run encode lane context = .ok false := by
+  rw [full_contract]
+  simp [validateView, wrong]
+
+theorem empty_lane_exact (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (absent : lane.last_retired = none) :
+    run encode lane context = .ok true ↔
+      lane.current_window = successor lane.retired_through ∧ lane.retired_through = 0#u64 := by
+  rw [full_contract]
+  simp [validateView, absent]
+  split_ifs <;> simp_all
+
+theorem rejected_prefix_skips_encoding (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation)
+    (present : lane.last_retired = some last) (rejected : ¬ Prefix lane context last) :
+    run encode lane context = .ok false := by
+  rw [full_contract]
+  simp [validateView, present, rejected]
+
+theorem accepted_prefix_exact (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation)
+    (current : lane.current_window = successor lane.retired_through)
+    (present : lane.last_retired = some last) (validPrefix : Prefix lane context last) :
+    run encode lane context = encodedWithin encode last := by
+  rw [full_contract]
+  simp [validateView, current, present, validPrefix]
+
+theorem encoded_acceptance_iff (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation)
+    (bytes : alloc.vec.Vec U8) (present : lane.last_retired = some last)
+    (encoded : encode last = .ok (.Ok bytes)) :
+    run encode lane context = .ok true ↔
+      lane.current_window = successor lane.retired_through ∧
+      Prefix lane context last ∧ bytes.val.length ≤ 8192 := by
+  rw [full_contract]
+  simp [validateView, present, encodedWithin, encoded]
+  split_ifs <;> simp_all
+
+theorem encoding_error_rejects (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation)
+    (error : serde_json.error.Error) (present : lane.last_retired = some last)
+    (encoded : encode last = .ok (.Err error)) : run encode lane context = .ok false := by
+  rw [full_contract]
+  simp [validateView, present, encodedWithin, encoded]
+
+-- These two conclusions are about the encoding computation in the candidate.
+-- Neither is an assumption that the actual standard encoder terminates or succeeds.
+theorem encoding_failure_preserved (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation) (error : Error)
+    (current : lane.current_window = successor lane.retired_through)
+    (present : lane.last_retired = some last) (validPrefix : Prefix lane context last)
+    (encoded : encode last = .fail error) : run encode lane context = .fail error := by
+  rw [accepted_prefix_exact encode lane context last current present validPrefix]
+  simp [encodedWithin, encoded]
+
+theorem encoding_divergence_preserved (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) (last : TerminalLifecycleObservation)
+    (current : lane.current_window = successor lane.retired_through)
+    (present : lane.last_retired = some last) (validPrefix : Prefix lane context last)
+    (encoded : encode last = .div) : run encode lane context = .div := by
+  rw [accepted_prefix_exact encode lane context last current present validPrefix]
+  simp [encodedWithin, encoded]
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoding_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.valid_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.wrong_successor_skips_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.empty_lane_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.rejected_prefix_skips_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.accepted_prefix_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoded_acceptance_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoding_error_rejects
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoding_failure_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.encoding_divergence_preserved

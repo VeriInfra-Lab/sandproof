@@ -1,0 +1,132 @@
+import SandboxModel.Lifecycle.Protocol.SavedModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority
+open sandbox_controller_core.maintenance.retirement
+namespace SandboxModel.Stage1Protocol.SavedRetirement.Values
+noncomputable section
+open scoped Classical
+
+def createIntent : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent },
+    operation := .Create Validation.Examples.createPayload 101#u64 } }
+
+def destroyIntent : AcceptedLifecycleIntent := {
+  createIntent with
+  accepted_version := 2#u64
+  request := {
+    createIntent.request with
+    operation := .Destroy
+    binding := {
+      createIntent.request.binding with
+      expected := .Version 1#u64
+      key := { createIntent.request.binding.key with sequence := 2#u64 } } } }
+
+def binding : InternalLocalBinding := ⟨10#u64, 20#u64, 30#u64⟩
+def receipt : NativeRetirementReceipt := {
+  «local» := binding, request_binding := Request.digest,
+  retirement := {
+    sandbox := 10#u64, owner := 20#u64, epoch := 5#u64, operation := 31#u64,
+    retain_until := 100#u64, quiescence := {
+      sandbox := 10#u64, owner := 20#u64, epoch := 5#u64, operation := 31#u64,
+      workspace := 6#u64, worker_drained := .Confirmed, data_connections_drained := .Confirmed,
+      host_resources_reclaimed := .Confirmed, external_pins_released := .Confirmed } } }
+def entry (intent : AcceptedLifecycleIntent) (operation : U64) : Entry :=
+  ⟨intent, some operation, none, none, none⟩
+def entries : alloc.vec.Vec Entry := alloc.vec.Vec.from
+  [entry createIntent 30#u64, entry destroyIntent 31#u64] (by simp; scalar_tac)
+def normal : Session := {
+  id := createIntent.request.binding.session, retention := createIntent.retention,
+  owner := createIntent.request.binding.key.owner, current_version := 2#u64,
+  terminal := true, refusal := none, incarnation := some 101#u64, «local» := some binding,
+  entries := entries, confirmed_terminal := none, confirmed_renewal := none,
+  compacted_sdk_through := none, native_retirement := some receipt }
+def absent : Session := { normal with native_retirement := none, terminal := false, «local» := none }
+def wrongLocal := { normal with «local» := some { binding with operation := 99#u64 } }
+def wrongVersion := { normal with current_version := 3#u64 }
+def wrongDigest : sandproof_protocol.lifecycle.digest.ContentDigest :=
+  Array.from (List.replicate 32 1#u8) (by simp)
+def changed (saved : NativeRetirementReceipt) : Session := { normal with native_retirement := some saved }
+def wrongBinding := changed { receipt with request_binding := wrongDigest }
+def quiescenceChanged (qc : QuiescenceCertificate) : Session :=
+  changed { receipt with retirement := { receipt.retirement with quiescence := qc } }
+def wrongWorker := quiescenceChanged { receipt.retirement.quiescence with worker_drained := .Unconfirmed }
+def wrongData := quiescenceChanged { receipt.retirement.quiescence with data_connections_drained := .Unconfirmed }
+def wrongHost := quiescenceChanged { receipt.retirement.quiescence with host_resources_reclaimed := .Unconfirmed }
+def wrongPins := quiescenceChanged { receipt.retirement.quiescence with external_pins_released := .Unconfirmed }
+def wrongEpoch := quiescenceChanged { receipt.retirement.quiescence with epoch := 6#u64 }
+
+def bytes (n : Nat) (bound : n ≤ 8193) : alloc.vec.Vec U8 :=
+  alloc.vec.Vec.from (List.replicate n 0#u8) (by simp; scalar_tac)
+/-- Satisfiable abstract callbacks, not an instance of real Serde or SHA. -/
+def encoding (n : Nat) (bound : n ≤ 8193) : Encoding := {
+  encode_intent := fun _ => .ok (.Ok (bytes 0 (by decide))),
+  digest := fun _ => .ok Request.digest,
+  encode_receipt := fun _ => .ok (.Ok (bytes n bound)) }
+def small := encoding 0 (by decide)
+def intentError : Encoding := { small with encode_intent := fun _ => .ok (.Err ⟨7⟩) }
+
+theorem normal_envelopes :
+    Validation.ValidEnvelope createIntent EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroyIntent EnvelopeValues.context := by
+  have checked : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    createIntent, destroyIntent, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.center, EnvelopeValues.node, Validation.Examples.createPayload,
+    Validation.createView, SandboxModel.Foundations.CreatePlan.valid,
+    Validation.resourceView, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter, checked]
+
+theorem normal_fields :
+    BeforeBinding normal receipt (entry destroyIntent 31#u64) ∧ ReceiptFields receipt := by
+  simp [BeforeBinding, ReceiptFields, normal, entry, receipt, binding, destroyIntent]
+
+theorem bytes_length (n : Nat) (bound : n ≤ 8193) : (bytes n bound).val.length = n := by
+  simp only [bytes, alloc.vec.Vec.from_val, List.length_replicate]
+
+theorem model_normal_witnesses :
+    validateView small normal = .ok (.Ok ()) ∧ validateView small absent = .ok (.Ok ()) := by
+  simp [validateView, normal, absent, entries, entry, receipt, binding, destroyIntent,
+    BeforeBinding, ReceiptFields, small, encoding, checkBinding, checkReceipt, bytes_length]
+
+theorem model_rejections :
+    validateView small wrongLocal = corrupt ∧ validateView small wrongVersion = corrupt ∧
+    validateView small wrongBinding = corrupt ∧ validateView small wrongWorker = corrupt ∧
+    validateView small wrongData = corrupt ∧ validateView small wrongHost = corrupt ∧
+    validateView small wrongPins = corrupt ∧ validateView small wrongEpoch = corrupt := by
+  have distinct : wrongDigest ≠ Request.digest := by decide
+  simp [validateView, wrongLocal, wrongVersion, wrongBinding, wrongWorker, wrongData, wrongHost,
+    wrongPins, wrongEpoch, quiescenceChanged, changed, normal, entries, entry, receipt, binding,
+    BeforeBinding, ReceiptFields, destroyIntent, small, encoding, checkBinding,
+    distinct, corrupt]
+
+theorem model_size_boundary :
+    validateView (encoding 8192 (by decide)) normal = .ok (.Ok ()) ∧
+    validateView (encoding 8193 (by decide)) normal = corrupt := by
+  simp [validateView, normal, entries, entry, receipt, binding, destroyIntent,
+    BeforeBinding, ReceiptFields, encoding, checkBinding, checkReceipt, bytes_length, corrupt]
+
+theorem model_error_order :
+    validateView intentError wrongLocal = corrupt ∧
+    validateView intentError normal = .ok (.Err (.Json ⟨7⟩)) := by
+  simp [validateView, intentError, wrongLocal, normal, entries, entry, receipt, binding,
+    BeforeBinding, destroyIntent, checkBinding, corrupt]
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.normal_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.bytes_length
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.model_normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.model_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.model_size_boundary
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.Values.model_error_order

@@ -1,0 +1,176 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadConfigComposition
+import SandboxModel.Lifecycle.Protocol.InboxLoadValueLibrary
+import SandboxModel.Lifecycle.Protocol.InboxCompositionModel
+
+-- One unchanged specification for correct and actual mutated Rust views.
+-- Production adoption, concrete providers and durable transaction facts remain open.
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+def existsStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_lifecycle_inbox')"
+
+def versionStatement : Str := SandproofStage1RequestRust.toStr "SELECT version FROM controller_meta WHERE id=1"
+
+def sourceStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_source_work')"
+
+def internalStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='controller_internal_inbox')"
+
+abbrev Outcome (E : Type) := Result (core.result.Result (Option Inbox) JournalError × E)
+
+abbrev Check := Result (core.result.Result Unit JournalError)
+
+def attempt {E α : Type} (run : Result (core.result.Result α JournalError × E))
+    (next : α → E → Outcome E) : Outcome E := do
+  let (result, after) ← run
+  match result with
+  | .Ok value => next value after
+  | .Err error => .ok (.Err error, after)
+
+def corrupt {E : Type} (state : E) : Outcome E := .ok (.Err .CorruptStore, state)
+
+def unsupported {E : Type} (state : E) : Outcome E := .ok (.Err .UnsupportedStore, state)
+
+def lengthsStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT length(state_json),reserve_bytes FROM controller_lifecycle_inbox WHERE id=1"
+
+def bodyStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1"
+
+-- The reader has already been proved against all Maintenance/Capacity fields.
+-- This second read is deliberately separate from the earlier capacity read.
+
+def finishView {E : Type} (io : InboxLoadEffects E) (inbox : Inbox) (state : E) : Outcome E :=
+  attempt (InboxLoadConfig.readFullView io.checkpointconfigReadConfigEffectsInst state) fun policy after =>
+    match policy with
+    | some config =>
+      if inbox.config.max_operations_per_session.val > config.max_operations_per_sandbox.val
+      then corrupt after else .ok (.Ok (some inbox), after)
+    | none => unsupported after
+
+-- Validator and budget are parameters during control-flow correspondence.
+-- The final contract must instantiate their existing independent specifications.
+
+def validatedView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox) (reserve : U64) (state : E) : Outcome E := do
+  let required ← budget inbox.config
+  if required ≠ reserve then corrupt state
+  else do
+    let checked ← validate inbox
+    match checked with
+    | .Ok _ => finishView io inbox state
+    | .Err error => .ok (.Err error, state)
+
+def canonicalView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes : alloc.vec.Vec U8) (reserve : U64) (state : E) : Outcome E :=
+  attempt (io.encode_inbox state inbox) fun encoded after => do
+    let different ← alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 encoded bytes
+    if different then corrupt after else validatedView io validate budget inbox reserve after
+
+def digestView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes sha : alloc.vec.Vec U8) (reserve : U64) (state : E) : Outcome E := do
+  let (digest, after) ← io.digest state (alloc.vec.Vec.deref bytes)
+  if digest.val ≠ sha.val then corrupt after
+  else canonicalView io validate budget inbox bytes reserve after
+
+def bodyView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (reserve : U64) (state : E) : Outcome E :=
+  attempt (io.query_bytes_pair state bodyStatement) fun stored afterBytes =>
+    let (bytes, sha) := stored
+    do
+    let (decoded, afterDecode) ← io.decode_inbox afterBytes (alloc.vec.Vec.deref bytes)
+    match decoded with
+    | .Ok inbox => digestView io validate budget inbox bytes sha reserve afterDecode
+    | .Err _ => corrupt afterDecode
+
+def sixteenKiB : U64 := 16384#u64
+
+def maximumBytes : U64 := 16777216#u64
+
+def limitsView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (capacity : controller.capacity.CapacityConfig)
+    (length reserve : I64) (state : E) : Outcome E :=
+  if length < 0#i64 then corrupt state
+  else do
+    let unsignedLength ← core.num.I64.cast_unsigned length
+    if reserve < 0#i64 then corrupt state
+    else do
+      let unsignedReserve ← core.num.I64.cast_unsigned reserve
+      if unsignedReserve < unsignedLength then corrupt state
+      else if unsignedReserve > capacity.max_sql_value_bytes then corrupt state
+      else if unsignedReserve > maximumBytes then corrupt state
+      else bodyView io validate budget unsignedReserve state
+
+def capacityView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Outcome E :=
+  attempt (InboxLoadConfig.capacityReadView io.checkpointconfigReadConfigEffectsInst state) fun value after =>
+    match value with
+    | some capacity => attempt (io.query_i64_pair after lengthsStatement) fun measured afterLengths =>
+        let (length, reserve) := measured
+        limitsView io validate budget capacity length reserve afterLengths
+    | none => unsupported after
+
+def currentView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Outcome E :=
+  attempt (io.query_bool state internalStatement) fun internal after =>
+    if internal then corrupt after else capacityView io validate budget after
+
+def loadView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Outcome E :=
+  attempt (io.query_bool state existsStatement) fun hasInbox afterExists =>
+    attempt (io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement) fun version afterVersion =>
+      attempt (io.query_bool afterVersion sourceStatement) fun source afterSource =>
+        if source != (version = LIFECYCLE_STORE_FORMAT_VERSION) then corrupt afterSource
+        else if hasInbox then do
+          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          if current then currentView io validate budget afterSource else corrupt afterSource
+        else do
+          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          if current then corrupt afterSource else .ok (.Ok none, afterSource)
+
+def DecodedStringsRepresentable {E : Type} (io : InboxLoadEffects E) : Prop :=
+  ∀ state bytes inbox after,
+    io.decode_inbox state bytes = .ok (.Ok inbox, after) →
+    ConfigValidation.Representable inbox.config
+
+def budgetValue (config : LifecycleInboxConfig) : U64 :=
+  U64.ofNatCore (ConfigBudget.bytes config)
+    (Nat.lt_of_le_of_lt (ConfigBudget.total_bound config) (by decide))
+
+def fullLoadView {R T N U E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (io : InboxLoadEffects E) (state : E) : Outcome E :=
+  loadView io (InboxValidation.inboxView saved terminal renewal.encode unload.encode)
+    (fun config => .ok (budgetValue config)) state
+
+abbrev Implementation := ∀ {R T N U B E : Type},
+  RetirementEncoding R → TerminalEncoding T → RenewalEncoding N → UnloadEncoding U →
+  GraphicBytes B → InboxLoadEffects E → E → Outcome E
+
+-- This single contract is also the target for actual extracted Rust mutants.
+
+def FullLoadContract (implementation : Implementation) : Prop :=
+  ∀ {R T N U B E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+    (io : InboxLoadEffects E), ComposedConfig.FullGraphicContract graphic →
+    DecodedStringsRepresentable io → ∀ state,
+    implementation saved terminal renewal unload graphic io state =
+      fullLoadView saved terminal renewal unload io state
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad

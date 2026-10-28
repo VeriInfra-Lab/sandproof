@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveRun
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxSave.Values
+noncomputable section
+
+theorem actual_normal_validation :
+    Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic InboxValidation.Values.normal = .ok (.Ok ()) :=
+  InboxValidation.Values.normal_accepted saved terminal renewal unload
+
+theorem actual_validation_rejects :
+    Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic InboxValidation.Values.duplicateExternal =
+      .ok (.Err .CorruptStore) := by
+  rw [InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    InboxValidation.Values.duplicateExternal InboxValidation.Values.fixture_representable]
+  exact (InboxValidation.Values.owner_model_counterexamples saved terminal renewal unload).1
+
+end
+end SandboxModel.Stage1Protocol.InboxSave.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.actual_normal_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.actual_validation_rejects

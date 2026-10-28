@@ -1,0 +1,97 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -248,6 +248,9 @@
+     target = work / 'stage1-inbox-save'
+     native_case('stage1-inbox-save', ROOT, target, lambda p=target:
+         call(['verification/experiments/stage1-protocol/inbox-save/native.py', '--output', p]))
++    target = work / 'stage1-inbox-record-validation'
++    native_case('stage1-inbox-record-validation', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-record-validation/native.py', '--output', p]))
+     for driver in JSON_NEGATIVE_DRIVERS:
+         call(['tools/' + driver, '--native-only', '--output', work / driver.removesuffix('.py')])
+     call(['verification/experiments/tunnel-contract/replay.py', '--native-only',
+@@ -302,7 +305,7 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     sub = parser.add_subparsers(dest='mode', required=True)
+     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage','stage1-inbox-retained','stage1-inbox-lifetimes','stage1-inbox-renewal-session','stage1-inbox-unload-resolution','stage1-inbox-entry-validation','stage1-inbox-retired-identities','stage1-inbox-origin-selection','stage1-inbox-config','stage1-inbox-config-validation','stage1-terminal-binding','stage1-retention-lane','stage1-native-retirement','stage1-session-shape','stage1-inbox-validation','stage1-inbox-save'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage','stage1-inbox-retained','stage1-inbox-lifetimes','stage1-inbox-renewal-session','stage1-inbox-unload-resolution','stage1-inbox-entry-validation','stage1-inbox-retired-identities','stage1-inbox-origin-selection','stage1-inbox-config','stage1-inbox-config-validation','stage1-terminal-binding','stage1-retention-lane','stage1-native-retirement','stage1-session-shape','stage1-inbox-validation','stage1-inbox-save','stage1-inbox-record-validation'])
+     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
+     args = parser.parse_args(argv)
+     if args.mode == 'run':
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -111,5 +111,11 @@
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-save/formal.py --require-native --variant wrong-budget --output "$EVIDENCE/inbox-save-wrong-budget"
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-save/formal.py --require-native --variant wrong-zero-row --output "$EVIDENCE/inbox-save-wrong-zero-row"
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-save/formal.py --require-native --variant wrong-hash --output "$EVIDENCE/inbox-save-wrong-hash"
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-record-validation
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-validation/formal.py --require-native --variant correct --output "$EVIDENCE/inbox-record-validation-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-validation/formal.py --require-native --variant wrong-validation --output "$EVIDENCE/inbox-record-validation-wrong-validation"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-validation/formal.py --require-native --variant wrong-budget --output "$EVIDENCE/inbox-record-validation-wrong-budget"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-validation/formal.py --require-native --variant wrong-zero-row --output "$EVIDENCE/inbox-record-validation-wrong-zero-row"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-validation/formal.py --require-native --variant wrong-hash --output "$EVIDENCE/inbox-record-validation-wrong-hash"
+ echo 'Retained Stage1 protocol profiles and all registered actual Rust mutants passed.'
+ echo 'Typed pure guards and complete value binding only; not whole lifecycle, bytes/TLS, async or ledger truth.'
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -70,6 +70,7 @@
+ | V3 会话形状条件候选 | 任意 Session/Inbox/索引和回调的完整接受条件、首错、越界与编码传播；同合同四个 Rust 反例；见[范围](../verification/experiments/stage1-protocol/session-shape/README.md) | 固定 a9c 的隔离透明遍历和窄接口候选；原实现一般等价、标准 Serde/SHA 接线、生产采用及 ning/共享验收待完成；不代表完整 Inbox 合法、认证、持久接受或真实资源 |
+ | V3 完整 Inbox 值校验条件候选 | 任意表示范围内 Inbox 与回调的完整外层/各循环对应，保留首拒绝、checked 算术与失败；同合同三个实际 Rust 反例；见[范围](../verification/experiments/stage1-protocol/inbox-validation/README.md) | 固定 a9c 隔离候选；原实现一般等价、标准 Serde/SHA 接线、生产采用及 ning/共享验收待完成；不代表持久接受、认证或真实资源；Inbox lineage 与请求 Resume 的代号间隔规则不同 |
+ | V3 Inbox 保存调用条件候选 | 任意已解码值／效果字典的完整校验、编码、预算、同字节 digest／原 SQL UPDATE 和恰好一行；保留调用顺序与错误后态；同合同四个实际 Rust 反例；见[范围](../verification/experiments/stage1-protocol/inbox-save/README.md) | 固定 a9c 隔离窄接口候选；原实现一般等价、标准 Serde/SHA/SQL 连接、生产采用及 ning/共享验收待完成；不代表回滚、同事务持久接受、认证或真实资源 |
++| V3 Inbox 记录／校验组合边界 | 完整合法前态与合法封套下 record 成功仍可被完整校验拒绝；严格 capture frontier 的合法／反例状态族、精确后态、save 拒绝与完整效果轨迹；见[范围](../verification/experiments/stage1-protocol/inbox-record-validation/README.md) | 固定 a9c 既有隔离候选组合；保留三个完整合同，不是任意转换保持。原候选一般等价、提供者连接与采用、ning／共享验收、同事务持久接受及重启仍待完成 |
+ | V4 | 原 CaptureHandoff 值方法局部证明；候选多代 workflow、checkpoint 与历史退休已有真实 Rust 组件回归 | 新历史校验、源绑定、资源责任、退休守卫及完整 World 对应均未证明；原局部证明不覆盖这些改动 |
+ | V5 | 候选原 SQL 唯一恢复认领、材料使用责任、激活前记录、逐代凭据索引、不重置恢复寿命及多轮 SourceWork 有组件检查 | SQL/回调的整体对应；Continue 与 GC 有定向组件结果，实际维护与最终结算组合仍待完整验收；新实现对应证明未完成 |
+ | V6 | Full/原 worker/停止清理；候选 File LoadPaused、同候选激活、API 最终回应记录、Node 逐代凭据及完整/部分材料精确删除有组件检查 | 与服务组合及实机凭据更换仍待验收；未知捕获收敛、GC 许可与最终结算、原文件/进程算法对应仍有缺口 |
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -916,3 +916,5 @@
+ 尤其 local_operation 非空仅是解码值，不能从本检查推出附加事务或 VM 切换已发生。
+
+ V3 Inbox 保存切片仅复用既有逐符号模型与同版 `toStr` 字面量适配；SQL 文本的长度界限经内核检查，实际生成根仍须完整审计。`InboxSaveEffects` 的完整显式状态只是调用／参数／结果观察，不假定标准 Serde、SHA 或整个 SQLite 事务正确；具体提供者、同事务接受、未知提交与重启继续属于待证连接。候选范围见[保存调用](../../verification/experiments/stage1-protocol/inbox-save/README.md)。
++
++V3 记录／完整校验组合复用原有逐符号合同，不新增库或事务可信假设。完整状态反例要求业务提供者明确 capture 相对保留 frontier 的严格增长条件；唯一性本身不足，编号空洞允许。V1/V2 的当前意图与耐久发送、V7 的独立认证、V4/V5 的本地接受及事务事实、V6 的资源事实继续具名待证；见[组合边界](../../verification/experiments/stage1-protocol/inbox-record-validation/README.md)。
+--- a/tools/proof_batch.py
++++ b/tools/proof_batch.py
+@@ -150,6 +150,41 @@
+     'verification/experiments/stage1-protocol/inbox-save/InboxSaveValidationWitnesses.lean.in',
+     'verification/experiments/stage1-protocol/inbox-save/InboxSaveValues.lean.in',
+     'verification/experiments/stage1-protocol/inbox-save/InboxSaveWitnesses.lean.in',
++)
++
++# Combined Inbox record/validation/save contracts and frontier witnesses.
++EXTRA_AUDIT_FILES += (
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppend.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendCallerModel.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendDestroy.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendFrame.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendModel.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendNonterminal.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendSelections.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendValues.lean.in',
++    'verification/experiments/stage1-protocol/inbox-append/InboxAppendWitnesses.lean.in',
++    'verification/experiments/stage1-protocol/inbox-lookup/InboxLookup.lean.in',
++    'verification/experiments/stage1-protocol/inbox-lookup/InboxLookupModel.lean.in',
++    'verification/experiments/stage1-protocol/inbox-lookup/InboxLookupSupport.lean.in',
++    'verification/experiments/stage1-protocol/inbox-lookup/InboxLookupValues.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-total/InboxRecordTotal.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-total/InboxRecordTotalModel.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxAppendPredicates.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordValidationEntries.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordValidationOrder.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordValidationProofs.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordValidationValues.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record-validation/InboxSaveNecessary.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordCloning.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordFresh.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordFreshSupport.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordNewSession.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordNewSessionModel.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordPredicates.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordReplay.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordSelection.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordValues.lean.in',
++    'verification/experiments/stage1-protocol/inbox-record/InboxRecordWindowComparison.lean.in',
+ )
+
+ # These generators intentionally reuse a fixed workspace output location.

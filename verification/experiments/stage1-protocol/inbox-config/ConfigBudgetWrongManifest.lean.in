@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigBudget.WrongManifest
+noncomputable section
+
+theorem actual_return : LifecycleInboxConfig.required_bytes Values.small = .ok 106502#u64 := by
+  have spec : LifecycleInboxConfig.required_bytes Values.small ⦃ output => output.val = 106502 ⦄ := by
+    unfold LifecycleInboxConfig.required_bytes
+    simp only [Values.small, lift, bind_tc_ok]
+    step*
+  obtain ⟨output, returned, exactValue⟩ := WP.spec_imp_exists spec
+  have outputEq : output = 106502#u64 := by scalar_tac
+  simpa only [outputEq] using returned
+
+theorem refutes_full_contract : ¬FullBudgetContract LifecycleInboxConfig.required_bytes := by
+  intro contract
+  obtain ⟨output, returned, exactValue⟩ := contract Values.small
+  rw [actual_return] at returned
+  have outputEq : output = 106502#u64 := by
+    simpa only [Result.ok.injEq] using returned.symm
+  rw [outputEq] at exactValue
+  change 106502 = bytes Values.small at exactValue
+  have expected := Values.expected_values.1
+  omega
+
+end
+end SandboxModel.Stage1Protocol.ConfigBudget.WrongManifest
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.WrongManifest.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.WrongManifest.refutes_full_contract

@@ -163,18 +163,22 @@ impl CapacityConfig {
             self.checkpoint_scratch_bytes,
             self.max_online_storage_bytes,
         ];
-        if values
-            .into_iter()
-            .any(|n| n == 0 || i64::try_from(n).is_err() || usize::try_from(n).is_err())
+        if invalid_capacity_values(values)
             || self.max_transaction_inputs < 4
             || self.max_transaction_inputs > policy.max_tail_inputs
             || self.max_transaction_bytes
                 < mul(self.max_transaction_inputs, policy.max_input_bytes)?
             || self.max_transaction_bytes > policy.max_tail_bytes
             || policy.max_input_bytes < SCALAR_BYTES + 9
-            || self.max_sql_value_bytes
-                < add(mul(3, policy.max_input_bytes)?, SCALAR_BYTES)?
-                    .max(2 * OPTIONS_BYTES + SCALAR_BYTES)
+            || self.max_sql_value_bytes < {
+                let computed = add(mul(3, policy.max_input_bytes)?, SCALAR_BYTES)?;
+                let options = 2 * OPTIONS_BYTES + SCALAR_BYTES;
+                if computed > options {
+                    computed
+                } else {
+                    options
+                }
+            }
             || self.max_receipt_bytes < add(policy.max_input_bytes, SCALAR_BYTES)?
             || self.max_receipt_bytes > self.max_sql_value_bytes
             || self.checkpoint_scratch_bytes < mul(2, policy.max_checkpoint_bytes)?
@@ -193,7 +197,13 @@ impl CapacityConfig {
 }
 
 pub(super) fn config(connection: &Connection) -> Result<Option<CapacityConfig>, JournalError> {
-    let policy = checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    config_using(&mut checkpoint::StandardConfigRead { connection })
+}
+
+pub(super) fn config_using<E: checkpoint::ReadConfigEffects>(
+    effects: &mut E,
+) -> Result<Option<CapacityConfig>, JournalError> {
+    let policy = checkpoint::config_using(effects)?.ok_or(JournalError::UnsupportedStore)?;
     Ok(Some(policy.capacity.ok_or(JournalError::UnsupportedStore)?))
 }
 
@@ -878,4 +888,16 @@ pub(super) fn fixture_sql_budget(
         graph(&policy)?.sql_rows,
         sql_lease(&policy, cap)?,
     ))
+}
+
+fn invalid_capacity_values(values: [u64; 12]) -> bool {
+    let mut index = 0;
+    while index < values.len() {
+        let value = values[index];
+        if value == 0 || value > i64::MAX as u64 || value > usize::MAX as u64 {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }

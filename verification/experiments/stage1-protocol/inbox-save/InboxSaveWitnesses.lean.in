@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+namespace SandboxModel.Stage1Protocol.InboxSave.Values
+noncomputable section
+
+theorem normal_saved (trace : Trace) :
+    runSave saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.normal bytes) := by
+  rw [full_save_contract _ _ _ _ _ _ _ InboxValidation.Values.fixture_representable]
+  exact normal_model_saved trace
+
+theorem recorded_saved (trace : Trace) :
+    runSave saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.recorded trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.recorded bytes) := by
+  rw [full_save_contract saved terminal renewal unload (effects bytes (.Ok 1#usize))
+    InboxValidation.Values.recorded trace InboxValidation.Values.fixture_representable]
+  exact recorded_model_saved trace
+
+theorem zero_rows_rejected_after_update (trace : Trace) :
+    runSave saved terminal renewal unload (effects bytes (.Ok 0#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Err .CorruptStore, trace ++ completeTrace InboxValidation.Values.normal bytes) := by
+  rw [full_save_contract _ _ _ _ _ _ _ InboxValidation.Values.fixture_representable]
+  exact zero_rows_model_rejected trace
+
+end
+end SandboxModel.Stage1Protocol.InboxSave.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.normal_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.recorded_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.zero_rows_rejected_after_update

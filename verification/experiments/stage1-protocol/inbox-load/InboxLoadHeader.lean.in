@@ -1,0 +1,156 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadEarlyErrors
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+variable {R T N U B E : Type}
+variable (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+variable (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+variable (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+
+
+theorem current_source_missing (state afterExists afterVersion after : E) (hasInbox : Bool)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [load_using, first, second, third, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem legacy_with_source_rejected (state afterExists afterVersion after : E) (hasInbox : Bool) (version : I64)
+    (different : version ≠ LIFECYCLE_STORE_FORMAT_VERSION)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok version, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp only [LIFECYCLE_STORE_FORMAT_VERSION] at different
+  simp [load_using, first, second, third, different, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem legacy_absence_success (state afterExists afterVersion after : E) (version : I64)
+    (different : version ≠ LIFECYCLE_STORE_FORMAT_VERSION)
+    (first : io.query_bool state existsStatement = .ok (.Ok false, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok version, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Ok none, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp only [LIFECYCLE_STORE_FORMAT_VERSION] at different
+  have differentValue : version.val ≠ 23 := by simpa [IScalar.eq_equiv] using different
+  simp [load_using, first, second, third, differentValue,
+    LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  split
+  · exfalso
+    exact (by assumption : (23#iscalar : I64).val ≠ 23) (by decide)
+  · simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+
+
+theorem current_missing_inbox_rejected (state afterExists afterVersion after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok false, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [load_using, first, second, third, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv]
+
+
+theorem legacy_present_inbox_rejected (state afterExists afterVersion after : E) (version : I64)
+    (different : version ≠ LIFECYCLE_STORE_FORMAT_VERSION)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok version, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp only [LIFECYCLE_STORE_FORMAT_VERSION] at different
+  have differentValue : version.val ≠ 23 := by simpa [IScalar.eq_equiv] using different
+  simp [load_using, first, second, third, differentValue,
+    LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  split
+  · exfalso
+    exact (by assumption : (23#iscalar : I64).val ≠ 23) (by decide)
+  · simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+
+
+theorem internal_table_rejected (state afterExists afterVersion afterSource after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, afterSource))
+    (fourth : io.query_bool afterSource internalStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [internalStatement] at fourth
+  simp [load_using, first, second, third, fourth, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv]
+
+
+theorem internal_query_error (state afterExists afterVersion afterSource after : E) (error : JournalError)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, afterSource))
+    (fourth : io.query_bool afterSource internalStatement = .ok (.Err error, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err error, after) := by
+
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [internalStatement] at fourth
+  simp [load_using, first, second, third, fourth, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.current_source_missing
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.legacy_with_source_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.legacy_absence_success
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.current_missing_inbox_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.legacy_present_inbox_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.internal_table_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.internal_query_error

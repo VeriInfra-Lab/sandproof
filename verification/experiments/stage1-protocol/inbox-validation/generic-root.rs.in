@@ -1,0 +1,11 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_inbox_validate_using<
+    R: super::native_retirement::RetirementEncoding,
+    T: TerminalEncoding,
+    N: super::renewal_confirmation::RenewalEncoding,
+    U: super::unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+>(inbox: &Inbox) -> Result<(), JournalError> {
+    inbox.validate_using::<R, T, N, U, B>()
+}

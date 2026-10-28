@@ -1,0 +1,139 @@
+import SandboxModel.Lifecycle.Protocol.InboxHost
+-- One decoded-value specification shared by the correct and actual Rust mutant views.
+import SandboxModel.Lifecycle.Protocol.InboxOwners
+import SandboxModel.Lifecycle.Protocol.ComposedConfigProofs
+import SandboxModel.Lifecycle.Protocol.ShapeProofs
+import SandboxModel.Lifecycle.Protocol.LaneProofs
+import SandboxModel.Lifecycle.Protocol.InboxRenewalComposition
+import SandboxModel.Lifecycle.Protocol.InboxEntryProofs
+import SandboxModel.Lifecycle.Protocol.InboxLineage
+import SandboxModel.Lifecycle.Protocol.InboxRetained
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+abbrev Check := Result (core.result.Result Unit JournalError)
+def rejected : Check := .ok (.Err .CorruptStore)
+
+-- Counts are natural numbers in the specification; the implementation stores five U16 values.
+structure EntrySummary where
+  maximum : U64
+  counts : Fin 5 → Nat
+
+def initialSummary : EntrySummary := ⟨0#u64, fun _ => 0⟩
+
+def incrementKind (state : EntrySummary) (version : U64) (kind : Usize) :
+    Result (core.result.Result EntrySummary JournalError) :=
+  if bounded : kind.val < 5 then
+    let old := state.counts ⟨kind.val, bounded⟩
+    if old + 1 ≤ U16.max then
+      if (kind.val = 0 ∨ kind.val = 2) ∧ old + 1 > 1 then .ok (.Err .CorruptStore)
+      else .ok (.Ok ⟨version, fun index => if index.val = kind.val then old + 1 else state.counts index⟩)
+    else .fail .integerOverflow
+  else .fail .arrayOutOfBounds
+
+def entryScan (encode : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) : List Entry → EntrySummary →
+    Result (core.result.Result EntrySummary JournalError)
+  | [], state => .ok (.Ok state)
+  | entry :: tail, state =>
+    if entry.intent.accepted_version ≤ state.maximum then .ok (.Err .CorruptStore)
+    else if entry.intent.request.operation ≠ .Destroy ∧
+      InboxRetained.expected session state.maximum entry.intent = false then .ok (.Err .CorruptStore)
+    else do
+      let checked ← InboxEntry.entryView encode inbox session entry context
+      match checked with
+      | .Err error => .ok (.Err error)
+      | .Ok kind =>
+        let counted ← incrementKind state entry.intent.accepted_version kind
+        match counted with
+        | .Err error => .ok (.Err error)
+        | .Ok next => entryScan encode inbox session context tail next
+
+def SummaryFields (inbox : Inbox) (session : Session) (state : EntrySummary) : Prop :=
+  session.current_version = state.maximum ∧
+  session.terminal = decide (state.counts ⟨2, by decide⟩ = 1) ∧
+  (session.local = none ∨ state.counts ⟨0, by decide⟩ = 1) ∧
+  session.incarnation.isSome = decide (state.counts ⟨0, by decide⟩ = 1) ∧
+  (session.terminal = false ∨ ∃ entry ∈ session.entries.val,
+    entry.intent.request.operation = .Destroy ∧ entry.intent.accepted_version = state.maximum) ∧
+  (∀ binding, session.local = some binding →
+    ∃ owner ∈ inbox.owners.val, owner.external = session.owner ∧ owner.local = binding.owner)
+
+def sessionView {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (index : Usize) (session : Session) (context : AuthenticatedCenterContext) : Check := do
+  let shape ← SessionShape.validateView saved terminal inbox index session
+  match shape with
+  | .Err error => .ok (.Err error)
+  | .Ok () =>
+    let renewed ← InboxRenewal.validateView renewal session
+    match renewed with
+    | .Err error => .ok (.Err error)
+    | .Ok () =>
+      let ordered ← entryScan unload inbox session context session.entries.val initialSummary
+      match ordered with
+      | .Err error => .ok (.Err error)
+      | .Ok summary =>
+        -- Current Inbox lineage requires the exact checked successor. This is
+        -- separate from request.validate, which permits increasing generation gaps.
+        match InboxLineage.expectedResult session with
+        | .Err error => .ok (.Err error)
+        | .Ok () => if SummaryFields inbox session summary then .ok (.Ok ()) else rejected
+
+def sessionsView {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) : List Session → Usize → Check
+  | [], _ => .ok (.Ok ())
+  | session :: tail, index => do
+      -- Enumerate advances before calling the validator; preserve that order.
+      let next ← index + 1#usize
+      let checked ← sessionView saved terminal renewal unload inbox index session context
+      match checked with
+      | .Err error => .ok (.Err error)
+      | .Ok () => sessionsView saved terminal renewal unload inbox context tail next
+
+def laneScan (encode : RetentionLane.Encoding) (context : AuthenticatedCenterContext) :
+    List LifecycleRetentionLane → Nat → Result Bool
+  | [], _ => .ok true
+  | lane :: tail, index =>
+      if lane.slot.val ≠ index + 1 then .ok false
+      else do
+        let checked ← RetentionLane.validateView encode lane context
+        if checked then laneScan encode context tail (index + 1) else .ok false
+
+def inboxView {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox) : Check :=
+  if ¬ConfigValidation.Valid inbox.config then rejected
+  else if inbox.sessions.val.length > inbox.config.max_sessions.val then rejected
+  else if inbox.owners.val.length > inbox.config.max_sessions.val then rejected
+  else if inbox.lanes.val.length ≠ inbox.config.max_sessions.val then rejected
+  else do
+    let context := decodedContext inbox.config
+    let lanes ← laneScan terminal.encode context inbox.lanes.val 0
+    if lanes = false then rejected
+    else match RetiredIdentity.validationResult (RetiredIdentity.remainingConflict inbox 0) with
+      | .Err error => .ok (.Err error)
+      | .Ok () =>
+        if ¬HostMatches inbox then rejected
+        else if ¬OwnersValid inbox then rejected
+        else sessionsView saved terminal renewal unload inbox context inbox.sessions.val 0#usize
+
+-- The same property will be used for the correct and actual Rust mutant views.
+-- This covers decoded values, not wire decoding, peer authentication, or storage.
+def FullInboxContract
+    (run : RetirementEncoding Unit → TerminalEncoding Unit → InboxRenewal.Encoding →
+      UnloadResolution.Encoding → Inbox → Check) : Prop :=
+  ∀ saved terminal renewal unload inbox,
+    ConfigValidation.Representable inbox.config →
+    run saved terminal renewal unload inbox = inboxView saved terminal renewal unload inbox
+
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation

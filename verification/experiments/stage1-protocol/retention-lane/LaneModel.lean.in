@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.TerminalModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetentionLane
+noncomputable section
+open scoped Classical
+
+abbrev Encoding := TerminalLifecycleObservation →
+  Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+
+/-- The exact checked successor; the upper bound has no current window. -/
+def successor (floor : U64) : Option U64 := U64.checked_add floor 1#u64
+
+/-- No physical cleanup, independent context origin, or durable acceptance is inferred. -/
+def Prefix (lane : LifecycleRetentionLane) (context : AuthenticatedCenterContext)
+    (last : TerminalLifecycleObservation) : Prop :=
+  0 < lane.retired_through.val ∧ last.status = .Cleaned ∧
+  Terminal.Matches last last.request ∧ Validation.ValidEnvelope last.request context ∧
+  last.request.retention.slot = lane.slot ∧
+  last.request.retention.window = lane.retired_through
+
+def encodedWithin (encode : Encoding) (last : TerminalLifecycleObservation) : Result Bool := do
+  let result ← encode last
+  match result with
+  | .Err _ => .ok false
+  | .Ok bytes => .ok (decide (bytes.val.length ≤ 8192))
+
+/-- Arbitrary encoding computation. Early rejection skips it; any outer failure
+or divergence is preserved. No successful-encoding or fixed-length premise. -/
+def validateView (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) : Result Bool :=
+  if lane.current_window ≠ successor lane.retired_through then .ok false
+  else match lane.last_retired with
+    | none => .ok (decide (lane.retired_through = 0#u64))
+    | some last => if Prefix lane context last then encodedWithin encode last else .ok false
+
+def FullLaneContract
+    (run : Encoding → LifecycleRetentionLane → AuthenticatedCenterContext → Result Bool) : Prop :=
+  ∀ encode lane context, run encode lane context = validateView encode lane context
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane

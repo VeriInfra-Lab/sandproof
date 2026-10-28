@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionBoundaryValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+noncomputable section
+
+variable (saved : sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit)
+    (terminal : TerminalEncoding Unit) (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+
+theorem owner_field_counterexamples :
+    runInbox saved terminal renewal unload duplicateExternal = rejected ∧
+    runInbox saved terminal renewal unload duplicateInternal = rejected ∧
+    runInbox saved terminal renewal unload aboveWater = rejected := by
+  rw [full_inbox_contract saved terminal renewal unload duplicateExternal fixture_representable,
+    full_inbox_contract saved terminal renewal unload duplicateInternal fixture_representable,
+    full_inbox_contract saved terminal renewal unload aboveWater fixture_representable]
+  exact owner_model_counterexamples saved terminal renewal unload
+
+theorem lane_field_counterexamples :
+    runInbox saved terminal renewal unload wrongLaneOrder = rejected ∧
+    runInbox saved terminal renewal unload missingLane = rejected := by
+  rw [full_inbox_contract saved terminal renewal unload wrongLaneOrder fixture_representable,
+    full_inbox_contract saved terminal renewal unload missingLane fixture_representable]
+  exact lane_model_counterexamples saved terminal renewal unload
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.owner_field_counterexamples
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.lane_field_counterexamples

@@ -23,22 +23,48 @@ pub(super) struct NativeRetirementReceipt {
     retirement: RetireRequest,
 }
 
+pub(super) trait RetirementEncoding {
+    fn encode_intent(
+        value: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<Vec<u8>, serde_json::Error>;
+    fn digest(bytes: &[u8]) -> ContentDigest;
+    fn encode_receipt(value: &NativeRetirementReceipt) -> Result<Vec<u8>, serde_json::Error>;
+}
+
+pub(super) struct StandardRetirementEncoding;
+impl RetirementEncoding for StandardRetirementEncoding {
+    fn encode_intent(
+        value: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(value)
+    }
+    fn digest(bytes: &[u8]) -> ContentDigest {
+        source_work::digest(bytes)
+    }
+    fn encode_receipt(value: &NativeRetirementReceipt) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(value)
+    }
+}
+
 pub(super) fn validate_saved(session: &Session) -> Result<(), JournalError> {
+    validate_saved_using::<StandardRetirementEncoding>(session)
+}
+
+pub(super) fn validate_saved_using<E: RetirementEncoding>(
+    session: &Session,
+) -> Result<(), JournalError> {
     let Some(saved) = &session.native_retirement else {
         return Ok(());
     };
-    let last = session.entries.last().ok_or(JournalError::CorruptStore)?;
+    let last = session.last_entry().ok_or(JournalError::CorruptStore)?;
     let request = saved.retirement;
     let qc = request.quiescence;
     if !session.terminal
         || session.local != Some(saved.local)
-        || !matches!(
-            last.intent.request.operation,
-            LifecycleOperation::Destroy { .. }
-        )
+        || !is_destroy_operation(&last.intent.request.operation)
         || last.intent.accepted_version != session.current_version
         || last.local_operation != Some(request.operation)
-        || saved.request_binding != source_work::digest(&serde_json::to_vec(&last.intent)?)
+        || saved.request_binding != E::digest(&E::encode_intent(&last.intent)?)
         || request.sandbox != saved.local.sandbox
         || request.owner != saved.local.owner
         || qc.sandbox != request.sandbox
@@ -49,7 +75,7 @@ pub(super) fn validate_saved(session: &Session) -> Result<(), JournalError> {
         || qc.data_connections_drained != QuiescenceStatus::Confirmed
         || qc.host_resources_reclaimed != QuiescenceStatus::Confirmed
         || qc.external_pins_released != QuiescenceStatus::Confirmed
-        || serde_json::to_vec(saved)?.len() > 8192
+        || E::encode_receipt(saved)?.len() > 8192
     {
         return Err(JournalError::CorruptStore);
     }
@@ -163,4 +189,8 @@ pub(in crate::controller) fn record(
     });
     validate_saved(session)?;
     codec::save(connection, &inbox)
+}
+
+fn is_destroy_operation(operation: &LifecycleOperation) -> bool {
+    matches!(operation, LifecycleOperation::Destroy { .. })
 }

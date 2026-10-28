@@ -1,0 +1,8 @@
+
+#[must_use]
+pub fn terminal_matches(
+    observation: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+    request: &AcceptedLifecycleIntent,
+) -> bool {
+    observation.matches_request(request)
+}

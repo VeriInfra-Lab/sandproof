@@ -1,0 +1,205 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadCapacityBounds
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.capacity
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadCapacity
+noncomputable section
+open scoped Classical
+
+abbrev Check := Result (core.result.Result Unit JournalError)
+
+abbrev fields (config : CapacityConfig) : List U64 :=
+  [config.max_live_sandboxes, config.max_sql_rows, config.max_sql_bytes,
+    config.max_sql_value_bytes, config.max_receipt_bytes, config.max_transaction_inputs,
+    config.max_transaction_bytes, config.max_database_bytes, config.max_wal_bytes,
+    config.max_shm_bytes, config.checkpoint_scratch_bytes, config.max_online_storage_bytes]
+
+-- The fixed library checked arithmetic retains its overflow branch. A failed
+-- arithmetic operation has a different error from a rejected capacity guard.
+def checkedCapacity {α : Type} (value : Option U64)
+    (next : U64 → Result (core.result.Result α JournalError)) :
+    Result (core.result.Result α JournalError) :=
+  match value with
+  | none => .ok (.Err .MaintenanceCapacity)
+  | some result => next result
+
+def capacityView (config : CapacityConfig) (policy : MaintenanceConfig) : Check :=
+  if ¬∀ value ∈ fields config, ScalarValid value then .ok (.Err .UnsupportedStore)
+  else if config.max_transaction_inputs.val < 4 then .ok (.Err .UnsupportedStore)
+  else if config.max_transaction_inputs.val > policy.max_tail_inputs.val then .ok (.Err .UnsupportedStore)
+  else checkedCapacity (U64.checked_mul config.max_transaction_inputs policy.max_input_bytes) fun transaction =>
+    if config.max_transaction_bytes.val < transaction.val then .ok (.Err .UnsupportedStore)
+    else if config.max_transaction_bytes.val > policy.max_tail_bytes.val then .ok (.Err .UnsupportedStore)
+    else if policy.max_input_bytes.val < 4105 then .ok (.Err .UnsupportedStore)
+    else checkedCapacity (U64.checked_mul 3#u64 policy.max_input_bytes) fun threeInputs =>
+      checkedCapacity (U64.checked_add threeInputs 4096#u64) fun computed =>
+        if config.max_sql_value_bytes.val < max computed.val 135168 then .ok (.Err .UnsupportedStore)
+        else checkedCapacity (U64.checked_add policy.max_input_bytes 4096#u64) fun receipt =>
+          if config.max_receipt_bytes.val < receipt.val then .ok (.Err .UnsupportedStore)
+          else if config.max_receipt_bytes.val > config.max_sql_value_bytes.val then .ok (.Err .UnsupportedStore)
+          else checkedCapacity (U64.checked_mul 2#u64 policy.max_checkpoint_bytes) fun scratch =>
+            if config.checkpoint_scratch_bytes.val < scratch.val then .ok (.Err .UnsupportedStore)
+            else checkedCapacity (U64.checked_add config.max_database_bytes config.max_wal_bytes) fun databaseWal =>
+              checkedCapacity (U64.checked_add databaseWal config.max_shm_bytes) fun withShm =>
+                checkedCapacity (U64.checked_add withShm config.checkpoint_scratch_bytes) fun total =>
+                  if total.val > config.max_online_storage_bytes.val then .ok (.Err .UnsupportedStore)
+                  else .ok (.Ok ())
+
+def inputFloor : U64 := 4105#u64
+def optionsValue : U64 := 65536#u64
+def twiceOptions : U64 := 131072#u64
+def sqlFloor : U64 := 135168#u64
+
+theorem input_floor_value : inputFloor.val = 4105 := by rfl
+theorem sql_floor_value : sqlFloor.val = 135168 := by rfl
+
+theorem options_bytes : OPTIONS_BYTES = .ok optionsValue := by
+  unfold OPTIONS_BYTES host_contract.CreateOptions.MAX_ENCODED_BYTES
+  have multiplied : (64#usize * 1024#usize : Result Usize) = .ok 65536#usize := by
+    obtain ⟨value, returned, post⟩ := WP.spec_imp_exists
+      (Usize.mul_bv_spec (x := 64#usize) (y := 1024#usize) (by scalar_tac))
+    have same : value = 65536#usize := by scalar_tac
+    simpa only [same] using returned
+  have casted : UScalar.cast .U64 (65536#usize) = optionsValue := by
+    apply UScalar.eq_of_val_eq
+    rw [UScalar.cast_val_eq]
+    simp [optionsValue]
+  simp only [multiplied, bind_tc_ok, casted]
+
+theorem add_result_bind {α : Type} (left right : U64)
+    (next : core.result.Result U64 JournalError → Result α) :
+    (do let result ← add left right; next result) =
+      (match U64.checked_add left right with
+        | none => next (.Err .MaintenanceCapacity)
+        | some value => next (.Ok value)) := by
+  cases arithmetic : U64.checked_add left right <;>
+    simp [add, lift, arithmetic, core.option.Option.ok_or]
+
+theorem mul_result_bind {α : Type} (left right : U64)
+    (next : core.result.Result U64 JournalError → Result α) :
+    (do let result ← mul left right; next result) =
+      (match U64.checked_mul left right with
+        | none => next (.Err .MaintenanceCapacity)
+        | some value => next (.Ok value)) := by
+  cases arithmetic : U64.checked_mul left right <;>
+    simp [mul, lift, arithmetic, core.option.Option.ok_or]
+
+theorem checked_capacity_eq {α : Type} (value : Option U64)
+    (next : U64 → Result (core.result.Result α JournalError)) :
+    checkedCapacity value next = (match value with
+      | none => .ok (.Err .MaintenanceCapacity)
+      | some result => next result) := by rfl
+
+theorem max_guard (value : U64) (bound : Nat) (rejected accepted : Check) :
+    (do let selected ← if sqlFloor.val < value.val then Result.ok value else Result.ok sqlFloor
+        if bound < selected.val then rejected else accepted) =
+      if bound < max value.val 135168 then rejected else accepted := by
+  by_cases rising : sqlFloor.val < value.val
+  · have larger : 135168 ≤ value.val := by rw [sql_floor_value] at rising; omega
+    simp only [rising, ↓reduceIte, bind_tc_ok, max_eq_left larger]
+  · have smaller : value.val ≤ 135168 := by rw [sql_floor_value] at rising; omega
+    simp only [sql_floor_value, Nat.not_lt.mpr smaller, ↓reduceIte, bind_tc_ok, max_eq_right smaller]
+
+theorem capacity_refines (config : CapacityConfig) (policy : MaintenanceConfig) :
+    CapacityConfig.validate config policy = capacityView config policy := by
+  unfold CapacityConfig.validate capacityView
+  rw [bounds_refines]
+  simp only [Array.make_val, bind_tc_ok, decide_eq_true_eq, fields,
+    UScalar.lt_equiv, SCALAR_BYTES, options_bytes]
+  have scalarAdd : (4096#u64 + 9#u64 : Result U64) = .ok inputFloor := by rfl
+  have optionsMul : (2#u64 * optionsValue : Result U64) = .ok twiceOptions := by rfl
+  have optionsAdd : (twiceOptions + 4096#u64 : Result U64) = .ok sqlFloor := by rfl
+  have four : (4#u64).val = 4 := by rfl
+  simp only [scalarAdd, optionsMul, optionsAdd, bind_tc_ok, four, input_floor_value]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch]
+  by_cases badScalars : ¬∀ value ∈ fields config, ScalarValid value
+  · simp only [badScalars, not_false_eq_true, ↓reduceIte]
+  · simp only [badScalars, ↓reduceIte]
+    by_cases fewInputs : config.max_transaction_inputs.val < 4
+    · simp only [fewInputs, ↓reduceIte]
+    · simp only [fewInputs, ↓reduceIte]
+      by_cases manyInputs : config.max_transaction_inputs.val > policy.max_tail_inputs.val
+      · simp only [manyInputs, ↓reduceIte]
+      · simp only [manyInputs, ↓reduceIte]
+        rw [mul_result_bind, checked_capacity_eq]
+        cases arithmetic : U64.checked_mul config.max_transaction_inputs policy.max_input_bytes with
+        | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | some transaction =>
+          simp only [bind_tc_ok]
+          by_cases fewTransactionBytes : config.max_transaction_bytes.val < transaction.val
+          · simp only [fewTransactionBytes, ↓reduceIte]
+          · simp only [fewTransactionBytes, ↓reduceIte]
+            by_cases manyTransactionBytes : config.max_transaction_bytes.val > policy.max_tail_bytes.val
+            · simp only [manyTransactionBytes, ↓reduceIte]
+            · simp only [manyTransactionBytes, ↓reduceIte]
+              by_cases fewInputBytes : policy.max_input_bytes.val < 4105
+              · simp only [fewInputBytes, ↓reduceIte]
+              · simp only [fewInputBytes, ↓reduceIte]
+                rw [mul_result_bind, checked_capacity_eq]
+                cases arithmetic : U64.checked_mul 3#u64 policy.max_input_bytes with
+                | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                | some threeInputs =>
+                  simp only [bind_tc_ok]
+                  rw [add_result_bind, checked_capacity_eq]
+                  cases arithmetic : U64.checked_add threeInputs 4096#u64 with
+                  | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                  | some computed =>
+                    simp only [bind_tc_ok]
+                    simp only [max_guard]
+                    by_cases fewSqlBytes : config.max_sql_value_bytes.val < max computed.val 135168
+                    · simp only [fewSqlBytes, ↓reduceIte]
+                    · simp only [fewSqlBytes, ↓reduceIte]
+                      rw [add_result_bind, checked_capacity_eq]
+                      cases arithmetic : U64.checked_add policy.max_input_bytes 4096#u64 with
+                      | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                      | some receipt =>
+                        simp only [bind_tc_ok]
+                        by_cases fewReceiptBytes : config.max_receipt_bytes.val < receipt.val
+                        · simp only [fewReceiptBytes, ↓reduceIte]
+                        · simp only [fewReceiptBytes, ↓reduceIte]
+                          by_cases manyReceiptBytes : config.max_receipt_bytes.val > config.max_sql_value_bytes.val
+                          · simp only [manyReceiptBytes, ↓reduceIte]
+                          · simp only [manyReceiptBytes, ↓reduceIte]
+                            rw [mul_result_bind, checked_capacity_eq]
+                            cases arithmetic : U64.checked_mul 2#u64 policy.max_checkpoint_bytes with
+                            | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                            | some scratch =>
+                              simp only [bind_tc_ok]
+                              by_cases fewScratchBytes : config.checkpoint_scratch_bytes.val < scratch.val
+                              · simp only [fewScratchBytes, ↓reduceIte]
+                              · simp only [fewScratchBytes, ↓reduceIte]
+                                rw [add_result_bind, checked_capacity_eq]
+                                cases arithmetic : U64.checked_add config.max_database_bytes config.max_wal_bytes with
+                                | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                                | some databaseWal =>
+                                  simp only [bind_tc_ok]
+                                  rw [add_result_bind, checked_capacity_eq]
+                                  cases arithmetic : U64.checked_add databaseWal config.max_shm_bytes with
+                                  | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                                  | some withShm =>
+                                    simp only [bind_tc_ok]
+                                    rw [add_result_bind, checked_capacity_eq]
+                                    cases arithmetic : U64.checked_add withShm config.checkpoint_scratch_bytes with
+                                    | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                                    | some total =>
+                                      simp only [bind_tc_ok]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadCapacity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.options_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.capacity_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.input_floor_value
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.sql_floor_value
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.add_result_bind
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.mul_result_bind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.checked_capacity_eq
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.max_guard

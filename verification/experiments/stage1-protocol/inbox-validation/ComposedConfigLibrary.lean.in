@@ -1,0 +1,49 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationModel
+import SandboxModel.Lifecycle.Protocol.GraphicProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ComposedConfig
+open ConfigValidation
+noncomputable section
+
+def FullGraphicContract {B : Type} (graphic : GraphicBytes B) : Prop :=
+  ∀ text, graphic.all_graphic text = .ok (text.val.all graphicByte)
+
+/-- The provider is the actual independently generated standard implementation. -/
+def standardGraphic : GraphicBytes Unit := {
+  all_graphic := SandproofStage1GraphicRust.sandproof_controller_service.capture.StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic }
+
+theorem standard_graphic_contract : FullGraphicContract standardGraphic := by
+  intro text
+  exact GraphicPrimitive.standard_refines text
+
+-- Original generated generic dictionary dispatch is retained.
+theorem range_u16_refines (lo hi value : U16) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      core.cmp.PartialOrdU16 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU16.le]
+  split <;> simp_all
+
+theorem range_u32_refines (lo hi value : U32) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU32 core.cmp.PartialOrdU32
+      core.cmp.PartialOrdU32 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU32.le]
+  split <;> simp_all
+
+end
+end SandboxModel.Stage1Protocol.ComposedConfig
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.standard_graphic_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.range_u16_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.range_u32_refines

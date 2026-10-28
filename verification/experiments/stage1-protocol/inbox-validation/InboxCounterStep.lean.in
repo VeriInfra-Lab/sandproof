@@ -1,0 +1,94 @@
+import SandboxModel.Lifecycle.Protocol.InboxCounterRepresentation
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+abbrev StoredSummary := U64 × Array U16 5#usize
+
+def observeSummary (value : core.result.Result StoredSummary JournalError) :
+    core.result.Result EntrySummary JournalError :=
+  match value with
+  | .Err error => .Err error
+  | .Ok (maximum, kinds) => .Ok (arraySummary maximum kinds)
+
+-- A normal form for the generated loop's counter continuation. Its connection
+-- to the actual generated body is a separate theorem, not an extraction root.
+def storedIncrement (version : U64) (kinds : Array U16 5#usize) (kind : Usize) :
+    Result (core.result.Result StoredSummary JournalError) := do
+  let old ← Array.index_usize kinds kind
+  let next ← old + 1#u16
+  if (kind = 0#usize ∨ kind = 2#usize) ∧ next > 1#u16 then .ok (.Err .CorruptStore)
+  else .ok (.Ok (version, kinds.set kind next))
+
+theorem array_read (kinds : Array U16 5#usize) (kind : Usize) (bound : kind.val < 5) :
+    Array.index_usize kinds kind = .ok (kinds.val[kind.val]'(by simpa using bound)) := by
+  simp [Array.index_usize, bound]
+
+theorem array_read_outside (kinds : Array U16 5#usize) (kind : Usize) (bound : 5 ≤ kind.val) :
+    Array.index_usize kinds kind = .fail .arrayOutOfBounds := by
+  simp [Array.index_usize, bound]
+
+theorem array_read_updated (kinds : Array U16 5#usize) (kind : Usize) (value : U16)
+    (bound : kind.val < 5) :
+    Array.index_usize (kinds.set kind value) kind = .ok value := by
+  rw [array_read _ _ bound]
+  simp [Array.set_val_eq]
+
+theorem u16_increment_ok (old : U16) (bound : old.val + 1 ≤ U16.max) :
+    old + 1#u16 = Result.ok (UScalar.ofNatCore (old.val + 1) (by scalar_tac)) := by
+  change UScalar.tryMk .U16 (old.val + 1) = _
+  have small : old.val + 1 < 65536 := by scalar_tac
+  simp [UScalar.tryMk, UScalar.tryMkOpt, small, Result.ofOption]
+
+theorem u16_increment_overflow (old : U16) (bound : ¬old.val + 1 ≤ U16.max) :
+    old + 1#u16 = Result.fail .integerOverflow := by
+  change UScalar.tryMk .U16 (old.val + 1) = _
+  have large : ¬old.val + 1 < 65536 := by scalar_tac
+  simp [UScalar.tryMk, UScalar.tryMkOpt, large, Result.ofOption]
+
+theorem stored_increment_refines (maximum version : U64) (kinds : Array U16 5#usize)
+    (kind : Usize) :
+    (do let result ← storedIncrement version kinds kind; .ok (observeSummary result)) =
+      incrementKind (arraySummary maximum kinds) version kind := by
+  by_cases bound : kind.val < 5
+  · rw [storedIncrement, array_read _ _ bound]
+    simp only [bind_tc_ok]
+    let old := kinds.val[kind.val]'(by simpa using bound)
+    by_cases room : old.val + 1 ≤ U16.max
+    · rw [u16_increment_ok old room]
+      simp only [bind_tc_ok]
+      simp only [incrementKind, bound, ↓reduceDIte, arraySummary]
+      have zero : kind = 0#usize ↔ kind.val = 0 := by scalar_tac
+      have two : kind = 2#usize ↔ kind.val = 2 := by scalar_tac
+      have greater : (UScalar.ofNatCore (old.val + 1) (by scalar_tac) : U16) > 1#u16 ↔
+          old.val + 1 > 1 := by scalar_tac
+      simp only [zero, two, greater]
+      split
+      · simp [observeSummary]
+      · simp only [bind_tc_ok, observeSummary]
+        apply congrArg Result.ok
+        apply congrArg core.result.Result.Ok
+        unfold arraySummary
+        congr 1
+        funext index
+        by_cases same : kind.val = index.val
+        · simp [Array.set_val_eq, same, old]
+        · have reverse := Ne.symm same
+          simp [Array.set_val_eq, same, reverse, old]
+    · rw [u16_increment_overflow old room]
+      simp [incrementKind, bound, arraySummary, room, old]
+  · rw [storedIncrement, array_read_outside _ _ (by omega)]
+    simp [incrementKind, bound]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.array_read
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.array_read_outside
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.array_read_updated
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.u16_increment_ok
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.u16_increment_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.stored_increment_refines
