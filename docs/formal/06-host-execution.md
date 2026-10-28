@@ -101,7 +101,7 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 正式初始化从 `LinuxWorker::host_epoch_registration` 取得既有受保护文件的完整 SHA-256、boot 和原节点/namespace 绑定，并重新核对同一 provider 的真实宿主信息。`ProtectedHostEpochSource::provision` 仅供显式操作者命令生成全新当前格式文件：原父目录 FD 下 create-new、root/0400、全字节写入及文件/目录同步；不覆盖、修复或自动升级。错误可留下未登记文件，不能把错误当“没有写入”。服务重启必须核对已存原 registration，不能用这次观察自动改写旧值。实际工具字节与固定 Firecracker/jailer 语义的对应、完整宿主 proc/sys 视图及 epoch 内配置不变仍是部署条件；该接口不产生快照兼容、捕获预算或停止许可。正式 CLI/初始化/重启连接和本批验收由唯一服务装配完成，单个生成函数不代表这些连接已经通过。
 
 
-重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续分段捕获接线属于本批运行组件，尚待真实固定 VMM endpoint 和完整卸载验收，不声称获得新机器证明。
+重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续捕获已接入正式卸载，有限真实 VMM 场景的版本与结果见[覆盖记录](../proof-coverage.md#current-status)；这些工程结果不构成新机器证明，也不覆盖全部准备断点。
 
 
 ### 原 Pause 的 Node 接线候选
@@ -140,6 +140,6 @@ worker 完成后保存绑定原 action/Full/job/worker/source 的 completion；�
 
 `LinuxWorker::observe_full_capture` 仍只是未决工作在原 key、独立 profile/原输入及已有摘要下的文件观察；它不再次 Pause/Full，也不单凭完整文件提供捕获来源、worker 退出或数据库接管证明。当前完成观察还需结合原 SQL worker、completion 和实际退出依据。未采用的 `CapturePreparationObservation`/`observe_capture_preparation` 保留在 #638 后续范围：当前没有在原独占门内保留 canonical/stage、并让观察对象覆盖短事务的这套准备恢复接口，三个准备阶段的 manager 崩溃断点回归也尚未接入。正常 Full 后的管理进程重启验收不代表这些断点已覆盖。
 
-通用冷启动路径仍不接受 Node snapshot-source Prepare，恢复走独立的原工作入口；T=0 仅限原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射。C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套0或删掉真实恢复状态。正常卸载与原材料重开已有定向实机证据，精确版本和失败记录仍在关联 issue；这不覆盖所有未知提交、准备阶段崩溃或任意并发历史，也未新增对应 Rust/Lean 证明。已接入的恢复、LoadPaused 和材料 GC 仍未完成整体实现对应与统一实机验收。
+通用冷启动路径仍不接受 Node snapshot-source Prepare，恢复走独立的原工作入口；T=0 仅限原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射。C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套0或删掉真实恢复状态。恢复、LoadPaused、材料 GC 及有限故障代表已有正式工程证据，精确版本、复用范围和失败记录见[覆盖记录](../proof-coverage.md#current-status)。这不覆盖所有未知提交、准备阶段崩溃或任意并发历史；整体 Rust/Lean 对应仍未闭合。
 
 `NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 消费原 journal 提供的独立材料期望。`sealed_capture_expectation`/`committed_capture_expectation` 已从原持久记录及各阶段检查提供期望，分别连接 CommitSnapshot 前的材料核对和提交后的 Stop/清理观察；封存材料不等于已提交，动作资格仍由原工作流检查。该类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要。Node 核同一受保护 store/epoch、原 key 和全部字节，不依赖旧 Occupied 位置、launch secret 或活 VMM。材料观察不提供恢复、pin、删除、访问、停止或退额许可；后续恢复仍须独立持久 bundle/pin 记录和自己的资格证明，不能由正常卸载通过外推。

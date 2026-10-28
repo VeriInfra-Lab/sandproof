@@ -6,7 +6,7 @@
 
 ## 1. 从旧核心到新合同
 
-对应 [controller-core](../../controller-core/src/lib.rs)。当前候选已将原 Pause/Resume 核心接入多代检查点、服务恢复准入和专用宿主动作；普通 Pause 的补偿保留原 Pausing、VM 和责任，失败继续沿原计划推进。这些新连接尚未完成整体实现对应与统一实机验收。旧逻辑 manifest 计数不能代替真实材料摘要，保持状态也不等于失败后已经自动恢复服务。
+对应 [controller-core](../../controller-core/src/lib.rs)。原 Pause/Resume 核心已接入多代检查点、服务恢复准入和专用宿主动作；普通 Pause 的补偿保留原 Pausing、VM 和责任，失败继续沿原计划推进。正式链路及有限故障代表已有工程验收，准确版本与范围见[覆盖记录](../proof-coverage.md#current-status)；整体实现对应与全部故障交错证明仍未完成。旧逻辑 manifest 计数不能代替真实材料摘要，保留材料的局部性质也不单独证明失败后已恢复服务。
 
 本模块拥有逻辑 `Session`、`Operation`、`Capture`、运行资格、预留和逻辑工作；V5 提供持久性，V6 提供物理效果。不把持久记录和真实 VMM 状态定义为同一对象。
 
