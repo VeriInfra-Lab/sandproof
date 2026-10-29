@@ -49,27 +49,25 @@ theorem record_inner_commit_success_identity
       simp only [bind_tc_ok] at tail
       cases found : tableLookup key world.operation_plans.entries.val with
       | none =>
-        simp [found, core.result.Result.Insts.CoreOpsTry.branch,
+        simp [found,
           core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at tail
       | some plan =>
-        simp only [found, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at tail
+        simp only [found, bind_tc_ok] at tail
         have planKey : plan.key = key := by
           by_contra different
           simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, different] at tail
         simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, planKey] at tail
         have session : key.sandbox = sandbox := by
           by_contra different
-          simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
-            sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+          simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
             ← UScalar.eq_equiv, different] at tail
-        simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
-          sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, session] at tail
+        simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, session] at tail
         cases currentOperation : row.current_operation with
         | none =>
-          simp [currentOperation, core.result.Result.Insts.CoreOpsTry.branch,
+          simp [currentOperation,
             core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at tail
         | some current =>
-          simp [currentOperation, core.result.Result.Insts.CoreOpsTry.branch] at tail
+          simp [currentOperation] at tail
           have differentOperation : key.operation ≠ current.id := by
             intro same
             simp [sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq, same] at tail
@@ -77,12 +75,12 @@ theorem record_inner_commit_success_identity
             differentOperation, ← UScalar.eq_equiv] at tail
           have generationMatch : plan.generation = row.generation := by
             by_contra different
-            simp [different, ← UScalar.eq_equiv] at tail
+            simp [different, -UScalar.eq_equiv] at tail
           simp [generationMatch] at tail
           have epochMatch : epoch = plan.epoch := by
             by_contra different
             simp [sandbox_controller_core.model.Command.epoch,
-              core.option.Option.Insts.CoreCmpPartialEqOption.eq, different, ← UScalar.eq_equiv] at tail
+              core.option.Option.Insts.CoreCmpPartialEqOption.eq, different, -UScalar.eq_equiv] at tail
           simp [sandbox_controller_core.model.Command.epoch,
             core.option.Option.Insts.CoreCmpPartialEqOption.eq, epochMatch] at tail
           cases captured : plan.capture with
@@ -101,7 +99,7 @@ theorem record_inner_commit_success_identity
                 sandbox_controller_core.capture.CaptureHandoff.has_capture_work] at tail
             cases working : capture.capture_work <;> simp [working] at tail
             exact ⟨logical, key, plan, current, capture, logicalRead, origin, found,
-              planKey, session, currentOperation, differentOperation, generationMatch, epochMatch,
+              planKey, session, rfl, differentOperation, generationMatch, epochMatch,
               captured, eligibility, working, tail⟩
 
 /-- The actual outer record function reads this terminal row from the original
@@ -137,6 +135,6 @@ theorem record_commit_success_outer
     obtain ⟨result, inner, returned⟩ := bind_ok_inv _ _ _ evaluated
     have same : result = .Ok decision := by simpa using returned
     subst result
-    exact ⟨row, found, terminal, phase, inner⟩
+    exact ⟨row, rfl, terminal, phase, inner⟩
 
 end SandboxModel.Lifecycle.CaptureHandoffCaller
