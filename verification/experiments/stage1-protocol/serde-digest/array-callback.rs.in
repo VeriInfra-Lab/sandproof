@@ -1,0 +1,15 @@
+
+// Direct call to the original generic array-32 Deserialize, without a concrete element dictionary.
+pub fn proof_array_decode<'de, T: serde::Deserialize<'de>, D: serde::Deserializer<'de>>(
+    input: D,
+) -> Result<[T; 32], D::Error> {
+    <[T; 32] as serde::Deserialize>::deserialize(input)
+}
+
+// Expose the original generic Visitor method without a concrete replacement reader.
+pub fn proof_sequence_visit<'de, V: serde::de::Visitor<'de>, A: serde::de::SeqAccess<'de>>(
+    visitor: V,
+    sequence: A,
+) -> Result<V::Value, A::Error> {
+    visitor.visit_seq(sequence)
+}

@@ -1,0 +1,7 @@
+
+// Direct call to the actual derived transparent 32-byte digest Deserialize.
+pub fn proof_digest_decode<'de, D: serde::Deserializer<'de>>(
+    input: D,
+) -> Result<sandproof_protocol::lifecycle::ContentDigest, D::Error> {
+    <sandproof_protocol::lifecycle::ContentDigest as serde::Deserialize>::deserialize(input)
+}

@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "base": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "production_modified": false,
+  "library_modified": false,
+  "generated_bodies_modified": false,
+  "models_imported": false,
+  "proof_complete": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "full_v3": false,
+  "modes": {
+    "digest": {
+      "roots": [
+        "crate::proof_digest_decode"
+      ],
+      "include": [
+        "sandproof_protocol",
+        "serde_core::de::impls",
+        "serde_core::de::SeqAccess::next_element",
+        "serde_core::de::_::deserialize"
+      ],
+      "root_file": "digest.rs.in",
+      "original_development_result": {
+        "capture_complete": true,
+        "translation_complete": false,
+        "proof_complete": false
+      },
+      "scope": "Actual original ContentDigest derived Deserialize; fixed backend rejects mixed u8 Visitor/range-error recursion"
+    },
+    "array-constructor": {
+      "roots": [
+        "crate::proof_array_decode"
+      ],
+      "include": [
+        "sandproof_protocol",
+        "serde_core::de::impls::_::deserialize",
+        "serde_core::de::impls::_::visit_seq",
+        "serde_core::de::impls::_::expecting",
+        "serde_core::de::impls::ArrayVisitor",
+        "serde_core::de::SeqAccess::next_element",
+        "serde_core::private::seed"
+      ],
+      "root_file": "array-constructor.rs.in",
+      "original_development_result": {
+        "capture_complete": true,
+        "translation_complete": true,
+        "proof_complete": false
+      },
+      "scope": "Does not include visit_seq; not a 32-element consumption proof; raw ArrayVisitor.new remains external and no model supplied"
+    },
+    "array-callback": {
+      "roots": [
+        "crate::proof_array_decode",
+        "crate::proof_sequence_visit"
+      ],
+      "include": [
+        "sandproof_protocol",
+        "serde_core::de::impls::_::deserialize",
+        "serde_core::de::impls::_::visit_seq",
+        "serde_core::de::impls::_::expecting",
+        "serde_core::de::impls::ArrayVisitor",
+        "serde_core::de::impls::_::new",
+        "serde_core::de::SeqAccess::next_element",
+        "serde_core::private::seed"
+      ],
+      "root_file": "array-callback.rs.in",
+      "original_development_result": {
+        "capture_complete": true,
+        "translation_complete": false,
+        "proof_complete": false
+      },
+      "scope": "Actual generic 32-element array method exposed by pure Visitor forwarder; fixed backend rejects mutually recursive Deserialize/DeserializeSeed/Deserializer/Visitor/SeqAccess traits"
+    }
+  },
+  "source_inputs": {
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "verification/experiments/stage1-protocol/envelope-bytes/roots.rs.in": "01083254ea7f091a27626b18e9052332f605bebc697c94387b06e33373228963",
+    "verification/experiments/stage1-protocol/envelope-bytes/Cargo.toml": "6b2085de2c23b3feef0d7fdb863824929c05778e839afbc64b57430014076e43",
+    "verification/experiments/stage1-protocol/envelope-bytes/Cargo.lock": "3d8b14b92d5a07fec136a4cd1cc0b89b6f9c92d7093c6960ee8479b7caa73105",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99"
+  },
+  "provider_sources": {
+    "serde_core-1.0.228/src/de/mod.rs": "5ec8602d593915e0cf480b0ce67b02f6ab066dac34725237d2c7b4a6ef12a845",
+    "serde_core-1.0.228/src/de/impls.rs": "9fb7a0322af51971fe1fa8f5b56c7ca3716622a6e9127b86bddfc0742c11383c",
+    "serde_core-1.0.228/src/private/seed.rs": "3f6e098c5bd314788370dcaf3ab0152fcd7feb6bcf36a9c51808938cd58071eb",
+    "serde_json-1.0.142/src/de.rs": "db7adf3ef0074e15426d31e1cf4bec78ad92c20e4642c136325f0a78547218c7",
+    "serde_json-1.0.142/src/read.rs": "17a2efe49e5a6937c8d7d4a5c0b9eac84453de0f86bf8e7ee421387e82341bb3"
+  },
+  "templates": {
+    "digest.rs.in": "40eca3675caaca33667bfdd76a95b169208abcf5e99c257fe5810308af5f22e0",
+    "array-callback.rs.in": "b66c6604bdfec25f99177742711ce9ddf52713831188ea9062b33a4e784c2832",
+    "array-constructor.rs.in": "777479710f4927dd06287d8a8d746d21cab37e616e767970ca6f0574dd88e61b"
+  },
+  "driver_sha256": "52fcf07dfc79b6b37a8db0923d45128b74b68719094d04ebb00762e3b54c8a60"
+}
