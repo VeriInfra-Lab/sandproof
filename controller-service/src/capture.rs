@@ -19,11 +19,13 @@ pub use launch::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureResult, PreparedFullCapture,
 };
 pub use restore::{RestoreActivationPermit, RestoreCandidateExitObservation, RestoreWorkRequest};
-#[cfg(feature = "durable")]
-pub(crate) use retirement::MATERIAL_RETIREMENT_RECORD_MAX_BYTES;
 pub use retirement::{
     CaptureMaterialRetirementRequest, MATERIAL_RETIREMENT_PLAN_MAX_BYTES,
     MaterialRetirementObservation, MaterialRetirementPermit,
+};
+#[cfg(feature = "durable")]
+pub(crate) use retirement::{
+    MATERIAL_RELEASE_RECORD_MAX_BYTES, MATERIAL_RETIREMENT_RECORD_MAX_BYTES,
 };
 pub use source::{RawSourceObservation, SourceObservationConfig, SourceObservationRequirement};
 pub use terminated::{TerminatedCaptureObservation, TerminatedCaptureWorkRequest};

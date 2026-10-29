@@ -18,8 +18,8 @@
 | registerBundle | 原捕获计划、完整校验回执、不可变文件身份、pin/资格 | 文件发布不自动变业务成功；孤儿只按原计划对账 |
 | claimResume | 当前会话/来源/寿命、唯一操作/新代、资源预留、pin | 同键返回原 claim；其它竞争失败，不复制 claim |
 | recordMayExecute | 原 claim/候选和当前终止版本、不可逆标记、激活工作 | 确认提交后才能可能激活；未知不换候选 |
-| releasePin / beginRetire | 具名持有者结束证据；同一事务检查新引用关闭、资格/引用状态 | 活跃/未知使用不清零；重启不靠内存引用数 |
-| scheduleDelete / settleRelease | 精确对象与原删除责任、实际删除/映射释放结果、计费 | 部分成功可重试，未知仍占账 |
+| releasePin / beginRetire | 绑定原材料的具名结束证据，终止或完整后继接管；同一事务检查并永久关闭新引用、保存固定原计划及待办 | 活跃/未知使用不清零；提交未知不给许可，重启不靠内存引用数 |
+| scheduleDelete / settleRelease | 精确对象与原 work/plan、锁外实际删除/映射释放结果、原计费 | 部分成功和丢回执沿原计划续做；后继进一步演进不妨碍旧计划结算，重复不双退额 |
 
 上述接口需映射实际函数/SQL，不要求建立同名壳函数。状态更改与生成待办必须同事务，接受时保留后续记录空间；普通请求不能耗尽内部终止/清理能力。
 
@@ -28,6 +28,18 @@
 每次外部效果之前都已有可枚举的原身份责任。文件 rename 与 SQLite 提交之间崩溃时，原 capture 意图说明文件为何存在；仅扫描到完整文件不能赋予恢复资格。恢复必须核对版本/完整内容/路径身份并按原状态登记或清理。
 
 pin 是具名持久集合，可重建 original loader、candidate、running backing 和 cleanup 责任。未知加载仍持 pin，实际进程消失需精确证明，不用 PID 查询缺席冒充永无迟到 worker。Retiring 后禁止重新取 pin，所有删除者服从同一状态。
+
+后继回收使用原 SourceWork 和 SQLite，不新建第二本 GC 账。A 恢复为 R1 后保存 B，原 R1 释放完成、B 成为 Unloaded 的同一事务先固定匹配 A.restore/R1/B 的真实释放事实；其它写者或 pin 尚未结束也保留该事实，不能等每 sandbox 的最新释放见证被覆盖后再猜。全部原使用闭合、B 完整持久接管后才进入 Retiring。保存的理由和结束事实绑定原材料，不依赖当前会话 terminal/epoch/operation；B 又被 C 接管或后续续期不得令旧计划 Corrupt 或永远不能结算。计划结构校验与新删除许可的现场物理核验分别证明。
+
+原退休 plan 保存 `bytes/work_binding/plan_binding/closure`；closure 的
+`release_binding` 绑定 producer/consumer 原释放事实，`restore_binding` 绑定原恢复
+intent/local/generation/activation（不含可关闭的 material_use，无 claim 时显式 null）。
+`reason` 严格区分原 terminal operation/epoch/workspace 与 superseded 的后继 work、
+完整 Full 及 manifest 摘要。后继还须连接原 execution_origin、已释放 R1 的 generation/VM
+及原 Pause 已登记成功结果；仅编号增长不提供接管。保存后保留历史 B 的这些绑定，
+不要求 B 永远是当前来源。上述摘要只命名原事实，不代替真实结束或业务资格。
+
+物理准备、删除及观察在管理锁和 SQL 事务外执行；返回后重核原 identity/work/plan，不把旧 World 整体写回。Held 与新引用竞争由同一事务裁定，Retiring 保留原计划和整笔未结额度，Settled 仅由匹配的实际回执建立。大文件删除保留消费标记、结果重放及必要 manifest 摘要；原 SourceWork/inbox 的有界元数据退休仍沿既有窗口规则。旧 Resume 不重新取得加载资格。
 
 恢复驱动独立于 HTTP future。证明待办在条件满足时可被选中、每个本地有限扫描终止、锁/队列不会让停止等待自己的 backing 删除；外部 I/O 永久阻塞不承诺最终完成。锁的机械保证不是这些业务推进的证明。
 
@@ -39,7 +51,7 @@ pin 是具名持久集合，可重建 original loader、candidate、running back
 
 ## 5. 显式卸载检查点
 
-当前服务只接受完整初始化的生命周期库。服务格式取共享 `HOST_STORE_FORMAT_VERSION`（本次核对为 23），核心检查点版本为 2；旧 `INTERNAL_INBOX_FORMAT_VERSION = 16` 只用于历史组件断言，不是另一生产模式。旧 FirstUnload/Source18 分阶段启用说明已被当前唯一格式替代；不保留自动迁移或旧读者备用逻辑。
+当前服务只接受完整初始化的生命周期库。服务格式取共享 `HOST_STORE_FORMAT_VERSION`（材料级退休格式为 24），核心检查点版本为 2；旧 `INTERNAL_INBOX_FORMAT_VERSION = 16` 只用于历史组件断言，不是另一生产模式。旧 HOST23、FirstUnload/Source18 分阶段启用说明不提供另一生产模式；不保留自动迁移或旧读者备用逻辑。SourceWork 的必填 `material_release` 精确保存 producer/consumer 两个原 `HostReleaseWitness` 或显式 null，单记录上界 4096 字节，并在每条原 SourceWork 预留中单独计入；缺字段不能按旧形状读取。
 
 检查点和原 SQL 投影支持多轮 Pause/Resume、来源工作及材料责任；`check_input_profile` 通过 `permits_resume_input` 核对原持久恢复记录，拒绝绕过准入的 Resume。结构校验包含原身份、epoch、计划、来源、资源和捕获未知状态，不能靠反序列化出一个 Paused 值声明物理卸载。原 WorldTransaction、输入日志、outbox、回执与剪枝共同承担重启恢复，不无限保留全局历史代替当前责任。
 
@@ -76,7 +88,7 @@ Node 已有原实例执行/只观察方法：实际执行要求原 action 与完
 
 - 验证已接入原后台的事务、私有执行许可、实际调用、原回执及新鲜授权观察；准入前尚无 native Pause 的失败已沿 `close_failed_unadmitted_unload` 关闭原 Inbox 并观察原执行，仍须证明无捕获 SourceWork 的退休和结果发布，不得伪造 Full 工作。
 - Full 已放行而 API 结束记录丢失时，不能由 worker 缺席或新连接 GET 推定旧调用已经结束。安全继续原 VM 的充分观察尚未闭合；显式 Destroy/TTL 的原终止计划也须能停止精确原 VMM、排空写者后收尾，不能被同一个未知 Full 永久挡住。
-- 原持久退休计划、精确删除许可、物理回执结算及 `maintain` 的材料/元数据收尾已有接线；卸载后 Destroy、终止和多轮恢复的引用关闭与最终退额仍须组合证明，真实回收证据按覆盖记录的具体场景复用。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
+- 原持久退休计划、精确删除许可、物理回执结算及 `maintain` 的材料/元数据收尾已有接线；终止与后继接管沿同一材料级流程，当前会话仍存活时也须能调度旧代。其引用关闭、固定原释放事实、重启续计划及最终退额仍须组合证明，真实回收证据按覆盖记录的具体场景复用。`retains_session` 保守保留不是完成；有界删除计划也不等于已获删除许可。
 - 禁止新引用与退休在原事务决定，File backing、loader、VMM 和写者的责任分别结束，才能按实际删除结果结算；TTL 不直接 unlink。
 
 当前已实现内容及检查范围以[覆盖记录](../proof-coverage.md)的精确版本为准。可先认领稳定同步入口的证明，不能把工程接线、受控物理输入或尚未验证的故障收尾作为已证业务前提。

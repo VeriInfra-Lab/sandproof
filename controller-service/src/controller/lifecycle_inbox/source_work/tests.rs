@@ -14,6 +14,7 @@ mod continue_application;
 mod continued_exit;
 mod end_pipeline;
 mod material_quota;
+mod material_retirement;
 mod original_continue;
 mod released_terminal;
 mod restore_exit;

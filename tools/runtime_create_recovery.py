@@ -19,7 +19,7 @@ import time
 # confirmation and retention-lane fields. This observer does not infer material
 # cleanup or consume the host's source-work/material configuration.
 LIFECYCLE_PROTOCOL_VERSION = 4
-CURRENT_VERSIONS = dict(internal_protocol=2, center_store=11, host_store=23)
+CURRENT_VERSIONS = dict(internal_protocol=2, center_store=11, host_store=24)
 CENTER_OPERATION_FIELDS = frozenset(('binding', 'center', 'retention',
     'accepted_version', 'acceptance_time', 'operation', 'running',
     'create_refusal', 'terminal', 'unloaded'))

@@ -132,6 +132,14 @@ impl Directory {
         Ok(self.read_file(name)?.map(|(_, bytes)| bytes))
     }
     pub(super) fn read_file(&self, name: &str) -> Result<Option<(File, Vec<u8>)>> {
+        self.read_file_with_limit(name, CONTROL_LIMIT)
+    }
+    pub(super) fn read_observation(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .read_file_with_limit("observation.json", u64::try_from(OBSERVATION_LIMIT)?)?
+            .map(|(_, bytes)| bytes))
+    }
+    fn read_file_with_limit(&self, name: &str, limit: u64) -> Result<Option<(File, Vec<u8>)>> {
         self.verify()?;
         let file = match fs::openat(
             &self.file,
@@ -148,12 +156,12 @@ impl Directory {
             || before.uid() != self.owner
             || before.nlink() != 1
             || before.mode() & 0o7777 != 0o600
-            || before.len() > CONTROL_LIMIT
+            || before.len() > limit
         {
             return Err("restore gate control file type, owner, mode or bound".into());
         }
         let mut bytes = Vec::new();
-        (&file).take(CONTROL_LIMIT + 1).read_to_end(&mut bytes)?;
+        (&file).take(limit + 1).read_to_end(&mut bytes)?;
         let after = file.metadata()?;
         if bytes.len() as u64 != before.len()
             || (before.len(), before.ctime(), before.ctime_nsec())

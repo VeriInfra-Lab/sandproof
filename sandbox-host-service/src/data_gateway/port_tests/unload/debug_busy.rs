@@ -81,7 +81,7 @@ impl Fixture {
                     |row| row.get::<_, i64>(0)
                 )
                 .unwrap(),
-            23
+            24
         );
         assert!(!connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='controller_internal_inbox')",
             [], |row| row.get::<_, bool>(0)).unwrap());

@@ -157,13 +157,12 @@ pub(super) fn record_release(
     {
         return Err(JournalError::CorruptStore);
     }
-    store_witness(
-        tx,
-        HostReleaseWitness {
-            context,
-            input_sequence: sequence,
-        },
-    )
+    let witness = HostReleaseWitness {
+        context,
+        input_sequence: sequence,
+    };
+    store_witness(tx, witness)?;
+    super::super::lifecycle_inbox::source_work::record_material_release(tx, &world, witness)
 }
 
 fn pinned(

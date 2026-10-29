@@ -60,15 +60,15 @@ def remaining(deadline):
 
 
 def checked_source_records(conn,host_config,deadline):
-    """Read only HOST23's pre-reserved rows; never adopt an aggregate layout."""
+    """Read only HOST24's pre-reserved rows; never adopt an aggregate layout."""
     remaining(deadline)
     policy=host_config['native']['maintenance']
     inbox=host_config['inbox']
     configuration=host_config['source_observation']
-    if conn.execute('SELECT version FROM controller_meta WHERE id=1').fetchone()!=(23,):
-        raise ValueError('HOST23 original source layout required')
+    if conn.execute('SELECT version FROM controller_meta WHERE id=1').fetchone()!=(24,):
+        raise ValueError('HOST24 original source layout required')
     q=inbox['max_sessions']*(policy['max_operations_per_sandbox']-2)
-    reserve=configuration['max_work_bytes']+4*configuration['max_configuration_bytes']         +8192+131072+4*16384+4096+8192
+    reserve=configuration['max_work_bytes']+4*configuration['max_configuration_bytes']         +8192+131072+4*16384+4096+8192+4096
     if not 0<q<=policy['capacity']['max_sql_rows'] or not 0<reserve<=min(16*1024**2,policy['capacity']['max_sql_value_bytes']):
         raise ValueError('bounded original per-work reservation required')
     header=conn.execute('SELECT count(*),max(length(state_json)),max(reserve_bytes) '
@@ -97,15 +97,40 @@ def checked_source_records(conn,host_config,deadline):
             if encoded!=b'null' or key is not None:
                 raise ValueError('vacant original source row is not empty')
             continue
-        if set(record)!={'work','observation','capture','restore','retirement'} or not isinstance(key,bytes) or len(key)!=32:
+        if set(record)!={'work','observation','capture','restore','retirement','material_release'} or not isinstance(key,bytes) or len(key)!=32:
             raise ValueError('complete original source work row required')
         binding=record['work']['requirement']['work_binding']
         anchor=json.dumps(record['work']['anchor'],ensure_ascii=False,separators=(',',':')).encode()
         if list(key)!=binding or hashlib.sha256(anchor).digest()!=key or key in seen:
             raise ValueError('original immutable work key differs or repeats')
+        checked_material_release(record['material_release'])
         material_source_charge(record)
         seen.add(key);records.append(record)
+    checked_material_relations(records)
     return records
+
+
+def checked_material_release(value):
+    """Validate the bounded saved shape, never synthesize a physical witness."""
+    if (type(value) is not dict or set(value) != {'producer','consumer'}
+            or len(json.dumps(value,separators=(',',':')).encode()) > 4096):
+        raise ValueError('complete bounded original material release facts required')
+    for witness in value.values():
+        if witness is None:
+            continue
+        if type(witness) is not dict or set(witness) != {'context','input_sequence'}:
+            raise ValueError('complete original release witness required')
+        context = witness['context']
+        if (type(context) is not dict or set(context) != {'position','expected_previous','binding'}
+                or type(context['binding']) is not dict
+                or set(context['binding']) != {'owner','sandbox','generation','vm','network'}):
+            raise ValueError('complete original release context required')
+        numbers = [witness['input_sequence'],context['position'],*context['binding'].values()]
+        if context['expected_previous'] is not None:
+            numbers.append(context['expected_previous'])
+        if any(type(number) is not int or not 0 <= number < 2**64 for number in numbers):
+            raise ValueError('original release witness integer domain required')
+    return value
 
 
 def material_source_charge(record):
@@ -119,6 +144,80 @@ def material_source_charge(record):
 def _material_digest_matches(value,expected):
     return (type(value) is list and len(value)==32
         and all(type(n) is int and 0<=n<=255 for n in value) and value==expected)
+
+
+def _material_json_digest(value):
+    return list(hashlib.sha256(json.dumps(value,ensure_ascii=False,
+        separators=(',',':')).encode()).digest())
+
+
+def checked_material_closure(record,closure):
+    """Saved binding checks, without inventing the physical facts they name."""
+    if type(closure) is not dict or set(closure) != {'release_binding','restore_binding','reason'}:
+        raise ValueError('complete original material closure required')
+    release=checked_material_release(record['material_release'])
+    restore=record['restore']
+    if release['producer'] is None or (restore is not None and release['consumer'] is None):
+        raise ValueError('original producer and restored consumer release facts required')
+    if not _material_digest_matches(closure['release_binding'],_material_json_digest(release)):
+        raise ValueError('original material release binding differs')
+    expected_restore=None if restore is None else _material_json_digest([
+        restore['intent'],restore['local'],restore['generation'],restore['activation']])
+    if ((expected_restore is None and closure['restore_binding'] is not None)
+            or (expected_restore is not None
+                and not _material_digest_matches(closure['restore_binding'],expected_restore))):
+        raise ValueError('original immutable restore binding differs')
+    reason=closure['reason']
+    if type(reason) is not dict:
+        raise ValueError('original material retirement reason required')
+    if reason.get('kind') == 'terminal':
+        if (set(reason) != {'kind','operation','epoch','workspace'}
+                or type(reason['operation']) is not dict
+                or set(reason['operation']) != {'sandbox','operation'}
+                or reason['operation']['sandbox'] != record['work']['anchor']['local']['sandbox']
+                or any(type(n) is not int or not 0 <= n < 2**64 for n in (
+                    *reason['operation'].values(),reason['epoch'],reason['workspace']))):
+            raise ValueError('complete original terminal reason identity required')
+    elif reason.get('kind') == 'superseded':
+        if (set(reason) != {'kind','successor_work_binding','successor_full_binding','manifest_digest'}
+                or restore is None
+                or any(not _material_digest_matches(reason[name],reason[name]) for name in (
+                    'successor_work_binding','successor_full_binding','manifest_digest'))):
+            raise ValueError('complete original successor reason bindings required')
+    else:
+        raise ValueError('unknown original material retirement reason')
+    return reason
+
+
+def checked_material_relations(records):
+    """Check frozen B bindings, even after current source has advanced to C."""
+    for record in records:
+        retirement=record['retirement']
+        if retirement is None:
+            continue
+        reason=retirement['plan']['closure']['reason']
+        if reason['kind'] != 'superseded':
+            continue
+        candidates=[row for row in records if row['work']['requirement']['work_binding']
+            == reason['successor_work_binding']]
+        if len(candidates) != 1:
+            raise ValueError('one retained original successor work binding required')
+        successor=candidates[0]
+        capture=successor['capture']
+        claim=record['restore']
+        source=successor['work']['anchor']
+        consumer=record['material_release']['consumer']['context']['binding']
+        if (successor is record or capture is None
+                or not _material_digest_matches(reason['successor_full_binding'],
+                    _material_json_digest(capture['full']))
+                or not _material_digest_matches(reason['manifest_digest'],capture['completed'])
+                or source['execution_origin'] != claim['intent']
+                or any(source['local'][name] != claim['local'][name] for name in ('sandbox','owner'))
+                or source['native']['generation'] != claim['generation']
+                or source['native']['current_vm'] != consumer['vm']
+                or source['request']['request']['binding']['session']
+                    != record['work']['anchor']['request']['request']['binding']['session']):
+            raise ValueError('frozen successor material or original restored execution differs')
 
 
 def _material_source_charge(record):
@@ -146,7 +245,7 @@ def _material_source_charge(record):
     if set(retirement)!=fields or len(json.dumps(retirement,separators=(',',':')).encode())>69632:
         raise ValueError('bounded complete material retirement record required')
     plan=retirement['plan']
-    if type(plan) is not dict or set(plan)!={'bytes','work_binding','plan_binding','quiescence'}:
+    if type(plan) is not dict or set(plan)!={'bytes','work_binding','plan_binding','closure'}:
         raise ValueError('complete original material plan required')
     raw=plan['bytes']
     if type(raw) is not list or not 0<len(raw)<=16384 or any(type(n) is not int or not 0<=n<=255 for n in raw):
@@ -158,15 +257,9 @@ def _material_source_charge(record):
     digest=list(hashlib.sha256(bytes(raw)).digest())
     if not _material_digest_matches(plan['work_binding'],work) or not _material_digest_matches(plan['plan_binding'],digest):
         raise ValueError('original material plan or Full work binding differs')
-    closure=plan['quiescence']
-    identity={'sandbox','owner','epoch','operation','workspace'}
-    statuses={'worker_drained','data_connections_drained','host_resources_reclaimed','external_pins_released'}
-    if (type(closure) is not dict or set(closure)!=identity|statuses
-            or any(type(closure[name]) is not int or not 0<=closure[name]<2**64 for name in identity)
-            or closure['sandbox']!=anchor['local']['sandbox'] or closure['owner']!=anchor['local']['owner']
-            or any(closure[name]!='Confirmed' for name in statuses)
-            or (restore is not None and restore['material_use'] is not False)):
-        raise ValueError('original closed material uses and exact certificate required')
+    checked_material_closure(record,plan['closure'])
+    if restore is not None and restore['material_use'] is not False:
+        raise ValueError('original restored material use remains open')
     if retirement['state']=='retiring':
         return reserved
     settlement=retirement['settlement']
@@ -1486,12 +1579,17 @@ class UnloadRuntime:
             self.services.processes.start('center')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
 
-    def restart_managers(self,deadline,*,original_unload=None):
+    def restart_managers(self,deadline,*,original_unload=None,host_env=None,on_managers_stopped=None):
         remaining(deadline)
         before=self.services.processes.observe()
         redis=self.services.processes.children['redis']
         self.services.processes.stop('center')
         self.services.processes.stop('host-0')
+        stopped_observation=None
+        if on_managers_stopped is not None:
+            if any(self.services.processes.children[name].poll() is None for name in ('center','host-0')):
+                raise ValueError('both original managers must have exited before the stopped observation')
+            stopped_observation=on_managers_stopped()
         operation_evidence=None
         if original_unload is not None:
             acceptance,unloaded=original_unload
@@ -1502,7 +1600,7 @@ class UnloadRuntime:
             if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs[name]:
                 raise ValueError('original manager configuration changed before restart')
         # No initialize/provision, Redis restart, fresh database or new layout.
-        self.services.processes.start('host-0')
+        self.services.processes.start('host-0',env=host_env)
         self.services.processes.start('center')
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
         after=self.services.processes.observe()
@@ -1510,8 +1608,11 @@ class UnloadRuntime:
             raise ValueError('original Redis process changed during manager restart')
         if any(before[name]['pid']==after[name]['pid'] for name in ('center','host-0')):
             raise ValueError('both original manager children must have exited and restarted')
-        return dict(before=before,after=after,original_configs=self.configs,redis_preserved=True,
+        result=dict(before=before,after=after,original_configs=self.configs,redis_preserved=True,
             original_unload_operation=operation_evidence)
+        if on_managers_stopped is not None:
+            result['original_managers_stopped_observation']=stopped_observation
+        return result
 
     def finish(self,report):
         # Only product GC and original accounting success permit stopping

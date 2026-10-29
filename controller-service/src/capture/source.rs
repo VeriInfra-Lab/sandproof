@@ -39,7 +39,8 @@ impl SourceObservationConfig {
                 // The same source can eventually require its exact original
                 // physical retirement plan. Reserve before any capture/Load,
                 // including unknown outcomes; do not rely on spare row bytes.
-                + super::MATERIAL_RETIREMENT_RECORD_MAX_BYTES)
+                + super::MATERIAL_RETIREMENT_RECORD_MAX_BYTES
+                + super::MATERIAL_RELEASE_RECORD_MAX_BYTES)
             + 8192
     }
 }

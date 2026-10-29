@@ -1,11 +1,10 @@
-//! Final terminal material cleanup uses the original application and Host port.
+//! Material cleanup uses the original application and Host port.
 //! The original saved plan is committed before any physical delete; unknown
 //! effects keep its full charge and are retried with those same bytes.
 use super::{
-    ApplicationError, ControllerApplication, ControllerHost, Inner, NeverCrash, core, map_journal,
+    ApplicationError, ControllerApplication, ControllerHost, NeverCrash, core, map_journal,
 };
 use crate::MaterialRetirementQuestion;
-use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
 use std::sync::Arc;
 
 struct MaterialRetirementGuard<'a, H: ControllerHost> {
@@ -22,56 +21,12 @@ impl<H: ControllerHost> Drop for MaterialRetirementGuard<'_, H> {
     }
 }
 
-fn routes_drained<H: ControllerHost>(inner: &Inner<H>, sandbox: core::SandboxId) -> bool {
-    inner
-        .data_revocations
-        .get(&sandbox.0)
-        .is_none_or(|signals| {
-            signals
-                .iter()
-                .all(|signal| *signal.borrow() && signal.receiver_count() == 0)
-        })
-        && inner
-            .data_drains
-            .get(&sandbox.0)
-            .is_none_or(super::DataLease::drained)
-}
-
-fn certificate<H: ControllerHost>(
-    inner: &Inner<H>,
-    question: &MaterialRetirementQuestion,
-) -> Result<QuiescenceCertificate, ApplicationError> {
-    let sandbox = question.request.sandbox();
-    if !routes_drained(inner, sandbox) {
-        return Err(ApplicationError::Busy);
-    }
-    let world = inner.journal.world().map_err(map_journal)?;
-    core::maintenance::retirement::validate_terminal_cleanup(&world, sandbox)
-        .map_err(|_| ApplicationError::Busy)?;
-    let row = world
-        .sandbox_record(sandbox)
-        .ok_or(ApplicationError::Busy)?;
-    // The journal separately verifies real writer-end, all native uses, exact
-    // release witness and external pins before accepting this certificate.
-    Ok(QuiescenceCertificate {
-        sandbox,
-        owner: row.owner,
-        epoch: row.epoch,
-        operation: row.current_operation.ok_or(ApplicationError::Busy)?.id,
-        workspace: row.workspace,
-        worker_drained: QuiescenceStatus::Confirmed,
-        data_connections_drained: QuiescenceStatus::Confirmed,
-        host_resources_reclaimed: QuiescenceStatus::Confirmed,
-        external_pins_released: QuiescenceStatus::Confirmed,
-    })
-}
-
 impl<H: ControllerHost> ControllerApplication<H> {
-    /// Advance only final terminal material obligations. This is called by the
+    /// Advance exact material obligations. This is called by the
     /// existing bounded maintenance driver, never a second GC controller.
     /// # Errors
     /// Busy users, unknown deletion or mismatched original evidence stay charged.
-    pub fn advance_terminal_lifecycle_material(
+    pub fn advance_lifecycle_material(
         &self,
         sandbox: core::SandboxId,
     ) -> Result<usize, ApplicationError> {
@@ -102,10 +57,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
             {
                 return Err(ApplicationError::Busy);
             }
-            inner.revoke_data(sandbox);
-            if !routes_drained(&inner, sandbox) {
-                return Err(ApplicationError::Busy);
-            }
+            // The original producer/consumer ConfirmRelease already saved
+            // their real drain/physical-end facts. Never revoke or wait for
+            // unrelated connections of a newer execution here.
             inner.active_sandboxes.insert(sandbox);
             inner.active_sessions.insert(session.clone());
             (questions, Arc::clone(&inner.host), session)
@@ -140,10 +94,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         let permit = {
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-            let closure = certificate(&inner, question)?;
             inner
                 .journal
-                .prepare_lifecycle_material_retirement(question, &bytes, closure, &mut NeverCrash)
+                .prepare_lifecycle_material_retirement(question, &bytes, &mut NeverCrash)
                 .map_err(map_journal)?
         };
         // Outside SQL and Inner: errors return without changing Retiring or its
@@ -152,10 +105,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .retire_lifecycle_material(&question.request, &bytes, &permit)
             .map_err(|_| ApplicationError::OutcomeUnknown)?;
         let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let closure = certificate(&inner, question)?;
         inner
             .journal
-            .settle_lifecycle_material_retirement(question, &observation, closure, &mut NeverCrash)
+            .settle_lifecycle_material_retirement(question, &observation, &mut NeverCrash)
             .map_err(map_journal)
     }
 }

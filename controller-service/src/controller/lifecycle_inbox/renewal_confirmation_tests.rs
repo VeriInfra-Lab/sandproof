@@ -482,14 +482,14 @@ fn current_renewal_fields_require_explicit_null_instead_of_missing_old_format_fi
 
 #[test]
 fn current_renewal_store_refuses_prior_lifecycle_formats_without_mutation() {
-    for prior in [19, 20, 21, 22] {
+    for prior in [19, 20, 21, 22, 23] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
         let journal = fixture::initialize(&path);
         assert_eq!(
             crate::LIFECYCLE_STORE_FORMAT_VERSION,
-            23,
-            "run only the normalized lifecycle format 23 candidate"
+            24,
+            "run only the current lifecycle format 24 candidate"
         );
         journal
             .journal

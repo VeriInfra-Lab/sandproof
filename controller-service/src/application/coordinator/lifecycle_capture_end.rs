@@ -24,9 +24,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .map_err(map_journal)?
                 .sandbox_records()
                 .iter()
-                .filter_map(|(sandbox, row)| {
-                    (row.terminal && row.phase == core::Phase::Destroyed).then_some(*sandbox)
-                })
+                .map(|(sandbox, _)| *sandbox)
                 .collect::<Vec<_>>();
             (values, std::sync::Arc::clone(&inner.host))
         };
@@ -45,9 +43,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     Err(error) => return Err(error),
                 }
             }
-            // The C collector independently acquires the same sandbox/session
-            // occupancy and rechecks every source, real pin and drain before I/O.
-            match self.advance_terminal_lifecycle_material(sandbox) {
+            // The material collector acquires the same sandbox/session guard
+            // and rechecks each original source's closure before physical I/O.
+            match self.advance_lifecycle_material(sandbox) {
                 Ok(_)
                 | Err(
                     ApplicationError::Busy
