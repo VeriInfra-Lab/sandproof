@@ -1,0 +1,8 @@
+
+// The original generic library one-shot call, with the real borrowed data type.
+pub fn proof_digest_blanket<D>(bytes: &[u8]) -> sha2::digest::Output<D>
+where
+    D: sha2::digest::FixedOutput + Default + sha2::digest::Update + sha2::digest::HashMarker,
+{
+    <D as sha2::Digest>::digest(bytes)
+}

@@ -65,6 +65,16 @@ def run(output, mode):
                 raise ValueError('fixed provider missing or different: '+name)
             providers[name] = dict(paths=[str(p) for p in matches], sha256=digest)
         rec['provider_sources'] = providers
+        standard_sources = {}
+        for kind, values in inv['std_sources'].items():
+            selector = [] if kind == 'production' else ['+'+inv['extraction_frontend']]
+            sysroot = Path(subprocess.check_output(['rustc', *selector, '--print', 'sysroot'], text=True).strip())
+            standard_sources[kind] = {}
+            for name, digest in values.items():
+                path = sysroot/'lib/rustlib/src/rust/library'/name
+                if sha(path) != digest: raise ValueError('fixed standard source differs: '+kind+'/'+name)
+                standard_sources[kind][name] = dict(path=str(path), sha256=digest)
+        rec['std_sources'] = standard_sources
         rec['inputs'] = base.snapshot(ROOT)
         rec['input_modes'] = {n:('100755' if (ROOT/n).stat().st_mode & 0o111 else '100644') for n in rec['inputs']}
         rec['source_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
@@ -143,6 +153,11 @@ def run(output, mode):
                 for row in providers.values() for p in row['paths'])
             if not rec['provider_sources_unchanged']:
                 rec.update(translation_complete=False, error='fixed providers changed during preflight')
+        if 'standard_sources' in locals():
+            rec['std_sources_unchanged'] = all(sha(Path(row['path'])) == row['sha256']
+                for group in standard_sources.values() for row in group.values())
+            if not rec['std_sources_unchanged']:
+                rec.update(translation_complete=False, error='fixed standard sources changed during preflight')
         rec['seconds'] = time.monotonic()-started
         (output/'result.json').write_text(json.dumps(rec, indent=2)+'\n')
     return rec
@@ -150,7 +165,7 @@ def run(output, mode):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode', choices=('source-work', 'standard-instances'), default='source-work')
+    parser.add_argument('--mode', choices=('source-work', 'standard-instances', 'blanket'), default='source-work')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True, help='existing shared proof-heavy lock')
     args = parser.parse_args(); os.umask(0o077)

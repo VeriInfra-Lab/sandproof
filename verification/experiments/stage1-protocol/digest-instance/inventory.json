@@ -28,9 +28,10 @@
   "templates": {
     "source-work-root.rs.in": "b075c45f3c3d58988fa495f1cf580bbb32ca4bade8f39bbda8b844ae55be6a36",
     "codec-roots.rs.in": "7ba5fe55a630eb422b7994fe16ff1a362c4586d4fa063fd38a43e2225fb5233e",
-    "README.md": "0698c2223c2553da93860d4b5f1b71d8aa25a5de072099d494e6be3f23458ff3"
+    "README.md": "a5f4ccd3a71968fdc67957b57b07fc890734609f3964c3f9470c8c94e97082c5",
+    "blanket-root.rs.in": "ae529f00e7fc603f80ed8635e671029cb8ba8b9b1563f4f9740603c2e9cc0ed0"
   },
-  "driver_sha256": "f731e015ba06888f48199c26b1da27cb2ad5a9b838fc0e562bc4b6b7205ad556",
+  "driver_sha256": "46f8e23bff631a6aa75fdb4a63b34d8b341f0426c2bd2f6cbfc33542ccfdbb3a",
   "provider_sources": {
     "sha2-0.10.9/Cargo.toml": "f5b86209df69360114aaee67a66c3fcd31d8c840b8f34b9ad383aacd63cd15da",
     "sha2-0.10.9/tests/mod.rs": "61be596fd9b45a8db345950ff2ed6f87eaf4d239ac156885f36e819da0597644",
@@ -158,6 +159,30 @@
         }
       ],
       "scope": "Actual StandardConfigRead/StandardInboxSave digest methods through thin constructor-and-forward roots; no hash or Connection model supplied"
+    },
+    "blanket": {
+      "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+      "roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_blanket"
+      ],
+      "include": [
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_blanket",
+        "digest::digest::_::digest",
+        "generic_array::GenericArray",
+        "core::convert::_::as_ref"
+      ],
+      "opaque": [],
+      "retained_actual_roots": [
+        "digest::digest::{impl digest::digest::Digest<Clause0_Clause1_OutputSize, Clause0_Clause1_Clause0_ArrayType> for D}::digest"
+      ],
+      "instrumentation": [
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+          "root_file": "blanket-root.rs.in",
+          "root_marker": "proof_digest_blanket"
+        }
+      ],
+      "scope": "Original generic Digest::digest body and original AsRef implementations; finalizer binding may remain unmodeled; not fixed Sha256 computation proof"
     }
   },
   "minimum_provider_request": {
@@ -185,7 +210,24 @@
       "serde/SQL/transaction/material/authorization facts"
     ],
     "main_must_assign_scope_and_owner": true,
-    "adopted": false
+    "adopted": false,
+    "one_shot_decomposition": {
+      "source": "digest-0.10.7/src/digest.rs:124",
+      "actual_captured_sequence": [
+        "Default::default",
+        "AsRef::as_ref",
+        "Update::update",
+        "Digest::finalize"
+      ],
+      "generic_view_remaining_binding": "digest-0.10.7/src/digest.rs:85 finalize",
+      "concrete_sha2_state_bindings_still_open": true,
+      "generic_view_is_not_concrete_sha256_computation_proof": true,
+      "generic_array32_conversion_source": [
+        "generic-array-0.14.7/src/impls.rs:139",
+        "generic-array-0.14.7/src/lib.rs:653 unsafe transmute/ptr::read"
+      ],
+      "no_new_models_or_theorems": true
+    }
   },
   "actual_root_disappearance_requires_rejection": true,
   "generators_only_not_lean_proof": true,
@@ -206,6 +248,22 @@
     },
     "models_adopted": false,
     "template_axioms_imported": false,
-    "lean_files_checked": 0
+    "lean_files_checked": 0,
+    "blanket": {
+      "transparent_functions": 3,
+      "external_functions": 1,
+      "external_globals": 0,
+      "external_types": 0,
+      "remaining_function": "digest::digest::Digest blanket finalize"
+    }
+  },
+  "extraction_frontend": "nightly-2026-08-18",
+  "std_sources": {
+    "production": {
+      "core/src/convert/mod.rs": "45a0dd7cb34dcd592018f5b463493bf83254aaf3a2c909152060be8a4ea9b873"
+    },
+    "extraction": {
+      "core/src/convert/mod.rs": "e3e2314f58cede71077d46befcab3a381f2082130e0672b1bf01f79b5199347c"
+    }
   }
 }

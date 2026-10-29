@@ -31,6 +31,13 @@ source-work 视图保留原私有 digest 和既有载体构造共两透明函数
 本包不建议逐个任填62个模板，更不把整个自有 source_work/codec 函数设为可信。
 V3 仍负责实际三个函数的参数、值包装和调用对应。
 
+另有 blanket 独立视图：借用切片薄根转调原泛型 Digest::digest，透明捕获原
+default→AsRef→update→finalize 控制流及两个原标准 AsRef 转发。GenericArray 直接
+保留原 data 关联类型字段，无外部类型或库常量；四函数中三透明，只有原 finalize
+尚为未填外部体。这是该控制流的抽取，不是其 Lean 对应或具体 Sha256 状态的算法证明。
+具体实例的 default/update/finalize 及原 GenericArray32 转换仍须由唯一库绑定落实。
+库的转换源码实际使用 generic-array::transmute/ptr::read，不能用构造值往返替代它。
+
 32字节值往返不证明执行过 SHA256。即使该窄库绑定落实，JSON 正文选择、原文件和
 材料、SQL 参数/列与同一事务、提交未知/重启等仍是独立义务。
 
@@ -49,14 +56,19 @@ V3 仍负责实际三个函数的参数、值包装和调用对应。
 ```sh
 python3 verification/experiments/stage1-protocol/digest-instance/preflight.py --mode source-work --output /private/proof/source-digest --lock /private/proof/shared-proof.lock
 python3 verification/experiments/stage1-protocol/digest-instance/preflight.py --mode standard-instances --output /private/proof/standard-digest --lock /private/proof/shared-proof.lock
+python3 verification/experiments/stage1-protocol/digest-instance/preflight.py --mode blanket --output /private/proof/digest-blanket --lock /private/proof/shared-proof.lock
 ```
 
 外层限制四核，使用同一既有共享重锁；每个输出独立源码/Cargo target/.lake/build。
-核对清单列出的原源、锁文件、库源、固定二进制和驱动，记录完整源码字节与执行位；
+核对清单列出的原源、锁文件、库源、两版标准 AsRef 原源、固定二进制和驱动，记录完整源码字节与执行位；
 私有薄根衍生及所有清单输入结束复核。opaque/exclude/跳过借用/类型检查及单态化选项
 不得另加。capture_complete/translation_complete 只表示这些阶段及实际根准入；
 proof_complete 始终 false。固定抽取前端的原 AtomicCounter fetch_update 弃用警告
 保留，不能称普通检查无警告通过；不为消去警告修改无关生产代码。
+
+较宽的泛型库入口曾在固定前端查询 InvalidBufferSize 构造器 fn_sig 时 panic。
+原失败保留；缩小根和 include 后才得到上述 blanket 视图，没有更换工具、删除生成字段、
+改写库源码或把该编译失败计作性质反例。原 c462e94a 两个公开视图保持原身份。
 
 普通/原生仍归 ning，公共模型/登记/覆盖和正式验收由主控统一采用，不追加当前固定
 窗口或新开迁移 PR。完整实际 SHA/JSON/SQL、持久收件和完整 V3 保持开放。
