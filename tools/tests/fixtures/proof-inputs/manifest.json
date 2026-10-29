@@ -6502,6 +6502,7 @@
   "archived_paths": [
     "Cargo.lock",
     "Cargo.toml",
+    "SandboxModel.lean",
     "controller-core/Cargo.toml",
     "controller-core/src/auxiliary.rs",
     "controller-core/src/checkpoint.rs",
@@ -7774,7 +7775,7 @@
     "verification/use-inventory/config.json",
     "verification/use-inventory/responsibilities.json"
   ],
-  "archive_sha256": "5ca96dd4c781a9555144d6a93c21a2e008826da61f594d737e7c129e30189925",
+  "archive_sha256": "7858b845f60d8e7d9531b1303a572c9d10a01d8c2c7fec6684910b5dfae0c5dc",
   "source_repository": "https://github.com/VeriInfra-Lab/sandproof",
-  "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing."
+  "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing. SandboxModel.lean is archived at the same historical source version so adding current root imports does not change this fixture."
 }
