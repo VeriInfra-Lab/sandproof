@@ -1,0 +1,8 @@
+// Thin proof root; original snapshot checker remains the sole algorithm.
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(crate) fn proof_native_create_snapshot_completed(
+    snapshot: &NativeCreateSnapshot,
+    local: InternalLocalBinding,
+) -> bool {
+    snapshot.has_completed_original_execution(local)
+}

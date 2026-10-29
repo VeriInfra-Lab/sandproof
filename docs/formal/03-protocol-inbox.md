@@ -159,3 +159,16 @@ record 后完整值校验仍是必要条件，record 成功本身不保证后态
 Host async 接收器内联四字段构造的实际连接须单列。Renew 在 record 之后可能返回
 错误，封套取自调用时捕获的 state；不能据后续错误推出此前未记录，或把构造关系
 当成整个接收器、JSON/Serde、SQL 事务及提交未知/重启的证明。
+
+## 9. 原生快照的原操作完成条件
+
+[快照完成条件切片](../../verification/experiments/stage1-protocol/native-readiness/README.md)
+只对应实际 `NativeCreateSnapshot::has_completed_original_execution`，以原snapshot与
+local binding的完整值为输入。owner、运行状态、terminal、代次、VM字段存在性、
+不确定动作以及原操作号/epoch/类别/成功状态分别按原判断保留，不能以同一个成功标记
+代替所有条件。Create对应第一代，Resume仍须满足其实际代次关系。
+
+这个检查不核对lifetime内容、binding中的sandbox或某个具体VM身份；原
+`snapshot.rs`从同一个World/sandbox取得数据、核对历史Running结果、期限及独立来源/
+凭据/探测的责任须分别连接。纯值条件成立不表示整体Ready、VM存在、已授权或已经
+耐久执行，不把整个snapshot来源、handler或收件事务列为可信。

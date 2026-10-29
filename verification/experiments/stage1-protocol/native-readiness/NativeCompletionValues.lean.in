@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.NativeCompletionModel
+
+open Aeneas Aeneas.Std SandproofNativeReadinessRust
+open sandbox_controller_core
+namespace SandboxModel.Stage1Protocol.NativeReadiness
+open scoped Classical
+noncomputable section
+
+def sampleBinding : LocalBinding := ⟨1#u64, 2#u64, 3#u64⟩
+def sampleOperation : Operation := ⟨3#u64, 5#u64, .Create, .Succeeded⟩
+def sampleCreate : Snapshot := {
+  owner := 2#u64, phase := .Running, terminal := false, epoch := 5#u64, generation := 1#u64,
+  current_vm := some 4#u64, current_operation := some sampleOperation,
+  lifetime := none, uncertain_actions := alloc.vec.Vec.from [] (by simp) }
+def sampleResume : Snapshot := {sampleCreate with
+  generation := 2#u64,
+  current_operation := some {sampleOperation with kind := .Resume}}
+def pendingSnapshot : Snapshot := {sampleCreate with
+  current_operation := some {sampleOperation with status := .Pending}}
+def uncertainEffect : model.EffectId := ⟨⟨.ActivateVm 1#u64 5#u64 1#u64 4#u64⟩, 1#u64⟩
+
+def rejectedSnapshots : List Snapshot := [
+  {sampleCreate with owner := 7#u64},
+  {sampleCreate with phase := .Starting},
+  {sampleCreate with terminal := true},
+  {sampleCreate with generation := 0#u64},
+  {sampleCreate with current_vm := none},
+  {sampleCreate with uncertain_actions := alloc.vec.Vec.from [uncertainEffect] (by scalar_tac)},
+  {sampleCreate with current_operation := none},
+  {sampleCreate with current_operation := some {sampleOperation with id := 7#u64}},
+  {sampleCreate with current_operation := some {sampleOperation with epoch := 7#u64}},
+  {sampleCreate with current_operation := some {sampleOperation with kind := .Pause}},
+  {sampleCreate with current_operation := some {sampleOperation with kind := .Kill}},
+  {sampleCreate with generation := 2#u64},
+  {sampleResume with generation := 1#u64},
+  pendingSnapshot,
+  {sampleCreate with current_operation := some {sampleOperation with status := .OutcomeUnknown}},
+  {sampleCreate with current_operation := some {sampleOperation with status := .Compensating .InternalFailure}},
+  {sampleCreate with current_operation := some {sampleOperation with status := .Failed .Cancelled}}]
+
+
+end
+end SandboxModel.Stage1Protocol.NativeReadiness
