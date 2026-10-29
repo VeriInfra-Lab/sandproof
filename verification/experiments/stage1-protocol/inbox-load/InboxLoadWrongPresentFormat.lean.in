@@ -1,0 +1,83 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat
+noncomputable section
+open Values
+
+theorem actual_prefix_rejects {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+    (state afterExists afterVersion after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 24#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  simp [existsStatement] at first
+  simp [versionStatement] at second
+  simp [sourceStatement] at third
+  simp [load_using, first, second, third, LIFECYCLE_STORE_FORMAT_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  split
+  · rename_i _ equality
+    have different : (24#i64 : I64) ≠ 23#iscalar := by decide
+    exact False.elim (different equality)
+  · simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+
+def prefixTrace : Trace :=
+  [.boolQuery existsStatement, .integerQuery versionStatement, .boolQuery sourceStatement]
+
+theorem actual_normal_rejected (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic normalEffects trace =
+      .ok (.Err .CorruptStore, trace ++ prefixTrace) := by
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  apply actual_prefix_rejects saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic normalEffects trace
+    (trace ++ [.boolQuery existsStatement])
+    ((trace ++ [.boolQuery existsStatement]) ++ [.integerQuery versionStatement])
+    (trace ++ prefixTrace)
+  · simp [normalEffects, effects, existsDifferent]
+  · simp [normalEffects, effects, policyEffects, versionDifferent, LIFECYCLE_STORE_FORMAT_VERSION]
+  · simp [normalEffects, effects, sourceDifferent, prefixTrace, List.append_assoc]
+
+theorem model_normal_accepted (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ normalEffects trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ completeTrace InboxValidation.Values.normal) :=
+  normal_model_loaded trace
+
+theorem violates_full_contract : ¬ FullLoadContract load_using := by
+  intro contract
+  have predicted := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic normalEffects ComposedConfig.standard_graphic_contract normal_represented []
+  dsimp only at predicted
+  rw [actual_normal_rejected, model_normal_accepted] at predicted
+  simp only [Result.ok.injEq, Prod.mk.injEq, reduceCtorEq, false_and] at predicted
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat.actual_prefix_rejects
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat.actual_normal_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat.model_normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.WrongPresentFormat.violates_full_contract

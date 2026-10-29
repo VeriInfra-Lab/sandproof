@@ -378,7 +378,7 @@ impl Inbox {
         false
     }
 
-    fn session_index(&self, id: &SessionId) -> Option<usize> {
+    pub(super) fn session_index(&self, id: &SessionId) -> Option<usize> {
         for (index, session) in self.sessions.iter().enumerate() {
             if session.id == *id {
                 return Some(index);

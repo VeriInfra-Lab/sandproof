@@ -94,7 +94,7 @@ theorem normal_model_loaded (trace : Trace) :
   change loadView normalEffects validation budget trace = _
   simp only [loadView, existsReturns, versionReturns, sourceReturns, attempt, bind_tc_ok]
   simp [LIFECYCLE_STORE_FORMAT_VERSION]
-  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  have currentLiteral : ((24#64)#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv, current_normal, completeTrace,
     currentTrace, capacityTrace, bodyTrace, afterDigest, afterEncoding, List.append_assoc]
 

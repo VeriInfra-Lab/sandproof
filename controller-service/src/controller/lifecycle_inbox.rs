@@ -12,6 +12,7 @@ pub use audit::{LifecycleAudit, LifecycleAuditOperation};
 mod model;
 mod pending;
 mod readiness;
+mod recording;
 mod refusal;
 pub(in crate::controller) mod released_execution;
 pub(in crate::controller) mod source_work;
@@ -235,47 +236,24 @@ impl ControllerJournal {
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let loaded = codec::load(&tx)?;
-        let mut inbox = loaded.ok_or(JournalError::UnsupportedStore)?;
-        authenticated(&inbox, intent, context)?;
-        if let Some((s, e)) = inbox.find(intent)? {
-            return Ok(inbox.state(s, e));
-        }
-        if matches!(intent.request.operation, LifecycleOperation::Destroy {})
-            && inbox
-                .sessions
-                .iter()
-                .find(|session| session.id == intent.request.binding.session)
-                .and_then(|session| session.local)
-                .is_some_and(|local| {
-                    tx.world().maintenance_state().is_some_and(|state| {
-                        state.host_slots().iter().any(|(_, slot)| {
-                            slot.binding.sandbox == local.sandbox
-                                && slot.phase == core::maintenance::slots::HostSlotPhase::Releasing
-                        })
-                    })
-                })
-        {
-            // The original physical release remains responsible for this
-            // position. Retry this SAME canonical Destroy after its confirmation.
-            return Err(JournalError::UnresolvedAction);
-        }
-        let (s, e) = inbox.record(intent)?;
-        if matches!(intent.request.operation, LifecycleOperation::Destroy {})
-            && let Some(local) = inbox.sessions[s].local
-        {
-            internal_inbox::terminate_local(&tx, &self.namespace, local)?;
-            let operation = tx
-                .world()
-                .sandbox_record(local.sandbox)
-                .ok_or(JournalError::CorruptStore)?
-                .current_operation
-                .ok_or(JournalError::CorruptStore)?
-                .id;
-            inbox.sessions[s].entries[e].local_operation = Some(operation);
-        }
-        codec::save(&tx, &inbox)?;
-        let state = inbox.state(s, e);
+        let outcome = {
+            let mut effects = recording::StandardRecord {
+                tx: &tx,
+                namespace: &self.namespace,
+            };
+            recording::record_using::<
+                native_retirement::StandardRetirementEncoding,
+                model::StandardTerminalEncoding,
+                renewal_confirmation::StandardRenewalEncoding,
+                unload_resolution::StandardUnloadEncoding,
+                crate::capture::StandardGraphicBytes,
+                _,
+            >(&mut effects, intent, context)?
+        };
+        let state = match outcome {
+            recording::RecordOutcome::Replay(state) => return Ok(state),
+            recording::RecordOutcome::Recorded(state) => state,
+        };
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
         crashes.hit(CrashPoint::AfterCommit)?;

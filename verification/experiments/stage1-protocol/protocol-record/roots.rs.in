@@ -1,0 +1,15 @@
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_protocol_record_using<
+    R: RetirementEncoding,
+    T: TerminalEncoding,
+    N: RenewalEncoding,
+    U: UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: RecordEffects,
+>(
+    effects: &mut E,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<RecordOutcome, JournalError> {
+    record_using::<R, T, N, U, B, E>(effects, intent, context)
+}

@@ -136,10 +136,10 @@ def loadView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
       attempt (io.query_bool afterVersion sourceStatement) fun source afterSource =>
         if source != (version = LIFECYCLE_STORE_FORMAT_VERSION) then corrupt afterSource
         else if hasInbox then do
-          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          let current ← match version with | 24#iscalar => Result.ok true | _ => .ok false
           if current then currentView io validate budget afterSource else corrupt afterSource
         else do
-          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          let current ← match version with | 24#iscalar => Result.ok true | _ => .ok false
           if current then corrupt afterSource else .ok (.Ok none, afterSource)
 
 def DecodedStringsRepresentable {E : Type} (io : InboxLoadEffects E) : Prop :=

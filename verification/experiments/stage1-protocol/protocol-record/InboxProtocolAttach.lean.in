@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecordModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+
+theorem attach_refines {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (state : E)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < inbox.sessions.val[s.val].entries.val.length) :
+    attach_destroy io state inbox intent s e = attachView io inbox intent s e state := by
+  obtain ⟨session, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.sessions s sb)
+  obtain ⟨entry, entryIndexed, entrySame⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.sessions.val[s.val].entries e eb)
+  obtain ⟨⟨sessionMut, backSession⟩, mutIndexed, sessionSame, sessionBack⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec inbox.sessions s sb)
+  obtain ⟨⟨entryMut, backEntry⟩, entryMutIndexed, entryMutSame, entryBack⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec inbox.sessions.val[s.val].entries e eb)
+  cases operation : intent.request.operation <;>
+    simp [attach_destroy, attachView, destroy, operation]
+  simp only [indexed, bind_tc_ok, same]
+  cases bindingEq : inbox.sessions.val[s.val].local with
+  | none => simp
+  | some binding =>
+    simp only []
+    apply congrArg (fun continuation => Bind.bind (io.terminate_local state binding) continuation)
+    funext returned
+    rcases returned with ⟨terminated, afterTerminate⟩
+    cases terminated with
+    | Err error => simp [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok accepted =>
+      cases accepted
+      simp only [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+      apply congrArg (fun continuation => Bind.bind
+        (io.current_operation afterTerminate binding.sandbox) continuation)
+      funext returned
+      rcases returned with ⟨operationId, afterCurrent⟩
+      cases operationId with
+      | none => simp [uncurry_apply_pair, core.option.Option.ok_or,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some operationId =>
+        simp only [uncurry_apply_pair, core.option.Option.ok_or, bind_tc_ok]
+        rw [mutIndexed]
+        simp only [bind_tc_ok, uncurry_apply_pair, sessionSame]
+        rw [entryMutIndexed]
+        simp only [bind_tc_ok, uncurry_apply_pair, entryIndexed,
+          entrySame, entryMutSame, sessionBack, entryBack, InboxAppend.replaceSession, bindingEq]
+
+end SandboxModel.Stage1Protocol.ProtocolRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.attach_refines
