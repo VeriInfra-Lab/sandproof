@@ -1,0 +1,21 @@
+fn owner_for(
+    inbox: &Inbox,
+    world: &core::World,
+    owner: &sandproof_protocol::TenantId,
+) -> Result<core::TenantId, JournalError> {
+    if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
+        return Ok(row.local);
+    }
+    let highest = world
+        .sandbox_records()
+        .iter()
+        .map(|(_, s)| s.owner.0)
+        .max()
+        .unwrap_or(0)
+        .max(inbox.owner_high_water);
+    Ok(core::TenantId(
+        highest
+            .checked_add(1)
+            .ok_or(JournalError::IdentifierExhausted)?,
+    ))
+}

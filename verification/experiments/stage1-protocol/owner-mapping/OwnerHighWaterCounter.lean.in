@@ -1,0 +1,85 @@
+import SandproofStage1OwnerMapping.Funs
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater
+open SandboxModel.Stage1Protocol.OwnerMapping
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.owner_for
+abbrev ownerLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+abbrev ownerBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body
+abbrev maxLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+abbrev maxBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body
+theorem owner_unfold (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    ownerLoop inbox world owner index = (do
+      let step ← ownerBody inbox world owner index
+      match step with
+      | .done value => .ok value
+      | .cont next => ownerLoop inbox world owner next) := by
+  unfold ownerLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (ownerBody inbox world owner index))
+  funext step
+  cases step <;> rfl
+
+
+theorem max_unfold (records : Slice Record) (highest : U64) (index : Usize) :
+    maxLoop records highest index = (do
+      let step ← maxBody records highest index
+      match step with
+      | .done value => .ok value
+      | .cont (next, nextIndex) => maxLoop records next nextIndex) := by
+  unfold maxLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (maxBody records highest index))
+  funext step
+  cases step with
+  | done value => rfl
+  | cont pair => cases pair; rfl
+
+
+
+theorem max_end (records : Slice Record) (highest : U64) (index : Usize)
+    (outside : records.val.length ≤ index.val) : maxLoop records highest index = .ok highest := by
+  rw [max_unfold]
+  have missing : ¬ index < Slice.len records := by scalar_tac
+  simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body, missing]
+
+theorem observed : run (noOwners 64#u64) emptyWorld "new-owner" = .ok (.Ok 1#u64) := by
+  change ownerLoop (noOwners 64#u64) emptyWorld "new-owner" 0#usize = _
+  rw [owner_unfold]
+  have scanned := max_end (alloc.vec.Vec.deref emptyWorld.sandboxes.entries) 0#u64 0#usize
+    (by simp [emptyWorld, emptyStore, alloc.vec.Vec.deref])
+  unfold maxLoop at scanned
+  have body : ownerBody (noOwners 64#u64) emptyWorld "new-owner" 0#usize = .ok (.done (.Ok 1#u64)) := by
+    have missing : ¬ 0#usize < alloc.vec.Vec.len (noOwners 64#u64).owners := by simp [noOwners, inbox]
+    simp only [ownerBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body,
+      missing, ite_false, sandbox_controller_core.model.World.sandbox_records,
+      sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+    rw [scanned]
+    simp only [bind_tc_ok, lift]
+    rw [allocation_checked]
+    have success : allocation (0#u64).val = .Ok 1#u64 := allocation_known 0 1#u64 (by scalar_tac) (by scalar_tac)
+    rw [success]
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  rw [body]
+  simp only [bind_tc_ok]
+
+theorem violates_full_contract : ¬ FullOwnerContract run := by
+  intro contract
+  have required := contract (noOwners 64#u64) emptyWorld "new-owner"
+  have mathematical : expected (noOwners 64#u64) emptyWorld "new-owner" = .Ok 65#u64 := by
+    change allocation 64 = _
+    exact allocation_known 64 65#u64 (by scalar_tac) (by scalar_tac)
+  have different : Result.ok (.Ok 1#u64 : core.result.Result U64 JournalError) =
+      Result.ok (.Ok 65#u64 : core.result.Result U64 JournalError) :=
+    observed.symm.trans (required.trans (congrArg Result.ok mathematical))
+  simp at different
+end SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.owner_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.max_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.max_end
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.violates_full_contract

@@ -1,0 +1,639 @@
+{
+  "schema": 1,
+  "kind": "unadopted-owner-mapping-proof-candidate",
+  "production_adopted": false,
+  "shared_Ord_binding_adopted": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "full_v3": false,
+  "base_commit": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "source": "controller-service/src/controller/lifecycle_inbox.rs",
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183"
+  },
+  "candidate_original_body_sha256": "063fe544d6c47326830af85f124b02f8e8da3bdb643bb23c7c7ac10a90840e2f",
+  "candidate_body_sha256": "a09cdf3f8a21d641beb6cc55c0bfffa92293bf2c4da89afa745c9518f20b1319",
+  "root": "sandproof_controller_service::controller::lifecycle_inbox::proof_owner_for",
+  "retained_actual_root": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+  "variants": {
+    "candidate": {
+      "mutation": null,
+      "seed": "OwnerMappingExamples",
+      "templates": [
+        "OwnerMappingLibrary",
+        "OwnerMapping",
+        "OwnerMappingExamples"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      ],
+      "generated_raw_files": {
+        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
+        "Funs.lean": "bdb536a00bcb9c96a8a8d81d88afb8b5915da4d93945a374b30c075bc8a515bd"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/OwnerMapping.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_exists",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_end",
+        "SandboxModel.Stage1Protocol.OwnerMapping.tenant_eq",
+        "SandboxModel.Stage1Protocol.OwnerMapping.expected_cons",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_refines",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_complete",
+        "SandboxModel.Stage1Protocol.OwnerMapping.normal_empty_allocates_one",
+        "SandboxModel.Stage1Protocol.OwnerMapping.normal_full_owner_match",
+        "SandboxModel.Stage1Protocol.OwnerMapping.repeated_first_match",
+        "SandboxModel.Stage1Protocol.OwnerMapping.world_maximum_all_records",
+        "SandboxModel.Stage1Protocol.OwnerMapping.high_water_not_omitted",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_exhausted",
+        "SandboxModel.Stage1Protocol.OwnerMapping.lookup_before_allocator_exhaustion",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-owner-guard": {
+      "mutation": {
+        "before": "if &row.external == owner {",
+        "after": "if &row.external == owner || owner_index < inbox.owners.len() {"
+      },
+      "seed": "OwnerMappingCounter",
+      "templates": [
+        "OwnerGuardCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      ],
+      "generated_raw_files": {
+        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
+        "Funs.lean": "675d3e1a0a19d21527f7cc1170e899e77378faab98e801ec6cb4610983169f8a"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.tenant_eq",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.bypasses_full_owner",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.observed",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.violates_full_contract",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-world-maximum": {
+      "mutation": {
+        "before": "highest = highest.max(records[record_index].1.owner.0);",
+        "after": "highest = highest.max(inbox.owner_high_water);"
+      },
+      "seed": "OwnerMappingCounter",
+      "templates": [
+        "OwnerMappingLibrary",
+        "OwnerWorldMaximumCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      ],
+      "generated_raw_files": {
+        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
+        "Funs.lean": "7a88893d6388b4a0ae4e6a0aa21ac6b896f08824d6ee5aaad66b9189d26dd8ee"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongWorldMaximum.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongWorldMaximum.max_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongWorldMaximum.ignores_record_owners",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongWorldMaximum.observed",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongWorldMaximum.violates_full_contract",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-high-water": {
+      "mutation": {
+        "before": "let mut highest = inbox.owner_high_water;",
+        "after": "let mut highest = 0_u64;"
+      },
+      "seed": "OwnerMappingCounter",
+      "templates": [
+        "OwnerMappingLibrary",
+        "OwnerHighWaterCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      ],
+      "generated_raw_files": {
+        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
+        "Funs.lean": "a7ae2622e4faa622c5e8e65a0060462559e41ba8d99fb472d22cab0099fd0982"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.max_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.max_end",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.observed",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongHighWater.violates_full_contract",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-overflow": {
+      "mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))"
+      },
+      "seed": "OwnerMappingCounter",
+      "templates": [
+        "OwnerMappingLibrary",
+        "OwnerOverflowCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      ],
+      "generated_raw_files": {
+        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
+        "Funs.lean": "fd0c35b7a526f604533afe8e24aa6a2fd2ebc9ba21e9aac9f742cc95a814f479"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.max_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.max_end",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.wrapped_zero",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.observed",
+        "SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.violates_full_contract",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    }
+  },
+  "common_templates": [
+    "OwnerMappingModel",
+    "OwnerMappingValues"
+  ],
+  "std_cmp_sources": {
+    "production": {
+      "sha256": "b8ae0403b4787172b39eef6a69cb3676846a956fa8b7d16defefb4a9d86ab195",
+      "max_body_sha256": "436570054f1717ef7416ec94582de484734e50ede0d9584d1086395fa27830af"
+    },
+    "extraction": {
+      "sha256": "99d9443dfc103cf0acffb7a9462cd9723364f7bf072651123bd4910934ee7dbe",
+      "max_body_sha256": "436570054f1717ef7416ec94582de484734e50ede0d9584d1086395fa27830af"
+    }
+  },
+  "fixed_library_model_sources": {
+    "Core/Cmp.lean": "86477b7a8b90def126c4e482ecb68bf4415848d7ea625c2c4de1d126af54d970",
+    "Scalar/EqOrd.lean": "8b060ad91a22a8cd4288c0c0a62811e4ec207ad2f79b7ff69c76ecdae594ad3c"
+  },
+  "providers": {
+    "verification/experiments/stage1-protocol/inbox-validation/TypesExternal.lean.in": "3dd360d7d6b405f4f250c43c18b92f5663e403800feed7924c12587d3e07bbd8",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9"
+  },
+  "templates": {
+    "OwnerMappingValues.lean.in": "f9149b6e39b1e2ff267d4dea762926c59140c4f618e055e647ff78b9741baa81",
+    "TypesExternal.lean.in": "f6acc05e3805f7e42121089911e16091dd44af3587edd5ea9dc490a4c6dd17ca",
+    "candidate-owner-for.rs.in": "a09cdf3f8a21d641beb6cc55c0bfffa92293bf2c4da89afa745c9518f20b1319",
+    "native-common.rs.in": "ba67e8b1f7f17fb252d2f4e417f5c34fd5b6dccdf050e66d38630c14752cccb3",
+    "OwnerOverflowCounter.lean.in": "1985a20b00ae8aeeaffcf8f2d96d4638136bbd81026ff6711beab48fb582e20e",
+    "OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
+    "OwnerMappingExamples.lean.in": "5fbce2fefadd8c34ce525807949f33a9db7ee7c7ebdb14cf0b77953ca48f6071",
+    "root.rs.in": "2d15255c7b1ac61f18e9a6e9bd19bc4230d0334b3da436c5a3acf55419f3c14d",
+    "OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
+    "OwnerGuardCounter.lean.in": "32d44dfe44217f12c5d62973c436232a8e3894144c22d2b254d130c8a33be1a0",
+    "OwnerHighWaterCounter.lean.in": "6ae4ddf4a54dbd3bb669c18d8e8c0ce3c1e7c5b45a37c438fa40f2e36d08e892",
+    "original-owner-for.rs.in": "063fe544d6c47326830af85f124b02f8e8da3bdb643bb23c7c7ac10a90840e2f",
+    "OwnerMapping.lean.in": "d774ce8fadd7a4841d6baf39e712496b59c49a392caf210de499d4aae3468170",
+    "FunsExternal.lean.in": "92e7b0610f5e6c52ea7d03d6a03587a5728877613abd3f30232823e7cd4eec22",
+    "SharedValueBindings.lean.in": "e19592197f1418c3a7721bb3913a423e3231a169627fd19ece3f2c33cf604bd4",
+    "OwnerWorldMaximumCounter.lean.in": "86ce4e7be639b909800134a2dd505cf6cc6c7ccf50a4bec43cdd0c6ec1213caf",
+    "OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f"
+  },
+  "native_plan": {
+    "test_count": 10,
+    "native_compilation_or_assertions_run": false,
+    "original_and_candidate_and_restored_preserve_all_tests": true,
+    "variant_failure_expectations_pending_actual_ning": [
+      "wrong-owner-guard",
+      "wrong-world-maximum",
+      "wrong-high-water",
+      "wrong-overflow"
+    ],
+    "expected_failures": {
+      "wrong-owner-guard": [
+        "proof_owner_full_external_match",
+        "proof_owner_world_maximum",
+        "proof_owner_high_water"
+      ],
+      "wrong-world-maximum": [
+        "proof_owner_world_maximum",
+        "proof_owner_world_overflow",
+        "proof_owner_boundary_reaches_max"
+      ],
+      "wrong-high-water": [
+        "proof_owner_high_water",
+        "proof_owner_high_water_overflow",
+        "proof_owner_boundary_reaches_max"
+      ],
+      "wrong-overflow": [
+        "proof_owner_high_water_overflow",
+        "proof_owner_world_overflow"
+      ]
+    },
+    "test_names": [
+      "proof_owner_full_external_match",
+      "proof_owner_lookup_precedes_exhaustion",
+      "proof_owner_first_duplicate",
+      "proof_owner_world_maximum",
+      "proof_owner_high_water",
+      "proof_owner_empty_starts_one",
+      "proof_owner_high_water_overflow",
+      "proof_owner_world_overflow",
+      "proof_owner_existing_zero",
+      "proof_owner_boundary_reaches_max"
+    ],
+    "entry_sources": {
+      "native.py": "a76d5ca4733a9776649f9c6e2e1c310d6f834142dbdc6ac119c74c03035dd6d9",
+      "native_prepare.py": "15a2e9e07fd1f590036e7cb12c785b1daa42ee72106275674ea36c3dc5f6c62f",
+      "native-common.rs.in": "ba67e8b1f7f17fb252d2f4e417f5c34fd5b6dccdf050e66d38630c14752cccb3"
+    }
+  },
+  "driver_sha256": "49c05f13fd60703ee95eaf344e7be2b92cb44b83d00af2a757b43c58fe67f202",
+  "admission_sha256": "3504ff2fbbfed7e91746adbf7559f7bb77025e2fd2c5839637ea7d34c4b9cb38"
+}

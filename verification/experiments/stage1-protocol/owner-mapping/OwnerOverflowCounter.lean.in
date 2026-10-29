@@ -1,0 +1,105 @@
+import SandproofStage1OwnerMapping.Funs
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow
+open SandboxModel.Stage1Protocol.OwnerMapping
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.owner_for
+abbrev ownerLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+abbrev ownerBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body
+abbrev maxLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+abbrev maxBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body
+theorem owner_unfold (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    ownerLoop inbox world owner index = (do
+      let step ← ownerBody inbox world owner index
+      match step with
+      | .done value => .ok value
+      | .cont next => ownerLoop inbox world owner next) := by
+  unfold ownerLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (ownerBody inbox world owner index))
+  funext step
+  cases step <;> rfl
+
+
+theorem max_unfold (records : Slice Record) (highest : U64) (index : Usize) :
+    maxLoop records highest index = (do
+      let step ← maxBody records highest index
+      match step with
+      | .done value => .ok value
+      | .cont (next, nextIndex) => maxLoop records next nextIndex) := by
+  unfold maxLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (maxBody records highest index))
+  funext step
+  cases step with
+  | done value => rfl
+  | cont pair => cases pair; rfl
+
+
+
+theorem max_end (records : Slice Record) (highest : U64) (index : Usize)
+    (outside : records.val.length ≤ index.val) : maxLoop records highest index = .ok highest := by
+  rw [max_unfold]
+  have missing : ¬ index < Slice.len records := by scalar_tac
+  simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body, missing]
+
+def limit : U64 := U64.ofNatCore U64.max (by scalar_tac)
+
+theorem wrapped_zero : core.num.U64.wrapping_add limit 1#u64 = 0#u64 := by
+  apply UScalar.eq_of_val_eq
+  simp only [core.num.U64.wrapping_add_val_eq]
+  have at_max : limit.val = U64.max := by
+    unfold limit
+    scalar_tac
+  simp only [at_max]
+  scalar_tac
+
+theorem observed : run (noOwners limit) emptyWorld "new-owner" = .ok (.Ok 0#u64) := by
+  have scanned := max_end (alloc.vec.Vec.deref emptyWorld.sandboxes.entries) limit 0#usize
+    (by simp [emptyWorld, emptyStore, alloc.vec.Vec.deref])
+  unfold maxLoop at scanned
+  have body : ownerBody (noOwners limit) emptyWorld "new-owner" 0#usize = .ok (.done 0#u64) := by
+    have missing : ¬ 0#usize < alloc.vec.Vec.len (noOwners limit).owners := by simp [noOwners, inbox]
+    simp only [ownerBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body,
+      missing, ite_false, sandbox_controller_core.model.World.sandbox_records,
+      sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+    change (do
+      let highest ← sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+        (alloc.vec.Vec.deref emptyWorld.sandboxes.entries) limit 0#usize
+      let value ← lift (core.num.U64.wrapping_add highest 1#u64)
+      (Result.ok (.done value) : Result (ControlFlow Usize U64))) = _
+    rw [scanned]
+    simp only [bind_tc_ok, lift, wrapped_zero]
+  have completed : ownerLoop (noOwners limit) emptyWorld "new-owner" 0#usize = .ok 0#u64 := by
+    rw [owner_unfold, body]
+    simp only [bind_tc_ok]
+  change (do
+    let value ← ownerLoop (noOwners limit) emptyWorld "new-owner" 0#usize
+    (Result.ok (.Ok value) : Result (core.result.Result U64 JournalError))) = _
+  rw [completed]
+  simp only [bind_tc_ok]
+
+theorem violates_full_contract : ¬ FullOwnerContract run := by
+  intro contract
+  have required := contract (noOwners limit) emptyWorld "new-owner"
+  have mathematical : expected (noOwners limit) emptyWorld "new-owner" = .Err .IdentifierExhausted := by
+    change allocation limit.val = _
+    have at_max : limit.val = U64.max := by
+      unfold limit
+      scalar_tac
+    rw [at_max]
+    simp [allocation]
+  have different : Result.ok (.Ok 0#u64 : core.result.Result U64 JournalError) =
+      Result.ok (.Err .IdentifierExhausted : core.result.Result U64 JournalError) :=
+    observed.symm.trans (required.trans (congrArg Result.ok mathematical))
+  simp at different
+end SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.owner_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.max_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.max_end
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.wrapped_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOverflow.violates_full_contract

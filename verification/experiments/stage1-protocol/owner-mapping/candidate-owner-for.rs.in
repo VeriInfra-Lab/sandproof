@@ -1,0 +1,26 @@
+fn owner_for(
+    inbox: &Inbox,
+    world: &core::World,
+    owner: &sandproof_protocol::TenantId,
+) -> Result<core::TenantId, JournalError> {
+    let mut owner_index = 0;
+    while owner_index < inbox.owners.len() {
+        let row = &inbox.owners[owner_index];
+        if &row.external == owner {
+            return Ok(row.local);
+        }
+        owner_index += 1;
+    }
+    let records = world.sandbox_records();
+    let mut highest = inbox.owner_high_water;
+    let mut record_index = 0;
+    while record_index < records.len() {
+        highest = highest.max(records[record_index].1.owner.0);
+        record_index += 1;
+    }
+    Ok(core::TenantId(
+        highest
+            .checked_add(1)
+            .ok_or(JournalError::IdentifierExhausted)?,
+    ))
+}

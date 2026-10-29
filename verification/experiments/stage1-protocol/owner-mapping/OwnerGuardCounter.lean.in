@@ -1,0 +1,67 @@
+import SandproofStage1OwnerMapping.Funs
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard
+open SandboxModel.Stage1Protocol.OwnerMapping
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.owner_for
+abbrev ownerLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+abbrev ownerBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body
+theorem owner_unfold (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    ownerLoop inbox world owner index = (do
+      let step ← ownerBody inbox world owner index
+      match step with
+      | .done value => .ok value
+      | .cont next => ownerLoop inbox world owner next) := by
+  unfold ownerLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (ownerBody inbox world owner index))
+  funext step
+  cases step <;> rfl
+
+
+theorem tenant_eq (left right : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (decide (left = right)) := by
+  simp [sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    SandproofStage1OwnerMappingRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+
+
+theorem bypasses_full_owner (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId)
+    (index : Usize) (within : index.val < inbox.owners.val.length) :
+    ownerBody inbox world owner index = .ok (.done (.Ok inbox.owners.val[index.val].local)) := by
+  have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Owner)
+      inbox.owners index = .ok inbox.owners.val[index.val] := by
+    rw [alloc.vec.Vec.index_slice_index]
+    obtain ⟨value, returned, same⟩ := WP.spec_imp_exists (alloc.vec.Vec.index_usize_spec inbox.owners index within)
+    simpa only [same] using returned
+  have inside : index < alloc.vec.Vec.len inbox.owners := by scalar_tac
+  simp only [ownerBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body,
+    inside, if_pos, item, bind_tc_ok, tenant_eq, decide_eq_true_eq]
+  split_ifs <;> rfl
+
+theorem observed : run twoOwners emptyWorld "bravo" = .ok (.Ok 7#u64) := by
+  change ownerLoop twoOwners emptyWorld "bravo" 0#usize = _
+  rw [owner_unfold]
+  have head := bypasses_full_owner twoOwners emptyWorld "bravo" 0#usize
+    (by simp [twoOwners, inbox])
+  rw [head]
+  simp [twoOwners, inbox]
+
+theorem violates_full_contract : ¬ FullOwnerContract run := by
+  intro contract
+  have required := contract twoOwners emptyWorld "bravo"
+  have mathematical : expected twoOwners emptyWorld "bravo" = .Ok 9#u64 := rfl
+  have different : Result.ok (.Ok 7#u64 : core.result.Result U64 JournalError) =
+      Result.ok (.Ok 9#u64 : core.result.Result U64 JournalError) :=
+    observed.symm.trans (required.trans (congrArg Result.ok mathematical))
+  simp at different
+end SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.owner_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.tenant_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.bypasses_full_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.WrongOwnerGuard.violates_full_contract
