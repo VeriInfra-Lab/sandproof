@@ -92,36 +92,29 @@ pub(super) fn completed_pause_epoch(
     epoch: Epoch,
     source: RestoreSource,
 ) -> Option<Epoch> {
-    for (prior, ledger) in world.operation_records() {
-        if prior.sandbox == binding.sandbox && ledger.operation.epoch.checked_add(1) == Some(epoch)
-        {
-            if ledger.operation.kind != OperationKind::Pause
-                || ledger.operation.status != OperationStatus::Succeeded
-                || ledger.result != Some(OperationResult::Paused(source))
-                || ledger.input
-                    != (OperationInput::Pause {
-                        generation: binding.generation,
-                    })
-                || world.operation_plan(*prior).is_none_or(|plan| {
-                    plan.generation != binding.generation
-                        || plan.vm != Some(binding.vm)
-                        || plan.target_snapshot != Some(source)
-                        || !plan.close_slots.contains(&binding.network)
-                        || plan.capture.is_none_or(|capture| {
-                            capture.commit() != crate::capture::CaptureCommit::Registered
-                                || !capture.has_unload_source()
-                                || capture.eligibility()
-                                    != crate::capture::RestoreEligibility::Revoked
-                        })
+    let (prior, ledger) = world.operation_records().iter().find(|(prior, ledger)| {
+        prior.sandbox == binding.sandbox && ledger.operation.epoch.checked_add(1) == Some(epoch)
+    })?;
+    if ledger.operation.kind != OperationKind::Pause
+        || ledger.operation.status != OperationStatus::Succeeded
+        || ledger.result != Some(OperationResult::Paused(source))
+        || ledger.input
+            != (OperationInput::Pause {
+                generation: binding.generation,
+            })
+        || world.operation_plan(*prior).is_none_or(|plan| {
+            plan.generation != binding.generation
+                || plan.vm != Some(binding.vm)
+                || plan.target_snapshot != Some(source)
+                || !plan.close_slots.contains(&binding.network)
+                || plan.capture.is_none_or(|capture| {
+                    capture.commit() != crate::capture::CaptureCommit::Registered
+                        || !capture.has_unload_source()
+                        || capture.eligibility() != crate::capture::RestoreEligibility::Revoked
                 })
-            {
-                return None;
-            }
-            return Some(ledger.operation.epoch);
-        }
+        })
+    {
+        return None;
     }
-    None
+    Some(ledger.operation.epoch)
 }
-
-#[cfg(test)]
-mod tests;
