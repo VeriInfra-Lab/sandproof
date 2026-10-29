@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.HostEvidenceConnection
+import SandboxModel.Lifecycle.Protocol.HostEvidenceValues
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem twelve_normal_shapes :
+    twelveNormalShapes.all (fun observation => decide (ValidatesValue observation observation.command)) = true := by
+  decide
+
+theorem sample_prepare_domain : ObservationDomain samplePrepared := normal_process_domain
+theorem sample_activate_domain : ObservationDomain sampleActivated := normal_process_domain
+theorem sample_seal_domain : ObservationDomain sampleSealed := by trivial
+theorem malformed_prepare_domain : ObservationDomain malformedPrepared := by
+  unfold ObservationDomain malformedPrepared
+  unfold SandproofFoundationsRust.IdentifierLibrary.StringRepresentable
+  simp [SandproofFoundationsRust.IdentifierLibrary.stringBytes]
+
+theorem normal_prepare_accepted : host_evidence.validates samplePrepared samplePrepare = .ok true := by
+  rw [validates_refines samplePrepared samplePrepare sample_prepare_domain]
+  rfl
+
+theorem normal_source_retained :
+    host_evidence.recorded_source samplePrepared samplePrepare vmResource = .ok (some normalProcess) ∧
+    host_evidence.source_process samplePrepared samplePrepare vmResource = .ok (some (projectSource normalProcess)) := by
+  rw [recorded_root_refines samplePrepared samplePrepare vmResource sample_prepare_domain,
+    source_process_refines samplePrepared samplePrepare vmResource sample_prepare_domain]
+  constructor <;> rfl
+
+theorem normal_activate_source :
+    host_evidence.source_process sampleActivated sampleActivate vmResource = .ok (some (projectSource normalProcess)) := by
+  rw [source_process_refines sampleActivated sampleActivate vmResource sample_activate_domain]
+  rfl
+
+theorem normal_seal_projections :
+    host_evidence.manifest_digest sampleSealed sampleSeal = .ok (some sampleDigest) ∧
+    host_evidence.material_bytes sampleSealed sampleSeal = .ok (some (1#u64)) := by
+  rw [manifest_digest_refines sampleSealed sampleSeal sample_seal_domain,
+    material_bytes_refines sampleSealed sampleSeal sample_seal_domain]
+  constructor <;> rfl
+
+theorem foreign_full_command_refused :
+    host_evidence.validates samplePrepared foreignPrepare = .ok false := by
+  rw [validates_refines samplePrepared foreignPrepare sample_prepare_domain]
+  rfl
+
+theorem independent_resource_refused :
+    host_evidence.recorded_source samplePrepared samplePrepare foreignResource = .ok none ∧
+    host_evidence.source_process samplePrepared samplePrepare foreignResource = .ok none := by
+  rw [recorded_root_refines samplePrepared samplePrepare foreignResource sample_prepare_domain,
+    source_process_refines samplePrepared samplePrepare foreignResource sample_prepare_domain]
+  constructor <;> rfl
+
+theorem prepare_shape_does_not_validate_boot :
+    host_evidence.validates malformedPrepared samplePrepare = .ok true ∧
+    host_evidence.recorded_source malformedPrepared samplePrepare vmResource = .ok none := by
+  rw [validates_refines malformedPrepared samplePrepare malformed_prepare_domain,
+    recorded_root_refines malformedPrepared samplePrepare vmResource malformed_prepare_domain]
+  constructor <;> rfl
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.twelve_normal_shapes
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.sample_prepare_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.sample_activate_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.sample_seal_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.malformed_prepare_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_prepare_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_source_retained
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_activate_source
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_seal_projections
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.foreign_full_command_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.independent_resource_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.prepare_shape_does_not_validate_boot

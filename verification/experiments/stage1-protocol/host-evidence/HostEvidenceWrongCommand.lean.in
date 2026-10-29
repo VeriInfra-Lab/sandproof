@@ -1,0 +1,27 @@
+import SandproofHostEvidence.Funs
+import SandboxModel.Lifecycle.Protocol.HostEvidenceValues
+import SandboxModel.Lifecycle.Protocol.HostBootFacts
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem actual_skip_command_accepts_foreign_vm :
+    host_evidence.validates samplePrepared foreignPrepare = .ok true := by
+  rfl
+
+theorem same_full_value_spec_rejects_foreign_vm :
+    ¬ ValidatesValue samplePrepared foreignPrepare := by decide
+
+theorem actual_skip_command_refutes_full_contract :
+    ¬ FullHostValueContract host_evidence.validates host_evidence.manifest_digest
+      host_evidence.material_bytes host_evidence.recorded_source host_evidence.source_process := by
+  intro contract
+  have checked := contract.validation samplePrepared foreignPrepare normal_process_domain
+  rw [actual_skip_command_accepts_foreign_vm] at checked
+  simp [same_full_value_spec_rejects_foreign_vm] at checked
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.actual_skip_command_accepts_foreign_vm
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.same_full_value_spec_rejects_foreign_vm
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.actual_skip_command_refutes_full_contract

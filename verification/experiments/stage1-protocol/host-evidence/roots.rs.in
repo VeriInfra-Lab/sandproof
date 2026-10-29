@@ -1,0 +1,21 @@
+use crate::HostObservation;
+use sandbox_controller_core::Command;
+use sandproof_controller_service::{HostEvidence, capture::SourceProcessIdentity};
+use sandproof_protocol::{ResourceRef, lifecycle::ContentDigest};
+use sandbox_runtime::RuntimeProcessIdentity;
+
+pub fn validates(observation: &HostObservation, command: &Command) -> bool {
+    observation.validates(command)
+}
+pub fn manifest_digest(observation: &HostObservation, command: &Command) -> Option<ContentDigest> {
+    observation.capture_manifest_digest(command)
+}
+pub fn material_bytes(observation: &HostObservation, command: &Command) -> Option<u64> {
+    observation.capture_material_bytes(command)
+}
+pub fn recorded_source(observation: &HostObservation, command: &Command, resource: &ResourceRef) -> Option<RuntimeProcessIdentity> {
+    observation.recorded_source_identity(command, resource)
+}
+pub fn source_process(observation: &HostObservation, command: &Command, resource: &ResourceRef) -> Option<SourceProcessIdentity> {
+    observation.source_process_identity(command, resource)
+}

@@ -1,0 +1,45 @@
+--- a/sandbox-runtime/src/helper_gate.rs
++++ b/sandbox-runtime/src/helper_gate.rs
+@@ -95,0 +96,7 @@
++    pub fn has_valid_fields(&self) -> bool {
++        self.pid != 0
++            && self.pid <= i32::MAX as u32
++            && self.start_time_ticks != 0
++            && valid_boot_id(&self.boot_id)
++    }
++
+@@ -97,5 +104 @@
+-        if self.pid == 0
+-            || self.pid > i32::MAX as u32
+-            || self.start_time_ticks == 0
+-            || !valid_boot_id(&self.boot_id)
+-        {
++        if !self.has_valid_fields() {
+@@ -111,3 +114,4 @@
+-    value.len() == 36
+-        && value.bytes().enumerate().all(|(index, byte)| {
+-            if matches!(index, 8 | 13 | 18 | 23) {
++    value.len() == 36 && {
++        let mut index = 0usize;
++        value.bytes().all(move |byte| {
++            let valid = if matches!(index, 8 | 13 | 18 | 23) {
+@@ -117 +121,3 @@
+-            }
++            };
++            index += 1;
++            valid
+@@ -118,0 +125 @@
++    }
+--- a/sandbox-node/src/linux/decisions.rs
++++ b/sandbox-node/src/linux/decisions.rs
+@@ -115,2 +115 @@
+-        .validate_fields()
+-        .is_ok(),
++        .has_valid_fields(),
+--- a/sandbox-node/src/linux/source_process.rs
++++ b/sandbox-node/src/linux/source_process.rs
+@@ -63 +63,3 @@
+-        source.validate_fields().ok()?;
++        if !source.has_valid_fields() {
++            return None;
++        }

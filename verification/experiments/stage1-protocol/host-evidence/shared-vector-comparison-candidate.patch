@@ -1,0 +1,97 @@
+--- a/SandboxModel/Access/Guards.lean
++++ b/SandboxModel/Access/Guards.lean
+@@ -0,0 +1 @@
++import SandboxModel.Foundations.VectorComparison
+@@ -6,42 +6,0 @@
+-
+-theorem list_allM_view_eq [DecidableEq M] (eq : core.cmp.PartialEq T T)
+-    (view : T → M) (lawful : ∀ left right,
+-      eq.eq left right = .ok (decide (view left = view right))) :
+-    ∀ left right : List T, left.length = right.length →
+-      List.allM (fun pair => eq.eq pair.1 pair.2) (left.zip right) =
+-        .ok (decide (left.map view = right.map view)) := by
+-  intro left
+-  induction left with
+-  | nil =>
+-      intro right equalLength
+-      cases right with
+-      | nil => rfl
+-      | cons _ _ => simp at equalLength
+-  | cons head tail ih =>
+-      intro right equalLength
+-      cases right with
+-      | nil => simp at equalLength
+-      | cons other rest =>
+-          have tailLength : tail.length = rest.length := by simpa using equalLength
+-          simp only [List.zip_cons_cons, List.allM_cons]
+-          rw [lawful head other]
+-          by_cases same : view head = view other
+-          · simpa [same, Aeneas.Std.instMonadResult] using ih rest tailLength
+-          · simp [same]
+-            rfl
+-
+-theorem vector_eq_view [DecidableEq M] (eq : core.cmp.PartialEq T T)
+-    (view : T → M) (lawful : ∀ left right,
+-      eq.eq left right = .ok (decide (view left = view right)))
+-    (left right : alloc.vec.Vec T) :
+-    alloc.vec.partial_eq.PartialEqVec.eq eq left right =
+-      .ok (decide (left.val.map view = right.val.map view)) := by
+-  unfold alloc.vec.partial_eq.PartialEqVec.eq
+-  by_cases equalLength : left.length = right.length
+-  · simp only [equalLength, if_pos]
+-    exact list_allM_view_eq eq view lawful left.val right.val (by simpa using equalLength)
+-  · have different : left.val.map view ≠ right.val.map view := by
+-      intro same
+-      apply equalLength
+-      simpa using congrArg List.length same
+-    simp [equalLength, different]
+--- /dev/null
++++ b/SandboxModel/Foundations/VectorComparison.lean
+@@ -0,0 +1,47 @@
++import Aeneas
++open Aeneas Aeneas.Std
++namespace SandboxModel.Access
++
++theorem list_allM_view_eq [DecidableEq M] (eq : core.cmp.PartialEq T T)
++    (view : T → M) (lawful : ∀ left right,
++      eq.eq left right = .ok (decide (view left = view right))) :
++    ∀ left right : List T, left.length = right.length →
++      List.allM (fun pair => eq.eq pair.1 pair.2) (left.zip right) =
++        .ok (decide (left.map view = right.map view)) := by
++  intro left
++  induction left with
++  | nil =>
++      intro right equalLength
++      cases right with
++      | nil => rfl
++      | cons _ _ => simp at equalLength
++  | cons head tail ih =>
++      intro right equalLength
++      cases right with
++      | nil => simp at equalLength
++      | cons other rest =>
++          have tailLength : tail.length = rest.length := by simpa using equalLength
++          simp only [List.zip_cons_cons, List.allM_cons]
++          rw [lawful head other]
++          by_cases same : view head = view other
++          · simpa [same, Aeneas.Std.instMonadResult] using ih rest tailLength
++          · simp [same]
++            rfl
++
++theorem vector_eq_view [DecidableEq M] (eq : core.cmp.PartialEq T T)
++    (view : T → M) (lawful : ∀ left right,
++      eq.eq left right = .ok (decide (view left = view right)))
++    (left right : alloc.vec.Vec T) :
++    alloc.vec.partial_eq.PartialEqVec.eq eq left right =
++      .ok (decide (left.val.map view = right.val.map view)) := by
++  unfold alloc.vec.partial_eq.PartialEqVec.eq
++  by_cases equalLength : left.length = right.length
++  · simp only [equalLength, if_pos]
++    exact list_allM_view_eq eq view lawful left.val right.val (by simpa using equalLength)
++  · have different : left.val.map view ≠ right.val.map view := by
++      intro same
++      apply equalLength
++      simpa using congrArg List.length same
++    simp [equalLength, different]
++
++end SandboxModel.Access

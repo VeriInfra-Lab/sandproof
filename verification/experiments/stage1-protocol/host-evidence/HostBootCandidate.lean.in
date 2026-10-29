@@ -1,0 +1,98 @@
+import SandproofHostEvidence.Funs
+import SandboxModel.Lifecycle.Protocol.HostBootFacts
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem digit_refines (byte : U8) :
+    core.num.U8.is_ascii_digit byte = .ok (digitByte byte) := by
+  simp only [core.num.U8.is_ascii_digit, digitByte]
+  split <;> simp_all
+
+theorem range_u8_refines (lo hi value : U8) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU8 core.cmp.PartialOrdU8
+      core.cmp.PartialOrdU8 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU8.le]
+  split <;> simp_all
+
+
+theorem boot_callback_shape (counter : Usize) (byte : U8) :
+    sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut counter byte =
+      (do let next ← counter + 1#usize
+          .ok (bootByte counter.val byte, next)) := by
+  simp only [sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut,
+    core.ops.range.RangeInclusive.new, digit_refines]
+  split <;> simp_all [bootByte, separator, hexLetter, UScalar.eq_equiv, range_u8_refines]
+  split <;> simp_all [digitByte]
+  have not_digit : ¬ (48 ≤ byte.val ∧ byte.val ≤ 57) := by omega
+  simp only [← Bool.decide_and]
+  simp [not_digit]
+
+theorem boot_callback_refines (counter : Usize) (byte : U8) (bounded : counter.val < 36) :
+    ∃ next : Usize, next.val = counter.val + 1 ∧
+      sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut counter byte =
+        .ok (bootByte counter.val byte, next) := by
+  obtain ⟨next, added, value⟩ := WP.spec_imp_exists
+    (Usize.add_spec (x := counter) (y := 1#usize) (by simp; scalar_tac))
+  refine ⟨next, by simpa using value, ?_⟩
+  simp [boot_callback_shape, added]
+
+
+theorem boot_all_refines (bytes : List U8) (counter : Usize)
+    (room : counter.val + bytes.length ≤ 36) :
+    SandproofFoundationsRust.IdentifierLibrary.allBytes
+      sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      counter bytes = .ok (bootScan counter.val bytes) := by
+  induction bytes generalizing counter with
+  | nil => rfl
+  | cons byte rest ih =>
+    obtain ⟨next, next_value, callback⟩ := boot_callback_refines counter byte (by simp at room; omega)
+    cases accepted : bootByte counter.val byte with
+    | false => simp [SandproofFoundationsRust.IdentifierLibrary.allBytes, callback, bootScan, accepted]
+    | true =>
+      have tail_checked := ih next (by simp at room; omega)
+      simpa [SandproofFoundationsRust.IdentifierLibrary.allBytes, callback, bootScan, accepted, next_value]
+        using tail_checked
+
+theorem boot_id_refines (value : Str) :
+    sandbox_runtime.linux.helper_gate.valid_boot_id value =
+      .ok (decide (value.val.length = 36) && (bootScan 0 value.val).1) := by
+  by_cases length : value.val.length = 36
+  · cases scanned : bootScan 0 value.val with
+    | mk keep rest =>
+      simp [sandbox_runtime.linux.helper_gate.valid_boot_id, core.str.Str.len,
+        core.str.Str.bytes, core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+        boot_all_refines value.val (0#usize) (by simp [length]), length, UScalar.eq_equiv, scanned]
+  · simp [sandbox_runtime.linux.helper_gate.valid_boot_id, core.str.Str.len,
+      UScalar.eq_equiv, length]
+
+
+theorem process_fields_refines (value : sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity)
+    (representable : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable value.boot_id) :
+    sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields value =
+      .ok (decide (ProcessFields value)) := by
+  simp [sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields,
+    ProcessFields, BootEncoding, pid_max_cast, lift,
+    alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, representable, boot_id_refines,
+    UScalar.eq_equiv, UScalar.le_equiv]
+  split_ifs <;> simp_all
+
+
+theorem normal_process_accepted :
+    sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields normalProcess = .ok true := by
+  simp [process_fields_refines normalProcess normal_process_domain, normal_fields]
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.digit_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.range_u8_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.boot_callback_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.boot_callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.boot_all_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.boot_id_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.process_fields_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_process_accepted

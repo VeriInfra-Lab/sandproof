@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "base": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "production_modified": false,
+  "source_candidate_adopted": false,
+  "public_shared_files_modified": false,
+  "original_rust_correspondence": false,
+  "formal_acceptance": false,
+  "native_run": false,
+  "full_v3": false,
+  "roots": [
+    "sandproof_node::host_evidence::validates",
+    "sandproof_node::host_evidence::manifest_digest",
+    "sandproof_node::host_evidence::material_bytes",
+    "sandproof_node::host_evidence::recorded_source",
+    "sandproof_node::host_evidence::source_process"
+  ],
+  "include": [
+    "sandproof_protocol",
+    "sandbox_controller_core",
+    "sandproof_node",
+    "sandbox_runtime",
+    "sandproof_controller_service",
+    "core::num::_::is_ascii_digit",
+    "core::ops::range::_::contains",
+    "core::ops::range::_::start_bound",
+    "core::ops::range::_::end_bound",
+    "core::ops::range::RangeInclusive",
+    "core::option::_::map"
+  ],
+  "opaque": [],
+  "exclude": [],
+  "manifest": "sandbox-node/Cargo.toml",
+  "generated_namespace": "SandproofHostEvidenceRust",
+  "generated_subdir": "SandproofHostEvidence",
+  "production_inputs": {
+    "sandbox-node/src/lib.rs": "89fff6be7d63edddaa5d8f041b86ca23d503df95c9ae0a06942029d78714e1ec",
+    "sandbox-node/src/linux.rs": "60e1e3cae45cbc9406385eb7c377f4e0bd84831e3595c4a814ac7fb6479a7b17",
+    "sandbox-node/src/linux/decisions.rs": "13bd2ec00a21a85f56c83d7769c6327ef820bed9f1505ff4d032d8a4f2745d7b",
+    "sandbox-node/src/linux/source_process.rs": "e94c991a8bef583b3bd6bc79e3cd6a210388756f5439dbff9829aab8a79ed0d3",
+    "sandbox-node/Cargo.toml": "a8f334d90d2da05b966e77c2e3ede84476b20976b20e954944d93262dd2c2074",
+    "sandbox-runtime/src/helper_gate.rs": "4eb89f57803d8871d6be54c6684007166b88372e8923fc10ab237c06dbfa6fdc",
+    "sandbox-runtime/Cargo.toml": "7ac428a54ceaf02ff0c4e290c767496e6555ec5f8b8cbc53d772e54817dc0ea3",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "SandboxModel/Access/Guards.lean": "bf6053f5427be34017d9b406fb2329c1bae53bc562f8613f4285defb2eb19317"
+  },
+  "providers": {
+    "HostBootFacts.lean.in": "5586a703ce56362b01ed63517eb60accde3ed04680f30340058c24a750227dfb",
+    "TypesExternal.lean.in": "86209edde22d8e4afafc25cdd96ef6efef012f4815d832b91fda86a7548b8f9c",
+    "HostEvidenceWrongCommand.lean.in": "34c3d17fd8680a6065d9deab3d1de52fbdcb92101a1377f6bd655648d76fae23",
+    "HostEvidenceWitnesses.lean.in": "d4089c2c5d660ccd1848eafe94a635cf7673e1cf4d4742392484a713ec490994",
+    "HostCommandCandidate.lean.in": "ab56124a9d652094856d189dedf8d924e68bfad8e1bdd6d7ebfe22092e932547",
+    "VectorComparison.lean.in": "518178da1321c5b4a4a53cb0f425bd492fb744cf232ac1e2a0bb9105a79e36fa",
+    "HostBootCandidate.lean.in": "527150ce67c56d4acabea7c10ac1f98a673a9cd0914e96bb2e156f0daabad14b",
+    "HostBootModel.lean.in": "68daa194bf933014b13c9624b41294dd57cd4680a5045400d8fe4d6ee61244f8",
+    "roots.rs.in": "79da95632d9220704a6a3f04b39bcac32b4ea2685ed6ab405b62e0d8f8136aed",
+    "HostEvidenceValues.lean.in": "c64485d84cfc5099aa02db4aa9d7553dc1002610566742d61b4a558ca3f0828e",
+    "HostEvidenceModel.lean.in": "db8018fcabdf5b9d419f911cd0ce1e15f54477cadff4ded7f6edf4f95b70f7f1",
+    "shared-vector-comparison-candidate.patch": "627ff11c7c2476cf9e7e113bd5bcb58e34f2267fd4583a08713f66486757e1cc",
+    "FunsExternal.lean.in": "356a3fdbea6c7ae2c6cefc3bd5e2fafdc7827f2719e5c08917913bd7e4be1c5a",
+    "HostEvidenceConnection.lean.in": "acf33328d6c97725a77bc70f6c542027e7fc9b5d91e1b57f95adccd3292f6c6f",
+    "source-guard-candidate.patch": "45eee22db4f060023e7aba214506e8e5945fd531de21ff55082c08b77ab2e99e",
+    "HostEvidenceBoundaries.lean.in": "a51bfc17291a1c01ce9714d08a1eca0be5cf0eda78556cf9f14b6c05e112496f",
+    "HostEvidenceWrongResource.lean.in": "2e87238241d5800b8056f7413eabf8a5a188fc2c8eb8f7305af371da6929fa26",
+    "HostEvidenceTypes.lean.in": "7fea584a88dc75c1df393015046760b570c3372749663cf4ed33d214d42ec110"
+  },
+  "physical_development_evidence": {
+    "correct": {
+      "files": 18,
+      "audits": 57,
+      "result_sha256": "16ea654c45d1027009ce3a5dab1e25ed93a34d07965ee4cfc47b0a69aa87357c",
+      "source_capture_identity_preserved": true
+    },
+    "skip-command": {
+      "files": 13,
+      "audits": 9,
+      "result_sha256": "b8886b05eb08c4cfc69f7137d30787a8e1a8ef2611866dacb010b90d32a777ca",
+      "source_capture_identity_preserved": true
+    },
+    "skip-resource": {
+      "files": 14,
+      "audits": 17,
+      "result_sha256": "cb243262042e0cb8f9dcd3f5140338508d4b0f6b479550738dceea8fa135157b",
+      "source_capture_identity_preserved": true
+    }
+  },
+  "development_cli_registered": false,
+  "source_preservation_scope": "same pure model and values; source candidate has three private Rust file changes; two additional wrong variants each modify one guard",
+  "source_provider_obligations": [
+    "V0/main canonical comparison-proof factoring",
+    "V6 source owner review/adoption of the three-file guard/callback candidate",
+    "Main/ning ordinary/native original-wrong-restored and public/formal/shared acceptance"
+  ],
+  "remaining": [
+    "current unmodified source five-method correspondence",
+    "actual probes_match/producer/source evidence binding",
+    "actual JSON/Serde and SQL/SHA",
+    "transaction unknown/restart",
+    "authentication and actual host/file/VM facts"
+  ]
+}

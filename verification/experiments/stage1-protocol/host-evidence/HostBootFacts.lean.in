@@ -1,0 +1,61 @@
+import SandboxModel.Lifecycle.Protocol.HostBootModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem pid_max_cast : IScalar.hcast .U32 core.num.I32.MAX = 2147483647#u32 := by rfl
+
+theorem indexed_boot_cons (position : Nat) (byte : U8) (rest : List U8) :
+    IndexedBoot position (byte :: rest) ↔
+      bootByte position byte = true ∧ IndexedBoot (position + 1) rest := by
+  constructor
+  · intro checked
+    refine ⟨?_, ?_⟩
+    · simpa using checked 0 byte (by rfl)
+    · intro offset item found
+      have h := checked (offset + 1) item (by simpa using found)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h
+  · rintro ⟨head, tail⟩ offset item found
+    cases offset with
+    | zero =>
+      have same : byte = item := by simpa using found
+      subst item
+      simpa using head
+    | succ offset =>
+      have h := tail offset item (by simpa using found)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using h
+
+theorem boot_scan_iff_indexed (bytes : List U8) (position : Nat) :
+    (bootScan position bytes).1 = true ↔ IndexedBoot position bytes := by
+  induction bytes generalizing position with
+  | nil => simp [bootScan, IndexedBoot]
+  | cons byte rest ih =>
+    rw [indexed_boot_cons]
+    cases checked : bootByte position byte <;> simp [bootScan, checked, ih]
+
+theorem full_boot_position_rule (value : String) :
+    BootEncoding value ↔
+      (SandproofFoundationsRust.IdentifierLibrary.stringBytes value).length = 36 ∧
+      ∀ position byte, (SandproofFoundationsRust.IdentifierLibrary.stringBytes value)[position]? = some byte →
+        bootByte position byte = true := by
+  simp [BootEncoding, boot_scan_iff_indexed, IndexedBoot]
+
+theorem normal_fields : ProcessFields normalProcess := by decide
+
+theorem normal_process_domain :
+    SandproofFoundationsRust.IdentifierLibrary.StringRepresentable normalProcess.boot_id := by
+  have size : (SandproofFoundationsRust.IdentifierLibrary.stringBytes normalProcess.boot_id).length = 36 := by decide
+  unfold SandproofFoundationsRust.IdentifierLibrary.StringRepresentable
+  rw [size]
+  scalar_tac
+
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.pid_max_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.indexed_boot_cons
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.boot_scan_iff_indexed
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.full_boot_position_rule
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.normal_process_domain

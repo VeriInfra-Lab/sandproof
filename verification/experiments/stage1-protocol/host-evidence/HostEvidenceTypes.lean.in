@@ -1,0 +1,21 @@
+import SandproofHostEvidence.Types
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+deriving instance DecidableEq for sandbox_controller_core.model.FilePolicyRef
+deriving instance DecidableEq for sandbox_controller_core.model.SnapshotManifestRef
+deriving instance DecidableEq for sandbox_controller_core.model.RestoreSource
+deriving instance DecidableEq for sandbox_controller_core.model.Protocol
+deriving instance DecidableEq for sandbox_controller_core.model.Endpoint
+deriving instance DecidableEq for sandbox_controller_core.model.Ipv4Cidr
+deriving instance DecidableEq for sandbox_controller_core.model.NetworkPolicy
+deriving instance DecidableEq for sandbox_controller_core.model.Command
+deriving instance DecidableEq for sandproof_protocol.ResourceKind
+deriving instance DecidableEq for sandproof_protocol.ResourceRef
+
+deriving instance DecidableEq for sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity
+deriving instance DecidableEq for sandproof_controller_service.capture.SourceProcessIdentity
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence

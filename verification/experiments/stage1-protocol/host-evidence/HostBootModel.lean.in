@@ -1,0 +1,41 @@
+import SandproofHostEvidence.Types
+import SandproofFoundations.IdentifierLibrary
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+def digitByte (byte : U8) : Bool := decide (48 ≤ byte.val ∧ byte.val ≤ 57)
+def hexLetter (byte : U8) : Bool := decide (97 ≤ byte.val ∧ byte.val ≤ 102)
+def separator (position : Nat) : Prop :=
+  position = 8 ∨ position = 13 ∨ position = 18 ∨ position = 23
+instance (position : Nat) : Decidable (separator position) :=
+  inferInstanceAs (Decidable (_ ∨ _ ∨ _ ∨ _))
+def bootByte (position : Nat) (byte : U8) : Bool :=
+  if separator position then decide (byte.val = 45)
+  else digitByte byte || hexLetter byte
+
+def bootScan (position : Nat) : List U8 → Bool × List U8
+  | [] => (true, [])
+  | byte :: rest => if bootByte position byte then bootScan (position + 1) rest else (false, rest)
+
+def BootEncoding (value : String) : Prop :=
+  let bytes := SandproofFoundationsRust.IdentifierLibrary.stringBytes value
+  bytes.length = 36 ∧ (bootScan 0 bytes).1 = true
+
+def ProcessFields (value : sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity) : Prop :=
+  value.pid.val ≠ 0 ∧ value.pid.val ≤ 2147483647 ∧ value.start_time_ticks.val ≠ 0 ∧
+    BootEncoding value.boot_id
+
+instance (value : sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity) :
+    Decidable (ProcessFields value) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ (_ ∧ _)))
+
+def IndexedBoot (position : Nat) (bytes : List U8) : Prop :=
+  ∀ offset byte, bytes[offset]? = some byte → bootByte (position + offset) byte = true
+
+def normalProcess : sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity :=
+  ⟨1#u32, 2#u64, "01234567-89ab-cdef-0123-456789abcdef"⟩
+
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence

@@ -1,0 +1,124 @@
+import SandproofHostEvidence.Funs
+import SandboxModel.Lifecycle.Protocol.HostEvidenceTypes
+import SandboxModel.Foundations.VectorComparison
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem vector_eq_value [DecidableEq T] (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b)))
+    (a b : alloc.vec.Vec T) :
+    alloc.vec.partial_eq.PartialEqVec.eq dictionary a b = .ok (decide (a = b)) := by
+  have same : a.val = b.val ↔ a = b :=
+    ⟨fun h => alloc.vec.Vec.ext a b h, fun h => congrArg (fun v => v.val) h⟩
+  simpa [same] using SandboxModel.Access.vector_eq_view dictionary id lawful a b
+
+theorem option_eq_value [DecidableEq T] (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b)))
+    (a b : Option T) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq dictionary a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq, lawful]
+
+theorem file_policy_eq (a b : sandbox_controller_core.model.FilePolicyRef) :
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq,
+    sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq]
+
+theorem manifest_ref_eq (a b : sandbox_controller_core.model.SnapshotManifestRef) :
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq,
+    sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq]
+
+theorem restore_source_eq (a b : sandbox_controller_core.model.RestoreSource) :
+    sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq,
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq, manifest_ref_eq]
+  split_ifs <;> simp_all
+
+theorem protocol_eq (a b : sandbox_controller_core.model.Protocol) :
+    sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq,
+      sandbox_controller_core.model.Protocol.read_discriminant]
+
+theorem endpoint_eq (a b : sandbox_controller_core.model.Endpoint) :
+    sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, protocol_eq]
+  split_ifs <;> simp_all
+
+theorem cidr_eq (a b : sandbox_controller_core.model.Ipv4Cidr) :
+    sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq]
+  split_ifs <;> simp_all
+
+theorem policy_eq (a b : sandbox_controller_core.model.NetworkPolicy) :
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq,
+      sandbox_controller_core.model.NetworkPolicy.read_discriminant,
+      vector_eq_value sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint endpoint_eq,
+      vector_eq_value sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr cidr_eq,
+      core.cmp.impls.PartialEqBool.eq]
+  all_goals split_ifs <;> simp_all
+
+theorem command_eq (a b : sandbox_controller_core.model.Command) :
+    sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b
+  all_goals simp [lift, sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq,
+      sandbox_controller_core.model.Command.read_discriminant,
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq,
+      sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq,
+      sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq,
+      sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq,
+      core.cmp.impls.PartialEqBool.eq, file_policy_eq, manifest_ref_eq, policy_eq,
+      option_eq_value sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource restore_source_eq]
+  all_goals split_ifs <;> simp_all
+
+theorem resource_kind_eq (a b : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+      sandproof_protocol.ResourceKind.read_discriminant]
+
+theorem resource_eq (a b : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    resource_kind_eq, sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+  split_ifs <;> simp_all
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Access.list_allM_view_eq
+#audit_controller_proof SandboxModel.Access.vector_eq_view
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.vector_eq_value
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.option_eq_value
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.file_policy_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.manifest_ref_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.restore_source_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.protocol_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.endpoint_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.cidr_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.policy_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.command_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.resource_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.resource_eq

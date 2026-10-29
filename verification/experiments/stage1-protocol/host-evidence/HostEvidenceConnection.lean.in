@@ -1,0 +1,102 @@
+import SandboxModel.Lifecycle.Protocol.HostEvidenceModel
+import SandboxModel.Lifecycle.Protocol.HostBootCandidate
+import SandboxModel.Lifecycle.Protocol.HostCommandCandidate
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem evidence_matches_refines (observation : Observation) (command : Command)
+    (domain : ObservationDomain observation) :
+    linux.decisions.evidence_matches observation command = .ok (decide (ValidatesValue observation command)) := by
+  cases observation with
+  | mk resource original result =>
+    cases command <;> cases result <;>
+      simp [linux.decisions.evidence_matches, core.cmp.impls.PartialEqShared.ne,
+        core.cmp.PartialEq.ne.default,
+        command_eq, ValidatesValue, EvidenceShape,
+        alloc.string.String.Insts.CoreCloneClone.clone,
+        ObservationDomain] at *
+    all_goals split_ifs <;> simp_all [UScalar.eq_equiv]
+    all_goals first
+      | exact process_fields_refines _ domain
+      | apply Bool.eq_iff_iff.mpr
+        simp [UScalar.eq_equiv]
+
+
+theorem validates_refines (observation : Observation) (command : Command)
+    (domain : ObservationDomain observation) :
+    host_evidence.validates observation command = .ok (decide (ValidatesValue observation command)) := by
+  simpa [host_evidence.validates,
+    linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.validates]
+    using evidence_matches_refines observation command domain
+
+theorem manifest_digest_refines (observation : Observation) (command : Command)
+    (domain : ObservationDomain observation) :
+    host_evidence.manifest_digest observation command = .ok (manifestDigestValue observation command) := by
+  by_cases checked : ValidatesValue observation command <;>
+    cases result : observation.result <;>
+    simp [host_evidence.manifest_digest,
+      linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_manifest_digest,
+      evidence_matches_refines observation command domain, manifestDigestValue, checked, result]
+
+theorem material_bytes_refines (observation : Observation) (command : Command)
+    (domain : ObservationDomain observation) :
+    host_evidence.material_bytes observation command = .ok (materialBytesValue observation command) := by
+  by_cases checked : ValidatesValue observation command <;>
+    cases result : observation.result <;>
+    simp [host_evidence.material_bytes,
+      linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_material_bytes,
+      evidence_matches_refines observation command domain, materialBytesValue, checked, result]
+
+theorem recorded_source_refines (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (domain : ObservationDomain observation) :
+    linux.source_process.HostObservation.recorded_source_identity observation command resource =
+      .ok (recordedSourceValue observation command resource) := by
+  have matched := evidence_matches_refines observation command domain
+  cases observation with
+  | mk actual original result =>
+    cases command <;> cases result
+    all_goals simp only [ObservationDomain] at domain
+    all_goals simp [linux.source_process.HostObservation.recorded_source_identity,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      resource_eq, matched, recordedSourceValue,
+      alloc.string.String.Insts.CoreCloneClone.clone] at *
+    all_goals split_ifs <;> simp_all
+    all_goals rw [process_fields_refines _ domain]
+    all_goals simp_all
+
+theorem recorded_root_refines (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (domain : ObservationDomain observation) :
+    host_evidence.recorded_source observation command resource =
+      .ok (recordedSourceValue observation command resource) := by
+  simpa [host_evidence.recorded_source] using recorded_source_refines observation command resource domain
+
+theorem source_process_refines (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (domain : ObservationDomain observation) :
+    host_evidence.source_process observation command resource =
+      .ok (sourceProcessValue observation command resource) := by
+  simp [host_evidence.source_process,
+    linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.source_process_identity,
+    recorded_source_refines observation command resource domain,
+    core.option.Option.map,
+    linux.HostEvidenceHostObservation.source_process_identity.closure.Insts.CoreOpsFunctionFnOnceTupleRuntimeProcessIdentitySourceProcessIdentity.call_once,
+    sourceProcessValue]
+  cases recordedSourceValue observation command resource <;> rfl
+
+theorem full_host_value_contract :
+    FullHostValueContract host_evidence.validates host_evidence.manifest_digest
+      host_evidence.material_bytes host_evidence.recorded_source host_evidence.source_process :=
+  ⟨validates_refines, manifest_digest_refines, material_bytes_refines,
+    recorded_root_refines, source_process_refines⟩
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.evidence_matches_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.validates_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.manifest_digest_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.material_bytes_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.recorded_source_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.recorded_root_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.source_process_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.full_host_value_contract

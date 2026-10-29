@@ -1,0 +1,38 @@
+import SandboxModel.Lifecycle.Protocol.HostEvidenceModel
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+def vmResource : sandproof_protocol.ResourceRef := ⟨.Vm, "vm-test-4"⟩
+def foreignResource : sandproof_protocol.ResourceRef := ⟨.Vm, "vm-test-99"⟩
+def snapshotResource : sandproof_protocol.ResourceRef := ⟨.Snapshot, "snapshot-test-6"⟩
+def samplePrepare : Command := .PrepareVm 1#u64 2#u64 3#u64 4#u64 5#u64 none
+def foreignPrepare : Command := .PrepareVm 1#u64 2#u64 3#u64 99#u64 5#u64 none
+def sampleActivate : Command := .ActivateVm 1#u64 2#u64 3#u64 4#u64
+def sampleSeal : Command := .SealSnapshot 1#u64 2#u64 3#u64 4#u64 5#u64 6#u64 ⟨7#u64⟩
+def sampleDigest : Digest := Aeneas.Std.Array.from (List.replicate 32 (0#u8)) (by simp)
+def samplePrepared : Observation :=
+  ⟨vmResource, samplePrepare, .Prepared 1#u32 2#u64 normalProcess.boot_id⟩
+def sampleActivated : Observation :=
+  ⟨vmResource, sampleActivate, .Activated 1#u32 2#u64 normalProcess.boot_id⟩
+def sampleSealed : Observation :=
+  ⟨snapshotResource, sampleSeal, .SnapshotSealed sampleDigest 1#u64⟩
+def malformedPrepared : Observation :=
+  ⟨vmResource, samplePrepare, .Prepared 1#u32 2#u64 ""⟩
+
+def twelveNormalShapes : List Observation := [
+  ⟨⟨.Sandbox, "sb-test-1"⟩, .InstallFence 1#u64 2#u64 false, .Fence ⟨2#u64, false⟩⟩,
+  samplePrepared,
+  ⟨⟨.NetworkSlot, "slot-test-5"⟩, .ConfigureNetwork 1#u64 2#u64 3#u64 4#u64 5#u64 .DenyAll, .Network 8#u64⟩,
+  sampleActivated,
+  ⟨vmResource, .FreezeVm 1#u64 2#u64 3#u64 4#u64, .Frozen 1#u32 2#u64 normalProcess.boot_id⟩,
+  ⟨⟨.Workspace, "fs-test-5"⟩, .ApplyFilePolicy 1#u64 2#u64 3#u64 5#u64 ⟨11#u64⟩, .FilePolicy 8#u64⟩,
+  sampleSealed,
+  ⟨snapshotResource, .CommitSnapshot 1#u64 2#u64 3#u64 6#u64 ⟨7#u64⟩, .SnapshotCommitted sampleDigest 1#u64⟩,
+  ⟨vmResource, .StopVm 1#u64 2#u64 3#u64 4#u64, .Stopped 1#u32 2#u64⟩,
+  ⟨vmResource, .AbortPrepare 1#u64 2#u64 3#u64 4#u64 5#u64, .PrepareAborted⟩,
+  ⟨vmResource, .CleanupVm 1#u64 2#u64 4#u64, .VmCleaned⟩,
+  ⟨⟨.NetworkSlot, "slot-test-5"⟩, .CleanupSlot 1#u64 2#u64 5#u64, .SlotClosed⟩]
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence

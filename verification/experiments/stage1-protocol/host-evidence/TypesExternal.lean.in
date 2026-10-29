@@ -1,0 +1,4 @@
+import SandproofFoundations.TypesExternal
+namespace SandproofHostEvidenceRust
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+end SandproofHostEvidenceRust

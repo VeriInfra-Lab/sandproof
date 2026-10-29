@@ -1,0 +1,97 @@
+import SandboxModel.Lifecycle.Protocol.HostBootModel
+import SandboxModel.Lifecycle.Protocol.HostEvidenceTypes
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+abbrev Observation := linux.HostObservation
+abbrev Observed := linux.ObservedResult
+abbrev Command := sandbox_controller_core.model.Command
+abbrev RuntimeIdentity := sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity
+abbrev SourceIdentity := sandproof_controller_service.capture.SourceProcessIdentity
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+
+def ObservationDomain (observation : Observation) : Prop :=
+  match observation.result with
+  | .Prepared _ _ boot | .Activated _ _ boot | .Frozen _ _ boot =>
+      SandproofFoundationsRust.IdentifierLibrary.StringRepresentable boot
+  | _ => True
+
+def EvidenceShape (command : Command) (result : Observed) : Prop :=
+  match command, result with
+  | .InstallFence _ epoch terminal, .Fence fence =>
+      fence.epoch = epoch ∧ fence.terminal = terminal
+  | .PrepareVm _ _ _ _ _ _, .Prepared pid ticks _
+  | .ActivateVm _ _ _ _, .Activated pid ticks _
+  | .StopVm _ _ _ _, .Stopped pid ticks => pid.val ≠ 0 ∧ ticks.val ≠ 0
+  | .FreezeVm _ _ _ _, .Frozen pid ticks boot => ProcessFields ⟨pid, ticks, boot⟩
+  | .ConfigureNetwork _ _ _ _ _ _, .Network inode
+  | .ApplyFilePolicy _ _ _ _ _, .FilePolicy inode => inode.val ≠ 0
+  | .SealSnapshot _ _ _ _ _ _ _, .SnapshotSealed _ bytes
+  | .CommitSnapshot _ _ _ _ _, .SnapshotCommitted _ bytes => 0 < bytes.val
+  | .CleanupVm _ _ _, .VmCleaned
+  | .CleanupSlot _ _ _, .SlotClosed
+  | .AbortPrepare _ _ _ _ _, .PrepareAborted => True
+  | _, _ => False
+
+instance (command : Command) (result : Observed) : Decidable (EvidenceShape command result) := by
+  cases command <;> cases result <;> unfold EvidenceShape <;> infer_instance
+
+def ValidatesValue (observation : Observation) (command : Command) : Prop :=
+  observation.command = command ∧ EvidenceShape command observation.result
+instance (observation : Observation) (command : Command) : Decidable (ValidatesValue observation command) :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+def manifestDigestValue (observation : Observation) (command : Command) : Option Digest :=
+  if ValidatesValue observation command then
+    match observation.result with
+    | .SnapshotSealed digest _ | .SnapshotCommitted digest _ => some digest
+    | _ => none
+  else none
+
+def materialBytesValue (observation : Observation) (command : Command) : Option U64 :=
+  if ValidatesValue observation command then
+    match observation.result with
+    | .SnapshotSealed _ bytes | .SnapshotCommitted _ bytes => some bytes
+    | _ => none
+  else none
+
+def recordedSourceValue (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) : Option RuntimeIdentity :=
+  if observation.resource = resource then
+    if ValidatesValue observation command then
+      match command, observation.result with
+      | .PrepareVm _ _ _ _ _ _, .Prepared pid ticks boot
+      | .ActivateVm _ _ _ _, .Activated pid ticks boot =>
+          let source : RuntimeIdentity := ⟨pid, ticks, boot⟩
+          if ProcessFields source then some source else none
+      | _, _ => none
+    else none
+  else none
+
+def projectSource (source : RuntimeIdentity) : SourceIdentity :=
+  ⟨source.pid, source.start_time_ticks, source.boot_id⟩
+
+def sourceProcessValue (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) : Option SourceIdentity :=
+  (recordedSourceValue observation command resource).map projectSource
+
+structure FullHostValueContract
+    (validates : Observation → Command → Result Bool)
+    (manifest : Observation → Command → Result (Option Digest))
+    (material : Observation → Command → Result (Option U64))
+    (recorded : Observation → Command → sandproof_protocol.ResourceRef → Result (Option RuntimeIdentity))
+    (source : Observation → Command → sandproof_protocol.ResourceRef → Result (Option SourceIdentity)) : Prop where
+  validation : ∀ observation command, ObservationDomain observation →
+    validates observation command = .ok (decide (ValidatesValue observation command))
+  manifest_digest : ∀ observation command, ObservationDomain observation →
+    manifest observation command = .ok (manifestDigestValue observation command)
+  material_bytes : ∀ observation command, ObservationDomain observation →
+    material observation command = .ok (materialBytesValue observation command)
+  recorded_source : ∀ observation command resource, ObservationDomain observation →
+    recorded observation command resource = .ok (recordedSourceValue observation command resource)
+  source_process : ∀ observation command resource, ObservationDomain observation →
+    source observation command resource = .ok (sourceProcessValue observation command resource)
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence

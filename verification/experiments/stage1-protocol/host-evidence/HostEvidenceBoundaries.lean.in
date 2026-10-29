@@ -1,0 +1,78 @@
+import SandboxModel.Lifecycle.Protocol.HostEvidenceConnection
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem validates_accepts_iff (observation : Observation) (command : Command)
+    (domain : ObservationDomain observation) :
+    host_evidence.validates observation command = .ok true ↔
+      observation.command = command ∧ EvidenceShape command observation.result := by
+  rw [validates_refines observation command domain]
+  simp [ValidatesValue]
+
+theorem full_command_rejected_first (observation : Observation) (command : Command)
+    (different : observation.command ≠ command) :
+    host_evidence.validates observation command = .ok false := by
+  simp [host_evidence.validates,
+    linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.validates,
+    linux.decisions.evidence_matches, core.cmp.impls.PartialEqShared.ne,
+    core.cmp.PartialEq.ne.default, command_eq, different]
+
+theorem independent_resource_rejected_first (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (different : observation.resource ≠ resource) :
+    host_evidence.recorded_source observation command resource = .ok none := by
+  simp [host_evidence.recorded_source, linux.source_process.HostObservation.recorded_source_identity,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, resource_eq, different]
+
+theorem validates_does_not_check_resource (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) :
+    host_evidence.validates { observation with resource := resource } command =
+      host_evidence.validates observation command := by
+  rfl
+
+theorem sealed_digest_not_validated (resource : sandproof_protocol.ResourceRef)
+    (stored command : Command) (left right : Digest) (bytes : U64) :
+    host_evidence.validates ⟨resource, stored, .SnapshotSealed left bytes⟩ command =
+      host_evidence.validates ⟨resource, stored, .SnapshotSealed right bytes⟩ command := by
+  cases command <;> rfl
+
+theorem committed_digest_not_validated (resource : sandproof_protocol.ResourceRef)
+    (stored command : Command) (left right : Digest) (bytes : U64) :
+    host_evidence.validates ⟨resource, stored, .SnapshotCommitted left bytes⟩ command =
+      host_evidence.validates ⟨resource, stored, .SnapshotCommitted right bytes⟩ command := by
+  cases command <;> rfl
+
+theorem source_projection_retains_all_fields (value : RuntimeIdentity) :
+    (projectSource value).pid = value.pid ∧
+    (projectSource value).start_time_ticks = value.start_time_ticks ∧
+    (projectSource value).boot_id = value.boot_id := ⟨rfl, rfl, rfl⟩
+
+theorem recorded_source_requires_resource (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (value : RuntimeIdentity)
+    (domain : ObservationDomain observation)
+    (accepted : host_evidence.recorded_source observation command resource = .ok (some value)) :
+    observation.resource = resource := by
+  by_contra different
+  rw [recorded_root_refines observation command resource domain] at accepted
+  simp [recordedSourceValue, different] at accepted
+
+theorem recorded_source_requires_full_command (observation : Observation) (command : Command)
+    (resource : sandproof_protocol.ResourceRef) (value : RuntimeIdentity)
+    (domain : ObservationDomain observation)
+    (accepted : host_evidence.recorded_source observation command resource = .ok (some value)) :
+    observation.command = command := by
+  by_contra different
+  rw [recorded_root_refines observation command resource domain] at accepted
+  simp [recordedSourceValue, ValidatesValue, different] at accepted
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.validates_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.full_command_rejected_first
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.independent_resource_rejected_first
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.validates_does_not_check_resource
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.sealed_digest_not_validated
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.committed_digest_not_validated
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.source_projection_retains_all_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.recorded_source_requires_resource
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.recorded_source_requires_full_command

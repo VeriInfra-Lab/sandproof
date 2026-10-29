@@ -1,0 +1,41 @@
+import SandproofHostEvidence.Funs
+import SandboxModel.Lifecycle.Protocol.HostEvidenceValues
+import SandboxModel.Lifecycle.Protocol.HostProcessFields
+open Aeneas Aeneas.Std SandproofHostEvidenceRust
+namespace SandboxModel.Stage1Protocol.HostEvidence
+noncomputable section
+
+theorem actual_skip_resource_accepts_foreign_resource :
+    host_evidence.recorded_source samplePrepared samplePrepare foreignResource = .ok (some normalProcess) := by
+  have normal_guard : sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields
+      ⟨1#u32, 2#u64, normalProcess.boot_id⟩ = .ok true := normal_process_accepted
+  simp [host_evidence.recorded_source,
+    linux.source_process.HostObservation.recorded_source_identity,
+    linux.decisions.evidence_matches, core.cmp.impls.PartialEqShared.ne,
+    core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq,
+    sandbox_controller_core.model.Command.read_discriminant,
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq,
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    alloc.string.String.Insts.CoreCloneClone.clone, lift,
+    samplePrepared, samplePrepare, normal_guard]
+  rfl
+
+theorem same_full_value_spec_rejects_foreign_resource :
+    recordedSourceValue samplePrepared samplePrepare foreignResource = none := by decide
+
+theorem actual_skip_resource_refutes_full_contract :
+    ¬ FullHostValueContract host_evidence.validates host_evidence.manifest_digest
+      host_evidence.material_bytes host_evidence.recorded_source host_evidence.source_process := by
+  intro contract
+  have checked := contract.recorded_source samplePrepared samplePrepare foreignResource normal_process_domain
+  rw [actual_skip_resource_accepts_foreign_resource, same_full_value_spec_rejects_foreign_resource] at checked
+  simp at checked
+
+end
+end SandboxModel.Stage1Protocol.HostEvidence
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.actual_skip_resource_accepts_foreign_resource
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.same_full_value_spec_rejects_foreign_resource
+#audit_controller_proof SandboxModel.Stage1Protocol.HostEvidence.actual_skip_resource_refutes_full_contract
