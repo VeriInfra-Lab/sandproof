@@ -1,0 +1,15 @@
+
+// Direct calls to the actual transparent digest derive and original array impl.
+pub fn proof_digest_encode<S: serde::Serializer>(
+    value: &sandproof_protocol::lifecycle::ContentDigest,
+    output: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(value, output)
+}
+
+pub fn proof_array_encode<S: serde::Serializer>(
+    value: &[u8; 32],
+    output: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(value, output)
+}

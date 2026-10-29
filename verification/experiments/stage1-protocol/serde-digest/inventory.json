@@ -71,6 +71,23 @@
         "proof_complete": false
       },
       "scope": "Actual generic 32-element array method exposed by pure Visitor forwarder; fixed backend rejects mutually recursive Deserialize/DeserializeSeed/Deserializer/Visitor/SeqAccess traits"
+    },
+    "serialize": {
+      "roots": [
+        "crate::proof_digest_encode",
+        "crate::proof_array_encode"
+      ],
+      "include": [
+        "sandproof_protocol",
+        "serde_core::ser::impls"
+      ],
+      "root_file": "digest-serialize.rs.in",
+      "scope": "Actual original ContentDigest derived Serialize, array loop and u8 forwarding are captured; fixed backend rejects nine mutually recursive serialization traits; all fields retained and no model supplied",
+      "original_development_result": {
+        "capture_complete": true,
+        "translation_complete": false,
+        "proof_complete": false
+      }
     }
   },
   "source_inputs": {
@@ -88,12 +105,49 @@
     "serde_core-1.0.228/src/de/impls.rs": "9fb7a0322af51971fe1fa8f5b56c7ca3716622a6e9127b86bddfc0742c11383c",
     "serde_core-1.0.228/src/private/seed.rs": "3f6e098c5bd314788370dcaf3ab0152fcd7feb6bcf36a9c51808938cd58071eb",
     "serde_json-1.0.142/src/de.rs": "db7adf3ef0074e15426d31e1cf4bec78ad92c20e4642c136325f0a78547218c7",
-    "serde_json-1.0.142/src/read.rs": "17a2efe49e5a6937c8d7d4a5c0b9eac84453de0f86bf8e7ee421387e82341bb3"
+    "serde_json-1.0.142/src/read.rs": "17a2efe49e5a6937c8d7d4a5c0b9eac84453de0f86bf8e7ee421387e82341bb3",
+    "serde_core-1.0.228/src/ser/impls.rs": "5ee7efc439345e8665da0bd79bc06c02a0506e5fd0f3a4cf11af0c7197eaa643",
+    "serde_core-1.0.228/src/ser/mod.rs": "ec097d92c8545356961e977a4c9650361cadd1d3a243d805ae7b0e0e589ae803",
+    "serde-1.0.228/src/private/ser.rs": "bea364a6199b57c2aa5a96a6bb0530176850dbeaaee908a6307fe610c873c8e3",
+    "serde_json-1.0.142/src/ser.rs": "59dd65e09972907a1ee6a054544fbf80abf380ca866da01a50ca343f88b527b3"
   },
   "templates": {
     "digest.rs.in": "40eca3675caaca33667bfdd76a95b169208abcf5e99c257fe5810308af5f22e0",
     "array-callback.rs.in": "b66c6604bdfec25f99177742711ce9ddf52713831188ea9062b33a4e784c2832",
-    "array-constructor.rs.in": "777479710f4927dd06287d8a8d746d21cab37e616e767970ca6f0574dd88e61b"
+    "array-constructor.rs.in": "777479710f4927dd06287d8a8d746d21cab37e616e767970ca6f0574dd88e61b",
+    "digest-serialize.rs.in": "e95314ff770017c64a6bd040599ddcd8303c4ab5bd52b0028a8ae53ec214d65b",
+    "README.md": "06955e10b952c6898b3b39babc3976e99bf7f82eea9da05f6d7a6968ac8ae57f"
   },
-  "driver_sha256": "52fcf07dfc79b6b37a8db0923d45128b74b68719094d04ebb00762e3b54c8a60"
+  "driver_sha256": "6f39ef1a1a3f869265bb1a1f1d3329bf5956cd1c103ffb21c87ee8d3528b6c83",
+  "minimum_serialization_provider_request": {
+    "source": "serde_core-1.0.228/src/ser/impls.rs:143-170",
+    "actual_owned_source": "sandbox-protocol/src/lifecycle/digest.rs",
+    "original_roots": [
+      "crate::proof_digest_encode",
+      "crate::proof_array_encode"
+    ],
+    "unmodified_trait_shapes": {
+      "serde_core::ser::Serializer": {
+        "methods": 34,
+        "associated_types": 9
+      },
+      "serde_core::ser::SerializeTuple": {
+        "methods": 2,
+        "associated_types": 2
+      }
+    },
+    "scope": [
+      "exact fixed serializer serialize_tuple(32)",
+      "same SerializeTuple state, original per-element/u8 callback order and end",
+      "original borrowed array IntoIterator/Iterator complete32-element sequence",
+      "errors and already-written prefix/actual Writer budget; no rollback assumption"
+    ],
+    "not_requested": [
+      "whole Serialize/Serializer correctness",
+      "arbitrary user serializer or custom Drop correctness",
+      "own ContentDigest/complete protocol field correctness as a library axiom",
+      "unadopted model import or tool change"
+    ],
+    "main_must_assign_scope_and_owner": true
+  }
 }

@@ -51,6 +51,8 @@ def run(output, mode):
 
     try:
         inv = json.loads((ROOT/HERE/'inventory.json').read_text()); recipe = inv['modes'][mode]
+        if sha(ROOT/HERE/'preflight.py') != inv['driver_sha256']:
+            raise ValueError('reviewed driver changed')
         for name, digest in inv['source_inputs'].items():
             if sha(ROOT/name) != digest:
                 raise ValueError('reviewed original source changed: '+name)
@@ -154,11 +156,12 @@ def run(output, mode):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode', choices=('digest', 'array-constructor', 'array-callback'), default='digest')
+    parser.add_argument('--mode', choices=('digest', 'array-constructor', 'array-callback',
+        'serialize'), default='digest')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True, help='existing shared proof-heavy lock')
     args = parser.parse_args(); os.umask(0o077)
-    with args.lock.open('a') as lock:
+    with args.lock.open('r+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         rec = run(args.output.absolute(), args.mode)
     print(json.dumps({k:rec.get(k) for k in ('capture_complete', 'translation_complete', 'proof_complete', 'property_rejection', 'error')}))
