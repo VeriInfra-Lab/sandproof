@@ -328,6 +328,8 @@ class CaptureCallerScopeTests(unittest.TestCase):
     def setUp(self):
         fixtures.ReceiptTests.setUp(self)
         self.labels = receipts.CAPTURE_CALLER_LABELS
+        temporary = mock.patch.dict(os.environ, {'TMPDIR': str(self.base)})
+        temporary.start(); self.addCleanup(temporary.stop)
         subprocess.run(['git', '-c', 'user.name=Fixture', '-c',
                         'user.email=fixture@example.invalid', 'commit', '-qm',
                         'synthetic capture scope fixture'], cwd=self.source, check=True)
