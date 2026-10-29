@@ -4,7 +4,7 @@
   "review_base_commit": "41129b1d278e5bba7e69ce57be97d5fb40ad37b1",
   "base_tree": "a608cb8d01760f6341bc1a28accc15769e4a57e1",
   "same_base_tree_verified": true,
-  "production_proposal_sha256": "9f41e258cb0d22f20adf81440a42c39a29ceaa8e50b20a7accbf0eb438cf0c6f",
+  "production_proposal_sha256": "96fec9da5cbf2ca6ed46997799f83644fbe6d4750e8e6a9e1be87e2008f24d2e",
   "templates": {
     "InboxProtocolAttach.lean.in": "6fe298384eaf5c06ba2d1eb8220a14f1178e3392f56a54b7262e1e56faa9dfc2",
     "InboxProtocolAttachConfig.lean.in": "c9b1d73e5f51ff244e6975095db238599a49e29f14d27aaf0b7253dd9c266c2b",
@@ -1365,5 +1365,7 @@
   "formal_admission": false,
   "ning_acceptance": false,
   "shared_acceptance": false,
-  "full_v3": false
+  "full_v3": false,
+  "original_production_proposal_sha256": "9f41e258cb0d22f20adf81440a42c39a29ceaa8e50b20a7accbf0eb438cf0c6f",
+  "production_proposal_format": "Context-only blank line markers normalized; git apply output verified identical to original proposal on all three files."
 }
