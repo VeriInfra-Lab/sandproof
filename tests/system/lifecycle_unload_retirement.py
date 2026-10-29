@@ -1,8 +1,9 @@
 """Read-only retirement observations on the original lifecycle deployment.
 
 The strict current SourceWork reader checks saved accounting and plan bindings.
-This consumer does not provide an end certificate, close a pin, delete files or
-stop a manager. A filesystem absence never substitutes for Settled.
+Read-only observations do not provide an end certificate, close a pin or delete
+materials. The explicit G7 probe restarts original managers only at the verified
+cut. A filesystem absence never substitutes for Settled.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -12,6 +13,7 @@ _runpy.run_path(str(_GuardPath(__file__).with_name('_assertions_required.py')))[
 from contextlib import closing
 import copy
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -24,10 +26,15 @@ from lifecycle_unload_runtime import (
     original_process, remaining, validate_gate_ready,
 )
 from tools.system_acceptance import private_path
+from tools.check_kvm_host import unique_keys
 
 
 def read_records(runtime, deadline):
     """One read-only WAL snapshot; never use the manager-stopping audit helper."""
+    return _read_snapshot(runtime, deadline)[0]
+
+
+def _read_snapshot(runtime, deadline, accepted=None):
     database = private_path(runtime.services.native_pools[0]['database'])
     stamp = database.stat()
     identity = (stamp.st_dev, stamp.st_ino)
@@ -35,10 +42,56 @@ def read_records(runtime, deadline):
             timeout=min(2, remaining(deadline)))) as connection:
         connection.execute('BEGIN')
         records = checked_source_records(connection, runtime.services.host_configs[0], deadline)
+        successor = None
+        if accepted is not None:
+            header = connection.execute('SELECT length(state_json),reserve_bytes FROM '
+                'controller_lifecycle_inbox WHERE id=1').fetchone()
+            if header is None or not 0 < header[0] <= header[1] <= 16*1024**2:
+                raise ValueError('bounded original lifecycle inbox required at retirement gate')
+            raw,checksum = connection.execute('SELECT state_json,sha256 FROM '
+                'controller_lifecycle_inbox WHERE id=1').fetchone()
+            if hashlib.sha256(raw).digest() != checksum:
+                raise ValueError('original lifecycle inbox checksum differs at retirement gate')
+            inbox = json.loads(raw,object_pairs_hook=unique_keys)
+            successor = accepted_successor(records,inbox,accepted,
+                runtime.services.host_configs[0]['inbox']['node'])
     after = database.stat()
     if (after.st_dev, after.st_ino) != identity:
         raise ValueError('original SQLite replaced during material retirement observation')
-    return records
+    return records,successor
+
+
+def accepted_successor(records,inbox,accepted,node):
+    """Select B from original accepted SQL identity, without public completion."""
+    sessions = [row for row in inbox['sessions'] if row['id'] == accepted['session']]
+    if (len(sessions) != 1 or sessions[0]['terminal'] is not False
+            or sessions[0]['current_version'] != accepted['accepted_version']):
+        raise ValueError('original current nonterminal successor acceptance required')
+    entries = [entry for entry in sessions[0]['entries']
+        if entry['intent']['accepted_version'] == accepted['accepted_version']
+        and entry['intent']['request']['binding']['key'] == accepted['key']]
+    if len(entries) != 1 or entries[0]['local_operation'] is None:
+        raise ValueError('one original admitted successor Unload required')
+    intent = entries[0]['intent']
+    request = intent['request']
+    operation = request['operation']
+    if (request['binding']['session'] != accepted['session']
+            or request['binding']['node'] != node or operation['kind'] != 'unload'):
+        raise ValueError('successor acceptance has a different original request')
+    rows = [row for row in records if row['work']['anchor']['request'] == intent]
+    if len(rows) != 1 or rows[0]['capture'] is None:
+        raise ValueError('one original accepted successor Full responsibility required')
+    successor = rows[0]
+    capture = successor['capture']
+    binding = capture['full']['pause']['binding']
+    if (binding['operation'] != request['binding']
+            or binding['source_incarnation'] != operation['source_incarnation']
+            or binding['capture'] != operation['capture']
+            or capture['operation'] != entries[0]['local_operation']
+            or type(capture['completed']) is not list or len(capture['completed']) != 32
+            or any(type(n) is not int or not 0 <= n <= 255 for n in capture['completed'])):
+        raise ValueError('successor capture or complete manifest differs from original acceptance')
+    return successor
 
 
 def source_record(records, session, physical):
@@ -193,7 +246,6 @@ class RetirementRestartProbe:
             raise ValueError('one bounded original material retirement target required')
         self.config = dict(schema_version=1,run_identity=run,sandbox=sandbox,
             generation=generation,capture_key=key,timeout_ms=timeout_ms)
-        self.gate_deadline = min(self.deadline,time.monotonic()+timeout_ms/1000)
         parent = private_path(runtime.quota['deployment_control'],directory=True)
         self.path = parent/'material-retirement-gate'
         self.path.mkdir(mode=0o700)
@@ -231,22 +283,27 @@ class RetirementRestartProbe:
             if (digest,stamp) != expected:
                 raise ValueError('original sealed material retirement gate file changed')
 
-    def restart_after_delete(self, successor_view):
-        runtime = self.runtime
+    def _wait_ready(self):
         while True:
-            remaining(self.gate_deadline)
+            # The producer's timeout starts at its actual post-delete wait.
+            # Preparing B can take longer; arm must not spend that budget.
+            remaining(self.deadline)
             self._unchanged()
-            if runtime.services.processes.children['host-0'] is not self.host or self.host.poll() is not None:
+            if self.runtime.services.processes.children['host-0'] is not self.host or self.host.poll() is not None:
                 raise ValueError('original manager exited before the material deletion gate')
             try:
                 ready,_ = self._save('ready.json')
             except FileNotFoundError:
-                time.sleep(min(0.05,remaining(self.gate_deadline)))
+                time.sleep(min(0.05,remaining(self.deadline)))
                 continue
-            break
+            return ready
+
+    def restart_after_delete(self, successor_acceptance):
+        runtime = self.runtime
+        ready = self._wait_ready()
         observation,digest = self._save('observation.json')
         validate_gate_ready(ready,digest)
-        records = read_records(runtime,self.deadline)
+        records,successor = _read_snapshot(runtime,self.deadline,successor_acceptance)
         original = source_record(records,self.session,self.original)
         material = gate_material(original,self.config['capture_key'])
         validate_retirement_gate(observation,run_identity=runtime.lease.identity,
@@ -258,8 +315,11 @@ class RetirementRestartProbe:
                 or consumed != dict(schema_version=1,run_identity=runtime.lease.identity,
                     observation_sha256=digest,material=material)):
             raise ValueError('original durable one-shot material gate consumption required')
-        successor = source_record(records,self.session,
-            dict(facts=successor_view['unload_outcome']['facts']))
+        reason = original['retirement']['plan']['closure']['reason']
+        if (reason['kind'] != 'superseded'
+                or reason['successor_work_binding'] != successor['work']['requirement']['work_binding']
+                or reason['manifest_digest'] != successor['capture']['completed']):
+            raise ValueError('original frozen closure does not name this accepted successor')
         if successor['retirement'] is not None or successor['restore'] is not None or material_source_charge(successor) <= 0:
             raise ValueError('current successor not held while old deletion is unsettled')
         # Full byte/manifest validation is read-only and leaves no source FD open.
@@ -292,6 +352,9 @@ class RetirementRestartProbe:
         return dict(phase=observation['phase'],material=material,
             retiring_material_bytes=material_source_charge(original),
             successor_manifest=complete['manifest'],manager_restart=restart,
+            successor_accepted_version=successor_acceptance['accepted_version'],
+            successor_capture=successor['capture']['full']['pause']['binding']['capture'],
+            public_unloaded_not_inferred_from_gate=True,
             same_gate_consumed_before_restart=True,
             same_plan_settled_after_restart=True,settled_material_bytes=0)
 

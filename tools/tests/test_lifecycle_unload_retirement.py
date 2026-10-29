@@ -3,8 +3,9 @@ import copy
 import hashlib
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests/system'))
 import lifecycle_unload_retirement as retirement
@@ -84,6 +85,44 @@ class RetirementSnapshotTests(unittest.TestCase):
 
 
 class RetirementGateBindingTests(unittest.TestCase):
+    def test_ready_wait_does_not_spend_producer_timeout_while_preparing_successor(self):
+        host=Mock();host.poll.return_value=None
+        runtime=SimpleNamespace(services=SimpleNamespace(processes=SimpleNamespace(
+            children={'host-0':host})))
+        probe=retirement.RetirementRestartProbe(runtime,'original',{},200)
+        probe.host=host
+        probe.config=dict(timeout_ms=60000)
+        probe._unchanged=Mock()
+        ready=dict(schema_version=1,observation_sha256='a'*64)
+        probe._save=Mock(side_effect=[FileNotFoundError(),(ready,'b'*64)])
+        # B has already taken 63 seconds since arm. Only the original 200s
+        # scenario budget applies before producer publishes its actual cut.
+        with patch.object(retirement.time,'monotonic',return_value=63), \
+                patch.object(retirement.time,'sleep'):
+            self.assertEqual(probe._wait_ready(),ready)
+        self.assertEqual(probe.config['timeout_ms'],60000)
+
+    def test_gate_selects_adopted_successor_from_accepted_sql_key_and_capture(self):
+        records,_,_,_=fixture()
+        node=dict(node_id='original-node')
+        accepted=dict(session='original',key={'sequence':4},accepted_version=4)
+        binding=dict(session='original',key=accepted['key'],node=node)
+        intent=dict(accepted_version=4,request=dict(binding=binding,
+            operation=dict(kind='unload',source_incarnation=2,capture=2)))
+        successor=records[1]
+        successor['work']['anchor']['request']=intent
+        successor['capture']['operation']=12
+        successor['capture']['full']['pause']['binding']['operation']=binding
+        inbox=dict(sessions=[dict(id='original',terminal=False,current_version=4,
+            entries=[dict(intent=intent,local_operation=12)])])
+        self.assertIs(retirement.accepted_successor(records,inbox,accepted,node),successor)
+        for fault in ('key','capture'):
+            changed=copy.deepcopy(records)
+            if fault=='key':changed[1]['work']['anchor']['request']['request']['binding']['key']={'sequence':9}
+            else:changed[1]['capture']['full']['pause']['binding']['capture']=9
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                retirement.accepted_successor(changed,inbox,accepted,node)
+
     def observation(self):
         records,_,_,_=fixture()
         records[0]['retirement']['state']='retiring'

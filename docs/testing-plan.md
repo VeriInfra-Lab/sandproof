@@ -170,13 +170,17 @@ G6 只扩展唯一 `normal`：产生 A→恢复 R1→B→恢复 R2→C→恢复 
 也不把路径缺席当作结算。正常收敛后的旧大文件数量不随完成轮数增长；当前来源须仍
 合法恢复并延续原见证，最后通过公开 Destroy 完成原产品回收和总账结算，环境收尾另记。
 
-G7 在同一入口选择 `material-retirement-restart` 回收中断/管理重启代表：先到达明确同步点，原计划已经 SQL
+G7 在同一入口选择 `material-retirement-restart` 回收中断/管理重启代表：B 的 Unload
+已接受后先等待明确同步点，不以 public Unloaded 作为到达原删除 gate 的前置条件。原计划已经 SQL
 持久且物理删除完成，但尚未记录结算；部分删除由组件覆盖。监督器将生产 gate 与原
-work/plan、原 capture key、raw-plan 长度/摘要及真实 source resource 对上，核对
-Retiring 仍占额度、当前 B 完整，再重启同配置 manager。原 one-shot consumed 必须在
+work/plan、原 capture key、raw-plan 长度/摘要及真实 source resource 对上；同一只读
+SQLite 事务按 B 原 accepted key/version/intent/capture 及 A closure 的后继绑定核对
+B 已持久接管、Retiring 仍占额度，再全读 B 完整材料并重启同配置 manager。consumer
+等待 ready 使用原操作/总场景期限，producer 的 post-delete timeout 不从 arm 时提前消耗。
+原 one-shot consumed 必须在
 ready 之前持久，重开保留相同测试环境变量，让真实删除重试核对同一 consumed 后不再
-等待；不能跳过原物理身份检查。重开
-继续同一固定计划并到达 Settled，旧请求/原 claim 不变，当前来源可恢复，最终 Destroy
+等待；不能跳过原物理身份检查。重开继续同一固定计划并到达 Settled 后，再要求原
+public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功。旧请求/原 claim 不变，当前来源可恢复，最终 Destroy
 结算；不以退出码或测试 gate 文件作为业务完成凭据。其它交错由上述确定性组件覆盖，
 不展开任意排列或重复整套论文矩阵。实际执行和首次失败仍绑定精确候选保存。
 

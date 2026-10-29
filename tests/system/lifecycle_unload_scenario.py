@@ -1040,10 +1040,11 @@ def exercise(args):
                         report['cycles'][-1]['continued_after_measurement_error'] = copy.deepcopy(resumed)
                         break
                 client.assert_data_closed()
-                saved=client.wait_unloaded()
                 if retirement_probe is not None:
                     report['phase'] = 'original-material-deleted-before-settlement'
-                    report['material_retirement_restart'] = retirement_probe.restart_after_delete(saved)
+                    report['material_retirement_restart'] = retirement_probe.restart_after_delete(accepted_unload)
+                saved=client.wait_unloaded()
+                if retirement_probe is not None:
                     client.assert_reopened(saved)
                 physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
                 client.assert_unloaded_facts(saved,physical['facts'])
