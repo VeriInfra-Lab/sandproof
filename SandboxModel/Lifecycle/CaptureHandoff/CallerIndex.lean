@@ -93,6 +93,7 @@ theorem caller_index_sandbox_eq_lawful :
   · intro index invariant
     rcases invariant with ⟨indexBound, absentPrefix⟩
     unfold sandbox_controller_core.worker.insert_unique_loop0.body
+    dsimp only
     split
     · rename_i inBounds
       rw [alloc.vec.Vec.index_slice_index]
@@ -143,7 +144,12 @@ theorem caller_index_insert_exact
       sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone
       sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId values value =
         .ok result ∧ result.val = (if value ∈ values.val then values.val else value :: values.val) := by
-  simpa [prependIfAbsent] using WP.spec_imp_exists (caller_index_insert_refines values value capacity)
+  obtain ⟨result, evaluated, post⟩ :=
+    WP.spec_imp_exists (caller_index_insert_refines values value capacity)
+  refine ⟨result, evaluated, ?_⟩
+  by_cases present : value ∈ values.val
+  · simpa [prependIfAbsent, present] using post
+  · simpa [prependIfAbsent, present] using post
 
 theorem caller_index_insert_membership
     (values : alloc.vec.Vec sandbox_controller_core.ids.SnapshotId)
@@ -206,7 +212,7 @@ theorem caller_index_register_membership
   refine ⟨{ world with resource_indexes := indexes }, index, ?_, ?_, rfl, rfl, ?_, ?_, rfl⟩
   · simp only [sandbox_controller_core.worker.register_snapshot,
       caller_index_resource_index_exact, bind_tc_ok, inserted]
-    simpa only [index, written, bind_tc_ok]
+    simp only [index, written, bind_tc_ok]
   · rw [entries, table_lookup_put]
     simp
   · intro query
