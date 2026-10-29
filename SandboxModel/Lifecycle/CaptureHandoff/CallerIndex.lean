@@ -115,7 +115,7 @@ theorem caller_index_sandbox_eq_lawful :
         · constructor
           · rw [nextIndexPost, List.take_succ_eq_append_getElem indexStrict, ← storedPost]
             simp [absentPrefix]
-            exact fun equal => same equal.symm
+            exact fun equal => same (UScalar.eq_of_val_eq equal.symm)
           · rw [nextIndexPost]
             omega
     · rename_i outside
@@ -128,9 +128,11 @@ theorem caller_index_sandbox_eq_lawful :
         simp [alloc.vec.Vec.new]
         scalar_tac
       step as ⟨initial, initialPost⟩
-      have copyRoom : initial.val.length + values.val.length ≤ Usize.max := by
+      have initialLength : initial.val.length = 1 := by
         rw [initialPost]
-        simp only [alloc.vec.Vec.new, List.length_append, List.length_cons, List.length_nil]
+        simp [alloc.vec.Vec.new]
+      have copyRoom : initial.val.length + values.val.length ≤ Usize.max := by
+        rw [initialLength]
         omega
       step as ⟨result, resultPost⟩
       simpa [prependIfAbsent, absent, initialPost, alloc.vec.Vec.new] using resultPost
