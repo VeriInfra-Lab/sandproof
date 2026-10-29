@@ -11,7 +11,8 @@ case "$variant" in
     roots=(accepted dispatch register observe pause_failure terminate stop_permit registration_allowed commit eligibility material_uses)
     ;;
   handler) roots=(compensate) ;;
-  *) echo 'expected values or handler' >&2; exit 2 ;;
+  worker) roots=(worker) ;;
+  *) echo 'expected values, handler or worker' >&2; exit 2 ;;
 esac
 out="${SANDPROOF_CAPTURE_OUTPUT:?set a fresh private output directory}"
 mkdir -m 700 "$out"
