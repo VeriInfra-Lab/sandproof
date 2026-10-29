@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.HostReceiptConnection
+import SandboxModel.Lifecycle.Protocol.HostReceiptValues
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptWitnesses
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+open SandboxModel.Stage1Protocol.CurrentReceipt
+noncomputable section
+
+theorem normal_original_effect_host_receipt :
+    host_receipts.validate_effect sampleReceipt sampleAction = .ok (.Ok ()) := by
+  rw [concrete_effect_root_exact]
+  apply (concrete_receipt_accepts_iff _ _).mpr
+  simp [sampleReceipt, sampleAction, sampleObservation, hostIdentity,
+    actionView, outcomeView, Outcome.observation]
+
+theorem original_host_resource_mismatch_refused :
+    host_receipts.validate_effect mismatchedObservationReceipt sampleAction =
+      .ok (.Err .MismatchedObservation) := by
+  rw [concrete_effect_root_exact]
+  apply (observation_error_is_exact _).mp
+  rw [concrete_receipt_refines]
+  simp [checkReceipt, checkActionVersion, mismatchedObservationReceipt,
+    sampleReceipt, sampleAction, sampleObservation, hostIdentity, actionView,
+    resourceView, kindView, outcomeView, Outcome.observation]
+
+theorem original_host_full_identity_kind_refused :
+    host_receipts.validate_effect mismatchedKindReceipt sampleAction =
+      .ok (.Err .MismatchedIdentity) := by
+  rw [concrete_effect_root_exact, concrete_receipt_root_uses_original_dictionary]
+  apply receipt_identity_before_observation
+  · rfl
+  · rfl
+  · simp [sampleAction, mismatchedKindReceipt, sampleReceipt, hostIdentity,
+      actionView, resourceView, kindView]
+
+theorem receipt_acceptance_does_not_check_host_command_or_result :
+    host_receipts.validate_effect {sampleReceipt with outcome := .ObservedSuccess {
+      sampleObservation with command := .CleanupVm 91#u64 92#u64 93#u64, result := .VmCleaned}}
+      sampleAction = .ok (.Ok ()) := by
+  rw [concrete_effect_root_exact, receipt_does_not_validate_command_or_result]
+  exact (concrete_effect_root_exact sampleReceipt sampleAction).symm.trans normal_original_effect_host_receipt
+
+end
+end SandboxModel.Stage1Protocol.HostReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.normal_original_effect_host_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.original_host_resource_mismatch_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.original_host_full_identity_kind_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.receipt_acceptance_does_not_check_host_command_or_result

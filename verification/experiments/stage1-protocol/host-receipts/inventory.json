@@ -1,0 +1,851 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "parent_provider_commit": "0cd08d5f06ef6b8624cdde866b5149e2e99d6664",
+  "source_capture_commit": "5a571e5a720dd5488423d8bf4b490ebc078bd369",
+  "production_modified": false,
+  "cargo_modified": false,
+  "shared_model_candidate_adopted": false,
+  "formal_acceptance": false,
+  "native_run": false,
+  "full_v3": false,
+  "roots": [
+    "sandproof_node::receipts::action_version",
+    "sandproof_node::receipts::receipt_validate",
+    "sandproof_node::host_receipts::resource",
+    "sandproof_node::host_receipts::validate",
+    "sandproof_node::host_receipts::validate_effect"
+  ],
+  "include": [
+    "sandproof_protocol",
+    "sandbox_controller_core",
+    "sandproof_node"
+  ],
+  "manifest": "sandbox-node/Cargo.toml",
+  "production_inputs": {
+    "sandbox-node/src/lib.rs": "89fff6be7d63edddaa5d8f041b86ca23d503df95c9ae0a06942029d78714e1ec",
+    "sandbox-node/src/linux.rs": "60e1e3cae45cbc9406385eb7c377f4e0bd84831e3595c4a814ac7fb6479a7b17",
+    "sandbox-node/Cargo.toml": "a8f334d90d2da05b966e77c2e3ede84476b20976b20e954944d93262dd2c2074",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/extract-foundations/src/receipts.rs": "747664dbc77462d495550222bc24e21ac66edac8c2b46fe969430fd62a01717a",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/experiments/stage1-protocol/current-receipts/shared-model-candidate.patch": "09453bcaf6989ce9ba8663068748f1d42cab5a10444a96cb6179796ff5484e90"
+  },
+  "providers": {
+    "HostReceiptValues.lean.in": {
+      "sha256": "78ad8e067987e0d3e3598d6356dcaa710968b5f32686f6112859f8f7f46ac4f9",
+      "audits": []
+    },
+    "HostReceiptWrongOwner.lean.in": {
+      "sha256": "a068d2602fb115d0a79bbe1c8a39d3d6eb4dd680334f54c1dc889735a594b6b6",
+      "audits": [
+        "SandboxModel.Stage1Protocol.HostReceipt.actual_host_owner_only_accepts_wrong_kind",
+        "SandboxModel.Stage1Protocol.HostReceipt.same_full_spec_rejects_wrong_kind",
+        "SandboxModel.Stage1Protocol.HostReceipt.actual_host_owner_only_refutes_full_contract"
+      ]
+    },
+    "HostReceiptGetter.lean.in": {
+      "sha256": "dca7f14b329ee9f9125f0f66377a288d13a37c64bdba35ad14a539f6714227b7",
+      "audits": [
+        "SandboxModel.Stage1Protocol.HostReceipt.original_resource_getter_exact",
+        "SandboxModel.Stage1Protocol.HostReceipt.thin_resource_root_exact",
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_root_uses_original_dictionary",
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_effect_root_exact"
+      ]
+    },
+    "HostReceiptConnection.lean.in": {
+      "sha256": "55d0e31260aa1652981e09b0165702efcbcc5ef13b4c858f21f52bf876fca8de",
+      "audits": [
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_refines",
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_full_host_contract",
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_effect_contract",
+        "SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_accepts_iff",
+        "SandboxModel.Stage1Protocol.HostReceipt.observation_error_is_exact",
+        "SandboxModel.Stage1Protocol.HostReceipt.getter_does_not_validate_command_or_result",
+        "SandboxModel.Stage1Protocol.HostReceipt.receipt_does_not_validate_command_or_result"
+      ]
+    },
+    "HostReceiptWitnesses.lean.in": {
+      "sha256": "94ee19ee570b1b53f9f136f8c094611a3ac0c5e6bcbebbfbda08b74323546802",
+      "audits": [
+        "SandboxModel.Stage1Protocol.HostReceipt.normal_original_effect_host_receipt",
+        "SandboxModel.Stage1Protocol.HostReceipt.original_host_resource_mismatch_refused",
+        "SandboxModel.Stage1Protocol.HostReceipt.original_host_full_identity_kind_refused",
+        "SandboxModel.Stage1Protocol.HostReceipt.receipt_acceptance_does_not_check_host_command_or_result"
+      ]
+    },
+    "HostReceiptDefinitions.lean.in": {
+      "sha256": "78f39d889c71619f159b218335b1507dba9466a61abc0bbfb1d1b1632d918a5f",
+      "audits": []
+    }
+  },
+  "root_sha256": "fd08aee186df5af4bd66139f5126cce8c74cdfb8f71c970ad234f7f55b08b617",
+  "generated_functions": {
+    "correct": [
+      [
+        "SandproofReceiptRust.host_receipts.resource",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.host_receipts.validate",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.host_receipts.validate_effect",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.linux.HostObservation.Insts.Sandproof_protocolResourceEvidence.resource",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.receipts.action_version",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.receipts.receipt_validate",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ActionIdentity.validate_version",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkOutcome.observation",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkReceipt.validate_for",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.as_ref",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.is_some_and",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ]
+    ],
+    "owner-only": [
+      [
+        "SandproofReceiptRust.host_receipts.resource",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.host_receipts.validate",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.host_receipts.validate_effect",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.linux.HostObservation.Insts.Sandproof_protocolResourceEvidence.resource",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.receipts.action_version",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.receipts.receipt_validate",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ActionIdentity.validate_version",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkOutcome.observation",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkReceipt.validate_for",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "SandproofReceiptRust.sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once",
+        false,
+        "SandproofReceipt/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.as_ref",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.is_some_and",
+        true,
+        "SandproofReceipt/FunsExternal_Template.lean"
+      ]
+    ]
+  },
+  "actual_host_fields": [
+    "resource",
+    "command",
+    "result"
+  ],
+  "actual_result_variants": [
+    "Fence",
+    "Prepared",
+    "Network",
+    "Activated",
+    "Frozen",
+    "SnapshotSealed",
+    "SnapshotCommitted",
+    "FilePolicy",
+    "Stopped",
+    "PrepareAborted",
+    "VmCleaned",
+    "SlotClosed"
+  ],
+  "actual_effect_fields": [
+    "logical",
+    "attempt"
+  ],
+  "correct_audits": 42,
+  "wrong_audits": 7,
+  "one_shared_protocol_model": true,
+  "new_trusted_operations": [],
+  "enum_schemas": [
+    {
+      "path": [
+        "sandproof_node",
+        "linux",
+        "ObservedResult"
+      ],
+      "variants": [
+        {
+          "name": "Fence",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": [
+            "_0"
+          ]
+        },
+        {
+          "name": "Prepared",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            "pid",
+            "start_ticks",
+            "boot_id"
+          ]
+        },
+        {
+          "name": "Network",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            "namespace_inode"
+          ]
+        },
+        {
+          "name": "Activated",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": [
+            "pid",
+            "start_ticks",
+            "boot_id"
+          ]
+        },
+        {
+          "name": "Frozen",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": [
+            "pid",
+            "start_ticks",
+            "boot_id"
+          ]
+        },
+        {
+          "name": "SnapshotSealed",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "5"
+            ]
+          },
+          "fields": [
+            "manifest_digest",
+            "material_bytes"
+          ]
+        },
+        {
+          "name": "SnapshotCommitted",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "6"
+            ]
+          },
+          "fields": [
+            "manifest_digest",
+            "material_bytes"
+          ]
+        },
+        {
+          "name": "FilePolicy",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "7"
+            ]
+          },
+          "fields": [
+            "disk_inode"
+          ]
+        },
+        {
+          "name": "Stopped",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "8"
+            ]
+          },
+          "fields": [
+            "pid",
+            "start_ticks"
+          ]
+        },
+        {
+          "name": "PrepareAborted",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "9"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "VmCleaned",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "10"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "SlotClosed",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "11"
+            ]
+          },
+          "fields": []
+        }
+      ]
+    },
+    {
+      "path": [
+        "sandbox_controller_core",
+        "model",
+        "Command"
+      ],
+      "variants": [
+        {
+          "name": "InstallFence",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "terminal"
+          ]
+        },
+        {
+          "name": "PrepareVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm",
+            "slot",
+            "source"
+          ]
+        },
+        {
+          "name": "ConfigureNetwork",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm",
+            "slot",
+            "policy"
+          ]
+        },
+        {
+          "name": "ActivateVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm"
+          ]
+        },
+        {
+          "name": "FreezeVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm"
+          ]
+        },
+        {
+          "name": "ApplyFilePolicy",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "5"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "workspace",
+            "policy"
+          ]
+        },
+        {
+          "name": "SealSnapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "6"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm",
+            "workspace",
+            "snapshot",
+            "manifest"
+          ]
+        },
+        {
+          "name": "CommitSnapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "7"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "snapshot",
+            "manifest"
+          ]
+        },
+        {
+          "name": "StopVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "8"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm"
+          ]
+        },
+        {
+          "name": "AbortPrepare",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "9"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "epoch",
+            "generation",
+            "vm",
+            "slot"
+          ]
+        },
+        {
+          "name": "CleanupVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "10"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "generation",
+            "vm"
+          ]
+        },
+        {
+          "name": "CleanupSlot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "11"
+            ]
+          },
+          "fields": [
+            "sandbox",
+            "generation",
+            "slot"
+          ]
+        }
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "ResourceKind"
+      ],
+      "variants": [
+        {
+          "name": "Sandbox",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Vm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Workspace",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Snapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "NetworkSlot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": []
+        }
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "WorkOutcome"
+      ],
+      "variants": [
+        {
+          "name": "ObservedSuccess",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": [
+            "_0"
+          ]
+        },
+        {
+          "name": "DefinitiveFailure",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            "code",
+            "retryable",
+            "partial"
+          ]
+        },
+        {
+          "name": "Unknown",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            "reason",
+            "last_observation"
+          ]
+        }
+      ]
+    }
+  ],
+  "struct_schemas": [
+    {
+      "path": [
+        "sandproof_node",
+        "linux",
+        "HostObservation"
+      ],
+      "fields": [
+        "resource",
+        "command",
+        "result"
+      ]
+    },
+    {
+      "path": [
+        "sandbox_controller_core",
+        "model",
+        "EffectId"
+      ],
+      "fields": [
+        "logical",
+        "attempt"
+      ]
+    },
+    {
+      "path": [
+        "sandbox_controller_core",
+        "model",
+        "LogicalEffectId"
+      ],
+      "fields": [
+        "command"
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "ActionIdentity"
+      ],
+      "fields": [
+        "protocol_version",
+        "owner",
+        "sandbox",
+        "operation",
+        "epoch",
+        "generation",
+        "logical_action",
+        "attempt",
+        "resource"
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "ResourceRef"
+      ],
+      "fields": [
+        "kind",
+        "id"
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "WorkReceipt"
+      ],
+      "fields": [
+        "identity",
+        "outcome"
+      ]
+    },
+    {
+      "path": [
+        "sandproof_protocol",
+        "WorkAction"
+      ],
+      "fields": [
+        "identity",
+        "command"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+use crate::HostObservation;
+use sandproof_protocol::{ContractError, ResourceEvidence, ResourceRef, WorkAction, WorkReceipt};
+
+pub fn resource(value: &HostObservation) -> &ResourceRef {
+    value.resource()
+}
+
+pub fn validate<C>(
+    receipt: &WorkReceipt<HostObservation>,
+    action: &WorkAction<C>,
+) -> Result<(), ContractError> {
+    receipt.validate_for(action)
+}
+
+pub fn validate_effect(
+    receipt: &WorkReceipt<HostObservation>,
+    action: &WorkAction<sandbox_controller_core::EffectId>,
+) -> Result<(), ContractError> {
+    receipt.validate_for(action)
+}

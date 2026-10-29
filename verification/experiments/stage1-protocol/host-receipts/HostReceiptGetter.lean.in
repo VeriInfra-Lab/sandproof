@@ -1,0 +1,33 @@
+import SandboxModel.Lifecycle.Protocol.HostReceiptDefinitions
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+open SandboxModel.Stage1Protocol.CurrentReceipt
+
+theorem original_resource_getter_exact :
+    ResourceGetterExact linux.HostObservation.Insts.Sandproof_protocolResourceEvidence
+      (fun observation => observation.resource) := by
+  intro observation
+  rfl
+
+theorem thin_resource_root_exact (observation : Observation) :
+    host_receipts.resource observation = .ok observation.resource := by
+  rfl
+
+theorem concrete_receipt_root_uses_original_dictionary {C : Type}
+    (receipt : sandproof_protocol.WorkReceipt Observation) (action : sandproof_protocol.WorkAction C) :
+    host_receipts.validate receipt action =
+      receipts.receipt_validate linux.HostObservation.Insts.Sandproof_protocolResourceEvidence receipt action := by
+  rfl
+
+theorem concrete_effect_root_exact
+    (receipt : sandproof_protocol.WorkReceipt Observation)
+    (action : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    host_receipts.validate_effect receipt action = host_receipts.validate receipt action := by
+  rfl
+
+end SandboxModel.Stage1Protocol.HostReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.original_resource_getter_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.thin_resource_root_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_root_uses_original_dictionary
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_effect_root_exact

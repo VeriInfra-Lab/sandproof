@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptDefinitions
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+open SandboxModel.Stage1Protocol.CurrentReceipt
+open scoped Classical
+noncomputable section
+
+abbrev Observation := linux.HostObservation
+abbrev ObservationResult := linux.ObservedResult
+abbrev Command := sandbox_controller_core.model.Command
+
+/-- Same canonical checkReceipt, specialized to the actual HostObservation field. -/
+def FullHostReceiptContract {C : Type}
+    (check : sandproof_protocol.WorkReceipt Observation → sandproof_protocol.WorkAction C →
+      Result (core.result.Result Unit sandproof_protocol.ContractError)) : Prop :=
+  ∀ receipt action, checkedResultView (check receipt action) =
+    .ok (checkReceipt (actionView action.identity) (actionView receipt.identity)
+      (outcomeView receipt.outcome) (fun observation => resourceView observation.resource))
+
+end
+end SandboxModel.Stage1Protocol.HostReceipt

@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.HostReceiptDefinitions
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptValues
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+
+def hostIdentity : sandproof_protocol.ActionIdentity :=
+  ⟨1#u16, "tenant", "sb-test-1", "op-test-1", 2#u64, 3#u64, "effect-1", 0#u64,
+    ⟨.Snapshot, "snapshot-test-6"⟩⟩
+def sampleCommand : Command := .SealSnapshot 1#u64 2#u64 3#u64 4#u64 5#u64 6#u64 ⟨7#u64⟩
+def sampleObservation : Observation := {
+  resource := hostIdentity.resource, command := sampleCommand,
+  result := .SnapshotSealed
+    (Array.from (List.replicate 32 (0#u8)) (by simp)) 1#u64 }
+def sampleAction : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId :=
+  ⟨hostIdentity, ⟨⟨sampleCommand⟩, 0#u64⟩⟩
+def sampleReceipt : sandproof_protocol.WorkReceipt Observation :=
+  ⟨hostIdentity, .ObservedSuccess sampleObservation⟩
+def mismatchedKindReceipt : sandproof_protocol.WorkReceipt Observation :=
+  {sampleReceipt with identity := {hostIdentity with resource := ⟨.Workspace, "snapshot-test-6"⟩}}
+def mismatchedObservationReceipt : sandproof_protocol.WorkReceipt Observation :=
+  {sampleReceipt with outcome := .ObservedSuccess {
+    sampleObservation with resource := ⟨.Snapshot, "other-snapshot"⟩}}
+
+end SandboxModel.Stage1Protocol.HostReceipt

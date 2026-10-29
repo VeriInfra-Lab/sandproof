@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.HostReceiptGetter
+import SandboxModel.Lifecycle.Protocol.HostReceiptValues
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+open SandboxModel.Stage1Protocol.CurrentReceipt
+noncomputable section
+
+theorem actual_host_owner_only_accepts_wrong_kind :
+    host_receipts.validate_effect mismatchedKindReceipt sampleAction = .ok (.Ok ()) := by
+  simp [host_receipts.validate_effect, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.WorkOutcome.observation,
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once,
+    core.option.Option.is_some_and, core.cmp.impls.PartialEqShared.ne,
+    linux.HostObservation.Insts.Sandproof_protocolResourceEvidence.resource,
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+    sandproof_protocol.ResourceKind.read_discriminant,
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    mismatchedKindReceipt, sampleAction, sampleReceipt, sampleObservation, hostIdentity]
+
+theorem same_full_spec_rejects_wrong_kind :
+    checkReceipt (actionView sampleAction.identity) (actionView mismatchedKindReceipt.identity)
+      (outcomeView mismatchedKindReceipt.outcome) (fun observation => resourceView observation.resource) =
+        .error .mismatchedIdentity := by
+  rfl
+
+theorem actual_host_owner_only_refutes_full_contract :
+    ¬ FullHostReceiptContract (C := sandbox_controller_core.model.EffectId) host_receipts.validate_effect := by
+  intro contract
+  have checked := contract mismatchedKindReceipt sampleAction
+  rw [actual_host_owner_only_accepts_wrong_kind] at checked
+  simp [checkedResultView, receiptResultView, same_full_spec_rejects_wrong_kind] at checked
+
+end
+end SandboxModel.Stage1Protocol.HostReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.actual_host_owner_only_accepts_wrong_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.same_full_spec_rejects_wrong_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.actual_host_owner_only_refutes_full_contract

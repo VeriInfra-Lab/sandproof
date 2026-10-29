@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptConnection
+import SandboxModel.Lifecycle.Protocol.HostReceiptGetter
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.HostReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+open SandboxModel.Stage1Protocol.CurrentReceipt
+noncomputable section
+
+theorem concrete_receipt_refines {C : Type}
+    (receipt : sandproof_protocol.WorkReceipt Observation) (action : sandproof_protocol.WorkAction C) :
+    checkedResultView (host_receipts.validate receipt action) =
+      .ok (checkReceipt (actionView action.identity) (actionView receipt.identity)
+        (outcomeView receipt.outcome) (fun observation => resourceView observation.resource)) := by
+  rw [concrete_receipt_root_uses_original_dictionary]
+  exact receipt_validate_refines _ _ original_resource_getter_exact _ _
+
+theorem concrete_full_host_contract (C : Type) :
+    FullHostReceiptContract (C := C) host_receipts.validate := concrete_receipt_refines
+
+theorem concrete_effect_contract :
+    FullHostReceiptContract (C := sandbox_controller_core.model.EffectId) host_receipts.validate_effect := by
+  intro receipt action
+  rw [concrete_effect_root_exact]
+  exact concrete_receipt_refines _ _
+
+theorem concrete_receipt_accepts_iff {C : Type}
+    (receipt : sandproof_protocol.WorkReceipt Observation) (action : sandproof_protocol.WorkAction C) :
+    host_receipts.validate receipt action = .ok (.Ok ()) ↔
+      (actionView action.identity).protocol = 1 ∧ (actionView receipt.identity).protocol = 1 ∧
+      actionView receipt.identity = actionView action.identity ∧
+      ∀ observation, (outcomeView receipt.outcome).observation = some observation →
+        resourceView observation.resource = resourceView action.identity.resource := by
+  rw [concrete_receipt_root_uses_original_dictionary]
+  exact receipt_success_iff _ _ original_resource_getter_exact _ _
+
+theorem observation_error_is_exact
+    (output : Result (core.result.Result Unit sandproof_protocol.ContractError)) :
+    checkedResultView output = .ok (.error .mismatchedObservation) ↔
+      output = .ok (.Err .MismatchedObservation) := by
+  cases output using Result.cases with
+  | ret value =>
+    cases value with
+    | Ok value => simp [checkedResultView, receiptResultView]
+    | Err error => cases error <;> simp [checkedResultView, receiptResultView]
+  | vis effect continuation => simp [checkedResultView]
+  | div => simp [checkedResultView]
+
+theorem getter_does_not_validate_command_or_result (observation : Observation)
+    (command : Command) (result : ObservationResult) :
+    host_receipts.resource {observation with command := command, result := result} =
+      host_receipts.resource observation := by
+  rfl
+
+theorem receipt_does_not_validate_command_or_result {C : Type}
+    (identity : sandproof_protocol.ActionIdentity) (observation : Observation)
+    (command : Command) (result : ObservationResult) (action : sandproof_protocol.WorkAction C) :
+    host_receipts.validate ⟨identity, .ObservedSuccess {observation with command := command, result := result}⟩ action =
+      host_receipts.validate ⟨identity, .ObservedSuccess observation⟩ action := by
+  simp [host_receipts.validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.WorkOutcome.observation, core.option.Option.is_some_and,
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once,
+    linux.HostObservation.Insts.Sandproof_protocolResourceEvidence.resource]
+
+end
+end SandboxModel.Stage1Protocol.HostReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_full_host_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_effect_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.concrete_receipt_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.observation_error_is_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.getter_does_not_validate_command_or_result
+#audit_controller_proof SandboxModel.Stage1Protocol.HostReceipt.receipt_does_not_validate_command_or_result
