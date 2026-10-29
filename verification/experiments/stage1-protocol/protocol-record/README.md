@@ -13,6 +13,12 @@
 `9944f879` 与本审阅分支的基线 `41129b1d` 具有相同源码树；本分支不重复提交 #741，
 也不自动跟随后续工程提交。
 
+后续工程提交 `f3627b7b`（#747）把 Host 存储格式从 23 升到 24；该常量通过
+`controller-service::LIFECYCLE_STORE_FORMAT_VERSION` 进入实际 load 生成体。
+本目录保留的抽取视图仍为 23，不能迁记为 Host24 已证。请求/全文重放的未变
+输入按原闭包复用；load/调用方和新增 SourceWork 材料释放关系须按精确新基线
+重新核对抽取、标准实例及准入。影响核对见 `upstream-impact.json`。
+
 `InboxProtocolRecordModel` 复用现有 FullLoad、认证、全文查找、FullRecord、
 FullSave 和完整状态规格；`FullFlowContract` 对任意已解码值和明确效果提供者，
 描述同一效果状态上的实际分支及结果。`InboxProtocolRecord`、Guard、Attach、

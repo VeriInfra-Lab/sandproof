@@ -1367,5 +1367,8 @@
   "shared_acceptance": false,
   "full_v3": false,
   "original_production_proposal_sha256": "9f41e258cb0d22f20adf81440a42c39a29ceaa8e50b20a7accbf0eb438cf0c6f",
-  "production_proposal_format": "Context-only blank line markers normalized; git apply output verified identical to original proposal on all three files."
+  "production_proposal_format": "Context-only blank line markers normalized; git apply output verified identical to original proposal on all three files.",
+  "upstream_impact_sha256": "c32ab96e46c470a55243cb1113e8dce2247e57c53566ea76e3bbe905932eb920",
+  "upstream_reviewed_commit": "f3627b7bb9995251abe31e2bd2bf6252daa1f2c8",
+  "load_caller_old_results_cover_host24": false
 }
