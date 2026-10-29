@@ -1,0 +1,5 @@
+
+// Public thin root keeps the original private digest call in the exported view.
+pub fn proof_digest_instance_source_work(bytes: &[u8]) -> ContentDigest {
+    digest(bytes)
+}
