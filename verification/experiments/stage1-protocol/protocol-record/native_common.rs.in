@@ -95,5 +95,8 @@ fn proof_caller_destroy_keeps_the_real_new_current_operation_in_full_state() {
     assert_eq!(result.local, Some(local));
     assert_eq!(result.local_operation, Some(operation));
     assert!(result.current && result.terminal);
-    assert_eq!(journal.lifecycle_work_state(&stop, &context()).unwrap(), result);
+    assert_eq!(
+        journal.lifecycle_work_state(&stop, &context()).unwrap(),
+        result
+    );
 }

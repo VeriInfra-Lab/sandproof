@@ -1,0 +1,33 @@
+{
+  "proof_changes": {
+    "SandboxModel/Lifecycle/Protocol/InboxLoadHeader.lean": {
+      "original_sha256": "9c5529da229947e5a99dec6b8e5aa5571858f7143da333f2232e27abfc8f4133",
+      "host24_sha256": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
+      "numeric_replacements": 12
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadLibrary.lean": {
+      "original_sha256": "a2a89c1446567cf740bbfa6ffc48d4ff33736042f515265ebaeb21c620aa1aa1",
+      "host24_sha256": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
+      "numeric_replacements": 4
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadModel.lean": {
+      "original_sha256": "8d887da51f8af264279d3574c76130e10d4723fac54ffa860cad4089653945c6",
+      "host24_sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
+      "numeric_replacements": 2
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveFullValues.lean": {
+      "original_sha256": "41ae2cabfa0a0064bfe0a442418555ad4792b7337c32a810a4221029962d4c00",
+      "host24_sha256": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
+      "numeric_replacements": 2
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadRawCorrespondence.lean": {
+      "original_sha256": "c98e3dd9d21756f71eb637fde18e8e50491bf19c52e121865e5e52d00f719bb2",
+      "host24_sha256": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
+      "numeric_replacements": 7
+    }
+  },
+  "reason": "Explicit update to the adopted Host24 format; retain complete contract/control-flow shape, including legacy absence returning None.",
+  "source_commit": "f3627b7bb9995251abe31e2bd2bf6252daa1f2c8",
+  "counter_template_sha256": "7fa53485c497c0b16205d75405040a0784b2a32620c131741ce487c57d27b948",
+  "same_full_load_model_sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a"
+}

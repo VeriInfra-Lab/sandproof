@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "variants": {
+    "skip-independent-context": {
+      "path": "controller-service/src/controller/lifecycle_inbox/recording.rs",
+      "old": "    super::authenticated(&inbox, intent, context)?;",
+      "new": "    let _ = context;",
+      "expected_failures": [
+        "proof_caller_foreign_node_refuses_without_changing_complete_inbox_or_world"
+      ],
+      "native_observed": false
+    },
+    "replay-falls-through": {
+      "path": "controller-service/src/controller/lifecycle_inbox/recording.rs",
+      "old": "        return Ok(RecordOutcome::Replay(inbox.state(s, e)));",
+      "new": "        let _ = inbox.state(s, e);",
+      "expected_failures": [
+        "proof_caller_full_replay_returns_same_state_before_commit_points"
+      ],
+      "native_observed": false
+    },
+    "stale-local-operation": {
+      "path": "controller-service/src/controller/lifecycle_inbox/recording.rs",
+      "old": "        let operation = effects\n            .current_operation(local.sandbox)\n            .ok_or(JournalError::CorruptStore)?;",
+      "new": "        let _observed = effects\n            .current_operation(local.sandbox)\n            .ok_or(JournalError::CorruptStore)?;\n        let operation = local.operation;",
+      "expected_failures": [
+        "proof_caller_destroy_keeps_the_real_new_current_operation_in_full_state"
+      ],
+      "native_observed": false
+    }
+  }
+}

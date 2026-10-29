@@ -45,10 +45,12 @@
   "full_v3": false,
   "native_assertion_candidate": {
     "path": "native_common.rs.in",
-    "sha256": "0f0a6a765e6095e3dc3fc91efb507ece522669d06b9bcea43481973cbdf41b81",
+    "sha256": "b154c3e2e6ac7534b890d3f7248401f1f8c28ba995e36b4f6b3511723197ff31",
     "tests": 3,
     "compiled_or_run": false,
-    "existing_assertions_replaced": false
+    "existing_assertions_replaced": false,
+    "previous_unformatted_sha256": "0f0a6a765e6095e3dc3fc91efb507ece522669d06b9bcea43481973cbdf41b81",
+    "change": "rustfmt-only wrapping of the final full-state assertion; not compiled/run"
   },
   "development_extraction_source_commit": "1053c1e5d345efd998da529b9984f1361920a8ed",
   "handwritten_fixture_port": {
@@ -92,5 +94,21 @@
     "total_members": 15807,
     "all_archive_members_read_back": true,
     "name": "host24-caller-development-evidence-1053c1e5-01.tar.gz"
+  },
+  "module_entrypoints": {
+    "prepare": "prepare.py",
+    "formal": "formal.py",
+    "formal_variants": [
+      "correct",
+      "skip-independent-context",
+      "replay-falls-through",
+      "stale-local-operation"
+    ],
+    "native": "native.py",
+    "inventory": "inventory.json",
+    "mutations": "mutations.json",
+    "host24_load_missing_steps": "load_reproduction.py",
+    "public_registration_pending": true,
+    "native_accepted": false
   }
 }
