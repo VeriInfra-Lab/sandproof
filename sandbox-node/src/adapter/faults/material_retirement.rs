@@ -80,6 +80,23 @@ fn raw_hex(bytes: &[u8]) -> String {
 fn valid_capture(value: &str) -> bool {
     value.strip_prefix("capture-").is_some_and(valid_digest)
 }
+fn observation_bytes(
+    run_identity: &str,
+    material: &Material,
+    source_resource: &ResourceRef,
+) -> Result<Vec<u8>> {
+    let bytes = serde_json::to_vec(&Observation {
+        schema_version: 1,
+        run_identity,
+        phase: PHASE,
+        material,
+        source_resource,
+    })?;
+    if bytes.len() > 16_384 {
+        return Err("material gate observation exceeds original bound".into());
+    }
+    Ok(bytes)
+}
 
 pub(super) fn after_material_delete(
     request: &CaptureMaterialRetirementRequest,
@@ -111,14 +128,22 @@ pub(super) fn after_material_delete(
         plan_binding,
         plan_bytes: plan.len(),
     };
-    if let Some(gate) = Gate::select(Directory::open(PathBuf::from(path))?, &material)? {
+    if let Some(gate) = Gate::select(
+        Directory::open(PathBuf::from(path))?,
+        &material,
+        &request.full().pause.source_resource,
+    )? {
         gate.wait(&material, &request.full().pause.source_resource)?;
     }
     Ok(())
 }
 
 impl Gate {
-    fn select(directory: Directory, material: &Material) -> Result<Option<Self>> {
+    fn select(
+        directory: Directory,
+        material: &Material,
+        source_resource: &ResourceRef,
+    ) -> Result<Option<Self>> {
         let (config_file, config_bytes) = directory
             .read_file("config.json")?
             .ok_or("material gate config missing")?;
@@ -146,8 +171,17 @@ impl Gate {
             {
                 return Err("material gate consumed another work or saved plan".into());
             }
+            let original = directory
+                .read_observation()?
+                .ok_or("material gate consumed observation is missing")?;
+            if hex_digest(&original) != consumed.observation_sha256
+                || original != observation_bytes(&config.run_identity, material, source_resource)?
+            {
+                return Err("material gate consumed observation bytes or binding changed".into());
+            }
             // The caller has just repeated real physical deletion/absence
             // verification. Only this testing wait is one-shot on restart.
+            // No ready file is inferred or created for a pre-ready crash.
             return Ok(None);
         }
         Ok(Some(Self {
@@ -160,16 +194,7 @@ impl Gate {
 
     fn wait(&self, material: &Material, source_resource: &ResourceRef) -> Result<()> {
         let deadline = Instant::now() + Duration::from_millis(self.config.timeout_ms);
-        let bytes = serde_json::to_vec(&Observation {
-            schema_version: 1,
-            run_identity: &self.config.run_identity,
-            phase: PHASE,
-            material,
-            source_resource,
-        })?;
-        if bytes.len() > 16_384 {
-            return Err("material gate observation exceeds original bound".into());
-        }
+        let bytes = observation_bytes(&self.config.run_identity, material, source_resource)?;
         let digest = hex_digest(&bytes);
         let file = self.directory.create("observation.json", &bytes)?;
         let original = file.metadata()?;

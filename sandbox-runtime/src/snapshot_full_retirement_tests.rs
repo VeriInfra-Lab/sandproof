@@ -9,7 +9,7 @@ use std::{
 };
 
 struct Fixture {
-    _root: tempfile::TempDir,
+    root: tempfile::TempDir,
     layout: SnapshotLayout,
     runtime: Runtime,
     owner: u32,
@@ -41,7 +41,7 @@ impl Fixture {
             },
         };
         let value = Self {
-            _root: root,
+            root,
             layout,
             runtime,
             owner,
@@ -193,7 +193,7 @@ fn plan_with_absent_source_rejects_a_later_jail_instead_of_adopting_it() {
 #[test]
 fn saved_material_plan_preserves_a_distinct_vm_reusing_the_same_slot_uid_and_gate() {
     let mut fixture = Fixture::new(false);
-    let gate_path = fixture._root.path().join("same-position-gate");
+    let gate_path = fixture.root.path().join("same-position-gate");
     let gate = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -306,7 +306,7 @@ fn reopened_layout_retries_every_partial_source_and_store_cut_with_the_original_
     for cut in 0..=5 {
         let fixture = Fixture::new(true);
         let saved = serde_json::to_vec(&fixture.plan()).unwrap();
-        let path = fixture._root.path().join("saved-material-plan.json");
+        let path = fixture.root.path().join("saved-material-plan.json");
         Fixture::write(&path, &saved);
         File::open(&path).unwrap().sync_all().unwrap();
         for (index, item) in [
@@ -329,7 +329,7 @@ fn reopened_layout_retries_every_partial_source_and_store_cut_with_the_original_
             }
         }
         let reopened =
-            SnapshotLayout::reopen_for_owner(fixture._root.path(), [6; 32], fixture.owner).unwrap();
+            SnapshotLayout::reopen_for_owner(fixture.root.path(), [6; 32], fixture.owner).unwrap();
         let restored: FullMaterialRetirement =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         reopened.retire_full_material(&restored).unwrap();

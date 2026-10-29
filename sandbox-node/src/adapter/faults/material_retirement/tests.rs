@@ -113,7 +113,7 @@ fn release_or_failure_requires_the_exact_work_capture_plan_length_and_observatio
         "wrong-command",
     ] {
         let (_root, path) = fixture();
-        let gate = Gate::select(directory(&path), &material())
+        let gate = Gate::select(directory(&path), &material(), &source())
             .unwrap()
             .unwrap();
         let control = path.clone();
@@ -123,7 +123,7 @@ fn release_or_failure_requires_the_exact_work_capture_plan_length_and_observatio
         assert_eq!(result.is_ok(), mode == "release");
         // Reopening skips only this one test cut for the exact same plan.
         assert!(
-            Gate::select(directory(&path), &material())
+            Gate::select(directory(&path), &material(), &source())
                 .unwrap()
                 .is_none()
         );
@@ -136,7 +136,7 @@ fn release_or_failure_requires_the_exact_work_capture_plan_length_and_observatio
                 3 => changed.capture_key = format!("capture-{}", "f".repeat(64)),
                 _ => unreachable!(),
             }
-            let selected = Gate::select(directory(&path), &changed);
+            let selected = Gate::select(directory(&path), &changed, &source());
             if variant == 3 {
                 assert!(selected.unwrap().is_none());
             } else {
@@ -151,12 +151,16 @@ fn another_capture_in_the_same_generation_does_not_select_or_consume_the_gate() 
     let (_root, path) = fixture();
     let mut other = material();
     other.capture_key = format!("capture-{}", "f".repeat(64));
-    assert!(Gate::select(directory(&path), &other).unwrap().is_none());
+    assert!(
+        Gate::select(directory(&path), &other, &source())
+            .unwrap()
+            .is_none()
+    );
     assert!(!path.join("observation.json").exists());
     assert!(!path.join("consumed.json").exists());
     assert!(!path.join("ready.json").exists());
     assert!(
-        Gate::select(directory(&path), &material())
+        Gate::select(directory(&path), &material(), &source())
             .unwrap()
             .is_some()
     );
@@ -168,6 +172,63 @@ fn malformed_consumption_is_not_a_successful_restart_bypass() {
     directory(&path)
         .create("consumed.json", br#"{"schema_version":1}"#)
         .unwrap();
-    assert!(Gate::select(directory(&path), &material()).is_err());
+    assert!(Gate::select(directory(&path), &material(), &source()).is_err());
     assert!(!path.join("ready.json").exists());
+}
+
+#[test]
+fn restart_checks_original_observation_bytes_without_inventing_a_ready_cut() {
+    for mode in [
+        "unchanged-before-ready",
+        "wrong-hex",
+        "missing",
+        "changed-source",
+    ] {
+        let (_root, path) = fixture();
+        let original = observation_bytes(&"a".repeat(64), &material(), &source()).unwrap();
+        directory(&path)
+            .create("observation.json", &original)
+            .unwrap();
+        let mut digest = hex_digest(&original);
+        match mode {
+            "wrong-hex" => {
+                digest = "f".repeat(64);
+                assert!(valid_digest(&digest));
+                assert_ne!(digest, hex_digest(&original));
+            }
+            "missing" => disk::remove_file(path.join("observation.json")).unwrap(),
+            "changed-source" => {
+                let changed = ResourceRef {
+                    kind: ResourceKind::Vm,
+                    id: ResourceId::try_from("vm-test-3").unwrap(),
+                };
+                let bytes = observation_bytes(&"a".repeat(64), &material(), &changed).unwrap();
+                disk::write(path.join("observation.json"), &bytes).unwrap();
+                // Even a matching digest cannot substitute another source
+                // for the one from the caller's actual physical observation.
+                digest = hex_digest(&bytes);
+            }
+            _ => {}
+        }
+        directory(&path)
+            .create(
+                "consumed.json",
+                &serde_json::to_vec(&Consumption {
+                    schema_version: 1,
+                    run_identity: "a".repeat(64),
+                    observation_sha256: digest,
+                    material: material(),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let selected = Gate::select(directory(&path), &material(), &source());
+        if mode == "unchanged-before-ready" {
+            assert!(selected.unwrap().is_none());
+        } else {
+            assert!(selected.is_err());
+        }
+        assert!(!path.join("ready.json").exists());
+        assert!(!path.join("command.json").exists());
+    }
 }
