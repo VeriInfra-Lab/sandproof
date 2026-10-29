@@ -431,7 +431,7 @@ def audit_fixture():
     local = dict(sandbox=41, owner=23)  # Deliberately not GLOBAL IDs/owner.
     context = dict(position=0, expected_previous=None, binding=dict(sandbox=41, owner=23, vm=77))
     center = dict(schema_version=3, deployment='test-deployment',
-        versions=dict(internal_protocol=2, center_store=11, host_store=23),
+        versions=dict(internal_protocol=2, center_store=11, host_store=24),
         retention_lanes=[dict(node=node_identity(), retention_slot=1, retired_through=0, phase='open', last_retired=None)],
         sandboxes=[dict(create={'binding': binding}, private=True, released=True,
             operations=[first, last], terminal_confirmation=copy.deepcopy(response))])
