@@ -1,88 +1,98 @@
 # 原操作计划中的捕获交接切片
 
-[V4 详细计划](../../../docs/formal/04-local-core.md) · [证明工作流](../../../docs/proof-workflow.md)
+[V4 详细计划](../../../docs/formal/04-local-core.md) · [证明工作流](../../../docs/proof-workflow.md) · [覆盖记录](../../../docs/proof-coverage.md#current-status)
 
-本组件直接调用 `controller-core/src/capture.rs` 的生产值方法，不使用另一套业务解释器。
-`verification/extract-capture-handoff/src/lib.rs` 只提供透明抽取根。
-本目录保留的原值方法证明不覆盖后来接通的完整产品卸载或 Resume。两者已接入正式
-生命周期；实际实现、有限工程验收及未证明连接统一见[覆盖记录](../../../docs/proof-coverage.md#current-status)。
-当前检查点与结构化恢复范围见 [V5](../../../docs/formal/05-local-service.md#5-显式卸载检查点)，不属于本值方法证明。
-本组件通过也不表示整个控制器或真实 VM 已验证。
+本组件使用固定原 Charon/Aeneas，从真实 `controller-core` 抽取暂停补偿和迟到
+`CommitSnapshot` 的有限调用链。Lean 证明直接引用实际生成函数，不另写业务解释器。
+当前六字段调用方的入口是 `caller_replay.py`；历史四字段值层的 `replay.py`、
+`Values.lean`、`DropMaterial.lean` 和 `ReviveEligibility.lean` 保留其原版本身份，
+不作为当前调用链已通过的依据。实际通过的版本、环境与公共接线见覆盖记录。
 
-## 接口、性质与调用方责任
+## 检查范围和调用方责任
 
-| 接口/字段 | 本组件检查的内容 | 本组件之外仍须完成的连接 |
+| 实际入口或性质 | 本切片的结论 | 仍须由后续提供的条件或连接 |
 |---|---|---|
-| `CaptureCommit` | 未登记、提交未知、确认登记分开；普通失败不把未知改成未登记 | 存储结果必须绑定原计划；未知结果须对账，不能推断没有物理效果 |
-| `capture_work`、`unload_source` | 失败保留两项材料责任；资格撤销不释放它们 | 这些是逻辑责任槽，不是完整文件 pin、mmap、预算向量或物理退出证据 |
-| `observe_bundle` | 允许记录先前在途操作的迟到成功；已撤销资格保持撤销，并拒绝 Stop | 调用方须核对原 operation/epoch/generation/VM/target，接入真实完整 bundle 及持久结果 |
-| `may_stop_original` | 正常登记可以获准停止；已撤销的迟到成功不能获准停止 | 值方法不证明调用方身份检查、SQLite 原子提交、真正 Stop 或后续发布 |
-| 原 `handle_compensation` | 重新抽取完整 World 入口，确认工具仍可生成，检查不再新增 `Option.map` 依赖 | 本批不完成该入口的 World 不变量/对应证明；其外部模板绝不作为公理导入 |
+| `CaptureHandoff` 的十二个值方法 | 失败保留材料责任，撤销不能被迟到成功恢复，已撤销状态不能获准停止原 VM；有正常接受见证 | 字段表示逻辑材料责任，不代表物理文件引用、映射、预算或退出证据；值层历史只覆盖列出的转换 |
+| `handle_compensation` 的普通 Pause 分支 | 取消、超时分别与 Pending、OutcomeUnknown 组合；精确说明原记录和计划的更新，保留原材料责任 | 不覆盖其它操作种类的补偿，也不证明整个驱动能完成卸载 |
+| `current_capture` | 对应真实函数检查的 Pause 种类、原计划键、operation、epoch 和 generation | 不宣称该函数检查了 VM 或完整 target；这些条件由各自实际入口负责 |
+| 迟到 `commit` 成功反推 | 从实际成功返回推出 generation、完整 target、原快照 owner/sandbox/source generation/workspace/manifest/LocalSealed，以及实际 `observe_bundle` 成功所需条件 | 原计划行及撤销状态须绑定实际调用；有限容器写入需要相应容量条件。Unknown、work=true、source=false 不是成功反推的输入假设；NotRegistered 未被排除 |
+| 迟到 `commit` 的材料登记 | 原计划和原快照的精确更新；原资源索引成员保留并加入当前快照；其它 World 字段不变；撤销保持且不能 Stop | 不等于 SQLite 已持久化、真实 bundle 完整或 VM 已停止 |
+| `record_inner` 与外层 `record` 成功反推及组合 | 原 logical effect、原计划、current operation 等身份检查来自真实执行；外层从原 World 查询终态 Revoking 行，再接入上述材料结论 | 这是有限同步入口的实现证明，不能替代 V9 合法状态可达性、之前 Freeze/Seal 的材料来源或全生命周期组合 |
+| 正常成功见证 | 在明确的接口输入和容量条件下确实可以成功，不把成功返回本身作为见证前提 | 接口域见证不是完整系统从初态可达的证明 |
 
-共同定义位于 `SandboxModel/Lifecycle/CaptureHandoff/Conditions.lean`，只导入 Aeneas，
-不依赖任何生成类型。`FailurePreservesUses` 要求每次失败转换成功返回且材料责任不变；
-`LateSuccessSafe` 要求已撤销的状态在记录迟到成功后仍撤销、Stop 为假、已有材料责任保留。
-正确版和两个真实错误版使用同一份定义，没有为负例替换成较弱或不同的性质。
-正确版另有正常登记并获准 Stop、撤销后仍能登记材料的非空见证。
+共同性质位于 `SandboxModel/Lifecycle/CaptureHandoff/Conditions.lean`，不依赖生成类型。
+`FailurePreservesUses` 与 `LateSuccessSafe` 描述材料责任和撤销；
+`RejectsMismatchedTarget` 要求不匹配的完整目标被优先拒绝为 PlanMismatch。
+当前正确版和真实忽略 target 错误版使用同一个 `RejectsMismatchedTarget`。
 
-## 错误版与导入闭包
+## 真实抽取和依赖边界
 
-`native.py` 只在新私有副本中实施三种精确变异：普通 Pause 错走终止补偿、失败提前清空
-材料责任、迟到成功恢复已撤销资格。每版必须实际编译成功、生成新测试二进制并触发原断言；
-编译失败、缺少预期断言或单纯异常退出都不算拒绝。
+`regenerate.sh caller` 直接选择生产 `controller-core` 的局部根，包括实际外层
+`late_capture::record` 和 `handle_compensation`。旧的外部包装根可能存在于 LLBC，
+却被原 Aeneas 的未使用函数处理过滤；当前入口同时核对 translation JSON 与最终
+Lean 函数体，不能仅用 LLBC 中“存在 record”声明接通。
 
-后两版还由 `replay.py` 从相同真实 Rust 变异重新抽取，并分别证明共同性质不成立。
-对应证书在 `model/DropMaterial.lean`、`model/ReviveEligibility.lean`。
-第一种错误版本批只有原入口的原生反例，不宣称有完整 World 的 Lean 反例。
+生成的 Types、Funs 和 translation JSON 必须与已提交版本逐字节一致。
+`FunsExternal` 仅接入已有审核的十一项纯 Std 模型：Option、String、Vec 和 Bool，
+不替代业务查询或处理函数。外部模板出现其它符号即拒绝。
+`Option.and_then` 使用真实抽取体，克隆、查询和有限写入分别通过实际生成体的引理连接。
+这仍沿用原翻译工具和库模型的信任标准，不宣称翻译器本身已经形式化验证。
 
-固定 Aeneas 为相同 Rust 枚举生成同名的辅助实例，即使传入不同 namespace 也可能冲突。
-因此公共总根只导入纯 `Conditions`；正确 `Values` 和两份负例分别在独立导入闭包检查。
-原生成物保持不变。公共根未导入这些实现文件，不构成省略检查的理由。
-`replay.py` 要求三份生成库、全部 10 份实际文件的完整服务诊断和 9 个精确审计目标均通过；
-缺文件、导入错误、超时、stale、partial、警告或缺审计一律失败。
-这些是本组件独立检查要求，不表示当前公共入口已登记该组件。全局 Lake、总根、
-组件/原生登记和覆盖记录由统一集成负责；隔离后继的局部成功不能代替共享接线。
+Pause 分支有两处同名局部变量由 `capture` 改为 `handoff`，避免原 Lean 后端把局部值与
+`capture` 命名空间混淆。未改动业务条件、更新或调用顺序；新源码必须重新抽取并接受
+本候选普通检查，不能用旧源码结果自动背书。生成物不手工修补。
 
-## 复现
+正确和错误生成环境具有同名枚举辅助实例，各自在独立导入闭包检查。
+当前形式入口检查十四个调用方证明模块及总审计，并使用项目已有的本地导入解析器
+展开全部真实依赖；每份文件都接受完整服务诊断、指纹检查和它自身的精确审计。
+缺文件、依赖失败、超时、stale、partial、错误、警告或缺审计均拒绝。
+公共 Lake、总根、登记、冻结和覆盖记录由统一集成负责人维护，本组件不自行改写。
 
-从已审查的精确提交导出同一归档，记录其提交与 SHA256。只向两台执行环境复制源码归档，
-不复制 Cargo target。下面的路径由操作者替换为已有批准的私有目录、离线 Cargo 环境和重锁。
-两个组件都要求新输出目录，不覆盖旧失败记录。普通与形式重任务分开执行。
+## 正反例和复现
 
-普通测试环境：
+`native.py` 在普通测试环境执行正确版及四种真实 Rust 错误版：普通 Pause 错走终止
+补偿、失败提前清空材料责任、迟到成功恢复资格、忽略原 target。
+每版须真实编译成功并产生当前副本的新测试二进制，随后原断言失败；编译失败不算拒绝。
+当前形式入口另从真实忽略 target 的 Rust 变异抽取，并证明同一 target 性质不成立。
+该形式反例检查首个拒绝：错误实现继续查询而返回 ResourceNotFound，违反必须先返回
+PlanMismatch 的规则。它不宣称是 V9 可达状态；原生终态场景另外检查实际材料接纳。
+本批不迁移历史两份四字段形式反例，也不宣称当前四个原生错误版都有形式反例。
+
+从最终精确提交导出同一归档并记录 SHA256，两机只交接源码和原始证据，不复制 Cargo
+target。使用已有批准的私有 wrapper、固定工具/库及离线依赖；普通检查在 ning，形式检查
+在证明环境。外层调度已经持有重任务锁时，下面 `--lock` 使用独立组件锁，不能再次锁住
+同一个全局锁。每次使用新输出目录，保留旧失败记录。
+
+普通检查：
 
 ```sh
 export CARGO_HOME=/private/approved-cargo-home
 python3 verification/experiments/capture-handoff/native.py \
   --archive /private/capture-source.tar.gz --archive-sha256 SOURCE_SHA256 \
   --head EXACT_COMMIT --output /private/native-capture \
-  --lock /private/coordination/native-heavy.lock
+  --lock /private/coordination/capture-native-component.lock
 ```
 
-包含 workspace/抽取 crate 的格式检查、核心全特性测试、两者严格 Clippy 和三个真实错误版。
-原始 stdout/stderr、Cargo 实际二进制及其来源/摘要、编译器信息和结果均保留在输出目录。
+包含 workspace/抽取 crate 格式检查、核心全特性测试、两者严格 Clippy 和四个真实错误版。
 
-形式环境使用现有批准的隔离运行 wrapper 调用以下命令，保持固定工具和库：
+当前调用方形式检查：
 
 ```sh
-python3 verification/experiments/capture-handoff/replay.py \
+python3 verification/experiments/capture-handoff/caller_replay.py \
   --archive /private/capture-source.tar.gz --archive-sha256 SOURCE_SHA256 \
-  --head EXACT_COMMIT --output /private/formal-capture \
-  --lock /private/coordination/formal-heavy.lock \
+  --head EXACT_COMMIT --output /private/formal-capture-caller \
+  --lock /private/coordination/capture-formal-component.lock \
   --tools /private/fixed-tools --packages /private/fixed-lake-packages
 ```
 
-入口先检查 Charon/Aeneas 二进制摘要；重新生成正确值方法、原 World 入口与两个错误版。
-正确生成 Lean 和 translation JSON 必须与归档中的提交版本逐字节一致。三份库只登记在归档
-解出的私有 Lake 视图中，使用独立 `.lake/build`，不修改共享源码或清理缓存。
-随后执行独立构建/审计，并通过原 `tools/lean_session.py` 检查每份真实文件及其指纹。
-所有证据保留，只有完整成功才写 `complete=true`；这仍只是本组件通过，不是共享整套通过。
+入口重新抽取正确和忽略 target 版，核对真实根、生成物、外部模板和固定工具，运行
+原内核构建、同性质反例和全部本地闭包文件的真实服务检查，转发原始审计输出。
+`result.json` 保存 head、归档摘要、实际根、闭包指纹、命令/日志摘要、形式反例及真实
+诊断；只有全部成功才写 `complete=true`。这只是本组件结果，不能代替公共完整验收。
 
-## 剩余边界
+## 范围外
 
-需要继续证明原 World 的计划身份、派发/回执/发布与值方法之间的连接，以及已实现的 SQLite
-提交、真实 bundle 和材料引用、原工作撤销/退出、未知提交对账及继续原 VM 路径的对应。
-当前六字段 CaptureHandoff 的后继隔离结果另按其精确源码登记；本目录旧结果不自动适用，
-也不因产品路径已有工程验收而成为完整实现证明。
-停留在 `Pausing` 不满足完整进展目标；本组件不把这些业务义务变成外部假设。
-旧模型及旧测试的成功只适用于其原版本，不能替代本候选的检查。
+完整 worker 抽取、非 Pause 补偿、普通非终态 Commit/Stop 派发、SQLite 原子提交、
+真实 bundle/文件引用、原工作退出、未知提交对账、继续原 VM 的驱动进展，以及 Resume/GC
+和 V9 全局不变量不由本切片完成。停留在 Pausing 不能满足完整进展目标。
+这些业务义务不能通过额外外部假设或本值层定理消除。

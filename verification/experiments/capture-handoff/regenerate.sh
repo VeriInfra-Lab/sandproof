@@ -13,7 +13,13 @@ case "$variant" in
   handler) roots=(compensate) ;;
   worker) roots=(worker) ;;
   caller)
-    roots=(accepted dispatch register observe pause_failure terminate stop_permit registration_allowed commit eligibility material_uses compensate)
+    roots=('capture::*::accepted' 'capture::*::registration_dispatched'
+           'capture::*::register_bundle' 'capture::*::observe_bundle'
+           'capture::*::ordinary_failure' 'capture::*::terminate'
+           'capture::*::may_stop_original' 'capture::*::accepts_registration'
+           'capture::*::commit' 'capture::*::eligibility'
+           'capture::*::has_capture_work' 'capture::*::has_unload_source'
+           request::handle_compensation worker::late_capture::record)
     ;;
   *) echo 'expected values, handler, worker or caller' >&2; exit 2 ;;
 esac
@@ -23,16 +29,18 @@ args=()
 for root in "${roots[@]}"; do args+=(--start-from "crate::$root"); done
 namespace=CaptureHandoffRust
 subdir=CaptureHandoff
+crate=verification/extract-capture-handoff
 if [[ "$variant" == worker || "$variant" == caller ]]; then
   args+=(--include 'core::option::*::and_then')
 fi
 if [[ "$variant" == caller ]]; then
-  args+=(--start-from sandbox_controller_core::worker::late_capture::record
-         --start-from sandbox_controller_core::worker::late_capture::commit)
-  namespace=CaptureCallerRust
+  # Aeneas filters uncalled external top-level roots. Extract the real local
+  # crate so late_capture::record survives into the final Lean, not just LLBC.
+  crate=controller-core
+  namespace=CaptureCallerRust.sandbox_controller_core
   subdir=CaptureCaller
 fi
-cd verification/extract-capture-handoff
+cd "$crate"
 RUSTFLAGS="--remap-path-prefix=$ROOT=." "$CHARON" cargo --preset=aeneas \
   --error-on-warnings --sysroot default "${args[@]}" --include sandbox_controller_core \
   --dest-file "$out/capture_handoff.llbc" -- --manifest-path Cargo.toml --lib --locked --offline
