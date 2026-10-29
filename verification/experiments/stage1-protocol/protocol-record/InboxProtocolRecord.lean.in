@@ -1,0 +1,107 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolAttachConfig
+import SandboxModel.Lifecycle.Protocol.InboxProtocolGuard
+import SandboxModel.Lifecycle.Protocol.InboxSynchronous
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+noncomputable section
+
+theorem full_flow_contract : FullFlowContract record_using := by
+  intro R T N U B E saved terminal renewal unload graphic io graphicLaw represented intent context state
+  unfold record_using flowView
+  change Bind.bind (m := Result) (load_using saved terminal renewal unload graphic io.codecInboxLoadEffectsInst state) _ =
+    Bind.bind (m := Result) (InboxLoad.fullLoadView saved terminal renewal unload io.codecInboxLoadEffectsInst state) _
+  rw [← InboxLoad.full_load_refines saved terminal renewal unload graphic graphicLaw
+    io.codecInboxLoadEffectsInst represented state]
+  apply InboxLoad.bind_return_congr
+  rintro ⟨loaded, afterLoad⟩ loadReturned
+  simp only [uncurry_apply_pair]
+  cases loaded with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok loaded =>
+    cases loaded with
+    | none => simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some inbox =>
+      have bounded := InboxSynchronous.loaded_representable saved terminal renewal unload graphic
+        graphicLaw io.codecInboxLoadEffectsInst represented inbox state afterLoad loadReturned
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+        bind_tc_ok, loadedView]
+      apply InboxLoad.continue_congr
+      intro accepted
+      cases accepted with
+      | Err error => simp [
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok accepted =>
+        cases accepted
+        simp only [bind_tc_ok]
+        apply InboxLoad.continue_congr
+        intro found
+        cases found with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok found =>
+          cases found with
+          | some indices =>
+            rcases indices with ⟨s, e⟩
+            simp [uncurry_apply_pair]
+          | none =>
+            simp only [bind_tc_ok]
+            rw [guard_refines]
+            apply InboxLoad.continue_congr
+            rintro ⟨guarded, afterGuard⟩
+            simp only [uncurry_apply_pair]
+            cases guarded with
+            | Err error => simp [
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok accepted =>
+              cases accepted
+              simp only [bind_tc_ok, recordThenSave]
+              obtain ⟨⟨recorded, post⟩, recordReturned, frame⟩ := WP.spec_imp_exists
+                (InboxRecordTotal.Connection.record_config_frame inbox intent)
+              rw [recordReturned]
+              simp only [bind_tc_ok, uncurry_apply_pair]
+              cases recorded with
+              | Err error => simp [
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+              | Ok indices =>
+                rcases indices with ⟨s, e⟩
+                simp only [bind_tc_ok, uncurry_apply_pair]
+                rw [attach_refines_total]
+                apply InboxLoad.bind_return_congr
+                rintro ⟨attached, afterAttach, final⟩ attachReturned
+                simp only [uncurry_apply_pair]
+                cases attached with
+                | Err error => simp [
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                | Ok accepted =>
+                  cases accepted
+                  simp only [bind_tc_ok, saveThenState]
+                  have finalBounded : ConfigValidation.Representable final.config := by
+                    rw [attach_view_config io post intent s e afterGuard afterAttach (.Ok ()) final attachReturned, frame]
+                    exact bounded
+                  rw [InboxSave.save_refines saved terminal renewal unload graphic graphicLaw
+                    io.codecInboxSaveEffectsInst final afterAttach finalBounded]
+                  apply InboxLoad.continue_congr
+                  rintro ⟨savedResult, afterSave⟩
+                  simp only [uncurry_apply_pair]
+                  cases savedResult with
+                  | Err error => simp [
+                      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                  | Ok accepted =>
+                    cases accepted
+                    simp
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.full_flow_contract

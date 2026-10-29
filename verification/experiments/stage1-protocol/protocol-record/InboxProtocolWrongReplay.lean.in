@@ -1,0 +1,81 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolReadFixture
+import SandboxModel.Lifecycle.Protocol.InboxProtocolReplayValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.WrongReplay
+noncomputable section
+open Values ReplayValues
+open InboxLoad.Values (saved terminal renewal unload)
+
+def retainedIO : RecordEffects InboxLoad.Values.Trace := {
+  normalIO with codecInboxLoadEffectsInst := Fixture.readEffects InboxValidation.Values.recorded }
+
+theorem model_replay (trace : InboxLoad.Values.Trace) :
+    flowView saved terminal renewal unload retainedIO SavedRetirement.Values.createIntent
+      EnvelopeValues.context trace =
+      .ok (.Ok (.Replay normalState), trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.recorded) := by
+  have loaded := Fixture.loaded_model InboxValidation.Values.recorded InboxSave.Values.recorded_accepted
+    InboxLoad.Values.normal_budget (by decide) trace
+  unfold flowView
+  change Bind.bind (m := Result)
+    (InboxLoad.fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      (Fixture.readEffects InboxValidation.Values.recorded) trace) _ = _
+  rw [loaded]
+  simp only [bind_tc_ok, uncurry_apply_pair]
+  exact stored_replay_model retainedIO _
+
+-- A fallthrough path can return Recorded, an error or fail/diverge; it cannot
+-- return the required Replay result. No assumption is made about save success.
+theorem actual_not_replay (trace : InboxLoad.Values.Trace) :
+    record_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic retainedIO trace SavedRetirement.Values.createIntent EnvelopeValues.context ≠
+      .ok (.Ok (.Replay normalState), trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.recorded) := by
+  have loaded : load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic retainedIO.codecInboxLoadEffectsInst trace =
+        .ok (.Ok (some InboxValidation.Values.recorded),
+          trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.recorded) :=
+    Fixture.recorded_loaded trace
+  have guarded (state : InboxLoad.Values.Trace) :
+      guard_destroy retainedIO state InboxValidation.Values.recorded SavedRetirement.Values.createIntent =
+        .ok (.Ok (), state) := by
+    simp [guard_destroy, SavedRetirement.Values.createIntent]
+  have attached (state : InboxLoad.Values.Trace) :
+      attach_destroy retainedIO state InboxValidation.Values.recorded SavedRetirement.Values.createIntent
+        0#usize 0#usize = .ok (.Ok (), state, InboxValidation.Values.recorded) := by
+    simp [attach_destroy, SavedRetirement.Values.createIntent]
+  intro returned
+  unfold record_using at returned
+  rw [loaded] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, stored_authenticated, stored_find, stored_query] at returned
+  rw [guarded] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  rw [stored_record] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  rw [attached] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  obtain ⟨⟨savedResult, afterSave⟩, _, continued⟩ := InboxLoad.bind_success_value _ _ _ returned
+  simp only [uncurry_apply_pair] at continued
+  cases savedResult with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at continued
+  | Ok accepted =>
+    cases accepted
+    simp [stored_query] at continued
+
+theorem violates_full_contract : ¬ FullFlowContract record_using := by
+  intro contract
+  have predicted := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic retainedIO ComposedConfig.standard_graphic_contract
+    Fixture.recorded_represented SavedRetirement.Values.createIntent EnvelopeValues.context []
+  exact actual_not_replay [] (predicted.trans (model_replay []))
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.WrongReplay
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongReplay.model_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongReplay.actual_not_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongReplay.violates_full_contract

@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecordModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+
+theorem guard_refines {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (state : E) :
+    guard_destroy io state inbox intent = guardView io inbox intent state := by
+  cases operation : intent.request.operation with
+  | Create a b => simp [guard_destroy, guardView, destroy, operation]
+  | Unload a b => simp [guard_destroy, guardView, destroy, operation]
+  | Resume a b c d => simp [guard_destroy, guardView, destroy, operation]
+  | Renew a b c => simp [guard_destroy, guardView, destroy, operation]
+  | Destroy =>
+    simp [guard_destroy, guardView, destroy, operation]
+    rfl
+
+end SandboxModel.Stage1Protocol.ProtocolRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.guard_refines

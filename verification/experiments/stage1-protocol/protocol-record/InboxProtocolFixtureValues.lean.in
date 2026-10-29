@@ -1,0 +1,118 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecordModel
+import SandboxModel.Lifecycle.Protocol.InboxSynchronous
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSession
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.Values
+noncomputable section
+open InboxLoad.Values (saved terminal renewal unload bytes digest)
+open SessionShape.Values (vector)
+
+-- Synthetic lawful callbacks are witnesses, not standard Serde/SHA/SQL facts.
+def writeIO : InboxSaveEffects InboxLoad.Values.Trace := {
+  encode := fun trace inbox => .ok (.Ok bytes, trace ++ [.encodedInbox inbox])
+  digest := fun trace input => .ok (digest, trace ++ [.digested input.val])
+  update := fun trace _ _ _ => .ok (.Ok 1#usize, trace) }
+
+def normalIO : RecordEffects InboxLoad.Values.Trace := {
+  codecInboxLoadEffectsInst := InboxLoad.Values.normalEffects
+  codecInboxSaveEffectsInst := writeIO
+  releasing := fun trace _ => .ok (false, trace)
+  terminate_local := fun trace _ => .ok (.Ok (), trace)
+  current_operation := fun trace _ => .ok (none, trace) }
+
+theorem normal_recorded :
+    InboxValidation.Values.normal.record SavedRetirement.Values.createIntent =
+      .ok (.Ok (0#usize, 0#usize), InboxValidation.Values.recorded) := by
+  have absent : InboxLookup.inboxSpec SavedRetirement.Values.createIntent
+      InboxValidation.Values.normal.sessions.val 0 = .absent := rfl
+  have selected : InboxRecord.firstIndex
+      (fun session => decide (session.id = SavedRetirement.Values.createIntent.request.binding.session))
+      InboxValidation.Values.normal.sessions.val 0 = none := rfl
+  have decision : InboxRecord.freshDecision InboxValidation.Values.normal
+      SavedRetirement.Values.createIntent = .insert false (some 101#u64) := by
+    simp [InboxRecord.freshDecision, InboxRecord.retiredMatch, InboxRecord.firstIndex,
+      InboxValidation.Values.normal, vector, SavedRetirement.Values.createIntent,
+      EnvelopeValues.intent, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture,
+      ConfigBudget.Values.small, Validation.Examples.createPayload]
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists
+    (InboxRecordTotal.record_contract InboxValidation.Values.normal SavedRetirement.Values.createIntent)
+  simp only [InboxRecordTotal.RecordPost, absent, selected, InboxRecord.FreshPost, decision] at post
+  obtain ⟨index, indexValue, reply, frame, contents⟩ := post
+  have zero : index = 0#usize := by
+    apply UScalar.eq_of_val_eq
+    simpa [InboxValidation.Values.normal, vector] using indexValue
+  have sessionsSame : out.2.sessions = InboxValidation.Values.recorded.sessions := by
+    apply alloc.vec.Vec.ext
+    simpa [InboxValidation.Values.normal, vector, InboxValidation.Values.recorded,
+      InboxValidation.Values.recordedSession, InboxRecord.freshSession,
+      InboxRecord.freshEntries, InboxRecord.pendingEntry, SessionShape.Values.normal,
+      SessionShape.Values.entry, SavedRetirement.Values.normal,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent] using contents
+  have whole : out.2 = InboxValidation.Values.recorded := by
+    calc
+      out.2 = { InboxValidation.Values.normal with sessions := out.2.sessions } := frame
+      _ = { InboxValidation.Values.normal with sessions := InboxValidation.Values.recorded.sessions } :=
+        congrArg (fun sessions => { InboxValidation.Values.normal with sessions := sessions }) sessionsSame
+      _ = InboxValidation.Values.recorded := rfl
+  have replySame : out.1 = .Ok (0#usize, 0#usize) := by simpa [zero] using reply
+  have same : out = (.Ok (0#usize, 0#usize), InboxValidation.Values.recorded) :=
+    Prod.ext replySame whole
+  simpa only [same] using returned
+
+def normalState : LifecycleWorkState := InboxState.workState
+  InboxValidation.Values.recordedSession (InboxRecord.pendingEntry SavedRetirement.Values.createIntent)
+
+def writeTrace : InboxLoad.Values.Trace :=
+  [.encodedInbox InboxValidation.Values.recorded, .digested bytes.val]
+
+theorem normal_model_saved (trace : InboxLoad.Values.Trace) :
+    InboxSave.saveView saved terminal renewal unload writeIO InboxValidation.Values.recorded trace =
+      .ok (.Ok (), trace ++ writeTrace) := by
+  have accepted : InboxValidation.inboxView saved terminal renewal unload
+      InboxValidation.Values.recorded = .ok (.Ok ()) := InboxSave.Values.recorded_accepted
+  have fits : ¬ bytes.val.length > ConfigBudget.bytes InboxValidation.Values.recorded.config := by
+    change ¬ 2 > 286720
+    decide
+  simp [InboxSave.saveView, accepted, InboxSave.encodeAndSave, writeIO, fits,
+    writeTrace, alloc.vec.Vec.deref, List.append_assoc]
+
+theorem normal_model_flow (trace : InboxLoad.Values.Trace) :
+    flowView saved terminal renewal unload normalIO SavedRetirement.Values.createIntent
+      EnvelopeValues.context trace =
+      .ok (.Ok (.Recorded normalState),
+        (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) ++ writeTrace) := by
+  have authorized := (InboxSynchronous.normal_load_guard trace).2
+  have found : InboxValidation.Values.normal.find SavedRetirement.Values.createIntent = .ok (.Ok none) :=
+    (InboxLookup.find_none_iff _ _).mpr (by simp [InboxValidation.Values.normal, vector])
+  have noDestroy : destroy SavedRetirement.Values.createIntent = false := rfl
+  have query : InboxValidation.Values.recorded.state 0#usize 0#usize = .ok normalState := by
+    simpa [normalState, InboxValidation.Values.recorded, vector,
+      SessionShape.Values.entry, InboxRecord.pendingEntry, InboxValidation.Values.recordedSession,
+      SessionShape.Values.normal] using
+      InboxState.state_contract InboxValidation.Values.recorded 0#usize 0#usize (by decide) (by decide)
+  unfold flowView
+  change Bind.bind (m := Result)
+    (InboxLoad.fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      InboxLoad.Values.normalEffects trace) _ = _
+  rw [InboxLoad.Values.normal_model_loaded]
+  simp only [bind_tc_ok, uncurry_apply_pair, loadedView, authorized, found,
+    guardView, noDestroy, Bool.false_eq_true, ↓reduceIte, recordThenSave,
+    normal_recorded, attachView, saveThenState]
+  change Bind.bind (m := Result)
+    (InboxSave.saveView saved terminal renewal unload writeIO InboxValidation.Values.recorded
+      (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal)) _ = _
+  rw [normal_model_saved]
+  simp [query]
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Values.normal_recorded
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Values.normal_model_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Values.normal_model_flow

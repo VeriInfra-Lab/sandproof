@@ -1,0 +1,85 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolDestroyValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open DestroyValues
+
+def pendingEntries : alloc.vec.Vec Entry := vector [created, InboxRecord.pendingEntry destroyIntent] (by simp)
+def pendingSession : Session := {
+  beforeSession with current_version := 2#u64, terminal := true, entries := pendingEntries }
+def pending : Inbox := container pendingSession
+
+theorem selected : InboxAppend.ExistingSelection before destroyIntent 0#usize := by
+  simp [InboxAppend.ExistingSelection, InboxLookup.NoKey, InboxRecord.firstIndex,
+    before, container, beforeSession, vector, created, InboxRecord.pendingEntry,
+    create, destroyIntent, SavedRetirement.Values.createIntent, SavedRetirement.Values.destroyIntent,
+    EnvelopeValues.intent, InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal]
+
+theorem decision : InboxAppend.existingDecision before beforeSession destroyIntent = .append true := by
+  simp [InboxAppend.existingDecision, InboxAppend.isDestroy, InboxAppend.operationAllowed,
+    InboxRecord.sdkRenewal,
+    before, container, beforeSession, vector, created, InboxRecord.pendingEntry,
+    create, destroyIntent, SavedRetirement.Values.createIntent, SavedRetirement.Values.destroyIntent,
+    EnvelopeValues.intent, InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, InboxRecordValidation.inbox, InboxRecordValidation.config,
+    ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small]
+
+theorem recorded : before.record destroyIntent = .ok (.Ok (0#usize, 1#usize), pending) := by
+  have contract := InboxRecordTotal.total_implies_existing Inbox.record InboxRecordTotal.record_contract
+    before destroyIntent 0#usize selected
+  have selectedSession : before.sessions.val[0#usize.val]'(InboxAppend.selected_bound
+      before destroyIntent 0#usize selected) = beforeSession := by simp [before, container, vector]
+  simp only [selectedSession, decision] at contract
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  obtain ⟨es, index, values, indexValue, outcome⟩ := post
+  have sameEntries : es = pendingEntries := by
+    apply alloc.vec.Vec.ext
+    simpa [beforeSession, pendingEntries, vector] using values
+  have sameIndex : index = 1#usize := by
+    apply UScalar.eq_of_val_eq
+    simpa [beforeSession, vector] using indexValue
+  have appended : InboxAppend.appendedSession beforeSession destroyIntent true pendingEntries =
+      pendingSession := rfl
+  have updated : before.sessions.set 0#usize pendingSession = pending.sessions := by
+    apply alloc.vec.Vec.ext
+    simp [before, pending, container, vector]
+  have replaced : InboxAppend.replaceSession before 0#usize pendingSession = pending := by
+    unfold InboxAppend.replaceSession
+    rw [updated]
+    rfl
+  simpa only [outcome, sameEntries, sameIndex, appended, replaced] using returned
+
+theorem authenticated : sandproof_controller_service.controller.lifecycle_inbox.authenticated
+    before destroyIntent EnvelopeValues.context = .ok (.Ok ()) := by
+  apply (InboxAdmission.accepts_iff _ _ _).mpr
+  refine ⟨?_, envelopes.2⟩
+  constructor <;> rfl
+
+theorem not_found : before.find destroyIntent = .ok (.Ok none) :=
+  (InboxLookup.find_none_iff _ _).mpr selected.1
+
+theorem session_index : before.session_index destroyIntent.request.binding.session = .ok (some 0#usize) := by
+  obtain ⟨index, returned, position⟩ := WP.spec_imp_exists
+    (InboxRecord.session_index_spec before destroyIntent.request.binding.session)
+  rw [selected.2] at position
+  cases index with
+  | none => simp at position
+  | some s =>
+    have zero : s = 0#usize := UScalar.eq_of_val_eq (by simpa using position)
+    simpa [zero] using returned
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.selected
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.decision
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.recorded
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.authenticated
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.not_found
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyRecordValues.session_index

@@ -1,0 +1,138 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecordModel
+import SandboxModel.Lifecycle.Protocol.InboxSynchronous
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.Fixture
+noncomputable section
+open InboxLoad
+open InboxLoad.Values
+
+def readEffects (inbox : Inbox) : InboxLoadEffects Trace :=
+  effects (.Ok inbox) bytes bytes storedDigest 286720#i64 InboxLoadConfig.LifecycleValues.normal
+
+theorem represented (inbox : Inbox) (bounded : ConfigValidation.Representable inbox.config) :
+    DecodedStringsRepresentable (readEffects inbox) := by
+  intro state input value after equation
+  simp only [readEffects, effects, Result.ok.injEq, Prod.mk.injEq,
+    core.result.Result.Ok.injEq] at equation
+  rcases equation with ⟨same, _⟩
+  rw [← same]
+  exact bounded
+
+theorem loaded_model (inbox : Inbox)
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (budgetSame : budgetValue inbox.config = 286720#u64)
+    (small : inbox.config.max_operations_per_session.val ≤ 8) (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (readEffects inbox) trace =
+      .ok (.Ok (some inbox), trace ++ completeTrace inbox) := by
+  have finish (state : Trace) : finishView (readEffects inbox) inbox state =
+      .ok (.Ok (some inbox), state ++ policyTrace) := by
+    have under : ¬ inbox.config.max_operations_per_session.val >
+        InboxLoadConfig.LifecycleValues.normal.max_operations_per_sandbox.val := by
+      change ¬ inbox.config.max_operations_per_session.val > 8
+      omega
+    simp [finishView, readEffects, effects, policy_read, attempt, under]
+  have body (state : Trace) : bodyView (readEffects inbox) validation budget 286720#u64 state =
+      .ok (.Ok (some inbox), state ++ bodyTrace inbox) := by
+    simp only [bodyView, readEffects, effects, attempt, bind_tc_ok, uncurry_apply_pair]
+    simp only [digestView, bind_tc_ok, uncurry_apply_pair,
+      show digest.val = storedDigest.val from rfl, ne_eq, not_true_eq_false, ↓reduceIte]
+    simp only [canonicalView, attempt, bind_tc_ok, uncurry_apply_pair]
+    rw [InboxLoadLibrary.vec_ne]
+    simp only [ne_eq, not_true_eq_false, decide_false, bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+    simp only [validatedView, budget, budgetSame, bind_tc_ok, ne_eq, not_true_eq_false, ↓reduceIte,
+      validation, checked]
+    change finishView (readEffects inbox) inbox
+      (state ++ [.bodyQuery bodyStatement] ++ [.decodedInbox bytes.val] ++
+        [.digested bytes.val] ++ [.encodedInbox inbox]) = _
+    rw [finish]
+    simp [bodyTrace, afterDigest, afterEncoding, List.append_assoc]
+  have limits (state : Trace) : limitsView (readEffects inbox) validation budget
+      InboxLoadConfig.LifecycleValues.capacity 2#i64 286720#i64 state =
+      .ok (.Ok (some inbox), state ++ bodyTrace inbox) := by
+    unfold limitsView
+    rw [if_neg (by decide : ¬ (2#i64 < 0#i64))]
+    rw [show core.num.I64.cast_unsigned 2#i64 = .ok 2#u64 from rfl]
+    simp only [bind_tc_ok]
+    rw [if_neg (by decide : ¬ (286720#i64 < 0#i64))]
+    rw [show core.num.I64.cast_unsigned 286720#i64 = .ok 286720#u64 from rfl]
+    simp only [bind_tc_ok]
+    rw [if_neg (by decide : ¬ (286720#u64 < 2#u64))]
+    rw [if_neg (by decide : ¬ (286720#u64 > InboxLoadConfig.LifecycleValues.capacity.max_sql_value_bytes))]
+    rw [if_neg (by decide : ¬ (286720#u64 > maximumBytes))]
+    exact body state
+  have current (state : Trace) : currentView (readEffects inbox) validation budget state =
+      .ok (.Ok (some inbox), state ++ currentTrace inbox) := by
+    simp only [currentView, readEffects, effects, capacityView, capacity_read, attempt,
+      bind_tc_ok, uncurry_apply_pair, ne_eq, not_true_eq_false, decide_false,
+      Bool.false_eq_true, ↓reduceIte]
+    change limitsView (readEffects inbox) validation budget InboxLoadConfig.LifecycleValues.capacity
+      2#i64 286720#i64 (state ++ [.boolQuery internalStatement] ++ policyTrace ++
+        [.lengthQuery lengthsStatement]) = _
+    rw [limits]
+    simp [currentTrace, capacityTrace, List.append_assoc]
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have existsReturns (state : Trace) : (readEffects inbox).query_bool state existsStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery existsStatement]) := by
+    simp [readEffects, effects, existsDifferent]
+  have sourceReturns (state : Trace) : (readEffects inbox).query_bool state sourceStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery sourceStatement]) := by
+    simp [readEffects, effects, sourceDifferent]
+  have versionReturns (state : Trace) : (readEffects inbox).checkpointconfigReadConfigEffectsInst.query_i64
+      state versionStatement = .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp [readEffects, effects, policyEffects, versionDifferent]
+  change loadView (readEffects inbox) validation budget trace = _
+  simp only [loadView, existsReturns, versionReturns, sourceReturns, attempt, bind_tc_ok, uncurry_apply_pair]
+  simp [LIFECYCLE_STORE_FORMAT_VERSION]
+  have literalValue : ((23#64)#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv, completeTrace, currentTrace,
+    capacityTrace, bodyTrace, afterDigest, afterEncoding, List.append_assoc]
+
+theorem loaded_actual (inbox : Inbox)
+    (bounded : ConfigValidation.Representable inbox.config)
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (budgetSame : budgetValue inbox.config = 286720#u64)
+    (small : inbox.config.max_operations_per_session.val ≤ 8) (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (readEffects inbox) trace =
+      .ok (.Ok (some inbox), trace ++ completeTrace inbox) := by
+  exact (full_load_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    (readEffects inbox) (represented inbox bounded) trace).trans
+    (loaded_model inbox checked budgetSame small trace)
+
+theorem recorded_represented : DecodedStringsRepresentable (readEffects InboxValidation.Values.recorded) :=
+  represented InboxValidation.Values.recorded InboxValidation.Values.fixture_representable
+
+theorem recorded_loaded (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (readEffects InboxValidation.Values.recorded) trace =
+      .ok (.Ok (some InboxValidation.Values.recorded),
+        trace ++ completeTrace InboxValidation.Values.recorded) := by
+  exact loaded_actual InboxValidation.Values.recorded InboxValidation.Values.fixture_representable
+    InboxSave.Values.recorded_accepted normal_budget (by decide) trace
+
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.Fixture
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Fixture.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Fixture.loaded_model
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Fixture.loaded_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Fixture.recorded_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Fixture.recorded_loaded
