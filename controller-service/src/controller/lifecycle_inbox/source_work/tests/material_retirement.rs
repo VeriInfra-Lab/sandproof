@@ -303,12 +303,12 @@ fn frozen_old_plan_survives_third_capture_and_latest_release_replacement() {
     );
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
     journal.publish_checkpoint(&mut NeverCrash).unwrap();
-    let retained_inputs: u64 = journal
+    let retained_inputs: i64 = journal
         .journal
         .connection
         .query_row(
             "SELECT count(*) FROM controller_inputs WHERE sequence<=?1",
-            [witnesses[0].input_sequence],
+            [i64::try_from(witnesses[0].input_sequence).unwrap()],
             |row| row.get(0),
         )
         .unwrap();
