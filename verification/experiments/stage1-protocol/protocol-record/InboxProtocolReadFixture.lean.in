@@ -99,7 +99,7 @@ theorem loaded_model (inbox : Inbox)
   change loadView (readEffects inbox) validation budget trace = _
   simp only [loadView, existsReturns, versionReturns, sourceReturns, attempt, bind_tc_ok, uncurry_apply_pair]
   simp [LIFECYCLE_STORE_FORMAT_VERSION]
-  have literalValue : ((23#64)#iscalar : I64).val = 23 := by decide
+  have literalValue : ((24#64)#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv, completeTrace, currentTrace,
     capacityTrace, bodyTrace, afterDigest, afterEncoding, List.append_assoc]
 

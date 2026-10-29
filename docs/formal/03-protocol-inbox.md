@@ -113,3 +113,30 @@ save、BeforeCommit 或 AfterCommit 错误都不能独自推出事务没有效�
 同步效果接口不替代具体 JSON、SHA、SQL、同事务快照、提交未知和重启证明。认证来源、
 当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。完整
 manifest 文件集、真实字节/网络外壳和系统结论继续是独立义务。
+
+## 7. 同步调用方与 Destroy 的连接义务
+
+[调用方切片](../../verification/experiments/stage1-protocol/protocol-record/README.md)
+连接实际 `record_using`：完整 load 后检查独立 context，全文查找命中后直接返回 Replay；
+新操作按释放中守卫、完整 record、Destroy 附加操作、save、state 的原顺序执行。
+`FullFlowContract` 复用原 FullLoad、认证/查找、FullRecord、FullSave 和状态规格，
+对任意已解码意图与效果状态给出对应，不能把整个 handler 或事务设为正确前提。
+
+Destroy 的释放中拒绝仍读取原本地 sandbox 的原 slot 状态。实际终止调用返回成功后，
+仍须读取同一 sandbox 的当前操作号；缺失时拒绝，不能写回旧 binding.operation。
+释放状态、终止结果和操作号分别是明确的效果接口，不因此推出资源物理存在、已退出、
+材料不再被引用或已经耐久提交。SourceWork/GC 的事实按实际读取范围交 V4/V5/V6，
+完整 SourceWork 证明不作为无关同步值定理的前置条件。
+
+`StandardRecord` 各方法转发原同一 WorldTransaction 的连接及 namespace，复用原
+StandardConfigRead/StandardInboxSave、JSON、SHA、SQL 及 terminate_local 实现。
+原标准实例的逐符号库条件与这条具体接线须分别核对；不把整个 Serde/SQLite 事务
+作为可信业务。Replay 在本次 save、BeforeCommit、当前事务 commit 和 AfterCommit
+之前返回；begin 内的 prepare_write 在 BEGIN IMMEDIATE 前执行，不能据Replay
+推出此前无效果。新操作保留原故障点顺序，返回错误仍不表示没有发生效果。
+
+Host 存储版本通过实际常量进入 load 的两处分支，必须随精确输入重新抽取和验收。
+helper 对非当前版本且收件表、SourceWork 表均缺席时保留 None；不能加强为所有旧
+版本均拒绝。版本标记、32字节摘要值和重编码相等也不表示真实材料完整或已经计算
+内容哈希。正常见证和真实错误版继续使用同一完整合同；事务提交未知、重启、真实
+JSON/TLS、manifest 现版准入/真实文件材料及完整系统结论仍分别登记。
