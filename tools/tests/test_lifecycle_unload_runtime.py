@@ -586,7 +586,7 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
             current_version=accepted['accepted_version'],phase=phase,
             unload_outcome=({'state':'unloaded','facts':{}} if phase=='unloaded' else {'state':'pending'} if phase=='unloading' else None),create_refusal=None)
 
-    def test_two_restore_cycles_keep_session_owner_and_monotone_original_keys(self):
+    def test_three_restore_cycles_keep_session_owner_and_monotone_original_keys(self):
         client=self.client()
         calls=[]
         def accepted(method,path,*,key,body,status):
@@ -599,11 +599,13 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
             client.resume(self.view(client,'unloaded'))
             client.unload(self.view(client,'running'))
             client.resume(self.view(client,'unloaded'))
+            client.unload(self.view(client,'running'))
+            client.resume(self.view(client,'unloaded'))
             client.destroy(self.view(client,'running'))
-        self.assertEqual([row[1]['sequence'] for row in calls],[2,3,4,5,6])
-        self.assertEqual([row[1]['expected_version'] for row in calls],[1,2,3,4,5])
+        self.assertEqual([row[1]['sequence'] for row in calls],[2,3,4,5,6,7,8])
+        self.assertEqual([row[1]['expected_version'] for row in calls],[1,2,3,4,5,6,7])
         self.assertEqual([row[0].rsplit('/',1)[-1] for row in calls],
-            ['unload','resume','unload','resume','destroy'])
+            ['unload','resume','unload','resume','unload','resume','destroy'])
         self.assertTrue(all('/sessions/original-session/' in row[0] for row in calls))
         self.assertEqual(client.current_acceptance['key']['owner'],'1')
 
@@ -611,6 +613,30 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         first,second=self.client(),self.client('2')
         self.assertNotEqual(first.key(1),second.key(1))
         self.assertEqual(second.key(1)['owner'],'2')
+
+    def test_old_resume_replay_preserves_original_acceptance_and_current_query(self):
+        client=self.client()
+        request=dict(window=1,sequence=3,expected_version=2)
+        accepted=dict(session=client.session,key=client.key(3),accepted_version=3)
+        current=self.view(client,'unloaded')
+        before=(client.sequence,client.current_acceptance)
+        with patch.object(client,'read_json',return_value=accepted) as send, \
+                patch.object(client,'query',return_value=current):
+            client.assert_resume_replay(request,accepted,current)
+        self.assertEqual(send.call_args.kwargs['body'],request)
+        self.assertEqual(send.call_args.kwargs['status'],202)
+        self.assertEqual((client.sequence,client.current_acceptance),before)
+
+    def test_old_resume_replay_cannot_return_a_new_acceptance_or_change_current(self):
+        client=self.client()
+        accepted=dict(session=client.session,key=client.key(3),accepted_version=3)
+        current=self.view(client,'unloaded')
+        for result,view in ((dict(accepted,accepted_version=9),current),
+                            (accepted,dict(current,phase='resuming'))):
+            with self.subTest(result=result,view=view), \
+                    patch.object(client,'read_json',return_value=result), \
+                    patch.object(client,'query',return_value=view),self.assertRaises(AssertionError):
+                client.assert_resume_replay(dict(window=1,sequence=3,expected_version=2),accepted,current)
 
     def test_state_lost_completes_original_resume_and_allows_explicit_destroy(self):
         client=self.client()
@@ -978,9 +1004,9 @@ class SourceRowsTests(unittest.TestCase):
         self.host=dict(native=dict(maintenance=dict(max_operations_per_sandbox=8,
             capacity=dict(max_sql_value_bytes=16*1024**2,max_sql_rows=8192))),
             inbox=dict(max_sessions=1,node=dict(node_id='original')),source_observation=self.config)
-        self.reserve=65536+4*16384+8192+131072+4*16384+4096+8192
+        self.reserve=65536+4*16384+8192+131072+4*16384+4096+8192+4096
         self.conn.executescript('CREATE TABLE controller_meta(id INTEGER,version INTEGER);'
-            'INSERT INTO controller_meta VALUES(1,23);'
+            'INSERT INTO controller_meta VALUES(1,24);'
             'CREATE TABLE controller_source_work(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER);'
             'CREATE TABLE controller_source_work_records(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER,work_key BLOB);')
         meta=json.dumps(dict(config=self.config,node=self.host['inbox']['node'],max_sessions=1)).encode()
@@ -996,7 +1022,7 @@ class SourceRowsTests(unittest.TestCase):
         self.assertEqual(self.conn.total_changes,before)
 
     def test_wrong_format_missing_row_and_changed_reserve_are_rejected(self):
-        for statement in ('UPDATE controller_meta SET version=22',
+        for statement in ('UPDATE controller_meta SET version=23',
                 'DELETE FROM controller_source_work_records WHERE id=6',
                 'UPDATE controller_source_work_records SET reserve_bytes=1 WHERE id=1'):
             with self.subTest(statement=statement):
@@ -1010,7 +1036,8 @@ class SourceRowsTests(unittest.TestCase):
         anchor=dict(original='work')
         key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
         record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
-            observation=None,capture=None,restore=None,retirement=None)
+            observation=None,capture=None,restore=None,retirement=None,
+            material_release=dict(producer=None,consumer=None))
         encoded=json.dumps(record,separators=(',',':')).encode()
         self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
             (encoded,self.hashlib.sha256(encoded).digest(),key))
@@ -1024,6 +1051,34 @@ class SourceRowsTests(unittest.TestCase):
         key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
         record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
             observation=None,capture=None,restore=None)
+        encoded=json.dumps(record,separators=(',',':')).encode()
+        self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
+            (encoded,self.hashlib.sha256(encoded).digest(),key))
+        with self.assertRaises(ValueError):
+            runtime.checked_source_records(self.conn,self.host,self.deadline)
+
+    def test_material_release_requires_both_explicit_options_and_complete_witness(self):
+        witness=dict(context=dict(position=1,expected_previous=None,
+            binding=dict(owner=2,sandbox=3,generation=4,vm=5,network=6)),input_sequence=7)
+        value=dict(producer=witness,consumer=None)
+        self.assertIs(runtime.checked_material_release(value),value)
+        import copy
+        mutations=[None,{},dict(producer=witness),dict(producer=None,consumer=None,extra=True)]
+        for name in ('context','input_sequence'):
+            changed=copy.deepcopy(value);del changed['producer'][name];mutations.append(changed)
+        for name in ('position','expected_previous','binding'):
+            changed=copy.deepcopy(value);del changed['producer']['context'][name];mutations.append(changed)
+        changed=copy.deepcopy(value);changed['producer']['input_sequence']=True;mutations.append(changed)
+        changed=copy.deepcopy(value);changed['producer']['context']['binding']['generation']=-1;mutations.append(changed)
+        for changed in mutations:
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                runtime.checked_material_release(changed)
+
+    def test_missing_material_release_is_rejected_even_with_current_host_version(self):
+        anchor=dict(original='work')
+        key=self.hashlib.sha256(json.dumps(anchor,separators=(',',':')).encode()).digest()
+        record=dict(work=dict(anchor=anchor,requirement=dict(work_binding=list(key))),
+            observation=None,capture=None,restore=None,retirement=None)
         encoded=json.dumps(record,separators=(',',':')).encode()
         self.conn.execute('UPDATE controller_source_work_records SET state_json=?,sha256=?,work_key=? WHERE id=1',
             (encoded,self.hashlib.sha256(encoded).digest(),key))
@@ -1181,7 +1236,8 @@ class MaterialSettlementBindingTests(unittest.TestCase):
     def record(self,state='retiring'):
         full=dict(pause={},compatibility={},state_bytes=4096,memory_bytes=8192,disk_bytes=16384,
             api_timeout_ms=1000,worker_timeout_ms=2000)
-        anchor=dict(local=dict(sandbox=1,owner=2),native=dict(generation=3))
+        anchor=dict(local=dict(sandbox=1,owner=2),native=dict(generation=3),
+            request=dict(request=dict(binding=dict(session='original'))))
         requirement=dict(work_binding=[7]*32)
         capture=dict(full=full,action=None,worker=None,completed=None,
             reserved_material_bytes=2*(4096+8192+16384)+2*262144+65536)
@@ -1189,16 +1245,23 @@ class MaterialSettlementBindingTests(unittest.TestCase):
         digest=lambda value:list(runtime.hashlib.sha256(value).digest())
         work=digest(json.dumps(original,ensure_ascii=False,separators=(',',':')).encode())
         raw=list(b'controlled original physical-port plan')
+        witness=lambda generation,vm:dict(context=dict(position=generation,expected_previous=None,
+            binding=dict(owner=2,sandbox=1,generation=generation,vm=vm,network=vm)),input_sequence=vm)
+        release=dict(producer=witness(3,13),consumer=witness(4,14))
+        claim=dict(intent={'original':'accepted-resume'},local=dict(sandbox=1,owner=2,operation=8),
+            generation=4,material_use=False,activation={'original':'activation'})
+        closure=dict(release_binding=runtime._material_json_digest(release),
+            restore_binding=runtime._material_json_digest([
+                claim['intent'],claim['local'],claim['generation'],claim['activation']]),
+            reason=dict(kind='terminal',operation=dict(sandbox=1,operation=5),epoch=4,workspace=6))
         plan=dict(bytes=raw,work_binding=work,plan_binding=digest(bytes(raw)),
-            quiescence=dict(sandbox=1,owner=2,epoch=4,operation=5,workspace=6,
-                worker_drained='Confirmed',data_connections_drained='Confirmed',
-                host_resources_reclaimed='Confirmed',external_pins_released='Confirmed'))
+            closure=closure)
         retirement=dict(state=state,plan=plan)
         if state=='settled':
             retirement['settlement']=dict(work_binding=work,plan_binding=plan['plan_binding'],
                 released_material_bytes=capture['reserved_material_bytes'])
         return dict(work=dict(anchor=anchor,requirement=requirement),observation=None,
-            capture=capture,restore=dict(material_use=False),retirement=retirement)
+            capture=capture,restore=claim,retirement=retirement,material_release=release)
 
     def test_retiring_remains_fully_charged_and_only_bound_settlement_is_zero(self):
         retiring=self.record()
@@ -1223,8 +1286,14 @@ class MaterialSettlementBindingTests(unittest.TestCase):
         changed=copy.deepcopy(original);changed['retirement']['plan']['bytes'][0]^=1;mutations.append(changed)
         changed=copy.deepcopy(original);changed['capture']['full']['disk_bytes']+=1;mutations.append(changed)
         changed=copy.deepcopy(original);changed['restore']['material_use']=True;mutations.append(changed)
-        changed=copy.deepcopy(original);changed['retirement']['plan']['quiescence']['worker_drained']='Unconfirmed';mutations.append(changed)
-        changed=copy.deepcopy(original);changed['retirement']['plan']['quiescence']['sandbox']+=1;mutations.append(changed)
+        for name in ('release_binding','restore_binding','reason'):
+            changed=copy.deepcopy(original);del changed['retirement']['plan']['closure'][name];mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['closure']['release_binding']=[0]*32;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['closure']['restore_binding']=None;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['closure']['reason']['operation']['sandbox']+=1;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['retirement']['plan']['quiescence']=changed['retirement']['plan'].pop('closure');mutations.append(changed)
+        changed=copy.deepcopy(original);changed['material_release']['consumer']=None;mutations.append(changed)
+        changed=copy.deepcopy(original);changed['restore']['activation']={'replacement':True};mutations.append(changed)
         for changed in mutations:
             with self.subTest(changed=changed),self.assertRaises(ValueError):
                 runtime.material_source_charge(changed)
@@ -1234,3 +1303,70 @@ class MaterialSettlementBindingTests(unittest.TestCase):
             record=self.record('settled');record['capture']=capture
             with self.subTest(capture=capture),self.assertRaises(ValueError):
                 runtime.material_source_charge(record)
+
+    def successor_records(self):
+        import copy
+        original=self.record('settled')
+        successor=self.record();successor['retirement']=None;successor['restore']=None
+        successor['capture']['completed']=[9]*32
+        successor['work']['anchor']=dict(local=dict(sandbox=1,owner=2),
+            native=dict(generation=4,current_vm=14),execution_origin=copy.deepcopy(original['restore']['intent']),
+            request=dict(request=dict(binding=dict(session='original'))))
+        successor['work']['requirement']['work_binding']=runtime._material_json_digest(successor['work']['anchor'])
+        original['retirement']['plan']['closure']['reason']=dict(kind='superseded',
+            successor_work_binding=successor['work']['requirement']['work_binding'],
+            successor_full_binding=runtime._material_json_digest(successor['capture']['full']),
+            manifest_digest=successor['capture']['completed'])
+        return original,successor
+
+    def test_frozen_successor_bindings_survive_a_later_current_source(self):
+        import copy
+        original,successor=self.successor_records()
+        later=copy.deepcopy(successor)
+        later['work']['requirement']['work_binding']=[8]*32
+        later['work']['anchor']['native']=dict(generation=5,current_vm=15)
+        self.assertEqual(runtime.material_source_charge(original),0)
+        runtime.checked_material_relations([original,successor,later])
+
+    def test_frozen_successor_cannot_be_replaced_by_manifest_number_or_new_vm(self):
+        import copy
+        for fault in ('missing','duplicate','full','manifest','origin','generation','vm','session'):
+            original,successor=self.successor_records()
+            records=[original,successor]
+            if fault=='missing':records.remove(successor)
+            elif fault=='duplicate':records.append(copy.deepcopy(successor))
+            elif fault=='full':successor['capture']['full']['disk_bytes']+=1
+            elif fault=='manifest':successor['capture']['completed']=[8]*32
+            elif fault=='origin':successor['work']['anchor']['execution_origin']={'replacement':True}
+            elif fault=='generation':successor['work']['anchor']['native']['generation']+=1
+            elif fault=='vm':successor['work']['anchor']['native']['current_vm']+=1
+            elif fault=='session':successor['work']['anchor']['request']['request']['binding']['session']='other'
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                runtime.checked_material_relations(records)
+
+    def test_missing_optional_restore_binding_or_unknown_reason_is_not_compatible(self):
+        import copy
+        for fault in ('missing_restore','unknown_reason','terminal_extra','superseded_missing','superseded_bool'):
+            record=self.record('settled')
+            closure=record['retirement']['plan']['closure']
+            if fault=='missing_restore':del closure['restore_binding']
+            elif fault=='unknown_reason':closure['reason']={'kind':'old_terminal'}
+            elif fault=='terminal_extra':closure['reason']['current_epoch']=4
+            else:
+                closure['reason']=dict(kind='superseded',successor_work_binding=[7]*32,
+                    successor_full_binding=[8]*32,manifest_digest=[9]*32)
+                if fault=='superseded_missing':del closure['reason']['manifest_digest']
+                else:closure['reason']['manifest_digest']=[True]*32
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                runtime.material_source_charge(record)
+
+    def test_never_restored_terminal_uses_explicit_null_not_hash_of_null(self):
+        record=self.record('settled')
+        record['restore']=None
+        record['material_release']['consumer']=None
+        closure=record['retirement']['plan']['closure']
+        closure['release_binding']=runtime._material_json_digest(record['material_release'])
+        closure['restore_binding']=None
+        self.assertEqual(runtime.material_source_charge(record),0)
+        closure['restore_binding']=runtime._material_json_digest(None)
+        with self.assertRaises(ValueError):runtime.material_source_charge(record)

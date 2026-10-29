@@ -543,6 +543,15 @@ class PublicUnloadScenario:
         self.assert_original_replay(saved)
         self.remaining()
 
+    def assert_resume_replay(self, request, accepted, current):
+        """The original full request returns its acceptance, preserving current view."""
+        self.step('retired-source-resume-replay', 202)
+        replay = self.read_json('POST', self.path() + '/resume', key=self.owner_key,
+            body=copy.deepcopy(request), status=202)
+        assert replay == accepted, 'old Resume did not return its original acceptance'
+        self.step('retired-source-current-query', 200)
+        assert self.query() == current, 'old Resume replay changed current lifecycle state'
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -698,7 +707,9 @@ def exercise(args):
     prepare_destroy = args.scenario == 'restore-prepare-destroy'
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
     data_drain = args.scenario == 'data-drain'
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain):
+    retirement_restart = args.scenario == 'material-retirement-restart'
+    retirement_observation = args.scenario == 'normal' or retirement_restart
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -713,7 +724,7 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
-    capture_probe = data_probe = cow_probe = None
+    capture_probe = data_probe = cow_probe = retirement_probe = None
     terminal_destroy_done = False
     failed = False
     try:
@@ -804,7 +815,8 @@ def exercise(args):
             position=control_physical['context']['position'])
         report['cycles']=[]
         lost=None
-        for cycle in (1,2):
+        restore_cycles = 3 if args.scenario == 'normal' else 2
+        for cycle in range(1, restore_cycles + 1):
             report['phase']='public-resume-'+str(cycle)
             gate_receipt=None
             if cycle==1 and restore_fault:
@@ -815,11 +827,13 @@ def exercise(args):
                 capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
                     'restore-prepare-destroy' if prepare_destroy else 'restore-prepare-receipt')
                 report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
-            if args.scenario == 'normal':
+            if retirement_observation:
                 from lifecycle_unload_cow import SealedSourceProbe
                 cow_probe = SealedSourceProbe(physical, session=client.session,
                     witness_before=client.witness, deadline=deadline)
             accepted=client.resume(saved)
+            original_physical = copy.deepcopy(physical)
+            original_resume_request = copy.deepcopy(client.resume_request)
             if cycle == 1 and prepare_fault:
                 report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted, deadline)
                 if prepare_destroy:
@@ -996,6 +1010,13 @@ def exercise(args):
                 control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+            if cycle < restore_cycles:
+                if retirement_restart:
+                    from lifecycle_unload_retirement import RetirementRestartProbe
+                    retirement_probe = RetirementRestartProbe(runtime,client.session,
+                        original_physical,deadline)
+                    report['phase'] = 'arm-original-material-retirement-gate'
+                    report['material_retirement_arm'] = retirement_probe.arm(args.activation_gate_timeout_ms)
                 if capture_stage is not None:
                     from lifecycle_unload_capture_faults import CaptureHandoffProbe
                     gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
@@ -1003,7 +1024,7 @@ def exercise(args):
                     capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
                         capture_stage, gate)
                     report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
-                report['phase']='second-public-unload'
+                report['phase']='public-unload-after-resume-'+str(cycle)
                 accepted_unload = client.unload(resumed)
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
@@ -1020,12 +1041,28 @@ def exercise(args):
                         break
                 client.assert_data_closed()
                 saved=client.wait_unloaded()
+                if retirement_probe is not None:
+                    report['phase'] = 'original-material-deleted-before-settlement'
+                    report['material_retirement_restart'] = retirement_probe.restart_after_delete(saved)
+                    client.assert_reopened(saved)
                 physical=runtime.unload_evidence(client.session,deadline,client.unload_acceptance['key'])
                 client.assert_unloaded_facts(saved,physical['facts'])
                 client.operation_evidence_completed()
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
+                if retirement_observation:
+                    from lifecycle_unload_retirement import wait_settled, assert_replay_unchanged
+                    report['phase'] = 'live-session-old-material-settlement-' + str(cycle)
+                    client.step('live-session-material-settlement')
+                    retirement = wait_settled(runtime, session=client.session,
+                        original=original_physical, successor=physical, resume=accepted,
+                        prior_running=physical_running, deadline=deadline)
+                    client.assert_resume_replay(original_resume_request, accepted, saved)
+                    assert_replay_unchanged(runtime, retirement['snapshot'], session=client.session,
+                        original=original_physical, successor=physical, resume=accepted,
+                        deadline=deadline)
+                    report['cycles'][-1]['old_material_retirement'] = retirement['receipt']
         if not terminal_destroy_done:
             report['phase']='public-destroy-and-physical-gc'
             report['destroy']=client.destroy(lost if lost is not None else resumed)
@@ -1051,10 +1088,21 @@ def exercise(args):
             'other_cases':'not claimed by this normal scenario',
         }
         if args.scenario == 'normal':
+            report['acceptance_cases']['E12'] = (
+                'two owners, two sessions and three complete restore cycles observed')
             report['acceptance_cases']['C6'] = (
-                'two existing guest RAM/disk advances followed by full reread of each original '
+                'three existing guest RAM/disk advances followed by full reread of each original '
                 'sealed source; same manifest, source identities and backing pin observed; '
                 'not arbitrary future write isolation or a complete fault matrix')
+            report['acceptance_cases']['G6'] = (
+                'A/B/C complete sources and three restores; previous generations settled while '
+                'session live, old Resume acceptance/claim unchanged, current source charged and '
+                'restorable, exact old paths absent; logical settlement is not shared-block release')
+        if retirement_restart:
+            report['acceptance_cases']['G7'] = (
+                'original durable plan observed Retiring after actual delete and before settlement; '
+                'same-config managers restarted, same consumed gate and fixed plan settled, '
+                'old Resume/claim preserved, current successor restored and final Destroy settled')
         if args.scenario=='restore-activation-loss':
             report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
         if args.scenario=='restore-candidate-exit':
@@ -1096,6 +1144,8 @@ def exercise(args):
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
         if capture_probe is not None:
             report['capture_handoff_gate_cleanup'] = capture_probe.cleanup()
+        if retirement_probe is not None:
+            report['material_retirement_gate_cleanup'] = retirement_probe.cleanup()
         report['phase'] = 'accepted-scenario'
         report['complete'] = True
     except BaseException as error:
@@ -1145,6 +1195,8 @@ def exercise(args):
                 # including failures before the original guest-write observation.
                 cow_probe.close()
                 cow_probe = None
+            if retirement_probe is not None:
+                retirement_probe.close()
             if data_probe is not None:
                 # Withdraw only this observer's exact relay pause before the
                 # original product failure cleanup. Record uncertainty rather
@@ -1180,7 +1232,8 @@ def main():
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
-        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy'),default='normal')
+        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
+        'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

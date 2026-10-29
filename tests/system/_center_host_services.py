@@ -34,7 +34,7 @@ BLOCK_BYTES = 16 * 1024**2
 REDIS_MEMORY_BYTES = 128 * 1024**2
 CERTIFICATE_BYTES = 1024**2
 OPTIONS_BYTES = 4096
-OPERATIONS = 8  # Stage1 Create/Unload/Resume/Unload/Resume/Destroy needs at least six.
+OPERATIONS = 8  # Normal Create, three Unload/Resume pairs, and reserved Destroy.
 # Center terminal-result retention; independent of Host/build/Guest retention.
 RESULT_RETENTION_MS = 300_000
 HOST_FAULT_VARIABLES = frozenset({
@@ -46,6 +46,7 @@ HOST_FAULT_VARIABLES = frozenset({
     'SANDPROOF_TEST_CAPTURE_CANCEL_GATE',
     'SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE',
     'SANDPROOF_TEST_DATA_DRAIN_GATE',
+    'SANDPROOF_TEST_MATERIAL_RETIREMENT_GATE',
 })
 
 
