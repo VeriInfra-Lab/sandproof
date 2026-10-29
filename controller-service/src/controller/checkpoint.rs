@@ -15,6 +15,7 @@ use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
 pub(super) use config::{ReadConfigEffects, StandardConfigRead};
 pub use retirement::RetirementCandidate;
+pub(super) use retirement::execution_binding;
 pub(super) use retirement::material_retirement_pins_closed;
 pub(super) use retirement::original_binding;
 pub(super) use retirement::witnesses as release_witnesses;
