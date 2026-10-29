@@ -217,6 +217,21 @@ def validate_retirement_gate(value, *, run_identity, expected, source_resource):
     return value
 
 
+def stopped_retiring(record,original):
+    """A reached cut must remain unsettled after the actual managers exit."""
+    state=record['retirement']
+    if (state is None or state['state'] != 'retiring'
+            or state['plan'] != original['retirement']['plan']
+            or record['work'] != original['work']
+            or record['restore'] != original['restore']
+            or record['material_release'] != original['material_release']
+            or material_source_charge(record) != original['capture']['reserved_material_bytes']):
+        raise ValueError('original Retiring cut was not retained until manager exit')
+    return dict(state='retiring',material_reserved_bytes=material_source_charge(record),
+        work_binding=copy.deepcopy(state['plan']['work_binding']),
+        plan_binding=copy.deepcopy(state['plan']['plan_binding']))
+
+
 class RetirementRestartProbe:
     """One original post-delete/pre-settlement gate; no second VM or collector."""
 
@@ -328,7 +343,12 @@ class RetirementRestartProbe:
             raise ValueError('real original delete has not completed at the selected gate')
         self._unchanged()
         self._configuration()
-        restart = runtime.restart_managers(self.deadline,host_env=self.env)
+        def observe_stopped():
+            self._unchanged()
+            stopped=source_record(read_records(runtime,self.deadline),self.session,self.original)
+            return stopped_retiring(stopped,original)
+        restart = runtime.restart_managers(self.deadline,host_env=self.env,
+            on_managers_stopped=observe_stopped)
         self._unchanged()
         # Do not let the later physical audit stop/restart Host before this
         # same-environment retry has actually consumed and settled its plan.

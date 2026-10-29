@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests/system'))
 import lifecycle_unload_retirement as retirement
+import lifecycle_unload_runtime as runtime
 
 
 def charge(record):
@@ -85,6 +86,50 @@ class RetirementSnapshotTests(unittest.TestCase):
 
 
 class RetirementGateBindingTests(unittest.TestCase):
+    def test_restart_checks_exact_retiring_after_both_stops_and_rejects_already_settled(self):
+        for stopped_state in ('retiring','settled'):
+            records,_,_,_=fixture()
+            original=records[0]
+            original['retirement']['state']='retiring'
+            original['material_release']={'producer':{'original':1},'consumer':{'original':2}}
+            stopped=copy.deepcopy(original)
+            stopped['retirement']['state']=stopped_state
+            events=[]
+            center,host=Mock(),Mock()
+            center.poll.return_value=host.poll.return_value=None
+            children={'center':center,'host-0':host,'redis':object()}
+            def stop(name):
+                events.append('stop-'+name)
+                children[name].poll.return_value=0
+            processes=SimpleNamespace(children=children,stop=Mock(side_effect=stop),
+                start=Mock(side_effect=lambda name,**_:events.append('start-'+name)),
+                observe=Mock(side_effect=[dict(center={'pid':1},**{'host-0':{'pid':2},'redis':{'pid':3}}),
+                    dict(center={'pid':4},**{'host-0':{'pid':5},'redis':{'pid':3}})]),
+                bindings={name:dict(config='/private/'+name+'.json',uid=0,gid=0)
+                    for name in ('center','host-0')})
+            state=runtime.UnloadRuntime.__new__(runtime.UnloadRuntime)
+            state.services=SimpleNamespace(processes=processes,wait_ready=Mock())
+            state.configs={'center':{},'host-0':{}}
+            def observe_stopped():
+                events.append('check')
+                self.assertTrue(all(children[name].poll() is not None for name in ('center','host-0')))
+                processes.start.assert_not_called()
+                return retirement.stopped_retiring(stopped,original)
+            with self.subTest(stopped_state=stopped_state), \
+                    patch.object(runtime,'remaining',return_value=10), \
+                    patch.object(runtime,'role_facts',return_value={}), \
+                    patch.object(retirement,'material_source_charge',side_effect=charge):
+                if stopped_state=='settled':
+                    with self.assertRaisesRegex(ValueError,'not retained until manager exit'):
+                        state.restart_managers(200,on_managers_stopped=observe_stopped)
+                    processes.start.assert_not_called()
+                    self.assertEqual(events,['stop-center','stop-host-0','check'])
+                else:
+                    result=state.restart_managers(200,on_managers_stopped=observe_stopped)
+                    self.assertEqual(events,['stop-center','stop-host-0','check','start-host-0','start-center'])
+                    self.assertEqual(result['original_managers_stopped_observation']['state'],'retiring')
+                    self.assertEqual(result['original_managers_stopped_observation']['material_reserved_bytes'],100)
+
     def test_ready_wait_does_not_spend_producer_timeout_while_preparing_successor(self):
         host=Mock();host.poll.return_value=None
         runtime=SimpleNamespace(services=SimpleNamespace(processes=SimpleNamespace(

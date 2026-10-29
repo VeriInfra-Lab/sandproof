@@ -1579,12 +1579,17 @@ class UnloadRuntime:
             self.services.processes.start('center')
             self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
 
-    def restart_managers(self,deadline,*,original_unload=None,host_env=None):
+    def restart_managers(self,deadline,*,original_unload=None,host_env=None,on_managers_stopped=None):
         remaining(deadline)
         before=self.services.processes.observe()
         redis=self.services.processes.children['redis']
         self.services.processes.stop('center')
         self.services.processes.stop('host-0')
+        stopped_observation=None
+        if on_managers_stopped is not None:
+            if any(self.services.processes.children[name].poll() is None for name in ('center','host-0')):
+                raise ValueError('both original managers must have exited before the stopped observation')
+            stopped_observation=on_managers_stopped()
         operation_evidence=None
         if original_unload is not None:
             acceptance,unloaded=original_unload
@@ -1603,8 +1608,11 @@ class UnloadRuntime:
             raise ValueError('original Redis process changed during manager restart')
         if any(before[name]['pid']==after[name]['pid'] for name in ('center','host-0')):
             raise ValueError('both original manager children must have exited and restarted')
-        return dict(before=before,after=after,original_configs=self.configs,redis_preserved=True,
+        result=dict(before=before,after=after,original_configs=self.configs,redis_preserved=True,
             original_unload_operation=operation_evidence)
+        if on_managers_stopped is not None:
+            result['original_managers_stopped_observation']=stopped_observation
+        return result
 
     def finish(self,report):
         # Only product GC and original accounting success permit stopping

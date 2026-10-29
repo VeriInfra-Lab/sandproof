@@ -175,7 +175,10 @@ G7 在同一入口选择 `material-retirement-restart` 回收中断/管理重启
 持久且物理删除完成，但尚未记录结算；部分删除由组件覆盖。监督器将生产 gate 与原
 work/plan、原 capture key、raw-plan 长度/摘要及真实 source resource 对上；同一只读
 SQLite 事务按 B 原 accepted key/version/intent/capture 及 A closure 的后继绑定核对
-B 已持久接管、Retiring 仍占额度，再全读 B 完整材料并重启同配置 manager。consumer
+B 已持久接管、Retiring 仍占额度，再全读 B 完整材料。原 manager 均已确切停止、
+新 manager 尚未启动时，沿同一重启流程再次只读核对 A 仍为 Retiring、原 raw plan/
+closure/claim/release facts 不变且完整占额；此刻已 Settled 表示未取得中断切点，必须失败，
+不能记 G7 通过。检查成功才重启同配置 manager。consumer
 等待 ready 使用原操作/总场景期限，producer 的 post-delete timeout 不从 arm 时提前消耗。
 原 one-shot consumed 必须在
 ready 之前持久，重开保留相同测试环境变量，让真实删除重试核对同一 consumed 后不再
