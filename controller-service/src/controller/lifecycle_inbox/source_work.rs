@@ -3,6 +3,7 @@ mod codec;
 pub(in crate::controller) mod full;
 pub(in crate::controller) mod restore;
 mod retirement;
+pub(in crate::controller) use retirement::record_material_release;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -45,6 +46,7 @@ pub(in crate::controller) fn retire_unadmitted(
         if record.capture.is_some()
             || record.restore.is_some()
             || record.retirement.is_some()
+            || record.material_release != retirement::MaterialReleaseFacts::empty()
             || record.work.anchor.native != *original
         {
             return Err(JournalError::UnresolvedAction);
@@ -108,6 +110,9 @@ pub struct SourceWorkRecord {
     restore: Option<restore::RestoreClaim>,
     #[serde(deserialize_with = "required_option")]
     retirement: Option<retirement::MaterialRetirementState>,
+    // Required in the sole current host format; never reconstructed from a
+    // newer generation's mutable latest-release row after reopening.
+    material_release: retirement::MaterialReleaseFacts,
 }
 
 // The original complete capture/end must still be bound to this execution.
@@ -205,8 +210,8 @@ pub(in crate::controller) fn configuration_snapshot(
         .config)
 }
 
-// Until capture/material retirement is connected in the following batches,
-// any original source responsibility prevents claiming complete destruction.
+// Source metadata remains pinned through byte settlement. Only the original
+// final native retirement removes these rows and their replay history.
 pub(super) fn retains_session(
     connection: &rusqlite::Connection,
     session: &sandproof_protocol::lifecycle::SessionId,
@@ -303,6 +308,7 @@ impl ControllerJournal {
             capture: None,
             restore: None,
             retirement: None,
+            material_release: retirement::MaterialReleaseFacts::empty(),
         };
         sources.records.push(record.clone());
         codec::save(&tx, &sources, inbox.config.max_sessions)?;

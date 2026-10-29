@@ -203,11 +203,14 @@ pub(super) fn save(
     }
     // Existing responsibilities cannot be dropped by a general source update.
     // The later GC settlement must have its own checked removal transaction.
-    if current
-        .records
-        .iter()
-        .any(|record| !keys.contains(record.work.requirement.work_binding.as_bytes()))
-    {
+    if current.records.iter().any(|record| {
+        !keys.contains(record.work.requirement.work_binding.as_bytes())
+            || sources
+                .records
+                .iter()
+                .find(|next| next.work == record.work)
+                .is_none_or(|next| !super::retirement::preserves_saved_facts(record, next))
+    }) {
         return Err(JournalError::Conflict);
     }
     for (key, bytes) in encoded {
@@ -350,7 +353,13 @@ pub(in crate::controller) fn validate(
     if reserved > sources.config.max_material_bytes {
         return Err(JournalError::CorruptStore);
     }
+    super::retirement::validate_relations(&sources.records, world)?;
     for (index, record) in sources.records.iter().enumerate() {
+        super::retirement::validate_material_release(
+            record,
+            world,
+            crate::controller::allocators::input_high_water(connection)?,
+        )?;
         super::snapshot::validate_record(connection, world, &inbox, &sources.config, record)?;
         super::full::validate_record(record, world)?;
         super::restore::validate_record(record, world)?;

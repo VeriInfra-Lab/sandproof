@@ -71,21 +71,6 @@ fn terminal(path: &Path) -> (ControllerJournal, super::super::SourceWork) {
     (journal, source.work)
 }
 
-fn closure(journal: &ControllerJournal, sandbox: core::SandboxId) -> QuiescenceCertificate {
-    let world = journal.world().unwrap();
-    let row = world.sandbox_record(sandbox).unwrap();
-    QuiescenceCertificate {
-        sandbox,
-        owner: row.owner,
-        epoch: row.epoch,
-        operation: row.current_operation.unwrap().id,
-        workspace: row.workspace,
-        worker_drained: QuiescenceStatus::Confirmed,
-        data_connections_drained: QuiescenceStatus::Confirmed,
-        host_resources_reclaimed: QuiescenceStatus::Confirmed,
-        external_pins_released: QuiescenceStatus::Confirmed,
-    }
-}
 fn saved(journal: &ControllerJournal) -> SourceWorkRecord {
     journal.lifecycle_source_work(&v3::config().node).unwrap()[0].clone()
 }
@@ -118,12 +103,10 @@ fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged(
         .remove(0);
     let original_charge = material_charge(&saved(&journal)).unwrap();
     assert!(original_charge > 0);
-    let certificate = closure(&journal, sandbox);
     let permit = journal
         .prepare_lifecycle_material_retirement(
             &question,
             b"original bounded Node plan",
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();
@@ -153,7 +136,6 @@ fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged(
         .prepare_lifecycle_material_retirement(
             &question,
             b"original bounded Node plan",
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();
@@ -163,19 +145,13 @@ fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged(
             .prepare_lifecycle_material_retirement(
                 &question,
                 b"replacement inventory",
-                certificate,
                 &mut NeverCrash
             )
             .is_err()
     );
     assert_eq!(material_charge(&saved(&journal)).unwrap(), original_charge);
     journal
-        .settle_lifecycle_material_retirement(
-            &question,
-            &receipt(&permit),
-            certificate,
-            &mut NeverCrash,
-        )
+        .settle_lifecycle_material_retirement(&question, &receipt(&permit), &mut NeverCrash)
         .unwrap();
     assert!(is_settled(&saved(&journal)));
     assert_eq!(material_charge(&saved(&journal)).unwrap(), 0);
@@ -190,12 +166,7 @@ fn terminal_plan_is_committed_before_permission_and_unknown_stays_fully_charged(
         1
     );
     journal
-        .settle_lifecycle_material_retirement(
-            &question,
-            &receipt(&permit),
-            certificate,
-            &mut NeverCrash,
-        )
+        .settle_lifecycle_material_retirement(&question, &receipt(&permit), &mut NeverCrash)
         .unwrap();
     drop(journal);
     assert!(is_settled(&saved(&v3::open(&path))));
@@ -210,9 +181,8 @@ fn saved_plan_never_substitutes_for_the_original_writer_end() {
         .lifecycle_material_retirement_questions(sandbox)
         .unwrap()
         .remove(0);
-    let certificate = closure(&journal, sandbox);
     journal
-        .prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash)
+        .prepare_lifecycle_material_retirement(&question, b"plan", &mut NeverCrash)
         .unwrap();
     let original = saved(&journal);
     let mut encoded = serde_json::to_value(&original).unwrap();
@@ -228,7 +198,7 @@ fn saved_plan_never_substitutes_for_the_original_writer_end() {
 }
 
 #[test]
-fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
+fn missing_or_foreign_release_and_foreign_receipt_preserve_original_charge() {
     let dir = tempfile::tempdir().unwrap();
     let (mut journal, source) = terminal(&dir.path().join("db"));
     let sandbox = source.anchor.local.sandbox;
@@ -236,29 +206,36 @@ fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
         .lifecycle_material_retirement_questions(sandbox)
         .unwrap()
         .remove(0);
-    let certificate = closure(&journal, sandbox);
-    for field in 0..9 {
-        let mut wrong = certificate;
-        match field {
-            0 => wrong.worker_drained = QuiescenceStatus::Unconfirmed,
-            1 => wrong.data_connections_drained = QuiescenceStatus::Unconfirmed,
-            2 => wrong.host_resources_reclaimed = QuiescenceStatus::Unconfirmed,
-            3 => wrong.external_pins_released = QuiescenceStatus::Unconfirmed,
-            4 => wrong.sandbox = core::SandboxId(sandbox.0 + 1),
-            5 => wrong.epoch += 1,
-            6 => wrong.operation = core::OperationId(wrong.operation.0 + 1),
-            7 => wrong.workspace = core::FsId(wrong.workspace.0 + 1),
-            _ => wrong.owner = core::TenantId(wrong.owner.0 + 1),
+    let original = saved(&journal);
+    let world = journal.world().unwrap();
+    for field in 0..5 {
+        let mut wrong = original.clone();
+        if field == 0 {
+            wrong.material_release.producer = None;
+            assert!(
+                closure::eligible(&journal.journal.connection, &world, &[], &wrong)
+                    .unwrap()
+                    .is_none()
+            );
+        } else {
+            let release = wrong.material_release.producer.as_mut().unwrap();
+            match field {
+                1 => release.input_sequence = 0,
+                2 => release.context.binding.generation += 1,
+                3 => release.context.binding.owner = core::TenantId(2),
+                _ => release.context.binding.vm = core::VmId(release.context.binding.vm.0 + 1),
+            }
+            assert!(release::validate(&wrong, &world, u64::MAX).is_err());
         }
-        assert!(
-            journal
-                .prepare_lifecycle_material_retirement(&question, b"plan", wrong, &mut NeverCrash)
-                .is_err()
+        assert_eq!(
+            material_charge(&wrong).unwrap(),
+            material_charge(&original).unwrap()
         );
+        assert_eq!(saved(&journal), original);
         assert!(saved(&journal).retirement.is_none());
     }
     let permit = journal
-        .prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash)
+        .prepare_lifecycle_material_retirement(&question, b"plan", &mut NeverCrash)
         .unwrap();
     for change_work in [true, false] {
         let mut wrong = receipt(&permit);
@@ -269,12 +246,7 @@ fn wrong_or_unconfirmed_closure_and_foreign_receipt_preserve_original_charge() {
         }
         assert!(
             journal
-                .settle_lifecycle_material_retirement(
-                    &question,
-                    &wrong,
-                    certificate,
-                    &mut NeverCrash
-                )
+                .settle_lifecycle_material_retirement(&question, &wrong, &mut NeverCrash)
                 .is_err()
         );
         assert!(!is_settled(&saved(&journal)));
@@ -291,19 +263,13 @@ fn bounded_original_plan_rejects_empty_and_oversize_without_permission() {
         .lifecycle_material_retirement_questions(sandbox)
         .unwrap()
         .remove(0);
-    let certificate = closure(&journal, sandbox);
     for bytes in [
         Vec::new(),
         vec![255; MATERIAL_RETIREMENT_PLAN_MAX_BYTES + 1],
     ] {
         assert!(
             journal
-                .prepare_lifecycle_material_retirement(
-                    &question,
-                    &bytes,
-                    certificate,
-                    &mut NeverCrash
-                )
+                .prepare_lifecycle_material_retirement(&question, &bytes, &mut NeverCrash)
                 .is_err()
         );
         assert!(saved(&journal).retirement.is_none());
@@ -312,7 +278,6 @@ fn bounded_original_plan_rejects_empty_and_oversize_without_permission() {
         .prepare_lifecycle_material_retirement(
             &question,
             &vec![255; MATERIAL_RETIREMENT_PLAN_MAX_BYTES],
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();
@@ -335,15 +300,9 @@ fn both_commit_boundaries_keep_original_plan_and_settlement_recoverable() {
             .lifecycle_material_retirement_questions(sandbox)
             .unwrap()
             .remove(0);
-        let certificate = closure(&journal, sandbox);
         assert!(
             journal
-                .prepare_lifecycle_material_retirement(
-                    &question,
-                    b"plan",
-                    certificate,
-                    &mut StopAt(point)
-                )
+                .prepare_lifecycle_material_retirement(&question, b"plan", &mut StopAt(point))
                 .is_err()
         );
         drop(journal);
@@ -354,14 +313,13 @@ fn both_commit_boundaries_keep_original_plan_and_settlement_recoverable() {
         );
         assert!(material_charge(&saved(&journal)).unwrap() > 0);
         let permit = journal
-            .prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash)
+            .prepare_lifecycle_material_retirement(&question, b"plan", &mut NeverCrash)
             .unwrap();
         assert!(
             journal
                 .settle_lifecycle_material_retirement(
                     &question,
                     &receipt(&permit),
-                    certificate,
                     &mut StopAt(point)
                 )
                 .is_err()
@@ -387,7 +345,8 @@ fn historical_unloaded_bundle_is_not_a_terminal_material_gc_permit() {
     assert!(
         journal
             .lifecycle_material_retirement_questions(source.work.anchor.local.sandbox)
-            .is_err()
+            .unwrap()
+            .is_empty()
     );
     assert_eq!(journal.world().unwrap(), before);
     assert!(saved(&journal).retirement.is_none());
@@ -403,17 +362,11 @@ fn persisted_settlement_checks_reject_changed_plan_receipt_reserve_or_unconfirme
         .lifecycle_material_retirement_questions(sandbox)
         .unwrap()
         .remove(0);
-    let certificate = closure(&journal, sandbox);
     let permit = journal
-        .prepare_lifecycle_material_retirement(&question, b"plan", certificate, &mut NeverCrash)
+        .prepare_lifecycle_material_retirement(&question, b"plan", &mut NeverCrash)
         .unwrap();
     journal
-        .settle_lifecycle_material_retirement(
-            &question,
-            &receipt(&permit),
-            certificate,
-            &mut NeverCrash,
-        )
+        .settle_lifecycle_material_retirement(&question, &receipt(&permit), &mut NeverCrash)
         .unwrap();
     let original = saved(&journal);
     let world = journal.world().unwrap();
@@ -428,7 +381,7 @@ fn persisted_settlement_checks_reject_changed_plan_receipt_reserve_or_unconfirme
             0 => plan.bytes[0] ^= 1,
             1 => settlement.work_binding = ContentDigest::from_sha256([8; 32]),
             2 => settlement.released_material_bytes -= 1,
-            _ => plan.quiescence.worker_drained = QuiescenceStatus::Unconfirmed,
+            _ => plan.closure.release_binding = ContentDigest::from_sha256([8; 32]),
         }
         assert!(validate_record(&record, &world).is_err());
         assert!(material_charge(&record).is_err());

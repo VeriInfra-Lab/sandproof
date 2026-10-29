@@ -511,8 +511,7 @@ fn released_terminal_missing_witness_and_releasing_position_do_not_close() {
 }
 
 #[test]
-fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_deletion() {
-    use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
+fn released_terminal_preserves_material_charge_for_foreign_source_and_unknown_deletion() {
     let (_directory, mut journal, source, destroy, basis) = prepared();
     crate::finish_accepted_kill::<FullEvidence, _>(
         &mut journal,
@@ -521,8 +520,6 @@ fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_
         &mut |_| panic!("no physical fence for an already released execution"),
     )
     .unwrap();
-    let world = journal.world().unwrap();
-    let row = world.sandbox_record(basis.key.sandbox).unwrap();
     let original_charge = journal
         .lifecycle_capture_record(basis.key.sandbox)
         .unwrap()
@@ -535,36 +532,21 @@ fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_
         .lifecycle_material_retirement_questions(basis.key.sandbox)
         .unwrap()
         .remove(0);
-    let certificate = QuiescenceCertificate {
-        sandbox: basis.key.sandbox,
-        owner: basis.binding.owner,
-        epoch: basis.epoch,
-        operation: basis.key.operation,
-        workspace: row.workspace,
-        worker_drained: QuiescenceStatus::Confirmed,
-        data_connections_drained: QuiescenceStatus::Confirmed,
-        host_resources_reclaimed: QuiescenceStatus::Confirmed,
-        external_pins_released: QuiescenceStatus::Unconfirmed,
-    };
+    let mut foreign = question.clone();
+    foreign.source.requirement.source.pid += 1;
     assert!(
         journal
             .prepare_lifecycle_material_retirement(
-                &question,
+                &foreign,
                 b"original material plan",
-                certificate,
                 &mut NeverCrash
             )
             .is_err()
     );
-    let certificate = QuiescenceCertificate {
-        external_pins_released: QuiescenceStatus::Confirmed,
-        ..certificate
-    };
     journal
         .prepare_lifecycle_material_retirement(
             &question,
             b"original material plan",
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();
@@ -593,7 +575,6 @@ fn released_terminal_preserves_material_charge_for_unconfirmed_pins_and_unknown_
 
 #[test]
 fn released_terminal_only_becomes_cleaned_after_original_material_settlement_and_retire() {
-    use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
     let (directory, mut journal, _source, destroy, basis) = prepared();
     crate::finish_accepted_kill::<FullEvidence, _>(
         &mut journal,
@@ -602,19 +583,6 @@ fn released_terminal_only_becomes_cleaned_after_original_material_settlement_and
         &mut |_| panic!("already released execution must not enter Node"),
     )
     .unwrap();
-    let world = journal.world().unwrap();
-    let row = world.sandbox_record(basis.key.sandbox).unwrap();
-    let certificate = QuiescenceCertificate {
-        sandbox: basis.key.sandbox,
-        owner: row.owner,
-        epoch: row.epoch,
-        operation: basis.key.operation,
-        workspace: row.workspace,
-        worker_drained: QuiescenceStatus::Confirmed,
-        data_connections_drained: QuiescenceStatus::Confirmed,
-        host_resources_reclaimed: QuiescenceStatus::Confirmed,
-        external_pins_released: QuiescenceStatus::Confirmed,
-    };
     let question = journal
         .lifecycle_material_retirement_questions(basis.key.sandbox)
         .unwrap()
@@ -623,7 +591,6 @@ fn released_terminal_only_becomes_cleaned_after_original_material_settlement_and
         .prepare_lifecycle_material_retirement(
             &question,
             b"original bounded material plan",
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();
@@ -639,7 +606,6 @@ fn released_terminal_only_becomes_cleaned_after_original_material_settlement_and
                 work_binding: permit.work_binding(),
                 plan_binding: permit.plan_binding(),
             },
-            certificate,
             &mut NeverCrash,
         )
         .unwrap();

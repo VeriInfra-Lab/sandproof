@@ -19,6 +19,11 @@ pub const MATERIAL_RETIREMENT_PLAN_MAX_BYTES: usize = 16_384;
 pub(crate) const MATERIAL_RETIREMENT_RECORD_MAX_BYTES: u64 =
     4 * MATERIAL_RETIREMENT_PLAN_MAX_BYTES as u64 + 4096;
 
+// Two exact, bounded execution-release witnesses per original material row.
+// Reserved before receiving work, even while other closure facts are pending.
+#[cfg(feature = "durable")]
+pub(crate) const MATERIAL_RELEASE_RECORD_MAX_BYTES: u64 = 4096;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CaptureMaterialRetirementRequest {
     sandbox: SandboxId,

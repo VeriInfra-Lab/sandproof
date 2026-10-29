@@ -279,24 +279,10 @@ fn application_uses_generic_terminal_stop_then_waits_for_real_drain_before_clean
 }
 
 fn settled_terminal(path: &Path) -> (ControllerJournal, AcceptedLifecycleIntent, core::SandboxId) {
-    use core::maintenance::retirement::{QuiescenceCertificate, QuiescenceStatus};
     let (mut journal, source) = unloaded_resume_source(path);
     let sandbox = source.source_sandbox();
     let request = destroy(&mut journal);
     finish_destroy(&mut journal, sandbox);
-    let world = journal.world().unwrap();
-    let row = world.sandbox_record(sandbox).unwrap();
-    let closure = QuiescenceCertificate {
-        sandbox,
-        owner: row.owner,
-        epoch: row.epoch,
-        operation: row.current_operation.unwrap().id,
-        workspace: row.workspace,
-        worker_drained: QuiescenceStatus::Confirmed,
-        data_connections_drained: QuiescenceStatus::Confirmed,
-        host_resources_reclaimed: QuiescenceStatus::Confirmed,
-        external_pins_released: QuiescenceStatus::Confirmed,
-    };
     let question = journal
         .lifecycle_material_retirement_questions(sandbox)
         .unwrap()
@@ -306,7 +292,6 @@ fn settled_terminal(path: &Path) -> (ControllerJournal, AcceptedLifecycleIntent,
         .prepare_lifecycle_material_retirement(
             &question,
             b"controlled physical deletion plan",
-            closure,
             &mut NeverCrash,
         )
         .unwrap();
@@ -317,7 +302,6 @@ fn settled_terminal(path: &Path) -> (ControllerJournal, AcceptedLifecycleIntent,
                 work_binding: permit.work_binding(),
                 plan_binding: permit.plan_binding(),
             },
-            closure,
             &mut NeverCrash,
         )
         .unwrap();

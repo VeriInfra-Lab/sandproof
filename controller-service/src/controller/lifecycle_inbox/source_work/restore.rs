@@ -27,16 +27,12 @@ pub(super) struct RestoreClaim {
     pub(super) activation: Option<WorkAction<core::EffectId>>,
 }
 
-/// The terminal material transaction closes the actual use before any unlink.
+/// The material transaction closes the original use before any unlink.
 pub(super) fn close_material_use(
     record: &mut SourceWorkRecord,
     world: &core::World,
 ) -> Result<(), JournalError> {
-    core::maintenance::retirement::validate_terminal_cleanup(
-        world,
-        record.work.anchor.local.sandbox,
-    )
-    .map_err(|_| JournalError::UnresolvedAction)?;
+    super::retirement::validate_material_release(record, world, u64::MAX)?;
     if !super::retirement::has_closed_material_use(record) {
         return Err(JournalError::UnresolvedAction);
     }
@@ -427,6 +423,9 @@ impl ControllerJournal {
             } else {
                 Err(JournalError::Conflict)
             };
+        }
+        if sources.records[index].retirement.is_some() {
+            return Err(JournalError::Conflict);
         }
         if !state.current
             || state.terminal

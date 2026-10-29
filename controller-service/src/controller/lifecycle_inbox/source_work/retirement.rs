@@ -1,20 +1,67 @@
 //! One original source row owns its bounded deletion plan and byte settlement.
 //! Neither a plan digest nor native logical cleanup establishes physical closure.
 use crate::capture::CaptureMaterialRetirementRequest;
-use sandbox_controller_core::maintenance::retirement::QuiescenceCertificate;
 use sandproof_protocol::lifecycle::ContentDigest;
 use serde::{Deserialize, Serialize};
+mod closure;
+mod release;
+pub(in crate::controller) use release::record_release as record_material_release;
+pub(super) use release::validate as validate_material_release;
+
+/// Exact original provider-release facts. Presence alone grants no permission
+/// to delete or settle; writers, custody, uses and plan are checked separately.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MaterialReleaseFacts {
+    #[serde(deserialize_with = "super::required_option")]
+    producer: Option<crate::controller::HostReleaseWitness>,
+    #[serde(deserialize_with = "super::required_option")]
+    consumer: Option<crate::controller::HostReleaseWitness>,
+}
+
+impl MaterialReleaseFacts {
+    pub(super) const fn empty() -> Self {
+        Self {
+            producer: None,
+            consumer: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MaterialRetirementClosure {
+    release_binding: ContentDigest,
+    #[serde(deserialize_with = "super::required_option")]
+    restore_binding: Option<ContentDigest>,
+    reason: MaterialRetirementReason,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum MaterialRetirementReason {
+    Terminal {
+        operation: sandbox_controller_core::OperationKey,
+        epoch: sandbox_controller_core::Epoch,
+        workspace: sandbox_controller_core::FsId,
+    },
+    Superseded {
+        successor_work_binding: ContentDigest,
+        successor_full_binding: ContentDigest,
+        manifest_digest: ContentDigest,
+    },
+}
 
 /// The same plan survives partial deletion and restart; it is never refreshed
-/// from an already partly absent filesystem. The certificate must be rebuilt
-/// from real original responsibilities before each deletion permission.
+/// from an already partly absent filesystem. Original material closure stays
+/// fixed through later generations; opaque plan bytes never grant closure.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MaterialRetirementPlan {
     pub(super) bytes: Vec<u8>,
     pub(super) work_binding: ContentDigest,
     pub(super) plan_binding: ContentDigest,
-    pub(super) quiescence: QuiescenceCertificate,
+    pub(super) closure: MaterialRetirementClosure,
 }
 
 /// An observation copied only after the actual provider returned the same
@@ -53,7 +100,7 @@ use crate::capture::{
 };
 use crate::controller::{checkpoint, transaction::WorldTransaction};
 use crate::{ControllerJournal, CrashInjector, CrashPoint, JournalError};
-use core::maintenance::retirement::{QuiescenceStatus, validate_terminal_cleanup};
+use core::maintenance::retirement::validate_terminal_cleanup;
 use rusqlite::Connection;
 use sandbox_controller_core as core;
 
@@ -78,13 +125,6 @@ fn plan(state: &MaterialRetirementState) -> &MaterialRetirementPlan {
         MaterialRetirementState::Retiring { plan }
         | MaterialRetirementState::Settled { plan, .. } => plan,
     }
-}
-
-fn complete_certificate(value: &QuiescenceCertificate) -> bool {
-    value.worker_drained == QuiescenceStatus::Confirmed
-        && value.data_connections_drained == QuiescenceStatus::Confirmed
-        && value.host_resources_reclaimed == QuiescenceStatus::Confirmed
-        && value.external_pins_released == QuiescenceStatus::Confirmed
 }
 
 fn bounded(state: &MaterialRetirementState) -> Result<(), JournalError> {
@@ -114,17 +154,7 @@ pub(in crate::controller) fn validate_record(
         || saved.bytes.len() > MATERIAL_RETIREMENT_PLAN_MAX_BYTES
         || saved.work_binding != request(record)?.binding_digest()?
         || saved.plan_binding != super::digest(&saved.bytes)
-        || !complete_certificate(&saved.quiescence)
-        || saved.quiescence.sandbox != record.work.anchor.local.sandbox
-        || saved.quiescence.owner != record.work.anchor.local.owner
-        || saved.quiescence.owner != row.owner
-        || saved.quiescence.epoch != row.epoch
-        || saved.quiescence.workspace != row.workspace
-        || row
-            .current_operation
-            .is_none_or(|op| op.id != saved.quiescence.operation)
-        || !row.terminal
-        || row.phase != core::Phase::Destroyed
+        || row.owner != record.work.anchor.local.owner
         || record
             .restore
             .as_ref()
@@ -132,8 +162,8 @@ pub(in crate::controller) fn validate_record(
     {
         return Err(JournalError::CorruptStore);
     }
-    validate_terminal_cleanup(world, saved.quiescence.sandbox)
-        .map_err(|_| JournalError::UnresolvedAction)?;
+    release::validate(record, world, u64::MAX)?;
+    closure::validate_bindings(record, &saved.closure)?;
     if !full::material_writer_closed(record, world)? {
         return Err(JournalError::UnresolvedAction);
     }
@@ -145,6 +175,38 @@ pub(in crate::controller) fn validate_record(
         return Err(JournalError::CorruptStore);
     }
     Ok(())
+}
+
+pub(super) fn validate_relations(
+    records: &[SourceWorkRecord],
+    world: &core::World,
+) -> Result<(), JournalError> {
+    for record in records {
+        if let Some(state) = &record.retirement {
+            closure::validate(record, world, records, &plan(state).closure)?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn preserves_saved_facts(old: &SourceWorkRecord, new: &SourceWorkRecord) -> bool {
+    if old
+        .material_release
+        .producer
+        .is_some_and(|fact| new.material_release.producer != Some(fact))
+        || old
+            .material_release
+            .consumer
+            .is_some_and(|fact| new.material_release.consumer != Some(fact))
+    {
+        return false;
+    }
+    match (&old.retirement, &new.retirement) {
+        (None, _) => true,
+        (Some(MaterialRetirementState::Settled { .. }), next) => next == &old.retirement,
+        (Some(previous), Some(next)) => plan(previous) == plan(next),
+        (Some(_), None) => false,
+    }
 }
 
 pub(in crate::controller) fn is_settled(record: &SourceWorkRecord) -> bool {
@@ -159,7 +221,9 @@ pub(in crate::controller) fn material_charge(
     record: &SourceWorkRecord,
 ) -> Result<u64, JournalError> {
     let Some(capture) = &record.capture else {
-        return if record.retirement.is_none() {
+        return if record.retirement.is_none()
+            && record.material_release == MaterialReleaseFacts::empty()
+        {
             Ok(0)
         } else {
             Err(JournalError::CorruptStore)
@@ -172,9 +236,6 @@ pub(in crate::controller) fn material_charge(
             || saved.bytes.len() > MATERIAL_RETIREMENT_PLAN_MAX_BYTES
             || saved.work_binding != request(record)?.binding_digest()?
             || saved.plan_binding != super::digest(&saved.bytes)
-            || !complete_certificate(&saved.quiescence)
-            || saved.quiescence.sandbox != record.work.anchor.local.sandbox
-            || saved.quiescence.owner != record.work.anchor.local.owner
             || record
                 .restore
                 .as_ref()
@@ -182,6 +243,7 @@ pub(in crate::controller) fn material_charge(
         {
             return Err(JournalError::CorruptStore);
         }
+        closure::validate_bindings(record, &saved.closure)?;
         if let MaterialRetirementState::Settled { settlement, .. } = state {
             if settlement.work_binding != saved.work_binding
                 || settlement.plan_binding != saved.plan_binding
@@ -196,7 +258,10 @@ pub(in crate::controller) fn material_charge(
 }
 
 pub(super) fn has_closed_material_use(record: &SourceWorkRecord) -> bool {
-    record.retirement.is_some()
+    record
+        .retirement
+        .as_ref()
+        .is_some_and(|state| closure::validate_bindings(record, &plan(state).closure).is_ok())
 }
 
 fn validate_source_identity(
@@ -204,8 +269,6 @@ fn validate_source_identity(
     world: &core::World,
     record: &SourceWorkRecord,
 ) -> Result<(), JournalError> {
-    let sandbox = record.work.anchor.local.sandbox;
-    validate_terminal_cleanup(world, sandbox).map_err(|_| JournalError::UnresolvedAction)?;
     let inbox = super::super::codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
     super::snapshot::validate_record(
         connection,
@@ -218,7 +281,16 @@ fn validate_source_identity(
     )?;
     full::validate_record(record, world)?;
     restore::validate_record(record, world)?;
+    release::validate(
+        record,
+        world,
+        crate::controller::allocators::input_high_water(connection)?,
+    )?;
     validate_record(record, world)?;
+    let sources = codec::load(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    if let Some(state) = &record.retirement {
+        closure::validate(record, world, &sources.records, &plan(state).closure)?;
+    }
     Ok(())
 }
 
@@ -229,43 +301,16 @@ fn terminal_source(
 ) -> Result<(), JournalError> {
     validate_source_identity(connection, world, record)?;
     let sandbox = record.work.anchor.local.sandbox;
+    validate_terminal_cleanup(world, sandbox).map_err(|_| JournalError::UnresolvedAction)?;
     let row = world
         .sandbox_record(sandbox)
         .ok_or(JournalError::CorruptStore)?;
     if row.owner != record.work.anchor.local.owner
-        || !checkpoint::release_witnesses(connection, world)?
-            .iter()
-            .any(|witness| {
-                witness.context.binding.sandbox == sandbox
-                    && witness.context.binding.owner == row.owner
-                    && witness.context.binding.generation == row.generation
-            })
+        || !release::complete(&record.material_release, record.restore.is_some())
         || !checkpoint::material_retirement_pins_closed(connection, world, sandbox)?
         || !full::material_writer_closed(record, world)?
     {
         return Err(JournalError::UnresolvedAction);
-    }
-    Ok(())
-}
-
-fn certificate_matches(
-    world: &core::World,
-    record: &SourceWorkRecord,
-    certificate: &QuiescenceCertificate,
-) -> Result<(), JournalError> {
-    let row = world
-        .sandbox_record(record.work.anchor.local.sandbox)
-        .ok_or(JournalError::CorruptStore)?;
-    if !complete_certificate(certificate)
-        || certificate.sandbox != record.work.anchor.local.sandbox
-        || certificate.owner != row.owner
-        || certificate.epoch != row.epoch
-        || certificate.workspace != row.workspace
-        || row
-            .current_operation
-            .is_none_or(|op| op.id != certificate.operation)
-    {
-        return Err(JournalError::Conflict);
     }
     Ok(())
 }
@@ -286,7 +331,7 @@ fn find<'a>(
 }
 
 impl ControllerJournal {
-    /// Terminal-only original Full questions, not a new collector or queue.
+    /// Original material questions, from terminal cleanup or a durable successor.
     /// # Errors
     /// Missing native identity, unresolved uses or changed source refuse GC.
     pub(crate) fn lifecycle_material_retirement_questions(
@@ -296,7 +341,6 @@ impl ControllerJournal {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;
-        validate_terminal_cleanup(&world, sandbox).map_err(|_| JournalError::UnresolvedAction)?;
         let sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let mut questions = Vec::new();
         for record in sources
@@ -307,11 +351,31 @@ impl ControllerJournal {
             if record.capture.is_none() || is_settled(record) {
                 continue;
             }
-            terminal_source(&tx, &world, record)?;
+            validate_source_identity(&tx, &world, record)?;
+            if record.retirement.is_none()
+                && closure::eligible(&tx, &world, &sources.records, record)?.is_none()
+            {
+                continue;
+            }
             questions.push(MaterialRetirementQuestion {
                 source: record.work.clone(),
                 request: request(record)?,
             });
+        }
+        // Keep the original pending-terminal classification for unfinished
+        // loader/writer/pin responsibility. A separately qualified old plan
+        // can still progress while a newer execution is being destroyed.
+        if questions.is_empty()
+            && world
+                .sandbox_record(sandbox)
+                .is_some_and(|row| row.terminal)
+            && sources.records.iter().any(|record| {
+                record.work.anchor.local.sandbox == sandbox
+                    && record.capture.is_some()
+                    && !is_settled(record)
+            })
+        {
+            return Err(JournalError::UnresolvedAction);
         }
         self.committed_world.check_identity(&tx)?;
         tx.commit()?;
@@ -328,7 +392,7 @@ impl ControllerJournal {
         self.committed_world.check_identity(&tx)?;
         let sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let record = find(&sources, question)?;
-        terminal_source(&tx, &world, record)?;
+        validate_source_identity(&tx, &world, record)?;
         let result = record
             .retirement
             .as_ref()
@@ -343,7 +407,6 @@ impl ControllerJournal {
         &mut self,
         question: &MaterialRetirementQuestion,
         bytes: &[u8],
-        certificate: QuiescenceCertificate,
         crashes: &mut impl CrashInjector,
     ) -> Result<MaterialRetirementPermit, JournalError> {
         if bytes.is_empty() || bytes.len() > MATERIAL_RETIREMENT_PLAN_MAX_BYTES {
@@ -353,13 +416,20 @@ impl ControllerJournal {
         let world = tx.world();
         let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let original = find(&sources, question)?;
-        terminal_source(&tx, &world, original)?;
-        certificate_matches(&world, original, &certificate)?;
-        let proposed = MaterialRetirementPlan {
-            bytes: bytes.to_vec(),
-            work_binding: question.request.binding_digest()?,
-            plan_binding: super::digest(bytes),
-            quiescence: certificate,
+        validate_source_identity(&tx, &world, original)?;
+        let proposed = if let Some(saved) = &original.retirement {
+            if plan(saved).bytes != bytes {
+                return Err(JournalError::Conflict);
+            }
+            plan(saved).clone()
+        } else {
+            MaterialRetirementPlan {
+                bytes: bytes.to_vec(),
+                work_binding: question.request.binding_digest()?,
+                plan_binding: super::digest(bytes),
+                closure: closure::eligible(&tx, &world, &sources.records, original)?
+                    .ok_or(JournalError::UnresolvedAction)?,
+            }
         };
         if original
             .retirement
@@ -380,6 +450,7 @@ impl ControllerJournal {
             restore::close_material_use(record, &world)?;
         }
         validate_record(record, &world)?;
+        validate_relations(&sources.records, &world)?;
         codec::save(&tx, &sources, sources.max_sessions)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
@@ -395,22 +466,19 @@ impl ControllerJournal {
         &mut self,
         question: &MaterialRetirementQuestion,
         observation: &MaterialRetirementObservation,
-        certificate: QuiescenceCertificate,
         crashes: &mut impl CrashInjector,
     ) -> Result<(), JournalError> {
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let world = tx.world();
         let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
         let original = find(&sources, question)?;
-        terminal_source(&tx, &world, original)?;
-        certificate_matches(&world, original, &certificate)?;
+        validate_source_identity(&tx, &world, original)?;
         let state = original
             .retirement
             .as_ref()
             .ok_or(JournalError::UnresolvedAction)?;
         let saved = plan(state).clone();
-        if saved.quiescence != certificate
-            || observation.work_binding != saved.work_binding
+        if observation.work_binding != saved.work_binding
             || observation.plan_binding != saved.plan_binding
         {
             return Err(JournalError::InvalidHostEvidence);
@@ -438,6 +506,7 @@ impl ControllerJournal {
         }
         record.retirement = Some(proposed);
         validate_record(record, &world)?;
+        validate_relations(&sources.records, &world)?;
         codec::save(&tx, &sources, sources.max_sessions)?;
         crashes.hit(CrashPoint::BeforeCommit)?;
         tx.commit()?;
