@@ -75,12 +75,12 @@ theorem record_inner_commit_success_identity
             differentOperation, ← UScalar.eq_equiv] at tail
           have generationMatch : plan.generation = row.generation := by
             by_contra different
-            simp [different, -UScalar.eq_equiv] at tail
+            simp [different] at tail
           simp [generationMatch] at tail
           have epochMatch : epoch = plan.epoch := by
             by_contra different
             simp [sandbox_controller_core.model.Command.epoch,
-              core.option.Option.Insts.CoreCmpPartialEqOption.eq, different, -UScalar.eq_equiv] at tail
+              core.option.Option.Insts.CoreCmpPartialEqOption.eq, different] at tail
           simp [sandbox_controller_core.model.Command.epoch,
             core.option.Option.Insts.CoreCmpPartialEqOption.eq, epochMatch] at tail
           cases captured : plan.capture with
