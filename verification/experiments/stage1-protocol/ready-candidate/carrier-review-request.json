@@ -1,0 +1,30 @@
+{
+  "kind": "unadopted-value-carrier-review-request",
+  "owner": "V0/main",
+  "no_new_operation_laws": true,
+  "business_functions_opaque": false,
+  "production_modified": false,
+  "fields_erased": false,
+  "raw_generated_types_unchanged": true,
+  "types": [
+    {
+      "symbol": "std.path.PathBuf",
+      "use": "TemplateArtifact.path carried under ReadyCandidate.options",
+      "proposal": "original complete Unix raw encoded bytes in existing finite Vec<U8>; no path operation, equality, parsing, IO, authorization or lifetime law",
+      "status": "unadopted representation request; actual Rust-to-value relation remains required"
+    },
+    {
+      "symbol": "alloc.collections.btree.map.BTreeMap",
+      "use": "complete env_vars/metadata under CreateOptions",
+      "proposal": "reuse existing SandproofStorage.TypesExternal key/value entries carrier without any map operation; preserve all entries rather than unit",
+      "status": "existing source carrier, not admitted to current V3 view; actual representation relation and adoption remain required"
+    }
+  ],
+  "independence": "can_probe does not read options/receipts/ready_fact or other view fields; general irrelevance proved, but this does not itself establish the proposed carriers",
+  "remaining": [
+    "same actual candidate producer and World/sandbox facts",
+    "actual original sources/credential validity/authorization/probe truth",
+    "native correct/wrong/restored checks on ning",
+    "public formal registration/admission and current acceptance"
+  ]
+}

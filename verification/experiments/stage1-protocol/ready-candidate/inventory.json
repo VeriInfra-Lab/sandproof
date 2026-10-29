@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "kind": "ready-candidate-preflight-inventory",
+  "source_base_commit": "425172a2398fc75759b56b06a3c1cda16e2217be",
+  "candidate_only": true,
+  "public_formal_registered": false,
+  "native_checks_run": false,
+  "full_v3": false,
+  "generated_body_modified": false,
+  "new_operation_contracts": [],
+  "unadopted_external_value_carriers": [
+    "std.path.PathBuf",
+    "alloc.collections.btree.map.BTreeMap"
+  ],
+  "production_inputs": {
+    "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": "32885942ca2d52198c03964b1d3291f0258ec30ced44c9a05ab781c0adad4538",
+    "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
+    "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
+    "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
+    "controller-service/src/capture/continuation.rs": "4531cc219de821a7c223267a6e3fc1d7cd125d13ffcd4977983c3b630a2fa0a2",
+    "controller-service/src/capture/work.rs": "fa09c2f565602f0ace3351652aa4d5fc0ed8aafe361b9b864d8f981f78248dcc",
+    "controller-service/src/capture/source.rs": "862c749de515fbe35595b6f00043455935d9581e22ae10554f639579c1833fbc",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/experiments/stage1-protocol/inbox-record/lib.rs": "5979b781630c4ae9a4ecf120d135352309868d97aa117a928d870ef7457136c3"
+  },
+  "providers": {
+    "FunsExternal": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/FunsExternal.lean.in",
+      "sha256": "76eb8333522b2686d3c9cddecee832b7e497e9d4fece953ec81d0396b60696a7",
+      "audits": []
+    },
+    "ReadyCandidateModel": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/ReadyCandidateModel.lean.in",
+      "sha256": "e5c57ce72c57ae03f24731e8b5cda42cb3ce5cad1be6e890b65aab7b7ac5f397",
+      "audits": []
+    },
+    "ReadyCandidateProofs": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/ReadyCandidateProofs.lean.in",
+      "sha256": "850a5bc79b326d3be25afe89accabe8781060e877a3e90976ef8de931c751a98",
+      "audits": [
+        "SandboxModel.Stage1Protocol.ReadyProbe.pending_eq_host_unobserved",
+        "SandboxModel.Stage1Protocol.ReadyProbe.readiness_eq_host_unobserved",
+        "SandboxModel.Stage1Protocol.ReadyProbe.result_if",
+        "SandboxModel.Stage1Protocol.ReadyProbe.probe_refines",
+        "SandboxModel.Stage1Protocol.ReadyProbe.full_contract",
+        "SandboxModel.Stage1Protocol.ReadyProbe.accepts_iff"
+      ]
+    },
+    "ReadyCandidateValues": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/ReadyCandidateValues.lean.in",
+      "sha256": "86e618ab027656959674f630298cbb95324a5114476abb9e7e705ede8cebdc92",
+      "audits": []
+    },
+    "ReadyCandidateWitnesses": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/ReadyCandidateWitnesses.lean.in",
+      "sha256": "f57712e350f6c80225a406923527a35ec7443ab81dbbcc855cf5f02a69d88826",
+      "audits": [
+        "SandboxModel.Stage1Protocol.ReadyProbe.normal_five",
+        "SandboxModel.Stage1Protocol.ReadyProbe.normal_one",
+        "SandboxModel.Stage1Protocol.ReadyProbe.continuation_changes_count",
+        "SandboxModel.Stage1Protocol.ReadyProbe.field_omission_rejections",
+        "SandboxModel.Stage1Protocol.ReadyProbe.receipts_options_fact_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.view_other_fields_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.source_contents_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.credential_contents_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.continuation_contents_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.action_contents_ignored",
+        "SandboxModel.Stage1Protocol.ReadyProbe.accepted_does_not_supply_native_or_receipts"
+      ]
+    },
+    "ReadyCandidateWrongCredential": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/ReadyCandidateWrongCredential.lean.in",
+      "sha256": "fed7bdd23fc90d427b92a0711b83d2c6dd4d7a6c1f5406df19d89fe011e5c08e",
+      "audits": [
+        "SandboxModel.Stage1Protocol.ReadyProbe.wrong_credential_accepts_missing",
+        "SandboxModel.Stage1Protocol.ReadyProbe.missing_rejected_by_unchanged_spec",
+        "SandboxModel.Stage1Protocol.ReadyProbe.wrong_credential_refutes_full_contract"
+      ]
+    },
+    "TypesExternal.candidate": {
+      "path": "verification/experiments/stage1-protocol/ready-candidate/TypesExternal.candidate.lean.in",
+      "sha256": "e92a73791ebcb6095ba8963d31f2de2ebace5a6b043a3fdfec83a327b209b089",
+      "audits": []
+    }
+  },
+  "correct_audits": 17,
+  "wrong_audits": 3,
+  "complete_candidate_fields": [
+    "view",
+    "actions",
+    "continuation",
+    "receipts",
+    "source",
+    "credential",
+    "options",
+    "ready_fact"
+  ],
+  "mutation": {
+    "source": "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs",
+    "old": "&& self.credential.is_some()",
+    "new": "&& { let _ = self.credential; true }"
+  }
+}

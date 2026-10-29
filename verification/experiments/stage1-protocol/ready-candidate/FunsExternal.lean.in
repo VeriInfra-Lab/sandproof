@@ -1,0 +1,9 @@
+import SandproofFoundations.FunsExternal
+import SandproofReadyCandidate.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofReadyCandidateRust
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+end SandproofReadyCandidateRust

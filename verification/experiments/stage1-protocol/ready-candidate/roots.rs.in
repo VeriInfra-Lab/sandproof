@@ -1,0 +1,3 @@
+pub(crate) fn proof_ready_candidate_can_probe(candidate: &ReadyCandidate) -> bool {
+    candidate.can_probe()
+}

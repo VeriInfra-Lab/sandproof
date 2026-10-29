@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.ReadyCandidateModel
+
+open Aeneas Aeneas.Std SandproofReadyCandidateRust
+open sandproof_controller_service.controller.lifecycle_inbox.readiness
+namespace SandboxModel.Stage1Protocol.ReadyProbe
+open scoped Classical
+noncomputable section
+
+theorem pending_eq_host_unobserved (pending : Pending) :
+    CreateReadinessPending.Insts.CoreCmpPartialEqCreateReadinessPending.eq pending .HostUnobserved =
+      .ok (decide (pending = .HostUnobserved)) := by
+  cases pending <;> simp [CreateReadinessPending.Insts.CoreCmpPartialEqCreateReadinessPending.eq,
+    CreateReadinessPending.read_discriminant]
+
+theorem readiness_eq_host_unobserved (readiness : Readiness) :
+    CreateReadiness.Insts.CoreCmpPartialEqCreateReadiness.eq readiness (.Pending .HostUnobserved) =
+      .ok (decide (readiness = .Pending .HostUnobserved)) := by
+  cases readiness <;> simp [CreateReadiness.Insts.CoreCmpPartialEqCreateReadiness.eq,
+    CreateReadiness.read_discriminant, pending_eq_host_unobserved]
+
+theorem result_if (condition : Prop) [Decidable condition] (yes no : Bool) :
+    (if condition then Result.ok yes else Result.ok no) =
+      Result.ok (if condition then yes else no) := by
+  split <;> rfl
+
+theorem probe_refines (candidate : Candidate) :
+    run candidate = .ok (decide (ProbeEligible candidate)) := by
+  simp only [run, snapshot.ReadyCandidate.can_probe, readiness_eq_host_unobserved]
+  cases hc : candidate.continuation <;>
+    cases hs : candidate.source <;> cases hk : candidate.credential <;>
+    simp [ProbeEligible, hc, hs, hk, core.option.Option.is_some, result_if,
+      UScalar.eq_equiv, alloc.vec.Vec.len]
+
+theorem full_contract : FullProbeContract run := probe_refines
+
+theorem accepts_iff (candidate : Candidate) :
+    run candidate = .ok true ↔ ProbeEligible candidate := by
+  rw [probe_refines]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.ReadyProbe
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.pending_eq_host_unobserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.readiness_eq_host_unobserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.result_if
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.probe_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.accepts_iff

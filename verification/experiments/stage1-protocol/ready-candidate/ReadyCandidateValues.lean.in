@@ -1,0 +1,64 @@
+import SandboxModel.Lifecycle.Protocol.ReadyCandidateModel
+
+open Aeneas Aeneas.Std SandproofReadyCandidateRust
+open sandproof_controller_service.controller.lifecycle_inbox.readiness
+namespace SandboxModel.Stage1Protocol.ReadyProbe
+noncomputable section
+
+def bytes32 : Array U8 32#usize := Array.from (List.replicate 32 (0#u8)) (by simp)
+def node : sandproof_protocol.internal.NodeIdentity := ⟨"deployment", "host", 1#u64⟩
+def sampleIntent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent := {
+  request := {
+    binding := {
+      protocol_version := 4#u16, node := node, session := "session",
+      key := ⟨"deployment", "owner", 1#u64, 1#u64⟩, expected := .Absent },
+    operation := .Create {
+      template_revision := "base", template_digest := bytes32,
+      resources := ⟨1#u64, 1#u64, 1#u64, 1#u64⟩,
+      options := alloc.vec.Vec.from [1#u8] (by scalar_tac),
+      startup_deadline_ms := 20#u64, timeout_ms := 40#u64, max_lifetime_ms := 90#u64 } 1#u64 },
+  accepted_version := 1#u64, center := ⟨"deployment", "center"⟩,
+  retention := ⟨1#u16, 1#u64⟩ }
+def sampleAction : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId := {
+  identity := ⟨4#u16, "owner", "session", "operation", 1#u64, 1#u64,
+    "action", 1#u64, ⟨.Vm, "vm"⟩⟩,
+  command := ⟨⟨.ActivateVm 1#u64 1#u64 1#u64 1#u64⟩, 1#u64⟩ }
+def sampleSource : sandproof_controller_service.capture.SourceProcessIdentity :=
+  ⟨1#u32, 2#u64, "boot"⟩
+def sampleFive : Candidate := {
+  view := ⟨sampleIntent, sampleIntent, none, none, 0#u64, none, .Pending .HostUnobserved⟩,
+  actions := alloc.vec.Vec.from (List.replicate 5 sampleAction) (by scalar_tac),
+  continuation := none, receipts := alloc.vec.Vec.from [] (by simp),
+  source := some sampleSource, credential := some (1#u64, bytes32),
+  options := none, ready_fact := none }
+def sampleOne (saved : sandproof_controller_service.capture.continuation.OriginalContinueWorkRequest) :
+    Candidate := {sampleFive with
+      continuation := some saved
+      actions := alloc.vec.Vec.from [sampleAction] (by scalar_tac)}
+def missingCredential : Candidate := {sampleFive with credential := none}
+def sampleObserved : LifecycleReadyObservation := {
+  started_at_ms := 10#u64, end_at_ms := 20#u64, max_end_at_ms := 30#u64,
+  startup_deadline_ms := 15#u64, observed_at_ms := 12#u64,
+  source := sampleSource,
+  basis := ⟨0#u64, alloc.vec.Vec.from [] (by simp), alloc.vec.Vec.from [] (by simp)⟩ }
+
+def rejectedCandidates : List Candidate := [
+  {sampleFive with actions := alloc.vec.Vec.from [] (by simp)},
+  {sampleFive with actions := alloc.vec.Vec.from [sampleAction] (by scalar_tac)},
+  {sampleFive with actions := alloc.vec.Vec.from (List.replicate 4 sampleAction) (by scalar_tac)},
+  {sampleFive with actions := alloc.vec.Vec.from (List.replicate 6 sampleAction) (by scalar_tac)},
+  {sampleFive with source := none}, missingCredential,
+  {sampleFive with view := {sampleFive.view with readiness := .NotCurrent}},
+  {sampleFive with view := {sampleFive.view with readiness := .NotRunning}},
+  {sampleFive with view := {sampleFive.view with readiness := .Expired}},
+  {sampleFive with view := {sampleFive.view with readiness := .Refused .Capacity}},
+  {sampleFive with view := {sampleFive.view with readiness := .Observed sampleObserved}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .NoLocalMapping}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .StartupIncomplete}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .WorkUnknown}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .OriginalEvidenceMissing}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .CredentialUnobserved}},
+  {sampleFive with view := {sampleFive.view with readiness := .Pending .SnapshotChanged}}]
+
+end
+end SandboxModel.Stage1Protocol.ReadyProbe

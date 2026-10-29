@@ -1,0 +1,26 @@
+import SandproofReadyCandidate.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofReadyCandidateRust
+namespace SandboxModel.Stage1Protocol.ReadyProbe
+open scoped Classical
+noncomputable section
+
+abbrev Candidate := sandproof_controller_service.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate
+abbrev Readiness := sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadiness
+abbrev Pending := sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadinessPending
+
+/-- Exact ordinary-value eligibility. This grants no authorization or resource fact. -/
+def ProbeEligible (candidate : Candidate) : Prop :=
+  candidate.actions.val.length = (if candidate.continuation.isSome then 1 else 5) ∧
+  candidate.source.isSome = true ∧ candidate.credential.isSome = true ∧
+  candidate.view.readiness = .Pending .HostUnobserved
+
+def run (candidate : Candidate) : Result Bool :=
+  sandproof_controller_service.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate.can_probe candidate
+
+def FullProbeContract (check : Candidate → Result Bool) : Prop :=
+  ∀ candidate, check candidate = .ok (decide (ProbeEligible candidate))
+
+end
+end SandboxModel.Stage1Protocol.ReadyProbe

@@ -1,0 +1,82 @@
+import SandboxModel.Lifecycle.Protocol.ReadyCandidateProofs
+import SandboxModel.Lifecycle.Protocol.ReadyCandidateValues
+
+open Aeneas Aeneas.Std SandproofReadyCandidateRust
+open sandproof_controller_service.controller.lifecycle_inbox.readiness
+namespace SandboxModel.Stage1Protocol.ReadyProbe
+open scoped Classical
+noncomputable section
+
+theorem normal_five : run sampleFive = .ok true := by
+  simp [probe_refines, ProbeEligible, sampleFive]
+
+theorem normal_one (saved : sandproof_controller_service.capture.continuation.OriginalContinueWorkRequest) :
+    run (sampleOne saved) = .ok true := by
+  simp [probe_refines, ProbeEligible, sampleOne, sampleFive]
+
+theorem continuation_changes_count
+    (saved : sandproof_controller_service.capture.continuation.OriginalContinueWorkRequest) :
+    run {sampleFive with continuation := some saved} = .ok false := by
+  simp [probe_refines, ProbeEligible, sampleFive]
+
+theorem field_omission_rejections :
+    ∀ candidate ∈ rejectedCandidates, run candidate = .ok false := by
+  intro candidate member
+  simp only [rejectedCandidates, List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals simp [probe_refines, ProbeEligible, sampleFive, missingCredential]
+
+theorem receipts_options_fact_ignored (candidate : Candidate)
+    (receipts : alloc.vec.Vec (alloc.vec.Vec U8))
+    (options : Option sandproof_controller_service.host_contract.CreateOptions)
+    (fact : Option sandproof_protocol.internal.lifecycle.LifecycleFact) :
+    run {candidate with receipts := receipts, options := options, ready_fact := fact} = run candidate := by
+  simp only [probe_refines, ProbeEligible]
+  rfl
+
+theorem view_other_fields_ignored (candidate : Candidate) (view : LifecycleCreateObservation) :
+    run {candidate with view := {view with readiness := candidate.view.readiness}} = run candidate := by
+  simp only [probe_refines, ProbeEligible]
+  rfl
+
+theorem source_contents_ignored (candidate : Candidate)
+    (one two : sandproof_controller_service.capture.SourceProcessIdentity) :
+    run {candidate with source := some one} = run {candidate with source := some two} := by
+  simp only [probe_refines, ProbeEligible, Option.isSome_some]
+
+theorem credential_contents_ignored (candidate : Candidate)
+    (one two : U64 × (Array U8 32#usize)) :
+    run {candidate with credential := some one} = run {candidate with credential := some two} := by
+  simp only [probe_refines, ProbeEligible, Option.isSome_some]
+
+theorem continuation_contents_ignored (candidate : Candidate)
+    (one two : sandproof_controller_service.capture.continuation.OriginalContinueWorkRequest) :
+    run {candidate with continuation := some one} =
+      run {candidate with continuation := some two} := by
+  simp only [probe_refines, ProbeEligible, Option.isSome_some]
+
+theorem action_contents_ignored (candidate : Candidate)
+    (actions : alloc.vec.Vec (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId))
+    (same_count : actions.val.length = candidate.actions.val.length) :
+    run {candidate with actions := actions} = run candidate := by
+  simp [probe_refines, ProbeEligible, same_count]
+
+theorem accepted_does_not_supply_native_or_receipts :
+    run sampleFive = .ok true ∧ sampleFive.view.native = none ∧
+    sampleFive.view.local = none ∧ sampleFive.view.historical_result = none ∧
+    sampleFive.receipts.val = [] ∧ sampleFive.options = none ∧ sampleFive.ready_fact = none := by
+  exact ⟨normal_five, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+end
+end SandboxModel.Stage1Protocol.ReadyProbe
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.normal_five
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.normal_one
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.continuation_changes_count
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.receipts_options_fact_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.view_other_fields_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.source_contents_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.credential_contents_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.continuation_contents_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.action_contents_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyProbe.accepted_does_not_supply_native_or_receipts

@@ -1,0 +1,9 @@
+import SandproofStorage.TypesExternal
+
+open Aeneas Aeneas.Std
+namespace SandproofReadyCandidateRust
+abbrev alloc.collections.btree.map.BTreeMap :=
+  SandproofStorageRust.alloc.collections.btree.map.BTreeMap
+/-- Candidate raw Unix path value carrier only; no path operation is modeled. -/
+abbrev std.path.PathBuf := alloc.vec.Vec U8
+end SandproofReadyCandidateRust
