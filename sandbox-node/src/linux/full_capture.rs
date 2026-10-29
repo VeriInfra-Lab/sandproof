@@ -316,7 +316,8 @@ impl LinuxWorker {
                 // This debug-only path is bound into its original job digest
                 // before V5 commits the launch permit; it grants no authority.
                 #[cfg(debug_assertions)]
-                copy_gate: std::env::var_os("SANDPROOF_TEST_CAPTURE_COPY_GATE").map(Into::into),
+                measurement_gate: std::env::var_os("SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE")
+                    .map(Into::into),
             },
         )
     }

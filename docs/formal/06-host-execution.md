@@ -6,7 +6,7 @@
 
 ## 1. 实现范围
 
-对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。通用 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 仍明确拒绝 snapshot source；恢复由 `linux/restore.rs` 的 `restore_action` 消费原恢复工作及激活许可，调用 Runtime 的 `load_paused_snapshot` / `activate_loaded_snapshot`。不能将历史 Freeze/Seal/Commit 命令或模型记为这些新连接已证明。本阶段使用固定 Firecracker/jailer 1.16.1，原身份/围栏/受保护目录及清理继续复用，完整恢复与回收仍待统一实机验收和实现对应。
+对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。通用 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 仍明确拒绝 snapshot source；恢复由 `linux/restore.rs` 的 `restore_action` 消费原恢复工作及激活许可，调用 Runtime 的 `load_paused_snapshot` / `activate_loaded_snapshot`。不能将历史 Freeze/Seal/Commit 命令或模型记为这些新连接已证明。本阶段使用固定 Firecracker/jailer 1.16.1，原身份/围栏/受保护目录及清理继续复用；已有有限实机范围见覆盖记录，新增 CoW 路径仍须相应工程验收与实现对应。
 
 新增外部接口合同仅为[依赖登记 S-C1–6](dependencies.md#第一阶段新增依赖合同)。选择哪个 manifest、原 VM 是否允许停止、何时激活和哪些文件允许删除属于自有业务。外部工具可返回错误但留下部分效果。
 
@@ -40,17 +40,53 @@
 
 `Runtime::pause_original_vm` 绑定原进程的 PID、启动时间、boot 身份和原 jail，只有 API 确认为 paused 才产生 `PausedOriginalVm`。句柄只是观察结果，不授予当前操作资格；丢弃它不会停止或恢复原 VM。
 
-`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并复制到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
+`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并克隆到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
 
-`SnapshotStage` 检查原 FD 的类型、属主、权限、链接数及长度，逐块复制并计算真实 SHA-256。发布前核对保留的目标 FD、替换/修改及全部测量，随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。
+`SnapshotStage` 的 `copy_artifact` 接口沿原 FD 的类型、属主、权限、链接数及长度检查，
+调用唯一 `clone_whole_file` 作同文件系统整文件 FICLONE，再读取目标计算完整 SHA-256；
+接口名不表示仍保留另一条字节复制实现。发布前核对保留的目标 FD、替换/修改及全部测量，
+随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步
+错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。单个文件的
+克隆原子性不能代替整个捕获截面的无写者条件；Full RAM 写入及全量摘要读取仍存在。
+
+捕获观察使用 `SnapshotArtifactEvent` 的 `BeforeClone`、`Cloned`、
+`Measuring { measured_bytes, total_bytes }`、`BeforeSync`、`Synced`。
+`Cloned` 只说明同一目标已经完成整文件克隆，不表示摘要、同步或 bundle 发布完成；
+`Measuring` 表示随后读取目标计算摘要的进度，不是复制写入进度。任何事件/回调失败
+仍保留原工作与材料；观察事件不能充当 Full 成功、持久登记或 Stop 许可。
 
 `CapturedFullSnapshot` 与普通文件复制结果分型；节点 `full_snapshot::seal_full_capture` 再核对原 VM 身份、完整 capture 目录键和原 profile，并从实际测量构建完整 manifest。`PublishedFullCapture` 只表示文件与同步事实；V5 持久登记前没有 stop 许可。此底层模块无删除/kill/thaw 的失败补偿；正式 Full 调用已由后文许可接线连接，底层调用成功仍不等于完整 pause/unload 已验收。具体提交和证据在 #638 记录。
 
 纯 `snapshot_policy::accepts` 是复制路径实际调用的 Metadata 接受检查；其局部证明不能替代原 FD 获取、冻结期间无写者、完整 manifest/事务连接或 S-C 文件持久性合同。
 
-`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
+`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，从同一个父 FD
+取得两原句柄，并核对同 XFS、同一当次挂载及不同目录身份。随后在原父目录创建两个
+私有探针文件，实际克隆、读回、同步，按原 inode/目录项核对后精确删除并同步父目录。
+探针及后续同步全部成功后才发布唯一的 `LayoutRecord` version 2；其 `binding`、
+`parent`、`runtime`、`store` 字段仍保存原配置绑定和目录设备/inode/出生身份。
+version 1 明确拒绝，不自动迁移、不保留双格式。version 2 只登记该次克隆能力探针成功，
+不代替项目配额部署/读回或每次真实克隆的错误处理。
 
-运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明仍须补齐，正式捕获接线见后文；部署还须提供匹配的受保护布局和项目配额。当前 `load_paused_snapshot` 从原封存 bundle 复制新 jail 的私有 state、RAM 与磁盘，私有 File backing 在复制前接入原材料项目，保留到精确 VMM 退出与 jail 清理；权限、实际峰值预算及完整恢复链仍须统一验收和证明。
+初始化发生效果后失败时，已创建的 `v`/`s` 和可能剩余的探针/发布文件保留，不能当作
+空目录重新初始化；即使探针名称已经删除，原目录锚点也保留这项未结责任。`reopen`
+读取原 version 2 记录，允许目录已有运行材料，核对原目录身份、配置和当次 FD 的
+XFS/挂载关系，不重新创建探针，也不持久化 MNT_ID。缺失、部分初始化、替换或旧格式
+均拒绝，不现场重造身份或另建编号。Full 捕获消费这个私有构造的布局并重查原 runtime
+root，任意两个 Path 不提供同等保证。这里仍依赖受控挂载和无无关特权写者；自有初始化、
+探针、精确删除和重开判断都不是整体可信依赖。
+
+运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。本次内部布局记录改为 version 2，
+bundle/manifest 的数据字段不因文件系统块共享而改变，不增加旧布局兼容路径。部署提供
+受保护布局与匹配的 reflink/项目配额能力；`MaterialProject` 保留原 store FD，向目录赋予
+项目标签前复用同一 XFS/当次挂载检查，不把同设备别名当作该 store 的目标。
+`load_paused_snapshot` 通过 `SnapshotBundle::clone_for_restore`
+从原封存 bundle 创建新 jail 私有 state、RAM 与磁盘的独立 inode；先核来源，create-new，
+调用同一 `clone_whole_file`，按原长度上界读取目标校验 SHA-256，再核原来源与目录项，
+设置原 UID/GID、state/RAM 0400 或磁盘0600，完成文件/目录同步。私有 File backing 在
+克隆前接入原材料项目，保留到精确 VMM 退出与 jail 清理；共享块不解除 loader/pin 责任。
+不支持/跨挂载/配额/同步失败保留部分文件，不改回旧复制算法。能力和实际峰值按完整
+逻辑写入上界准入，不能把初始共享块占用当永久预算。外部保证见
+[A3 CoW 合同](dependencies.md#a3整文件-cow-克隆的准确边界)；自有实际连接仍须实现对应。
 
 ### 原捕获动作与已发布材料观察
 

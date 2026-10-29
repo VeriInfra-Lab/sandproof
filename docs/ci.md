@@ -48,6 +48,39 @@ SDK 合同任务另运行 `scripts/check-distributed-contract.sh`：先由 `tool
 
 普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
 
+Rust 和 SDK 任务的保存包组件需要实际 XFS reflink；原来宾 ext4 `/tmp` 不满足要求。
+[单任务入口](../tools/ci_vm.py)在这两个档位的 runner 启动前，由可信来宾 root
+配方创建一次性 XFS 临时区；其他档位及制备/预热不创建。固定路径为
+`/var/lib/sandproof-ci-cow`，父目录 root/0711、镜像 root/0600，挂载后的
+`mount/tmp` 仅 runner 可读写（0700），并通过任务环境 `TMPDIR` 指向该处。
+原有路径即拒绝，不复用或格式化已有文件、块设备；只对独占新建的 1 GiB
+普通文件分配空间并执行 `mkfs.xfs -K -m reflink=1`，`-K` 禁止格式化时 discard
+抵消这次预分配；随后挂载 `prjquota,nodev,nosuid`。
+不加 `noexec`，保留临时编译程序的执行能力。runner 的无 sudo、无能力集、
+`NoNewPrivileges`、`PrivateTmp` 与其他隔离设置保持原状，任务代码不参与 root 配方。
+
+启动前须实际核对挂载类型、项目配额和选项，并以 runner 身份在临时区完成
+创建、FICLONE、独立 inode、双向写隔离及程序执行探针；任一步失败即拒绝启动
+监听器并关闭本轮来宾，不跳过测试或回退 ext4/普通复制。
+root 配方和 runner 探针均使用固定 `/usr/bin/python3 -I`，忽略 Python 环境注入，
+并显式拒绝 `optimize` 非零，避免断言被关闭而打印就绪。
+启动日志的 `SANDPROOF_CI_COW_READY` 记录当时探针结果、镜像逻辑大小、实际分配量和挂载选项，
+只代表临时区就绪，不代表组件或整套检查通过。镜像占用计入原来宾 32 GiB
+工作盘预算，不扩大 QEMU、宿主准入或任务期限。loop 和挂载只存在于本轮来宾，
+停机后随原工作盘回收；不在宿主创建 loop，也不保留跨任务可写临时区。
+其中 `allocated_bytes` 是来宾内部 backing 普通文件按 `st_blocks * 512` 计费的数值，
+不能据此声称宿主工作盘的净物理占用或节省量。
+
+这段配方随宿主受控安装的 `/opt/sandproof-ci/ci_vm.py` 生成 cloud-config；
+监督器的新工作单元直接执行该文件，仓库 PR 的同名文件不会自动生效。
+安装前先审查精确提交及脚本自测，再按原准入锁在普通任务自然排空、登记为空且
+没有他人维护标记时取得本次维护窗口。保存旧文件及摘要，以 root 原子替换这一份
+已审查文件，保持原权限和所有者；不用更换黄金盘、App、执行器身份或其他工具。
+实际验证新来宾的正向就绪、故意准备失败不启动 runner，以及原工作盘收尾后才
+恢复准入。失败时在同样的空闲窗口恢复原文件并记录尚未具备 XFS 条件；旧文件
+恢复不代表依赖 XFS 的检查可以通过。只移除自己的维护标记，不停止在途任务。
+实现、受控安装和实测结论分别记录在关联 issue/PR，源码存在不表示宿主已启用。
+
 固定普通 CI 依赖由[可信预热入口](../tools/ci_dependencies.py)从管理员已审查的精确提交准备输入；输入只含 SDK/Harbor 项目的锁与清单、Cargo 锁与清单、固定 Redis 官方归档及必要的固定工具配方，不由 PR 提供任意预热命令。先运行 `python3 tools/ci_dependencies.py prepare-input --checkout <审核检出目录> --approved-commit <40位提交> --output <新私有输入JSON> --redis-archive <固定官方Redis归档>`，它核对输入文件与该提交的 Git blob 一致。旧运行 pins 缺少 uv 三个字段时，创建独立 root 私有制备 pins，保留当前 `cloud_sha256`、`golden_sha256` 及既有 `golden_image` 等基线身份，只从已核验的[构建输入](../tools/ci_image_pins.json)加入 `uv_version`、`uv_url`、`uv_sha256`，不提前覆盖运行 pins；通过受控宿主入口 `python3 tools/ci_vm.py --role preheat --pins <独立私有制备pins> --dependency-input <该输入JSON> --timeout <秒>` 从当前黄金盘派生独立来宾，安装同一固定 uv，并以 runner 身份按原锁预热 uv 和 Cargo。新增 [Redis 制备工具](../tools/ci_redis.py)只接受输入锁固定的官方归档，在同一隔离来宾以 runner 身份、固定参数编译；可信 root 配方确认 runner 工作结束后才封存 x86_64 程序和源/二进制摘要，缺失、损坏或不受保护材料拒绝。来宾不下载 Redis、不接受 PR 的构建命令，也不初始化生产账本。预热须在不同临时目录完成离线重建及 Git 安装来源核对，真实退出成功后才发布按磁盘摘要命名的新候选黄金盘及 `prepared-pins.json`，不会自动替换运行 pins。候选 pins 位于受下文 40 份／128 MiB 限制回收的诊断目录，开始验证前须保存 root 私有副本。入口实现不表示已安装或已验收；同固定材料的两次全新虚拟机离线验证、镜像与输入摘要和真实结果须记录在对应 issue/PR。
 
 预热入口只在普通执行位置自然空闲、登记已清且没有已有维护标记时，自动认领本轮暂停与独占身份；他人的维护标记、未清普通占用或仍在运行的工作单元均使启动拒绝。管理员先等待普通任务自然完成再调用，不提前创建 `paused` 或 `exclusive-host`，也不停止在途任务。收尾确认本轮来宾与工作盘已停止、回收后，只按精确身份移除自己的标记并恢复准入；未知结果保留身份供核对。

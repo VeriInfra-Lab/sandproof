@@ -68,7 +68,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
         .create(
             "config.json",
             &serde_json::to_vec(&serde_json::json!({
-                "schema_version": 1, "run_identity": "a".repeat(64), "sandbox": "sb-test-1",
+                "schema_version": 2, "run_identity": "a".repeat(64), "sandbox": "sb-test-1",
                 "generation": 2, "timeout_ms": 1000,
             }))
             .unwrap(),
@@ -94,9 +94,12 @@ fn instruction(path: &Path, mode: &str) {
     assert_eq!(observed["action"], serde_json::to_value(action()).unwrap());
     assert_eq!(observed["worker"], serde_json::to_value(worker()).unwrap());
     assert_eq!(observed["source"], serde_json::to_value(source()).unwrap());
-    assert_eq!(observed["copied_bytes"], 65_536);
+    assert_eq!(observed["schema_version"], 2);
+    assert_eq!(observed["phase"], "measuring-cloned-artifact");
+    assert_eq!(observed["measured_bytes"], 65_536);
+    assert!(observed.get("copied_bytes").is_none());
     assert_eq!(observed["total_bytes"], 131_072);
-    let mut value = serde_json::json!({"schema_version":1,"run_identity":"a".repeat(64),
+    let mut value = serde_json::json!({"schema_version":2,"run_identity":"a".repeat(64),
         "observation_sha256":hex_digest(&bytes),"full_work_binding":ContentDigest::from_sha256([3;32]),
         "command":if mode=="fail" {"fail"} else {"release"}});
     match mode {
@@ -106,6 +109,7 @@ fn instruction(path: &Path, mode: &str) {
             value["full_work_binding"] =
                 serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap();
         }
+        "old-format" => value["schema_version"] = serde_json::json!(1),
         _ => {}
     }
     directory(path)
@@ -120,6 +124,7 @@ fn copy_gate_binds_original_question_and_only_consumes_exact_release_or_failure(
         "wrong-run",
         "wrong-question",
         "wrong-work",
+        "old-format",
     ] {
         let (_root, path) = fixture();
         let gate = CaptureCopyGate::select(directory(&path), &action())
@@ -144,7 +149,7 @@ fn copy_gate_binds_original_question_and_only_consumes_exact_release_or_failure(
     }
 }
 #[test]
-fn copy_gate_rejects_zero_or_finished_copy_before_publishing_a_question() {
+fn copy_gate_rejects_zero_or_finished_measurement_before_publishing_a_question() {
     for progress in [(0, 131_072), (131_072, 131_072), (2, 1)] {
         let (_root, path) = fixture();
         let gate = CaptureCopyGate::select(directory(&path), &action())
@@ -162,4 +167,19 @@ fn copy_gate_rejects_zero_or_finished_copy_before_publishing_a_question() {
         );
         assert!(!path.join("ready.json").exists());
     }
+}
+
+#[test]
+fn old_copy_config_is_rejected_instead_of_becoming_a_measurement_gate() {
+    let (_root, path) = fixture();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&disk::read(path.join("config.json")).unwrap()).unwrap();
+    config["schema_version"] = serde_json::json!(1);
+    disk::write(
+        path.join("config.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    assert!(CaptureCopyGate::select(directory(&path), &action()).is_err());
+    assert!(!path.join("ready.json").exists());
 }

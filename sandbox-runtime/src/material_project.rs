@@ -173,6 +173,7 @@ impl Tool {
 pub(crate) struct MaterialProject {
     settings: MaterialProjectSettings,
     device: u64,
+    store: File,
     chattr: Tool,
     lsattr: Tool,
 }
@@ -182,8 +183,10 @@ impl MaterialProject {
         store: &File,
     ) -> Result<Self, RuntimeError> {
         settings.validate()?;
+        crate::snapshot_store::require_same_xfs_mount(store, store)?;
         let result = Self {
             device: store.metadata()?.dev(),
+            store: store.try_clone()?,
             chattr: Tool::open(&settings.chattr)?,
             lsattr: Tool::open(&settings.lsattr)?,
             settings,
@@ -196,8 +199,10 @@ impl MaterialProject {
         store: &File,
     ) -> Result<Self, RuntimeError> {
         settings.validate()?;
+        crate::snapshot_store::require_same_xfs_mount(store, store)?;
         let result = Self {
             device: store.metadata()?.dev(),
+            store: store.try_clone()?,
             chattr: Tool::open(&settings.chattr)?,
             lsattr: Tool::open(&settings.lsattr)?,
             settings,
@@ -206,6 +211,7 @@ impl MaterialProject {
         Ok(result)
     }
     fn target(&self, directory: &File) -> Result<String, RuntimeError> {
+        crate::snapshot_store::require_same_xfs_mount(&self.store, directory)?;
         let meta = directory.metadata()?;
         if !meta.is_dir()
             || meta.dev() != self.device

@@ -213,7 +213,7 @@ fn original_content_mutation_is_not_hidden_by_a_retained_descriptor() {
 }
 
 #[test]
-fn private_restore_copies_preserve_sealed_sources_and_are_independent() {
+fn private_restore_clones_preserve_sealed_sources_and_are_independent() {
     let fixture = Fixture::new();
     let bundle = fixture.open().unwrap();
     let private = fixture.temporary.path().join("private-jail");
@@ -226,18 +226,25 @@ fn private_restore_copies_preserve_sealed_sources_and_are_independent() {
         SnapshotArtifact::Memory,
         SnapshotArtifact::Disk(0),
     ] {
-        bundle.copy_for_restore(&directory, role, uid, gid).unwrap();
+        bundle
+            .clone_for_restore(&directory, role, uid, gid)
+            .unwrap();
     }
-    for (name, bytes, mode) in [
-        ("restore-state.bin", 1, 0o400),
-        ("restore-memory.bin", 2, 0o400),
-        ("rootfs.ext4", 3, 0o600),
+    for (name, source, bytes, mode) in [
+        ("restore-state.bin", "state.bin", 1, 0o400),
+        ("restore-memory.bin", "memory.bin", 2, 0o400),
+        ("rootfs.ext4", "disk-0.img", 3, 0o600),
     ] {
         let metadata = fs::metadata(private.join(name)).unwrap();
         assert_eq!(fs::read(private.join(name)).unwrap(), vec![bytes; 17]);
         assert_eq!(metadata.mode() & 0o777, mode);
         assert_eq!(metadata.uid(), uid);
+        assert_eq!(metadata.gid(), gid);
         assert_eq!(metadata.nlink(), 1);
+        let original = fs::metadata(fixture.bundle_path().join(source)).unwrap();
+        assert_eq!(metadata.dev(), original.dev());
+        assert_ne!(metadata.ino(), original.ino());
+        assert_eq!(original.nlink(), 1);
     }
     fs::write(private.join("rootfs.ext4"), b"new guest writes").unwrap();
     assert_eq!(
@@ -247,7 +254,7 @@ fn private_restore_copies_preserve_sealed_sources_and_are_independent() {
     bundle.verify_unchanged().unwrap();
     assert!(
         bundle
-            .copy_for_restore(&directory, SnapshotArtifact::Disk(0), uid, gid)
+            .clone_for_restore(&directory, SnapshotArtifact::Disk(0), uid, gid)
             .is_err()
     );
     assert_eq!(
@@ -257,7 +264,70 @@ fn private_restore_copies_preserve_sealed_sources_and_are_independent() {
 }
 
 #[test]
-fn restore_copy_rejects_substituted_source_and_destination_symlink() {
+fn restore_clone_writes_and_source_unlink_cannot_change_the_other_inode() {
+    let fixture = Fixture::new();
+    let bundle = fixture.open().unwrap();
+    let private = fixture.temporary.path().join("private-jail");
+    fs::create_dir(&private).unwrap();
+    let directory = File::open(&private).unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    let gid = rustix::process::getegid().as_raw();
+    bundle
+        .clone_for_restore(&directory, SnapshotArtifact::Memory, uid, gid)
+        .unwrap();
+    let target = private.join("restore-memory.bin");
+    let source = fixture.bundle_path().join("memory.bin");
+
+    // Only this test's owner changes the readonly mode to exercise writes to
+    // both independent inodes. Production retains the sealed/private modes.
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(&target, vec![9; 17]).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), vec![2; 17]);
+    bundle.verify_unchanged().unwrap();
+
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(&source, vec![8; 17]).unwrap();
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o400)).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), vec![9; 17]);
+    assert!(bundle.verify_unchanged().is_err());
+
+    fixture.writable_directory();
+    fs::remove_file(&source).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), vec![9; 17]);
+    assert!(bundle.verify_unchanged().is_err());
+}
+
+#[test]
+fn later_restore_clone_failure_preserves_prior_private_material_and_source() {
+    let fixture = Fixture::new();
+    let bundle = fixture.open().unwrap();
+    let private = fixture.temporary.path().join("private-jail");
+    fs::create_dir(&private).unwrap();
+    let directory = File::open(&private).unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    let gid = rustix::process::getegid().as_raw();
+    bundle
+        .clone_for_restore(&directory, SnapshotArtifact::State, uid, gid)
+        .unwrap();
+    let sentinel = fixture.temporary.path().join("sentinel");
+    fs::write(&sentinel, b"not a restore destination").unwrap();
+    symlink(&sentinel, private.join("restore-memory.bin")).unwrap();
+    assert!(
+        bundle
+            .clone_for_restore(&directory, SnapshotArtifact::Memory, uid, gid)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(private.join("restore-state.bin")).unwrap(),
+        vec![1; 17]
+    );
+    assert_eq!(fs::read(&sentinel).unwrap(), b"not a restore destination");
+    assert!(private.join("restore-memory.bin").is_symlink());
+    bundle.verify_unchanged().unwrap();
+}
+
+#[test]
+fn restore_clone_rejects_substituted_source_and_destination_symlink() {
     let fixture = Fixture::new();
     let bundle = fixture.open().unwrap();
     let private = fixture.temporary.path().join("private-jail");
@@ -270,7 +340,7 @@ fn restore_copy_rejects_substituted_source_and_destination_symlink() {
     let gid = rustix::process::getegid().as_raw();
     assert!(
         bundle
-            .copy_for_restore(&directory, SnapshotArtifact::Memory, uid, gid)
+            .clone_for_restore(&directory, SnapshotArtifact::Memory, uid, gid)
             .is_err()
     );
     assert_eq!(fs::read(&sentinel).unwrap(), b"unchanged");
@@ -284,7 +354,7 @@ fn restore_copy_rejects_substituted_source_and_destination_symlink() {
     fixture.seal_directory();
     assert!(
         bundle
-            .copy_for_restore(&directory, SnapshotArtifact::State, uid, gid)
+            .clone_for_restore(&directory, SnapshotArtifact::State, uid, gid)
             .is_err()
     );
     assert!(!private.join("restore-state.bin").exists());

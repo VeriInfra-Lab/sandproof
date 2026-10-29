@@ -2,12 +2,155 @@ import base64
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from tools import ci_vm
+
+
+class CowScratchTests(unittest.TestCase):
+    def recipe(self):
+        namespace = {'__name__': 'scratch_recipe_unit_test'}
+        exec(compile(ci_vm.COW_SCRATCH_SETUP, '<trusted-scratch-recipe>', 'exec'), namespace)
+        # Exercise the actual emitted recipe's control flow without formatting
+        # any disk or requiring privilege in ordinary unit tests.
+        root = MagicMock(spec=Path)
+        root.parent.parents = ()
+        root.parent.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        image, mount, tmp = MagicMock(spec=Path), MagicMock(spec=Path), MagicMock(spec=Path)
+        root.__truediv__.side_effect = lambda name: {'scratch.img': image, 'mount': mount}[name]
+        mount.__truediv__.return_value = tmp
+        mount.__str__.return_value = '/var/lib/sandproof-ci-cow/mount'
+        image.__str__.return_value = '/var/lib/sandproof-ci-cow/scratch.img'
+        image.lstat.return_value = SimpleNamespace(st_dev=7, st_ino=19)
+        system = Mock(wraps=os)
+        for name in ('O_RDWR', 'O_CREAT', 'O_EXCL', 'O_NOFOLLOW'):
+            setattr(system, name, getattr(os, name))
+        system.geteuid.return_value = 0
+        system.umask = Mock()
+        system.open.return_value = 91
+        system.posix_fallocate = Mock()
+        system.fsync = Mock()
+        system.close = Mock()
+        system.chown = Mock()
+        system.fstat.return_value = SimpleNamespace(st_mode=stat.S_IFREG | 0o600,
+            st_uid=0, st_nlink=1, st_size=1024 ** 3, st_dev=7, st_ino=19, st_blocks=2000000)
+        process = Mock()
+        filesystem = {'filesystems': [{'target': str(mount), 'fstype': 'xfs',
+                                       'options': 'rw,nodev,nosuid,prjquota'}]}
+        witness = {'runner_uid': 1000, 'python_optimize': 0, 'clone_and_write_isolation': True,
+                   'executable_tmpdir': True}
+        def command(argv, **kwargs):
+            if argv[0] == '/usr/bin/findmnt':
+                return SimpleNamespace(stdout=json.dumps(filesystem))
+            if argv[0] == '/usr/sbin/runuser':
+                return SimpleNamespace(stdout=json.dumps(witness))
+            return SimpleNamespace()
+        process.run.side_effect = command
+        namespace.update(ROOT=root, os=system, subprocess=process,
+            pwd=SimpleNamespace(getpwnam=lambda name: SimpleNamespace(pw_uid=1000, pw_gid=1000)),
+            sys=SimpleNamespace(flags=SimpleNamespace(optimize=0)), print=Mock())
+        return namespace, root, image, system, process, filesystem, witness
+
+    def test_only_rust_and_sdk_prepare_before_listener_without_giving_runner_privilege(self):
+        jit = base64.b64encode(b'opaque-test-jit-configuration').decode()
+        for role in ci_vm.RUNNER_JOBS:
+            with self.subTest(role=role):
+                config = ci_vm.cloud_config(role, jit)
+                files = {item['path']: item for item in config['write_files']}
+                shell = config['runcmd'][-1][-1]
+                if role in {'rust', 'sdk'}:
+                    self.assertIn('TMPDIR=/var/lib/sandproof-ci-cow/mount/tmp\n',
+                                  files['/etc/sandproof-ci.env']['content'])
+                    recipe = files['/root/ci-cow-scratch.py']
+                    self.assertEqual((recipe['permissions'], recipe['owner']), ('0500', 'root:root'))
+                    self.assertEqual(recipe['content'], ci_vm.COW_SCRATCH_SETUP)
+                    self.assertIn('if /usr/bin/python3 -I /root/ci-cow-scratch.py && runuser ', shell)
+                else:
+                    self.assertNotIn('/root/ci-cow-scratch.py', files)
+                    self.assertNotIn('TMPDIR=', files['/etc/sandproof-ci.env']['content'])
+                self.assertTrue(shell.endswith('else poweroff; fi'))
+                unit = files['/etc/systemd/system/sandproof-ci-job.service']['content']
+                for setting in ('User=runner', 'PrivateTmp=true', 'NoNewPrivileges=true',
+                                'CapabilityBoundingSet=\n'):
+                    self.assertIn(setting, unit)
+                self.assertIsNone(config['users'][0]['sudo'])
+
+    def test_preexisting_path_or_unsafe_ancestor_is_never_formatted(self):
+        for reason in ('nonroot', 'optimized', 'ancestor', 'existing'):
+            with self.subTest(reason=reason):
+                ns, root, _, system, process, _, _ = self.recipe()
+                if reason == 'nonroot':
+                    system.geteuid.return_value = 1000
+                elif reason == 'optimized':
+                    ns['sys'].flags.optimize = 1
+                elif reason == 'ancestor':
+                    root.parent.lstat.return_value.st_mode = stat.S_IFDIR | 0o777
+                else:
+                    root.mkdir.side_effect = FileExistsError('already present')
+                with self.assertRaises((ValueError, FileExistsError)):
+                    ns['run']()
+                system.open.assert_not_called()
+                process.run.assert_not_called()
+
+    def test_fresh_bounded_file_and_fd_are_used_before_unprivileged_probe(self):
+        ns, root, image, system, process, _, _ = self.recipe()
+        ns['run']()
+        root.mkdir.assert_called_once_with(mode=0o711)
+        system.open.assert_called_once_with(image,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        system.posix_fallocate.assert_called_once_with(91, 0, 1024 ** 3)
+        commands = [call.args[0] for call in process.run.call_args_list]
+        self.assertEqual([argv[0] for argv in commands], ['/usr/sbin/mkfs.xfs',
+            '/usr/bin/mount', '/usr/bin/findmnt', '/usr/sbin/runuser'])
+        self.assertEqual(commands[0][-1], '/proc/self/fd/91')
+        self.assertIn('-K', commands[0])
+        self.assertEqual(process.run.call_args_list[0].kwargs['pass_fds'], (91,))
+        self.assertEqual(commands[1][2], 'loop,prjquota,nodev,nosuid')
+        self.assertEqual(commands[3][:4], ['/usr/sbin/runuser', '-u', 'runner', '--'])
+        self.assertEqual(commands[3][4:7], ['/usr/bin/python3', '-I', '-c'])
+        system.close.assert_called_once_with(91)
+        line = ns['print'].call_args.args[0]
+        self.assertTrue(line.startswith('SANDPROOF_CI_COW_READY '))
+        self.assertEqual(json.loads(line.partition(' ')[2])['logical_bytes'], 1024 ** 3)
+
+    def test_any_setup_command_failure_closes_fd_and_prevents_later_steps(self):
+        for failed in range(4):
+            with self.subTest(failed=failed):
+                ns, _, _, system, process, _, _ = self.recipe()
+                execute = process.run.side_effect
+                def fail(argv, **kwargs):
+                    if process.run.call_count == failed + 1:
+                        raise subprocess.CalledProcessError(1, argv)
+                    return execute(argv, **kwargs)
+                process.run.side_effect = fail
+                with self.assertRaises(subprocess.CalledProcessError):
+                    ns['run']()
+                self.assertEqual(process.run.call_count, failed + 1)
+                system.close.assert_called_once_with(91)
+                ns['print'].assert_not_called()
+
+    def test_missing_quota_wrong_filesystem_noexec_or_incomplete_probe_fail_closed(self):
+        for failure in ('quota', 'filesystem', 'noexec', 'probe'):
+            with self.subTest(failure=failure):
+                ns, _, _, system, process, filesystem, witness = self.recipe()
+                entry = filesystem['filesystems'][0]
+                if failure == 'quota':
+                    entry['options'] = 'rw,nodev,nosuid'
+                elif failure == 'filesystem':
+                    entry['fstype'] = 'ext4'
+                elif failure == 'noexec':
+                    entry['options'] += ',noexec'
+                else:
+                    witness['clone_and_write_isolation'] = False
+                with self.assertRaises(ValueError):
+                    ns['run']()
+                self.assertEqual(process.run.call_count, 4 if failure == 'probe' else 3)
+                system.close.assert_called_once_with(91)
+                ns['print'].assert_not_called()
 
 
 class RunnerDeadlineTests(unittest.TestCase):

@@ -1,4 +1,4 @@
-//! Debug-only observation AFTER a real Memory block write, before copy completion.
+//! Debug-only observation DURING SHA reads of an already complete Memory clone.
 //! No file/command creates an End, published Full, adoption or VM permission.
 use super::restore_gate::{Directory, hex_digest, valid_digest};
 use sandbox_controller_core as core;
@@ -34,7 +34,8 @@ struct Observation<'a> {
     full_work_binding: &'a ContentDigest,
     worker: &'a CaptureWorkerBinding,
     source: &'a SourceProcessIdentity,
-    copied_bytes: u64,
+    phase: &'static str,
+    measured_bytes: u64,
     total_bytes: u64,
 }
 #[derive(Deserialize)]
@@ -64,7 +65,7 @@ impl CaptureCopyGate {
             .read_file("config.json")?
             .ok_or("capture copy config missing")?;
         let config: Config = serde_json::from_slice(&config_bytes)?;
-        if config.schema_version != 1
+        if config.schema_version != 2
             || !valid_digest(&config.run_identity)
             || config.sandbox.is_empty()
             || config.sandbox.len() > 64
@@ -98,7 +99,7 @@ impl CaptureCopyGate {
         action: &WorkAction<core::EffectId>,
         full: &FullCaptureWorkRequest,
         worker: &CaptureWorkerBinding,
-        copied_bytes: u64,
+        measured_bytes: u64,
         total_bytes: u64,
     ) -> Result<()> {
         if !full.valid() {
@@ -109,7 +110,7 @@ impl CaptureCopyGate {
             full.binding_digest()?,
             &full.pause.source,
             worker,
-            (copied_bytes, total_bytes),
+            (measured_bytes, total_bytes),
         )
     }
 
@@ -121,10 +122,12 @@ impl CaptureCopyGate {
         worker: &CaptureWorkerBinding,
         progress: (u64, u64),
     ) -> Result<()> {
-        let (copied_bytes, total_bytes) = progress;
+        let (measured_bytes, total_bytes) = progress;
         let deadline = Instant::now() + Duration::from_millis(self.config.timeout_ms);
-        if copied_bytes == 0 || copied_bytes >= total_bytes {
-            return Err("copy gate requires an actual incomplete block copy".into());
+        if measured_bytes == 0 || measured_bytes >= total_bytes {
+            return Err(
+                "capture gate requires incomplete SHA measurement of the complete clone".into(),
+            );
         }
         if action.identity.sandbox.as_str() != self.config.sandbox
             || action.identity.generation != self.config.generation
@@ -134,13 +137,14 @@ impl CaptureCopyGate {
             return Err("capture copy original action/worker differs".into());
         }
         let bytes = serde_json::to_vec(&Observation {
-            schema_version: 1,
+            schema_version: 2,
             run_identity: &self.config.run_identity,
             action,
             full_work_binding: &full_work_binding,
             worker,
             source,
-            copied_bytes,
+            phase: "measuring-cloned-artifact",
+            measured_bytes,
             total_bytes,
         })?;
         if bytes.len() > 16_384 {
@@ -178,7 +182,7 @@ impl CaptureCopyGate {
             }
             if let Some(bytes) = self.directory.read("command.json")? {
                 let command: Instruction = serde_json::from_slice(&bytes)?;
-                if command.schema_version != 1
+                if command.schema_version != 2
                     || command.run_identity != self.config.run_identity
                     || command.observation_sha256 != digest
                     || command.full_work_binding != full_work_binding
@@ -192,7 +196,7 @@ impl CaptureCopyGate {
                 return if command.command == "release" {
                     Ok(())
                 } else {
-                    Err("copy gate requested failure after actual partial write".into())
+                    Err("capture gate requested failure during clone measurement".into())
                 };
             }
             std::thread::sleep(Duration::from_millis(10));
