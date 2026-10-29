@@ -513,8 +513,8 @@ pub fn begin_compensation(
         }
         if let Some(stored) = next.operation_plans.get(&key) {
             let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.ordinary_failure());
+            if let Some(handoff) = plan.capture {
+                plan.capture = Some(handoff.ordinary_failure());
             }
             next.operation_plans.put(key, plan);
         }
