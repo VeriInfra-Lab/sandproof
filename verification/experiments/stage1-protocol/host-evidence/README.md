@@ -57,6 +57,22 @@ inventory 记录原五个透明根、固定 include/目标、原始输入、模�
 
 全部实际导入文件经原检查器逐个内核、同服务非 stale/partial 完整诊断和依赖审计。
 完整开发过程、实际命令/配置、所有失败和原始结果保留在 #635 指定的无缓存证据包。
-本包还没有登记的正式/native CLI；公共复现装配、正式/原生登记、根导入、冻结和覆盖
-由主控协调后续采用，不能跑旧 verify-stage1-protocol.sh 报告本包已验收。
+`development.py` 提供独立复现装配：从固定原源复制私有项目，仅在副本应用两个候选
+补丁和至多一个真实 Rust 守卫变异，重新编译、抽取，并核对原 IR 的完整业务字段、
+变体及标签、透明方法、完整捕获选项和精确生成输出。它复用原 actual_files 检查器，
+不复用先前的成功状态。每版使用独立源码、Cargo target 和 .lake/build；只共享固定
+工具和包，保留所有失败。原项目内容与文件执行位也纳入输入记录及结束复查。
+
+在已配置的证明环境中，分别执行以下三条命令，使用同一个既有共享重任务锁。
+输出目录必须尚不存在。`--prepare-only` 仍实际编译和抽取，但不运行内核/服务检查，
+不能把 prepared 当成 complete。
+
+```sh
+python3 verification/experiments/stage1-protocol/host-evidence/development.py --variant correct --output /private/proof/host-correct --lock /private/proof/shared-proof.lock
+python3 verification/experiments/stage1-protocol/host-evidence/development.py --variant skip-command --output /private/proof/host-skip-command --lock /private/proof/shared-proof.lock
+python3 verification/experiments/stage1-protocol/host-evidence/development.py --variant skip-resource --output /private/proof/host-skip-resource --lock /private/proof/shared-proof.lock
+```
+
+本入口不签发正式/native 回执；正式/原生登记、根导入、冻结和覆盖由主控协调后续采用，
+不能跑旧 verify-stage1-protocol.sh 报告本包已验收。
 普通及正确/错误/恢复原生检查仍交 ning，当前封口窗口不追加本包；完整 V3 仍未完成。

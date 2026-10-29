@@ -68,7 +68,9 @@
     "source-guard-candidate.patch": "45eee22db4f060023e7aba214506e8e5945fd531de21ff55082c08b77ab2e99e",
     "HostEvidenceBoundaries.lean.in": "a51bfc17291a1c01ce9714d08a1eca0be5cf0eda78556cf9f14b6c05e112496f",
     "HostEvidenceWrongResource.lean.in": "2e87238241d5800b8056f7413eabf8a5a188fc2c8eb8f7305af371da6929fa26",
-    "HostEvidenceTypes.lean.in": "7fea584a88dc75c1df393015046760b570c3372749663cf4ed33d214d42ec110"
+    "HostEvidenceTypes.lean.in": "7fea584a88dc75c1df393015046760b570c3372749663cf4ed33d214d42ec110",
+    "development.py": "b4fec07fafecbc748d74168bb1e22565a377a9018cd83a6cf18bfac084bcf481",
+    "admission_tests.py": "d856a7564f60f4edb44abc8909baa9d323f9081af3fb648db1ef09196a4f63f5"
   },
   "physical_development_evidence": {
     "correct": {
@@ -103,5 +105,4338 @@
     "actual JSON/Serde and SQL/SHA",
     "transaction unknown/restart",
     "authentication and actual host/file/VM facts"
-  ]
+  ],
+  "capture_options": {
+    "ullbc": false,
+    "precise_drops": false,
+    "mir": null,
+    "rustc_args": [],
+    "targets": [],
+    "sysroot": "default",
+    "monomorphize": false,
+    "monomorphize_mut": null,
+    "start_from": [
+      "sandproof_node::host_evidence::validates",
+      "sandproof_node::host_evidence::manifest_digest",
+      "sandproof_node::host_evidence::material_bytes",
+      "sandproof_node::host_evidence::recorded_source",
+      "sandproof_node::host_evidence::source_process"
+    ],
+    "start_from_if_exists": [],
+    "start_from_attribute": [],
+    "start_from_pub": false,
+    "include": [
+      "sandproof_protocol",
+      "sandbox_controller_core",
+      "sandproof_node",
+      "sandbox_runtime",
+      "sandproof_controller_service",
+      "core::num::_::is_ascii_digit",
+      "core::ops::range::_::contains",
+      "core::ops::range::_::start_bound",
+      "core::ops::range::_::end_bound",
+      "core::ops::range::RangeInclusive",
+      "core::option::_::map"
+    ],
+    "opaque": [],
+    "exclude": [],
+    "extract_opaque_bodies": false,
+    "translate_all_methods": false,
+    "duplicate_defaulted_methods": false,
+    "lift_associated_types": [
+      "*"
+    ],
+    "hide_marker_traits": true,
+    "hide_allocator": true,
+    "remove_unused_clauses": false,
+    "remove_unused_self_clauses": true,
+    "remove_adt_clauses": true,
+    "desugar_drops": false,
+    "ops_to_function_calls": true,
+    "index_to_function_calls": true,
+    "treat_box_as_builtin": true,
+    "no_gen_tuple_structs": true,
+    "raw_consts": false,
+    "consts": null,
+    "unsized_strings": false,
+    "reconstruct_fallible_operations": true,
+    "reconstruct_asserts": true,
+    "reconstruct_matches": true,
+    "deallocate_all_locals": true,
+    "unbind_item_vars": true,
+    "print_original_ullbc": false,
+    "print_ullbc": false,
+    "print_built_llbc": false,
+    "print_llbc": false,
+    "dest_dir": null,
+    "dest_file": "/home/zn/u333-5tuoxof8/std-mutex-source/artifacts/host-evidence.llbc",
+    "no_dedup_serialized_ast": false,
+    "format": null,
+    "no_serialize": false,
+    "skip_borrowck": false,
+    "no_typecheck": false,
+    "no_normalize": false,
+    "no_reorder_decls": false,
+    "abort_on_error": false,
+    "error_on_warnings": true,
+    "preset": "Aeneas"
+  },
+  "business_schemas": [
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_node",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "HostObservation",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "resource",
+          "ty": {
+            "Value": [
+              12,
+              {
+                "Adt": {
+                  "id": 6,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "command",
+          "ty": {
+            "Value": [
+              13,
+              {
+                "Adt": {
+                  "id": 3,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "result",
+          "ty": {
+            "Value": [
+              14,
+              {
+                "Adt": {
+                  "id": 12,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Command",
+            0
+          ]
+        }
+      ],
+      "enum": [
+        {
+          "name": "InstallFence",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Value": [
+                  15,
+                  {
+                    "Adt": {
+                      "id": 13,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Value": [
+                  16,
+                  {
+                    "Scalar": {
+                      "Integer": {
+                        "Unsigned": "U64"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "terminal",
+              "ty": {
+                "Value": [
+                  17,
+                  {
+                    "Scalar": "Bool"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PrepareVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Value": [
+                  18,
+                  {
+                    "Adt": {
+                      "id": 14,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "slot",
+              "ty": {
+                "Value": [
+                  19,
+                  {
+                    "Adt": {
+                      "id": 15,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "source",
+              "ty": {
+                "Value": [
+                  20,
+                  {
+                    "Adt": {
+                      "id": 4,
+                      "generics": {
+                        "regions": [],
+                        "types": [
+                          {
+                            "Value": [
+                              21,
+                              {
+                                "Adt": {
+                                  "id": 16,
+                                  "generics": {
+                                    "regions": [],
+                                    "types": [],
+                                    "const_generics": [],
+                                    "trait_refs": []
+                                  },
+                                  "builtin": null
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ConfigureNetwork",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            },
+            {
+              "name": "slot",
+              "ty": {
+                "Deduplicated": 19
+              }
+            },
+            {
+              "name": "policy",
+              "ty": {
+                "Value": [
+                  22,
+                  {
+                    "Adt": {
+                      "id": 17,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ActivateVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            }
+          ]
+        },
+        {
+          "name": "FreezeVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            }
+          ]
+        },
+        {
+          "name": "ApplyFilePolicy",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "5"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "workspace",
+              "ty": {
+                "Value": [
+                  23,
+                  {
+                    "Adt": {
+                      "id": 18,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "policy",
+              "ty": {
+                "Value": [
+                  24,
+                  {
+                    "Adt": {
+                      "id": 19,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "SealSnapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "6"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            },
+            {
+              "name": "workspace",
+              "ty": {
+                "Deduplicated": 23
+              }
+            },
+            {
+              "name": "snapshot",
+              "ty": {
+                "Value": [
+                  25,
+                  {
+                    "Adt": {
+                      "id": 20,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "manifest",
+              "ty": {
+                "Value": [
+                  26,
+                  {
+                    "Adt": {
+                      "id": 21,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CommitSnapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "7"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "snapshot",
+              "ty": {
+                "Deduplicated": 25
+              }
+            },
+            {
+              "name": "manifest",
+              "ty": {
+                "Deduplicated": 26
+              }
+            }
+          ]
+        },
+        {
+          "name": "StopVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "8"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            }
+          ]
+        },
+        {
+          "name": "AbortPrepare",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "9"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "epoch",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            },
+            {
+              "name": "slot",
+              "ty": {
+                "Deduplicated": 19
+              }
+            }
+          ]
+        },
+        {
+          "name": "CleanupVm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "10"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "vm",
+              "ty": {
+                "Deduplicated": 18
+              }
+            }
+          ]
+        },
+        {
+          "name": "CleanupSlot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "11"
+            ]
+          },
+          "fields": [
+            {
+              "name": "sandbox",
+              "ty": {
+                "Deduplicated": 15
+              }
+            },
+            {
+              "name": "generation",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "slot",
+              "ty": {
+                "Deduplicated": 19
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_protocol",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "lifecycle",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "digest",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ContentDigest",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Value": [
+              27,
+              {
+                "Array": [
+                  {
+                    "Deduplicated": 8
+                  },
+                  {
+                    "Value": [
+                      1,
+                      [
+                        {
+                          "Integer": {
+                            "Unsigned": [
+                              "Usize",
+                              "32"
+                            ]
+                          }
+                        },
+                        {
+                          "Deduplicated": 0
+                        }
+                      ]
+                    ]
+                  },
+                  null
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_protocol",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ResourceRef",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "kind",
+          "ty": {
+            "Value": [
+              28,
+              {
+                "Adt": {
+                  "id": 22,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "id",
+          "ty": {
+            "Value": [
+              29,
+              {
+                "Adt": {
+                  "id": 23,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_runtime",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "helper_gate",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "RuntimeProcessIdentity",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "pid",
+          "ty": {
+            "Value": [
+              30,
+              {
+                "Scalar": {
+                  "Integer": {
+                    "Unsigned": "U32"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "start_time_ticks",
+          "ty": {
+            "Deduplicated": 16
+          }
+        },
+        {
+          "name": "boot_id",
+          "ty": {
+            "Value": [
+              31,
+              {
+                "Adt": {
+                  "id": 24,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_controller_service",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "capture",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "SourceProcessIdentity",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "pid",
+          "ty": {
+            "Deduplicated": 30
+          }
+        },
+        {
+          "name": "start_time_ticks",
+          "ty": {
+            "Deduplicated": 16
+          }
+        },
+        {
+          "name": "boot_id",
+          "ty": {
+            "Deduplicated": 31
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_node",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ObservedResult",
+            0
+          ]
+        }
+      ],
+      "enum": [
+        {
+          "name": "Fence",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": [
+            {
+              "name": "_0",
+              "ty": {
+                "Value": [
+                  32,
+                  {
+                    "Adt": {
+                      "id": 26,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prepared",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            {
+              "name": "pid",
+              "ty": {
+                "Deduplicated": 30
+              }
+            },
+            {
+              "name": "start_ticks",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "boot_id",
+              "ty": {
+                "Deduplicated": 31
+              }
+            }
+          ]
+        },
+        {
+          "name": "Network",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            {
+              "name": "namespace_inode",
+              "ty": {
+                "Deduplicated": 16
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activated",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": [
+            {
+              "name": "pid",
+              "ty": {
+                "Deduplicated": 30
+              }
+            },
+            {
+              "name": "start_ticks",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "boot_id",
+              "ty": {
+                "Deduplicated": 31
+              }
+            }
+          ]
+        },
+        {
+          "name": "Frozen",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": [
+            {
+              "name": "pid",
+              "ty": {
+                "Deduplicated": 30
+              }
+            },
+            {
+              "name": "start_ticks",
+              "ty": {
+                "Deduplicated": 16
+              }
+            },
+            {
+              "name": "boot_id",
+              "ty": {
+                "Deduplicated": 31
+              }
+            }
+          ]
+        },
+        {
+          "name": "SnapshotSealed",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "5"
+            ]
+          },
+          "fields": [
+            {
+              "name": "manifest_digest",
+              "ty": {
+                "Value": [
+                  33,
+                  {
+                    "Adt": {
+                      "id": 5,
+                      "generics": {
+                        "regions": [],
+                        "types": [],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "material_bytes",
+              "ty": {
+                "Deduplicated": 16
+              }
+            }
+          ]
+        },
+        {
+          "name": "SnapshotCommitted",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "6"
+            ]
+          },
+          "fields": [
+            {
+              "name": "manifest_digest",
+              "ty": {
+                "Deduplicated": 33
+              }
+            },
+            {
+              "name": "material_bytes",
+              "ty": {
+                "Deduplicated": 16
+              }
+            }
+          ]
+        },
+        {
+          "name": "FilePolicy",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "7"
+            ]
+          },
+          "fields": [
+            {
+              "name": "disk_inode",
+              "ty": {
+                "Deduplicated": 16
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stopped",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "8"
+            ]
+          },
+          "fields": [
+            {
+              "name": "pid",
+              "ty": {
+                "Deduplicated": 30
+              }
+            },
+            {
+              "name": "start_ticks",
+              "ty": {
+                "Deduplicated": 16
+              }
+            }
+          ]
+        },
+        {
+          "name": "PrepareAborted",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "9"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "VmCleaned",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "10"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "SlotClosed",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "11"
+            ]
+          },
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "SandboxId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "VmId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "NetSlotId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "RestoreSource",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "snapshot",
+          "ty": {
+            "Deduplicated": 25
+          }
+        },
+        {
+          "name": "manifest",
+          "ty": {
+            "Deduplicated": 26
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "NetworkPolicy",
+            0
+          ]
+        }
+      ],
+      "enum": [
+        {
+          "name": "DenyAll",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "StaticAllowlist",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": [
+            {
+              "name": "_0",
+              "ty": {
+                "Value": [
+                  34,
+                  {
+                    "Adt": {
+                      "id": 27,
+                      "generics": {
+                        "regions": [],
+                        "types": [
+                          {
+                            "Value": [
+                              35,
+                              {
+                                "Adt": {
+                                  "id": 28,
+                                  "generics": {
+                                    "regions": [],
+                                    "types": [],
+                                    "const_generics": [],
+                                    "trait_refs": []
+                                  },
+                                  "builtin": null
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ipv4",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": [
+            {
+              "name": "internet_access",
+              "ty": {
+                "Deduplicated": 17
+              }
+            },
+            {
+              "name": "allow_out",
+              "ty": {
+                "Value": [
+                  36,
+                  {
+                    "Adt": {
+                      "id": 27,
+                      "generics": {
+                        "regions": [],
+                        "types": [
+                          {
+                            "Value": [
+                              37,
+                              {
+                                "Adt": {
+                                  "id": 30,
+                                  "generics": {
+                                    "regions": [],
+                                    "types": [],
+                                    "const_generics": [],
+                                    "trait_refs": []
+                                  },
+                                  "builtin": null
+                                }
+                              }
+                            ]
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      },
+                      "builtin": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "deny_out",
+              "ty": {
+                "Deduplicated": 36
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "FsId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "FilePolicyRef",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "digest",
+          "ty": {
+            "Value": [
+              38,
+              {
+                "Adt": {
+                  "id": 31,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "SnapshotId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "SnapshotManifestRef",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "digest",
+          "ty": {
+            "Value": [
+              39,
+              {
+                "Adt": {
+                  "id": 32,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_protocol",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ResourceKind",
+            0
+          ]
+        }
+      ],
+      "enum": [
+        {
+          "name": "Sandbox",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Vm",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Workspace",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "2"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Snapshot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "3"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "NetworkSlot",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "4"
+            ]
+          },
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_protocol",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ResourceId",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 31
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_node",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Impl": {
+            "Trait": 6
+          }
+        },
+        {
+          "Ident": [
+            "source_process_identity",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            0
+          ]
+        }
+      ],
+      "struct": []
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandproof_node",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Fence",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "epoch",
+          "ty": {
+            "Deduplicated": 16
+          }
+        },
+        {
+          "name": "terminal",
+          "ty": {
+            "Deduplicated": 17
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Endpoint",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "address",
+          "ty": {
+            "Deduplicated": 31
+          }
+        },
+        {
+          "name": "prefix_length",
+          "ty": {
+            "Deduplicated": 16
+          }
+        },
+        {
+          "name": "protocol",
+          "ty": {
+            "Value": [
+              41,
+              {
+                "Adt": {
+                  "id": 38,
+                  "generics": {
+                    "regions": [],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_refs": []
+                  },
+                  "builtin": null
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "port",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Ipv4Cidr",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "network",
+          "ty": {
+            "Deduplicated": 30
+          }
+        },
+        {
+          "name": "prefix_length",
+          "ty": {
+            "Deduplicated": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "PolicyDigest",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ids",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "ManifestDigest",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 16
+          }
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_controller_core",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "model",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "Protocol",
+            0
+          ]
+        }
+      ],
+      "enum": [
+        {
+          "name": "Tcp",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "0"
+            ]
+          },
+          "fields": []
+        },
+        {
+          "name": "Udp",
+          "discriminant": {
+            "Signed": [
+              "Isize",
+              "1"
+            ]
+          },
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": [
+        {
+          "Ident": [
+            "sandbox_runtime",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "linux",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "helper_gate",
+            0
+          ]
+        },
+        {
+          "Ident": [
+            "valid_boot_id",
+            0
+          ]
+        },
+        {
+          "Builtin": [
+            "Closure",
+            0
+          ]
+        }
+      ],
+      "struct": [
+        {
+          "name": "_0",
+          "ty": {
+            "Deduplicated": 0
+          }
+        }
+      ]
+    }
+  ],
+  "transparent_functions": [
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_evidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "validates",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_evidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "manifest_digest",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_evidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "material_bytes",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_evidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "recorded_source",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_evidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "source_process",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "validates",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "capture_manifest_digest",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "capture_material_bytes",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "source_process",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Ty": {
+            "params": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_clauses": [],
+              "regions_outlive": [],
+              "types_outlive": [],
+              "trait_type_constraints": []
+            },
+            "skip_binder": {
+              "Deduplicated": 3
+            },
+            "kind": "InherentImplBlock"
+          }
+        }
+      },
+      {
+        "Ident": [
+          "recorded_source_identity",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "source_process_identity",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "decisions",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "evidence_matches",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Ty": {
+            "params": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_clauses": [],
+              "regions_outlive": [],
+              "types_outlive": [],
+              "trait_type_constraints": []
+            },
+            "skip_binder": {
+              "Deduplicated": 4
+            },
+            "kind": "InherentImplBlock"
+          }
+        }
+      },
+      {
+        "Ident": [
+          "has_valid_fields",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "option",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Ty": {
+            "params": {
+              "regions": [],
+              "types": [
+                {
+                  "index": 0,
+                  "name": "T",
+                  "variance": "Unknown"
+                }
+              ],
+              "const_generics": [],
+              "trait_clauses": [],
+              "regions_outlive": [],
+              "types_outlive": [],
+              "trait_type_constraints": []
+            },
+            "skip_binder": {
+              "Deduplicated": 5
+            },
+            "kind": "InherentImplBlock"
+          }
+        }
+      },
+      {
+        "Ident": [
+          "map",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_controller_service",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_contract",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "HostEvidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "capture_manifest_digest",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_controller_service",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_contract",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "HostEvidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "capture_material_bytes",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_controller_service",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "host_contract",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "HostEvidence",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "source_process_identity",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 7
+        }
+      },
+      {
+        "Ident": [
+          "resource",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_protocol",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 8
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Builtin": [
+          {
+            "Tuple": 3
+          },
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 11
+        }
+      },
+      {
+        "Builtin": [
+          "DropGlue",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "valid_boot_id",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "RuntimeProcessIdentity",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 12
+        }
+      },
+      {
+        "Builtin": [
+          "DropGlue",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "source_process_identity",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 13
+        }
+      },
+      {
+        "Ident": [
+          "call_once",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_node",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 6
+        }
+      },
+      {
+        "Ident": [
+          "source_process_identity",
+          0
+        ]
+      },
+      {
+        "Builtin": [
+          "Closure",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 14
+        }
+      },
+      {
+        "Builtin": [
+          "DropGlue",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 17
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_protocol",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 19
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandproof_protocol",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 20
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "valid_boot_id",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 21
+        }
+      },
+      {
+        "Ident": [
+          "call_once",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "valid_boot_id",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 22
+        }
+      },
+      {
+        "Ident": [
+          "call_mut",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 25
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 27
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 28
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 29
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 30
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 31
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 32
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 34
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 35
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "num",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Ty": {
+            "params": {
+              "regions": [],
+              "types": [],
+              "const_generics": [],
+              "trait_clauses": [],
+              "regions_outlive": [],
+              "types_outlive": [],
+              "trait_type_constraints": []
+            },
+            "skip_binder": {
+              "Deduplicated": 8
+            },
+            "kind": "InherentImplBlock"
+          }
+        }
+      },
+      {
+        "Ident": [
+          "is_ascii_digit",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ops",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "range",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Ty": {
+            "params": {
+              "regions": [],
+              "types": [
+                {
+                  "index": 0,
+                  "name": "Idx",
+                  "variance": "Unknown"
+                }
+              ],
+              "const_generics": [],
+              "trait_clauses": [
+                {
+                  "clause_id": 0,
+                  "span": {
+                    "Deduplicated": 0
+                  },
+                  "origin": "WhereClauseOnImpl",
+                  "trait_": {
+                    "regions": [],
+                    "skip_binder": {
+                      "id": 25,
+                      "generics": {
+                        "regions": [],
+                        "types": [
+                          {
+                            "Deduplicated": 9
+                          },
+                          {
+                            "Deduplicated": 9
+                          }
+                        ],
+                        "const_generics": [],
+                        "trait_refs": []
+                      }
+                    }
+                  }
+                }
+              ],
+              "regions_outlive": [],
+              "types_outlive": [],
+              "trait_type_constraints": []
+            },
+            "skip_binder": {
+              "Deduplicated": 10
+            },
+            "kind": "InherentImplBlock"
+          }
+        }
+      },
+      {
+        "Ident": [
+          "contains",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 42
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ids",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 43
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_runtime",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "linux",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "helper_gate",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "valid_boot_id",
+          0
+        ]
+      },
+      {
+        "Builtin": [
+          "Closure",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 38
+        }
+      },
+      {
+        "Builtin": [
+          "DropGlue",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ops",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "range",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "RangeBounds",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "contains",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 45
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 46
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ops",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "range",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 47
+        }
+      },
+      {
+        "Ident": [
+          "start_bound",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "ops",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "range",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 47
+        }
+      },
+      {
+        "Ident": [
+          "end_bound",
+          0
+        ]
+      }
+    ],
+    [
+      {
+        "Ident": [
+          "sandbox_controller_core",
+          0
+        ]
+      },
+      {
+        "Ident": [
+          "model",
+          0
+        ]
+      },
+      {
+        "Impl": {
+          "Trait": 51
+        }
+      },
+      {
+        "Ident": [
+          "eq",
+          0
+        ]
+      }
+    ]
+  ],
+  "candidate_inputs": {
+    "sandbox-runtime/src/helper_gate.rs": "c8cee5dc7aa0d1f92c46a9ddc825d46485bd647393157c110808aad97fe4faa3",
+    "sandbox-node/src/linux/decisions.rs": "6f7bb2e6a6cdab93897784c42b288f09f35164d9dd2b1b5c726d710291da5b02",
+    "sandbox-node/src/linux/source_process.rs": "c3711d119617ba2cdb7eae6737de32d1ab6996c6a08a0085bf7bc569f0418010",
+    "SandboxModel/Access/Guards.lean": "cc25bdefbc6696b2caeb50fa4a21af6db7b888495b3864a4f04762a942a2c6f0",
+    "SandboxModel/Foundations/VectorComparison.lean": "518178da1321c5b4a4a53cb0f425bd492fb744cf232ac1e2a0bb9105a79e36fa"
+  },
+  "generated_functions": {
+    "correct": [
+      [
+        "Bool.Insts.CoreCmpPartialEqBool.ne",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.num.U8.is_ascii_digit",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeBounds.contains.default",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.contains",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.option.Option.map",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.recorded_source",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.source_process",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostEvidenceHostObservation.source_process_identity.closure.Insts.CoreOpsFunctionFnOnceTupleRuntimeProcessIdentitySourceProcessIdentity.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.source_process_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.decisions.evidence_matches",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.source_process.HostObservation.recorded_source_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCloneClone.clone",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.bytes",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.len",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ]
+    ],
+    "skip-command": [
+      [
+        "Bool.Insts.CoreCmpPartialEqBool.ne",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.num.U8.is_ascii_digit",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeBounds.contains.default",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.contains",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.option.Option.map",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.recorded_source",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.source_process",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostEvidenceHostObservation.source_process_identity.closure.Insts.CoreOpsFunctionFnOnceTupleRuntimeProcessIdentitySourceProcessIdentity.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.source_process_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.decisions.evidence_matches",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.source_process.HostObservation.recorded_source_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCloneClone.clone",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.bytes",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.len",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ]
+    ],
+    "skip-resource": [
+      [
+        "Bool.Insts.CoreCmpPartialEqBool.ne",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.num.U8.is_ascii_digit",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeBounds.contains.default",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.ops.range.RangeInclusive.contains",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.core.option.Option.map",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.recorded_source",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.source_process",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.host_evidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostEvidenceHostObservation.source_process_identity.closure.Insts.CoreOpsFunctionFnOnceTupleRuntimeProcessIdentitySourceProcessIdentity.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_manifest_digest",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.capture_material_bytes",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.source_process_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.HostObservation.Insts.Sandproof_controller_serviceHost_contractHostEvidence.validates",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.decisions.evidence_matches",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.linux.source_process.HostObservation.recorded_source_identity",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.RuntimeProcessIdentity.has_valid_fields",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandbox_runtime.linux.helper_gate.valid_boot_id.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "SandproofHostEvidenceRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofHostEvidence/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCloneClone.clone",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.bytes",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.Str.len",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ],
+      [
+        "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+        true,
+        "SandproofHostEvidence/FunsExternal_Template.lean"
+      ]
+    ]
+  },
+  "generated_files": {
+    "correct": {
+      "SandproofHostEvidence/FunsExternal_Template.lean": "02ef7497bc47690738789759116dc91e45539e4a03634362e86749eed4775e65",
+      "SandproofHostEvidence/Types.lean": "ffecd8e6d50c6d5ef9fbbd97d6392d0fe5fdc71c943d34913eff3329357c6fc9",
+      "SandproofHostEvidence/Funs.lean": "67a73eb73018383a2680fbcff700dd78b59fcbae382d8a79f7e560eded27f696",
+      "SandproofHostEvidence/TypesExternal_Template.lean": "f6d5b4443b003f2ba219cd1ca00a04f72c6e8f5d7943a18d3a1251fe767a1883"
+    },
+    "skip-command": {
+      "SandproofHostEvidence/FunsExternal_Template.lean": "02ef7497bc47690738789759116dc91e45539e4a03634362e86749eed4775e65",
+      "SandproofHostEvidence/Types.lean": "ffecd8e6d50c6d5ef9fbbd97d6392d0fe5fdc71c943d34913eff3329357c6fc9",
+      "SandproofHostEvidence/Funs.lean": "55611e23c0d05cf50a1b5608c8d5d729cd757b19094fbf761db94ad133a687a6",
+      "SandproofHostEvidence/TypesExternal_Template.lean": "f6d5b4443b003f2ba219cd1ca00a04f72c6e8f5d7943a18d3a1251fe767a1883"
+    },
+    "skip-resource": {
+      "SandproofHostEvidence/FunsExternal_Template.lean": "02ef7497bc47690738789759116dc91e45539e4a03634362e86749eed4775e65",
+      "SandproofHostEvidence/Types.lean": "ffecd8e6d50c6d5ef9fbbd97d6392d0fe5fdc71c943d34913eff3329357c6fc9",
+      "SandproofHostEvidence/Funs.lean": "a6b54884c92c07e872a29c3fb5a90c003202a2e3d0cc3736d31028f6d3a33b36",
+      "SandproofHostEvidence/TypesExternal_Template.lean": "f6d5b4443b003f2ba219cd1ca00a04f72c6e8f5d7943a18d3a1251fe767a1883"
+    }
+  },
+  "checks": {
+    "correct": {
+      "seeds": [
+        "HostEvidenceWitnesses",
+        "HostEvidenceBoundaries"
+      ],
+      "files": 18,
+      "audits": 57
+    },
+    "skip-command": {
+      "seeds": [
+        "HostEvidenceWrongCommand"
+      ],
+      "files": 13,
+      "audits": 9
+    },
+    "skip-resource": {
+      "seeds": [
+        "HostEvidenceWrongResource"
+      ],
+      "files": 14,
+      "audits": 17
+    }
+  },
+  "mutations": {
+    "skip-command": {
+      "source": "sandbox-node/src/linux/decisions.rs",
+      "old": "if &observation.command != command {",
+      "new": "if false && &observation.command != command {"
+    },
+    "skip-resource": {
+      "source": "sandbox-node/src/linux/source_process.rs",
+      "old": "if self.resource != *expected_resource ||",
+      "new": "if false && self.resource != *expected_resource ||"
+    }
+  },
+  "development_replay_cli": "development.py (independent development only; no formal/native registration)"
 }
