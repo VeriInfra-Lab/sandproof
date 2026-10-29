@@ -312,7 +312,8 @@ impl WorkExecution for NodeHost {
             .capture_profile
             .as_ref()
             .ok_or(ApplicationError::Invalid)?;
-        self.worker
+        let observation = self
+            .worker
             .retire_material(profile, request, plan, permit)
             .map_err(|error| {
                 busy(
@@ -320,7 +321,18 @@ impl WorkExecution for NodeHost {
                     FaultStage::Execute,
                     FaultContext::instance(request.sandbox(), None),
                 )
-            })
+            })?;
+        // Only an actual completed physical deletion reaches this boundary.
+        // The original journal has not received or settled the observation.
+        #[cfg(debug_assertions)]
+        faults::after_material_delete(request, plan, &observation).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::Execute,
+                FaultContext::instance(request.sandbox(), None),
+            )
+        })?;
+        Ok(observation)
     }
 
     fn execute_lifecycle_original_continue(

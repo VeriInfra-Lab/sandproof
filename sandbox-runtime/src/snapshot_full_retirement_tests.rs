@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::{
     fs,
     io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::PathBuf,
 };
 
@@ -188,4 +188,159 @@ fn plan_with_absent_source_rejects_a_later_jail_instead_of_adopting_it() {
     assert!(fixture.layout.retire_full_material(&plan).is_err());
     assert!(fixture.output().join("memory.bin").exists());
     assert!(fixture.stage().join("memory.bin").exists());
+}
+
+#[test]
+fn saved_material_plan_preserves_a_distinct_vm_reusing_the_same_slot_uid_and_gate() {
+    let mut fixture = Fixture::new(false);
+    let gate_path = fixture._root.path().join("same-position-gate");
+    let gate = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&gate_path)
+        .unwrap();
+    let gate_metadata = gate.metadata().unwrap();
+    fixture.runtime.config.host_slot = Some(crate::linux::RuntimeHostSlot {
+        position: 0,
+        vm: 1,
+        uplink_index: 900_001,
+        helper_gate: crate::linux::RuntimeHelperGate {
+            path: gate_path,
+            device: gate_metadata.dev(),
+            inode: gate_metadata.ino(),
+            max_data_routes_per_slot: 2,
+        },
+    });
+    fixture.install_source();
+    let plan = fixture.plan();
+    fixture
+        .runtime
+        .cleanup_jail("vm-test-1", fixture.owner, false)
+        .unwrap();
+
+    // This is an actual registered successor jail, with the same position,
+    // UID and helper inode, but a different permanent VM identity. No process,
+    // release witness or service-side retirement permission is synthesized.
+    let mut successor = Runtime {
+        config: fixture.runtime.config.clone(),
+    };
+    successor.config.host_slot.as_mut().unwrap().vm = 2;
+    let successor_claim = fixture.layout.runtime_root().join(".claims/vm-test-2");
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&successor_claim)
+        .unwrap();
+    successor
+        .reserve_jail_for_fixture("vm-test-2", fixture.owner)
+        .unwrap();
+    let successor_root = successor.jail_path("vm-test-2").join("root");
+    Fixture::write(&successor_root.join("rootfs.ext4"), b"new VM private disk");
+    Fixture::write(&successor_root.join("memory.bin"), b"new VM private RAM");
+    let witness = successor_claim.join("jail.json");
+    let original_witness = fs::read(&witness).unwrap();
+    let original_inode = fs::metadata(&successor_root).unwrap().ino();
+    assert_eq!(successor.config.vm_uid, fixture.runtime.config.vm_uid);
+    assert_eq!(
+        successor.config.host_slot.as_ref().unwrap().position,
+        fixture.runtime.config.host_slot.as_ref().unwrap().position
+    );
+
+    let saved = serde_json::to_vec(&plan).unwrap();
+    let restored = serde_json::from_slice(&saved).unwrap();
+    fixture.layout.retire_full_material(&restored).unwrap();
+    fixture.layout.retire_full_material(&restored).unwrap();
+    assert!(!fixture.stage().exists());
+    assert!(!fixture.output().exists());
+    assert_eq!(fs::metadata(&successor_root).unwrap().ino(), original_inode);
+    assert_eq!(fs::read(&witness).unwrap(), original_witness);
+    assert_eq!(
+        fs::read(successor_root.join("rootfs.ext4")).unwrap(),
+        b"new VM private disk"
+    );
+    assert_eq!(
+        fs::read(successor_root.join("memory.bin")).unwrap(),
+        b"new VM private RAM"
+    );
+    assert_eq!(serde_json::to_vec(&restored).unwrap(), saved);
+}
+
+#[test]
+fn recreated_original_vm_name_cannot_be_adopted_by_a_saved_material_plan() {
+    let fixture = Fixture::new(true);
+    let plan = fixture.plan();
+    let _original_root = File::open(fixture.vm_root()).unwrap();
+    fixture
+        .runtime
+        .cleanup_jail("vm-test-1", fixture.owner, false)
+        .unwrap();
+    let claims = fixture.layout.runtime_root().join(".claims");
+    fs::rename(claims.join("vm-test-1"), claims.join("original-claim")).unwrap();
+    fixture.install_source();
+    let replacement_witness = fs::read(claims.join("vm-test-1/jail.json")).unwrap();
+    let replacement_root = fs::metadata(fixture.vm_root()).unwrap().ino();
+
+    assert!(fixture.layout.retire_full_material(&plan).is_err());
+    assert_eq!(
+        fs::read(fixture.stage().join("memory.bin")).unwrap(),
+        b"partial destination"
+    );
+    assert_eq!(
+        fs::metadata(fixture.vm_root()).unwrap().ino(),
+        replacement_root
+    );
+    assert_eq!(
+        fs::read(claims.join("vm-test-1/jail.json")).unwrap(),
+        replacement_witness
+    );
+    assert_eq!(
+        fs::read(fixture.vm_root().join("rootfs.ext4")).unwrap(),
+        b"live original disk"
+    );
+    assert!(fixture.output().join("state.bin").exists());
+    assert!(fixture.output().join("memory.bin").exists());
+}
+
+#[test]
+fn reopened_layout_retries_every_partial_source_and_store_cut_with_the_original_plan() {
+    for cut in 0..=5 {
+        let fixture = Fixture::new(true);
+        let saved = serde_json::to_vec(&fixture.plan()).unwrap();
+        let path = fixture._root.path().join("saved-material-plan.json");
+        Fixture::write(&path, &saved);
+        File::open(&path).unwrap().sync_all().unwrap();
+        for (index, item) in [
+            fixture.output().join("state.bin"),
+            fixture.output().join("memory.bin"),
+            fixture.output(),
+            fixture.stage().join("memory.bin"),
+            fixture.stage(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index >= cut {
+                break;
+            }
+            if item.is_dir() {
+                fs::remove_dir(item).unwrap();
+            } else {
+                fs::remove_file(item).unwrap();
+            }
+        }
+        let reopened =
+            SnapshotLayout::reopen_for_owner(fixture._root.path(), [6; 32], fixture.owner).unwrap();
+        let restored: FullMaterialRetirement =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        reopened.retire_full_material(&restored).unwrap();
+        reopened.retire_full_material(&restored).unwrap();
+        assert!(!fixture.stage().exists());
+        assert!(!fixture.output().exists());
+        assert_eq!(fs::read(&path).unwrap(), saved);
+        assert_eq!(serde_json::to_vec(&restored).unwrap(), saved);
+        assert_eq!(
+            fs::read(fixture.vm_root().join("rootfs.ext4")).unwrap(),
+            b"live original disk"
+        );
+    }
 }

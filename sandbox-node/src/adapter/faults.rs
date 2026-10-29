@@ -11,6 +11,8 @@ mod capture_cancel;
 pub(super) use capture_cancel::CaptureCancelGate;
 mod capture_copy;
 pub(crate) use capture_copy::CaptureCopyGate;
+mod material_retirement;
+pub(super) use material_retirement::after_material_delete;
 
 pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
     // Debug-only deterministic crash after the outbox dispatch claim,
