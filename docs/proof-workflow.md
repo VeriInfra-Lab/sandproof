@@ -183,6 +183,27 @@ V3 的独立交付使用显式 `--scope stage1-protocol`，仍执行完整 Linux
 不能把 V3 限定记录当作全项目完成。全局旧首链或冻结失败如实保留；独立交付不删除它们、
 不修改其断言，也不自动完成其迁移。具体范围和命令见 [V3 组件入口](../verification/experiments/stage1-protocol/README.md#验收入口)。
 
+当前捕获调用方的独立入口使用固定 `--scope capture-caller`，只包含完整 Linux 基础检查
+`functional` 和原 `capture-caller` 组件。组件仍运行其最终清单中的正确/错误版、实际编译
+与原断言；案例数量不由外层写死。缺组件、错范围、重复组件或原源码归档缺失均拒绝。
+该记录不能作为 V3 或全项目原生封口，V3 记录也不能替代它。默认 `all` 保留原全部义务，
+并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
+
+```sh
+# ning：同一干净提交及本节固定普通环境。
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope capture-caller --output /private/acceptance/capture-caller-native
+# 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/capture-caller-native
+bash scripts/verify-capture-caller.sh
+```
+
+原源码归档通过已有干净提交归档器核对内容及执行位，再连接原生编译与当前证明。
+外层只持一次原协调锁，模块的 `--lock` 指向本次私有组件锁，不能再次锁同一个全局锁。
+正确生成库和独立错误版保持各自导入环境；总根不同时导入两者。公共登记、输入摘要、
+组件通过和整个 V4 完成分别记录，摘要更新本身不算验收通过。
+
 V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
 `1`、`2`、`4`，默认仍为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
 每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。

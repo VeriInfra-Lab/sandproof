@@ -34,8 +34,11 @@ class NativeScopeTests(unittest.TestCase):
             (output/'fixture.log').write_text('synthetic admission action\n')
             if fail:
                 raise RuntimeError('synthetic action failed')
-            if label == 'stage1-protocol':
+            if label in receipts.ARCHIVED_NATIVE_CASES:
                 (output/'source.tar').write_bytes(b'synthetic unit fixture archive\n')
+            if label == 'capture-caller':
+                (output/'ignore-capture-target.stdout').write_text('synthetic original assertion stream\n')
+                (output/'ignore-capture-target.stderr').write_text('')
         return receipts.native_case(label, self.source, output, action, scope=scope)
 
     def packet(self, *, scope='stage1-protocol', extra=False, atomic=False):
@@ -251,6 +254,100 @@ class NativeScopeTests(unittest.TestCase):
         with mock.patch.object(suite, 'native_case') as case:
             suite.main(['require', 'stage1-protocol', '--scope', 'stage1-protocol'])
             case.assert_called_once_with('stage1-protocol', suite.ROOT, None, scope='stage1-protocol')
+
+
+class CaptureCallerScopeTests(unittest.TestCase):
+    """Fixed two-component scope only; no business or proof acceptance claim."""
+
+    component = NativeScopeTests.component
+    packet = NativeScopeTests.packet
+    functional_fixture = NativeScopeTests.functional_fixture
+    cleanup_workflow_temporary_root = NativeScopeTests.cleanup_workflow_temporary_root
+
+    def setUp(self):
+        fixtures.ReceiptTests.setUp(self)
+        self.labels = receipts.CAPTURE_CALLER_LABELS
+        subprocess.run(['git', '-c', 'user.name=Fixture', '-c',
+                        'user.email=fixture@example.invalid', 'commit', '-qm',
+                        'synthetic capture scope fixture'], cwd=self.source, check=True)
+        rule = 'tools/tests/test_native_scopes.py'
+        for name, value in [('rules', {rule: receipts.sha(receipts.ROOT/rule)}),
+                            ('contract_inputs', {})]:
+            patch = mock.patch.object(receipts, name, return_value=value)
+            patch.start(); self.addCleanup(patch.stop)
+
+    def test_capture_packet_admits_only_its_complete_current_component(self):
+        seal = self.packet(scope='capture-caller')
+        self.assertEqual(len(seal['commands']), 2)
+        self.assertFalse(seal['full_native_suite_complete'])
+        receipts.validate_native(self.cache, scope='capture-caller')
+        os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'formal'
+        result = receipts.native_case('capture-caller', self.source, None, scope='capture-caller')
+        self.assertIn('evidence/source.tar', result['files'])
+        self.assertIn('evidence/ignore-capture-target.stdout', result['files'])
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache)
+
+    def test_wrong_scope_and_missing_case_cannot_supply_capture(self):
+        seal = self.packet(scope='capture-caller')
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache, scope='stage1-protocol')
+        with self.assertRaisesRegex(ValueError, 'outside requested native scope'):
+            receipts.native_case('capture-caller', self.source, None, scope='stage1-protocol')
+        for identity in list(seal['commands']):
+            row = json.loads((self.cache/'commands'/identity/'receipt.json').read_text())
+            if row['key']['label'] == 'capture-caller':
+                seal['commands'].pop(identity)
+        seal['case_names'] = list(self.labels)  # A claim cannot replace the receipt.
+        receipts.write_json(self.cache/'complete.json', seal)
+        with self.assertRaisesRegex(ValueError, '2 complete components'):
+            receipts.validate_native(self.cache, scope='capture-caller')
+
+    def test_capture_source_archive_is_mandatory_before_a_success_receipt(self):
+        output = self.base/'missing-archive'
+        def action():
+            output.mkdir()
+            (output/'fixture.log').write_text('synthetic failed admission\n')
+        with self.assertRaisesRegex(ValueError, 'original regular source.tar'):
+            receipts.native_case('capture-caller', self.source, output, action, scope='capture-caller')
+        key = receipts.native_key('capture-caller', ['component-case'], self.source)
+        self.assertFalse((self.cache/'commands'/receipts.digest(key)/'receipt.json').exists())
+        self.assertTrue((output/'fixture.log').exists())
+
+    def test_capture_target_named_evidence_is_kept_and_cargo_builds_are_not(self):
+        seal = self.packet(scope='capture-caller')
+        identity = next(identity for identity in seal['commands'] if json.loads(
+            (self.cache/'commands'/identity/'receipt.json').read_text())['key']['label'] == 'capture-caller')
+        original = self.cache/'commands'/identity/'evidence/ignore-capture-target.stdout'
+        self.assertTrue(original.is_file())
+        original.unlink()
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache, scope='capture-caller')
+        folder = self.base/'formal-files'
+        for name in ('wrong-target/actual.llbc', 'target-correct/compiler.json'):
+            path = folder/name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('synthetic evidence selection fixture\n')
+        selected = proof_batch.evidence_files(folder, include_sources=True, capture_caller=True)
+        self.assertIn(str((folder/'wrong-target/actual.llbc').resolve()), selected)
+        self.assertNotIn(str((folder/'target-correct/compiler.json').resolve()), selected)
+
+    def test_capture_workflow_never_runs_v3_or_global_commands(self):
+        self.addCleanup(self.cleanup_workflow_temporary_root)
+        def capture(work, *, scope):
+            self.assertEqual(scope, 'capture-caller')
+            self.component('capture-caller', work/'capture-caller', scope=scope)
+        with mock.patch.object(suite, 'ROOT', self.source), \
+                mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
+                mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
+                mock.patch.object(suite, 'functional', side_effect=self.functional_fixture), \
+                mock.patch.object(suite, 'run_capture_caller_native', side_effect=capture) as current, \
+                mock.patch.object(suite, 'run_stage1_native', side_effect=AssertionError('V3 in capture scope')), \
+                mock.patch.object(suite, 'command', side_effect=AssertionError('global command in capture scope')):
+            suite.run_suite(self.cache, scope='capture-caller')
+        current.assert_called_once()
+        result = receipts.validate_native(self.cache, scope='capture-caller')
+        self.assertEqual(len(result['commands']), 2)
+        self.assertFalse(result['full_native_suite_complete'])
 
 
 if __name__ == '__main__':

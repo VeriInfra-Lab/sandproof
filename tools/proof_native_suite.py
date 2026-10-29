@@ -135,6 +135,9 @@ def run_locked_suite(output, *, scope='all'):
     if scope == 'stage1-protocol':
         run_stage1_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'capture-caller':
+        run_capture_caller_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # These are the exact commands previously embedded in proof shell entries.
     # Identical commands/inputs execute once even when several modules ask.
     for cmd in [['cargo','fmt','--all','--','--check'],['cargo','test','--workspace'],
@@ -170,6 +173,7 @@ def run_locked_suite(output, *, scope='all'):
         call(['verification/experiments/protected-directory/test_checks.py'])
         call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
     native_case('protected-directory',ROOT,target,protected_directory_native)
+    run_capture_caller_native(work)
     run_stage1_native(work)
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
@@ -212,6 +216,14 @@ def run_locked_suite(output, *, scope='all'):
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
     return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+
+
+def run_capture_caller_native(work, *, scope='all'):
+    target = work / 'capture-caller'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_capture_caller_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('capture-caller', ROOT, target, original_component, scope=scope)
 
 
 def run_stage1_native(work, *, scope='all'):
@@ -279,7 +291,7 @@ def main(argv=None):
     run.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol', *registered.native_labels()])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','stage1-protocol', *registered.native_labels()])
     req.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
