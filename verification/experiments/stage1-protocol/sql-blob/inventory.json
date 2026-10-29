@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "base": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "source_inputs": {
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "ded0d6d9c4c23a66e2d12ec4894ba9076a75cd479e68a27075066ae4eb9a47c3",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8"
+  },
+  "templates": {
+    "Cargo.toml": "a56f22368de1add9e35bccceb53fa2812e8df2bcf858bcdf1b46f1a1978c52f1",
+    "Cargo.lock": "41741c485e6a37d8a0f0ba3f2325a4c1c9cb75f2e6eeedbbbb79102502958c15",
+    "roots.rs.in": "43a4987e809e1f4a2725077cb3d5b61ea2829a840a6c9204bdbccfc781199615",
+    "preflight.py": "811a605d83a333b88c32034c3c0bb79651632aab2ad51523ab02074e5669e63d",
+    "TypesExternal.lean.in": "1916a99a2e07414a3436404fbae1f34ef5cc204c824c089e37842dc0dba0adfe",
+    "SqlBlobValues.lean.in": "51145530cb06b7c5cab8b0e04ecfe59df8a994d7ab9fdd7723aa6e2db9d6b6c3",
+    "development.py": "fd18db9545967acc6c22cf6b0b9f7ba7f5333c87414c58c657e755d89010a66d",
+    "README.md": "2605fe04e6ef596ec7bdac477d7d4d2a8bd8c8b69b5f3c797993712d8cff8f01"
+  },
+  "provider_sources": {
+    "rusqlite-0.40.2/Cargo.toml": "e8213c0b968070c507f57ea6d87db4bd92c5453886981525c400a6eba8565dc7",
+    "rusqlite-0.40.2/src/lib.rs": "434fea1c571148b29288a50f8064e125a023ed30fdb7ae9e997b033e3ee73119",
+    "rusqlite-0.40.2/src/types/to_sql.rs": "0cc8452d1ae0f531918b672bc20384beeba4941c66b6a0619466b78be0b7cddd",
+    "rusqlite-0.40.2/src/types/value.rs": "a567e66156a4895332ed481ad362128ea770219b1886c7cccb520993fd0cf92d",
+    "rusqlite-0.40.2/src/types/value_ref.rs": "7ccb0e379a067ded70ae6754209e3e824bc465cc260bca2f3e57245a65082562",
+    "rusqlite-0.40.2/src/params.rs": "5cac2041f4fa8cb479997cbe9d0f716b577dde145e346ec3597d97de0cee6629",
+    "rusqlite-0.40.2/src/error.rs": "255d048cddaf8e385b65761f06bc0cf4868ce508ee724858871e31ba41e10b9e"
+  },
+  "modes": {
+    "slice": {
+      "roots": [
+        "crate::slice_to_sql",
+        "crate::ref_slice_to_sql"
+      ],
+      "include": [
+        "rusqlite::types::to_sql::ToSqlOutput",
+        "rusqlite::types::value_ref::ValueRef",
+        "rusqlite::types::value::Value",
+        "rusqlite::types::to_sql::_::to_sql",
+        "rusqlite::types::to_sql::_::from",
+        "rusqlite::types::value_ref::_::from"
+      ],
+      "opaque": [
+        "rusqlite::error::Error"
+      ]
+    },
+    "params": {
+      "roots": [
+        "crate::original_params"
+      ],
+      "include": [
+        "rusqlite::types::to_sql::ToSqlOutput",
+        "rusqlite::types::value_ref::ValueRef",
+        "rusqlite::types::value::Value",
+        "rusqlite::types::to_sql::_::to_sql",
+        "rusqlite::types::to_sql::_::from",
+        "rusqlite::types::value_ref::_::from"
+      ],
+      "opaque": [
+        "rusqlite::error::Error"
+      ]
+    }
+  },
+  "generated_functions": [
+    [
+      "SandproofSqlBlobRust.Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ],
+    [
+      "SandproofSqlBlobRust.SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ],
+    [
+      "SandproofSqlBlobRust.ref_slice_to_sql",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ],
+    [
+      "SandproofSqlBlobRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ],
+    [
+      "SandproofSqlBlobRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedASliceU8.from",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ],
+    [
+      "SandproofSqlBlobRust.slice_to_sql",
+      false,
+      "SandproofSqlBlob/Funs.lean"
+    ]
+  ],
+  "generated_files": {
+    "SandproofSqlBlob/Types.lean": "ceee08a828c91fcc1028a0fd81068417a3dd20157b1f528c6b1b7d929e16a420",
+    "SandproofSqlBlob/Funs.lean": "38422865034677ed7b5ce57bea302abf4078847a76ed9ef0a8658ee2a700bd1a",
+    "SandproofSqlBlob/TypesExternal_Template.lean": "fe01d12995e1575e614c6e833476111d61333da2c7b0c040c552a29277dddceb"
+  },
+  "checks": {
+    "files": [
+      "SandboxModel/Lifecycle/Protocol/SqlBlobValues.lean",
+      "SandboxModel/ProofAuditCommand.lean",
+      "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "verification/aeneas/stage1-protocol/sql-blob/SandproofSqlBlob/Funs.lean",
+      "verification/aeneas/stage1-protocol/sql-blob/SandproofSqlBlob/Types.lean",
+      "verification/aeneas/stage1-protocol/sql-blob/SandproofSqlBlob/TypesExternal.lean"
+    ],
+    "audits": [
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_value_ref_exact",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_reference_forwarding",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_slice_exact",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_ref_slice_exact",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_full_contract",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_output_iff_full_bytes",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.actual_never_conversion_error",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.two_actual_encodings_exact",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.two_actual_encodings_iff_all_bytes",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.empty_and_non_utf8_witness",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.same_length_does_not_identify_encoded_bytes",
+      "SandboxModel.Stage1Protocol.SqlBlobValues.swapped_distinct_encodings_rejected"
+    ]
+  },
+  "current_carrier_use_adopted": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "sql_parameter_wiring_proved": false,
+  "sql_execution_proved": false,
+  "new_external_function_assumptions": false,
+  "minimum_provider_request": {
+    "error_identity": {
+      "existing_provider": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean:rusqlite.error.Error",
+      "operations_used": []
+    },
+    "inert_float_payload": {
+      "existing_provider": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean:F64",
+      "current_sql_real_carrier_adoption": false,
+      "operations_used": []
+    },
+    "original_macro_cast": {
+      "source": "rusqlite-0.40.2/src/lib.rs:198",
+      "production_use": "controller-service/src/controller/lifecycle_inbox/codec.rs:StandardInboxSave::update",
+      "actual_root": "crate::original_params",
+      "failure": "fixed Aeneas InterpExpressions.ml:950: Unsized cast between dynamic traits: unimplemented case",
+      "scope": "two original borrowed &[u8] to &dyn ToSql casts/dispatch in params![bytes,digest]; no blanket Params/execute/transaction conformance"
+    },
+    "main_must_assign_scope_and_owner": true
+  },
+  "unproved": [
+    "current inert carrier use adoption",
+    "original params macro cast/dispatch and ordered SQL binding",
+    "actual Connection.execute/schema/row count conformance at this use",
+    "actual serde_json and SHA256 implementations at this use",
+    "same transaction/namespace, CommitUncertain and restart",
+    "authority, actual material/resources and durable acceptance",
+    "ning/native, public formal/shared adoption and full V3"
+  ]
+}

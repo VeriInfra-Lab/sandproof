@@ -1,0 +1,105 @@
+import SandproofSqlBlob.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSqlBlobRust
+namespace SandboxModel.Stage1Protocol.SqlBlobValues
+
+abbrev ByteSlice := Slice U8
+abbrev SqlOutput := rusqlite.types.to_sql.ToSqlOutput
+abbrev SqlReply := Result (core.result.Result SqlOutput rusqlite.error.Error)
+
+def blob (bytes : ByteSlice) : SqlOutput := .Borrowed (.Blob bytes)
+
+theorem actual_value_ref_exact (bytes : ByteSlice) :
+    rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedASliceU8.from bytes =
+      .ok (.Blob bytes) := rfl
+
+theorem actual_reference_forwarding {T : Type}
+    (dictionary : rusqlite.types.to_sql.ToSql T) (value : T) :
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql dictionary value =
+      dictionary.to_sql value := rfl
+
+theorem actual_slice_exact (bytes : ByteSlice) :
+    slice_to_sql bytes = .ok (.Ok (blob bytes)) := by
+  simp [slice_to_sql, SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from,
+    actual_value_ref_exact, blob]
+
+theorem actual_ref_slice_exact (bytes : ByteSlice) :
+    ref_slice_to_sql bytes = .ok (.Ok (blob bytes)) := by
+  change slice_to_sql bytes = _
+  exact actual_slice_exact bytes
+
+/-- The entire borrowed blob value, not its length, key or hash, is preserved. -/
+def FullBlobContract (encode : ByteSlice → SqlReply) : Prop :=
+  ∀ bytes, encode bytes = .ok (.Ok (blob bytes))
+
+theorem actual_full_contract :
+    FullBlobContract slice_to_sql ∧ FullBlobContract ref_slice_to_sql :=
+  ⟨actual_slice_exact, actual_ref_slice_exact⟩
+
+theorem actual_output_iff_full_bytes (left right : ByteSlice) :
+    ref_slice_to_sql left = ref_slice_to_sql right ↔ left = right := by
+  simp only [actual_ref_slice_exact, Result.ok.injEq,
+    core.result.Result.Ok.injEq, blob,
+    rusqlite.types.to_sql.ToSqlOutput.Borrowed.injEq,
+    rusqlite.types.value_ref.ValueRef.Blob.injEq]
+
+theorem actual_never_conversion_error (bytes : ByteSlice) (error : rusqlite.error.Error) :
+    ref_slice_to_sql bytes ≠ .ok (.Err error) := by
+  simp [actual_ref_slice_exact]
+
+/-- Independent conversion of two already supplied slices. The params! dynamic
+    cast, SQL positions, execution and same-transaction facts are separate duties. -/
+theorem two_actual_encodings_exact (state digest : ByteSlice) :
+    (ref_slice_to_sql state, ref_slice_to_sql digest) =
+      (.ok (.Ok (blob state)), .ok (.Ok (blob digest))) := by
+  rw [actual_ref_slice_exact, actual_ref_slice_exact]
+
+theorem two_actual_encodings_iff_all_bytes
+    (state digest otherState otherDigest : ByteSlice) :
+    (ref_slice_to_sql state, ref_slice_to_sql digest) =
+      (ref_slice_to_sql otherState, ref_slice_to_sql otherDigest) ↔
+      state = otherState ∧ digest = otherDigest := by
+  simp only [Prod.mk.injEq, actual_output_iff_full_bytes]
+
+def empty : ByteSlice := Slice.from [] (by simp)
+def binary : ByteSlice := Slice.from [0#u8, 255#u8, 128#u8] (by scalar_tac)
+def changedByte : ByteSlice := Slice.from [0#u8, 255#u8, 129#u8] (by scalar_tac)
+
+theorem empty_and_non_utf8_witness :
+    ref_slice_to_sql empty = .ok (.Ok (blob empty)) ∧
+    ref_slice_to_sql binary = .ok (.Ok (blob binary)) :=
+  ⟨actual_ref_slice_exact _, actual_ref_slice_exact _⟩
+
+theorem same_length_does_not_identify_encoded_bytes :
+    binary.val.length = changedByte.val.length ∧
+    ref_slice_to_sql binary ≠ ref_slice_to_sql changedByte := by
+  refine ⟨rfl, ?_⟩
+  intro same
+  have sameValues := congrArg (fun value : ByteSlice => value.val)
+    ((actual_output_iff_full_bytes _ _).mp same)
+  have sameLast := congrArg List.getLast? sameValues
+  change some (128#u8) = some (129#u8) at sameLast
+  have distinct : some (128#u8) ≠ some (129#u8) := by decide
+  exact distinct sameLast
+
+theorem swapped_distinct_encodings_rejected :
+    (ref_slice_to_sql binary, ref_slice_to_sql changedByte) ≠
+      (ref_slice_to_sql changedByte, ref_slice_to_sql binary) := by
+  intro same
+  exact same_length_does_not_identify_encoded_bytes.2 (congrArg Prod.fst same)
+
+end SandboxModel.Stage1Protocol.SqlBlobValues
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_value_ref_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_reference_forwarding
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_slice_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_ref_slice_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_output_iff_full_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.actual_never_conversion_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.two_actual_encodings_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.two_actual_encodings_iff_all_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.empty_and_non_utf8_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.same_length_does_not_identify_encoded_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SqlBlobValues.swapped_distinct_encodings_rejected

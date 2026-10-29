@@ -1,0 +1,13 @@
+import SandproofSqlite.TypesExternal
+import SandproofFoundations.TypesExternal
+
+/- Reuse only the already registered error identity carrier. No constructor,
+   text, engine outcome or conversion-failure behavior is assumed. All captured
+   blob conversion bodies are transparent and return Ok for every slice. -/
+namespace SandproofSqlBlobRust
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+-- Inert Real variants must keep their full payload even though this slice-only
+-- view never constructs or inspects them. Reuse the existing 64-bit carrier;
+-- current-use adoption is separate from these Blob-only equations. No floats run.
+abbrev F64 := SandproofFoundationsRust.F64
+end SandproofSqlBlobRust

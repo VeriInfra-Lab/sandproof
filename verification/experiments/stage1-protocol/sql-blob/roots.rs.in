@@ -1,0 +1,26 @@
+use rusqlite::{
+    ToSql,
+    types::{ToSqlOutput, ValueRef},
+};
+
+// The same &[u8] receiver type to which params![bytes, digest] takes a reference.
+pub fn slice_to_sql(bytes: &[u8]) -> rusqlite::Result<ToSqlOutput<'_>> {
+    ToSql::to_sql(bytes)
+}
+
+pub fn ref_slice_to_sql<'a>(bytes: &'a &'a [u8]) -> rusqlite::Result<ToSqlOutput<'a>> {
+    ToSql::to_sql(bytes)
+}
+
+// Exercise the original macro and its original dynamic dispatch, without an SQL
+// connection, instead of replacing it with a tuple of different Params behavior.
+pub fn original_params<'a>(bytes: &'a [u8], digest: &'a [u8]) -> rusqlite::Result<(bool, bool)> {
+    let params = rusqlite::params![bytes, digest];
+    Ok(match (params[0].to_sql()?, params[1].to_sql()?) {
+        (
+            ToSqlOutput::Borrowed(ValueRef::Blob(first)),
+            ToSqlOutput::Borrowed(ValueRef::Blob(second)),
+        ) => (first == bytes, second == digest),
+        _ => (false, false),
+    })
+}
