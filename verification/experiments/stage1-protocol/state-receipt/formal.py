@@ -25,13 +25,14 @@ def check_inventory(root):
         if sha(root/name) != digest:
             raise ValueError('shared protocol/state contract changed: '+name)
     view = value['views']['correct']
-    for name, item in own['files'].items():
+    additions = {**own['dependency_providers'], **own['files']}
+    for name, item in additions.items():
         if sha(root/item['provider']) != item['sha256']:
             raise ValueError('state/receipt proof provider changed: '+name)
         value['providers'][name] = dict(path=item['provider'], installed_sha256=item['sha256'])
         view['audits'][name] = item['audits']
         view['required_audits'].extend(item['audits'])
-    view['files'] = sorted({*view['files'], *own['files']})
+    view['files'] = sorted({*view['files'], *additions})
     value['same_models'].update(own['representation_models'])
     return value
 

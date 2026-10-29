@@ -36,8 +36,8 @@ python3 verification/experiments/stage1-protocol/state-receipt/formal.py \
   --output artifacts/state-receipt-correct --variant correct --require-native
 ```
 
-该入口只参数化原 `protocol-record/formal.py` 的正确视图，加入四个真实文件、全部
-新增审计及同一表示模型，然后使用原编译/Charon/Aeneas、library_binding、完整物理
+该入口只参数化原 `protocol-record/formal.py` 的正确视图，加入四个真实文件、原
+Recorded 合同文件的完整依赖、全部新增审计及同一表示模型，然后使用原编译/Charon/Aeneas、library_binding、完整物理
 文件/服务检查器和源/工具指纹校验。原父结果保存在 `parent-result.json`，没有新造
 检查器。`--prepare-only` 只准备，不能与 `--require-native` 合用成为正式通过。
 

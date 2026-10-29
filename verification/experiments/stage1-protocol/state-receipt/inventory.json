@@ -85,5 +85,26 @@
   "formal_acceptance": false,
   "ning_acceptance": false,
   "shared_acceptance": false,
-  "full_v3": false
+  "full_v3": false,
+  "dependency_providers": {
+    "SandboxModel/Lifecycle/Protocol/Recorded.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/Recorded.lean",
+      "sha256": "8c8f2da5a9ccb19e53160106848474558bb26852c67d7860ebdf7f1e2f668e84",
+      "audits": [
+        "SandboxModel.Stage1Protocol.Recorded.matches_refines",
+        "SandboxModel.Stage1Protocol.Recorded.complete",
+        "SandboxModel.Stage1Protocol.Recorded.accepts_iff",
+        "SandboxModel.Stage1Protocol.Recorded.rejects_changed_intent",
+        "SandboxModel.Stage1Protocol.Recorded.matches_keeps_original",
+        "SandboxModel.Stage1Protocol.Recorded.terminal_flag_not_certified",
+        "SandboxModel.Stage1Protocol.Recorded.older_version_rejected_after_full_intent",
+        "SandboxModel.Stage1Protocol.Recorded.wrong_current_rejected_after_version",
+        "SandboxModel.Stage1Protocol.Recorded.normal_recorded_matches",
+        "SandboxModel.Stage1Protocol.Recorded.same_session_changed_capture_rejected",
+        "SandboxModel.Stage1Protocol.Recorded.changed_retention_window_rejected",
+        "SandboxModel.Stage1Protocol.Recorded.matching_does_not_establish_validation"
+      ],
+      "kind": "unchanged previously proved complete Recorded contract, now required by the new import closure"
+    }
+  }
 }
