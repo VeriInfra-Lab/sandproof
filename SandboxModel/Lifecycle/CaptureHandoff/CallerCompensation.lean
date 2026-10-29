@@ -158,6 +158,9 @@ theorem compensation_ordinary_caller_connects
         { record with phase := .Pausing, current_operation := some operation } = record := by
       cases record
       simp_all
+    -- Match the simplified constructor's known field; this is value
+    -- normalization, not an additional write in the Rust transition.
+    simp only [nonterminal] at recordNormalized
     have operationEquals : sandbox_controller_core.model.Operation.Insts.CoreCmpPartialEqOperation.eq
         operation operation = .ok true := by
       simp [sandbox_controller_core.model.Operation.Insts.CoreCmpPartialEqOperation.eq,
