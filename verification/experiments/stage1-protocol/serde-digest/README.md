@@ -25,8 +25,10 @@ std+raw_value 特性、固定 Serde 1.0.228 / serde_json 1.0.142 及实际工具
 标准数组 visitor 消费元素后还须由实际 deserialize_tuple 检查元组收尾；不能只凭
 visitor 成功就推断拒绝多余第33个元素。原32字节值表示也不证明计算过哈希。
 
-输出视图保留 Serializer 的34方法和9关联类型，SerializeTuple 的原两方法/两关联类型，
-以及其它复合输出接口；不删除未走到的方法来消除递归。原派生直接转交原数组实现；
+原输出捕获中的 Serializer 有34方法槽、28个实际声明和6个 None 默认方法槽，
+并保留9个关联类型槽；SerializeTuple 的两方法声明/两关联类型槽完整。
+其它复合输出接口也保留原记录，包括其 None 槽。本包不编辑或过滤这些原记录，
+不把槽数称为全部方法声明已捕获，也不删除字段来消除递归。原派生直接转交原数组实现；
 数组实现先 serialize_tuple(32)，按原数组迭代调用 serialize_element，最后 end。
 原 u8 Serialize 只转调 serialize_u8，不能由这些捕获事实推出最终 JSON 字节已证。
 原 IntoIterator/Iterator 两个外部体没有填模型，标准迭代绑定同样需要精确采用。

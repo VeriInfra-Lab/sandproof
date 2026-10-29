@@ -82,7 +82,7 @@
         "serde_core::ser::impls"
       ],
       "root_file": "digest-serialize.rs.in",
-      "scope": "Actual original ContentDigest derived Serialize, array loop and u8 forwarding are captured; fixed backend rejects nine mutually recursive serialization traits; all fields retained and no model supplied",
+      "scope": "Actual original ContentDigest derived Serialize, array loop and u8 forwarding are captured; fixed backend rejects nine mutually recursive serialization traits; original metadata including default None method slots retained unedited; no model supplied",
       "original_development_result": {
         "capture_complete": true,
         "translation_complete": false,
@@ -116,7 +116,7 @@
     "array-callback.rs.in": "b66c6604bdfec25f99177742711ce9ddf52713831188ea9062b33a4e784c2832",
     "array-constructor.rs.in": "777479710f4927dd06287d8a8d746d21cab37e616e767970ca6f0574dd88e61b",
     "digest-serialize.rs.in": "e95314ff770017c64a6bd040599ddcd8303c4ab5bd52b0028a8ae53ec214d65b",
-    "README.md": "06955e10b952c6898b3b39babc3976e99bf7f82eea9da05f6d7a6968ac8ae57f"
+    "README.md": "252b0e672a4ec70850f2f13c0bbac3aa999ffc62227fb0caf4a83f81b48bcfa4"
   },
   "driver_sha256": "6f39ef1a1a3f869265bb1a1f1d3329bf5956cd1c103ffb21c87ee8d3528b6c83",
   "minimum_serialization_provider_request": {
@@ -126,16 +126,6 @@
       "crate::proof_digest_encode",
       "crate::proof_array_encode"
     ],
-    "unmodified_trait_shapes": {
-      "serde_core::ser::Serializer": {
-        "methods": 34,
-        "associated_types": 9
-      },
-      "serde_core::ser::SerializeTuple": {
-        "methods": 2,
-        "associated_types": 2
-      }
-    },
     "scope": [
       "exact fixed serializer serialize_tuple(32)",
       "same SerializeTuple state, original per-element/u8 callback order and end",
@@ -148,6 +138,26 @@
       "own ContentDigest/complete protocol field correctness as a library axiom",
       "unadopted model import or tool change"
     ],
-    "main_must_assign_scope_and_owner": true
+    "main_must_assign_scope_and_owner": true,
+    "unmodified_captured_trait_shapes": {
+      "serde_core::ser::Serializer": {
+        "method_slots": 34,
+        "present_method_declarations": 28,
+        "none_method_slots": [
+          5,
+          10,
+          30,
+          31,
+          32,
+          33
+        ],
+        "associated_type_slots": 9
+      },
+      "serde_core::ser::SerializeTuple": {
+        "method_slots": 2,
+        "present_method_declarations": 2,
+        "associated_type_slots": 2
+      }
+    }
   }
 }
