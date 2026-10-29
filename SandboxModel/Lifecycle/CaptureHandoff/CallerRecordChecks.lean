@@ -1,5 +1,4 @@
 import SandboxModel.Lifecycle.CaptureHandoff.CallerRecord
-import SandboxModel.Lifecycle.CaptureHandoff.CallerCommitChecks
 
 /-! Inverses for the actual CommitSnapshot branch only. The command and
 successful execution are the only input facts; original lookup, identity and
