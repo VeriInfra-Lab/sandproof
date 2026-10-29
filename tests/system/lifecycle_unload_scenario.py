@@ -690,7 +690,7 @@ def exercise(args):
     continued_exit=args.scenario in ('continued-after-capture-exit','continued-before-admission-exit')
     capture_stages = {
         'capture-freeze-receipt': 'freeze-receipt',
-        'capture-copy-partial': 'copy-partial',
+        'capture-measurement-partial': 'measurement-partial',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
     }
@@ -713,7 +713,7 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
-    capture_probe = data_probe = None
+    capture_probe = data_probe = cow_probe = None
     terminal_destroy_done = False
     failed = False
     try:
@@ -815,6 +815,10 @@ def exercise(args):
                 capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
                     'restore-prepare-destroy' if prepare_destroy else 'restore-prepare-receipt')
                 report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
+            if args.scenario == 'normal':
+                from lifecycle_unload_cow import SealedSourceProbe
+                cow_probe = SealedSourceProbe(physical, session=client.session,
+                    witness_before=client.witness, deadline=deadline)
             accepted=client.resume(saved)
             if cycle == 1 and prepare_fault:
                 report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted, deadline)
@@ -896,14 +900,22 @@ def exercise(args):
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
+            cow_receipt = None
+            if cow_probe is not None:
+                cow_receipt = cow_probe.verify_after_guest_write(
+                    physical_running, continuity, deadline)
+                cow_probe = None  # Verification closes both original directory FDs.
             if cycle == 1 and prepare_fault:
                 report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
             if cycle == 1 and data_probe is not None:
                 report['data_drain_resumed'] = data_probe.assert_resumed()
             client.operation_evidence_completed()
             client.assert_owner_isolation()
-            report['cycles'].append(dict(cycle=cycle,resume=accepted,
-                running=physical_running,continuity=continuity))
+            cycle_report = dict(cycle=cycle,resume=accepted,
+                running=physical_running,continuity=continuity)
+            if cow_receipt is not None:
+                cycle_report['cow_source_after_guest_write'] = cow_receipt
+            report['cycles'].append(cycle_report)
             if cycle==1 and continued_exit:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
@@ -986,8 +998,8 @@ def exercise(args):
                 control.operation_evidence_completed()
                 if capture_stage is not None:
                     from lifecycle_unload_capture_faults import CaptureHandoffProbe
-                    gate = (Path(runtime.quota['deployment_control']) / 'capture-copy-gate'
-                            if capture_stage == 'copy-partial' else None)
+                    gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
+                            if capture_stage == 'measurement-partial' else None)
                     capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
                         capture_stage, gate)
                     report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
@@ -997,14 +1009,14 @@ def exercise(args):
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
                     report['capture_handoff_recovery'] = capture_probe.finish(deadline)
-                    if capture_stage == 'copy-partial':
+                    if capture_stage == 'measurement-partial':
                         resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
-                        report['copy_partial_continued'] = client.assert_continued_workload(resumed, lifetime)
-                        report['copy_partial_same_candidate'] = runtime.confirm_running(
+                        report['measurement_partial_continued'] = client.assert_continued_workload(resumed, lifetime)
+                        report['measurement_partial_same_candidate'] = runtime.confirm_running(
                             client.session, physical_running, deadline)
                         client.operation_evidence_completed()
                         client.assert_original_replay(resumed)
-                        report['cycles'][-1]['continued_after_copy_error'] = copy.deepcopy(resumed)
+                        report['cycles'][-1]['continued_after_measurement_error'] = copy.deepcopy(resumed)
                         break
                 client.assert_data_closed()
                 saved=client.wait_unloaded()
@@ -1038,6 +1050,11 @@ def exercise(args):
             'E14':'old execution tokens rejected and new token accepted',
             'other_cases':'not claimed by this normal scenario',
         }
+        if args.scenario == 'normal':
+            report['acceptance_cases']['C6'] = (
+                'two existing guest RAM/disk advances followed by full reread of each original '
+                'sealed source; same manifest, source identities and backing pin observed; '
+                'not arbitrary future write isolation or a complete fault matrix')
         if args.scenario=='restore-activation-loss':
             report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
         if args.scenario=='restore-candidate-exit':
@@ -1055,10 +1072,10 @@ def exercise(args):
                 'qualification':stage,
                 'other_cases':'one selected continued death branch; no full fault matrix or formal proof claim',
             }
-        if capture_stage == 'copy-partial':
+        if capture_stage == 'measurement-partial':
             report['acceptance_cases'] = {
-                'E3': 'actual partial Memory copy returned an error; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
-                'E12': 'two owners and actual slot reuse observed before the copy fault',
+                'E3': 'actual complete Memory clone failed during SHA measurement; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
+                'E12': 'two owners and actual slot reuse observed before the clone measurement fault',
                 'E14': 'old tokens rejected after the first Resume; original continued authorization preserved',
                 'other_cases': 'one restore cycle and failed second Unload; no second Unloaded or full fault matrix claim',
             }
@@ -1123,6 +1140,11 @@ def exercise(args):
             cpu_rss_disk_peak='unknown:not sampled by this timing instrumentation',
             e16_complete=False)
         try:
+            if cow_probe is not None:
+                # Close read-only source anchors before product cleanup/settlement,
+                # including failures before the original guest-write observation.
+                cow_probe.close()
+                cow_probe = None
             if data_probe is not None:
                 # Withdraw only this observer's exact relay pause before the
                 # original product failure cleanup. Record uncertainty rather
@@ -1157,7 +1179,7 @@ def main():
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','capture-freeze-receipt','capture-copy-partial','capture-seal-receipt',
+        'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()

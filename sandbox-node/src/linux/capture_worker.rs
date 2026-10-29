@@ -196,7 +196,7 @@ pub(super) struct CaptureWorkerJob {
     pub(super) material_project: sandbox_runtime::MaterialProjectSettings,
     #[cfg(debug_assertions)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) copy_gate: Option<PathBuf>,
+    pub(super) measurement_gate: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -387,7 +387,7 @@ impl CaptureWorkerJob {
             disk_bytes: self.full.disk_bytes,
         };
         #[cfg(debug_assertions)]
-        if self.copy_gate.is_some() {
+        if self.measurement_gate.is_some() {
             let mut observed = false;
             return full_snapshot::capture_paused_original_observed(
                 runtime,
@@ -396,13 +396,21 @@ impl CaptureWorkerJob {
                 expected,
                 limits,
                 reads,
-                &mut |artifact, copied, total| {
+                &mut |artifact, event| {
+                    let sandbox_runtime::snapshot_store::SnapshotArtifactEvent::Measuring {
+                        measured_bytes,
+                        total_bytes,
+                    } = event
+                    else {
+                        return Ok(());
+                    };
                     if !observed
                         && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory
-                        && copied < total
+                        && measured_bytes > 0
+                        && measured_bytes < total_bytes
                     {
                         observed = true;
-                        self.wait_copy(job_digest, copied, total)?;
+                        self.wait_copy(job_digest, measured_bytes, total_bytes)?;
                     }
                     Ok(())
                 },
@@ -415,11 +423,11 @@ impl CaptureWorkerJob {
     fn wait_copy(
         &self,
         job_digest: ContentDigest,
-        copied: u64,
+        measured: u64,
         total: u64,
     ) -> Result<(), sandbox_runtime::RuntimeError> {
         let failure = |message| sandbox_runtime::RuntimeError::Io(std::io::Error::other(message));
-        let Some(path) = &self.copy_gate else {
+        let Some(path) = &self.measurement_gate else {
             return Ok(());
         };
         let gate = crate::adapter::faults::CaptureCopyGate::configured(path.clone(), &self.action)
@@ -435,8 +443,8 @@ impl CaptureWorkerJob {
                 job_digest,
             )
             .map_err(|_| failure("capture copy original worker rejected"))?;
-            gate.wait(&self.action, &self.full, &binding, copied, total)
-                .map_err(|_| failure("capture copy interrupted after partial write"))?;
+            gate.wait(&self.action, &self.full, &binding, measured, total)
+                .map_err(|_| failure("capture interrupted while measuring the complete clone"))?;
         }
         Ok(())
     }

@@ -154,7 +154,7 @@ impl Runtime {
             self.prepare_private_network(id, &claim)?;
         }
         // Network helpers have completed; hold the original exclusive gate
-        // across process launch, private copies and the load API exchange.
+        // across process launch, private clones and the load API exchange.
         let _gate = self.acquire_helper_gate()?;
         let record = self.spawn_jailer(id, &claim)?;
         self.wait_api_socket(id, record.pid)?;
@@ -174,7 +174,7 @@ impl Runtime {
             self.config.vm_gid,
         )?;
         // Private File backing is charged to the same enforced material
-        // project BEFORE any RAM/state bytes are copied. The writable disk
+        // project BEFORE RAM/state files acquire shared extents. The writable disk
         // remains in the separately reserved runtime position.
         fs::mkdirat(&root, "restore", Mode::RWXU).map_err(std::io::Error::from)?;
         let backing = File::from(
@@ -188,7 +188,7 @@ impl Runtime {
         );
         layout.assign_new_capture_project(&backing)?;
         for role in [SnapshotArtifact::State, SnapshotArtifact::Memory] {
-            bundle.copy_for_restore(&backing, role, self.config.vm_uid, self.config.vm_gid)?;
+            bundle.clone_for_restore(&backing, role, self.config.vm_uid, self.config.vm_gid)?;
         }
         fs::fchown(
             &backing,
@@ -199,7 +199,7 @@ impl Runtime {
         backing.set_permissions(std::fs::Permissions::from_mode(0o500))?;
         backing.sync_all()?;
         root.sync_all()?;
-        bundle.copy_for_restore(
+        bundle.clone_for_restore(
             &root,
             SnapshotArtifact::Disk(0),
             self.config.vm_uid,

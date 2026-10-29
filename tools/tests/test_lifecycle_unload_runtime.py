@@ -20,6 +20,46 @@ scene=importlib.util.module_from_spec(SCENE_SPEC)
 SCENE_SPEC.loader.exec_module(scene)
 
 
+class CaptureMeasurementProtocolTests(unittest.TestCase):
+    def fixture(self):
+        import lifecycle_unload_capture_faults as capture
+        question = dict(schema_version=2, run_identity='7'*64, action={'original': True},
+            full_work_binding=[9]*32, worker={'original': True}, source={'original': True},
+            phase='measuring-cloned-artifact', measured_bytes=65536, total_bytes=131072)
+        return capture, question
+
+    def test_only_current_measurement_question_with_strict_midpoint_is_admitted(self):
+        capture, question = self.fixture()
+        self.assertIs(capture.validate_measurement_question(question, '7'*64), question)
+        for key, value in [('schema_version', 1), ('schema_version', 2.0),
+                           ('phase', 'copying'), ('phase', 'cloned'),
+                           ('run_identity', '8'*64), ('measured_bytes', 0),
+                           ('measured_bytes', 131072), ('measured_bytes', True),
+                           ('total_bytes', True), ('total_bytes', 2**64)]:
+            changed = dict(question); changed[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                capture.validate_measurement_question(changed, '7'*64)
+
+    def test_legacy_copied_field_or_extra_claim_does_not_prove_a_measurement_window(self):
+        capture, question = self.fixture()
+        legacy = dict(question); legacy['copied_bytes'] = legacy.pop('measured_bytes')
+        mixed = dict(question, copied_bytes=65536)
+        for changed in (legacy, mixed, dict(question, capacity_released=True)):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                capture.validate_measurement_question(changed, '7'*64)
+
+    def test_old_stage_is_refused_before_any_runtime_action(self):
+        capture, _ = self.fixture()
+        client = SimpleNamespace(session='original')
+        running = dict(session='original')
+        runtime = Mock()
+        with self.assertRaises(ValueError):
+            capture.CaptureHandoffProbe(runtime, client, running, 'copy-partial')
+        self.assertEqual(runtime.mock_calls, [])
+        probe = capture.CaptureHandoffProbe(runtime, client, running, 'measurement-partial')
+        self.assertEqual(probe.stage, 'measurement-partial')
+
+
 class ContinuedExitConsumerTests(unittest.TestCase):
     def fixture(self):
         import copy

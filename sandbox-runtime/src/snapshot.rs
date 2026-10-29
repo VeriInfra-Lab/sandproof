@@ -15,7 +15,8 @@ use request_end::full_capture_request;
 pub use request_end::{FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome};
 
 use crate::snapshot_store::{
-    PublishedSnapshotFiles, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStage,
+    PublishedSnapshotFiles, SnapshotArtifact, SnapshotArtifactEvent, SnapshotFileMeasurement,
+    SnapshotStage,
 };
 use rustix::{
     fs::{self, Mode, OFlags},
@@ -285,7 +286,7 @@ impl Runtime {
         Ok(())
     }
 
-    /// Produce Full RAM/state and copy the fixed profile's original private disk
+    /// Produce Full RAM/state and clone the fixed profile's original private disk
     /// into a separate protected store during the same frozen interval.
     /// # Errors
     /// Preserves the original VMM and every partial source/store directory. The
@@ -297,10 +298,11 @@ impl Runtime {
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
-        self.capture_full_copying(paused, layout, directory_key, limits, &mut |_, _, _| Ok(()))
+        self.capture_full_cloning(paused, layout, directory_key, limits, &mut |_, _| Ok(()))
     }
 
-    /// Observe actual copied blocks only in controlled debug builds. The
+    /// Observe clone/target-measurement/sync boundaries in controlled debug builds.
+    /// Measurement is full logical content read progress, not physical writes. The
     /// original Full request, identity checks, files and publication are shared.
     /// # Errors
     /// An observation failure preserves the same original/partial materials.
@@ -311,18 +313,18 @@ impl Runtime {
         layout: &SnapshotLayout,
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
-        observe: &mut impl FnMut(SnapshotArtifact, u64, u64) -> Result<(), RuntimeError>,
+        observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
-        self.capture_full_copying(paused, layout, directory_key, limits, observe)
+        self.capture_full_cloning(paused, layout, directory_key, limits, observe)
     }
 
-    fn capture_full_copying(
+    fn capture_full_cloning(
         &self,
         paused: &PausedOriginalVm,
         layout: &SnapshotLayout,
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
-        observe: &mut impl FnMut(SnapshotArtifact, u64, u64) -> Result<(), RuntimeError>,
+        observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
         if limits.state_bytes == 0
             || limits.disk_bytes == 0

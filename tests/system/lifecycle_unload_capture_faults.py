@@ -1,6 +1,6 @@
 """Finite consumers of original capture handoffs; never a VM supervisor.
 
-Call arm only after record_running. During a held copy gate no helper may stop
+Call arm only after record_running. During a held measurement gate no helper may stop
 or audit the Host. Public completion and product GC remain the caller's job.
 An exit code, gate command or missing process alone never means Unloaded/Free.
 """
@@ -34,13 +34,28 @@ from tools.system_acceptance import private_path
 
 STAGES = {
     'freeze-receipt': ('freeze_vm', 'FreezeVm'),
-    'copy-partial': (None, 'SealSnapshot'),
+    'measurement-partial': (None, 'SealSnapshot'),
     'seal-receipt': ('seal_snapshot', 'SealSnapshot'),
     'stop-receipt': ('stop_vm', 'StopVm'),
     'restore-prepare-receipt': ('prepare_vm', 'PrepareVm'),
     'restore-prepare-destroy': ('prepare_vm', 'PrepareVm'),
 }
 RESTORE_STAGES = frozenset(('restore-prepare-receipt', 'restore-prepare-destroy'))
+
+
+def validate_measurement_question(question, run_identity):
+    # The trusted Node emits this phase only after FICLONE succeeded and while
+    # reading the complete target for SHA. This never claims partial disk copy.
+    if (type(question) is not dict
+            or set(question) != {'schema_version', 'run_identity', 'action', 'full_work_binding',
+                                 'worker', 'source', 'phase', 'measured_bytes', 'total_bytes'}
+            or type(question['schema_version']) is not int or question['schema_version'] != 2
+            or question['run_identity'] != run_identity
+            or question['phase'] != 'measuring-cloned-artifact'
+            or type(question['measured_bytes']) is not int or type(question['total_bytes']) is not int
+            or not 0 < question['measured_bytes'] < question['total_bytes'] < 2**64):
+        raise ValueError('actual incomplete SHA measurement of the original Memory clone required')
+    return question
 
 
 class _AwaitTerminal(Exception):
@@ -82,16 +97,17 @@ class CaptureHandoffProbe:
         self.deadline = min(deadline, time.monotonic() + timeout_ms / 1000)
         if self.stage not in RESTORE_STAGES:
             self.pidfd = open_original_candidate_pidfd(self.prior['source'])
-        if self.stage == 'copy-partial':
+        if self.stage == 'measurement-partial':
+            self.config['schema_version'] = 2
             control = private_path(runtime.quota['deployment_control'], directory=True)
-            if self.path != control / 'capture-copy-gate':
-                raise ValueError('exact private deployment copy gate required')
+            if self.path != control / 'capture-measurement-gate':
+                raise ValueError('exact private deployment measurement gate required')
             self.path.mkdir(mode=0o700)
             self.fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
             self.directory = os.fstat(self.fd)
             gate_publish(self.fd, 'config.json', self.config)
             self._save_file('config.json')
-            fault = {'SANDPROOF_TEST_CAPTURE_COPY_GATE': str(self.path)}
+            fault = {'SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE': str(self.path)}
         else:
             fault = {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
         runtime.services.processes.stop('host-0')
@@ -115,12 +131,12 @@ class CaptureHandoffProbe:
                 or (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino)
                 or set(os.listdir(self.fd)) - {'config.json', 'observation.json', 'ready.json',
                     'ready-stage.json', 'command-stage.json', 'command.json', 'consumed.json'}):
-            raise ValueError('original private copy gate changed')
+            raise ValueError('original private measurement gate changed')
         for name, expected in self.files.items():
             _, digest, identity = gate_json(self.path / name,
                 16384 if name == 'observation.json' else 1024, directory_fd=self.fd)
             if (digest, identity) != expected:
-                raise ValueError('original sealed copy gate file changed')
+                raise ValueError('original sealed measurement gate file changed')
 
     def _read(self, deadline):
         native = self.runtime.services.native_pools[0]
@@ -253,22 +269,17 @@ class CaptureHandoffProbe:
             raise ValueError('one original acceptance after arming required')
         self.accepted = copy.deepcopy(accepted)
         deadline = min(deadline, self.deadline)
-        if self.stage == 'copy-partial':
+        if self.stage == 'measurement-partial':
             while not (self.path / 'ready.json').exists():
                 self._gate_unchanged()
                 if self.host.poll() is not None:
-                    raise ValueError('original manager exited before copy observation')
+                    raise ValueError('original manager exited before measurement observation')
                 time.sleep(min(.05, remaining(deadline)))
             self._gate_unchanged()
             question, digest = self._save_file('observation.json')
             ready, _ = self._save_file('ready.json')
             validate_gate_ready(ready, digest)
-            if (set(question) != {'schema_version', 'run_identity', 'action', 'full_work_binding',
-                    'worker', 'source', 'copied_bytes', 'total_bytes'}
-                    or question['schema_version'] != 1 or question['run_identity'] != self.config['run_identity']
-                    or type(question['copied_bytes']) is not int or type(question['total_bytes']) is not int
-                    or not 0 < question['copied_bytes'] < question['total_bytes']):
-                raise ValueError('actual incomplete original Memory copy required')
+            validate_measurement_question(question, self.config['run_identity'])
             self.question, self.question_digest = question, digest
         elif self.host.wait(timeout=remaining(deadline)) != 86:
             raise ValueError('original selected manager did not exit86')
@@ -334,13 +345,13 @@ class CaptureHandoffProbe:
                 if captured['completed'] is None:
                     raise ValueError('Stop before original SQL Full adoption')
                 self.materials = self.runtime._materials(captured['full'], captured)
-            if self.stage == 'copy-partial':
+            if self.stage == 'measurement-partial':
                 self.record = continued_capture_question(self.question, accepted, records, self.prior['source'])
                 if self.question['action'] != self.action or self.question['source'] != source:
-                    raise ValueError('copy question differs from complete original action/source')
+                    raise ValueError('measurement question differs from complete original action/source')
                 self.worker_pidfd = open_original_candidate_pidfd(self.question['worker']['process'])
                 if question['total_bytes'] > captured['full']['memory_bytes']:
-                    raise ValueError('copy observation exceeds original Memory bound')
+                    raise ValueError('measurement observation exceeds original Memory bound')
             if self.stage == 'stop-receipt':
                 if not pidfd_exited(self.pidfd):
                     raise ValueError('original Stop did not close the exact source process')
@@ -668,9 +679,9 @@ class CaptureHandoffProbe:
         if self.action is None or self.recovered:
             raise ValueError('one observed original handoff required')
         deadline = min(deadline, self.deadline)
-        if self.stage == 'copy-partial':
+        if self.stage == 'measurement-partial':
             self._gate_unchanged()
-            command = dict(schema_version=1, run_identity=self.config['run_identity'],
+            command = dict(schema_version=2, run_identity=self.config['run_identity'],
                 observation_sha256=self.question_digest,
                 full_work_binding=self.question['full_work_binding'], command='fail')
             gate_publish(self.fd, 'command.json', command)
@@ -691,13 +702,13 @@ class CaptureHandoffProbe:
                             or observation['outcome']['kind'] != 'returned'
                             or not 200 <= observation['outcome']['http_status'] <= 599
                             or record['capture']['completed'] is not None):
-                        raise ValueError('partial copy must have its actual Returned End, never NoRequest')
+                        raise ValueError('clone measurement failure must have its actual Returned End, never NoRequest')
                     if pidfd_exited(self.worker_pidfd) and not original_process(self.question['worker']['process']):
                         break
                 time.sleep(min(.05, remaining(deadline)))
             consumed, _ = self._save_file('consumed.json')
             if consumed != command:
-                raise ValueError('original copy failure command not consumed exactly')
+                raise ValueError('original measurement failure command not consumed exactly')
             self._gate_unchanged()
             self.recovered = True
             return dict(stage=self.stage, actual_worker_end=True, no_request_inferred=False,
@@ -725,7 +736,7 @@ class CaptureHandoffProbe:
 
     def cleanup(self):
         """Only after original product GC: retire our exact consumed gate files."""
-        if self.stage != 'copy-partial':
+        if self.stage != 'measurement-partial':
             return None
         expected = {'config.json', 'observation.json', 'ready.json', 'command.json', 'consumed.json'}
         if (not self.runtime.gc_complete or not self.runtime.physical_complete

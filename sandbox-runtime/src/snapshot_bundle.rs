@@ -1,7 +1,7 @@
 //! Read-only reopening of an original published bundle, not restore authority.
 use super::{
-    FileStamp, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStore, accepts, file_facts,
-    invalid, key_name, matches_entry, os_error,
+    FileStamp, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStore, accepts, clone_whole_file,
+    file_facts, invalid, key_name, matches_entry, os_error,
 };
 use crate::RuntimeError;
 use rustix::fs::{self, Mode, OFlags};
@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom},
     os::unix::fs::{MetadataExt, PermissionsExt},
 };
 
@@ -213,14 +213,14 @@ impl SnapshotBundle {
             .collect()
     }
 
-    /// Copy an original sealed artifact into one fresh private jail file.
+    /// Clone an original sealed artifact into one fresh private jail inode.
     /// Source ownership/mode never changes. The caller has already reserved
-    /// both copies and keeps its durable loader/backing responsibility until
+    /// the full logical write budget and keeps its loader/backing responsibility until
     /// exact process exit and explicit cleanup, including on any error here.
     /// # Errors
-    /// Existing destinations, changed sources, short I/O or hash mismatches
+    /// Existing destinations, unsupported cloning, changed sources or hash mismatches
     /// preserve the partial destination; they never release source usage.
-    pub(crate) fn copy_for_restore(
+    pub(crate) fn clone_for_restore(
         &self,
         destination_root: &File,
         artifact: SnapshotArtifact,
@@ -248,23 +248,15 @@ impl SnapshotBundle {
             )
             .map_err(os_error)?,
         );
-        let mut source = original.file.try_clone()?;
-        source.seek(SeekFrom::Start(0))?;
-        let mut remaining = original.measurement.length;
-        let mut hash = Sha256::new();
-        let mut buffer = vec![0_u8; super::COPY_BUFFER_BYTES];
-        while remaining > 0 {
-            let count = usize::try_from(remaining.min(buffer.len() as u64))
-                .map_err(|_| invalid("restore copy length"))?;
-            source.read_exact(&mut buffer[..count])?;
-            destination.write_all(&buffer[..count])?;
-            hash.update(&buffer[..count]);
-            remaining -= count as u64;
+        clone_whole_file(&original.file, &destination)?;
+        // Read the actual private result, not a second view of the source.
+        // A successful ioctl alone is not a verified artifact or load permit.
+        if destination.metadata()?.len() != original.measurement.length {
+            return Err(invalid("restore clone length differs"));
         }
-        let mut extra = [0_u8; 1];
-        let digest: [u8; 32] = hash.finalize().into();
-        if source.read(&mut extra)? != 0 || digest != original.measurement.sha256 {
-            return Err(invalid("restore source bytes changed"));
+        let (measurement, _) = measure(&mut destination, artifact)?;
+        if measurement != original.measurement {
+            return Err(invalid("restore cloned bytes differ"));
         }
         self.verify_unchanged()?;
         fs::fchown(

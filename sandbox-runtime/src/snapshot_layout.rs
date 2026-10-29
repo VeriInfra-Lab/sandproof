@@ -3,21 +3,27 @@
 //! values. Unknown partial initialization is retained and cannot be adopted.
 
 use super::{RuntimeError, jail::DirectoryIdentity};
-use crate::snapshot_store::{SnapshotStore, matches_entry, open_store};
+use crate::snapshot_store::{
+    SnapshotStore, clone_whole_file, matches_entry, open_store, require_same_xfs_mount,
+};
 use rustix::fs::{self, AtFlags, Mode, OFlags, RenameFlags};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     fs::File,
     io::{self, Read, Write},
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{FileExt, MetadataExt},
     path::{Path, PathBuf},
 };
 
-const VERSION: u32 = 1;
+// Only this format attests that initialization completed the real CoW probe.
+// Reopening never migrates or adopts an older, unprobed development layout.
+const VERSION: u32 = 2;
 const PROFILE: &str = "layout.json";
 const INITIALIZING: &str = ".layout-initializing.json";
 const MAX_PROFILE_BYTES: u64 = 16_384;
+const PROBE_SOURCE: &str = ".layout-cow-source";
+const PROBE_TARGET: &str = ".layout-cow-target";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -76,6 +82,10 @@ fn child(parent: &File, name: &str, owner: u32) -> Result<File, RuntimeError> {
     Ok(opened)
 }
 fn distinct(parent: &File, runtime: &File, store: &File) -> Result<(), RuntimeError> {
+    // Compare current FD mounts, never a persisted mount number. Same device
+    // alone would admit an independently bound mount of the same filesystem.
+    require_same_xfs_mount(parent, runtime)?;
+    require_same_xfs_mount(parent, store)?;
     let base = parent.metadata()?;
     let first = runtime.metadata()?;
     let second = store.metadata()?;
@@ -89,6 +99,35 @@ fn distinct(parent: &File, runtime: &File, store: &File) -> Result<(), RuntimeEr
             "layout must be distinct original sibling directories",
         ));
     }
+    Ok(())
+}
+fn probe_clone(parent: &File) -> Result<(), RuntimeError> {
+    let flags = OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut source = File::from(
+        fs::openat(parent, PROBE_SOURCE, flags, Mode::RUSR | Mode::WUSR).map_err(errno)?,
+    );
+    let target = File::from(
+        fs::openat(parent, PROBE_TARGET, flags, Mode::RUSR | Mode::WUSR).map_err(errno)?,
+    );
+    source.write_all(b"C")?;
+    source.sync_all()?;
+    clone_whole_file(&source, &target)?;
+    let mut bytes = [0_u8; 1];
+    target.read_exact_at(&mut bytes, 0)?;
+    if bytes != *b"C" {
+        return Err(error("layout CoW probe content differs"));
+    }
+    source.sync_all()?;
+    target.sync_all()?;
+    parent.sync_all()?;
+    // Probe files remain on any preceding error. The already-created v/s
+    // directories also retain initialization responsibility if a later sync
+    // fails after both probe names were removed.
+    matches_entry(parent, OsStr::new(PROBE_SOURCE), &source)?;
+    fs::unlinkat(parent, PROBE_SOURCE, AtFlags::empty()).map_err(errno)?;
+    matches_entry(parent, OsStr::new(PROBE_TARGET), &target)?;
+    fs::unlinkat(parent, PROBE_TARGET, AtFlags::empty()).map_err(errno)?;
+    parent.sync_all()?;
     Ok(())
 }
 fn empty(parent: &File) -> Result<(), RuntimeError> {
@@ -195,11 +234,13 @@ impl SnapshotLayout {
     ) -> Result<Self, RuntimeError> {
         let parent = open_store(path, owner)?;
         empty(&parent)?;
+        require_same_xfs_mount(&parent, &parent)?;
         fs::mkdirat(&parent, "v", Mode::RWXU).map_err(errno)?;
         fs::mkdirat(&parent, "s", Mode::RWXU).map_err(errno)?;
         let runtime = child(&parent, "v", owner)?;
         let store = child(&parent, "s", owner)?;
         distinct(&parent, &runtime, &store)?;
+        probe_clone(&parent)?;
         let record = LayoutRecord {
             version: VERSION,
             binding,

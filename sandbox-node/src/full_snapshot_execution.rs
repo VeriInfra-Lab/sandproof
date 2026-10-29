@@ -67,8 +67,7 @@ pub(crate) fn capture_paused_original_observed(
     read_limits: BundleReadLimits,
     observe: &mut impl FnMut(
         sandbox_runtime::snapshot_store::SnapshotArtifact,
-        u64,
-        u64,
+        sandbox_runtime::snapshot_store::SnapshotArtifactEvent,
     ) -> Result<(), sandbox_runtime::RuntimeError>,
 ) -> SealResult<FullCaptureObservation> {
     require_original(paused, expected)?;
