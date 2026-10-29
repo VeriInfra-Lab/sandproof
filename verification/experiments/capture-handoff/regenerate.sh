@@ -18,6 +18,7 @@ out="${SANDPROOF_CAPTURE_OUTPUT:?set a fresh private output directory}"
 mkdir -m 700 "$out"
 args=()
 for root in "${roots[@]}"; do args+=(--start-from "crate::$root"); done
+if [[ "$variant" == worker ]]; then args+=(--include 'core::option::*::and_then'); fi
 cd verification/extract-capture-handoff
 RUSTFLAGS="--remap-path-prefix=$ROOT=." "$CHARON" cargo --preset=aeneas \
   --error-on-warnings --sysroot default "${args[@]}" --include sandbox_controller_core \
