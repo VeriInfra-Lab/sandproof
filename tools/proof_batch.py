@@ -176,7 +176,7 @@ def evidence_files(directory, include_sources=False, *, capture_caller=False):
         if capture_caller:
             # wrong-target is actual proof evidence, not a Cargo build tree.
             dirs[:] = [n for n in dirs if not (
-                n in ('target', 'extract-target', '.git', '.lake', '.tools', 'node_modules')
+                n in ('target', 'extract-target', 'formal-target', '.git', '.lake', '.tools', 'node_modules')
                 or n.startswith(('target-', 'cargo-target')))]
         else:
             dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]

@@ -409,8 +409,8 @@ def native_case(label, source, output, action=None, *, scope='all'):
                 # names such as ignore-capture-target. Do not discard a log
                 # merely because its filename contains the word "target".
                 suffixes += ('.stdout', '.stderr')
-                build = any(part in ('.git', '.lake', 'target', 'extract-target')
-                            or part.startswith('target-') for part in parts[:-1])
+                build = any(part in ('.git', '.lake', 'target', 'extract-target', 'formal-target')
+                            or part.startswith(('target-', 'cargo-target')) for part in parts[:-1])
             else:
                 build = any('target' in part or part in ('.git', '.lake') for part in parts)
             if (not path.is_file() or path.is_symlink() or path.suffix not in suffixes or build):

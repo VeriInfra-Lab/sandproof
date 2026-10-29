@@ -324,12 +324,15 @@ class CaptureCallerScopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             receipts.validate_native(self.cache, scope='capture-caller')
         folder = self.base/'formal-files'
-        for name in ('wrong-target/actual.llbc', 'target-correct/compiler.json'):
+        for name in ('wrong-target/actual.llbc', 'target-correct/compiler.json',
+                     'formal-target/build/generated.rs', 'formal-target/.fingerprint/compiler.json'):
             path = folder/name; path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('synthetic evidence selection fixture\n')
         selected = proof_batch.evidence_files(folder, include_sources=True, capture_caller=True)
         self.assertIn(str((folder/'wrong-target/actual.llbc').resolve()), selected)
         self.assertNotIn(str((folder/'target-correct/compiler.json').resolve()), selected)
+        self.assertNotIn(str((folder/'formal-target/build/generated.rs').resolve()), selected)
+        self.assertNotIn(str((folder/'formal-target/.fingerprint/compiler.json').resolve()), selected)
 
     def test_capture_workflow_never_runs_v3_or_global_commands(self):
         self.addCleanup(self.cleanup_workflow_temporary_root)
