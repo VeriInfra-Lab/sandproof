@@ -1,0 +1,26 @@
+{
+  "kind": "current-receipt-shared-model-adoption-candidate",
+  "owner": "V0/main",
+  "candidate_only": true,
+  "main_current_seal_expanded": false,
+  "new_library_operation_contracts": [],
+  "shared_files": [
+    "SandboxModel/Foundations/OutcomeModel.lean",
+    "SandboxModel/Foundations/Evidence.lean",
+    "SandboxModel/Foundations/ReceiptModel.lean",
+    "SandboxModel/Foundations/Receipts.lean"
+  ],
+  "change": "move the original pure Outcome and receipt specification into independent modules, add Snapshot to the same canonical ResourceKind; preserve original generated-source adapter/proof bodies",
+  "reason": "new and historical generated WorkOutcome imports collide at a global discriminant instance; keep fixed tools and both raw generations unchanged",
+  "same_protocol_model": true,
+  "old_proof_names_and_scope_retained": true,
+  "current_source_connection": "CurrentReceiptConnection.lean.in uses unchanged checkReceipt with the current five-kind generated values",
+  "proposed_shared_change_adopted": false,
+  "remaining": [
+    "main/V0 review shared module factoring and Snapshot vocabulary extension",
+    "main public Lake/import/task/native/coverage admission; no registered current-receipts formal CLI yet",
+    "ning correct/owner-only/restored native evidence and ordinary acceptance",
+    "actual original V3 probes_match still fails Iterator.zip trait metadata; two unadopted loop candidates also fail context joins",
+    "actual HostEvidence getters/command/process facts and outer Ready/transaction/JSON/resources remain separate"
+  ]
+}

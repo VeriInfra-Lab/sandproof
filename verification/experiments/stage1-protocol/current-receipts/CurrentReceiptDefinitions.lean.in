@@ -1,0 +1,67 @@
+import SandboxModel.Foundations.ReceiptModel
+import SandproofReceipt.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.CurrentReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts (ResourceKind ResourceBinding ActionBinding
+  ActionInputDomain ReceiptError checkActionVersion checkReceipt receipt_model_success_iff)
+
+noncomputable section
+open scoped Classical
+
+def outcomeView {E : Type} (out : sandproof_protocol.WorkOutcome E) :
+    Outcome E sandproof_protocol.FailureCode sandproof_protocol.UnknownReason :=
+  match out with
+  | .ObservedSuccess evidence => .observedSuccess evidence
+  | .DefinitiveFailure code retry residue => .definitiveFailure code retry residue
+  | .Unknown reason last => .unknown reason last
+
+def kindView : sandproof_protocol.ResourceKind → ResourceKind
+  | .Sandbox => .sandbox
+  | .Vm => .vm
+  | .Workspace => .workspace
+  | .Snapshot => .snapshot
+  | .NetworkSlot => .networkSlot
+
+def resourceView (resource : sandproof_protocol.ResourceRef) : ResourceBinding :=
+  ⟨kindView resource.kind, resource.id⟩
+
+def actionView (identity : sandproof_protocol.ActionIdentity) : ActionBinding :=
+  ⟨identity.protocol_version.val, identity.owner, identity.sandbox, identity.operation,
+   identity.epoch.val, identity.generation.val, identity.logical_action,
+   identity.attempt.val, resourceView identity.resource⟩
+
+def receiptResultView (result : core.result.Result Unit sandproof_protocol.ContractError) :
+    Except ReceiptError Unit :=
+  match result with
+  | .Ok _ => .ok ()
+  | .Err .InvalidIdentifier => .error .invalidIdentifier
+  | .Err (.UnsupportedVersion version) => .error (.unsupportedVersion version.val)
+  | .Err .MismatchedIdentity => .error .mismatchedIdentity
+  | .Err .MismatchedObservation => .error .mismatchedObservation
+
+def checkedResultView
+    (result : Result (core.result.Result Unit sandproof_protocol.ContractError)) :
+    Result (Except ReceiptError Unit) := do
+  let value ← result
+  .ok (receiptResultView value)
+
+def ResourceGetterExact {E : Type} (dictionary : sandproof_protocol.ResourceEvidence E)
+    (get : E → sandproof_protocol.ResourceRef) : Prop :=
+  ∀ evidence, dictionary.resource evidence = .ok (get evidence)
+
+def zeroAttemptIdentity : sandproof_protocol.ActionIdentity :=
+  ⟨1#u16, "tenant", "sandbox", "operation", 0#u64, 0#u64, "action", 0#u64, ⟨.Vm, "vm"⟩⟩
+
+def FullReceiptContract {E C : Type}
+    (check : sandproof_protocol.ResourceEvidence E → sandproof_protocol.WorkReceipt E →
+      sandproof_protocol.WorkAction C → Result (core.result.Result Unit sandproof_protocol.ContractError)) : Prop :=
+  ∀ dictionary get, ResourceGetterExact dictionary get → ∀ receipt action,
+    checkedResultView (check dictionary receipt action) =
+      .ok (checkReceipt (actionView action.identity) (actionView receipt.identity)
+        (outcomeView receipt.outcome) (fun evidence => resourceView (get evidence)))
+
+end
+end SandboxModel.Stage1Protocol.CurrentReceipt

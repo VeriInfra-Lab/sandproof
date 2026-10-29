@@ -1,0 +1,21 @@
+import SandproofReceipt.Types
+
+/- Exact existing per-symbol bodies; importing frozen FunsExternal would also
+import its old WorkOutcome discriminant and collide with the current type. -/
+open Aeneas Aeneas.Std
+namespace SandproofReceiptRust
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool := .ok (decide (left = right))
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : Aeneas.Std.core.ops.function.FnOnce F T Bool)
+    (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok false
+  | some entry => callback.call_once state entry
+
+end SandproofReceiptRust

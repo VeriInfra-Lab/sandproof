@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptDefinitions
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.CurrentReceipt
+
+def snapshotIdentity : sandproof_protocol.ActionIdentity :=
+  {zeroAttemptIdentity with resource := ⟨.Snapshot, "snapshot"⟩}
+def snapshotGet (_ : Unit) : sandproof_protocol.ResourceRef := snapshotIdentity.resource
+def snapshotDictionary : sandproof_protocol.ResourceEvidence Unit := ⟨fun _ => .ok (snapshotGet ())⟩
+def failingDictionary : sandproof_protocol.ResourceEvidence Unit := ⟨fun _ => .fail .panic⟩
+def snapshotAction : sandproof_protocol.WorkAction Unit := ⟨snapshotIdentity, ()⟩
+def snapshotReceipt : sandproof_protocol.WorkReceipt Unit := ⟨snapshotIdentity, .ObservedSuccess ()⟩
+def workspaceReceipt : sandproof_protocol.WorkReceipt Unit :=
+  {snapshotReceipt with identity := {snapshotIdentity with resource := ⟨.Workspace, "snapshot"⟩}}
+def changedIdentities : List sandproof_protocol.ActionIdentity := [
+  {snapshotIdentity with owner := "other"},
+  {snapshotIdentity with sandbox := "other"},
+  {snapshotIdentity with operation := "other"},
+  {snapshotIdentity with epoch := 1#u64},
+  {snapshotIdentity with generation := 1#u64},
+  {snapshotIdentity with logical_action := "other"},
+  {snapshotIdentity with attempt := 1#u64},
+  {snapshotIdentity with resource := ⟨.Snapshot, "other"⟩},
+  {snapshotIdentity with resource := ⟨.Workspace, "snapshot"⟩}]
+
+end SandboxModel.Stage1Protocol.CurrentReceipt

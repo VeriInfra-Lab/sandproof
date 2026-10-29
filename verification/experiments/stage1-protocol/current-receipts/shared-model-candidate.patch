@@ -1,0 +1,308 @@
+--- /dev/null
++++ b/SandboxModel/Foundations/OutcomeModel.lean
+@@ -0,0 +1,20 @@
++import Aeneas
++
++namespace SandboxModel.Foundations
++
++inductive Outcome (E Failure Reason : Type) where
++  | observedSuccess : E → Outcome E Failure Reason
++  | definitiveFailure : Failure → Bool → Option E → Outcome E Failure Reason
++  | unknown : Reason → Option E → Outcome E Failure Reason
++
++def Outcome.retryHint {E F U : Type} (out : Outcome E F U) : Bool :=
++  match out with
++  | .definitiveFailure _ true none => true
++  | _ => false
++def Outcome.observation {E F U : Type} (out : Outcome E F U) : Option E :=
++  match out with
++  | .observedSuccess evidence => some evidence
++  | .definitiveFailure _ _ residue => residue
++  | .unknown _ last => last
++
++end SandboxModel.Foundations
+--- a/SandboxModel/Foundations/Evidence.lean
++++ b/SandboxModel/Foundations/Evidence.lean
+@@ -0,0 +1 @@
++import SandboxModel.Foundations.OutcomeModel
+@@ -5,5 +5,0 @@
+-
+-inductive Outcome (E Failure Reason : Type) where
+-  | observedSuccess : E → Outcome E Failure Reason
+-  | definitiveFailure : Failure → Bool → Option E → Outcome E Failure Reason
+-  | unknown : Reason → Option E → Outcome E Failure Reason
+@@ -17,10 +12,0 @@
+-
+-def Outcome.retryHint {E F U : Type} (out : Outcome E F U) : Bool :=
+-  match out with
+-  | .definitiveFailure _ true none => true
+-  | _ => false
+-def Outcome.observation {E F U : Type} (out : Outcome E F U) : Option E :=
+-  match out with
+-  | .observedSuccess evidence => some evidence
+-  | .definitiveFailure _ _ residue => residue
+-  | .unknown _ last => last
+--- /dev/null
++++ b/SandboxModel/Foundations/ReceiptModel.lean
+@@ -0,0 +1,131 @@
++import SandboxModel.Foundations.OutcomeModel
++import SandboxModel.Foundations.IdentifierModel
++import SandboxModel.Foundations.Model
++
++/-! Shared receipt vocabulary and independent decision specification.
++The extraction roots call the production methods. Their implementation
++correspondence is added only after inspecting the actual generated bodies;
++the model results below do not certify a physical observation or durable state.
++-/
++namespace SandboxModel.Foundations.Receipts
++
++inductive ResourceKind where
++  | sandbox | vm | workspace | snapshot | networkSlot
++  deriving DecidableEq
++
++structure ResourceBinding where
++  kind : ResourceKind
++  id : String
++  deriving DecidableEq
++
++-- All production fields are retained. Epoch/generation/attempt zero remain
++-- representable: this pure boundary does not invent a nonzero requirement.
++structure ActionBinding where
++  protocol : Nat
++  owner : String
++  sandbox : String
++  operation : String
++  epoch : Nat
++  generation : Nat
++  logicalAction : String
++  attempt : Nat
++  resource : ResourceBinding
++  deriving DecidableEq
++
++def ActionInputDomain (identity : ActionBinding) : Prop :=
++  opaqueValid identity.owner ∧ opaqueValid identity.sandbox ∧
++  opaqueValid identity.operation ∧ opaqueValid identity.logicalAction ∧
++  opaqueValid identity.resource.id ∧ identity.protocol ≤ 65535 ∧
++  identity.epoch ≤ maxCounter ∧ identity.generation ≤ maxCounter ∧
++  identity.attempt ≤ maxCounter
++
++inductive ReceiptError where
++  | invalidIdentifier
++  | unsupportedVersion : Nat → ReceiptError
++  | mismatchedIdentity
++  | mismatchedObservation
++  deriving DecidableEq
++
++def checkActionVersion (identity : ActionBinding) : Except ReceiptError Unit :=
++  if identity.protocol = 1 then .ok ()
++  else .error (.unsupportedVersion identity.protocol)
++
++-- Version checks precede full identity, which precedes the optional evidence
++-- resource query. Command parameters are not checked by this method; they are
++-- independently bound by the durable action owner and command validator.
++def checkReceipt {E F U : Type} (action receipt : ActionBinding)
++    (outcome : Outcome E F U) (resource : E → ResourceBinding) :
++    Except ReceiptError Unit :=
++  match checkActionVersion action with
++  | .error error => .error error
++  | .ok _ =>
++    match checkActionVersion receipt with
++    | .error error => .error error
++    | .ok _ =>
++      if receipt ≠ action then .error .mismatchedIdentity
++      else match outcome.observation with
++        | none => .ok ()
++        | some evidence =>
++          if resource evidence = action.resource then .ok ()
++          else .error .mismatchedObservation
++
++theorem action_version_model_success_iff (identity : ActionBinding) :
++    checkActionVersion identity = .ok () ↔ identity.protocol = 1 := by
++  simp [checkActionVersion]
++
++theorem receipt_model_unsupported_action_first {E F U : Type}
++    (action receipt : ActionBinding) (outcome : Outcome E F U)
++    (resource : E → ResourceBinding) (unsupported : action.protocol ≠ 1) :
++    checkReceipt action receipt outcome resource =
++      .error (.unsupportedVersion action.protocol) := by
++  simp [checkReceipt, checkActionVersion, unsupported]
++
++theorem receipt_model_unsupported_receipt_second {E F U : Type}
++    (action receipt : ActionBinding) (outcome : Outcome E F U)
++    (resource : E → ResourceBinding) (supported : action.protocol = 1)
++    (unsupported : receipt.protocol ≠ 1) :
++    checkReceipt action receipt outcome resource =
++      .error (.unsupportedVersion receipt.protocol) := by
++  simp [checkReceipt, checkActionVersion, supported, unsupported]
++
++theorem receipt_model_identity_before_observation {E F U : Type}
++    (action receipt : ActionBinding) (outcome : Outcome E F U)
++    (resource : E → ResourceBinding) (actionSupported : action.protocol = 1)
++    (receiptSupported : receipt.protocol = 1) (different : receipt ≠ action) :
++    checkReceipt action receipt outcome resource = .error .mismatchedIdentity := by
++  simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported, different]
++
++theorem receipt_model_success_iff {E F U : Type}
++    (action receipt : ActionBinding) (outcome : Outcome E F U)
++    (resource : E → ResourceBinding) :
++    checkReceipt action receipt outcome resource = .ok () ↔
++      action.protocol = 1 ∧ receipt.protocol = 1 ∧ receipt = action ∧
++        ∀ evidence, outcome.observation = some evidence → resource evidence = action.resource := by
++  by_cases actionSupported : action.protocol = 1
++  · by_cases receiptSupported : receipt.protocol = 1
++    · by_cases same : receipt = action
++      · cases observed : outcome.observation with
++        | none => simp [checkReceipt, checkActionVersion, actionSupported, same, observed]
++        | some evidence => simp [checkReceipt, checkActionVersion, actionSupported, same, observed]
++      · simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported, same]
++    · simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported]
++  · simp [checkReceipt, checkActionVersion, actionSupported]
++
++theorem receipt_model_unknown_observation_checked {E F U : Type}
++    (identity : ActionBinding) (reason : U) (evidence : E)
++    (resource : E → ResourceBinding) (supported : identity.protocol = 1) :
++    checkReceipt identity identity (.unknown reason (some evidence) : Outcome E F U) resource =
++      if resource evidence = identity.resource then .ok ()
++      else .error .mismatchedObservation := by
++  by_cases same : resource evidence = identity.resource
++  · simp [checkReceipt, checkActionVersion, supported, Outcome.observation, same]
++  · simp [checkReceipt, checkActionVersion, supported, Outcome.observation, same]
++
++theorem receipt_model_empty_observation_accepted {E F U : Type}
++    (identity : ActionBinding) (outcome : Outcome E F U)
++    (resource : E → ResourceBinding) (supported : identity.protocol = 1)
++    (empty : outcome.observation = none) :
++    checkReceipt identity identity outcome resource = .ok () := by
++  simp [checkReceipt, checkActionVersion, supported, empty]
++
++end SandboxModel.Foundations.Receipts
+--- a/SandboxModel/Foundations/Receipts.lean
++++ b/SandboxModel/Foundations/Receipts.lean
+@@ -0,0 +1 @@
++import SandboxModel.Foundations.ReceiptModel
+@@ -4,5 +4,0 @@
+-/-! Shared receipt vocabulary and independent decision specification.
+-The extraction roots call the production methods. Their implementation
+-correspondence is added only after inspecting the actual generated bodies;
+-the model results below do not certify a physical observation or durable state.
+--/
+@@ -10,119 +5,0 @@
+-
+-inductive ResourceKind where
+-  | sandbox | vm | workspace | networkSlot
+-  deriving DecidableEq
+-
+-structure ResourceBinding where
+-  kind : ResourceKind
+-  id : String
+-  deriving DecidableEq
+-
+--- All production fields are retained. Epoch/generation/attempt zero remain
+--- representable: this pure boundary does not invent a nonzero requirement.
+-structure ActionBinding where
+-  protocol : Nat
+-  owner : String
+-  sandbox : String
+-  operation : String
+-  epoch : Nat
+-  generation : Nat
+-  logicalAction : String
+-  attempt : Nat
+-  resource : ResourceBinding
+-  deriving DecidableEq
+-
+-def ActionInputDomain (identity : ActionBinding) : Prop :=
+-  opaqueValid identity.owner ∧ opaqueValid identity.sandbox ∧
+-  opaqueValid identity.operation ∧ opaqueValid identity.logicalAction ∧
+-  opaqueValid identity.resource.id ∧ identity.protocol ≤ 65535 ∧
+-  identity.epoch ≤ maxCounter ∧ identity.generation ≤ maxCounter ∧
+-  identity.attempt ≤ maxCounter
+-
+-inductive ReceiptError where
+-  | invalidIdentifier
+-  | unsupportedVersion : Nat → ReceiptError
+-  | mismatchedIdentity
+-  | mismatchedObservation
+-  deriving DecidableEq
+-
+-def checkActionVersion (identity : ActionBinding) : Except ReceiptError Unit :=
+-  if identity.protocol = 1 then .ok ()
+-  else .error (.unsupportedVersion identity.protocol)
+-
+--- Version checks precede full identity, which precedes the optional evidence
+--- resource query. Command parameters are not checked by this method; they are
+--- independently bound by the durable action owner and command validator.
+-def checkReceipt {E F U : Type} (action receipt : ActionBinding)
+-    (outcome : Outcome E F U) (resource : E → ResourceBinding) :
+-    Except ReceiptError Unit :=
+-  match checkActionVersion action with
+-  | .error error => .error error
+-  | .ok _ =>
+-    match checkActionVersion receipt with
+-    | .error error => .error error
+-    | .ok _ =>
+-      if receipt ≠ action then .error .mismatchedIdentity
+-      else match outcome.observation with
+-        | none => .ok ()
+-        | some evidence =>
+-          if resource evidence = action.resource then .ok ()
+-          else .error .mismatchedObservation
+-
+-theorem action_version_model_success_iff (identity : ActionBinding) :
+-    checkActionVersion identity = .ok () ↔ identity.protocol = 1 := by
+-  simp [checkActionVersion]
+-
+-theorem receipt_model_unsupported_action_first {E F U : Type}
+-    (action receipt : ActionBinding) (outcome : Outcome E F U)
+-    (resource : E → ResourceBinding) (unsupported : action.protocol ≠ 1) :
+-    checkReceipt action receipt outcome resource =
+-      .error (.unsupportedVersion action.protocol) := by
+-  simp [checkReceipt, checkActionVersion, unsupported]
+-
+-theorem receipt_model_unsupported_receipt_second {E F U : Type}
+-    (action receipt : ActionBinding) (outcome : Outcome E F U)
+-    (resource : E → ResourceBinding) (supported : action.protocol = 1)
+-    (unsupported : receipt.protocol ≠ 1) :
+-    checkReceipt action receipt outcome resource =
+-      .error (.unsupportedVersion receipt.protocol) := by
+-  simp [checkReceipt, checkActionVersion, supported, unsupported]
+-
+-theorem receipt_model_identity_before_observation {E F U : Type}
+-    (action receipt : ActionBinding) (outcome : Outcome E F U)
+-    (resource : E → ResourceBinding) (actionSupported : action.protocol = 1)
+-    (receiptSupported : receipt.protocol = 1) (different : receipt ≠ action) :
+-    checkReceipt action receipt outcome resource = .error .mismatchedIdentity := by
+-  simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported, different]
+-
+-theorem receipt_model_success_iff {E F U : Type}
+-    (action receipt : ActionBinding) (outcome : Outcome E F U)
+-    (resource : E → ResourceBinding) :
+-    checkReceipt action receipt outcome resource = .ok () ↔
+-      action.protocol = 1 ∧ receipt.protocol = 1 ∧ receipt = action ∧
+-        ∀ evidence, outcome.observation = some evidence → resource evidence = action.resource := by
+-  by_cases actionSupported : action.protocol = 1
+-  · by_cases receiptSupported : receipt.protocol = 1
+-    · by_cases same : receipt = action
+-      · cases observed : outcome.observation with
+-        | none => simp [checkReceipt, checkActionVersion, actionSupported, same, observed]
+-        | some evidence => simp [checkReceipt, checkActionVersion, actionSupported, same, observed]
+-      · simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported, same]
+-    · simp [checkReceipt, checkActionVersion, actionSupported, receiptSupported]
+-  · simp [checkReceipt, checkActionVersion, actionSupported]
+-
+-theorem receipt_model_unknown_observation_checked {E F U : Type}
+-    (identity : ActionBinding) (reason : U) (evidence : E)
+-    (resource : E → ResourceBinding) (supported : identity.protocol = 1) :
+-    checkReceipt identity identity (.unknown reason (some evidence) : Outcome E F U) resource =
+-      if resource evidence = identity.resource then .ok ()
+-      else .error .mismatchedObservation := by
+-  by_cases same : resource evidence = identity.resource
+-  · simp [checkReceipt, checkActionVersion, supported, Outcome.observation, same]
+-  · simp [checkReceipt, checkActionVersion, supported, Outcome.observation, same]
+-
+-theorem receipt_model_empty_observation_accepted {E F U : Type}
+-    (identity : ActionBinding) (outcome : Outcome E F U)
+-    (resource : E → ResourceBinding) (supported : identity.protocol = 1)
+-    (empty : outcome.observation = none) :
+-    checkReceipt identity identity outcome resource = .ok () := by
+-  simp [checkReceipt, checkActionVersion, supported, empty]

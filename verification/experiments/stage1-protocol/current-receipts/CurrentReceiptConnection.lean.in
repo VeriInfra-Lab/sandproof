@@ -1,0 +1,348 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptDefinitions
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.CurrentReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts (ResourceKind ResourceBinding ActionBinding
+  ActionInputDomain ReceiptError checkActionVersion checkReceipt receipt_model_success_iff)
+noncomputable section
+open scoped Classical
+
+theorem observation_refines {E : Type} (out : sandproof_protocol.WorkOutcome E) :
+    sandproof_protocol.WorkOutcome.observation out = .ok (outcomeView out).observation := by
+  cases out <;> simp [sandproof_protocol.WorkOutcome.observation, outcomeView, Outcome.observation,
+    core.option.Option.as_ref]
+
+
+@[simp] theorem action_view_protocol (identity : sandproof_protocol.ActionIdentity) :
+    (actionView identity).protocol = identity.protocol_version.val := rfl
+
+@[simp] theorem action_view_resource (identity : sandproof_protocol.ActionIdentity) :
+    (actionView identity).resource = resourceView identity.resource := rfl
+
+theorem resource_kind_equality_refines (left right : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq left right =
+      .ok (decide (kindView left = kindView right)) := by
+  cases left <;> cases right <;>
+    simp [sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq, kindView,
+      sandproof_protocol.ResourceKind.read_discriminant]
+
+theorem resource_equality_refines (left right : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq left right =
+      .ok (decide (resourceView left = resourceView right)) := by
+  simp only [sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    resource_kind_equality_refines,
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+  by_cases kindSame : kindView left.kind = kindView right.kind <;>
+    by_cases idSame : left.id = right.id <;>
+    simp [resourceView, ResourceBinding.mk.injEq, kindSame, idSame]
+
+theorem action_equality_refines (left right : sandproof_protocol.ActionIdentity) :
+    sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq left right =
+      .ok (decide (actionView left = actionView right)) := by
+  have protocolEq : left.protocol_version.val = right.protocol_version.val ↔
+      left.protocol_version = right.protocol_version :=
+    ⟨UScalar.eq_of_val_eq, fun h => congrArg UScalar.val h⟩
+  have epochEq : left.epoch.val = right.epoch.val ↔ left.epoch = right.epoch :=
+    ⟨UScalar.eq_of_val_eq, fun h => congrArg UScalar.val h⟩
+  have generationEq : left.generation.val = right.generation.val ↔
+      left.generation = right.generation :=
+    ⟨UScalar.eq_of_val_eq, fun h => congrArg UScalar.val h⟩
+  have attemptEq : left.attempt.val = right.attempt.val ↔ left.attempt = right.attempt :=
+    ⟨UScalar.eq_of_val_eq, fun h => congrArg UScalar.val h⟩
+  simp only [sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, resource_equality_refines,
+    actionView, ActionBinding.mk.injEq, protocolEq, epochEq, generationEq, attemptEq]
+  split_ifs <;> simp_all
+  by_cases ownerEq : left.owner = right.owner <;>
+    by_cases sandboxEq : left.sandbox = right.sandbox <;>
+    by_cases operationEq : left.operation = right.operation <;>
+    by_cases logicalEq : left.logical_action = right.logical_action <;> simp_all
+
+theorem action_version_refines (identity : sandproof_protocol.ActionIdentity) :
+    checkedResultView (receipts.action_version identity) =
+      .ok (checkActionVersion (actionView identity)) := by
+  have protocolEq : identity.protocol_version.val = 1 ↔ identity.protocol_version = 1#u16 :=
+    ⟨fun h => UScalar.eq_of_val_eq (by simpa using h), fun h => by simp [h]⟩
+  by_cases supported : identity.protocol_version = 1#u16
+  all_goals simp [checkedResultView, receipts.action_version,
+    sandproof_protocol.ActionIdentity.validate_version,
+    sandproof_protocol.PROTOCOL_VERSION, checkActionVersion, actionView,
+    protocolEq, receiptResultView, supported]
+
+-- This is a caller-owned dictionary obligation, not an external assumption
+-- that an observation is true. The production HostObservation provider only
+-- reads its original resource field; its physical validity remains V6.
+theorem receipt_callback_refines {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (get : E → sandproof_protocol.ResourceRef) (exactGetter : ResourceGetterExact dictionary get)
+    (action : sandproof_protocol.WorkAction C) (evidence : E) :
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once
+      dictionary action evidence =
+      .ok (decide (resourceView (get evidence) ≠ resourceView action.identity.resource)) := by
+  simp [sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once,
+    exactGetter evidence, core.cmp.impls.PartialEqShared.ne,
+    core.cmp.PartialEq.ne.default, resource_equality_refines]
+
+theorem receipt_validate_refines {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (get : E → sandproof_protocol.ResourceRef) (exactGetter : ResourceGetterExact dictionary get)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C) :
+    checkedResultView (receipts.receipt_validate dictionary receipt action) =
+      .ok (checkReceipt (actionView action.identity) (actionView receipt.identity)
+        (outcomeView receipt.outcome) (fun evidence => resourceView (get evidence))) := by
+  have actionProtocol : action.identity.protocol_version.val = 1 ↔
+      action.identity.protocol_version = 1#u16 :=
+    ⟨fun h => UScalar.eq_of_val_eq (by simpa using h), fun h => by simp [h]⟩
+  have receiptProtocol : receipt.identity.protocol_version.val = 1 ↔
+      receipt.identity.protocol_version = 1#u16 :=
+    ⟨fun h => UScalar.eq_of_val_eq (by simpa using h), fun h => by simp [h]⟩
+  by_cases actionSupported : action.identity.protocol_version = 1#u16
+  · by_cases receiptSupported : receipt.identity.protocol_version = 1#u16
+    · by_cases same : actionView receipt.identity = actionView action.identity
+      · cases observed : (outcomeView receipt.outcome).observation with
+        | none =>
+          simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+            sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+            core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+            action_equality_refines, observation_refines,
+            core.option.Option.is_some_and, checkedResultView, receiptResultView,
+            checkReceipt, checkActionVersion,
+            actionSupported, receiptSupported, same, observed]
+        | some evidence =>
+          by_cases resourceSame : resourceView (get evidence) = resourceView action.identity.resource
+          all_goals simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+            sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+            core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+            action_equality_refines, observation_refines,
+            core.option.Option.is_some_and,
+            receipt_callback_refines dictionary get exactGetter,
+            checkedResultView, receiptResultView, checkReceipt, checkActionVersion,
+            actionSupported, receiptSupported, same, observed, resourceSame]
+      · simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+          sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+          core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, action_equality_refines,
+          checkedResultView, receiptResultView, checkReceipt, checkActionVersion,
+          actionSupported, receiptSupported, same]
+    · simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+        sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        checkedResultView, receiptResultView, checkReceipt, checkActionVersion,
+        receiptProtocol, actionSupported, receiptSupported]
+  · simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+      sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      checkedResultView, receiptResultView, checkReceipt, checkActionVersion,
+      actionProtocol, actionSupported]
+
+theorem resource_kind_view_injective : Function.Injective kindView := by
+  intro left right same
+  cases left <;> cases right <;> simp_all [kindView]
+
+theorem resource_view_injective : Function.Injective resourceView := by
+  intro left right same
+  cases left
+  cases right
+  simp only [resourceView, ResourceBinding.mk.injEq] at same
+  have kindSame := resource_kind_view_injective same.1
+  simp_all
+
+theorem action_view_injective : Function.Injective actionView := by
+  intro left right same
+  cases left
+  cases right
+  simp only [actionView, ActionBinding.mk.injEq] at same
+  rcases same with ⟨protocol, owner, sandbox, operation, epoch, generation, logical, attempt, resource⟩
+  have protocolSame := UScalar.eq_of_val_eq protocol
+  have epochSame := UScalar.eq_of_val_eq epoch
+  have generationSame := UScalar.eq_of_val_eq generation
+  have attemptSame := UScalar.eq_of_val_eq attempt
+  have resourceSame := resource_view_injective resource
+  simp_all
+
+theorem action_machine_fields_bounded (identity : sandproof_protocol.ActionIdentity) :
+    (actionView identity).protocol ≤ 65535 ∧ (actionView identity).epoch ≤ maxCounter ∧
+      (actionView identity).generation ≤ maxCounter ∧ (actionView identity).attempt ≤ maxCounter := by
+  simp only [actionView, maxCounter]
+  scalar_tac
+
+theorem action_input_domain_iff (identity : sandproof_protocol.ActionIdentity) :
+    ActionInputDomain (actionView identity) ↔
+      opaqueValid identity.owner ∧ opaqueValid identity.sandbox ∧
+      opaqueValid identity.operation ∧ opaqueValid identity.logical_action ∧
+      opaqueValid identity.resource.id := by
+  have bounded := action_machine_fields_bounded identity
+  simp only [ActionInputDomain, actionView, resourceView] at bounded ⊢
+  tauto
+
+theorem receipt_unsupported_action_first {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C)
+    (unsupported : action.identity.protocol_version ≠ 1#u16) :
+    receipts.receipt_validate dictionary receipt action =
+      .ok (.Err (.UnsupportedVersion action.identity.protocol_version)) := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, unsupported]
+
+theorem receipt_unsupported_receipt_second {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C)
+    (supported : action.identity.protocol_version = 1#u16)
+    (unsupported : receipt.identity.protocol_version ≠ 1#u16) :
+    receipts.receipt_validate dictionary receipt action =
+      .ok (.Err (.UnsupportedVersion receipt.identity.protocol_version)) := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    supported, unsupported]
+
+theorem receipt_identity_before_observation {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C)
+    (actionSupported : action.identity.protocol_version = 1#u16)
+    (receiptSupported : receipt.identity.protocol_version = 1#u16)
+    (different : actionView receipt.identity ≠ actionView action.identity) :
+    receipts.receipt_validate dictionary receipt action = .ok (.Err .MismatchedIdentity) := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, action_equality_refines,
+    actionSupported, receiptSupported, different]
+
+theorem receipt_no_observation_accepted {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C)
+    (actionSupported : action.identity.protocol_version = 1#u16)
+    (receiptSupported : receipt.identity.protocol_version = 1#u16)
+    (same : actionView receipt.identity = actionView action.identity)
+    (empty : (outcomeView receipt.outcome).observation = none) :
+    receipts.receipt_validate dictionary receipt action = .ok (.Ok ()) := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, action_equality_refines,
+    observation_refines, core.option.Option.is_some_and,
+    actionSupported, receiptSupported, same, empty]
+
+theorem receipt_success_iff {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (get : E → sandproof_protocol.ResourceRef) (exactGetter : ResourceGetterExact dictionary get)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C) :
+    receipts.receipt_validate dictionary receipt action = .ok (.Ok ()) ↔
+      (actionView action.identity).protocol = 1 ∧ (actionView receipt.identity).protocol = 1 ∧
+      actionView receipt.identity = actionView action.identity ∧
+      ∀ evidence, (outcomeView receipt.outcome).observation = some evidence →
+        resourceView (get evidence) = (actionView action.identity).resource := by
+  constructor
+  · intro accepted
+    have correspondence := receipt_validate_refines dictionary get exactGetter receipt action
+    rw [accepted] at correspondence
+    have modelAccepted : checkReceipt (actionView action.identity) (actionView receipt.identity)
+        (outcomeView receipt.outcome) (fun evidence => resourceView (get evidence)) = .ok () := by
+      simpa [checkedResultView, receiptResultView] using correspondence.symm
+    exact (receipt_model_success_iff _ _ _ _).mp modelAccepted
+  · rintro ⟨actionProtocol, receiptProtocol, same, observations⟩
+    have actionSupported : action.identity.protocol_version = 1#u16 :=
+      UScalar.eq_of_val_eq (by simpa using actionProtocol)
+    have receiptSupported : receipt.identity.protocol_version = 1#u16 :=
+      UScalar.eq_of_val_eq (by simpa using receiptProtocol)
+    cases observed : (outcomeView receipt.outcome).observation with
+    | none =>
+      exact receipt_no_observation_accepted dictionary receipt action
+        actionSupported receiptSupported same observed
+    | some evidence =>
+      have matched := observations evidence observed
+      simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+        sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        action_equality_refines, observation_refines, core.option.Option.is_some_and,
+        receipt_callback_refines dictionary get exactGetter,
+        actionSupported, receiptSupported, same, observed, matched]
+
+-- A valid zero-attempt action is accepted, not an empty/all-rejecting interface.
+-- The numerical epoch and generation are also allowed to be zero at this pure
+-- boundary. Downstream reachable-state invariants are separate obligations.
+theorem zero_attempt_receipt_realizable :
+    receipts.receipt_validate (⟨fun (_ : Unit) => .ok zeroAttemptIdentity.resource⟩)
+      (⟨zeroAttemptIdentity, .Unknown .WorkerRestarted none⟩ : sandproof_protocol.WorkReceipt Unit)
+      (⟨zeroAttemptIdentity, ()⟩ : sandproof_protocol.WorkAction Unit) = .ok (.Ok ()) := by
+  apply receipt_no_observation_accepted <;> rfl
+
+theorem zero_attempt_identity_in_domain :
+    ActionInputDomain (actionView zeroAttemptIdentity) := by
+  unfold ActionInputDomain
+  exact of_decide_eq_true rfl
+
+theorem receipt_callback_failure_propagates {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (action : sandproof_protocol.WorkAction C) (evidence : E) (error : Error)
+    (failed : dictionary.resource evidence = .fail error) :
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once
+      dictionary action evidence = .fail error := by
+  simp [sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once,
+    failed]
+
+theorem receipt_observation_failure_propagates {E C : Type}
+    (dictionary : sandproof_protocol.ResourceEvidence E)
+    (receipt : sandproof_protocol.WorkReceipt E) (action : sandproof_protocol.WorkAction C)
+    (actionSupported : action.identity.protocol_version = 1#u16)
+    (receiptSupported : receipt.identity.protocol_version = 1#u16)
+    (same : actionView receipt.identity = actionView action.identity)
+    (evidence : E) (observed : (outcomeView receipt.outcome).observation = some evidence)
+    (error : Error) (failed : dictionary.resource evidence = .fail error) :
+    receipts.receipt_validate dictionary receipt action = .fail error := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, action_equality_refines,
+    observation_refines, core.option.Option.is_some_and,
+    receipt_callback_failure_propagates dictionary action evidence error failed,
+    actionSupported, receiptSupported, same, observed]
+
+theorem full_receipt_contract (E C : Type) :
+    FullReceiptContract (E := E) (C := C) receipts.receipt_validate :=
+  receipt_validate_refines
+
+end
+end SandboxModel.Stage1Protocol.CurrentReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.observation_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_view_protocol
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_view_resource
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.resource_kind_equality_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.resource_equality_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_equality_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_version_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_validate_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.resource_kind_view_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.resource_view_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_view_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_machine_fields_bounded
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.action_input_domain_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_unsupported_action_first
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_unsupported_receipt_second
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_identity_before_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_no_observation_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.zero_attempt_receipt_realizable
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.zero_attempt_identity_in_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_callback_failure_propagates
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.receipt_observation_failure_propagates
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.full_receipt_contract

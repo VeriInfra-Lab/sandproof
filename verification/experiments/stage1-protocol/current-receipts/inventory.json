@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "source_capture_commit": "5a571e5a720dd5488423d8bf4b490ebc078bd369",
+  "public_candidate_parent": "425172a2398fc75759b56b06a3c1cda16e2217be",
+  "selected_source_files_identical_across_bases": true,
+  "production_modified": false,
+  "full_v0": false,
+  "full_v3": false,
+  "public_formal_registered": false,
+  "native_run": false,
+  "shared_model_candidate_adopted": false,
+  "one_canonical_shared_protocol_model": true,
+  "unchanged_specification": "SandboxModel.Foundations.Receipts.checkReceipt",
+  "shared_specification_change": "add snapshot resource kind; factor original pure declarations out of generated-source adapter imports",
+  "original_rust_roots": [
+    "sandproof_foundations_extract::receipts::action_version",
+    "sandproof_foundations_extract::receipts::receipt_validate"
+  ],
+  "production_inputs": {
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "verification/extract-foundations/src/receipts.rs": "747664dbc77462d495550222bc24e21ac66edac8c2b46fe969430fd62a01717a",
+    "verification/extract-foundations/Cargo.toml": "925c39d821702c5f18fb5c1ed0b8631bc029a936de390dd3c5a16862fcf29b46",
+    "verification/extract-foundations/Cargo.lock": "1b9a16ed6d61e968b0c2939c83a8558b252ce7182618df561d04b64395be7e95",
+    "SandboxModel/Foundations/Receipts.lean": "51630ae26c98e803d08eab730cb6684e120b1da5c95537d668c5c332c37213db",
+    "SandboxModel/Foundations/Evidence.lean": "e804223f650c8171778eb5e69390a01b2fda3e131c4b24785caee9a855e46471",
+    "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+    "SandboxModel/Foundations/IdentifierModel.lean": "1e40b772c61a27026285f68bd54eff1243f995634a091e13e743202357e89bef",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "providers": {
+    "CurrentReceiptWrongOwner.lean.in": {
+      "sha256": "31f63f58018056dad58c3392bd89070e40e8117bb1fc9a89d7571f3391aa467c"
+    },
+    "CurrentReceiptDefinitions.lean.in": {
+      "sha256": "3763864ad3182db4907019d1d79182633cf1688649fa9639295c8d2eaa4b1217"
+    },
+    "CurrentReceiptValues.lean.in": {
+      "sha256": "c8ca875ebdfd5dfdee4a7ab370bbdfe1fa234c426c95356d9e49aaf428a31e09"
+    },
+    "shared-model-candidate.patch": {
+      "sha256": "09453bcaf6989ce9ba8663068748f1d42cab5a10444a96cb6179796ff5484e90"
+    },
+    "CurrentReceiptConnection.lean.in": {
+      "sha256": "a4c15119a6d840d03475a524ce84fc9157d6b4423230f6722e5591729bf08a4b"
+    },
+    "FunsExternal.lean.in": {
+      "sha256": "5273712fe8fe0326eb452e2bfd27600daf0c28c90f8958393e8d4c09b61c43fc"
+    },
+    "CurrentReceiptWitnesses.lean.in": {
+      "sha256": "03269bc6938959839799cdd098a86481abb0a0da1909f7b60a28c4f32f789420"
+    }
+  },
+  "correct_transparent_functions": 14,
+  "wrong_transparent_functions": 10,
+  "registered_external_symbols": [
+    "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+    "core.option.Option.as_ref",
+    "core.option.Option.is_some_and"
+  ],
+  "wrong_mutation": {
+    "path": "sandbox-protocol/src/lib.rs",
+    "old": "if self.identity != action.identity {",
+    "new": "if self.identity.owner != action.identity.owner {",
+    "original_sha256": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "wrong_sha256": "d69d93776d2b3106feb52acdd346a1ff625cb575dc3d01c4623e8d9a5e781ed4"
+  },
+  "probe_loop_candidate_viable": false,
+  "proof_audits": 27,
+  "wrong_audits": 3,
+  "shared_patch_format": "zero-context unified diff; requires git apply --unidiff-zero after exact input review"
+}

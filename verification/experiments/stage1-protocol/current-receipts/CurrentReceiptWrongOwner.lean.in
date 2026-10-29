@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptDefinitions
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptValues
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.CurrentReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+noncomputable section
+
+theorem wrong_owner_accepts_different_resource_kind :
+    receipts.receipt_validate snapshotDictionary workspaceReceipt snapshotAction = .ok (.Ok ()) := by
+  simp [receipts.receipt_validate, sandproof_protocol.WorkReceipt.validate_for,
+    sandproof_protocol.ActionIdentity.validate_version, sandproof_protocol.PROTOCOL_VERSION,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.WorkOutcome.observation,
+    sandproof_protocol.WorkReceipt.validate_for.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEBool.call_once,
+    core.option.Option.is_some_and,
+    core.cmp.impls.PartialEqShared.ne,
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+    sandproof_protocol.ResourceKind.read_discriminant,
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    snapshotDictionary, snapshotGet, snapshotReceipt, snapshotAction, workspaceReceipt,
+    snapshotIdentity, zeroAttemptIdentity]
+
+theorem shared_spec_rejects_snapshot_workspace_confusion :
+    checkReceipt (actionView snapshotAction.identity) (actionView workspaceReceipt.identity)
+      (outcomeView workspaceReceipt.outcome) (fun evidence => resourceView (snapshotGet evidence)) =
+        .error .mismatchedIdentity := by
+  simp [checkReceipt, checkActionVersion, actionView, resourceView, kindView,
+    snapshotAction, workspaceReceipt, snapshotReceipt, snapshotIdentity, zeroAttemptIdentity]
+
+theorem wrong_owner_refutes_full_receipt_contract :
+    ¬ FullReceiptContract (E := Unit) (C := Unit) receipts.receipt_validate := by
+  intro contract
+  have exactGetter : ResourceGetterExact snapshotDictionary snapshotGet := by
+    intro value
+    cases value
+    rfl
+  have checked := contract snapshotDictionary snapshotGet exactGetter workspaceReceipt snapshotAction
+  rw [wrong_owner_accepts_different_resource_kind] at checked
+  simp [checkedResultView, receiptResultView,
+    shared_spec_rejects_snapshot_workspace_confusion] at checked
+
+end
+end SandboxModel.Stage1Protocol.CurrentReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.wrong_owner_accepts_different_resource_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.shared_spec_rejects_snapshot_workspace_confusion
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.wrong_owner_refutes_full_receipt_contract

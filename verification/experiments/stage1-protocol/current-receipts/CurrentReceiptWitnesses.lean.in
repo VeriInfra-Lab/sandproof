@@ -1,0 +1,46 @@
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptConnection
+import SandboxModel.Lifecycle.Protocol.CurrentReceiptValues
+
+open Aeneas Aeneas.Std SandproofReceiptRust
+namespace SandboxModel.Stage1Protocol.CurrentReceipt
+open SandboxModel.Foundations
+open SandboxModel.Foundations.Receipts
+noncomputable section
+
+theorem normal_snapshot_observation :
+    receipts.receipt_validate snapshotDictionary snapshotReceipt snapshotAction = .ok (.Ok ()) := by
+  apply (receipt_success_iff snapshotDictionary snapshotGet (by intro value; cases value; rfl) _ _).mpr
+  simp [snapshotReceipt, snapshotAction, snapshotIdentity, zeroAttemptIdentity,
+    actionView, outcomeView, Outcome.observation, snapshotGet]
+
+theorem all_identity_fields_precede_observation :
+    ∀ identity ∈ changedIdentities,
+      receipts.receipt_validate failingDictionary {snapshotReceipt with identity := identity}
+        snapshotAction = .ok (.Err .MismatchedIdentity) := by
+  intro identity member
+  simp only [changedIdentities, List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals apply receipt_identity_before_observation <;>
+    simp [snapshotAction, snapshotIdentity, zeroAttemptIdentity,
+      actionView, resourceView, kindView]
+
+theorem version_error_priority :
+    receipts.receipt_validate failingDictionary
+      {workspaceReceipt with identity := {workspaceReceipt.identity with protocol_version := 3#u16}}
+      {snapshotAction with identity := {snapshotIdentity with protocol_version := 2#u16}} =
+        .ok (.Err (.UnsupportedVersion 2#u16)) ∧
+    receipts.receipt_validate failingDictionary
+      {workspaceReceipt with identity := {workspaceReceipt.identity with protocol_version := 3#u16}}
+      snapshotAction = .ok (.Err (.UnsupportedVersion 3#u16)) := by
+  constructor
+  · apply receipt_unsupported_action_first
+    decide
+  · apply receipt_unsupported_receipt_second
+    · rfl
+    · decide
+
+end
+end SandboxModel.Stage1Protocol.CurrentReceipt
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.normal_snapshot_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.all_identity_fields_precede_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.CurrentReceipt.version_error_priority
