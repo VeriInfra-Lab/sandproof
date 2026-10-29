@@ -90,7 +90,7 @@ caller environment; no correct-namespace program theorem is imported. -/
 theorem empty_snapshot_query (key : sandbox_controller_core.ids.SnapshotId) :
     sandbox_controller_core.store.Store.get
       sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
-      (emptyStore _ _) key = .ok none := by
+      (emptyStore _ sandbox_controller_core.model.Snapshot) key = .ok none := by
   let store : SandproofFoundationsRust.sandbox_controller_core.store.Store U64
       sandbox_controller_core.model.Snapshot := ⟨alloc.vec.Vec.new _⟩
   have lawful : TableLawfulEq sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId := by
@@ -122,11 +122,11 @@ theorem same_property_rejects :
       (.Err .PlanMismatch) := by
   intro claimed
   have rejected := claimed world row plan input (by simp [targetMatches, plan, input])
-  have impossible : (Result.ok (core.result.Result.Err sandbox_controller_core.worker.WorkerReject.ResourceNotFound) :
-      Result (core.result.Result sandbox_controller_core.worker.WorkerDecision sandbox_controller_core.worker.WorkerReject)) =
-        .ok (.Err .PlanMismatch) := by
-    simpa [targetRun, input, actual_wrong_reaches_later_error] using rejected
-  cases impossible
+  change sandbox_controller_core.worker.late_capture.commit world row plan
+    (.CommitSnapshot 1#u64 3#u64 4#u64 6#u64 ⟨7#u64⟩) = .ok (.Err .PlanMismatch) at rejected
+  rw [actual_wrong_reaches_later_error] at rejected
+  simp only [Result.ok.injEq] at rejected
+  cases rejected
 
 end SandboxModel.Lifecycle.CaptureHandoffCaller.IgnoreTarget
 
