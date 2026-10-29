@@ -1,5 +1,6 @@
 use super::{CaptureCommit, CaptureHandoff, RestoreEligibility};
 use crate::*;
+mod caller_identity;
 
 const SID: SandboxId = SandboxId(10);
 const OWNER: TenantId = TenantId(1);

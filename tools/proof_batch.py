@@ -19,7 +19,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')
+           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -29,6 +29,7 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/callback-state/DoubleRecord.lean',
     'verification/experiments/bounded-writer/negative/Counterexample.lean',
     'verification/experiments/btree-set-binding/model/InvertFlag.lean',
+    'verification/experiments/capture-handoff/model/IgnoreTarget.lean',
     *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
       ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
        'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))
@@ -169,15 +170,23 @@ def native_dependencies(cache):
                 runtime=seal.get('runtime'),commands=commands)
 
 
-def evidence_files(directory, include_sources=False):
+def evidence_files(directory, include_sources=False, *, capture_caller=False):
     result = {}
     for parent, dirs, files in os.walk(directory):
-        dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]
+        if capture_caller:
+            # wrong-target is actual proof evidence, not a Cargo build tree.
+            dirs[:] = [n for n in dirs if not (
+                n in ('target', 'extract-target', 'formal-target', '.git', '.lake', '.tools', 'node_modules')
+                or n.startswith(('target-', 'cargo-target')))]
+        else:
+            dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]
         for name in files:
             path = Path(parent)/name
             suffixes=('.log','.json','.jsonl','.llbc','.lean','.sha256')
             if include_sources:
                 suffixes += ('.rs','.toml','.lock','.patch','.txt','.py','.sh','.gz','.tar')
+            if capture_caller:
+                suffixes += ('.stdout', '.stderr')
             if path.is_symlink() or path.suffix not in suffixes:
                 continue
             result[str(path.resolve())] = sha(path)
@@ -275,9 +284,9 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','stage1-protocol'),capture_caller=name=='capture-caller'))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','stage1-protocol'),capture_caller=name=='capture-caller'))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:

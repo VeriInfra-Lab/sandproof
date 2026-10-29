@@ -31,7 +31,7 @@ def load(name, path):
     return module
 
 
-def runtime():
+def runtime(*, temporary_parent=None):
     result = {}
     for name, arguments in [('rustc', ['-vV']), ('cargo', ['-V']),
                             ('rustfmt', ['--version']), ('clippy-driver', ['--version']),
@@ -53,6 +53,8 @@ def runtime():
     result['platform'] = sys.platform
     result['uid'] = os.getuid()
     result['gid'] = os.getgid()
+    if temporary_parent is not None:
+        result['temporary_parent'] = temporary_parent_identity(temporary_parent)
     cargo_home=Path(os.environ.get('CARGO_HOME',str(Path.home()/'.cargo')))
     result['registry']=tree_digest(cargo_home/'registry/src')
     result['cargo_config']={str(p):sha(p) for p in
@@ -88,6 +90,31 @@ def trusted_checkout(root):
             raise ValueError('untrusted checkout ancestry; prepare a private checkout with umask 077: '+str(path))
 
 
+
+def temporary_parent_identity(parent):
+    info = parent.lstat()
+    return dict(path=str(parent), device=info.st_dev, inode=info.st_ino,
+                uid=info.st_uid, gid=info.st_gid, mode=oct(info.st_mode & 0o7777))
+
+
+def private_temporary_root():
+    """Keep the configured filesystem and the original trusted-parent policy."""
+    configured = os.environ.get('TMPDIR')
+    parent = Path('/tmp') if configured is None else Path(configured)
+    if configured == '' or not parent.is_absolute() or '..' in parent.parts:
+        raise ValueError('native temporary parent must be an absolute nonempty path')
+    for path in (parent, *parent.parents):
+        info = path.lstat()
+        writes_ok = not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.getuid()) or not writes_ok):
+            raise ValueError('untrusted native temporary ancestry: ' + str(path))
+    if parent == Path('/tmp'):
+        info = parent.lstat()
+        if info.st_uid != 0 or not info.st_mode & stat.S_ISVTX:
+            raise ValueError('native fixture requires the normal root-owned sticky /tmp')
+    return Path(tempfile.mkdtemp(prefix='sandproof-native-', dir=parent))
+
+
 def run_suite(output, *, scope='all'):
     check_native_scope(scope)
     output.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -100,20 +127,15 @@ def run_locked_suite(output, *, scope='all'):
     trusted_checkout(ROOT)
     os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
-    # A permissive caller TMPDIR would cause genuine protected-file rejection.
-    # Use a private child of Linux's root-owned sticky /tmp; no shared modes or
-    # production checks are changed. Keep its identity in the private evidence.
-    system_tmp=Path('/tmp');info=system_tmp.lstat()
-    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
-            or not info.st_mode & stat.S_ISVTX):
-        raise ValueError('native fixture requires the normal root-owned sticky /tmp')
-    private_tmp=Path(tempfile.mkdtemp(prefix='sandproof-native-',dir=system_tmp))
+    # A private child keeps protected-file tests strict while retaining the
+    # operator's configured filesystem (the CoW cases require qualified XFS).
+    private_tmp = private_temporary_root()
     os.environ['TMPDIR']=str(private_tmp);tempfile.tempdir=None
-    write_json(output/'temporary-root.json',dict(path=str(private_tmp),uid=private_tmp.stat().st_uid,
-                                               mode=oct(private_tmp.stat().st_mode&0o777)))
+    write_json(output/'temporary-root.json',dict(path=str(private_tmp),parent=str(private_tmp.parent),
+        uid=private_tmp.stat().st_uid,mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
-    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
                    contracts=contract_inputs(ROOT),source_archives=source_archive_inputs())
     write_json(output / 'runtime.json', initial['runtime'])
     started = time.monotonic()
@@ -134,6 +156,9 @@ def run_locked_suite(output, *, scope='all'):
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
     if scope == 'stage1-protocol':
         run_stage1_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'capture-caller':
+        run_capture_caller_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # These are the exact commands previously embedded in proof shell entries.
     # Identical commands/inputs execute once even when several modules ask.
@@ -170,6 +195,7 @@ def run_locked_suite(output, *, scope='all'):
         call(['verification/experiments/protected-directory/test_checks.py'])
         call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
     native_case('protected-directory',ROOT,target,protected_directory_native)
+    run_capture_caller_native(work)
     run_stage1_native(work)
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
@@ -214,6 +240,14 @@ def run_locked_suite(output, *, scope='all'):
     return publish_suite(output, work, initial, started, scope=scope, builds=builds)
 
 
+def run_capture_caller_native(work, *, scope='all'):
+    target = work / 'capture-caller'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_capture_caller_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('capture-caller', ROOT, target, original_component, scope=scope)
+
+
 def run_stage1_native(work, *, scope='all'):
     target = work / 'stage1-protocol'
     def retained():
@@ -228,7 +262,7 @@ def run_stage1_native(work, *, scope='all'):
 
 def publish_suite(output, work, initial, started, *, scope='all', builds=None):
     check_native_scope(scope)
-    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
             contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
     trusted_checkout(ROOT)
@@ -279,7 +313,7 @@ def main(argv=None):
     run.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol', *registered.native_labels()])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','stage1-protocol', *registered.native_labels()])
     req.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
