@@ -7,13 +7,16 @@ not evidence that a bundle exists, was durably committed or belongs to a caller.
 -/
 namespace SandboxModel.Lifecycle.CaptureHandoffCaller
 open Aeneas Aeneas.Std CaptureCallerRust
+open CaptureCallerRust.sandbox_controller_core
 open CaptureCallerRust.sandbox_controller_core.capture
 
 theorem caller_observation_success_iff (before after : CaptureHandoff) :
     CaptureHandoff.observe_bundle before = .ok (some after) ↔
       before.capture_work = true ∧ before.unload_source = false ∧
       before.commit ≠ .Registered ∧ before.eligibility ≠ .Recoverable ∧
-      after = { before with commit := .Registered, unload_source := true,
+      after = { before with
+        commit := .Registered
+        unload_source := true
         eligibility := match before.eligibility with
           | .Capturing => .Recoverable
           | eligibility => eligibility } := by
@@ -34,7 +37,9 @@ theorem caller_observation_success_preconditions (before after : CaptureHandoff)
 
 theorem caller_observation_success_output (before after : CaptureHandoff)
     (observed : CaptureHandoff.observe_bundle before = .ok (some after)) :
-    after = { before with commit := .Registered, unload_source := true,
+    after = { before with
+      commit := .Registered
+      unload_source := true
       eligibility := match before.eligibility with
         | .Capturing => .Recoverable
         | eligibility => eligibility } := by

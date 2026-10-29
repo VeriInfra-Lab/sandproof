@@ -9,6 +9,7 @@ Only ordinary values and logical capacity are covered, not physical allocation,
 material existence, resource release or a permission to collect snapshots. -/
 namespace SandboxModel.Lifecycle.CaptureHandoffCaller
 open Aeneas Aeneas.Std CaptureCallerRust SandboxModel.Foundations
+open CaptureCallerRust.sandbox_controller_core
 
 @[simp] theorem caller_index_snapshot_eq_exact
     (left right : sandbox_controller_core.ids.SnapshotId) :

@@ -12,6 +12,7 @@ they provide no physical allocation, Drop, cancellation or World frame law.
 -/
 namespace SandboxModel.Lifecycle.CaptureHandoffCaller
 open Aeneas Aeneas.Std CaptureCallerRust
+open CaptureCallerRust.sandbox_controller_core
 
 abbrev CloneExact := @SandboxModel.Foundations.CloneExact
 
