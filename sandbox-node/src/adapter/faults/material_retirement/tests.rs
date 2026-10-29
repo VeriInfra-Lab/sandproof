@@ -81,7 +81,7 @@ fn instruction(path: &Path, mode: &str) {
         "wrong-observation" => value["observation_sha256"] = serde_json::json!("f".repeat(64)),
         "wrong-capture" => {
             value["material"]["capture_key"] =
-                serde_json::json!(format!("capture-{}", "f".repeat(64)))
+                serde_json::json!(format!("capture-{}", "f".repeat(64)));
         }
         "wrong-work" => value["material"]["work_binding"] = serde_json::json!("f".repeat(64)),
         "wrong-plan" => value["material"]["plan_binding"] = serde_json::json!("f".repeat(64)),
