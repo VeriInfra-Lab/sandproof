@@ -12,18 +12,31 @@ case "$variant" in
     ;;
   handler) roots=(compensate) ;;
   worker) roots=(worker) ;;
-  *) echo 'expected values, handler or worker' >&2; exit 2 ;;
+  caller)
+    roots=(accepted dispatch register observe pause_failure terminate stop_permit registration_allowed commit eligibility material_uses compensate)
+    ;;
+  *) echo 'expected values, handler, worker or caller' >&2; exit 2 ;;
 esac
 out="${SANDPROOF_CAPTURE_OUTPUT:?set a fresh private output directory}"
 mkdir -m 700 "$out"
 args=()
 for root in "${roots[@]}"; do args+=(--start-from "crate::$root"); done
-if [[ "$variant" == worker ]]; then args+=(--include 'core::option::*::and_then'); fi
+namespace=CaptureHandoffRust
+subdir=CaptureHandoff
+if [[ "$variant" == worker || "$variant" == caller ]]; then
+  args+=(--include 'core::option::*::and_then')
+fi
+if [[ "$variant" == caller ]]; then
+  args+=(--start-from sandbox_controller_core::worker::late_capture::record
+         --start-from sandbox_controller_core::worker::late_capture::commit)
+  namespace=CaptureCallerRust
+  subdir=CaptureCaller
+fi
 cd verification/extract-capture-handoff
 RUSTFLAGS="--remap-path-prefix=$ROOT=." "$CHARON" cargo --preset=aeneas \
   --error-on-warnings --sysroot default "${args[@]}" --include sandbox_controller_core \
   --dest-file "$out/capture_handoff.llbc" -- --manifest-path Cargo.toml --lib --locked --offline
 cd "$ROOT"
 "$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files -emit-json \
-  -namespace CaptureHandoffRust -subdir CaptureHandoff \
+  -namespace "$namespace" -subdir "$subdir" \
   -dest "$out/lean" "$out/capture_handoff.llbc"
