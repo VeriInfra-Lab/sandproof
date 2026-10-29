@@ -78,7 +78,7 @@ pub(in crate::controller) fn validate(
     Ok(())
 }
 
-/// Called ONLY after checkpoint verified the actual ConfirmRelease input in
+/// Called ONLY after checkpoint verified the actual `ConfirmRelease` input in
 /// this same transaction. Do not wait for unrelated writers or pins here.
 pub(in crate::controller) fn record_release(
     connection: &Connection,
