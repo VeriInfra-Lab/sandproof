@@ -1,0 +1,330 @@
+{
+  "schema": 1,
+  "base": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "production_modified": false,
+  "path_value_model_assumption_added": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "full_v3": false,
+  "btree_carrier_current_view_adopted": false,
+  "ready_provider_commit": "5a571e5a720dd5488423d8bf4b490ebc078bd369",
+  "ready_providers": {
+    "roots.rs.in": "163fb587d73a7405c00c454541a586bf36ffd42259f9b31c139e41fa1c90debb",
+    "FunsExternal.lean.in": "76eb8333522b2686d3c9cddecee832b7e497e9d4fece953ec81d0396b60696a7",
+    "ReadyCandidateModel.lean.in": "e5c57ce72c57ae03f24731e8b5cda42cb3ce5cad1be6e890b65aab7b7ac5f397",
+    "ReadyCandidateProofs.lean.in": "850a5bc79b326d3be25afe89accabe8781060e877a3e90976ef8de931c751a98",
+    "ReadyCandidateValues.lean.in": "86e618ab027656959674f630298cbb95324a5114476abb9e7e705ede8cebdc92",
+    "ReadyCandidateWitnesses.lean.in": "f57712e350f6c80225a406923527a35ec7443ab81dbbcc855cf5f02a69d88826",
+    "ReadyCandidateWrongCredential.lean.in": "fed7bdd23fc90d427b92a0711b83d2c6dd4d7a6c1f5406df19d89fe011e5c08e"
+  },
+  "source_inputs": {
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": "32885942ca2d52198c03964b1d3291f0258ec30ced44c9a05ab781c0adad4538",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/aeneas/storage/SandproofStorage/TypesExternal.lean": "af26b263c4a328d32381eb115e79588d29b493610a35d5c95df1a5e59f077296",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12"
+  },
+  "templates": {
+    "Cargo.toml": "67a2603a4b3f1cf576dbd73c903986acd9d5c68dee7271cecd1fe4eca47ffdc1",
+    "Cargo.lock": "c799fca0ea7077fa2bc601e1cf53b4aa5647f95ddc820371b2b71136f447e54b",
+    "roots.rs.in": "8c942ad9c1a3bf1d9638f96fa881291c12d965b3e44bf96f648ec619b1d3a0f7",
+    "UnixPathValues.lean.in": "2f0f2ec7c50d465e9824a1e06b7209e93c4c56865ad44533d0cb80026c48f51a",
+    "ReadyPathConnection.lean.in": "3bc3c7f6099b64adb00f4108a7efde50c6deda74e6d941b63a6fbc0fd7090f4f",
+    "ReadyTypesExternal.candidate.lean.in": "f3cdd1b38b7bc83a84e3802efbccbccc76fc3df22730eb646a5d886032d799b5",
+    "development.py": "f69585b1d79745d897be29627e2444130d22bba4f2a6351593825b79eee6a983"
+  },
+  "std_sources": {
+    "production": {
+      "std/src/path.rs": "adf67998c6668a1fb76f56e8553d72c0949ea2cc664525edfc2bc1e37a8df017",
+      "std/src/ffi/os_str.rs": "6f237c14ce802de28328b9a53d5e7e9c14b19a47e52a5192b9b8f217a1e933ee",
+      "std/src/sys/os_str/bytes.rs": "b8db748fa98d57b9c5358dd0ad48c4950691defea188786b0d17c2c23533a721",
+      "std/src/os/unix/ffi/os_str.rs": "f73a477e7ceaa8a84261f6aba84026321208ae15eb837696a15862d5622f15ae"
+    },
+    "extraction": {
+      "std/src/path.rs": "604d70af2354454e1612760524eb74f1b4c42d5f8a95f22ee996ca317efe1189",
+      "std/src/ffi/os_str.rs": "7cc3304446d921040ea617a76995c6bdd16d24ec6c48fef7ccfae07b71062830",
+      "std/src/sys/os_str/bytes.rs": "b8db748fa98d57b9c5358dd0ad48c4950691defea188786b0d17c2c23533a721",
+      "std/src/os/unix/ffi/os_str.rs": "5db4bdbca5facd9f5df12a17709ca0e7df82acd462bf6e117106752f559f84b3"
+    }
+  },
+  "generated_functions": {
+    "path": [
+      [
+        "SandproofUnixPathRust.path_bytes",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ],
+      [
+        "SandproofUnixPathRust.path_from_bytes",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ],
+      [
+        "SandproofUnixPathRust.std.ffi.os_str.OsString.Insts.StdOsUnixFfiOs_strOsStringExt.from_vec",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ],
+      [
+        "SandproofUnixPathRust.std.ffi.os_str.OsString.Insts.StdOsUnixFfiOs_strOsStringExt.into_vec",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ],
+      [
+        "SandproofUnixPathRust.std.path.PathBuf.Insts.CoreConvertFromOsString.from",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ],
+      [
+        "SandproofUnixPathRust.std.path.PathBuf.into_os_string",
+        false,
+        "SandproofUnixPath/Funs.lean"
+      ]
+    ],
+    "correct": [
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadiness.Insts.CoreCmpPartialEqCreateReadiness.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadinessPending.Insts.CoreCmpPartialEqCreateReadinessPending.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.LifecycleReadyBasis.Insts.CoreCmpPartialEqLifecycleReadyBasis.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.LifecycleReadyObservation.Insts.CoreCmpPartialEqLifecycleReadyObservation.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate.can_probe",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.lifecycle.observation.CreateRefusalReason.Insts.CoreCmpPartialEqCreateRefusalReason.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofReadyCandidate/FunsExternal_Template.lean"
+      ]
+    ],
+    "ignore-credential": [
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadiness.Insts.CoreCmpPartialEqCreateReadiness.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.CreateReadinessPending.Insts.CoreCmpPartialEqCreateReadinessPending.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.LifecycleReadyBasis.Insts.CoreCmpPartialEqLifecycleReadyBasis.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.LifecycleReadyObservation.Insts.CoreCmpPartialEqLifecycleReadyObservation.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_controller_service.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate.can_probe",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "SandproofReadyCandidateRust.sandproof_protocol.lifecycle.observation.CreateRefusalReason.Insts.CoreCmpPartialEqCreateRefusalReason.eq",
+        false,
+        "SandproofReadyCandidate/Funs.lean"
+      ],
+      [
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+        true,
+        "SandproofReadyCandidate/FunsExternal_Template.lean"
+      ]
+    ]
+  },
+  "generated_files": {
+    "path": {
+      "SandproofUnixPath/Types.lean": "16e661a5c9f584e598133a822d66455897170ade8d2d863c83e761163102cf29",
+      "SandproofUnixPath/Funs.lean": "c655ef5db263fbcd8a1deb9089848025bb05379ed0fff260d2c2a48bf68a2235"
+    },
+    "correct": {
+      "SandproofReadyCandidate/FunsExternal_Template.lean": "ddcaec842e325f0d219c834a721692e156faffe904d19367235bff4feaaaa995",
+      "SandproofReadyCandidate/Types.lean": "9fb2f6d210571bd31a13623041bb4a3780a38ea9fd2a010047a998d3b5dc0937",
+      "SandproofReadyCandidate/Funs.lean": "05a7d4c55958c0c1bfadd6e5ba053e6563acbe8b311577ec099e41474aad0a93",
+      "SandproofReadyCandidate/TypesExternal_Template.lean": "cfec20052972235e361b738fb588aa2e10be0613395db28744fd9a24816009ef"
+    },
+    "ignore-credential": {
+      "SandproofReadyCandidate/FunsExternal_Template.lean": "ddcaec842e325f0d219c834a721692e156faffe904d19367235bff4feaaaa995",
+      "SandproofReadyCandidate/Types.lean": "9fb2f6d210571bd31a13623041bb4a3780a38ea9fd2a010047a998d3b5dc0937",
+      "SandproofReadyCandidate/Funs.lean": "0f153d81db07f5421d9e0ff8d646cea87d764868961e46180636dddff18cd5f4",
+      "SandproofReadyCandidate/TypesExternal_Template.lean": "cfec20052972235e361b738fb588aa2e10be0613395db28744fd9a24816009ef"
+    }
+  },
+  "path_capture": {
+    "include": [
+      "std::path::PathBuf",
+      "std::ffi::os_str::OsString",
+      "std::sys::os_str::bytes::Buf",
+      "std::path::_::into_os_string",
+      "std::path::_::from",
+      "std::os::unix::ffi",
+      "std::ffi::os_str::_::from_inner",
+      "std::ffi::os_str::_::into_inner"
+    ],
+    "roots": [
+      "crate::path_bytes",
+      "crate::path_from_bytes"
+    ],
+    "manifest": "verification/experiments/stage1-protocol/unix-path/Cargo.toml"
+  },
+  "ready_capture": {
+    "include": [
+      "sandproof_protocol",
+      "sandbox_controller_core",
+      "sandproof_controller_service",
+      "std::path::PathBuf",
+      "std::ffi::os_str::OsString",
+      "std::sys::os_str::bytes::Buf"
+    ],
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::proof_ready_candidate_can_probe"
+    ],
+    "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml"
+  },
+  "checks": {
+    "path": {
+      "files": 4,
+      "audits": 18
+    },
+    "correct": {
+      "files": 18,
+      "audits": 43
+    },
+    "ignore-credential": {
+      "files": 17,
+      "audits": 29
+    }
+  },
+  "mutation": {
+    "source": "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs",
+    "old": "&& self.credential.is_some()",
+    "new": "&& { let _ = self.credential; true }"
+  },
+  "source_semantics": "PathBuf, OsString and Unix Buf are transparent original structs. No path external model or operation law added. Existing BTreeMap entries carrier remains unadopted for the Ready view."
+}

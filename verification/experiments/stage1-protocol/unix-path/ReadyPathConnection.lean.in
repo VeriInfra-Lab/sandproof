@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.UnixPathValues
+import SandboxModel.Lifecycle.Protocol.ReadyCandidateModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.ReadyPathConnection
+open UnixPathValues
+
+abbrev ReadyPath := SandproofReadyCandidateRust.std.path.PathBuf
+
+def toStandard (path : ReadyPath) : PathValue := pack path.inner.inner.inner
+def fromStandard (path : PathValue) : ReadyPath := ⟨⟨⟨bytes path⟩⟩⟩
+
+theorem ready_after_standard (path : ReadyPath) :
+    fromStandard (toStandard path) = path := rfl
+
+theorem standard_after_ready (path : PathValue) :
+    toStandard (fromStandard path) = path := rfl
+
+theorem all_ready_bytes_preserved (path : ReadyPath) :
+    bytes (toStandard path) = path.inner.inner.inner := rfl
+
+theorem all_standard_bytes_preserved (path : PathValue) :
+    (fromStandard path).inner.inner.inner = bytes path := rfl
+
+theorem ready_representation_injective : Function.Injective toStandard := by
+  intro left right same
+  calc
+    left = fromStandard (toStandard left) := (ready_after_standard left).symm
+    _ = fromStandard (toStandard right) := congrArg fromStandard same
+    _ = right := ready_after_standard right
+
+theorem actual_std_encode_preserves_ready (path : ReadyPath) :
+    SandproofUnixPathRust.path_bytes (toStandard path) = .ok path.inner.inner.inner :=
+  actual_path_bytes_exact _
+
+theorem actual_std_decode_preserves_ready (path : ReadyPath) :
+    (SandproofUnixPathRust.path_from_bytes path.inner.inner.inner >>= fun decoded =>
+      Result.ok (fromStandard decoded)) = .ok path := by
+  simp [actual_path_from_bytes_exact, fromStandard, pack, bytes]
+
+theorem actual_std_roundtrip_ready (path : ReadyPath) :
+    ((SandproofUnixPathRust.path_bytes (toStandard path) >>= SandproofUnixPathRust.path_from_bytes) >>=
+      fun decoded => Result.ok (fromStandard decoded)) = .ok path := by
+  simp [actual_path_roundtrip, ready_after_standard]
+
+end SandboxModel.Stage1Protocol.ReadyPathConnection
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.ready_after_standard
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.standard_after_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.all_ready_bytes_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.all_standard_bytes_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.ready_representation_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.actual_std_encode_preserves_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.actual_std_decode_preserves_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.ReadyPathConnection.actual_std_roundtrip_ready

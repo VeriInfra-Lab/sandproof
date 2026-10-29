@@ -1,0 +1,4 @@
+import SandproofStorage.TypesExternal
+namespace SandproofReadyCandidateRust
+abbrev alloc.collections.btree.map.BTreeMap := SandproofStorageRust.alloc.collections.btree.map.BTreeMap
+end SandproofReadyCandidateRust
