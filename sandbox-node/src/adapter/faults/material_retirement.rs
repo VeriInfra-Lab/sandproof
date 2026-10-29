@@ -98,7 +98,7 @@ fn observation_bytes(
     Ok(bytes)
 }
 
-pub(super) fn after_material_delete(
+pub(in crate::adapter) fn after_material_delete(
     request: &CaptureMaterialRetirementRequest,
     plan: &[u8],
     observation: &MaterialRetirementObservation,
