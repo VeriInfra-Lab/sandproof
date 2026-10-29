@@ -1,0 +1,224 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.StateReceiptVersion
+noncomputable section
+open scoped Classical
+open InboxValidation
+
+theorem increment_version (state next : EntrySummary) (version : U64) (kind : Usize)
+    (success : incrementKind state version kind = .ok (.Ok next)) :
+    next.maximum = version := by
+  unfold incrementKind at success
+  split_ifs at success <;> simp_all
+  split_ifs at success <;> simp_all
+  cases success
+  rfl
+
+
+theorem entry_scan_cons (encode : UnloadResolution.Encoding) (inbox : Inbox)
+    (session : Session) (context : AuthenticatedCenterContext)
+    (entry : Entry) (tail : List Entry) (state summary : EntrySummary)
+    (success : entryScan encode inbox session context (entry :: tail) state = .ok (.Ok summary)) :
+    ∃ next, state.maximum.val < entry.intent.accepted_version.val ∧
+      next.maximum = entry.intent.accepted_version ∧
+      entryScan encode inbox session context tail next = .ok (.Ok summary) := by
+  by_cases ordered : entry.intent.accepted_version ≤ state.maximum
+  · simp [entryScan, ordered] at success
+  · simp only [entryScan, ordered, ↓reduceIte] at success
+    by_cases retained : entry.intent.request.operation ≠ .Destroy ∧
+      InboxRetained.expected session state.maximum entry.intent = false
+    · simp [retained] at success
+    · simp only [retained, ↓reduceIte] at success
+      cases checked : InboxEntry.entryView encode inbox session entry context with
+      | vis effect continuation => simp [checked] at success
+      | div => simp [checked] at success
+      | ret checkedValue =>
+        cases checkedValue with
+        | Err error => simp [checked] at success
+        | Ok kind =>
+          cases counted : incrementKind state entry.intent.accepted_version kind with
+          | vis effect continuation => simp [checked, counted] at success
+          | div => simp [checked, counted] at success
+          | ret countedValue =>
+            cases countedValue with
+            | Err error => simp [checked, counted] at success
+            | Ok next =>
+              refine ⟨next, ?_, increment_version state next entry.intent.accepted_version kind counted, ?_⟩
+              · have notOrdered : ¬entry.intent.accepted_version.val ≤ state.maximum.val := by
+                  simpa only [UScalar.le_equiv] using ordered
+                omega
+              · simpa [checked, counted] using success
+
+theorem entry_scan_bounds (encode : UnloadResolution.Encoding) (inbox : Inbox)
+    (session : Session) (context : AuthenticatedCenterContext)
+    (entries : List Entry) (state summary : EntrySummary)
+    (success : entryScan encode inbox session context entries state = .ok (.Ok summary)) :
+    state.maximum.val ≤ summary.maximum.val ∧
+      ∀ entry ∈ entries, entry.intent.accepted_version.val ≤ summary.maximum.val := by
+  induction entries generalizing state with
+  | nil =>
+    simp [entryScan] at success
+    subst summary
+    simp
+  | cons entry tail ih =>
+    rcases entry_scan_cons encode inbox session context entry tail state summary success with
+      ⟨next, increasing, maximum, tailSuccess⟩
+    rcases ih next tailSuccess with ⟨monotone, bound⟩
+    rw [maximum] at monotone
+    refine ⟨by omega, ?_⟩
+    intro kept member
+    simp only [List.mem_cons] at member
+    rcases member with same | member
+    · subst kept
+      exact monotone
+    · exact bound kept member
+
+
+theorem result_bind_success {α β : Type} (first : Result α) (next : α → Result β)
+    (value : β) (success : (do let checked ← first; next checked) = .ok value) :
+    ∃ checked, first = .ok checked ∧ next checked = .ok value := by
+  cases first with
+  | ret checked => exact ⟨checked, rfl, by simpa using success⟩
+  | vis effect continuation => simp at success
+  | div => simp at success
+
+theorem session_scan_summary {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (index : Usize) (session : Session) (context : AuthenticatedCenterContext)
+    (success : sessionView saved terminal renewal unload inbox index session context = .ok (.Ok ())) :
+    ∃ summary, entryScan unload inbox session context session.entries.val initialSummary = .ok (.Ok summary) ∧
+      session.current_version = summary.maximum := by
+  unfold sessionView at success
+  rcases result_bind_success _ _ _ success with ⟨shape, _, afterShape⟩
+  cases shape with
+  | Err error => simp at afterShape
+  | Ok checkedUnit =>
+    cases checkedUnit
+    rcases result_bind_success _ _ _ afterShape with ⟨renewed, _, afterRenewal⟩
+    cases renewed with
+    | Err error => simp at afterRenewal
+    | Ok checkedUnit =>
+      cases checkedUnit
+      rcases result_bind_success _ _ _ afterRenewal with ⟨ordered, scanned, afterEntries⟩
+      cases ordered with
+      | Err error => simp at afterEntries
+      | Ok summary =>
+        cases lineage : InboxLineage.expectedResult session with
+        | Err error => simp [lineage] at afterEntries
+        | Ok checkedUnit =>
+          cases checkedUnit
+          have fields : SummaryFields inbox session summary := by
+            by_contra invalid
+            simp [lineage, invalid, rejected] at afterEntries
+          exact ⟨summary, scanned, fields.1⟩
+
+theorem actual_session_entry_version_bound {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (index : Usize) (session : Session) (context : AuthenticatedCenterContext)
+    (success : Inbox.validate_one_session saved terminal renewal unload inbox index session context = .ok (.Ok ()))
+    (entry : Entry) (member : entry ∈ session.entries.val) :
+    entry.intent.accepted_version ≤ session.current_version := by
+  rw [one_session_refines] at success
+  rcases session_scan_summary saved terminal renewal.encode unload.encode inbox index session context success with
+    ⟨summary, scanned, version⟩
+  have bound := (entry_scan_bounds unload.encode inbox session context session.entries.val
+    initialSummary summary scanned).2 entry member
+  rw [← version] at bound
+  simpa only [UScalar.le_equiv] using bound
+
+
+open InboxValidation
+
+theorem sessions_entry_version_bounds {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (sessions : List Session) (index : Usize)
+    (success : sessionsView saved terminal renewal.encode unload.encode inbox context sessions index = .ok (.Ok ())) :
+    ∀ session ∈ sessions, ∀ entry ∈ session.entries.val,
+      entry.intent.accepted_version ≤ session.current_version := by
+  induction sessions generalizing index with
+  | nil => simp
+  | cons session tail ih =>
+    unfold sessionsView at success
+    rcases result_bind_success _ _ _ success with ⟨next, _, afterNext⟩
+    rcases result_bind_success _ _ _ afterNext with ⟨checked, sessionChecked, afterSession⟩
+    cases checked with
+    | Err error => simp at afterSession
+    | Ok checkedUnit =>
+      cases checkedUnit
+      intro selected member entry kept
+      simp only [List.mem_cons] at member
+      rcases member with same | member
+      · subst selected
+        have actual : Inbox.validate_one_session saved terminal renewal unload inbox index session context = .ok (.Ok ()) := by
+          rw [one_session_refines]
+          exact sessionChecked
+        exact actual_session_entry_version_bound saved terminal renewal unload inbox index session context actual entry kept
+      · exact ih next afterSession selected member entry kept
+
+theorem inbox_sessions_success {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (success : inboxView saved terminal renewal unload inbox = .ok (.Ok ())) :
+    sessionsView saved terminal renewal unload inbox (decodedContext inbox.config)
+      inbox.sessions.val 0#usize = .ok (.Ok ()) := by
+  unfold inboxView at success
+  split at success
+  · simp [rejected] at success
+  · split at success
+    · simp [rejected] at success
+    · split at success
+      · simp [rejected] at success
+      · split at success
+        · simp [rejected] at success
+        · rcases result_bind_success _ _ _ success with ⟨lanes, _, afterLanes⟩
+          cases lanes with
+          | false => simp [rejected] at afterLanes
+          | true =>
+            cases retired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict inbox 0) with
+            | Err error => simp [retired] at afterLanes
+            | Ok checkedUnit =>
+              cases checkedUnit
+              simp only [Bool.true_eq_false, ↓reduceIte, retired] at afterLanes
+              split at afterLanes
+              · simp [rejected] at afterLanes
+              · split at afterLanes
+                · simp [rejected] at afterLanes
+                · exact afterLanes
+
+theorem actual_inbox_entry_version_bound {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : sandproof_controller_service.capture.GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (inbox : Inbox) (represented : ConfigValidation.Representable inbox.config)
+    (success : Inbox.validate_using saved terminal renewal unload graphic inbox = .ok (.Ok ()))
+    (session : Session) (selected : session ∈ inbox.sessions.val)
+    (entry : Entry) (kept : entry ∈ session.entries.val) :
+    entry.intent.accepted_version ≤ session.current_version := by
+  rw [inbox_refines saved terminal renewal unload graphic graphicLaw inbox represented] at success
+  have checked := inbox_sessions_success saved terminal renewal.encode unload.encode inbox success
+  exact sessions_entry_version_bounds saved terminal renewal unload inbox (decodedContext inbox.config)
+    inbox.sessions.val 0#usize checked session selected entry kept
+
+end
+end SandboxModel.Stage1Protocol.StateReceiptVersion
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.increment_version
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.entry_scan_cons
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.entry_scan_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.result_bind_success
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.session_scan_summary
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.actual_session_entry_version_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.sessions_entry_version_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.inbox_sessions_success
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceiptVersion.actual_inbox_entry_version_bound

@@ -111,8 +111,9 @@ save 对完整同一 Inbox 先校验、再编码、检查输出容量、摘要�
 save、BeforeCommit 或 AfterCommit 错误都不能独自推出事务没有效果或已经耐久接受。
 
 同步效果接口不替代具体 JSON、SHA、SQL、同事务快照、提交未知和重启证明。认证来源、
-当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。完整
-manifest 文件集、真实字节/网络外壳和系统结论继续是独立义务。
+当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。manifest
+任意已解码清单/profile 的值级校验、现版完整输入准入和真实材料事实分别登记；
+真实字节/网络外壳与系统结论仍是独立义务，不能由其中一层替代其它层。
 
 ## 7. 同步调用方与 Destroy 的连接义务
 
@@ -140,3 +141,21 @@ helper 对非当前版本且收件表、SourceWork 表均缺席时保留 None；
 版本均拒绝。版本标记、32字节摘要值和重编码相等也不表示真实材料完整或已经计算
 内容哈希。正常见证和真实错误版继续使用同一完整合同；事务提交未知、重启、真实
 JSON/TLS、manifest 现版准入/真实文件材料及完整系统结论仍分别登记。
+
+## 8. 收件状态与 Recorded 封套的值连接
+
+[状态封套切片](../../verification/experiments/stage1-protocol/state-receipt/README.md)
+复用同一 FullInbox、FullRecord、FullState 和 Recorded 规格。版本上界由实际条目、
+会话和完整收件箱校验的成功路径推出，不能把上界直接当作未落实的业务前提。
+实际 record 成功返回的位置给出完整意图，实际 state 查询给出同一完整状态；
+record 后完整值校验仍是必要条件，record 成功本身不保证后态通过校验。
+
+四字段表示关系保留完整 intent、current_session_version、current 和 terminal。
+在该关系和已解码收件箱实际校验成立时，Recorded 匹配接受当且仅当完整状态意图
+等于原意图；它不表示已授权、耐久接受或实际资源存在。字段反例可以保持完整请求
+不变而改变 retention window，仍满足原 accepted 形状条件但全文匹配拒绝，不能
+据此给原实现补上 key window 与 retention window 相等的校验。
+
+Host async 接收器内联四字段构造的实际连接须单列。Renew 在 record 之后可能返回
+错误，封套取自调用时捕获的 state；不能据后续错误推出此前未记录，或把构造关系
+当成整个接收器、JSON/Serde、SQL 事务及提交未知/重启的证明。

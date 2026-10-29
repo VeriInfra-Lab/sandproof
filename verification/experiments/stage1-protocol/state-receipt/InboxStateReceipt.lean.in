@@ -1,0 +1,184 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateReceiptModel
+import SandboxModel.Lifecycle.Protocol.InboxStateReceiptVersion
+import SandboxModel.Lifecycle.Protocol.InboxPosition
+import SandboxModel.Lifecycle.Protocol.Recorded
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.StateReceipt
+noncomputable section
+theorem assembled_records_iff (state : LifecycleWorkState)
+    (receipt : RecordedLifecycleIntent) (original : AcceptedLifecycleIntent)
+    (current : state.current = decide (state.current_session_version = state.intent.accepted_version))
+    (assembled : Assembled state receipt) :
+    recorded_matches receipt original = .ok true ↔
+      state.intent = original ∧ original.accepted_version ≤ state.current_session_version := by
+  rw [Recorded.accepts_iff]
+  rcases assembled with ⟨intent, version, flag, _⟩
+  simp only [Validation.RecordsOriginal, intent, version, flag]
+  constructor
+  · intro matched
+    exact ⟨matched.1, matched.2.1⟩
+  · rintro ⟨same, bound⟩
+    refine ⟨same, bound, ?_⟩
+    rw [current, same]
+
+theorem work_state_current (session : Session) (entry : Entry) :
+    (InboxState.workState session entry).current =
+      decide ((InboxState.workState session entry).current_session_version =
+        (InboxState.workState session entry).intent.accepted_version) := by
+  simp [InboxState.workState, eq_comm]
+
+theorem actual_state_current (inbox : Inbox) (s e : Usize)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state) :
+    state.current = decide (state.current_session_version = state.intent.accepted_version) := by
+  have exactState := InboxState.state_contract inbox s e sb eb
+  have same := Result.ok_injective (returned.symm.trans exactState)
+  rw [same]
+  exact work_state_current _ _
+
+theorem actual_state_receipt_iff (inbox : Inbox) (s e : Usize)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state)
+    (receipt : RecordedLifecycleIntent) (assembled : Assembled state receipt)
+    (original : AcceptedLifecycleIntent) :
+    recorded_matches receipt original = .ok true ↔
+      state.intent = original ∧ original.accepted_version ≤ state.current_session_version :=
+  assembled_records_iff state receipt original
+    (actual_state_current inbox s e sb eb state returned) assembled
+
+
+
+theorem actual_validated_state_version_bound {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (s e : Usize)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (context : AuthenticatedCenterContext)
+    (validated : Inbox.validate_one_session saved terminal renewal unload inbox s
+      (inbox.sessions.val[s.val]'sb) context = .ok (.Ok ()))
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state) :
+    state.intent.accepted_version ≤ state.current_session_version := by
+  have exactState := InboxState.state_contract inbox s e sb eb
+  have same := Result.ok_injective (returned.symm.trans exactState)
+  rw [same]
+  have member := List.getElem_mem eb
+  exact StateReceiptVersion.actual_session_entry_version_bound saved terminal renewal unload
+    inbox s (inbox.sessions.val[s.val]'sb) context validated
+    ((inbox.sessions.val[s.val]'sb).entries.val[e.val]'eb) member
+
+theorem actual_validated_state_receipt_iff {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (s e : Usize)
+    (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (context : AuthenticatedCenterContext)
+    (validated : Inbox.validate_one_session saved terminal renewal unload inbox s
+      (inbox.sessions.val[s.val]'sb) context = .ok (.Ok ()))
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state)
+    (receipt : RecordedLifecycleIntent) (assembled : Assembled state receipt)
+    (original : AcceptedLifecycleIntent) :
+    recorded_matches receipt original = .ok true ↔ state.intent = original := by
+  rw [actual_state_receipt_iff inbox s e sb eb state returned receipt assembled original]
+  constructor
+  · exact And.left
+  · intro same
+    refine ⟨same, ?_⟩
+    rw [← same]
+    exact actual_validated_state_version_bound saved terminal renewal unload inbox s e sb eb
+      context validated state returned
+
+theorem assembled_changed_intent_rejected (state : LifecycleWorkState)
+    (receipt : RecordedLifecycleIntent) (assembled : Assembled state receipt)
+    (original : AcceptedLifecycleIntent) (changed : state.intent ≠ original) :
+    recorded_matches receipt original = .ok false := by
+  apply Recorded.rejects_changed_intent
+  rw [assembled.1]
+  exact changed
+
+
+
+theorem actual_inbox_state_version_bound {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : sandproof_controller_service.capture.GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (inbox : Inbox) (represented : ConfigValidation.Representable inbox.config)
+    (validated : Inbox.validate_using saved terminal renewal unload graphic inbox = .ok (.Ok ()))
+    (s e : Usize) (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state) :
+    state.intent.accepted_version ≤ state.current_session_version := by
+  have exactState := InboxState.state_contract inbox s e sb eb
+  have same := Result.ok_injective (returned.symm.trans exactState)
+  rw [same]
+  exact StateReceiptVersion.actual_inbox_entry_version_bound saved terminal renewal unload graphic graphicLaw
+    inbox represented validated (inbox.sessions.val[s.val]'sb) (List.getElem_mem sb)
+    ((inbox.sessions.val[s.val]'sb).entries.val[e.val]'eb) (List.getElem_mem eb)
+
+theorem actual_inbox_state_receipt_iff {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : sandproof_controller_service.capture.GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (inbox : Inbox) (represented : ConfigValidation.Representable inbox.config)
+    (validated : Inbox.validate_using saved terminal renewal unload graphic inbox = .ok (.Ok ()))
+    (s e : Usize) (sb : s.val < inbox.sessions.val.length)
+    (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length)
+    (state : LifecycleWorkState) (returned : inbox.state s e = .ok state)
+    (receipt : RecordedLifecycleIntent) (assembled : Assembled state receipt)
+    (original : AcceptedLifecycleIntent) :
+    recorded_matches receipt original = .ok true ↔ state.intent = original := by
+  rw [actual_state_receipt_iff inbox s e sb eb state returned receipt assembled original]
+  constructor
+  · exact And.left
+  · intro same
+    refine ⟨same, ?_⟩
+    rw [← same]
+    exact actual_inbox_state_version_bound saved terminal renewal unload graphic graphicLaw inbox
+      represented validated s e sb eb state returned
+
+theorem actual_record_success_receipt_matches {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : sandproof_controller_service.capture.GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (before : Inbox) (intent : AcceptedLifecycleIntent) (out : InboxRecord.RecordReturn)
+    (s e : Usize) (recorded : before.record intent = .ok out) (success : out.1 = .Ok (s, e))
+    (represented : ConfigValidation.Representable out.2.config)
+    (validated : Inbox.validate_using saved terminal renewal unload graphic out.2 = .ok (.Ok ()))
+    (state : LifecycleWorkState) (returned : out.2.state s e = .ok state)
+    (receipt : RecordedLifecycleIntent) (assembled : Assembled state receipt) :
+    recorded_matches receipt intent = .ok true := by
+  have stored := InboxPosition.record_success_position before intent out s e recorded success
+  rcases InboxPosition.stored_intent_bounds out.2 s e intent stored with ⟨sb, eb, full⟩
+  apply (actual_inbox_state_receipt_iff saved terminal renewal unload graphic graphicLaw out.2
+    represented validated s e sb eb state returned receipt assembled intent).mpr
+  have exactState := InboxState.state_contract out.2 s e sb eb
+  have same := Result.ok_injective (returned.symm.trans exactState)
+  rw [same]
+  exact full
+
+end
+end SandboxModel.Stage1Protocol.StateReceipt
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.assembled_records_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.work_state_current
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_state_current
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_state_receipt_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_validated_state_version_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_validated_state_receipt_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.assembled_changed_intent_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_inbox_state_version_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_inbox_state_receipt_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.actual_record_success_receipt_matches

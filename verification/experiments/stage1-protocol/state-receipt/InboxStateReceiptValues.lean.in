@@ -1,0 +1,89 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateReceipt
+import SandboxModel.Lifecycle.Protocol.InboxProtocolFixtureValues
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.StateReceipt.Values
+noncomputable section
+-- This is a single normal witness, not a substitute constructor algorithm.
+def normalReceipt : RecordedLifecycleIntent :=
+  ⟨SavedRetirement.Values.createIntent, 1#u64, true, false⟩
+
+theorem normal_assembled : Assembled ProtocolRecord.Values.normalState normalReceipt := by
+  simp [Assembled, ProtocolRecord.Values.normalState, normalReceipt, InboxState.workState,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    InboxRecord.pendingEntry, SavedRetirement.Values.normal,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem normal_actual_state : InboxValidation.Values.recorded.state 0#usize 0#usize =
+    .ok ProtocolRecord.Values.normalState := by
+  have sb : (0#usize).val < InboxValidation.Values.recorded.sessions.val.length := by decide
+  have eb : (0#usize).val <
+      (InboxValidation.Values.recorded.sessions.val[(0#usize).val]'sb).entries.val.length := by
+    change 0 < 1
+    decide
+  simpa [InboxValidation.Values.recorded, InboxValidation.Values.recordedSession,
+    SessionShape.Values.normal, SessionShape.Values.vector,
+    ProtocolRecord.Values.normalState, SessionShape.Values.entry, InboxRecord.pendingEntry]
+    using InboxState.state_contract InboxValidation.Values.recorded 0#usize 0#usize sb eb
+
+theorem normal_actual_validated
+    (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) :
+    Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic InboxValidation.Values.recorded = .ok (.Ok ()) := by
+  rw [InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    InboxValidation.Values.recorded InboxValidation.Values.fixture_representable]
+  exact InboxValidation.Values.recorded_model_accepted saved terminal renewal unload
+
+theorem normal_actual_record_receipt
+    (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) :
+    Validation.ValidEnvelope SavedRetirement.Values.createIntent EnvelopeValues.context ∧
+    Assembled ProtocolRecord.Values.normalState normalReceipt ∧
+    recorded_matches normalReceipt SavedRetirement.Values.createIntent = .ok true := by
+  refine ⟨SavedRetirement.Values.normal_envelopes.1, normal_assembled, ?_⟩
+  apply actual_record_success_receipt_matches saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    InboxValidation.Values.normal SavedRetirement.Values.createIntent
+    (.Ok (0#usize, 0#usize), InboxValidation.Values.recorded) 0#usize 0#usize
+    ProtocolRecord.Values.normal_recorded rfl InboxValidation.Values.fixture_representable
+    (normal_actual_validated saved terminal renewal unload)
+    ProtocolRecord.Values.normalState normal_actual_state normalReceipt normal_assembled
+
+def changedRetention : RecordedLifecycleIntent :=
+  { normalReceipt with intent := { normalReceipt.intent with retention := ⟨1#u16, 9#u64⟩ } }
+
+theorem changed_retention_keeps_request_and_is_legal :
+    changedRetention.intent.request = normalReceipt.intent.request ∧
+    Validation.ValidEnvelope changedRetention.intent EnvelopeValues.context := by
+  refine ⟨rfl, ?_⟩
+  have original := SavedRetirement.Values.normal_envelopes.1
+  simpa only [Validation.ValidEnvelope, Validation.retentionOK, Validation.versionOK,
+    changedRetention, normalReceipt, SavedRetirement.Values.createIntent, EnvelopeValues.intent] using original
+
+theorem changed_retention_not_assembled_and_refused :
+    ¬Assembled ProtocolRecord.Values.normalState changedRetention ∧
+      recorded_matches changedRetention SavedRetirement.Values.createIntent = .ok false := by
+  have changed : changedRetention.intent ≠ SavedRetirement.Values.createIntent := by
+    simp [changedRetention, normalReceipt, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  constructor
+  · intro assembled
+    exact changed (assembled.1.trans normal_assembled.1.symm)
+  · exact Recorded.rejects_changed_intent changedRetention SavedRetirement.Values.createIntent changed
+
+end
+end SandboxModel.Stage1Protocol.StateReceipt.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.normal_assembled
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_state
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_validated
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_record_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.changed_retention_keeps_request_and_is_legal
+#audit_controller_proof SandboxModel.Stage1Protocol.StateReceipt.Values.changed_retention_not_assembled_and_refused

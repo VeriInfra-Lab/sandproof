@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "kind": "decoded-state-receipt-reviewed-candidate-inputs",
+  "source_base_commit": "65cf8a33cb284562f1e986d10db2dfa986bdefea",
+  "parent_inventory_path": "verification/experiments/stage1-protocol/protocol-record/inventory.json",
+  "parent_inventory_sha256": "be70371139b2cbf16b021467e715981da942191bc940dcc704c67249bd147735",
+  "files": {
+    "SandboxModel/Lifecycle/Protocol/InboxStateReceipt.lean": {
+      "provider": "verification/experiments/stage1-protocol/state-receipt/InboxStateReceipt.lean.in",
+      "sha256": "c31fb07a9c941ae9ab6a85246ee0b2ee748019ad7bbe9d3adfc8e281a1a39db1",
+      "audits": [
+        "SandboxModel.Stage1Protocol.StateReceipt.assembled_records_iff",
+        "SandboxModel.Stage1Protocol.StateReceipt.work_state_current",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_state_current",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_state_receipt_iff",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_validated_state_version_bound",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_validated_state_receipt_iff",
+        "SandboxModel.Stage1Protocol.StateReceipt.assembled_changed_intent_rejected",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_inbox_state_version_bound",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_inbox_state_receipt_iff",
+        "SandboxModel.Stage1Protocol.StateReceipt.actual_record_success_receipt_matches"
+      ]
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxStateReceiptModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/state-receipt/InboxStateReceiptModel.lean.in",
+      "sha256": "390c8af65e31ab3d9454d6f0bb0a9d3f719de2e41a649c272ab0db0d5b46a305",
+      "audits": []
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxStateReceiptValues.lean": {
+      "provider": "verification/experiments/stage1-protocol/state-receipt/InboxStateReceiptValues.lean.in",
+      "sha256": "690b470f6d00a679f3f1deb4a7f4182e94ebb18353bd815cee94c220d028302f",
+      "audits": [
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.normal_assembled",
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_state",
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_validated",
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.normal_actual_record_receipt",
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.changed_retention_keeps_request_and_is_legal",
+        "SandboxModel.Stage1Protocol.StateReceipt.Values.changed_retention_not_assembled_and_refused"
+      ]
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxStateReceiptVersion.lean": {
+      "provider": "verification/experiments/stage1-protocol/state-receipt/InboxStateReceiptVersion.lean.in",
+      "sha256": "9e95f5f3f1eeb4c7cf1e86e88c4397150c4fa422340e71d987455a34521a8bea",
+      "audits": [
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.increment_version",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.entry_scan_cons",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.entry_scan_bounds",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.result_bind_success",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.session_scan_summary",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.actual_session_entry_version_bound",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.sessions_entry_version_bounds",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.inbox_sessions_success",
+        "SandboxModel.Stage1Protocol.StateReceiptVersion.actual_inbox_entry_version_bound"
+      ]
+    }
+  },
+  "shared_models": {
+    "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+    "verification/experiments/stage1-protocol/inbox-state/InboxStateModel.lean.in": "41d327031459ebcea834c632e8c2f85471b6ef41b9eaa31a6e62bdbc23d0eb91",
+    "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionModel.lean.in": "63c3fe4b4de4a8e6afa47e2cee7cdc41b7707ca2497a5ff5751f04896e1d26fb",
+    "verification/experiments/stage1-protocol/protocol-record/InboxProtocolRecordModel.lean.in": "fe63edcb5074ba6e0c9715477c5e2481c7480cdff2f49bd79538d4be0a4cc2f0",
+    "docs/formal/dependencies.md": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4"
+  },
+  "representation_models": {
+    "SandboxModel/Lifecycle/Protocol/InboxStateReceiptModel.lean": "390c8af65e31ab3d9454d6f0bb0a9d3f719de2e41a649c272ab0db0d5b46a305"
+  },
+  "actual_symbols": [
+    "Inbox.validate_one_session",
+    "Inbox.validate_using",
+    "Inbox.state",
+    "Inbox.record",
+    "RecordedLifecycleIntent.matches"
+  ],
+  "representation_fields": [
+    "intent",
+    "current_session_version",
+    "current",
+    "terminal"
+  ],
+  "new_business_model": false,
+  "actual_async_constructor_connection_proved": false,
+  "native_case": "stage1-protocol-record",
+  "new_native_case": false,
+  "public_registration_modified": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}
