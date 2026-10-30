@@ -22,7 +22,7 @@ CAPTURE_METHODS = (
 )
 ROOTS = tuple('capture::*::'+name for name in CAPTURE_METHODS) + (
     'request::handle_compensation', 'worker::late_capture::record',
-    'publication::handle_publish_paused',
+    'publication::handle_publish_paused', 'worker::pause_stop::record',
 )
 REQUIRED_FUNCTIONS = (
     ('request::handle_compensation', 'request.handle_compensation'),

@@ -5,6 +5,8 @@
 本切片检查真实 `handle_worker` 到 `worker::pause_stop::record` 的
 `CommitSnapshot`、`StopVm` 调用。当前处于开发阶段；夹具和接线已编写不等于
 原生、抽取、Lean 或完整入口已通过。正式结果只在证明覆盖和任务 issue 记录。
+机器对应的目标是实际生产 `record` 及其调用体；外层 `handle_worker` 的唯一转发
+通过源码审查和原生连接回归核对，不是整个 worker 的一般等价机器证明。
 
 ## 要检查的行为
 
