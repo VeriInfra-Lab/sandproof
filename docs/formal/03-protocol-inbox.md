@@ -127,7 +127,13 @@ session/entry 位置和 startup deadline。只有原缺失 owner 分支读取 Wo
 `create_owner_successor` 排除本次新 sandbox，重算 owner 最大值与高水位的受检后继。
 现存 owner 行不能被该重算覆盖，排除 ID 也不能替换成 owner 数字。
 
-只读 helper 返回不表示映射已保存。后续 owner/high-water、完整 local 与 entry 修改，
+只读 helper 返回不表示映射已保存。原父函数在 owner 检查之后调用
+[`create_attachment_install`](../../verification/experiments/stage1-protocol/create-install/README.md)，
+按原 session.owner 完整匹配决定是否追加映射；追加时把高水位赋为本次 local.owner，
+已有映射时保留原表和高水位。写入完整 local 和选中 entry.local_operation 后，其余完整 Inbox、
+session 和 entry 字段保留。索引由原完整选择给出，追加空间还需连接原 load/validate 的
+owner 数量上限；高水位单调性还需原 successor/owner 检查，不能从独立赋值推出。
+
 deadline 转换、固定 ID、原 UPDATE 与 save 仍属于同一原父函数的业务义务；原寿命
 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
 重启以及真实资源/认证来源继续分别连接。函数采用、实际生成体对应与完整组合分开

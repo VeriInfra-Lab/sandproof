@@ -474,6 +474,34 @@ pub(super) fn create_owner_successor(
     ))
 }
 
+fn create_owner_present(inbox: &Inbox, owner: &sandproof_protocol::TenantId) -> bool {
+    let mut index = 0;
+    while index < inbox.owners.len() {
+        if &inbox.owners[index].external == owner {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+pub(super) fn create_attachment_install(
+    inbox: &mut Inbox,
+    s: usize,
+    e: usize,
+    local: InternalLocalBinding,
+) {
+    if !create_owner_present(inbox, &inbox.sessions[s].owner) {
+        inbox.owner_high_water = local.owner.0;
+        inbox.owners.push(Owner {
+            external: inbox.sessions[s].owner.clone(),
+            local: local.owner,
+        });
+    }
+    inbox.sessions[s].local = Some(local);
+    inbox.sessions[s].entries[e].local_operation = Some(local.operation);
+}
+
 pub(super) fn attach_create(
     tx: &WorldTransaction<'_>,
     namespace: &str,
@@ -490,19 +518,7 @@ pub(super) fn attach_create(
     if expected != a.local.owner {
         return Err(JournalError::Conflict);
     }
-    if !inbox
-        .owners
-        .iter()
-        .any(|r| r.external == inbox.sessions[s].owner)
-    {
-        inbox.owner_high_water = a.local.owner.0;
-        inbox.owners.push(Owner {
-            external: inbox.sessions[s].owner.clone(),
-            local: a.local.owner,
-        });
-    }
-    inbox.sessions[s].local = Some(a.local);
-    inbox.sessions[s].entries[e].local_operation = Some(a.local.operation);
+    create_attachment_install(&mut inbox, s, e, a.local);
     tx.execute(
         "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
         params![

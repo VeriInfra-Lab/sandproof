@@ -1,0 +1,39 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateInstall
+theorem index_add_one (index next : Usize) (added : next.val = index.val + 1) :
+    ((index + 1#usize) : Result Usize) = .ok next := by
+  obtain ⟨value, returned, post⟩ := WP.spec_imp_exists
+    (Usize.add_bv_spec (x := index) (y := 1#usize) (by scalar_tac))
+  have same : value = next := by scalar_tac
+  simpa only [same] using returned
+
+/-- Common bounded-index argument; the actual bodies supply every step. -/
+theorem indexed_any_loop (values : Slice α) (pred : α → Bool)
+    (body : Usize → Result (ControlFlow Usize Bool))
+    (at_end : ∀ index, values.val.length ≤ index.val → body index = .ok (.done false))
+    (at_step : ∀ index next, ∀ inside : index.val < values.val.length,
+      next.val = index.val + 1 → body index = .ok
+        (if pred values.val[index.val] then .done true else .cont next)) (index : Usize) :
+    loop body index = .ok ((values.val.drop index.val).any pred) := by
+  induction remaining : values.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    conv_lhs => rw [loop]
+    by_cases inside : index.val < values.val.length
+    · let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+      have added : next.val = index.val + 1 := by rfl
+      rw [at_step index next inside added, List.drop_eq_getElem_cons inside, List.any_cons]
+      cases hit : pred values.val[index.val] with
+      | true => simp only [↓reduceIte, Bool.true_or, bind_ok]
+      | false =>
+        have later := ih (values.val.length - next.val) (by omega) next rfl
+        simp only [Bool.false_eq_true, ↓reduceIte, Bool.false_or, bind_ok, later, added]
+    · rw [at_end index (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index.val)]
+
+end SandboxModel.Stage1Protocol.CreateInstall
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.index_add_one
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.indexed_any_loop
