@@ -215,6 +215,24 @@ bash scripts/verify-capture-caller.sh
 同一稳定源码和运行条件下，完整 `functional` 仅按原收据与全部原始文件的严格校验复用，
 不能改写键、标签或缺失证据来合并结果。
 
+普通暂停的登记与停止使用独立 `--scope pause-stop`，固定包含完整 Linux
+`functional` 及 `pause-stop` 原组件；形式入口为 `scripts/verify-pause-stop.sh`。
+接口和正错规则见[登记与 Stop 组件](../verification/experiments/pause-stop/README.md)，
+实际实测和待验收范围只在覆盖记录维护。原生正确、错误和恢复版均经实际
+`handle_worker`；错误版须真实编译并被同一许可性质拒绝，格式、编译或工具失败不能
+代替性质反例。最终文件、必需定理、冻结输入、实际生成物或审计缺失时拒绝入场，
+不以空清单或接线准备完成表示正式验收通过。默认 `all` 保留旧全部义务并登记本组件一次。
+
+这三个切片共享 `CaptureCaller` 正确生成环境。改变其实际根或生成闭包时，先核对
+`pause-stop`、`capture-caller`、`pause-publication` 的影响，再在同一稳定候选上验收
+所有受影响的有限范围。各范围分别保留原组件和原始封口；不能把其中一份改标签
+供另一范围使用，也不能拼成 `all` 或 V3 完成。完整 Linux `functional` 只在该稳定
+候选上执行一次；另两范围仅在原收据键、全部跟踪输入、依赖、工具、运行条件及
+完整原始证据仍通过既有校验时复用，否则重新执行受影响检查。
+共享正确根新增 `worker::pause_stop::record` 时，publication 错误版沿其实际同根配置
+重抽；原 capture-caller 错误版保持原独立抽取 crate 的两个迟到处理根及命名空间，
+不为表面统一而扩大范围。各自实际配置及逐字节生成物比较仍不可省略。
+
 V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
 `1`、`2`、`4`，默认仍为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
 每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。

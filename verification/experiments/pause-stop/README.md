@@ -3,8 +3,10 @@
 [证明工作流](../../../../docs/proof-workflow.md) · [生命周期计划](../../../../docs/formal/04-local-core.md)
 
 本切片检查真实 `handle_worker` 到 `worker::pause_stop::record` 的
-`CommitSnapshot`、`StopVm` 调用。当前处于开发阶段；夹具和接线已编写不等于
-原生、抽取、Lean 或完整入口已通过。正式结果只在证明覆盖和任务 issue 记录。
+`CommitSnapshot`、`StopVm` 调用。已有 `b546da3` 的真实抽取/生成文件检查和
+`c0d97319` 的原生组件预检；精确输入、通过范围和失败记录见
+[覆盖记录](../../../../docs/proof-coverage.md#普通暂停登记与-stop局部实测通过最终验收未完成)。
+业务定理清单和最终完整入口仍待交付，局部预检不代替它们。
 机器对应的目标是实际生产 `record` 及其调用体；外层 `handle_worker` 的唯一转发
 通过源码审查和原生连接回归核对，不是整个 worker 的一般等价机器证明。
 
@@ -15,8 +17,11 @@
 若登记前已撤销，晚到的 Commit 仍可登记已经产生的材料，但不能借此恢复许可或新排 Stop。
 登记后发生普通取消则沿用原有有效交接，不能一概当成禁止停止。
 
-Stop 还要核对实际派发、当前尝试、队列、VM 状态、栅栏、当前计划及完整快照身份。
-普通 Commit 没有检查快照 owner；后续 Stop 有此检查。终止场景的 Revoking Stop
+Stop 还要核对实际派发、当前尝试、队列、VM 状态、栅栏、当前计划、目标快照身份
+及 Durable/immutable 字段。它检查命令与 VM 的 generation 相等，没有直接比较
+VM 与 sandbox 记录的 generation。普通 Commit 没有快照 owner 或记录非终止的
+直接守卫；后续普通 Stop 有这些检查，不能由 Commit 成功单独推出全部 Stop 前提。
+终止场景的 Revoking Stop
 使用终止栅栏，不能把普通暂停的快照要求强加给它。
 
 原生夹具复用原控制器的 create、running、pause、seal 和 commit 历史，均经真实
@@ -47,9 +52,10 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 旧 capture、publication、V3 的有限结果不能替代它；默认 `all` 保留旧全部义务。
 同一稳定源码上复用 functional 时仍使用原收据和完整原始证据检查，不改标签或键。
 
-形式入口 `scripts/verify-pause-stop.sh` 还需最终冻结清单、真实生成物、实际定理清单及
-`replay.py` 全部就绪；开发中缺一即拒绝执行，不生成占位成功。
-最终接线将逐字节重抽正确/错误版，检查全部实际文件、同一服务诊断和内核依赖。
+形式入口 `scripts/verify-pause-stop.sh` 已接固定工具、原始生成字节比对、同一服务诊断
+及审计流程，复用原声明读取和诊断检查器。最终冻结清单、正错真实生成物、实际定理
+清单和完整审计仍须全部就绪；缺一即拒绝，不生成占位成功。
+完整入口须逐字节重抽正确/错误版，检查全部实际文件、同一服务诊断和内核依赖。
 共享生成闭包变化时另核对受影响旧模块，分别保留它们原来的范围。
 
 本切片不证明物理 VM 已退出、磁盘真实落盘、完整 worker 一般等价或全生命周期 V9。

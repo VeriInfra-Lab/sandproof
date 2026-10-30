@@ -44,6 +44,39 @@
 
 至少让三个真实错误版本被同一性质拒绝：暂停捕获失败杀原 VM；激活未知后重载旧 capture；GC 检查后不受保护地删除。负例必须编译且能走到错误，不以抽取失败为安全证明。V4 负责 LC-P1/2/6/7/8/9/10/11 的纯决定，V5/V6 接真实效果，V9 证明全历史。
 
+### 普通暂停登记与 Stop 的函数边界
+
+实际 [worker 入口](../../controller-core/src/worker.rs) 唯一转发到
+[`worker::pause_stop::record`](../../controller-core/src/worker/pause_stop.rs)，
+不复制一套业务算法。函数正常返回时，`CommitSnapshot`、`StopVm` 由这条路径处理，
+其它命令返回 `None`，继续原 worker 分派。机器对应目标是 `record`、`execute`、
+`commit_snapshot`、`stop_vm` 的真实生成体及其实际依赖；外层唯一转发和未改路径
+另经源码审查、原生连接回归核对，不宣称已机器证明整个 worker 的一般等价。
+组件规则与入口见[普通暂停登记与 Stop](../../verification/experiments/pause-stop/README.md)。
+
+该切片需要分别检查以下合同，不以“能成功翻译”替代业务证明：
+
+- 保持原首错顺序：当前尝试、在途队列、`Dispatched` 或 `OutcomeUnknown`，之后才处理迟到捕获和具体命令。缺少逻辑效果行时仍按原实现使用第 0 次尝试；终止后的旧 Commit 保留原迟到处理优先级。
+- 普通 Commit 核对实际代码要求的快照、sandbox、epoch、generation、workspace、阶段和完整目标，登记原计划的材料责任并更新 Durable/immutable。只有交接允许停止原 VM 才排入完整身份的 Stop；此时不要求 Commit 成功回执已经到达。
+- 登记前已撤销的迟到 Commit 只登记收到的提交观察所指的材料责任，不恢复资格、不新排 Stop。登记后发生普通取消则保持原有效交接，不能一概拒绝后续 Stop。
+- 普通 Pausing Stop 必须核对原 VM、状态、非终止记录与栅栏、当前计划、有效交接，以及目标快照身份和 Durable/immutable 字段。Revoking Stop 沿原终止分支使用终止栅栏，不额外要求普通暂停材料。
+- 成功事件和完整状态更新与真实函数一致：Commit 只按实际写入改变计划、快照、资源索引，以及条件排队涉及的效果表、键列表、逻辑效果表和在途队列；Stop 只更新 VM 表和资源索引，其余状态保持。正常接受所需的输入和容器容量条件须明确，并给出可满足见证。
+- 正错实现使用同一许可性质。错误版只忽略 `may_stop_original` 的布尔结果，保留交接查询、None 拒绝及其它守卫；反例须使其它 Stop 条件全部满足，不能依赖另一道快照检查碰巧拒绝。
+
+分支之间的检查不能混写：普通 Commit 没有单独检查快照 owner 或记录非终止，
+后续普通 Stop 才检查这两项，不能由 Commit 成功单独推出全部 Stop 前提。
+Stop 明确检查 command.generation 等于 VM.generation；它没有直接比较
+VM.generation 与 record.generation，也不额外核对 VM.owner 与记录 owner，
+或逻辑效果 origin 与当前操作的全局关系。这些额外关系由实际来源、状态保持或 V9 不变量提供。
+Commit 构造的 Stop 携带记录的 generation，组合时须显式连接这一事实。
+效果登记使用初始尝试 0，并保留已有逻辑效果行的当前尝试号；不能仅从 Commit 成功
+推出新 Stop 必能立即派发，还要满足原尝试、队列和效果状态条件。
+
+本片处理的是纯决定中的登记、许可和状态，不把 `Durable`、逻辑成功回执或
+`VmStatus::Stopped` 当作真实落盘、VM 退出或可安全回收的证据。
+V5/V6 仍须连接同一持久事务、完整 bundle 和宿主结束事实，V9 仍须连接可达历史、
+身份与索引完整性以及条件进展。实际完成程度只在覆盖记录维护。
+
 ### 暂停成功发布的函数边界
 
 实际 `handle_publish_paused` 的后续有限切片使用[暂停发布组件](../../verification/experiments/pause-publication/README.md)。
