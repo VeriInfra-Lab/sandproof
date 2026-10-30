@@ -1,0 +1,179 @@
+use super::*;
+
+fn proof_owner_inbox(rows: &[(&str, u64)], high_water: u64) -> Inbox {
+    let config = config();
+    Inbox {
+        lanes: (1..=config.max_sessions)
+            .map(LifecycleRetentionLane::fresh)
+            .collect(),
+        config,
+        host_epoch_observation: None,
+        owner_high_water: high_water,
+        owners: rows
+            .iter()
+            .map(|(external, local)| Owner {
+                external: (*external).try_into().unwrap(),
+                local: core::TenantId(*local),
+            })
+            .collect(),
+        sessions: Vec::new(),
+    }
+}
+
+// Build the World through the public original core reducer. The tested V3
+// allocator is never used to manufacture its own input or expected result.
+fn proof_owner_world(owners: &[u64]) -> core::World {
+    let mut world = core::initial_world();
+    for (index, owner) in owners.iter().enumerate() {
+        let number = u64::try_from(index).unwrap() + 1;
+        world = core::handle_create(
+            &world,
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(*owner)),
+                owner: core::TenantId(*owner),
+                sandbox: core::SandboxId(number),
+                workspace: core::FsId(number),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(7),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+        )
+        .unwrap()
+        .next;
+    }
+    world
+}
+
+fn proof_local(sandbox: u64, owner: u64) -> InternalLocalBinding {
+    InternalLocalBinding {
+        sandbox: core::SandboxId(sandbox),
+        owner: core::TenantId(owner),
+        operation: core::OperationId(99),
+    }
+}
+
+#[test]
+fn proof_check_existing_full_owner() {
+    let inbox = proof_owner_inbox(&[("alpha", 7), ("bravo", 9)], 40);
+    assert!(inbox.validate().is_ok());
+    let owner = "bravo".try_into().unwrap();
+    assert!(check_existing_create_owner(&inbox, &owner, core::TenantId(9)).unwrap());
+}
+
+#[test]
+fn proof_check_existing_first_duplicate() {
+    // This complete helper contract includes arbitrary decoded rows.
+    let inbox = proof_owner_inbox(&[("alpha", 7), ("alpha", 9)], 9);
+    assert!(matches!(inbox.validate(), Err(JournalError::CorruptStore)));
+    let owner = "alpha".try_into().unwrap();
+    assert!(check_existing_create_owner(&inbox, &owner, core::TenantId(7)).unwrap());
+}
+
+#[test]
+fn proof_check_existing_first_conflict() {
+    let inbox = proof_owner_inbox(&[("alpha", 7), ("alpha", 9)], 9);
+    assert!(matches!(
+        check_existing_create_owner(&inbox, &"alpha".try_into().unwrap(), core::TenantId(9)),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_check_existing_missing() {
+    assert!(matches!(
+        check_existing_create_owner(
+            &proof_owner_inbox(&[], 0),
+            &"alpha".try_into().unwrap(),
+            core::TenantId(9)
+        ),
+        Ok(false)
+    ));
+}
+
+#[test]
+fn proof_check_existing_exhausted() {
+    let inbox = proof_owner_inbox(&[("alpha", 7)], u64::MAX);
+    let owner = "alpha".try_into().unwrap();
+    assert!(check_existing_create_owner(&inbox, &owner, core::TenantId(7)).unwrap());
+}
+
+#[test]
+fn proof_check_new_empty() {
+    let inbox = proof_owner_inbox(&[], 0);
+    assert!(inbox.validate().is_ok());
+    assert!(check_new_create_owner(&inbox, &proof_owner_world(&[]), proof_local(1, 1)).is_ok());
+}
+
+#[test]
+fn proof_check_new_excluded_largest() {
+    assert!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[9, 40, 17]),
+            proof_local(2, 18)
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn proof_check_new_wrong_owner() {
+    assert!(matches!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[9, 40, 17]),
+            proof_local(2, 41)
+        ),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_check_new_high_water() {
+    assert!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], 64),
+            &proof_owner_world(&[9, 40, 17]),
+            proof_local(2, 65)
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn proof_check_new_excluded_maximum() {
+    assert!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[u64::MAX]),
+            proof_local(1, 6)
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn proof_check_new_other_maximum_first_error() {
+    assert!(matches!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[u64::MAX]),
+            proof_local(2, 1)
+        ),
+        Err(JournalError::IdentifierExhausted)
+    ));
+}
+
+#[test]
+fn proof_check_new_high_water_first_error() {
+    assert!(matches!(
+        check_new_create_owner(
+            &proof_owner_inbox(&[], u64::MAX),
+            &proof_owner_world(&[]),
+            proof_local(1, 7)
+        ),
+        Err(JournalError::IdentifierExhausted)
+    ));
+}

@@ -502,6 +502,37 @@ pub(super) fn create_attachment_install(
     inbox.sessions[s].entries[e].local_operation = Some(local.operation);
 }
 
+pub(super) fn check_existing_create_owner(
+    inbox: &Inbox,
+    owner: &sandproof_protocol::TenantId,
+    local_owner: core::TenantId,
+) -> Result<bool, JournalError> {
+    let mut index = 0;
+    while index < inbox.owners.len() {
+        let row = &inbox.owners[index];
+        if &row.external == owner {
+            if row.local != local_owner {
+                return Err(JournalError::Conflict);
+            }
+            return Ok(true);
+        }
+        index += 1;
+    }
+    Ok(false)
+}
+
+pub(super) fn check_new_create_owner(
+    inbox: &Inbox,
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
+    let expected = create_owner_successor(inbox, world, local.sandbox)?;
+    if expected != local.owner {
+        return Err(JournalError::Conflict);
+    }
+    Ok(())
+}
+
 pub(super) fn attach_create(
     tx: &WorldTransaction<'_>,
     namespace: &str,
@@ -510,13 +541,8 @@ pub(super) fn attach_create(
     let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
     let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
     let owner = &inbox.sessions[s].owner;
-    let expected = if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
-        row.local
-    } else {
-        create_owner_successor(&inbox, &tx.world(), a.local.sandbox)?
-    };
-    if expected != a.local.owner {
-        return Err(JournalError::Conflict);
+    if !check_existing_create_owner(&inbox, owner, a.local.owner)? {
+        check_new_create_owner(&inbox, &tx.world(), a.local)?;
     }
     create_attachment_install(&mut inbox, s, e, a.local);
     tx.execute(

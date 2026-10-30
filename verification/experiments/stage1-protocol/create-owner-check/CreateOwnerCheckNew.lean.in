@@ -1,0 +1,31 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckCommon
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCore
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck
+open OwnerMapping
+abbrev newRun := sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+
+theorem new_complete : FullNewContract newRun := by
+  intro inbox world binding
+  have allocated := CreateOwnerSuccessor.successor_complete inbox world binding.sandbox
+  unfold newRun sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+  simp only [CreateOwnerSuccessor.run] at allocated
+  rw [allocated]
+  simp only [bind_tc_ok]
+  cases answer : CreateOwnerSuccessor.expected inbox world binding.sandbox with
+  | Err error =>
+      simp [answer, newExpected, guardExpected,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok owner =>
+      by_cases same : owner = binding.owner
+      · simp [answer, newExpected, guardExpected, same, internal_ne,
+          core.result.Result.Insts.CoreOpsTry.branch]
+      · have values : owner.val ≠ binding.owner.val :=
+          fun equal => same (UScalar.eq_of_val_eq equal)
+        simp [answer, newExpected, guardExpected, same, values, internal_ne,
+          core.result.Result.Insts.CoreOpsTry.branch]
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.new_complete

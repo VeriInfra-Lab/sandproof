@@ -4,6 +4,10 @@
 
 本入口针对当前真实 Rust 的有限写入函数，正确视图只追加透明调用根，错误视图才局部修改实际语句。数学开发、实际采用、重新抽取和原生验收分别记录；旧执行保留原精确输入，不改写成新头执行。
 
+此入口的输入清单固定于 `8a69398f`；后续 owner 守卫的采用见
+[独立入口](../create-owner-check/README.md)。本清单不直接刷新整文件摘要；未变化写入函数的
+复用仍须核对当前实际源码、重新抽取、生成/证明/依赖字节及原证据身份。
+
 本切片证明 `create_attachment_install` 对已解码完整 Inbox 的效果，复用原请求、Accepted/Recorded、查找和 Create 选择规格。父 `attach_create` 的 load、owner 检查、SQL 和 save 的整体结论仍开放。
 
 `FullInstallContract` 对任意完整 Inbox、两个有效索引和完整 `InternalLocalBinding` 使用相同性质：完整外部 owner 不存在时恰追加原 session.owner 与 binding.owner 的映射，并把高水位赋为该 owner；存在时保留原表和高水位。选中 session 写入完整 sandbox/owner/operation，选中 entry 写入 operation。后置条件与整个 Inbox 值相等，因此其余配置、host observation、lanes、session 字段、其他 session、entry 字段及其他 entry 全部保留。它没有假设映射唯一、ID 非零或已授权。

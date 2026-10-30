@@ -123,9 +123,13 @@ manifest 文件集、真实字节/网络外壳和系统结论继续是独立义�
 
 `attach_create` 先从原 load 的同一 Inbox 调用 `create_attachment_selection`，
 全文查找后按 terminal、refusal、当前版本不等、已有 local、Create 形状检查，返回原
-session/entry 位置和 startup deadline。只有原缺失 owner 分支读取 World，再由
+session/entry 位置和 startup deadline。随后由
+[`check_existing_create_owner`](../../verification/experiments/stage1-protocol/create-owner-check/README.md)
+按完整外部 owner 查找首次匹配；该行本地 owner 不等时立即 Conflict，相等时返回已有映射。
+只有没有匹配才读取 World，并调用 `check_new_create_owner`，由原
 `create_owner_successor` 排除本次新 sandbox，重算 owner 最大值与高水位的受检后继。
-现存 owner 行不能被该重算覆盖，排除 ID 也不能替换成 owner 数字。
+分配错误先原样传播，成功后才比较本地 owner；现存映射不调用该重算，排除 ID 也不能
+替换成 owner 数字。两个只读守卫的完整值合同不代替整个父函数或同事务对应。
 
 只读 helper 返回不表示映射已保存。原父函数在 owner 检查之后调用
 [`create_attachment_install`](../../verification/experiments/stage1-protocol/create-install/README.md)，

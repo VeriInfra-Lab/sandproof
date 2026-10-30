@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckEquality
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckValues
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCore
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+open OwnerMapping OwnerMapping.Values CreateOwnerSuccessor.Values Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+
+theorem observed : run (noOwners limit) emptyWorld (binding 1#u64 7#u64) = .ok (.Err .Conflict) := by
+  have calculated := (CreateOwnerSuccessor.successor_complete (noOwners limit) emptyWorld 1#u64).trans
+    (congrArg Result.ok CreateOwnerSuccessor.Values.high_water_exhausted_expected)
+  simp only [CreateOwnerSuccessor.run] at calculated
+  simp [run, sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner,
+    binding, calculated]
+
+theorem violates_full_contract : ¬ FullNewContract run := by
+  intro contract
+  have required := contract (noOwners limit) emptyWorld (binding 1#u64 7#u64)
+  rw [observed] at required
+  simp [Values.new_high_water_first_error] at required
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.violates_full_contract
