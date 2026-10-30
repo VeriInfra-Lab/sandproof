@@ -68,13 +68,38 @@
   "preserved_existing_proofs": {
     "InboxLookup.find_contract": "actual first full-key/full-intent lookup only; current source/provider/representation admission remains distinct",
     "ProtocolRecord.full_flow_contract": "existing synchronous record/save errors and poststate classification remain preserved",
-    "OwnerMapping.owner_complete": "separate 2e35b8c8 unadopted candidate, not original attachment or production equivalence"
+    "OwnerMapping.owner_complete": "separate 2e35b8c8 unadopted candidate, not original attachment or production equivalence",
+    "Cloning.model_World_clone_exact": "SandboxModel/Access/Cloning.lean; exact source/representation applicability required; no repeated V4 clone proof"
   },
   "minimum_provider_review": {
     "load_save": "reuse existing FullLoad/FullSave; actual standard Serde/SHA/SQL instance obligations already submitted to #632; no whole codec correctness assumption",
     "world": "original WorldTransaction.world borrows candidate RefCell<Option<World>>, expects live Some and clones complete World; old B2 set/take contract does not automatically cover this read",
     "identity": "original identity.sandbox_id uses format!(sb-{namespace}-{u64}) and original SandboxId::try_from; namespace/decimal formatting and full identifier validation/error must remain visible",
     "deadline_sql": "same original tx; original i64 checked conversion before identity, statement and parameter order [deadline,sandbox], errors before save; UPDATE success count is ignored in this function",
-    "outer_admission": "actual Create rows prepared before attach_admission and same tx.commit afterwards; row existence, protection, unknown commit and recovery are separate business obligations, not library correctness"
+    "outer_admission": "actual Create rows prepared before attach_admission and same tx.commit afterwards; row existence, protection, unknown commit and recovery are separate business obligations, not library correctness",
+    "world_existing": "A6-network-stdlib String/Option clone and Option.as_ref already registered; reuse public Cloning theorem with actual representation/source binding",
+    "identity_current_model_gap": "Unchanged built-in Argument/Arguments Unit and Arguments.new erase inputs. Request finite original 9-byte format and namespace/u64 arguments preserving constructor/render binding; not any constant alloc.fmt.format replacement."
+  },
+  "format_review": {
+    "kind": "unchanged-fixed-library-information-loss-only",
+    "driver_sha256": "ba85f5ca3fea2fb3683229c5ae970a4fde87ee57f36b45fa0c47a26c3138eda3",
+    "proof_sha256": "e58c57eb48a68ebfe443c73dbc8cd158456e684a385378d8f6606b6dff4c0161",
+    "fixed_models": {
+      "Core/Fmt.lean": "26ac770dbf97ae2947a968818c307044262756bd67275101ac0c34fb817a81ce",
+      "Scalar/Fmt.lean": "ba938d8921fd2c96612d74ab8b293a98c41255e683768e62e94da32a016ec59b",
+      "Primitives.lean": "702946866c83fa0bb8b9d2a248c14164d38aa15e1eebd67caf4f39b0076d0ff8"
+    },
+    "expected_files": [
+      "SandboxModel/Lifecycle/Protocol/FixedFmtArguments.lean",
+      "SandboxModel/ProofAuditCommand.lean"
+    ],
+    "expected_audits": [
+      "SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.new_erases_inputs",
+      "SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.new_collision",
+      "SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.no_faithful_two_results"
+    ],
+    "original_business_semantics_proved": false,
+    "new_model_adopted": false,
+    "whole_formatter_trusted": false
   }
 }

@@ -1,0 +1,32 @@
+import Aeneas
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt
+
+theorem new_erases_inputs {n m : Usize} (pieces : Array U8 n)
+    (arguments : Array core.fmt.rt.Argument m) :
+    core.fmt.Arguments.new pieces arguments = .ok () := by
+  rfl
+
+theorem new_collision {n m n' m' : Usize}
+    (pieces : Array U8 n) (arguments : Array core.fmt.rt.Argument m)
+    (pieces' : Array U8 n') (arguments' : Array core.fmt.rt.Argument m') :
+    core.fmt.Arguments.new pieces arguments =
+      core.fmt.Arguments.new pieces' arguments' := by
+  rfl
+
+theorem no_faithful_two_results {n m n' m' : Usize}
+    (pieces : Array U8 n) (arguments : Array core.fmt.rt.Argument m)
+    (pieces' : Array U8 n') (arguments' : Array core.fmt.rt.Argument m')
+    (format : core.fmt.Arguments → Result String) (left right : String)
+    (different : left ≠ right) :
+    ¬ ((do let value ← core.fmt.Arguments.new pieces arguments; format value) = .ok left ∧
+       (do let value ← core.fmt.Arguments.new pieces' arguments'; format value) = .ok right) := by
+  rintro ⟨first, second⟩
+  simp only [core.fmt.Arguments.new, bind_tc_ok] at first second
+  exact different (Result.ok_injective (first.symm.trans second))
+
+end SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.new_erases_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.new_collision
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachment.FixedFmt.no_faithful_two_results
