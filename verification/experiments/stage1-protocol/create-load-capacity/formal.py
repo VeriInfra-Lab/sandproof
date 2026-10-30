@@ -105,7 +105,7 @@ def run(output, variant, data, inputs, modes):
                      str(HERE.parent/'inbox-record/Cargo.toml'), '--lib', '--locked', '--offline', '--target', fixed['target']]
             command(project, output, label+'-charon', support.wrapper(project)+argv)
             raw = json.loads((project/ir).read_text())
-            admitted = support.load.admit_ir(raw, opaque=opaque, primitive=label == 'primitive')
+            admitted = dict(original_admission=support.load.admit_ir(raw, opaque=opaque, primitive=label == 'primitive'))
             if label != 'primitive':
                 admitted['complete_object_roots'] = support.binding.admit(raw)
                 admitted['rejected_changed_roots'] = support.binding.rejections(raw)
