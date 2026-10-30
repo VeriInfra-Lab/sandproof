@@ -1,0 +1,140 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentFlowModel
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentConfig
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow
+noncomputable section
+
+theorem full_flow_contract : FullCreateFlowContract attach_create_using := by
+  intro R T N U B E saved terminal renewal unload graphic io graphicLaw represented state ns attachment
+  unfold attach_create_using flowView
+  change Bind.bind (m := Result) (load_using saved terminal renewal unload graphic io.codecInboxLoadEffectsInst state) _ =
+    Bind.bind (m := Result) (InboxLoad.fullLoadView saved terminal renewal unload io.codecInboxLoadEffectsInst state) _
+  rw [← InboxLoad.full_load_refines saved terminal renewal unload graphic graphicLaw
+    io.codecInboxLoadEffectsInst represented state]
+  apply InboxLoad.bind_return_congr
+  rintro ⟨loaded,afterLoad⟩ loadReturned
+  simp only [uncurry_apply_pair]
+  cases loaded with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok loaded =>
+    cases loaded with
+    | none => simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some inbox =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch,core.option.Option.ok_or,
+        bind_tc_ok,loadedView]
+      apply InboxLoad.bind_return_congr
+      intro selected selectedReturned
+      cases selected with
+      | Err error => simp [
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok indices =>
+        rcases indices with ⟨s,e,deadline⟩
+        obtain ⟨post,installed,frame,bounded⟩ := loaded_selected_install_config
+          saved terminal renewal unload graphic graphicLaw io.codecInboxLoadEffectsInst represented
+          state afterLoad inbox loadReturned attachment.intent s e deadline attachment.local selectedReturned
+        simp only [bind_tc_ok,selectedView]
+        apply InboxLoad.continue_congr
+        intro session
+        apply InboxLoad.continue_congr
+        intro existing
+        cases existing with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok existing =>
+          cases existing with
+          | true =>
+            simp only [bind_tc_ok,
+              ↓reduceIte,installedView,installed,persistView,CreateDeadline.run]
+            apply InboxLoad.continue_congr
+            intro beforeArguments
+            apply InboxLoad.continue_congr
+            intro converted
+            cases converted with
+            | Err error => simp [
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok signed =>
+              simp only [bind_tc_ok]
+              apply InboxLoad.continue_congr
+              rintro ⟨identified,afterIdentity⟩
+              simp only [uncurry_apply_pair]
+              cases identified with
+              | Err error => simp [
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+              | Ok sandbox =>
+                simp only [bind_tc_ok]
+                apply InboxLoad.continue_congr
+                intro key
+                simp only [lifetimeStatement]
+                apply InboxLoad.continue_congr
+                rintro ⟨updated,afterUpdate⟩
+                simp only [uncurry_apply_pair]
+                cases updated with
+                | Err error => simp [
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                | Ok count =>
+                  simp only [bind_tc_ok]
+                  apply InboxLoad.continue_congr
+                  intro beforeSave
+                  exact InboxSave.save_refines saved terminal renewal unload graphic graphicLaw
+                    io.codecInboxSaveEffectsInst post beforeSave bounded
+          | false =>
+            simp only [bind_tc_ok,
+              Bool.false_eq_true,↓reduceIte]
+            apply InboxLoad.continue_congr
+            rintro ⟨world,afterWorld⟩
+            simp only [uncurry_apply_pair]
+            apply InboxLoad.continue_congr
+            intro fresh
+            cases fresh with
+            | Err error => simp [
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok accepted =>
+              cases accepted
+              simp only [bind_tc_ok,
+                installedView,installed,persistView,CreateDeadline.run]
+              apply InboxLoad.continue_congr
+              intro beforeArguments
+              apply InboxLoad.continue_congr
+              intro converted
+              cases converted with
+              | Err error => simp [
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+              | Ok signed =>
+                simp only [bind_tc_ok]
+                apply InboxLoad.continue_congr
+                rintro ⟨identified,afterIdentity⟩
+                simp only [uncurry_apply_pair]
+                cases identified with
+                | Err error => simp [
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                | Ok sandbox =>
+                  simp only [bind_tc_ok]
+                  apply InboxLoad.continue_congr
+                  intro key
+                  simp only [lifetimeStatement]
+                  apply InboxLoad.continue_congr
+                  rintro ⟨updated,afterUpdate⟩
+                  simp only [uncurry_apply_pair]
+                  cases updated with
+                  | Err error => simp [
+                      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                  | Ok count =>
+                    simp only [bind_tc_ok]
+                    apply InboxLoad.continue_congr
+                    intro beforeSave
+                    exact InboxSave.save_refines saved terminal renewal unload graphic graphicLaw
+                      io.codecInboxSaveEffectsInst post beforeSave bounded
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.full_flow_contract

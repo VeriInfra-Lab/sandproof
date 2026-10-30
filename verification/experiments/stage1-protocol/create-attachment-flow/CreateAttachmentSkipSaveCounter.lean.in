@@ -1,0 +1,57 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentCounterValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter
+noncomputable section
+open Values
+open InboxLoad.Values (saved terminal renewal unload Trace)
+
+-- This unfolds only the real mutated parent; lower business algorithms are
+-- discharged by their existing applicable contracts on the same complete input.
+theorem actual_without_save :
+    attach_create_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (effects 0#usize) [] namespaceValue (attachment CounterValues.template) =
+      .ok (.Ok (),InboxLoad.Values.completeTrace (inbox false) ++ argumentTrace) := by
+  have selection : create_attachment_selection (inbox false) intent =
+      .ok (.Ok (0#usize,0#usize,2#u64)) := selected
+  have indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      (inbox false).sessions 0#usize = .ok (session false) :=
+    CreateSelection.Values.singleton_index (session false)
+  have indexed_usize : alloc.vec.Vec.index_usize (inbox false).sessions 0#usize = .ok (session false) := by
+    simpa only [alloc.vec.Vec.index_slice_index] using indexed
+  have install : create_attachment_install (inbox false) 0#usize 0#usize binding = .ok (inbox true) := installed
+  have deadline : create_attachment_deadline 2#u64 = .ok (.Ok 2#i64) := deadline_two
+  unfold attach_create_using
+  change Bind.bind (m := Result)
+    (load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (CreateLoadCapacity.Fixture.ioFor (inbox false)) []) _ = _
+  rw [loaded]
+  simp [attachment,selection,indexed_usize,existing,install,deadline,effects,public_as_str,
+    lifetimeStatement,argumentTrace,List.append_assoc,core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem not_full_contract : ¬FullCreateFlowContract attach_create_using := by
+  intro law
+  have promised :
+      attach_create_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+        ComposedConfig.standardGraphic (effects 0#usize) [] namespaceValue (attachment CounterValues.template) =
+      flowView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+        (effects 0#usize) [] namespaceValue (attachment CounterValues.template) :=
+    law saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic
+      (effects 0#usize) ComposedConfig.standard_graphic_contract represented [] namespaceValue
+      (attachment CounterValues.template)
+  rw [actual_without_save,CounterValues.normal_specification] at promised
+  have stateEquality : InboxLoad.Values.completeTrace (inbox false) ++ argumentTrace = normalTrace := by
+    simpa only [Result.ok.injEq,Prod.mk.injEq,true_and] using promised
+  have lengthEquality := congrArg List.length stateEquality
+  simp only [normalTrace,List.length_append,savedTrace,List.length_cons,List.length_nil] at lengthEquality
+  omega
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.actual_without_save
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract

@@ -147,6 +147,41 @@ impl InboxSaveEffects for StandardInboxSave<'_> {
     }
 }
 
+// The existing connection carrier also delegates to the original save adapter.
+impl InboxSaveEffects for super::super::checkpoint::StandardConfigRead<'_> {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        InboxSaveEffects::encode(
+            &mut StandardInboxSave {
+                connection: self.connection,
+            },
+            inbox,
+        )
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        InboxSaveEffects::digest(
+            &mut StandardInboxSave {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+    fn update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        InboxSaveEffects::update(
+            &mut StandardInboxSave {
+                connection: self.connection,
+            },
+            statement,
+            bytes,
+            digest,
+        )
+    }
+}
+
 pub(super) fn save(connection: &Connection, inbox: &Inbox) -> Result<(), JournalError> {
     let mut effects = StandardInboxSave { connection };
     save_using::<

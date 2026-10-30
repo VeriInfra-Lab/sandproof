@@ -105,6 +105,22 @@ record 成功本身不保证后态通过完整校验。已有 capture frontier �
 及前一个对应 Unload；两层支持域必须分别保留。组合要证明实际拒绝/后态，或落实精确
 业务前提，不能把未解的 V3 保持命题交给外部提供者，也不能收窄公共请求合同。
 
+
+当前中心 [Resume 构造](../../sandbox-center-core/src/lifecycle/resume.rs)从同一前项已保存的 Unloaded
+事实取得 source／capture／digest，再用 source.checked_next() 构造目标；公开 Resume submission
+没有让调用者指定这些字段，也没有在这条路径独立预留运行代高水位。全局 operation_highwater
+是另一编号域。纯决定在克隆中构造后态；原 [authority](../../sandbox-center-store/src/authority.rs)
+在决定成功后提交同一封套，存储错误／未知提交会阻止继续使用旧 observed 视图，仍须由
+V1/V2 的实际值／耐久定理连接。当前 producer 的相邻目标策略与宿主较窄支持域可相容，
+不能据源码审查声称恢复调用链已证，或把公共请求合同改成必须加一。协议合法的空洞请求
+仍不属于当前宿主新建恢复分支的接受域。
+
+宿主的 wire IncarnationId、源 work 的 native Generation、中心 operation_highwater 和
+本地按 sandbox 分配的 OperationId 是四个不同编号域。恢复同时检查 wire source 的受检
+后继和实际 native generation 的受检后继；所需的是原来源／本地 work 绑定，不能假定
+两个数值相等。同一完整 restore claim 的重放先于新 operation 分配，不能从重放成功推出
+分配器仍有容量或一个新的 claim 已被接受。
+
 save 对完整同一 Inbox 先校验、再编码、检查输出容量、摘要、原 SQL UPDATE，最后检查
 更新恰好一行。当前使用 to_vec 后检查长度，有界输出不等于编码分配上界已证明。
 预算拒绝保留编码效果；SQL/行数错误保留已发生的更新效果。外层失败、重放时未调用
@@ -158,7 +174,15 @@ Inbox/World/local binding 陈述检查成功到整个 Inbox 写入的合同。�
 完整 Create 接受。固定 Std 的透明转换、完整错误载体与原 Result 模型分别登记，
 不把整数转换提升为完整事务结论。
 
-固定 ID、原 UPDATE 与 save 及 deadline 在完整父函数中的顺序仍须连接；原寿命
-UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
-重启以及真实资源/认证来源继续分别连接。函数采用、实际生成体对应与完整组合分开
-验收，候选结果的精确版本和当前缺口仍由覆盖记录及 #635 维护。
+完整父函数通过窄效果接口执行唯一 `attach_create_using`，直接调用原 `load_using` 和
+`save_using`；不把整个 codec 或事务设为可信回调。标准实例仍委托原读取、编码、摘要和
+写入实现，保留 load 前、寿命 UPDATE receiver 前及 save 前的三个原连接解引用位置。
+已有 owner 分支不读取 World；缺失时才取完整 owned World。完整字段、首错、短路、
+中间效果状态及正常／错误版的同一规格见
+[完整同步流程](../../verification/experiments/stage1-protocol/create-attachment-flow/README.md)。
+
+原寿命 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行；最后的收件 save 仍有
+独立的一行检查。固定 ID 的双输入十进制格式、普通共享借用、原 SQL 两参数及标准
+JSON／SHA 实例仍须逐符号连接。外层同事务插入、提交未知与重启以及真实资源／认证
+来源继续分别连接。采用、实际生成体对应与完整组合分开验收；当前适用版本、候选结果
+和缺口仍由覆盖记录及 #635 维护，不从合成效果下的正常见证推出真实持久接受。

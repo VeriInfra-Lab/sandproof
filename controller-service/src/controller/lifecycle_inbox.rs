@@ -537,26 +537,215 @@ pub(super) fn create_attachment_deadline(value: u64) -> Result<i64, JournalError
     i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)
 }
 
+pub(super) trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects {
+    fn world(&mut self) -> core::World;
+    fn begin_lifetime_update(&mut self);
+    fn sandbox_id(
+        &mut self,
+        namespace: &str,
+        sandbox: core::SandboxId,
+    ) -> Result<sandproof_protocol::SandboxId, JournalError>;
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError>;
+    fn begin_inbox_save(&mut self);
+}
+
+struct StandardCreateAttachment<'tx, 'connection> {
+    tx: &'tx WorldTransaction<'connection>,
+    connection: &'tx rusqlite::Connection,
+}
+
+impl super::checkpoint::ReadConfigEffects for StandardCreateAttachment<'_, '_> {
+    fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
+        super::checkpoint::ReadConfigEffects::query_i64(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError> {
+        super::checkpoint::ReadConfigEffects::query_bytes(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<crate::MaintenanceConfig, JournalError> {
+        super::checkpoint::ReadConfigEffects::decode_maintenance(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+}
+
+impl codec::InboxLoadEffects for StandardCreateAttachment<'_, '_> {
+    fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
+        codec::InboxLoadEffects::query_bool(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError> {
+        codec::InboxLoadEffects::query_i64_pair(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+        codec::InboxLoadEffects::query_bytes_pair(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
+        codec::InboxLoadEffects::decode_inbox(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+    fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        codec::InboxLoadEffects::encode_inbox(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            inbox,
+        )
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        codec::InboxLoadEffects::digest(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+}
+
+impl codec::InboxSaveEffects for StandardCreateAttachment<'_, '_> {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        codec::InboxSaveEffects::encode(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            inbox,
+        )
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        codec::InboxSaveEffects::digest(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+    fn update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        codec::InboxSaveEffects::update(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+            bytes,
+            digest,
+        )
+    }
+}
+
+impl CreateAttachmentEffects for StandardCreateAttachment<'_, '_> {
+    fn world(&mut self) -> core::World {
+        self.tx.world()
+    }
+    fn begin_lifetime_update(&mut self) {
+        self.connection = self.tx;
+    }
+    fn sandbox_id(
+        &mut self,
+        namespace: &str,
+        sandbox: core::SandboxId,
+    ) -> Result<sandproof_protocol::SandboxId, JournalError> {
+        identity::sandbox_id(namespace, sandbox)
+    }
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError> {
+        Ok(self.connection.execute(statement, params![deadline, sandbox])?)
+    }
+    fn begin_inbox_save(&mut self) {
+        self.connection = self.tx;
+    }
+}
+
 pub(super) fn attach_create(
     tx: &WorldTransaction<'_>,
     namespace: &str,
     a: &CreateAttachment,
 ) -> Result<(), JournalError> {
-    let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
+    let connection: &rusqlite::Connection = tx;
+    attach_create_using::<
+        native_retirement::StandardRetirementEncoding,
+        model::StandardTerminalEncoding,
+        renewal_confirmation::StandardRenewalEncoding,
+        unload_resolution::StandardUnloadEncoding,
+        crate::capture::StandardGraphicBytes,
+        _,
+    >(&mut StandardCreateAttachment { tx, connection }, namespace, a)
+}
+
+pub(super) fn attach_create_using<
+    R: native_retirement::RetirementEncoding,
+    T: model::TerminalEncoding,
+    N: renewal_confirmation::RenewalEncoding,
+    U: unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: CreateAttachmentEffects,
+>(
+    effects: &mut E,
+    namespace: &str,
+    a: &CreateAttachment,
+) -> Result<(), JournalError> {
+    let mut inbox = codec::load_using::<R, T, N, U, B, E>(effects)?
+        .ok_or(JournalError::UnsupportedStore)?;
     let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
     let owner = &inbox.sessions[s].owner;
     if !check_existing_create_owner(&inbox, owner, a.local.owner)? {
-        check_new_create_owner(&inbox, &tx.world(), a.local)?;
+        check_new_create_owner(&inbox, &effects.world(), a.local)?;
     }
     create_attachment_install(&mut inbox, s, e, a.local);
-    tx.execute(
-        "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
-        params![
-            create_attachment_deadline(startup_deadline_ms)?,
-            identity::sandbox_id(namespace, a.local.sandbox)?.as_str()
-        ],
-    )?;
-    codec::save(tx, &inbox)
+    effects.begin_lifetime_update();
+    {
+        let deadline = create_attachment_deadline(startup_deadline_ms)?;
+        let sandbox = effects.sandbox_id(namespace, a.local.sandbox)?;
+        effects.execute_lifetime_update(
+            "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
+            deadline,
+            sandbox.as_str(),
+        )?;
+    }
+    effects.begin_inbox_save();
+    codec::save_using::<R, T, N, U, B, E>(&inbox, effects)
 }
 
 pub(super) fn check_admission(

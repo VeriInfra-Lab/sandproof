@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.InboxSynchronous
+noncomputable section
+theorem loaded_representable {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : InboxLoad.DecodedStringsRepresentable io)
+    (output : Inbox) (before after : E)
+    (returned : load_using saved terminal renewal unload graphic io before =
+      .ok (.Ok (some output), after)) :
+    ConfigValidation.Representable output.config := by
+  obtain ⟨reserve, bodyStart, evidence⟩ := InboxLoad.full_load_success_body
+    saved terminal renewal unload graphic graphicLaw io represented output before after returned
+  rcases evidence with ⟨bytes, sha, afterBytes, afterDecode, observed, afterEncoding,
+    _, decoded, _, _, _, _, _⟩
+  exact represented afterBytes (alloc.vec.Vec.deref bytes) output afterDecode decoded
+end
+end SandboxModel.Stage1Protocol.InboxSynchronous
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSynchronous.loaded_representable
