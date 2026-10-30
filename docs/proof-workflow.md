@@ -206,6 +206,15 @@ bash scripts/verify-capture-caller.sh
 正确生成库和独立错误版保持各自导入环境；总根不同时导入两者。公共登记、输入摘要、
 组件通过和整个 V4 完成分别记录，摘要更新本身不算验收通过。
 
+暂停发布切片使用独立 `--scope pause-publication`，固定包含完整 Linux `functional`
+及当前 `pause-publication` 原生组件；形式入口为 `scripts/verify-pause-publication.sh`。
+原组件及准备状态见[暂停发布入口](../verification/experiments/pause-publication/README.md)，
+实际验收结果见覆盖记录。不得以原捕获调用方或 V3 的封口替代本范围；默认 `all`
+保留原全部义务并登记本组件一次，有限交付不因此要求在本批启动 `all`。
+共享生成闭包受影响时，另运行原 `capture-caller` 有限入口，两份封口各自保持原范围。
+同一稳定源码和运行条件下，完整 `functional` 仅按原收据与全部原始文件的严格校验复用，
+不能改写键、标签或缺失证据来合并结果。
+
 V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
 `1`、`2`、`4`，默认仍为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
 每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。

@@ -105,5 +105,50 @@ class PausePublicationComponentTests(unittest.TestCase):
             run.assert_not_called()
 
 
+class PausePublicationMutationTests(unittest.TestCase):
+    """Check mutant identity only; actual business assertions run in Rust."""
+
+    def setUp(self):
+        self.driver = component.load('pause_publication_mutator_regression',
+                                     component.HERE/'native.py')
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.path = self.root/self.driver.SOURCE
+        self.path.parent.mkdir(parents=True)
+        self.original = (component.ROOT/self.driver.SOURCE).read_text()
+        self.path.write_text(self.original)
+
+    def test_only_the_real_stop_rejection_is_bypassed(self):
+        self.assertEqual(len(self.driver.CASES), 1)
+        case = self.driver.CASES[0]
+        digest = self.driver.mutate(self.root, case)
+        changed = self.path.read_text()
+        self.assertEqual(changed, self.original.replace(case[2], case[3], 1))
+        self.assertEqual(digest, sha(self.path))
+        self.assertIn('let stop = Command::StopVm {', changed)
+        self.assertIn('let _ = effect_succeeded_check(world, &stop);', changed)
+        for command in ('fence', 'freeze', 'seal', 'commit'):
+            self.assertIn('if !effect_succeeded_check(world, &'+command+') {', changed)
+
+    def test_missing_duplicate_or_moved_guard_is_rejected_before_writing(self):
+        guard = self.driver.STOP_GUARD
+        candidates = [self.original.replace(guard, ''), self.original+guard,
+                      guard+self.original.replace(guard, '')]
+        for text in candidates:
+            with self.subTest(source=text[:40]):
+                self.path.write_text(text)
+                with self.assertRaises(ValueError):
+                    self.driver.mutate(self.root, self.driver.CASES[0])
+                self.assertEqual(self.path.read_text(), text)
+
+    def test_mutation_cannot_be_applied_twice(self):
+        self.driver.mutate(self.root, self.driver.CASES[0])
+        changed = self.path.read_bytes()
+        with self.assertRaises(ValueError):
+            self.driver.mutate(self.root, self.driver.CASES[0])
+        self.assertEqual(self.path.read_bytes(), changed)
+
+
 if __name__ == '__main__':
     unittest.main()
