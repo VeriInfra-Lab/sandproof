@@ -111,8 +111,10 @@ save 对完整同一 Inbox 先校验、再编码、检查输出容量、摘要�
 save、BeforeCommit 或 AfterCommit 错误都不能独自推出事务没有效果或已经耐久接受。
 
 同步效果接口不替代具体 JSON、SHA、SQL、同事务快照、提交未知和重启证明。认证来源、
-当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。完整
-manifest 文件集、真实字节/网络外壳和系统结论继续是独立义务。
+当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。
+Manifest 的任意已解码文件列表校验，与原文件白名单、实际句柄/长度/字节/摘要及
+冻结截面事实分别陈述；前者沿用其精确适用范围，不能以局部正常见证替代一般定理，
+也不能把后者或真实 JSON 字节、网络外壳和系统结论一起声称完成。
 
 ## 7. Create 身份映射的同步边界
 
@@ -140,7 +142,15 @@ session 和 entry 字段保留。索引由原完整选择给出；
 在同一次真实抽取的 Inbox 表示下，从完整 load/validate 接受结果给出 owner 数量上限，
 供给完整写入的追加空间条件。该结论只约束实际返回的同一个值；不把合成解码/摘要效果
 当作真实 JSON/SHA/SQL 或同事务证明。当前存储格式为 24，旧 Store23 冻结保持其原范围，
-不直接改摘要沿用。高水位单调性仍需原 successor/owner 检查，不能从独立赋值推出。
+不直接改摘要沿用。
+
+[高水位组合](../../verification/experiments/stage1-protocol/create-high-water/README.md)
+继续复用原 FullExistingContract、FullNewContract 和 FullInstallContract，以同一完整
+Inbox/World/local binding 陈述检查成功到整个 Inbox 写入的合同。已有 owner 分支
+保持高水位；缺失分支须由实际 new 守卫成功推出新编号严格大于原高水位，再连接
+原完整写入。组合同时保留全部原字段与高水位不下降，不从独立赋值推出单调性。
+从合法 load 和完整选择开始的正常见证仅说明此前缀可执行；写后整个 Inbox 仍可能
+由后续校验/save 拒绝，不能把安装成功当成持久接受。
 
 deadline 转换、固定 ID、原 UPDATE 与 save 仍属于同一原父函数的业务义务；原寿命
 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
