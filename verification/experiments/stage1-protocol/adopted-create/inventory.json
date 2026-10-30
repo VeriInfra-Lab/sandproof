@@ -1,0 +1,901 @@
+{
+  "schema": 1,
+  "kind": "adopted-v3-create-positive-correspondence",
+  "production_source_sha256": "e2a722904fe9283cf069029551e8b0058ff297ff56f959fd954cef42f62f3f40",
+  "function_sha256": {
+    "owner_for": "a09cdf3f8a21d641beb6cc55c0bfffa92293bf2c4da89afa745c9518f20b1319",
+    "create_attachment_selection": "71b5163289fad426bdb98915e2bf782f0b48814a2b0cea7e55f231184a4f5b9a",
+    "create_owner_successor": "d099b8919ce2540e19eef35d1959657b1621e501a2ab3238114f296b7d0c71ff"
+  },
+  "authorization": "https://github.com/VeriInfra-Lab/sandproof/issues/635#issuecomment-6514013245",
+  "production_adopted": true,
+  "original_full_attachment_proved": false,
+  "native_checks_run": false,
+  "formal_acceptance": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+    "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e",
+    "SandboxModel/Lifecycle/Protocol/Library.lean": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+    "SandboxModel/Lifecycle/Protocol/Model.lean": "dfada1e9591aa7aea3d9298ecd34fb8ae2701a5f1b46c18267ab845ca4a16083",
+    "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+    "SandboxModel/Lifecycle/Protocol/RequestValues.lean": "b92c5131933fe2e626157f9a7485f73544f13820a3cbec7b09457b0ea38b317a",
+    "SandboxModel/Lifecycle/Protocol/Validation.lean": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19",
+    "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean": "db7507109a9511d416ad1c519821b0ef28e73cc567acc323eb3392ff9f7bd488",
+    "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "controller-service/src/controller/lifecycle_inbox.rs": "e2a722904fe9283cf069029551e8b0058ff297ff56f959fd954cef42f62f3f40",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/llbc/sandproof_foundations.llbc": "47c88a04b10e54870520620eb2b2f94ad1ef7b7b69f0df717ce3fb403cb0ea22",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": "8e166ea90a3b4bfe578239f6fa3804bb53f8ea1f7559fdfb9db306669bdbdf10",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": "00fdd7431b3c304ea3d19ade4bc1d543433445260dd637d7f3ffe2f17dd9a8ba",
+    "verification/experiments/stage1-protocol/adopted-create/formal.py": "f3d8434702c3e832bc76db17192db54ae05edc04d51ee28d1de40b16f9378999",
+    "verification/experiments/stage1-protocol/adopted-create/native.py": "7bd537eeb7880e92dd7c20da37acd7a6c7a502dd4f86b8f3b2452ecd0a8ddf14",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/FunsExternal.lean.in": "92e7b0610f5e6c52ea7d03d6a03587a5728877613abd3f30232823e7cd4eec22",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/OwnerMapping.lean.in": "d774ce8fadd7a4841d6baf39e712496b59c49a392caf210de499d4aae3468170",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/OwnerMappingExamples.lean.in": "5fbce2fefadd8c34ce525807949f33a9db7ee7c7ebdb14cf0b77953ca48f6071",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/SharedValueBindings.lean.in": "e19592197f1418c3a7721bb3913a423e3231a169627fd19ece3f2c33cf604bd4",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/admission.py": "3504ff2fbbfed7e91746adbf7559f7bb77025e2fd2c5839637ea7d34c4b9cb38",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/native-common.rs.in": "ba67e8b1f7f17fb252d2f4e417f5c34fd5b6dccdf050e66d38630c14752cccb3",
+    "verification/experiments/stage1-protocol/adopted-create/reuse/root.rs.in": "2d15255c7b1ac61f18e9a6e9bd19bc4230d0334b3da436c5a3acf55419f3c14d",
+    "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorCommon.lean.in": "fe2168e1bc786e2f6b0457f45ad25110a39e28faf12012f6534a61e3237fae00",
+    "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorCore.lean.in": "169e7d25615485a23dc7e63b45ce0fef125b1bfd7c6eeadecb1474ce158fd96a",
+    "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorExamples.lean.in": "f7f5b0bf20f0aa70298f736dc70bfc5464ccc8c92bb13f557046d8b8534d7fc3",
+    "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorModel.lean.in": "801d02858897e7b8a361223ecb84bc4addaa7d6334e86ada5c9c162187a86fb3",
+    "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorValues.lean.in": "cfe224f9b66c4efe5b31e29a00cb615ec81d38844f53ee015905eedcc3ab93e9",
+    "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "96391005575339a348624d0aa61f73afe6936c523b8b12d7606b5dba20c337a8",
+    "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingValues.lean.in": "f9149b6e39b1e2ff267d4dea762926c59140c4f618e055e647ff78b9741baa81",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/TypesExternal.lean.in": "f6acc05e3805f7e42121089911e16091dd44af3587edd5ea9dc490a4c6dd17ca",
+    "verification/experiments/stage1-protocol/create-owner-successor/root.rs.in": "8a5856c03e9947deee3b8c6c22361ca42843ced908f56a3b33efd7927aed952e",
+    "verification/experiments/stage1-protocol/create-owner-successor/support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
+    "verification/experiments/stage1-protocol/create-selection/CreateSelection.lean.in": "01237e3b8008012924dc03e868be4791134524c0d0aa5abd00c142da4bd9830e",
+    "verification/experiments/stage1-protocol/create-selection/CreateSelectionExamples.lean.in": "8284838580b237af1b5b01054a41e41e8e183067d389c764da54c7bc96275333",
+    "verification/experiments/stage1-protocol/create-selection/CreateSelectionModel.lean.in": "3dd72759d2ded6256e3b3eb388c5ec0ef0d1e3b7ed83c1673bd1705857c99dfe",
+    "verification/experiments/stage1-protocol/create-selection/CreateSelectionValues.lean.in": "5d00ba9171fe031f4007da177b21a2695415688095bd0ca14791c466c7bcd7ea",
+    "verification/experiments/stage1-protocol/create-selection/native-common.rs.in": "79f03c4b22649ca997e47b84339480db01885fd087dd795b6c282d457ace3034",
+    "verification/experiments/stage1-protocol/create-selection/root.rs.in": "e5531a1ec37fdde2823f1bd9e6e4c74059c01332884811b5f9c3db02978c33d6",
+    "verification/experiments/stage1-protocol/create-selection/support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77",
+    "verification/experiments/stage1-protocol/envelope-writer/binding.py": "8a9af347602835db91d317bd1e5d3db30923d2afbedae45b53d0a86d03df3307",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/inbox-load/formal.py": "ed5b3bc7e4b93d7a0acdbd7e9dca40522c36dce0d088ef82becf42527b162e92",
+    "verification/experiments/stage1-protocol/inbox-lookup/InboxLookup.lean.in": "f6f6465db3047785dc1f6b0850c86f6b856b879164b229cdb192674c8bdb29c3",
+    "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupModel.lean.in": "c4cdd47fbbf766429225befc2b93b02b3f36869bf16e1abdf47d2422131000d0",
+    "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupSupport.lean.in": "a5fe02daea8d672e5521d3aeb195540b3dbc0a30956153f5945952a55675ce34",
+    "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupValues.lean.in": "a35ceca3238ef3fb36b84fb69b4b42392498d4cb36bc8c425ffd56c8bc0a1ec7",
+    "verification/experiments/stage1-protocol/inbox-lookup/TypesExternal.lean.in": "0e745e75bc62eb4cd195f97ed6081768a74b38d90ad0b49822cc9cb0422119e1",
+    "verification/experiments/stage1-protocol/inbox-lookup/journal_binding.py": "1754c6dffa5e6f83e9766baec4f0d94daa0a61084ded30f702657d607f5d9a10",
+    "verification/experiments/stage1-protocol/inbox-position/InboxPositionLookup.lean.in": "39ceb1aa5becb63d0613402cfb08aa10901d3c1393809ed325aec40ed443ac75",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "views": {
+    "owners": {
+      "namespace": "SandproofStage1OwnerMappingRust",
+      "library": "SandproofStage1OwnerMapping",
+      "generated": "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping",
+      "roots": [
+        "verification/experiments/stage1-protocol/adopted-create/reuse/root.rs.in",
+        "verification/experiments/stage1-protocol/create-owner-successor/root.rs.in"
+      ],
+      "start_from": [
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_owner_for",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_create_owner_successor"
+      ],
+      "functions": {
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq": {
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1OwnerMapping/FunsExternal_Template.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq": {
+          "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries": {
+          "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records": {
+          "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::owner_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        },
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+        }
+      },
+      "actual_roots": [
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.owner_for",
+        "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor"
+      ],
+      "providers": {
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingModel.lean.in",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingValues.lean.in",
+        "SandboxModel/Lifecycle/Protocol/OwnerMapping.lean": "verification/experiments/stage1-protocol/adopted-create/reuse/OwnerMapping.lean.in",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingExamples.lean": "verification/experiments/stage1-protocol/adopted-create/reuse/OwnerMappingExamples.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean": "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorModel.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean": "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorCommon.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCore.lean": "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorCore.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean": "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorValues.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorExamples.lean": "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorExamples.lean.in",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/TypesExternal.lean.in",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OrdDefaultBinding.lean.in",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean": "verification/experiments/stage1-protocol/adopted-create/reuse/FunsExternal.lean.in",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean": "verification/experiments/stage1-protocol/adopted-create/reuse/SharedValueBindings.lean.in"
+      },
+      "files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCore.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMapping.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_exists",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.successor_complete",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.empty_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_largest_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.absent_exclusion_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_maximum_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.other_maximum_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_exhausted_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_exists",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_unfold",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_end",
+        "SandboxModel.Stage1Protocol.OwnerMapping.tenant_eq",
+        "SandboxModel.Stage1Protocol.OwnerMapping.expected_cons",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_refines",
+        "SandboxModel.Stage1Protocol.OwnerMapping.owner_complete",
+        "SandboxModel.Stage1Protocol.OwnerMapping.normal_empty_allocates_one",
+        "SandboxModel.Stage1Protocol.OwnerMapping.normal_full_owner_match",
+        "SandboxModel.Stage1Protocol.OwnerMapping.repeated_first_match",
+        "SandboxModel.Stage1Protocol.OwnerMapping.world_maximum_all_records",
+        "SandboxModel.Stage1Protocol.OwnerMapping.high_water_not_omitted",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_exhausted",
+        "SandboxModel.Stage1Protocol.OwnerMapping.lookup_before_allocator_exhaustion",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ],
+      "seeds": [
+        "SandboxModel.Lifecycle.Protocol.OwnerMappingExamples",
+        "SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorExamples"
+      ]
+    },
+    "selection": {
+      "namespace": "SandproofStage1RequestRust",
+      "library": "SandproofStage1Request",
+      "generated": "verification/aeneas/stage1-protocol/request/SandproofStage1Request",
+      "roots": [
+        "verification/experiments/stage1-protocol/create-selection/root.rs.in"
+      ],
+      "start_from": [
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_create_attachment_selection",
+        "crate::request_validate",
+        "crate::replay_matches",
+        "crate::accepted_validate",
+        "crate::recorded_matches"
+      ],
+      "functions": {
+        "Bool.Insts.CoreCmpPartialEqBool.ne": {
+          "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        "core.option.Option.Insts.CoreCmpPartialEqOption.eq": {
+          "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        "alloc.string.String.Insts.CoreCmpPartialEqString.eq": {
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        "alloc.vec.Vec.is_empty": {
+          "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq": {
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq": {
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::Resources> for sandproof_protocol::internal::lifecycle::Resources}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCmpPartialEqCreateBinding.eq": {
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::CreateBinding> for sandproof_protocol::internal::lifecycle::CreateBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCmpPartialEqLifecycleOperation.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleOperation> for sandproof_protocol::lifecycle::request::LifecycleOperation}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq": {
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq": {
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId> for sandproof_protocol::lifecycle::identity::RetentionWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding> for sandproof_protocol::lifecycle::identity::RetentionBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId> for sandproof_protocol::lifecycle::authority::CenterId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent> for sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session.find_entry_loop.body": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Session}::find_entry",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session.find_entry_loop": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Session}::find_entry",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session.find_entry": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Session}::find_entry",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find_loop.body": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Inbox}::find",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find_loop": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Inbox}::find",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::model::{sandproof_controller_service::controller::lifecycle_inbox::model::Inbox}::find",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection": {
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_selection",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.positive": {
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.is_valid": {
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.get": {
+          "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.get": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.validate": {
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for": {
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate": {
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches": {
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.request_validate": {
+          "rust_name": "sandproof_stage1_inbox_record_extract::request_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.replay_matches": {
+          "rust_name": "sandproof_stage1_inbox_record_extract::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.accepted_validate": {
+          "rust_name": "sandproof_stage1_inbox_record_extract::accepted_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        "SandproofStage1RequestRust.recorded_matches": {
+          "rust_name": "sandproof_stage1_inbox_record_extract::recorded_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        }
+      },
+      "actual_roots": [
+        "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection"
+      ],
+      "providers": {
+        "SandboxModel/Lifecycle/Protocol/InboxLookupModel.lean": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupModel.lean.in",
+        "SandboxModel/Lifecycle/Protocol/InboxLookupSupport.lean": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupSupport.lean.in",
+        "SandboxModel/Lifecycle/Protocol/InboxLookupValues.lean": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupValues.lean.in",
+        "SandboxModel/Lifecycle/Protocol/InboxLookup.lean": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookup.lean.in",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionLookup.lean": "verification/experiments/stage1-protocol/inbox-position/InboxPositionLookup.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionModel.lean": "verification/experiments/stage1-protocol/create-selection/CreateSelectionModel.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateSelection.lean": "verification/experiments/stage1-protocol/create-selection/CreateSelection.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionValues.lean": "verification/experiments/stage1-protocol/create-selection/CreateSelectionValues.lean.in",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionExamples.lean": "verification/experiments/stage1-protocol/create-selection/CreateSelectionExamples.lean.in",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean": "verification/experiments/stage1-protocol/inbox-lookup/TypesExternal.lean.in"
+      },
+      "files": [
+        "SandboxModel/Foundations/Model.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateSelection.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateSelectionValues.lean",
+        "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLookup.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLookupModel.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLookupSupport.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxLookupValues.lean",
+        "SandboxModel/Lifecycle/Protocol/InboxPositionLookup.lean",
+        "SandboxModel/Lifecycle/Protocol/Library.lean",
+        "SandboxModel/Lifecycle/Protocol/Model.lean",
+        "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
+        "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
+        "SandboxModel/Lifecycle/Protocol/RequestValues.lean",
+        "SandboxModel/Lifecycle/Protocol/Validation.lean",
+        "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/ValidationModel.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean"
+      ],
+      "audits": [
+        "SandboxModel.Stage1Protocol.CreateSelection.absent",
+        "SandboxModel.Stage1Protocol.CreateSelection.conflict",
+        "SandboxModel.Stage1Protocol.CreateSelection.found",
+        "SandboxModel.Stage1Protocol.CreateSelection.selection_complete",
+        "SandboxModel.Stage1Protocol.CreateSelection.Examples.normal_actual",
+        "SandboxModel.Stage1Protocol.CreateSelection.Examples.terminal_actual",
+        "SandboxModel.Stage1Protocol.CreateSelection.Examples.refused_actual",
+        "SandboxModel.Stage1Protocol.CreateSelection.Examples.older_actual",
+        "SandboxModel.Stage1Protocol.CreateSelection.Examples.mapped_actual",
+        "SandboxModel.Stage1Protocol.CreateSelection.observe_session",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.envelope_valid",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.lookup_shape",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.lookup_returns",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.normal_expected",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.terminal_expected",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.refused_expected",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.older_expected",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.mapped_expected",
+        "SandboxModel.Stage1Protocol.CreateSelection.Values.singleton_index",
+        "SandboxModel.Stage1Protocol.EnvelopeValues.same_session",
+        "SandboxModel.Stage1Protocol.EnvelopeValues.changed_complete_intent",
+        "SandboxModel.Stage1Protocol.EnvelopeValues.both_inputs_have_valid_shape",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_body_step",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_body_hit",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_body_conflict",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_body_none",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_loop_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_entry_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_entry_outcome",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_loop_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_contract",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_outcome",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_none_iff",
+        "SandboxModel.Stage1Protocol.InboxLookup.find_first_key",
+        "SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_replay",
+        "SandboxModel.Stage1Protocol.InboxLookup.Witness.changed_capture_rejected",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_absent_iff",
+        "SandboxModel.Stage1Protocol.InboxLookup.entry_prefix",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_absent_iff",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_prefix",
+        "SandboxModel.Stage1Protocol.InboxLookup.first_key_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.next_none",
+        "SandboxModel.Stage1Protocol.InboxLookup.next_some",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_body_none",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_body_step",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_body_hit",
+        "SandboxModel.Stage1Protocol.InboxLookup.inbox_body_conflict",
+        "SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_shape",
+        "SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_spec",
+        "SandboxModel.Stage1Protocol.InboxLookup.Witness.conflicting_spec",
+        "SandboxModel.Stage1Protocol.InboxPosition.entry_found_split",
+        "SandboxModel.Stage1Protocol.InboxPosition.inbox_found_split",
+        "SandboxModel.Stage1Protocol.InboxPosition.inbox_found_reads",
+        "SandboxModel.Stage1Protocol.Library.bool_ne_model_exact",
+        "SandboxModel.Stage1Protocol.Library.option_some_calls_original_dictionary",
+        "SandboxModel.Stage1Protocol.Library.option_mismatch_calls_no_dictionary",
+        "SandboxModel.Stage1Protocol.Library.option_u64_eq",
+        "SandboxModel.Stage1Protocol.Replay.bytes_eq",
+        "SandboxModel.Stage1Protocol.Replay.array_eq",
+        "SandboxModel.Stage1Protocol.Replay.vec_eq",
+        "SandboxModel.Stage1Protocol.Replay.ok_and",
+        "SandboxModel.Stage1Protocol.Replay.resources_eq",
+        "SandboxModel.Stage1Protocol.Replay.create_eq",
+        "SandboxModel.Stage1Protocol.Replay.node_eq",
+        "SandboxModel.Stage1Protocol.Replay.key_eq",
+        "SandboxModel.Stage1Protocol.Replay.expected_eq",
+        "SandboxModel.Stage1Protocol.Replay.binding_eq",
+        "SandboxModel.Stage1Protocol.Replay.operation_eq",
+        "SandboxModel.Stage1Protocol.Replay.request_eq",
+        "SandboxModel.Stage1Protocol.Replay.center_eq",
+        "SandboxModel.Stage1Protocol.Replay.retention_eq",
+        "SandboxModel.Stage1Protocol.Replay.accepted_eq",
+        "SandboxModel.Stage1Protocol.Replay.replay_complete",
+        "SandboxModel.Stage1Protocol.Replay.replay_accepts_iff",
+        "SandboxModel.Stage1Protocol.Replay.replay_rejects_iff",
+        "SandboxModel.Stage1Protocol.Validation.resources_positive",
+        "SandboxModel.Stage1Protocol.Validation.checked_add_present",
+        "SandboxModel.Stage1Protocol.Validation.ok_unless",
+        "SandboxModel.Stage1Protocol.Validation.create_valid",
+        "SandboxModel.Stage1Protocol.Validation.ok_ite",
+        "SandboxModel.Stage1Protocol.Validation.validate_refines",
+        "SandboxModel.Stage1Protocol.Validation.expected_success_iff",
+        "SandboxModel.Stage1Protocol.Validation.expected_error_iff",
+        "SandboxModel.Stage1Protocol.Validation.validate_accepts_iff",
+        "SandboxModel.Stage1Protocol.Validation.validate_error_iff",
+        "SandboxModel.Stage1Protocol.Validation.validate_complete",
+        "SandboxModel.Stage1Protocol.Validation.validate_total",
+        "SandboxModel.Stage1Protocol.Validation.validate_body_refines",
+        "SandboxModel.Stage1Protocol.Validation.Examples.create_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.unload_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.resume_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.destroy_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.renew_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted",
+        "SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node",
+        "SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected",
+        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation"
+      ],
+      "seeds": [
+        "SandboxModel.Lifecycle.Protocol.CreateSelectionExamples"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "group": "all",
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 28
+    },
+    "owner-wrong-owner-guard": {
+      "group": "owner",
+      "mutation": {
+        "before": "if &row.external == owner {",
+        "after": "if &row.external == owner || owner_index < inbox.owners.len() {"
+      },
+      "function_marker": "fn owner_for(",
+      "expected_failures": [
+        "proof_owner_full_external_match",
+        "proof_owner_world_maximum",
+        "proof_owner_high_water"
+      ],
+      "test_count": 10
+    },
+    "owner-wrong-world-maximum": {
+      "group": "owner",
+      "mutation": {
+        "before": "highest = highest.max(records[record_index].1.owner.0);",
+        "after": "highest = highest.max(inbox.owner_high_water);"
+      },
+      "function_marker": "fn owner_for(",
+      "expected_failures": [
+        "proof_owner_world_maximum",
+        "proof_owner_world_overflow",
+        "proof_owner_boundary_reaches_max"
+      ],
+      "test_count": 10
+    },
+    "owner-wrong-high-water": {
+      "group": "owner",
+      "mutation": {
+        "before": "let mut highest = inbox.owner_high_water;",
+        "after": "let mut highest = 0_u64;"
+      },
+      "function_marker": "fn owner_for(",
+      "expected_failures": [
+        "proof_owner_high_water",
+        "proof_owner_high_water_overflow",
+        "proof_owner_boundary_reaches_max"
+      ],
+      "test_count": 10
+    },
+    "owner-wrong-overflow": {
+      "group": "owner",
+      "mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))"
+      },
+      "function_marker": "fn owner_for(",
+      "expected_failures": [
+        "proof_owner_high_water_overflow",
+        "proof_owner_world_overflow"
+      ],
+      "test_count": 10
+    },
+    "selection-wrong-terminal": {
+      "group": "selection",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "    if inbox.sessions[s].terminal\n        || inbox.sessions[s].refusal.is_some()",
+        "after": "    if inbox.sessions[s].refusal.is_some()"
+      },
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "expected_failures": [
+        "proof_selection_terminal"
+      ],
+      "test_count": 9
+    },
+    "selection-wrong-refusal": {
+      "group": "selection",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "        || inbox.sessions[s].refusal.is_some()\n",
+        "after": ""
+      },
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "expected_failures": [
+        "proof_selection_refusal"
+      ],
+      "test_count": 9
+    },
+    "selection-wrong-version": {
+      "group": "selection",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "inbox.sessions[s].current_version != intent.accepted_version",
+        "after": "inbox.sessions[s].current_version < intent.accepted_version"
+      },
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "expected_failures": [
+        "proof_selection_older_version"
+      ],
+      "test_count": 9
+    },
+    "selection-wrong-local": {
+      "group": "selection",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "        || inbox.sessions[s].local.is_some()\n",
+        "after": ""
+      },
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "expected_failures": [
+        "proof_selection_existing_local"
+      ],
+      "test_count": 9
+    },
+    "selection-wrong-deadline": {
+      "group": "selection",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "Ok((s, e, create.startup_deadline_ms))",
+        "after": "Ok((s, e, create.timeout_ms))"
+      },
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "expected_failures": [
+        "proof_selection_normal",
+        "proof_selection_first_position"
+      ],
+      "test_count": 9
+    },
+    "successor-wrong-exclusion": {
+      "group": "successor",
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if record.0 == sandbox {"
+      },
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "expected_failures": [
+        "proof_successor_excluded_largest",
+        "proof_successor_absent_exclusion",
+        "proof_successor_excluded_maximum",
+        "proof_successor_other_maximum",
+        "proof_successor_all_excluded"
+      ],
+      "test_count": 9
+    },
+    "successor-wrong-sandbox-field": {
+      "group": "successor",
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if core::SandboxId(record.1.owner.0) != sandbox {"
+      },
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "expected_failures": [
+        "proof_successor_excluded_largest",
+        "proof_successor_excluded_maximum",
+        "proof_successor_all_excluded"
+      ],
+      "test_count": 9
+    },
+    "successor-wrong-high-water": {
+      "group": "successor",
+      "mutation": {
+        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+      },
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "expected_failures": [
+        "proof_successor_high_water",
+        "proof_successor_excluded_maximum",
+        "proof_successor_high_water_exhausted",
+        "proof_successor_boundary",
+        "proof_successor_all_excluded"
+      ],
+      "test_count": 9
+    },
+    "successor-wrong-overflow": {
+      "group": "successor",
+      "mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))"
+      },
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "expected_failures": [
+        "proof_successor_other_maximum",
+        "proof_successor_high_water_exhausted"
+      ],
+      "test_count": 9
+    },
+    "restored-actual": {
+      "group": "all",
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 28
+    }
+  },
+  "native_fixtures": {
+    "owner": "verification/experiments/stage1-protocol/adopted-create/reuse/native-common.rs.in",
+    "selection": "verification/experiments/stage1-protocol/create-selection/native-common.rs.in",
+    "successor": "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in"
+  },
+  "reused_sources": [
+    "2e35b8c8619e05a1e4bb540105bd3e7f20725615",
+    "7d4a22187b3115cd32c44a2d32fec028afa7becd",
+    "dc41fd4121d1566e3519bc425428550ce5f6e306"
+  ]
+}

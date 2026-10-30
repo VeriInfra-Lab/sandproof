@@ -412,16 +412,61 @@ fn owner_for(
     world: &core::World,
     owner: &sandproof_protocol::TenantId,
 ) -> Result<core::TenantId, JournalError> {
-    if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
-        return Ok(row.local);
+    let mut owner_index = 0;
+    while owner_index < inbox.owners.len() {
+        let row = &inbox.owners[owner_index];
+        if &row.external == owner {
+            return Ok(row.local);
+        }
+        owner_index += 1;
     }
-    let highest = world
-        .sandbox_records()
-        .iter()
-        .map(|(_, s)| s.owner.0)
-        .max()
-        .unwrap_or(0)
-        .max(inbox.owner_high_water);
+    let records = world.sandbox_records();
+    let mut highest = inbox.owner_high_water;
+    let mut record_index = 0;
+    while record_index < records.len() {
+        highest = highest.max(records[record_index].1.owner.0);
+        record_index += 1;
+    }
+    Ok(core::TenantId(
+        highest
+            .checked_add(1)
+            .ok_or(JournalError::IdentifierExhausted)?,
+    ))
+}
+
+pub(super) fn create_attachment_selection(
+    inbox: &Inbox,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<(usize, usize, u64), JournalError> {
+    let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
+    if inbox.sessions[s].terminal
+        || inbox.sessions[s].refusal.is_some()
+        || inbox.sessions[s].current_version != intent.accepted_version
+        || inbox.sessions[s].local.is_some()
+    {
+        return Err(JournalError::Conflict);
+    }
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        return Err(JournalError::Conflict);
+    };
+    Ok((s, e, create.startup_deadline_ms))
+}
+
+pub(super) fn create_owner_successor(
+    inbox: &Inbox,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<core::TenantId, JournalError> {
+    let records = world.sandbox_records();
+    let mut highest = inbox.owner_high_water;
+    let mut record_index = 0;
+    while record_index < records.len() {
+        let record = &records[record_index];
+        if record.0 != sandbox {
+            highest = highest.max(record.1.owner.0);
+        }
+        record_index += 1;
+    }
     Ok(core::TenantId(
         highest
             .checked_add(1)
@@ -435,35 +480,12 @@ pub(super) fn attach_create(
     a: &CreateAttachment,
 ) -> Result<(), JournalError> {
     let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
-    let (s, e) = inbox.find(&a.intent)?.ok_or(JournalError::Conflict)?;
-    if inbox.sessions[s].terminal
-        || inbox.sessions[s].refusal.is_some()
-        || inbox.sessions[s].current_version != a.intent.accepted_version
-        || inbox.sessions[s].local.is_some()
-    {
-        return Err(JournalError::Conflict);
-    }
-    let LifecycleOperation::Create { create, .. } = &a.intent.request.operation else {
-        return Err(JournalError::Conflict);
-    };
+    let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
     let owner = &inbox.sessions[s].owner;
     let expected = if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
         row.local
     } else {
-        let maximum = tx
-            .world()
-            .sandbox_records()
-            .iter()
-            .filter(|(id, _)| *id != a.local.sandbox)
-            .map(|(_, r)| r.owner.0)
-            .max()
-            .unwrap_or(0)
-            .max(inbox.owner_high_water);
-        core::TenantId(
-            maximum
-                .checked_add(1)
-                .ok_or(JournalError::IdentifierExhausted)?,
-        )
+        create_owner_successor(&inbox, &tx.world(), a.local.sandbox)?
     };
     if expected != a.local.owner {
         return Err(JournalError::Conflict);
@@ -484,7 +506,7 @@ pub(super) fn attach_create(
     tx.execute(
         "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
         params![
-            i64::try_from(create.startup_deadline_ms)
+            i64::try_from(startup_deadline_ms)
                 .map_err(|_| JournalError::UnsupportedInput)?,
             identity::sandbox_id(namespace, a.local.sandbox)?.as_str()
         ],

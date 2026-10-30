@@ -113,3 +113,22 @@ save、BeforeCommit 或 AfterCommit 错误都不能独自推出事务没有效�
 同步效果接口不替代具体 JSON、SHA、SQL、同事务快照、提交未知和重启证明。认证来源、
 当前意图与耐久发送、本地结果及真实资源仍分别连接 V7、V1/V2、V4/V5、V6。完整
 manifest 文件集、真实字节/网络外壳和系统结论继续是独立义务。
+
+## 7. Create 身份映射的同步边界
+
+[原收件实现](../../controller-service/src/controller/lifecycle_inbox.rs)的 `owner_for`
+按首次完整外部 owner 匹配返回原映射；没有映射时，取完整 World owner 与原高水位的
+最大值并受检加一，耗尽返回 IdentifierExhausted。显式循环保留首次匹配和受检计数，
+不把表唯一性或 ID 非零添加为调用前提。
+
+`attach_create` 先从原 load 的同一 Inbox 调用 `create_attachment_selection`，
+全文查找后按 terminal、refusal、当前版本不等、已有 local、Create 形状检查，返回原
+session/entry 位置和 startup deadline。只有原缺失 owner 分支读取 World，再由
+`create_owner_successor` 排除本次新 sandbox，重算 owner 最大值与高水位的受检后继。
+现存 owner 行不能被该重算覆盖，排除 ID 也不能替换成 owner 数字。
+
+只读 helper 返回不表示映射已保存。后续 owner/high-water、完整 local 与 entry 修改，
+deadline 转换、固定 ID、原 UPDATE 与 save 仍属于同一原父函数的业务义务；原寿命
+UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
+重启以及真实资源/认证来源继续分别连接。函数采用、实际生成体对应与完整组合分开
+验收，候选结果的精确版本和当前缺口仍由覆盖记录及 #635 维护。
