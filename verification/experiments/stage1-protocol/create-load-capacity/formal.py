@@ -97,6 +97,7 @@ def run(output, variant, data, inputs, modes):
             for name in includes:
                 argv += ['--include', name]
             opaque = ['rusqlite::error::Error']+(['sandproof_protocol::ContractError'] if label == 'request' else [])
+            admission.OPAQUE = opaque
             for name in opaque:
                 argv += ['--opaque', name]
             for name in roots:

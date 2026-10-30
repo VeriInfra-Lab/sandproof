@@ -2,7 +2,7 @@
 
 [组件入口](../README.md) · [V3 设计与边界](../../../../docs/formal/03-protocol-inbox.md) · [依赖合同](../../../../docs/formal/dependencies.md)
 
-本目录把既有 FullLoad、FullInbox、完整 Create 选择和 FullInstall 放在同一次实际抽取的 Inbox 表示下。`actual_load_owner_limit` 从实际 load 成功返回的同一个完整 Inbox 推出 owners 长度不超过配置上限；`actual_loaded_selected_install` 据此消除完整写入定理的调用方容量前提。结论保留完整 intent、session/entry 位置、local binding 及整个 Inbox 的写入后置条件。它不证明完整父函数、owner 分配单调性、写入后的整个 Inbox 合法性、授权、实际资源或持久接受。
+本目录把既有 FullLoad、FullInbox、完整 Create 选择和 FullInstall 放在同一次实际抽取的 Inbox 表示下。容量连接直接复用既有 `InboxLoad.successful_load_requires_validation`，不另做一套 load 成功归纳。`actual_load_owner_limit` 从实际 load 成功返回的同一个完整 Inbox 推出 owners 长度不超过配置上限；`actual_loaded_selected_install` 据此消除完整写入定理的调用方容量前提。结论保留完整 intent、session/entry 位置、local binding 及整个 Inbox 的写入后置条件。它不证明完整父函数、owner 分配单调性、写入后的整个 Inbox 合法性、授权、实际资源或持久接受。
 
 `inventory.json` 逐项绑定生产源、原提供者、四个透明根、生成闭包、物理文件和审计。`binding.py` 核对原可变/共享对象、全部值参数和六类 load 泛型字典；它的准入拒绝检查与业务反例分开。原生、公共 Lake/根/输入/覆盖登记及整套验收由主控接线；本入口始终报告局部开发结果，不能以此替代完整入口。
 

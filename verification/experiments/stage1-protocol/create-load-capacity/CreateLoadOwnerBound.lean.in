@@ -1,5 +1,5 @@
 import SandboxModel.Lifecycle.Protocol.CreateLoadCapacityModel
-import SandboxModel.Lifecycle.Protocol.InboxLoadComposition
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
 import SandboxModel.Lifecycle.Protocol.CreateInstallSelection
 open Aeneas Aeneas.Std SandproofStage1RequestRust
 open sandproof_controller_service

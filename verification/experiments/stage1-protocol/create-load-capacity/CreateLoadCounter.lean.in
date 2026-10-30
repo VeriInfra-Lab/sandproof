@@ -27,6 +27,44 @@ theorem actually_loaded (trace : Trace) :
   exact Fixture.actual_loaded saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
     ComposedConfig.standardGraphic crowded actually_accepts charged (by decide) trace
 
+def rejectedTrace : Trace :=
+  [.boolQuery existsStatement, .integerQuery versionStatement,
+   .boolQuery sourceStatement, .boolQuery internalStatement] ++ policyTrace ++
+  [.lengthQuery lengthsStatement, .bodyQuery bodyStatement, .decodedInbox bytes.val,
+   .digested bytes.val, .encodedInbox crowded]
+
+set_option maxHeartbeats 1200000 in
+theorem model_load_rejects (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (Fixture.ioFor crowded) trace =
+      .ok (.Err .CorruptStore, trace ++ rejectedTrace) := by
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionReturns (state : Trace) : (policyEffects InboxLoadConfig.LifecycleValues.normal).query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp only [policyEffects, versionDifferent, ↓reduceIte]
+  have sameDigest : digest.val = storedDigest.val := rfl
+  have castLength : core.num.I64.cast_unsigned 2#i64 = .ok 2#u64 := rfl
+  have castReserve : core.num.I64.cast_unsigned 286720#i64 = .ok 286720#u64 := rfl
+  have budget : budgetValue crowded.config = 286720#u64 := normal_budget
+  simp [fullLoadView, loadView, currentView, capacityView, limitsView, bodyView, digestView, canonicalView,
+    validatedView, Fixture.ioFor, effects, attempt, existsDifferent,
+    sourceDifferent, versionReturns, LIFECYCLE_STORE_FORMAT_VERSION, capacity_read,
+    castLength, castReserve, InboxLoadConfig.LifecycleValues.capacity, maximumBytes,
+    InboxLoadLibrary.vec_ne, sameDigest, budget, full_model_rejects, corrupt, rejectedTrace,
+    policyTrace, List.append_assoc]
+  have literalValue : ((24#64)#iscalar : I64).val = 24 := by decide
+  split <;> simp_all [IScalar.eq_equiv, alloc.vec.Vec.deref]
+
 theorem violates_full_load_contract : ¬ FullLoadContract load_using := by
   intro contract
   have required := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
@@ -34,10 +72,8 @@ theorem violates_full_load_contract : ¬ FullLoadContract load_using := by
   change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
     ComposedConfig.standardGraphic (Fixture.ioFor crowded) [] =
     fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (Fixture.ioFor crowded) [] at required
-  have returned := actually_loaded []
-  rw [required] at returned
-  exact exceeds_owner_limit (full_load_safe saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
-    (Fixture.ioFor crowded) [] (.Ok (some crowded), [] ++ completeTrace crowded) returned)
+  rw [actually_loaded, model_load_rejects] at required
+  cases Result.ok_injective required
 
 end
 end SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
@@ -45,3 +81,4 @@ end SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
 #audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.charged
 #audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.actually_loaded
 #audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.violates_full_load_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.model_load_rejects
