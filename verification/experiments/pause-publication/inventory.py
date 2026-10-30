@@ -67,8 +67,42 @@ def audits(text):
 
 
 def declarations(text):
-    return re.findall(r'^(?:@\[[^\]]+\]\s*)?(?:theorem|lemma)\s+([\w.]+)',
-                      without_comments(text), re.M)
+    """Read this slice's explicit namespace/section style, including Fixture.
+
+    This is an inventory check, not a Lean parser or proof checker. The real
+    kernel/service must still resolve and audit every resulting full name.
+    """
+    scopes, namespaces, result = [], [], []
+    for line in without_comments(text).splitlines():
+        line = line.split('--', 1)[0].strip()
+        namespace = re.fullmatch(r'namespace ([\w.]+)', line)
+        section = re.fullmatch(r'(?:noncomputable )?section(?: (\w+))?', line)
+        end = re.fullmatch(r'end(?: ([\w.]+))?', line)
+        if namespace:
+            name = namespace.group(1)
+            scopes.append(('namespace', name))
+            namespaces.append(name)
+        elif section:
+            scopes.append(('section', section.group(1)))
+        elif end:
+            if not scopes:
+                raise ValueError('Unbalanced declaration inventory scope')
+            kind, name = scopes.pop()
+            if end.group(1) is not None and end.group(1) != name:
+                raise ValueError('Named declaration inventory scope does not match')
+            if kind == 'namespace':
+                namespaces.pop()
+        else:
+            theorem = re.match(r'^(?:@\[[^\]]+\]\s*)?(?:theorem|lemma)\s+([\w.]+)', line)
+            if theorem:
+                name = theorem.group(1)
+                result.append(name.removeprefix('_root_.') if name.startswith('_root_.')
+                              else '.'.join([*namespaces, name]))
+            elif re.match(r'^(?:@\[[^\]]+\]\s*)?(?:private|protected)\s+(?:theorem|lemma)\b', line):
+                raise ValueError('Unsupported visibility in finite declaration inventory')
+    if scopes:
+        raise ValueError('Unclosed declaration inventory scope')
+    return result
 
 
 def inventory(source):
@@ -91,8 +125,8 @@ def inventory(source):
         if path.parent != BASE or path.suffix != '.lean' or not isinstance(expected, list):
             raise ValueError('Unexpected publication proof path or declaration list')
         text = regular(source/path).read_text()
-        actual = [PREFIX+name for name in declarations(text)]
-        if actual != expected:
+        actual = declarations(text)
+        if actual != expected or any(not target.startswith(PREFIX) for target in actual):
             raise ValueError('Publication declaration inventory changed: '+name)
         files[name] = audits(text)
         targets.extend(actual)
@@ -107,11 +141,16 @@ def inventory(source):
     wrong_file = str(HERE/'model/IgnoreStop.lean')
     wrong_namespace = PREFIX+'IgnoreStop'
     if (wrong.get('file') != wrong_file or wrong.get('namespace') != wrong_namespace
-            or not isinstance(wrong.get('audits'), list) or not wrong['audits']):
+            or not isinstance(wrong.get('audits'), list) or not wrong['audits']
+            or not isinstance(wrong.get('required_theorems'), list) or not wrong['required_theorems']
+            or not all(isinstance(name, str) for name in wrong['required_theorems'])
+            or len(wrong['required_theorems']) != len(set(wrong['required_theorems']))):
         raise ValueError('Missing final real wrong-Stop audit inventory')
     text = regular(source/wrong_file).read_text()
-    expected_wrong = [wrong_namespace+'.'+name for name in declarations(text)]
+    expected_wrong = declarations(text)
     if (not expected_wrong or len(expected_wrong) != len(set(expected_wrong))
+            or any(not target.startswith(wrong_namespace+'.') for target in expected_wrong)
+            or not set(wrong['required_theorems']).issubset(expected_wrong)
             or wrong['audits'] != expected_wrong or audits(text) != expected_wrong):
         raise ValueError('Wrong-Stop declarations or audits changed')
     files[wrong_file] = expected_wrong

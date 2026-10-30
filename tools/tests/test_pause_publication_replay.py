@@ -31,7 +31,7 @@ class PublicationInventoryTests(unittest.TestCase):
         self.manifest = dict(schema=1, namespace=checks.PREFIX.rstrip('.'),
             proofs={self.proof: [self.target]}, required_theorems=[self.target],
             wrong=dict(file=self.wrong, namespace=checks.PREFIX+'IgnoreStop',
-                       audits=[self.wrong_target]))
+                       audits=[self.wrong_target], required_theorems=[self.wrong_target]))
         self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\n'
                    'theorem synthetic_property : True := by trivial\nend\n')
         self.write(str(checks.BASE/'Audit.lean'), '#audit_controller_proof '+self.target+'\n')
@@ -104,6 +104,35 @@ class PublicationInventoryTests(unittest.TestCase):
         (self.root/root/module/'Funs.lean').unlink()
         with self.assertRaisesRegex(ValueError, 'required source'):
             checks.inventory(self.root)
+
+    def test_nested_fixture_namespace_and_sections_keep_full_theorem_names(self):
+        nested = checks.PREFIX+'Fixture.normal_domain_nonempty'
+        self.manifest['proofs'][self.proof] = [self.target, nested]
+        self.manifest['required_theorems'].append(nested)
+        self.save()
+        self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\n'
+                   'theorem synthetic_property : True := by trivial\n'
+                   'namespace Fixture\nnoncomputable section\n'
+                   'theorem normal_domain_nonempty : True := by trivial\n'
+                   'end\nend Fixture\nend '+checks.PREFIX.rstrip('.')+'\n')
+        self.write(str(checks.BASE/'Audit.lean'), '#audit_controller_proof '+self.target+
+                   '\n#audit_controller_proof '+nested+'\n')
+        self.assertEqual(checks.inventory(self.root)[0][str(checks.BASE/'Audit.lean')],
+                         [self.target, nested])
+
+    def test_wrong_required_property_cannot_be_replaced_with_only_helpers(self):
+        text = (self.root/self.wrong).read_text().replace('synthetic_rejection', 'only_helper')
+        self.write(self.wrong, text)
+        self.manifest['wrong']['audits'] = [checks.PREFIX+'IgnoreStop.only_helper']
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'Wrong-Stop'):
+            checks.inventory(self.root)
+
+    def test_unbalanced_or_unsupported_scope_is_not_silently_discovered(self):
+        for text in ('end\n', 'namespace MissingEnd\n', 'namespace A\nend B\n',
+                     'namespace A\nprivate theorem hidden : True := by trivial\nend A\n'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                checks.declarations(text)
 
     def test_reviewed_literals_are_read_without_importing_cli_code(self):
         path = self.root/'original.py'
