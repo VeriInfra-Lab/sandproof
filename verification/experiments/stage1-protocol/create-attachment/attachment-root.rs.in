@@ -1,0 +1,9 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_attach_create(
+    tx: &WorldTransaction<'_>,
+    namespace: &str,
+    attachment: &CreateAttachment,
+) -> Result<(), JournalError> {
+    attach_create(tx, namespace, attachment)
+}

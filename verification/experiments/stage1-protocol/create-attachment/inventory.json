@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "kind": "original-create-attachment-capability-inputs",
+  "base_commit": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "business_bodies_changed": false,
+  "contracts_adopted": false,
+  "semantic_proof": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "ded0d6d9c4c23a66e2d12ec4894ba9076a75cd479e68a27075066ae4eb9a47c3",
+    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
+    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/internal_inbox/admission.rs": "58647835030f202abb57816d87bf486b8eb424015f493c17cec623a743c2db33",
+    "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/experiments/stage1-protocol/inbox-load/formal.py": "ed5b3bc7e4b93d7a0acdbd7e9dca40522c36dce0d088ef82becf42527b162e92",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d"
+  },
+  "templates": {
+    "world-root.rs.in": "609893e53a4dcfecb306d6e753fedfb1a31a67e7b39bb86d104bfaebdb16d19a",
+    "identity-root.rs.in": "0f4991dece3ba0ff00fae9350b72f691cea0bc4e0ff85b449dcb695763c378c1",
+    "attachment-root.rs.in": "5b7b827b63f4dabfaaa67a3444f3edb13411f6e479b9cc84025c4f6d4c8084be"
+  },
+  "driver_sha256": "d377763c0504f115fe0430edf3bff56668829dc6e0748cb350f376a70becfd6f",
+  "modes": {
+    "attachment": {
+      "source": "controller-service/src/controller/lifecycle_inbox.rs",
+      "root": "sandproof_controller_service::controller::lifecycle_inbox::proof_attach_create",
+      "callee_prefix": "sandproof_controller_service::controller::lifecycle_inbox",
+      "callee_name": "attach_create",
+      "callee_type": null,
+      "template": "attachment-root.rs.in",
+      "arguments": 3
+    },
+    "world": {
+      "source": "controller-service/src/controller/transaction.rs",
+      "root": "sandproof_controller_service::controller::transaction::proof_attachment_world",
+      "callee_prefix": "sandproof_controller_service::controller::transaction",
+      "callee_name": "world",
+      "callee_type": "WorldTransaction",
+      "template": "world-root.rs.in",
+      "arguments": 1
+    },
+    "identity": {
+      "source": "controller-service/src/controller/identity.rs",
+      "root": "sandproof_controller_service::controller::identity::proof_attachment_identity",
+      "callee_prefix": "sandproof_controller_service::controller::identity",
+      "callee_name": "sandbox_id",
+      "callee_type": null,
+      "template": "identity-root.rs.in",
+      "arguments": 2
+    }
+  },
+  "preserved_existing_proofs": {
+    "InboxLookup.find_contract": "actual first full-key/full-intent lookup only; current source/provider/representation admission remains distinct",
+    "ProtocolRecord.full_flow_contract": "existing synchronous record/save errors and poststate classification remain preserved",
+    "OwnerMapping.owner_complete": "separate 2e35b8c8 unadopted candidate, not original attachment or production equivalence"
+  },
+  "minimum_provider_review": {
+    "load_save": "reuse existing FullLoad/FullSave; actual standard Serde/SHA/SQL instance obligations already submitted to #632; no whole codec correctness assumption",
+    "world": "original WorldTransaction.world borrows candidate RefCell<Option<World>>, expects live Some and clones complete World; old B2 set/take contract does not automatically cover this read",
+    "identity": "original identity.sandbox_id uses format!(sb-{namespace}-{u64}) and original SandboxId::try_from; namespace/decimal formatting and full identifier validation/error must remain visible",
+    "deadline_sql": "same original tx; original i64 checked conversion before identity, statement and parameter order [deadline,sandbox], errors before save; UPDATE success count is ignored in this function",
+    "outer_admission": "actual Create rows prepared before attach_admission and same tx.commit afterwards; row existence, protection, unknown commit and recovery are separate business obligations, not library correctness"
+  }
+}

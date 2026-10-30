@@ -1,0 +1,5 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_attachment_world(tx: &WorldTransaction<'_>) -> World {
+    tx.world()
+}

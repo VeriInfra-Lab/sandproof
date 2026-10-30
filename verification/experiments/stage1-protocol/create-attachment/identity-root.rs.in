@@ -1,0 +1,8 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_attachment_identity(
+    namespace: &str,
+    sandbox: core::SandboxId,
+) -> Result<SandboxId, JournalError> {
+    sandbox_id(namespace, sandbox)
+}
