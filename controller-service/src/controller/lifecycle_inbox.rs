@@ -434,7 +434,7 @@ fn owner_for(
     ))
 }
 
-pub(super) fn create_attachment_selection(
+fn create_attachment_selection(
     inbox: &Inbox,
     intent: &AcceptedLifecycleIntent,
 ) -> Result<(usize, usize, u64), JournalError> {
@@ -452,7 +452,7 @@ pub(super) fn create_attachment_selection(
     Ok((s, e, create.startup_deadline_ms))
 }
 
-pub(super) fn create_owner_successor(
+fn create_owner_successor(
     inbox: &Inbox,
     world: &core::World,
     sandbox: core::SandboxId,
@@ -485,7 +485,7 @@ fn create_owner_present(inbox: &Inbox, owner: &sandproof_protocol::TenantId) -> 
     false
 }
 
-pub(super) fn create_attachment_install(
+fn create_attachment_install(
     inbox: &mut Inbox,
     s: usize,
     e: usize,
@@ -502,7 +502,7 @@ pub(super) fn create_attachment_install(
     inbox.sessions[s].entries[e].local_operation = Some(local.operation);
 }
 
-pub(super) fn check_existing_create_owner(
+fn check_existing_create_owner(
     inbox: &Inbox,
     owner: &sandproof_protocol::TenantId,
     local_owner: core::TenantId,
@@ -521,7 +521,7 @@ pub(super) fn check_existing_create_owner(
     Ok(false)
 }
 
-pub(super) fn check_new_create_owner(
+fn check_new_create_owner(
     inbox: &Inbox,
     world: &core::World,
     local: InternalLocalBinding,
@@ -537,7 +537,7 @@ pub(super) fn create_attachment_deadline(value: u64) -> Result<i64, JournalError
     i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)
 }
 
-pub(super) trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects {
+trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects {
     fn world(&mut self) -> core::World;
     fn begin_lifetime_update(&mut self);
     fn sandbox_id(
@@ -714,7 +714,7 @@ pub(super) fn attach_create(
     >(&mut StandardCreateAttachment { tx, connection }, namespace, a)
 }
 
-pub(super) fn attach_create_using<
+fn attach_create_using<
     R: native_retirement::RetirementEncoding,
     T: model::TerminalEncoding,
     N: renewal_confirmation::RenewalEncoding,

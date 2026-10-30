@@ -63,7 +63,7 @@ def function_range(text,marker):
 def mutate(project,mutation):
     path=project/SOURCE;before=sha(path)
     if mutation is not None:
-        text=path.read_text();start,end=function_range(text,'pub(super) fn attach_create_using<')
+        text=path.read_text();start,end=function_range(text,'fn attach_create_using<')
         body=text[start:end]
         if body.count(mutation['before'])!=1:
             raise ValueError('actual Create mutation is not unique')
