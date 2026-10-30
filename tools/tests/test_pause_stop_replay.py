@@ -238,7 +238,7 @@ class StopServiceTests(unittest.TestCase):
         self.row = dict(request=dict(tool='lean_diagnostic_messages',
             arguments=dict(file_path='Proof.lean'), expected_sha256=digest),
             revision=dict(file_sha256=digest), stale=False,
-            result=dict(success=True, items=[dict(severity='info',
+            result=dict(success=True, items=[dict(severity='info', line=1, column=1,
                 message='Checked Synthetic.target: 0 standard logical dependencies')]))
 
     def check(self, rows):
@@ -263,8 +263,10 @@ class StopServiceTests(unittest.TestCase):
 
     def test_warning_missing_or_unapproved_audit_is_rejected(self):
         for items in ([], [dict(severity='warning', message='warning')],
-                      [dict(severity='info', message='Checked Other.target: 0 standard logical dependencies')],
-                      [dict(severity='info', message='Checked Synthetic.target: 4 standard logical dependencies')]):
+                      [dict(severity='info', line=1, column=1,
+                            message='Checked Other.target: 0 standard logical dependencies')],
+                      [dict(severity='info', line=1, column=1,
+                            message='Checked Synthetic.target: 4 standard logical dependencies')]):
             row = copy.deepcopy(self.row); row['result']['items'] = items
             with self.subTest(items=items), self.assertRaises(ValueError):
                 self.check([row])

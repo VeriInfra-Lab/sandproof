@@ -224,8 +224,14 @@ def check_service(source, files, text, sha):
         items = value.get('items', [])
         if any(item.get('severity') in ('error', 'warning') for item in items):
             raise ValueError('Unresolved actual-file diagnostics: '+name)
-        checked = [item['message'] for item in items if item['message'].startswith('Checked ')]
-        parsed = [re.fullmatch(r'Checked (\S+): ([0-3]) standard logical dependencies', item)
+        checked = [item for item in items if item['message'].startswith('Checked ')]
+        if any(type(item.get(axis)) is not int or item[axis] < 1
+               for item in checked for axis in ('line', 'column')):
+            raise ValueError('Invalid actual proof audit source position: '+name)
+        # Diagnostic arrival order can differ from the audited command order.
+        # Keep the response intact and compare every message in source order.
+        checked = sorted(checked, key=lambda item: (item['line'], item['column']))
+        parsed = [re.fullmatch(r'Checked (\S+): ([0-3]) standard logical dependencies', item['message'])
                   for item in checked]
         if any(item is None for item in parsed) or [item.group(1) for item in parsed] != files[name]:
             raise ValueError('Missing, changed or extra actual proof audit: '+name)
