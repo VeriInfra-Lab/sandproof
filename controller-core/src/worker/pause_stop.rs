@@ -88,20 +88,20 @@ fn commit_snapshot(
     if plan.vm != Some(vm) || plan.target_snapshot != Some(RestoreSource { snapshot, manifest }) {
         return Err(WorkerReject::PlanMismatch);
     }
-    let Some(capture) = crate::transition::current_capture(world, sandbox, record)
+    let Some(handoff) = crate::transition::current_capture(world, sandbox, record)
         .and_then(crate::capture::CaptureHandoff::observe_bundle)
     else {
         return Err(WorkerReject::ResourceBusy);
     };
     let mut next = world.clone();
     let mut registered = plan.clone();
-    registered.capture = Some(capture);
+    registered.capture = Some(handoff);
     next.operation_plans.put(key, registered);
     let mut durable = *stored;
     durable.stage = SnapshotStage::Durable;
     durable.immutable = true;
     put_snapshot(&mut next, snapshot, durable);
-    if capture.may_stop_original() {
+    if handoff.may_stop_original() {
         enqueue(
             &mut next,
             Command::StopVm {
