@@ -21,10 +21,11 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
-NATIVE_SCOPES = ('all', 'stage1-protocol', 'capture-caller', 'pause-publication')
+NATIVE_SCOPES = ('all', 'stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
-ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication')
+PAUSE_STOP_LABELS = ('functional', 'pause-stop')
+ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -183,6 +184,7 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
         return
     expected = set(stage1_native_labels() if scope == 'stage1-protocol'
                    else PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
+              else PAUSE_STOP_LABELS if scope == 'pause-stop'
                    else CAPTURE_CALLER_LABELS)
     labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
     counts = Counter(labels)
@@ -363,6 +365,7 @@ def native_case(label, source, output, action=None, *, scope='all'):
     check_native_scope(scope)
     labels = (stage1_native_labels() if scope == 'stage1-protocol'
               else PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
+              else PAUSE_STOP_LABELS if scope == 'pause-stop'
               else CAPTURE_CALLER_LABELS)
     if scope != 'all' and label not in labels:
         raise ValueError('component is outside requested native scope: ' + label)
@@ -407,7 +410,7 @@ def native_case(label, source, output, action=None, *, scope='all'):
         for path in sorted(Path(output).rglob('*')):
             parts = path.relative_to(output).parts
             suffixes = ('.log', '.json', '.jsonl')
-            if label in ('capture-caller', 'pause-publication'):
+            if label in ('capture-caller', 'pause-publication', 'pause-stop'):
                 # Original CLI logs use .stdout/.stderr, including semantic
                 # names such as ignore-capture-target. Do not discard a log
                 # merely because its filename contains the word "target".

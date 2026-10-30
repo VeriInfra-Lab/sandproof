@@ -3078,7 +3078,7 @@ def sandbox_controller_core.store.Store.put
   ok { entries := v }
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop body 1:
-    Source: './controller-core/src/worker.rs', lines 104:4-107:5
+    Source: './controller-core/src/worker.rs', lines 105:4-108:5
     Name pattern: [sandbox_controller_core::worker::insert_unique] -/
 @[rust_loop_body, rust_fun "sandbox_controller_core::worker::insert_unique"]
 def sandbox_controller_core.worker.insert_unique_loop0_loop0.body
@@ -3099,7 +3099,7 @@ def sandbox_controller_core.worker.insert_unique_loop0_loop0.body
   else ok (done next)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop 1:
-    Source: './controller-core/src/worker.rs', lines 104:4-107:5
+    Source: './controller-core/src/worker.rs', lines 105:4-108:5
     Name pattern: [sandbox_controller_core::worker::insert_unique] -/
 @[rust_loop, rust_fun "sandbox_controller_core::worker::insert_unique"]
 def sandbox_controller_core.worker.insert_unique_loop0_loop0
@@ -3114,7 +3114,7 @@ def sandbox_controller_core.worker.insert_unique_loop0_loop0
     (index, next)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop body 0:
-    Source: './controller-core/src/worker.rs', lines 95:4-109:1
+    Source: './controller-core/src/worker.rs', lines 96:4-110:1
     Name pattern: [sandbox_controller_core::worker::insert_unique] -/
 @[rust_loop_body, rust_fun "sandbox_controller_core::worker::insert_unique"]
 def sandbox_controller_core.worker.insert_unique_loop0.body
@@ -3142,7 +3142,7 @@ def sandbox_controller_core.worker.insert_unique_loop0.body
     ok (done next1)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop 0:
-    Source: './controller-core/src/worker.rs', lines 95:4-109:1
+    Source: './controller-core/src/worker.rs', lines 96:4-110:1
     Name pattern: [sandbox_controller_core::worker::insert_unique] -/
 @[rust_loop, rust_fun "sandbox_controller_core::worker::insert_unique"]
 def sandbox_controller_core.worker.insert_unique_loop0
@@ -3157,7 +3157,7 @@ def sandbox_controller_core.worker.insert_unique_loop0
     index
 
 /-- [sandbox_controller_core::worker::insert_unique]:
-    Source: './controller-core/src/worker.rs', lines 93:0-93:69
+    Source: './controller-core/src/worker.rs', lines 94:0-94:69
     Name pattern: [sandbox_controller_core::worker::insert_unique] -/
 @[reducible, rust_fun "sandbox_controller_core::worker::insert_unique"]
 def sandbox_controller_core.worker.insert_unique
@@ -3169,7 +3169,7 @@ def sandbox_controller_core.worker.insert_unique
     corecmpPartialEqInst values value 0#usize
 
 /-- [sandbox_controller_core::worker::register_snapshot]:
-    Source: './controller-core/src/worker.rs', lines 186:0-186:81
+    Source: './controller-core/src/worker.rs', lines 187:0-187:81
     Name pattern: [sandbox_controller_core::worker::register_snapshot] -/
 @[rust_fun "sandbox_controller_core::worker::register_snapshot"]
 def sandbox_controller_core.worker.register_snapshot
@@ -3192,7 +3192,7 @@ def sandbox_controller_core.worker.register_snapshot
   ok { world with resource_indexes := s }
 
 /-- [sandbox_controller_core::worker::put_snapshot]:
-    Source: './controller-core/src/worker.rs', lines 202:0-202:67
+    Source: './controller-core/src/worker.rs', lines 203:0-203:67
     Name pattern: [sandbox_controller_core::worker::put_snapshot] -/
 @[rust_fun "sandbox_controller_core::worker::put_snapshot"]
 def sandbox_controller_core.worker.put_snapshot
@@ -3538,7 +3538,7 @@ def sandbox_controller_core.worker.late_capture.seal
       sandbox_controller_core.worker.WorkerReject.PlanMismatch)
 
 /-- [sandbox_controller_core::worker::register_vm]:
-    Source: './controller-core/src/worker.rs', lines 174:0-174:63
+    Source: './controller-core/src/worker.rs', lines 175:0-175:63
     Name pattern: [sandbox_controller_core::worker::register_vm] -/
 @[rust_fun "sandbox_controller_core::worker::register_vm"]
 def sandbox_controller_core.worker.register_vm
@@ -3560,7 +3560,7 @@ def sandbox_controller_core.worker.register_vm
   ok { world with resource_indexes := s }
 
 /-- [sandbox_controller_core::worker::put_vm]:
-    Source: './controller-core/src/worker.rs', lines 192:0-192:49
+    Source: './controller-core/src/worker.rs', lines 193:0-193:49
     Name pattern: [sandbox_controller_core::worker::put_vm] -/
 @[rust_fun "sandbox_controller_core::worker::put_vm"]
 def sandbox_controller_core.worker.put_vm

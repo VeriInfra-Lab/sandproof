@@ -45,6 +45,9 @@ class NativeScopeTests(unittest.TestCase):
             if label == 'pause-publication':
                 (output/'ignore-stop.stdout').write_text('synthetic original assertion stream\n')
                 (output/'ignore-stop.stderr').write_text('')
+            if label == 'pause-stop':
+                (output/'ignore-handoff.stdout').write_text('synthetic original assertion stream\n')
+                (output/'ignore-handoff.stderr').write_text('')
         return receipts.native_case(label, self.source, output, action, scope=scope)
 
     def packet(self, *, scope='stage1-protocol', extra=False, atomic=False):

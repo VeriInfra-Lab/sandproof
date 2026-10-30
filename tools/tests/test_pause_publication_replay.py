@@ -226,7 +226,7 @@ class PublicationServiceTests(unittest.TestCase):
         self.row = dict(request=dict(tool='lean_diagnostic_messages',
             arguments=dict(file_path='Proof.lean'), expected_sha256=digest),
             revision=dict(file_sha256=digest), stale=False,
-            result=dict(success=True, items=[dict(severity='info',
+            result=dict(success=True, items=[dict(severity='info', line=1, column=1,
                 message='Checked Synthetic.target: 0 standard logical dependencies')]))
 
     def check(self, rows):
@@ -234,6 +234,85 @@ class PublicationServiceTests(unittest.TestCase):
 
     def test_complete_actual_file_diagnostics_require_matching_audits(self):
         self.assertEqual(self.check([self.row]), [self.row])
+
+    def multiple_audits(self):
+        names = ['Synthetic.first', 'Synthetic.second', 'Synthetic.third']
+        self.files = {'Proof.lean': names}
+        (self.root/'Proof.lean').write_text(''.join(
+            '#audit_controller_proof '+name+'\n' for name in names))
+        row = copy.deepcopy(self.row)
+        digest = sha(self.root/'Proof.lean')
+        row['request']['expected_sha256'] = digest
+        row['revision']['file_sha256'] = digest
+        row['result']['items'] = [dict(severity='info', line=index+1, column=1,
+            message='Checked '+name+': 0 standard logical dependencies')
+            for index, name in enumerate(names)]
+        return row
+
+    def test_multiple_audits_accept_reverse_and_adjacent_arrival_orders(self):
+        original = self.multiple_audits()
+        for order in ((2, 1, 0), (0, 2, 1), (1, 0, 2)):
+            row = copy.deepcopy(original)
+            row['result']['items'] = [row['result']['items'][i] for i in order]
+            before = copy.deepcopy(row)
+            with self.subTest(order=order):
+                self.assertEqual(self.check([row]), [before])
+                self.assertEqual(row, before)
+
+    def test_source_columns_order_audits_on_the_same_line(self):
+        row = self.multiple_audits()
+        row['result']['items'][1].update(line=1, column=4)
+        row['result']['items'].reverse()
+        self.assertEqual(self.check([row]), [row])
+
+    def test_source_order_still_requires_the_exact_name_sequence(self):
+        row = self.multiple_audits()
+        first, second, _ = row['result']['items']
+        first['message'], second['message'] = second['message'], first['message']
+        with self.assertRaisesRegex(ValueError, 'actual proof audit'):
+            self.check([row])
+
+    def test_multiple_audits_reject_missing_duplicate_extra_changed_or_malformed(self):
+        original = self.multiple_audits()
+        variants = []
+        row = copy.deepcopy(original); row['result']['items'].pop(); variants.append(row)
+        row = copy.deepcopy(original)
+        row['result']['items'].append(copy.deepcopy(row['result']['items'][0]))
+        variants.append(row)
+        row = copy.deepcopy(original)
+        row['result']['items'].append(dict(severity='info', line=4, column=1,
+            message='Checked Synthetic.extra: 0 standard logical dependencies'))
+        variants.append(row)
+        for message in ('Checked Synthetic.changed: 0 standard logical dependencies',
+                        'Checked Synthetic.second: 4 standard logical dependencies',
+                        'Checked Synthetic.second: 0 standard logical dependencies trailing',
+                        'Checked Synthetic.second: malformed'):
+            row = copy.deepcopy(original)
+            row['result']['items'][1]['message'] = message
+            variants.append(row)
+        for index, row in enumerate(variants):
+            with self.subTest(variant=index), self.assertRaisesRegex(ValueError, 'actual proof audit'):
+                self.check([row])
+
+    def test_checked_audits_require_positive_integer_source_coordinates(self):
+        original = self.multiple_audits()
+        for axis in ('line', 'column'):
+            for value in (None, 0, -1, True, False, 1.0, '1'):
+                row = copy.deepcopy(original)
+                row['result']['items'][1][axis] = value
+                with self.subTest(axis=axis, value=value), \
+                        self.assertRaisesRegex(ValueError, 'source position'):
+                    self.check([row])
+            row = copy.deepcopy(original)
+            row['result']['items'][1].pop(axis)
+            with self.subTest(axis=axis, missing=True), \
+                    self.assertRaisesRegex(ValueError, 'source position'):
+                self.check([row])
+
+    def test_unrelated_info_without_coordinates_is_not_an_audit(self):
+        row = self.multiple_audits()
+        row['result']['items'].append(dict(severity='info', message='Unrelated information'))
+        self.assertEqual(self.check([row]), [row])
 
     def test_missing_duplicate_partial_stale_or_wrong_fingerprint_is_rejected(self):
         for rows in ([], [self.row, self.row]):
@@ -251,8 +330,10 @@ class PublicationServiceTests(unittest.TestCase):
 
     def test_warning_missing_or_unapproved_audit_is_rejected(self):
         for items in ([], [dict(severity='warning', message='warning')],
-                      [dict(severity='info', message='Checked Other.target: 0 standard logical dependencies')],
-                      [dict(severity='info', message='Checked Synthetic.target: 4 standard logical dependencies')]):
+                      [dict(severity='info', line=1, column=1,
+                            message='Checked Other.target: 0 standard logical dependencies')],
+                      [dict(severity='info', line=1, column=1,
+                            message='Checked Synthetic.target: 4 standard logical dependencies')]):
             row = copy.deepcopy(self.row); row['result']['items'] = items
             with self.subTest(items=items), self.assertRaises(ValueError):
                 self.check([row])

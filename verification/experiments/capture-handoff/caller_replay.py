@@ -120,6 +120,46 @@ def verify_generation(destination, module, namespace, required, local):
     return selected
 
 
+def check_service(source, files, text, sha):
+    actual = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("request", {}).get("tool") == "lean_diagnostic_messages":
+            actual.append(row)
+    if len(actual) != len(files):
+        raise ValueError("Missing actual-file diagnostics")
+    seen = set()
+    for row in actual:
+        name = row["request"]["arguments"]["file_path"]
+        if name not in files or name in seen:
+            raise ValueError("Unexpected or duplicate actual file")
+        seen.add(name)
+        value = row["result"].get("result", row["result"])
+        if (row["stale"] or value.get("success") is not True or value.get("partial") or
+            value.get("timed_out") or value.get("failed_dependencies") or
+            row["revision"]["file_sha256"] != sha(source / name) or
+            row["request"]["expected_sha256"] != sha(source / name)):
+            raise ValueError("Incomplete or changed actual file: " + name)
+        items = value.get("items", [])
+        if any(item.get("severity") in ["error", "warning"] for item in items):
+            raise ValueError("Unresolved actual-file diagnostics: " + name)
+        checked = [item for item in items if item["message"].startswith("Checked ")]
+        if any(type(item.get(axis)) is not int or item[axis] < 1
+               for item in checked for axis in ("line", "column")):
+            raise ValueError("Invalid actual proof audit source position: " + name)
+        # LSP diagnostics can arrive out of source order. Retain the response
+        # and compare every audit, including duplicates, in command order.
+        checked = sorted(checked, key=lambda item: (item["line"], item["column"]))
+        parsed = [re.fullmatch(r"Checked (\S+): ([0-3]) standard logical dependencies",
+                              item["message"]) for item in checked]
+        if any(item is None for item in parsed) or [item.group(1) for item in parsed] != files[name]:
+            raise ValueError("Missing, changed or extra actual proof audit: " + name)
+    return actual
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ["archive", "output", "lock", "tools", "packages"]:
@@ -236,35 +276,7 @@ def main():
             data = "".join(json.dumps(row) + "\n" for row in requests).encode()
             (out / "requests.jsonl").write_bytes(data)
             run("service", [source / ".tools/lean-mcp/bin/python", "tools/lean_session.py"], data=data)
-            actual = []
-            for line in (out / "service.log").read_text().splitlines():
-                try:
-                    row = json.loads(line)
-                except ValueError:
-                    continue
-                if row.get("request", {}).get("tool") == "lean_diagnostic_messages":
-                    actual.append(row)
-            if len(actual) != len(files):
-                raise ValueError("Missing actual-file diagnostics")
-            seen = set()
-            for row in actual:
-                name = row["request"]["arguments"]["file_path"]
-                if name not in files or name in seen:
-                    raise ValueError("Unexpected or duplicate actual file")
-                seen.add(name)
-                value = row["result"].get("result", row["result"])
-                if (row["stale"] or value.get("success") is not True or value.get("partial") or
-                    value.get("timed_out") or value.get("failed_dependencies") or
-                    row["revision"]["file_sha256"] != sha(source / name) or
-                    row["request"]["expected_sha256"] != sha(source / name)):
-                    raise ValueError("Incomplete or changed actual file: " + name)
-                items = value.get("items", [])
-                if any(item.get("severity") in ["error", "warning"] for item in items):
-                    raise ValueError("Unresolved actual-file diagnostics: " + name)
-                checked = [item["message"] for item in items if item["message"].startswith("Checked ")]
-                parsed = [re.fullmatch(r"Checked (\S+): ([0-3]) standard logical dependencies", item) for item in checked]
-                if any(item is None for item in parsed) or [item.group(1) for item in parsed] != files[name]:
-                    raise ValueError("Missing, changed or extra actual proof audit: " + name)
+            actual = check_service(source, files, (out / "service.log").read_text(), sha)
             record["actual_results"] = actual
             record["checked_file_count"] = len(files)
             record["complete"] = True

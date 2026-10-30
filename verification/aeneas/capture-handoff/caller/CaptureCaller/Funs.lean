@@ -4391,7 +4391,7 @@ def request.handle_compensation
   else ok (core.result.Result.Err request.Reject.ControllerDown)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop body 1:
-    Source: 'controller-core/src/worker.rs', lines 104:4-107:5 -/
+    Source: 'controller-core/src/worker.rs', lines 105:4-108:5 -/
 @[rust_loop_body]
 def worker.insert_unique_loop0_loop0.body
   {T : Type} (corecloneCloneInst : core.clone.Clone T)
@@ -4411,7 +4411,7 @@ def worker.insert_unique_loop0_loop0.body
   else ok (done next)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop 1:
-    Source: 'controller-core/src/worker.rs', lines 104:4-107:5 -/
+    Source: 'controller-core/src/worker.rs', lines 105:4-108:5 -/
 @[rust_loop]
 def worker.insert_unique_loop0_loop0
   {T : Type} (corecloneCloneInst : core.clone.Clone T)
@@ -4424,7 +4424,7 @@ def worker.insert_unique_loop0_loop0
     (index, next)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop body 0:
-    Source: 'controller-core/src/worker.rs', lines 95:4-109:1 -/
+    Source: 'controller-core/src/worker.rs', lines 96:4-110:1 -/
 @[rust_loop_body]
 def worker.insert_unique_loop0.body
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -4450,7 +4450,7 @@ def worker.insert_unique_loop0.body
     ok (done next1)
 
 /-- [sandbox_controller_core::worker::insert_unique]: loop 0:
-    Source: 'controller-core/src/worker.rs', lines 95:4-109:1 -/
+    Source: 'controller-core/src/worker.rs', lines 96:4-110:1 -/
 @[rust_loop]
 def worker.insert_unique_loop0
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -4464,7 +4464,7 @@ def worker.insert_unique_loop0
     index
 
 /-- [sandbox_controller_core::worker::insert_unique]:
-    Source: 'controller-core/src/worker.rs', lines 93:0-109:1 -/
+    Source: 'controller-core/src/worker.rs', lines 94:0-110:1 -/
 @[reducible]
 def worker.insert_unique
   {T : Type} (corecloneCloneInst : core.clone.Clone T) (corecmpPartialEqInst :
@@ -4475,7 +4475,7 @@ def worker.insert_unique
     value 0#usize
 
 /-- [sandbox_controller_core::worker::register_snapshot]:
-    Source: 'controller-core/src/worker.rs', lines 186:0-190:1 -/
+    Source: 'controller-core/src/worker.rs', lines 187:0-191:1 -/
 def worker.register_snapshot
   (world : model.World) (sandbox : ids.SandboxId) (snapshot : ids.SnapshotId) :
   Result model.World
@@ -4490,7 +4490,7 @@ def worker.register_snapshot
   ok { world with resource_indexes := s }
 
 /-- [sandbox_controller_core::worker::put_snapshot]:
-    Source: 'controller-core/src/worker.rs', lines 202:0-205:1 -/
+    Source: 'controller-core/src/worker.rs', lines 203:0-206:1 -/
 def worker.put_snapshot
   (world : model.World) (id : ids.SnapshotId) (value : model.Snapshot) :
   Result model.World
@@ -4770,7 +4770,7 @@ def worker.late_capture.seal
     ok (core.result.Result.Err worker.WorkerReject.PlanMismatch)
 
 /-- [sandbox_controller_core::worker::register_vm]:
-    Source: 'controller-core/src/worker.rs', lines 174:0-178:1 -/
+    Source: 'controller-core/src/worker.rs', lines 175:0-179:1 -/
 def worker.register_vm
   (world : model.World) (sandbox : ids.SandboxId) (vm : ids.VmId) :
   Result model.World
@@ -4785,7 +4785,7 @@ def worker.register_vm
   ok { world with resource_indexes := s }
 
 /-- [sandbox_controller_core::worker::put_vm]:
-    Source: 'controller-core/src/worker.rs', lines 192:0-195:1 -/
+    Source: 'controller-core/src/worker.rs', lines 193:0-196:1 -/
 def worker.put_vm
   (world : model.World) (id : ids.VmId) (value : model.Vm) :
   Result model.World
@@ -5071,5 +5071,577 @@ def worker.late_capture.record
   | core.ops.control_flow.ControlFlow.Break residual =>
     core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
       (core.result.Result worker.WorkerDecision worker.WorkerReject) residual
+
+/-- [sandbox_controller_core::worker::effect_awaiting]:
+    Source: 'controller-core/src/worker.rs', lines 141:0-153:1 -/
+def worker.effect_awaiting
+  (status : Option model.EffectStatus) : Result Bool := do
+  match status with
+  | none => ok false
+  | some es =>
+    match es with
+    | model.EffectStatus.Committed => ok false
+    | model.EffectStatus.Dispatched => ok true
+    | model.EffectStatus.OutcomeUnknown => ok true
+    | model.EffectStatus.Acknowledged _ => ok false
+    | model.EffectStatus.RetiredByStop _ => ok false
+    | model.EffectStatus.RetiredByCaptureEnd _ => ok false
+    | model.EffectStatus.RetiredByCaptureDrain _ => ok false
+
+/-- [sandbox_controller_core::worker::current_effect_id]:
+    Source: 'controller-core/src/worker.rs', lines 123:0-132:1 -/
+def worker.current_effect_id
+  (world : model.World) (command : model.Command) : Result model.EffectId := do
+  let c ← model.Command.Insts.CoreCloneClone.clone command
+  let o ←
+    store.Store.get_copy
+      model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+      model.LogicalEffectRecord.Insts.CoreMarkerCopy world.logical_effects
+      { command := c }
+  match o with
+  | none => ok { logical := { command := c }, attempt := 0#u64 }
+  | some record =>
+    ok { logical := { command := c }, attempt := record.current_attempt }
+
+/-- [sandbox_controller_core::worker::contains]: loop body 0:
+    Source: 'controller-core/src/worker.rs', lines 114:4-121:1 -/
+@[rust_loop_body]
+def worker.contains_loop.body
+  {T : Type} (corecmpPartialEqInst : core.cmp.PartialEq T T) (values : Slice T)
+  (value : T) (index : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i := Slice.len values
+  if index < i
+  then
+    let t ← Slice.index_usize values index
+    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t value
+    if b
+    then ok (done true)
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else ok (done false)
+
+/-- [sandbox_controller_core::worker::contains]: loop 0:
+    Source: 'controller-core/src/worker.rs', lines 114:4-121:1 -/
+@[rust_loop]
+def worker.contains_loop
+  {T : Type} (corecmpPartialEqInst : core.cmp.PartialEq T T) (values : Slice T)
+  (value : T) (index : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun index1 => worker.contains_loop.body corecmpPartialEqInst values value
+      index1)
+    index
+
+/-- [sandbox_controller_core::worker::contains]:
+    Source: 'controller-core/src/worker.rs', lines 112:0-121:1 -/
+@[reducible]
+def worker.contains
+  {T : Type} (corecmpPartialEqInst : core.cmp.PartialEq T T) (values : Slice T)
+  (value : T) :
+  Result Bool
+  := do
+  worker.contains_loop corecmpPartialEqInst values value 0#usize
+
+/-- [sandbox_controller_core::worker::current_plan]:
+    Source: 'controller-core/src/worker.rs', lines 348:0-361:1 -/
+def worker.current_plan
+  (world : model.World) (sandbox : ids.SandboxId)
+  (record : model.SandboxRecord) :
+  Result (core.result.Result (model.OperationKey × model.OperationPlan)
+    worker.WorkerReject)
+  := do
+  match record.current_operation with
+  | none => ok (core.result.Result.Err worker.WorkerReject.OperationNotFound)
+  | some operation =>
+    let key ← transition.operation_key sandbox operation.id
+    let o ←
+      store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+        world.operation_plans key
+    match o with
+    | none => ok (core.result.Result.Err worker.WorkerReject.PlanNotFound)
+    | some plan => ok (core.result.Result.Ok (key, plan))
+
+/-- [sandbox_controller_core::worker::stoppable_vm_status]:
+    Source: 'controller-core/src/worker.rs', lines 162:0-167:1 -/
+def worker.stoppable_vm_status (status : model.VmStatus) : Result Bool := do
+  match status with
+  | model.VmStatus.Prepared => ok true
+  | model.VmStatus.Executing => ok true
+  | model.VmStatus.Frozen => ok true
+  | model.VmStatus.Stopped => ok false
+  | model.VmStatus.Reclaimed => ok false
+
+/-- [sandbox_controller_core::worker::pause_stop::stop_vm]:
+    Source: 'controller-core/src/worker/pause_stop.rs', lines 121:0-204:1 -/
+def worker.pause_stop.stop_vm
+  (world : model.World) (sandbox : ids.SandboxId) (epoch : Std.U64)
+  (generation : Std.U64) (vm : ids.VmId) :
+  Result (core.result.Result worker.WorkerDecision worker.WorkerReject)
+  := do
+  let o ←
+    store.Store.get ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      world.sandboxes sandbox
+  match o with
+  | none => ok (core.result.Result.Err worker.WorkerReject.SandboxNotFound)
+  | some record =>
+    let o1 ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    match o1 with
+    | none => ok (core.result.Result.Err worker.WorkerReject.ResourceNotFound)
+    | some stored_vm =>
+      if epoch != record.epoch
+      then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+      else
+        if generation != stored_vm.generation
+        then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+        else
+          let b ←
+            core.cmp.PartialEq.ne.trait_default
+              ids.SandboxId.Insts.CoreCmpPartialEqSandboxId stored_vm.sandbox
+              sandbox
+          if b
+          then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+          else
+            let b1 ← worker.stoppable_vm_status stored_vm.status
+            if b1
+            then
+              let b2 ←
+                model.Phase.Insts.CoreCmpPartialEqPhase.eq record.phase
+                  model.Phase.Pausing
+              if b2
+              then
+                let b3 ←
+                  core.cmp.PartialEq.ne.trait_default
+                    (core.option.Option.Insts.CoreCmpPartialEqOption
+                    ids.VmId.Insts.CoreCmpPartialEqVmId) record.current_vm
+                    (some vm)
+                if b3
+                then
+                  ok (core.result.Result.Err
+                    worker.WorkerReject.IdentityMismatch)
+                else
+                  if record.terminal
+                  then ok (core.result.Result.Err worker.WorkerReject.Terminal)
+                  else
+                    let b4 ←
+                      core.cmp.PartialEq.ne.trait_default
+                        model.VmStatus.Insts.CoreCmpPartialEqVmStatus
+                        stored_vm.status model.VmStatus.Frozen
+                    if b4
+                    then
+                      ok (core.result.Result.Err
+                        worker.WorkerReject.WrongPhase)
+                    else
+                      let o2 ←
+                        store.Store.get
+                          ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                          world.worker_fences sandbox
+                      let b5 ←
+                        core.cmp.PartialEq.ne.trait_default
+                          (core.option.Option.Insts.CoreCmpPartialEqOption
+                          (core.cmp.PartialEqShared
+                          model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence))
+                          o2 (some
+                          { epoch := record.epoch, terminal := false })
+                      if b5
+                      then
+                        ok (core.result.Result.Err
+                          worker.WorkerReject.FenceNotReady)
+                      else
+                        let r ← worker.current_plan world sandbox record
+                        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+                        match cf with
+                        | core.ops.control_flow.ControlFlow.Continue p =>
+                          let (_, plan) := p
+                          let b6 ←
+                            core.cmp.PartialEq.ne.trait_default
+                              (core.option.Option.Insts.CoreCmpPartialEqOption
+                              ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm
+                              (some vm)
+                          if b6
+                          then
+                            ok (core.result.Result.Err
+                              worker.WorkerReject.SnapshotNotReady)
+                          else
+                            let o3 ←
+                              transition.current_capture world sandbox record
+                            let b7 ←
+                              core.option.Option.is_some_and
+                                P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool
+                                o3 (capture.CaptureHandoff.may_stop_original)
+                            if b7
+                            then
+                              match plan.target_snapshot with
+                              | none =>
+                                ok (core.result.Result.Err
+                                  worker.WorkerReject.SnapshotNotReady)
+                              | some target =>
+                                let o4 ←
+                                  store.Store.get
+                                    ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+                                    world.snapshots target.snapshot
+                                match o4 with
+                                | none =>
+                                  ok (core.result.Result.Err
+                                    worker.WorkerReject.SnapshotNotReady)
+                                | some stored_snapshot =>
+                                  let b8 ←
+                                    core.cmp.PartialEq.ne.trait_default
+                                      ids.TenantId.Insts.CoreCmpPartialEqTenantId
+                                      stored_snapshot.owner record.owner
+                                  if b8
+                                  then
+                                    ok (core.result.Result.Err
+                                      worker.WorkerReject.SnapshotNotReady)
+                                  else
+                                    let b9 ←
+                                      core.cmp.PartialEq.ne.trait_default
+                                        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                                        stored_snapshot.sandbox sandbox
+                                    if b9
+                                    then
+                                      ok (core.result.Result.Err
+                                        worker.WorkerReject.SnapshotNotReady)
+                                    else
+                                      if stored_snapshot.source_generation !=
+                                        record.generation
+                                      then
+                                        ok (core.result.Result.Err
+                                          worker.WorkerReject.SnapshotNotReady)
+                                      else
+                                        let b10 ←
+                                          core.cmp.PartialEq.ne.trait_default
+                                            ids.FsId.Insts.CoreCmpPartialEqFsId
+                                            stored_snapshot.workspace
+                                            record.workspace
+                                        if b10
+                                        then
+                                          ok (core.result.Result.Err
+                                            worker.WorkerReject.SnapshotNotReady)
+                                        else
+                                          let b11 ←
+                                            core.cmp.PartialEq.ne.trait_default
+                                              model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+                                              stored_snapshot.manifest
+                                              target.manifest
+                                          if b11
+                                          then
+                                            ok (core.result.Result.Err
+                                              worker.WorkerReject.SnapshotNotReady)
+                                          else
+                                            let b12 ←
+                                              core.cmp.PartialEq.ne.trait_default
+                                                model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
+                                                stored_snapshot.stage
+                                                model.SnapshotStage.Durable
+                                            if b12
+                                            then
+                                              ok (core.result.Result.Err
+                                                worker.WorkerReject.SnapshotNotReady)
+                                            else
+                                              if stored_snapshot.immutable
+                                              then
+                                                let next ←
+                                                  model.World.Insts.CoreCloneClone.clone
+                                                    world
+                                                let next1 ←
+                                                  worker.put_vm next vm
+                                                    {
+                                                      stored_vm
+                                                        with
+                                                        status :=
+                                                          model.VmStatus.Stopped
+                                                    }
+                                                ok (core.result.Result.Ok
+                                                  {
+                                                    event :=
+                                                      (worker.WorkerEvent.StopVm
+                                                        sandbox
+                                                        vm),
+                                                    next := next1
+                                                  })
+                                              else
+                                                ok (core.result.Result.Err
+                                                  worker.WorkerReject.SnapshotNotReady)
+                            else
+                              ok (core.result.Result.Err
+                                worker.WorkerReject.SnapshotNotReady)
+                        | core.ops.control_flow.ControlFlow.Break residual =>
+                          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                            worker.WorkerDecision (core.convert.FromSame
+                            worker.WorkerReject) residual
+              else
+                let b3 ←
+                  model.Phase.Insts.CoreCmpPartialEqPhase.eq record.phase
+                    model.Phase.Revoking
+                if b3
+                then
+                  if record.terminal
+                  then
+                    let o2 ←
+                      store.Store.get
+                        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                        world.worker_fences sandbox
+                    let b4 ←
+                      core.cmp.PartialEq.ne.trait_default
+                        (core.option.Option.Insts.CoreCmpPartialEqOption
+                        (core.cmp.PartialEqShared
+                        model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence))
+                        o2 (some { epoch := record.epoch, terminal := true })
+                    if b4
+                    then
+                      ok (core.result.Result.Err
+                        worker.WorkerReject.FenceNotReady)
+                    else
+                      let next ← model.World.Insts.CoreCloneClone.clone world
+                      let next1 ←
+                        worker.put_vm next vm
+                          { stored_vm with status := model.VmStatus.Stopped }
+                      ok (core.result.Result.Ok
+                        {
+                          event := (worker.WorkerEvent.StopVm sandbox vm),
+                          next := next1
+                        })
+                  else ok (core.result.Result.Err worker.WorkerReject.Terminal)
+                else ok (core.result.Result.Err worker.WorkerReject.WrongPhase)
+            else ok (core.result.Result.Err worker.WorkerReject.WrongPhase)
+
+/-- [sandbox_controller_core::worker::pause_stop::commit_snapshot]:
+    Source: 'controller-core/src/worker/pause_stop.rs', lines 54:0-119:1 -/
+def worker.pause_stop.commit_snapshot
+  (world : model.World) (sandbox : ids.SandboxId) (epoch : Std.U64)
+  (generation : Std.U64) (snapshot : ids.SnapshotId)
+  (manifest : model.SnapshotManifestRef) :
+  Result (core.result.Result worker.WorkerDecision worker.WorkerReject)
+  := do
+  let o ←
+    store.Store.get ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+      world.snapshots snapshot
+  match o with
+  | none => ok (core.result.Result.Err worker.WorkerReject.ResourceNotFound)
+  | some stored =>
+    let o1 ←
+      store.Store.get ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        world.sandboxes sandbox
+    match o1 with
+    | none => ok (core.result.Result.Err worker.WorkerReject.SandboxNotFound)
+    | some record =>
+      if epoch != record.epoch
+      then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+      else
+        if generation != record.generation
+        then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+        else
+          let b ←
+            core.cmp.PartialEq.ne.trait_default
+              model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+              manifest stored.manifest
+          if b
+          then ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+          else
+            let b1 ←
+              core.cmp.PartialEq.ne.trait_default
+                ids.SandboxId.Insts.CoreCmpPartialEqSandboxId stored.sandbox
+                sandbox
+            if b1
+            then
+              ok (core.result.Result.Err worker.WorkerReject.IdentityMismatch)
+            else
+              let b2 ←
+                core.cmp.PartialEq.ne.trait_default
+                  model.Phase.Insts.CoreCmpPartialEqPhase record.phase
+                  model.Phase.Pausing
+              if b2
+              then ok (core.result.Result.Err worker.WorkerReject.WrongPhase)
+              else
+                match record.current_vm with
+                | none =>
+                  ok (core.result.Result.Err
+                    worker.WorkerReject.ResourceNotFound)
+                | some vm =>
+                  if stored.source_generation != record.generation
+                  then
+                    ok (core.result.Result.Err
+                      worker.WorkerReject.IdentityMismatch)
+                  else
+                    let b3 ←
+                      core.cmp.PartialEq.ne.trait_default
+                        ids.FsId.Insts.CoreCmpPartialEqFsId stored.workspace
+                        record.workspace
+                    if b3
+                    then
+                      ok (core.result.Result.Err
+                        worker.WorkerReject.IdentityMismatch)
+                    else
+                      let b4 ←
+                        core.cmp.PartialEq.ne.trait_default
+                          model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
+                          stored.stage model.SnapshotStage.LocalSealed
+                      if b4
+                      then
+                        ok (core.result.Result.Err
+                          worker.WorkerReject.SnapshotNotReady)
+                      else
+                        let r ← worker.current_plan world sandbox record
+                        let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+                        match cf with
+                        | core.ops.control_flow.ControlFlow.Continue p =>
+                          let (key, plan) := p
+                          let b5 ←
+                            core.cmp.PartialEq.ne.trait_default
+                              (core.option.Option.Insts.CoreCmpPartialEqOption
+                              ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm
+                              record.current_vm
+                          if b5
+                          then
+                            ok (core.result.Result.Err
+                              worker.WorkerReject.PlanMismatch)
+                          else
+                            let b6 ←
+                              core.cmp.PartialEq.ne.trait_default
+                                (core.option.Option.Insts.CoreCmpPartialEqOption
+                                model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource)
+                                plan.target_snapshot (some
+                                { snapshot, manifest })
+                            if b6
+                            then
+                              ok (core.result.Result.Err
+                                worker.WorkerReject.PlanMismatch)
+                            else
+                              let o2 ←
+                                transition.current_capture world sandbox record
+                              let o3 ←
+                                core.option.Option.and_then
+                                  P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffOptionCaptureHandoff
+                                  o2 (capture.CaptureHandoff.observe_bundle)
+                              match o3 with
+                              | none =>
+                                ok (core.result.Result.Err
+                                  worker.WorkerReject.ResourceBusy)
+                              | some handoff =>
+                                let next ←
+                                  model.World.Insts.CoreCloneClone.clone world
+                                let registered ←
+                                  model.OperationPlan.Insts.CoreCloneClone.clone
+                                    plan
+                                let s ←
+                                  store.Store.put
+                                    model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+                                    next.operation_plans key
+                                    { registered with capture := o3 }
+                                let next1 ←
+                                  worker.put_snapshot
+                                    { next with operation_plans := s } snapshot
+                                    {
+                                      stored
+                                        with
+                                        stage := model.SnapshotStage.Durable,
+                                        immutable := true
+                                    }
+                                let b7 ←
+                                  capture.CaptureHandoff.may_stop_original
+                                    handoff
+                                if b7
+                                then
+                                  let next2 ←
+                                    transition.enqueue next1
+                                      (model.Command.StopVm sandbox
+                                      record.epoch record.generation vm)
+                                  ok (core.result.Result.Ok
+                                    {
+                                      event :=
+                                        (worker.WorkerEvent.CommitSnapshot
+                                          snapshot),
+                                      next := next2
+                                    })
+                                else
+                                  ok (core.result.Result.Ok
+                                    {
+                                      event :=
+                                        (worker.WorkerEvent.CommitSnapshot
+                                          snapshot),
+                                      next := next1
+                                    })
+                        | core.ops.control_flow.ControlFlow.Break residual =>
+                          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                            worker.WorkerDecision (core.convert.FromSame
+                            worker.WorkerReject) residual
+
+/-- [sandbox_controller_core::worker::pause_stop::execute]:
+    Source: 'controller-core/src/worker/pause_stop.rs', lines 22:0-52:1 -/
+def worker.pause_stop.execute
+  (world : model.World) (id : model.EffectId) :
+  Result (core.result.Result worker.WorkerDecision worker.WorkerReject)
+  := do
+  let command ← model.Command.Insts.CoreCloneClone.clone id.logical.command
+  let ei ← worker.current_effect_id world command
+  let b ←
+    core.cmp.PartialEq.ne.trait_default
+      model.EffectId.Insts.CoreCmpPartialEqEffectId ei id
+  if b
+  then ok (core.result.Result.Err worker.WorkerReject.StaleAttempt)
+  else
+    let s := alloc.vec.Vec.deref world.inflight
+    let b1 ←
+      worker.contains model.EffectId.Insts.CoreCmpPartialEqEffectId s id
+    if b1
+    then
+      let o ←
+        store.Store.get model.EffectId.Insts.CoreCmpPartialEqEffectId
+          world.effects id
+      let b2 ← worker.effect_awaiting o
+      if b2
+      then
+        let o1 ← worker.late_capture.record world id
+        match o1 with
+        | none =>
+          match command with
+          | model.Command.InstallFence _ _ _ => fail panic
+          | model.Command.PrepareVm _ _ _ _ _ _ => fail panic
+          | model.Command.ConfigureNetwork _ _ _ _ _ _ => fail panic
+          | model.Command.ActivateVm _ _ _ _ => fail panic
+          | model.Command.FreezeVm _ _ _ _ => fail panic
+          | model.Command.ApplyFilePolicy _ _ _ _ _ => fail panic
+          | model.Command.SealSnapshot _ _ _ _ _ _ _ => fail panic
+          | model.Command.CommitSnapshot sandbox epoch generation snapshot
+            manifest =>
+            worker.pause_stop.commit_snapshot world sandbox epoch generation
+              snapshot manifest
+          | model.Command.StopVm sandbox epoch generation vm =>
+            worker.pause_stop.stop_vm world sandbox epoch generation vm
+          | model.Command.AbortPrepare _ _ _ _ _ => fail panic
+          | model.Command.CleanupVm _ _ _ => fail panic
+          | model.Command.CleanupSlot _ _ _ => fail panic
+        | some result => ok result
+      else ok (core.result.Result.Err worker.WorkerReject.NotAwaiting)
+    else ok (core.result.Result.Err worker.WorkerReject.NotQueued)
+
+/-- [sandbox_controller_core::worker::pause_stop::record]:
+    Source: 'controller-core/src/worker/pause_stop.rs', lines 15:0-20:1 -/
+def worker.pause_stop.record
+  (world : model.World) (id : model.EffectId) :
+  Result (Option (core.result.Result worker.WorkerDecision
+    worker.WorkerReject))
+  := do
+  let c ← model.EffectId.command id
+  match c with
+  | model.Command.InstallFence _ _ _ => ok none
+  | model.Command.PrepareVm _ _ _ _ _ _ => ok none
+  | model.Command.ConfigureNetwork _ _ _ _ _ _ => ok none
+  | model.Command.ActivateVm _ _ _ _ => ok none
+  | model.Command.FreezeVm _ _ _ _ => ok none
+  | model.Command.ApplyFilePolicy _ _ _ _ _ => ok none
+  | model.Command.SealSnapshot _ _ _ _ _ _ _ => ok none
+  | model.Command.CommitSnapshot _ _ _ _ _ =>
+    let r ← worker.pause_stop.execute world id
+    ok (some r)
+  | model.Command.StopVm _ _ _ _ =>
+    let r ← worker.pause_stop.execute world id
+    ok (some r)
+  | model.Command.AbortPrepare _ _ _ _ _ => ok none
+  | model.Command.CleanupVm _ _ _ => ok none
+  | model.Command.CleanupSlot _ _ _ => ok none
 
 end CaptureCallerRust.sandbox_controller_core

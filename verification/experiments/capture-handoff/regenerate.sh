@@ -20,7 +20,7 @@ case "$variant" in
            'capture::*::commit' 'capture::*::eligibility'
            'capture::*::has_capture_work' 'capture::*::has_unload_source'
            request::handle_compensation worker::late_capture::record
-           publication::handle_publish_paused)
+           publication::handle_publish_paused worker::pause_stop::record)
     ;;
   *) echo 'expected values, handler, worker or caller' >&2; exit 2 ;;
 esac
