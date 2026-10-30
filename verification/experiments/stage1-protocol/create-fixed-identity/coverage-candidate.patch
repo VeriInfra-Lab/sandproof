@@ -1,0 +1,18 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2100,0 +2101,15 @@
++
++
++### V3 当前固定 sandbox 编号值对应（候选登记）
++
++真实 `controller::identity::sandbox_id` 的完整 namespace／u64 由透明根原样连接。
++`FullIdentityContract` 对全部输入证明完整 `sb-{namespace}-{十进制 u64}` 和原完整
++标识符拒绝／JournalError 转换，范围为已解码值、既有表示界和具名固定默认格式库合同。
++当前正例与两个真实 Rust 字段遗漏版使用同一模型、完整合同和正常输入；错误视图排除
++正确 ID 对应证明。正常、空 namespace、u64 全位以及含空白及非 ASCII namespace 的拒绝均有见证。
++库的 UTF-8、十进制与原标识符数学复用，不重新计为新证明。
++
++该值对应仍需连接实际 Create 标准实例／同 transaction、SQL 两参数、真实 JSON／SHA、
++认证来源、提交未知／重启和恢复调用。普通／原生交独立测试环境；正式共享入口、输入、
++累计审计和冻结由主控采用并统一验收。精确执行身份、完整正反原始证据接收和最终验收
++结果随同批记录填写，不从本候选或字段相等宣称完整 V3 已完成。
