@@ -152,7 +152,13 @@ Inbox/World/local binding 陈述检查成功到整个 Inbox 写入的合同。�
 从合法 load 和完整选择开始的正常见证仅说明此前缀可执行；写后整个 Inbox 仍可能
 由后续校验/save 拒绝，不能把安装成功当成持久接受。
 
-deadline 转换、固定 ID、原 UPDATE 与 save 仍属于同一原父函数的业务义务；原寿命
+[deadline helper](../../verification/experiments/stage1-protocol/create-deadline/README.md)
+只承接原 UPDATE 第一项参数的转换／错误映射，保留原 receiver 与身份参数位置。
+其纯值合同区分成功值不变和超出 i64 上限时的 UnsupportedInput，正常数值见证不等于
+完整 Create 接受。固定 Std 的透明转换、完整错误载体与原 Result 模型分别登记，
+不把整数转换提升为完整事务结论。
+
+固定 ID、原 UPDATE 与 save 及 deadline 在完整父函数中的顺序仍须连接；原寿命
 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
 重启以及真实资源/认证来源继续分别连接。函数采用、实际生成体对应与完整组合分开
 验收，候选结果的精确版本和当前缺口仍由覆盖记录及 #635 维护。

@@ -533,6 +533,10 @@ pub(super) fn check_new_create_owner(
     Ok(())
 }
 
+pub(super) fn create_attachment_deadline(value: u64) -> Result<i64, JournalError> {
+    i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)
+}
+
 pub(super) fn attach_create(
     tx: &WorldTransaction<'_>,
     namespace: &str,
@@ -548,8 +552,7 @@ pub(super) fn attach_create(
     tx.execute(
         "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
         params![
-            i64::try_from(startup_deadline_ms)
-                .map_err(|_| JournalError::UnsupportedInput)?,
+            create_attachment_deadline(startup_deadline_ms)?,
             identity::sandbox_id(namespace, a.local.sandbox)?.as_str()
         ],
     )?;
