@@ -24,10 +24,12 @@ include!(concat!(
     "/../verification/experiments/pause-stop/tests.rs"
 ));
 '''
-STOP_GUARD = '.is_some_and(crate::capture::CaptureHandoff::may_stop_original)'
+# Include the real query's two-line layout so the callback mutant is also
+# emitted in the fixed rustfmt format. Query/None/plan checks stay unchanged.
+STOP_GUARD = 'crate::transition::current_capture(world, sandbox, record)\n                .is_some_and(crate::capture::CaptureHandoff::may_stop_original)'
 # Preserve the current-capture query, None rejection, plan-VM comparison and
 # actual permission call. Only ignore the permission's Boolean result.
-STOP_BYPASS = '.is_some_and(|handoff| {\n                    let _ = handoff.may_stop_original();\n                    true\n                })'
+STOP_BYPASS = 'crate::transition::current_capture(world, sandbox, record).is_some_and(|handoff| {\n                let _ = handoff.may_stop_original();\n                true\n            })'
 CASES = [('ignore-handoff', str(SOURCE), STOP_GUARD, STOP_BYPASS,
           'stop_requires_registered_recoverable_handoff_even_with_durable_snapshot')]
 
