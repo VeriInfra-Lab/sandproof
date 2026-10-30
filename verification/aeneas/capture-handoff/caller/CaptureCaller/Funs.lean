@@ -121,18 +121,18 @@ def model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
   ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq self.digest
     other.digest
 
-/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}::eq]:
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
-    Visibility: public -/
-def ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
-  (self : ids.SnapshotId) (other : ids.SnapshotId) : Result Bool := do
-  ok (self = other)
-
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}::eq]:
     Source: 'controller-core/src/ids.rs', lines 3:37-3:46
     Visibility: public -/
 def ids.FsId.Insts.CoreCmpPartialEqFsId.eq
   (self : ids.FsId) (other : ids.FsId) : Result Bool := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}::eq]:
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
+    Visibility: public -/
+def ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+  (self : ids.SnapshotId) (other : ids.SnapshotId) : Result Bool := do
   ok (self = other)
 
 /-- [sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureSealEnd> for sandbox_controller_core::capture::continuation::CaptureSealEnd}::eq]:
@@ -599,705 +599,160 @@ def capture.CaptureHandoff.may_stop_original
     else ok false
   else ok false
 
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+/-- [sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::may_stop_original}::call_once]:
+    Source: 'controller-core/src/capture.rs', lines 148:4-152:5
     Visibility: public -/
-def ids.VmId.Insts.CoreCloneClone.clone
-  (self : ids.VmId) : Result ids.VmId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}]
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
-@[reducible]
-def ids.VmId.Insts.CoreCloneClone : core.clone.Clone ids.VmId := {
-  clone := ids.VmId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
-    Visibility: public -/
-def ids.NetSlotId.Insts.CoreCloneClone.clone
-  (self : ids.NetSlotId) : Result ids.NetSlotId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}]
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
-@[reducible]
-def ids.NetSlotId.Insts.CoreCloneClone : core.clone.Clone ids.NetSlotId := {
-  clone := ids.NetSlotId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
-    Visibility: public -/
-def ids.SandboxId.Insts.CoreCloneClone.clone
-  (self : ids.SandboxId) : Result ids.SandboxId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}]
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
-@[reducible]
-def ids.SandboxId.Insts.CoreCloneClone : core.clone.Clone ids.SandboxId := {
-  clone := ids.SandboxId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
-    Visibility: public -/
-def ids.FsId.Insts.CoreCloneClone.clone
-  (self : ids.FsId) : Result ids.FsId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}]
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
-@[reducible]
-def ids.FsId.Insts.CoreCloneClone : core.clone.Clone ids.FsId := {
-  clone := ids.FsId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
-    Visibility: public -/
-def ids.SnapshotId.Insts.CoreCloneClone.clone
-  (self : ids.SnapshotId) : Result ids.SnapshotId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}]
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
-@[reducible]
-def ids.SnapshotId.Insts.CoreCloneClone : core.clone.Clone ids.SnapshotId := {
-  clone := ids.SnapshotId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone]:
-    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
-    Visibility: public -/
-def ids.TenantId.Insts.CoreCloneClone.clone
-  (self : ids.TenantId) : Result ids.TenantId := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.SandboxId.Insts.CoreCmpPartialEqSandboxId : core.cmp.PartialEq
-  ids.SandboxId ids.SandboxId := {
-  eq := ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
-}
-
-/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq]:
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
-    Visibility: public -/
-def ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
-  (self : ids.TenantId) (other : ids.TenantId) : Result Bool := do
-  ok (self = other)
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.TenantId.Insts.CoreCmpPartialEqTenantId : core.cmp.PartialEq
-  ids.TenantId ids.TenantId := {
-  eq := ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.TenantId.Insts.CoreCmpPartialEqTenantId
-}
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.VmId.Insts.CoreCmpPartialEqVmId : core.cmp.PartialEq ids.VmId
-  ids.VmId := {
-  eq := ids.VmId.Insts.CoreCmpPartialEqVmId.eq
-  ne := core.cmp.PartialEq.ne.trait_default ids.VmId.Insts.CoreCmpPartialEqVmId
-}
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.FsId.Insts.CoreCmpPartialEqFsId : core.cmp.PartialEq ids.FsId
-  ids.FsId := {
-  eq := ids.FsId.Insts.CoreCmpPartialEqFsId.eq
-  ne := core.cmp.PartialEq.ne.trait_default ids.FsId.Insts.CoreCmpPartialEqFsId
-}
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId : core.cmp.PartialEq
-  ids.SnapshotId ids.SnapshotId := {
-  eq := ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
-}
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest :
-  core.cmp.PartialEq ids.ResultDigest ids.ResultDigest := {
-  eq := ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest
-}
-
-/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq]:
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
-    Visibility: public -/
-def ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
-  (self : ids.NetSlotId) (other : ids.NetSlotId) : Result Bool := do
-  ok (self = other)
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId : core.cmp.PartialEq
-  ids.NetSlotId ids.NetSlotId := {
-  eq := ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
-}
-
-/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq]:
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
-    Visibility: public -/
-def ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq
-  (self : ids.PolicyDigest) (other : ids.PolicyDigest) : Result Bool := do
-  ok (self = other)
-
-/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq]:
-    Source: 'controller-core/src/maintenance/slots.rs', lines 10:29-10:38
-    Visibility: public -/
-def maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
-  (self : maintenance.slots.HostBinding)
-  (other : maintenance.slots.HostBinding) :
+def P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once
+  (state : capture.CaptureHandoff → Result Bool)
+  (args : capture.CaptureHandoff) :
   Result Bool
   := do
-  let b ←
-    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq self.owner other.owner
-  if b
+  capture.CaptureHandoff.may_stop_original args
+
+/-- Trait implementation: [sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::may_stop_original}]
+    Source: 'controller-core/src/capture.rs', lines 148:4-152:5 -/
+@[reducible]
+def P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool :
+  core.ops.function.FnOnce (capture.CaptureHandoff → Result Bool)
+  capture.CaptureHandoff Bool := {
+  call_once := P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once
+}
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
+    Source: 'controller-core/src/store.rs', lines 66:8-73:5
+    Visibility: public -/
+@[rust_loop_body]
+def store.Store.get_copy_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (Option V))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
   then
-    let b1 ←
-      ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq self.sandbox
-        other.sandbox
-    if b1
-    then
-      if self.generation = other.generation
-      then
-        let b2 ← ids.VmId.Insts.CoreCmpPartialEqVmId.eq self.vm other.vm
-        if b2
-        then
-          ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq self.network
-            other.network
-        else ok false
-      else ok false
-    else ok false
-  else ok false
-
-/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotId> for sandbox_controller_core::maintenance::slots::HostSlotId}::eq]:
-    Source: 'controller-core/src/maintenance/slots.rs', lines 6:29-6:38
-    Visibility: public -/
-def maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq
-  (self : maintenance.slots.HostSlotId) (other : maintenance.slots.HostSlotId)
-  :
-  Result Bool
-  := do
-  ok (self = other)
-
-/-- [sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::eq]:
-    Source: 'controller-core/src/maintenance/released_execution.rs', lines 14:29-14:38
-    Visibility: public -/
-def
-  maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution.eq
-  (self : maintenance.released_execution.ReleasedExecution)
-  (other : maintenance.released_execution.ReleasedExecution) :
-  Result Bool
-  := do
-  if self.release_input_sequence = other.release_input_sequence
-  then
-    let b ←
-      model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq self.key
-        other.key
+    let (t, t1) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
     if b
-    then
-      if self.epoch = other.epoch
-      then
-        let b1 ←
-          maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq
-            self.position other.position
-        if b1
-        then
-          let b2 ←
-            core.option.Option.Insts.CoreCmpPartialEqOption.eq
-              ids.VmId.Insts.CoreCmpPartialEqVmId self.expected_previous
-              other.expected_previous
-          if b2
-          then
-            maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
-              self.binding other.binding
-          else ok false
-        else ok false
-      else ok false
-    else ok false
-  else ok false
+    then ok (done (some t1))
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else ok (done none)
 
-/-- Trait implementation: [sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}]
-    Source: 'controller-core/src/maintenance/released_execution.rs', lines 14:29-14:38 -/
-@[reducible]
-impl_def
-  maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution
-  : core.cmp.PartialEq maintenance.released_execution.ReleasedExecution
-  maintenance.released_execution.ReleasedExecution := {
-  eq :=
-    maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone]:
-    Source: 'controller-core/src/model.rs', lines 190:9-190:14
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop 0:
+    Source: 'controller-core/src/store.rs', lines 66:8-73:5
     Visibility: public -/
-def model.Operation.Insts.CoreCloneClone.clone
-  (self : model.Operation) : Result model.Operation := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone]:
-    Source: 'controller-core/src/model.rs', lines 162:9-162:14
-    Visibility: public -/
-def model.OperationResult.Insts.CoreCloneClone.clone
-  (self : model.OperationResult) : Result model.OperationResult := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}]
-    Source: 'controller-core/src/model.rs', lines 162:9-162:14 -/
-@[reducible]
-def model.OperationResult.Insts.CoreCloneClone : core.clone.Clone
-  model.OperationResult := {
-  clone := model.OperationResult.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone]:
-    Source: 'controller-core/src/model.rs', lines 97:9-97:14
-    Visibility: public -/
-def model.Ipv4Cidr.Insts.CoreCloneClone.clone
-  (self : model.Ipv4Cidr) : Result model.Ipv4Cidr := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}]
-    Source: 'controller-core/src/model.rs', lines 97:9-97:14 -/
-@[reducible]
-def model.Ipv4Cidr.Insts.CoreCloneClone : core.clone.Clone model.Ipv4Cidr := {
-  clone := model.Ipv4Cidr.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone]:
-    Source: 'controller-core/src/model.rs', lines 67:9-67:14
-    Visibility: public -/
-def model.Protocol.Insts.CoreCloneClone.clone
-  (self : model.Protocol) : Result model.Protocol := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone]:
-    Source: 'controller-core/src/model.rs', lines 74:9-74:14
-    Visibility: public -/
-def model.Endpoint.Insts.CoreCloneClone.clone
-  (self : model.Endpoint) : Result model.Endpoint := do
-  let s ← alloc.string.String.Insts.CoreCloneClone.clone self.address
-  let i ← lift (core.clone.impls.CloneU64.clone self.prefix_length)
-  let p ← model.Protocol.Insts.CoreCloneClone.clone self.protocol
-  let i1 ← lift (core.clone.impls.CloneU64.clone self.port)
-  ok { address := s, prefix_length := i, protocol := p, port := i1 }
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}]
-    Source: 'controller-core/src/model.rs', lines 74:9-74:14 -/
-@[reducible]
-def model.Endpoint.Insts.CoreCloneClone : core.clone.Clone model.Endpoint := {
-  clone := model.Endpoint.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone]:
-    Source: 'controller-core/src/model.rs', lines 83:9-83:14
-    Visibility: public -/
-def model.NetworkPolicy.Insts.CoreCloneClone.clone
-  (self : model.NetworkPolicy) : Result model.NetworkPolicy := do
-  match self with
-  | model.NetworkPolicy.DenyAll => ok model.NetworkPolicy.DenyAll
-  | model.NetworkPolicy.StaticAllowlist __self_0 =>
-    let v ←
-      alloc.vec.CloneVec.clone model.Endpoint.Insts.CoreCloneClone __self_0
-    ok (model.NetworkPolicy.StaticAllowlist v)
-  | model.NetworkPolicy.Ipv4 __self_0 __self_1 __self_2 =>
-    let b ← lift (core.clone.impls.CloneBool.clone __self_0)
-    let v ←
-      alloc.vec.CloneVec.clone model.Ipv4Cidr.Insts.CoreCloneClone __self_1
-    let v1 ←
-      alloc.vec.CloneVec.clone model.Ipv4Cidr.Insts.CoreCloneClone __self_2
-    ok (model.NetworkPolicy.Ipv4 b v v1)
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone]:
-    Source: 'controller-core/src/model.rs', lines 60:9-60:14
-    Visibility: public -/
-def model.RestoreSource.Insts.CoreCloneClone.clone
-  (self : model.RestoreSource) : Result model.RestoreSource := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone]:
-    Source: 'controller-core/src/model.rs', lines 48:9-48:14
-    Visibility: public -/
-def model.FilePolicyRef.Insts.CoreCloneClone.clone
-  (self : model.FilePolicyRef) : Result model.FilePolicyRef := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone]:
-    Source: 'controller-core/src/model.rs', lines 119:9-119:14
-    Visibility: public -/
-def model.OperationInput.Insts.CoreCloneClone.clone
-  (self : model.OperationInput) : Result model.OperationInput := do
-  match self with
-  | model.OperationInput.Create __self_0 __self_1 __self_2 =>
-    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_0
-    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_1
-    let fpr ← model.FilePolicyRef.Insts.CoreCloneClone.clone __self_2
-    ok (model.OperationInput.Create fi np fpr)
-  | model.OperationInput.Pause __self_0 =>
-    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
-    ok (model.OperationInput.Pause i)
-  | model.OperationInput.Resume __self_0 =>
-    let rs ← model.RestoreSource.Insts.CoreCloneClone.clone __self_0
-    ok (model.OperationInput.Resume rs)
-  | model.OperationInput.Kill __self_0 =>
-    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
-    ok (model.OperationInput.Kill i)
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone]:
-    Source: 'controller-core/src/model.rs', lines 491:9-491:14
-    Visibility: public -/
-def model.OperationLedgerRecord.Insts.CoreCloneClone.clone
-  (self : model.OperationLedgerRecord) :
-  Result model.OperationLedgerRecord
+@[rust_loop]
+def store.Store.get_copy_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (index : Std.Usize) :
+  Result (Option V)
   := do
-  let si ← ids.SandboxId.Insts.CoreCloneClone.clone self.sandbox
-  let o ← model.Operation.Insts.CoreCloneClone.clone self.operation
-  let oi ← model.OperationInput.Insts.CoreCloneClone.clone self.input
-  let o1 ←
-    core.option.Option.Insts.CoreCloneClone.clone
-      model.OperationResult.Insts.CoreCloneClone self.result
-  ok { sandbox := si, operation := o, input := oi, result := o1 }
+  loop
+    (fun index1 => store.Store.get_copy_loop.body corecmpPartialEqInst self key
+      index1)
+    index
 
-/-- [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone]:
-    Source: 'controller-core/src/maintenance/retirement.rs', lines 58:9-58:14
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]:
+    Source: 'controller-core/src/store.rs', lines 64:4-73:5
     Visibility: public -/
-def maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
-  (self : maintenance.retirement.RetainedOperation) :
-  Result maintenance.retirement.RetainedOperation
+@[reducible]
+def store.Store.get_copy
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (coremarkerCopyInst : core.marker.Copy V) (self : store.Store K V) 
+  (key : K) :
+  Result (Option V)
   := do
-  let ti ← ids.TenantId.Insts.CoreCloneClone.clone self.owner
-  let olr ←
-    model.OperationLedgerRecord.Insts.CoreCloneClone.clone self.ledger
-  let i ← lift (core.clone.impls.CloneU64.clone self.expires_at)
-  ok { owner := ti, ledger := olr, expires_at := i }
+  store.Store.get_copy_loop corecmpPartialEqInst self key 0#usize
 
-/-- Trait implementation: [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}]
-    Source: 'controller-core/src/maintenance/retirement.rs', lines 58:9-58:14 -/
-@[reducible]
-def maintenance.retirement.RetainedOperation.Insts.CoreCloneClone :
-  core.clone.Clone maintenance.retirement.RetainedOperation := {
-  clone := maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone]:
-    Source: 'controller-core/src/maintenance/slots.rs', lines 6:9-6:14
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop body 0:
+    Source: 'controller-core/src/store.rs', lines 22:8-29:5
     Visibility: public -/
-def maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
-  (self : maintenance.slots.HostSlotId) :
-  Result maintenance.slots.HostSlotId
+@[rust_loop_body]
+def store.Store.get_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (Option V))
   := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 6:9-6:14 -/
-@[reducible]
-def maintenance.slots.HostSlotId.Insts.CoreCloneClone : core.clone.Clone
-  maintenance.slots.HostSlotId := {
-  clone := maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone]:
-    Source: 'controller-core/src/maintenance/slots.rs', lines 28:9-28:14
-    Visibility: public -/
-def maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
-  (self : maintenance.slots.HostSlotRecord) :
-  Result maintenance.slots.HostSlotRecord
-  := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 28:9-28:14 -/
-@[reducible]
-def maintenance.slots.HostSlotRecord.Insts.CoreCloneClone : core.clone.Clone
-  maintenance.slots.HostSlotRecord := {
-  clone := maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone]:
-    Source: 'controller-core/src/maintenance/windows.rs', lines 44:9-44:14
-    Visibility: public -/
-def maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone
-  (self : maintenance.windows.WindowLimits) :
-  Result maintenance.windows.WindowLimits
-  := do
-  ok self
-
-/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone]:
-    Source: 'controller-core/src/maintenance/windows.rs', lines 94:9-94:14
-    Visibility: public -/
-def maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
-  (self : maintenance.windows.WindowRecord) :
-  Result maintenance.windows.WindowRecord
-  := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}]
-    Source: 'controller-core/src/maintenance/windows.rs', lines 94:9-94:14 -/
-@[reducible]
-def maintenance.windows.WindowRecord.Insts.CoreCloneClone : core.clone.Clone
-  maintenance.windows.WindowRecord := {
-  clone := maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone]:
-    Source: 'controller-core/src/maintenance/windows.rs', lines 128:9-128:14
-    Visibility: public -/
-def maintenance.windows.WindowState.Insts.CoreCloneClone.clone
-  (self : maintenance.windows.WindowState) :
-  Result maintenance.windows.WindowState
-  := do
-  let wl ←
-    maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone self.limits
-  let o ←
-    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
-      self.issued_through
-  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor_ms)
-  let v ←
-    alloc.vec.CloneVec.clone
-      maintenance.windows.WindowRecord.Insts.CoreCloneClone self.open
-  ok { limits := wl, issued_through := o, time_floor_ms := i, «open» := v }
-
-/-- [sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone]:
-    Source: 'controller-core/src/store.rs', lines 5:9-5:14
-    Visibility: public -/
-def store.Store.Insts.CoreCloneClone.clone
-  {K : Type} {V : Type} (corecloneCloneInst : core.clone.Clone K)
-  (corecloneCloneInst1 : core.clone.Clone V) (self : store.Store K V) :
-  Result (store.Store K V)
-  := do
-  let v ← alloc.vec.CloneVec.clone (BuiltinClone (K × V)) self.entries
-  ok { entries := v }
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone]:
-    Source: 'controller-core/src/model.rs', lines 410:9-410:14
-    Visibility: public -/
-def model.OperationKey.Insts.CoreCloneClone.clone
-  (self : model.OperationKey) : Result model.OperationKey := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}]
-    Source: 'controller-core/src/model.rs', lines 410:9-410:14 -/
-@[reducible]
-def model.OperationKey.Insts.CoreCloneClone : core.clone.Clone
-  model.OperationKey := {
-  clone := model.OperationKey.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone]:
-    Source: 'controller-core/src/maintenance.rs', lines 28:9-28:14
-    Visibility: public -/
-def maintenance.MaintenanceState.Insts.CoreCloneClone.clone
-  (self : maintenance.MaintenanceState) :
-  Result maintenance.MaintenanceState
-  := do
-  let o ←
-    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
-      self.sandbox_frontier
-  let o1 ←
-    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
-      self.workspace_frontier
-  let s ←
-    store.Store.Insts.CoreCloneClone.clone
-      model.OperationKey.Insts.CoreCloneClone
-      maintenance.retirement.RetainedOperation.Insts.CoreCloneClone
-      self.retained
-  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor)
-  let i1 ← lift (core.clone.impls.CloneU64.clone self.max_retained_results)
-  let i2 ← lift (core.clone.impls.CloneU64.clone self.max_host_slots)
-  let s1 ←
-    store.Store.Insts.CoreCloneClone.clone
-      maintenance.slots.HostSlotId.Insts.CoreCloneClone
-      maintenance.slots.HostSlotRecord.Insts.CoreCloneClone self.slots
-  let ws ←
-    maintenance.windows.WindowState.Insts.CoreCloneClone.clone self.windows
-  ok
-    {
-      sandbox_frontier := o,
-      workspace_frontier := o1,
-      retained := s,
-      time_floor := i,
-      max_retained_results := i1,
-      max_host_slots := i2,
-      slots := s1,
-      windows := ws
-    }
-
-/-- Trait implementation: [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}]
-    Source: 'controller-core/src/maintenance.rs', lines 28:9-28:14 -/
-@[reducible]
-def maintenance.MaintenanceState.Insts.CoreCloneClone : core.clone.Clone
-  maintenance.MaintenanceState := {
-  clone := maintenance.MaintenanceState.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone]:
-    Source: 'controller-core/src/model.rs', lines 14:9-14:14
-    Visibility: public -/
-def model.Phase.Insts.CoreCloneClone.clone
-  (self : model.Phase) : Result model.Phase := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}::eq]:
-    Source: 'controller-core/src/model.rs', lines 14:29-14:38
-    Visibility: public -/
-def model.Phase.Insts.CoreCmpPartialEqPhase.eq
-  (self : model.Phase) (other : model.Phase) : Result Bool := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}]
-    Source: 'controller-core/src/model.rs', lines 14:29-14:38 -/
-@[reducible]
-impl_def model.Phase.Insts.CoreCmpPartialEqPhase : core.cmp.PartialEq
-  model.Phase model.Phase := {
-  eq := model.Phase.Insts.CoreCmpPartialEqPhase.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.Phase.Insts.CoreCmpPartialEqPhase
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 25:29-25:38
-    Visibility: public -/
-def model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
-  (self : model.VmStatus) (other : model.VmStatus) : Result Bool := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}]
-    Source: 'controller-core/src/model.rs', lines 25:29-25:38 -/
-@[reducible]
-impl_def model.VmStatus.Insts.CoreCmpPartialEqVmStatus : core.cmp.PartialEq
-  model.VmStatus model.VmStatus := {
-  eq := model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.VmStatus.Insts.CoreCmpPartialEqVmStatus
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq]:
-    Source: 'controller-core/src/model.rs', lines 35:29-35:38
-    Visibility: public -/
-def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
-  (self : model.SnapshotStage) (other : model.SnapshotStage) :
-  Result Bool
-  := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}]
-    Source: 'controller-core/src/model.rs', lines 35:29-35:38 -/
-@[reducible]
-impl_def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage :
-  core.cmp.PartialEq model.SnapshotStage model.SnapshotStage := {
-  eq := model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone]:
-    Source: 'controller-core/src/model.rs', lines 42:9-42:14
-    Visibility: public -/
-def model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
-  (self : model.WorkspaceApiAccess) : Result model.WorkspaceApiAccess := do
-  ok self
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq]:
-    Source: 'controller-core/src/model.rs', lines 48:29-48:38
-    Visibility: public -/
-def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
-  (self : model.FilePolicyRef) (other : model.FilePolicyRef) :
-  Result Bool
-  := do
-  ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq self.digest
-    other.digest
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}]
-    Source: 'controller-core/src/model.rs', lines 48:29-48:38 -/
-@[reducible]
-impl_def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef :
-  core.cmp.PartialEq model.FilePolicyRef model.FilePolicyRef := {
-  eq := model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef
-}
-
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone]:
-    Source: 'controller-core/src/model.rs', lines 54:9-54:14
-    Visibility: public -/
-def model.SnapshotManifestRef.Insts.CoreCloneClone.clone
-  (self : model.SnapshotManifestRef) : Result model.SnapshotManifestRef := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}]
-    Source: 'controller-core/src/model.rs', lines 54:29-54:38 -/
-@[reducible]
-impl_def model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef :
-  core.cmp.PartialEq model.SnapshotManifestRef model.SnapshotManifestRef := {
-  eq := model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
-}
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}]
-    Source: 'controller-core/src/model.rs', lines 60:9-60:14 -/
-@[reducible]
-def model.RestoreSource.Insts.CoreCloneClone : core.clone.Clone
-  model.RestoreSource := {
-  clone := model.RestoreSource.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}::eq]:
-    Source: 'controller-core/src/model.rs', lines 60:29-60:38
-    Visibility: public -/
-def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
-  (self : model.RestoreSource) (other : model.RestoreSource) :
-  Result Bool
-  := do
-  let b ←
-    ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq self.snapshot
-      other.snapshot
-  if b
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
   then
-    model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
-      self.manifest other.manifest
+    let (t, t1) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
+    if b
+    then ok (done (some t1))
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else ok (done none)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop 0:
+    Source: 'controller-core/src/store.rs', lines 22:8-29:5
+    Visibility: public -/
+@[rust_loop]
+def store.Store.get_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (index : Std.Usize) :
+  Result (Option V)
+  := do
+  loop
+    (fun index1 => store.Store.get_loop.body corecmpPartialEqInst self key
+      index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]:
+    Source: 'controller-core/src/store.rs', lines 20:4-29:5
+    Visibility: public -/
+@[reducible]
+def store.Store.get
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) :
+  Result (Option V)
+  := do
+  store.Store.get_loop corecmpPartialEqInst self key 0#usize
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone]:
+    Source: 'controller-core/src/model.rs', lines 482:9-482:14
+    Visibility: public -/
+def model.LogicalEffectRecord.Insts.CoreCloneClone.clone
+  (self : model.LogicalEffectRecord) : Result model.LogicalEffectRecord := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}]
+    Source: 'controller-core/src/model.rs', lines 482:9-482:14 -/
+@[reducible]
+def model.LogicalEffectRecord.Insts.CoreCloneClone : core.clone.Clone
+  model.LogicalEffectRecord := {
+  clone := model.LogicalEffectRecord.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::marker::Copy for sandbox_controller_core::model::LogicalEffectRecord}]
+    Source: 'controller-core/src/model.rs', lines 482:16-482:20 -/
+@[reducible]
+def model.LogicalEffectRecord.Insts.CoreMarkerCopy : core.marker.Copy
+  model.LogicalEffectRecord := {
+  cloneInst := model.LogicalEffectRecord.Insts.CoreCloneClone
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq]:
+    Source: 'controller-core/src/model.rs', lines 97:29-97:38
+    Visibility: public -/
+def model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
+  (self : model.Ipv4Cidr) (other : model.Ipv4Cidr) : Result Bool := do
+  if self.network = other.network
+  then ok (self.prefix_length = other.prefix_length)
   else ok false
 
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}]
-    Source: 'controller-core/src/model.rs', lines 60:29-60:38 -/
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}]
+    Source: 'controller-core/src/model.rs', lines 97:29-97:38 -/
 @[reducible]
-impl_def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource :
-  core.cmp.PartialEq model.RestoreSource model.RestoreSource := {
-  eq := model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
+impl_def model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr : core.cmp.PartialEq
+  model.Ipv4Cidr model.Ipv4Cidr := {
+  eq := model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
   ne := core.cmp.PartialEq.ne.trait_default
-    model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
+    model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq]:
@@ -1337,25 +792,6 @@ impl_def model.Endpoint.Insts.CoreCmpPartialEqEndpoint : core.cmp.PartialEq
   eq := model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq
   ne := core.cmp.PartialEq.ne.trait_default
     model.Endpoint.Insts.CoreCmpPartialEqEndpoint
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq]:
-    Source: 'controller-core/src/model.rs', lines 97:29-97:38
-    Visibility: public -/
-def model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
-  (self : model.Ipv4Cidr) (other : model.Ipv4Cidr) : Result Bool := do
-  if self.network = other.network
-  then ok (self.prefix_length = other.prefix_length)
-  else ok false
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}]
-    Source: 'controller-core/src/model.rs', lines 97:29-97:38 -/
-@[reducible]
-impl_def model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr : core.cmp.PartialEq
-  model.Ipv4Cidr model.Ipv4Cidr := {
-  eq := model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq]:
@@ -1407,235 +843,123 @@ impl_def model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy :
     model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy
 }
 
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq]:
-    Source: 'controller-core/src/model.rs', lines 138:29-138:38
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}::eq]:
+    Source: 'controller-core/src/model.rs', lines 60:29-60:38
     Visibility: public -/
-def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
-  (self : model.FailureKind) (other : model.FailureKind) : Result Bool := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}]
-    Source: 'controller-core/src/model.rs', lines 138:29-138:38 -/
-@[reducible]
-impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
-  core.cmp.PartialEq model.FailureKind model.FailureKind := {
-  eq := model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.FailureKind.Insts.CoreCmpPartialEqFailureKind
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}::eq]:
-    Source: 'controller-core/src/model.rs', lines 171:29-171:38
-    Visibility: public -/
-def model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
-  (self : model.OperationKind) (other : model.OperationKind) :
+def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
+  (self : model.RestoreSource) (other : model.RestoreSource) :
   Result Bool
   := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}]
-    Source: 'controller-core/src/model.rs', lines 171:29-171:38 -/
-@[reducible]
-impl_def model.OperationKind.Insts.CoreCmpPartialEqOperationKind :
-  core.cmp.PartialEq model.OperationKind model.OperationKind := {
-  eq := model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.OperationKind.Insts.CoreCmpPartialEqOperationKind
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 180:29-180:38
-    Visibility: public -/
-def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
-  (self : model.OperationStatus) (other : model.OperationStatus) :
-  Result Bool
-  := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  if self1 = other1
-  then
-    match self with
-    | model.OperationStatus.Pending => ok true
-    | model.OperationStatus.OutcomeUnknown => ok true
-    | model.OperationStatus.Compensating __self_0 =>
-      match other with
-      | model.OperationStatus.Pending => ok true
-      | model.OperationStatus.OutcomeUnknown => ok true
-      | model.OperationStatus.Compensating __arg1_0 =>
-        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
-          __arg1_0
-      | model.OperationStatus.Succeeded => ok true
-      | model.OperationStatus.Failed _ => ok true
-    | model.OperationStatus.Succeeded => ok true
-    | model.OperationStatus.Failed __self_0 =>
-      match other with
-      | model.OperationStatus.Pending => ok true
-      | model.OperationStatus.OutcomeUnknown => ok true
-      | model.OperationStatus.Compensating _ => ok true
-      | model.OperationStatus.Succeeded => ok true
-      | model.OperationStatus.Failed __arg1_0 =>
-        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
-          __arg1_0
-  else ok false
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}]
-    Source: 'controller-core/src/model.rs', lines 190:9-190:14 -/
-@[reducible]
-def model.Operation.Insts.CoreCloneClone : core.clone.Clone model.Operation
-  := {
-  clone := model.Operation.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}::eq]:
-    Source: 'controller-core/src/model.rs', lines 190:29-190:38
-    Visibility: public -/
-def model.Operation.Insts.CoreCmpPartialEqOperation.eq
-  (self : model.Operation) (other : model.Operation) : Result Bool := do
   let b ←
-    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq self.id other.id
+    ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq self.snapshot
+      other.snapshot
   if b
   then
-    if self.epoch = other.epoch
-    then
-      let b1 ←
-        model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq self.kind
-          other.kind
-      if b1
-      then
-        model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
-          self.status other.status
-      else ok false
-    else ok false
+    model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+      self.manifest other.manifest
   else ok false
 
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}]
-    Source: 'controller-core/src/model.rs', lines 190:29-190:38 -/
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}]
+    Source: 'controller-core/src/model.rs', lines 60:29-60:38 -/
 @[reducible]
-impl_def model.Operation.Insts.CoreCmpPartialEqOperation : core.cmp.PartialEq
-  model.Operation model.Operation := {
-  eq := model.Operation.Insts.CoreCmpPartialEqOperation.eq
+impl_def model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource :
+  core.cmp.PartialEq model.RestoreSource model.RestoreSource := {
+  eq := model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq
   ne := core.cmp.PartialEq.ne.trait_default
-    model.Operation.Insts.CoreCmpPartialEqOperation
+    model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource
 }
 
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone]:
-    Source: 'controller-core/src/model.rs', lines 199:9-199:14
-    Visibility: public -/
-def model.Authority.Insts.CoreCloneClone.clone
-  (self : model.Authority) : Result model.Authority := do
-  match self with
-  | model.Authority.Closed => ok model.Authority.Closed
-  | model.Authority.Running __self_0 __self_1 __self_2 __self_3 __self_4
-    __self_5 __self_6 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_2
-    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_3
-    let waa ← model.WorkspaceApiAccess.Insts.CoreCloneClone.clone __self_4
-    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_5
-    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_6
-    ok (model.Authority.Running si i vi fi waa nsi np)
-  | model.Authority.Paused __self_0 __self_1 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let rs ← model.RestoreSource.Insts.CoreCloneClone.clone __self_1
-    ok (model.Authority.Paused si rs)
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}]
+    Source: 'controller-core/src/model.rs', lines 54:29-54:38 -/
+@[reducible]
+impl_def model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef :
+  core.cmp.PartialEq model.SnapshotManifestRef model.SnapshotManifestRef := {
+  eq := model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+}
 
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone]:
-    Source: 'controller-core/src/model.rs', lines 228:9-228:14
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq]:
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
     Visibility: public -/
-def model.Command.Insts.CoreCloneClone.clone
-  (self : model.Command) : Result model.Command := do
-  match self with
-  | model.Command.InstallFence __self_0 __self_1 __self_2 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let b ← lift (core.clone.impls.CloneBool.clone __self_2)
-    ok (model.Command.InstallFence si i b)
-  | model.Command.PrepareVm __self_0 __self_1 __self_2 __self_3 __self_4
-    __self_5 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
-    let o ←
-      core.option.Option.Insts.CoreCloneClone.clone
-        model.RestoreSource.Insts.CoreCloneClone __self_5
-    ok (model.Command.PrepareVm si i i1 vi nsi o)
-  | model.Command.ConfigureNetwork __self_0 __self_1 __self_2 __self_3 __self_4
-    __self_5 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
-    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_5
-    ok (model.Command.ConfigureNetwork si i i1 vi nsi np)
-  | model.Command.ActivateVm __self_0 __self_1 __self_2 __self_3 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    ok (model.Command.ActivateVm si i i1 vi)
-  | model.Command.FreezeVm __self_0 __self_1 __self_2 __self_3 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    ok (model.Command.FreezeVm si i i1 vi)
-  | model.Command.ApplyFilePolicy __self_0 __self_1 __self_2 __self_3 __self_4
-    =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_3
-    let fpr ← model.FilePolicyRef.Insts.CoreCloneClone.clone __self_4
-    ok (model.Command.ApplyFilePolicy si i i1 fi fpr)
-  | model.Command.SealSnapshot __self_0 __self_1 __self_2 __self_3 __self_4
-    __self_5 __self_6 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_4
-    let si1 ← ids.SnapshotId.Insts.CoreCloneClone.clone __self_5
-    let smr ← model.SnapshotManifestRef.Insts.CoreCloneClone.clone __self_6
-    ok (model.Command.SealSnapshot si i i1 vi fi si1 smr)
-  | model.Command.CommitSnapshot __self_0 __self_1 __self_2 __self_3 __self_4
-    =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let si1 ← ids.SnapshotId.Insts.CoreCloneClone.clone __self_3
-    let smr ← model.SnapshotManifestRef.Insts.CoreCloneClone.clone __self_4
-    ok (model.Command.CommitSnapshot si i i1 si1 smr)
-  | model.Command.StopVm __self_0 __self_1 __self_2 __self_3 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    ok (model.Command.StopVm si i i1 vi)
-  | model.Command.AbortPrepare __self_0 __self_1 __self_2 __self_3 __self_4 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
-    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
-    ok (model.Command.AbortPrepare si i i1 vi nsi)
-  | model.Command.CleanupVm __self_0 __self_1 __self_2 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_2
-    ok (model.Command.CleanupVm si i vi)
-  | model.Command.CleanupSlot __self_0 __self_1 __self_2 =>
-    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
-    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
-    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_2
-    ok (model.Command.CleanupSlot si i nsi)
+def ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq
+  (self : ids.PolicyDigest) (other : ids.PolicyDigest) : Result Bool := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq]:
+    Source: 'controller-core/src/model.rs', lines 48:29-48:38
+    Visibility: public -/
+def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+  (self : model.FilePolicyRef) (other : model.FilePolicyRef) :
+  Result Bool
+  := do
+  ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq self.digest
+    other.digest
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}]
+    Source: 'controller-core/src/model.rs', lines 48:29-48:38 -/
+@[reducible]
+impl_def model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef :
+  core.cmp.PartialEq model.FilePolicyRef model.FilePolicyRef := {
+  eq := model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef
+}
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq]:
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
+    Visibility: public -/
+def ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+  (self : ids.NetSlotId) (other : ids.NetSlotId) : Result Bool := do
+  ok (self = other)
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId : core.cmp.PartialEq
+  ids.NetSlotId ids.NetSlotId := {
+  eq := ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.VmId.Insts.CoreCmpPartialEqVmId : core.cmp.PartialEq ids.VmId
+  ids.VmId := {
+  eq := ids.VmId.Insts.CoreCmpPartialEqVmId.eq
+  ne := core.cmp.PartialEq.ne.trait_default ids.VmId.Insts.CoreCmpPartialEqVmId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.FsId.Insts.CoreCmpPartialEqFsId : core.cmp.PartialEq ids.FsId
+  ids.FsId := {
+  eq := ids.FsId.Insts.CoreCmpPartialEqFsId.eq
+  ne := core.cmp.PartialEq.ne.trait_default ids.FsId.Insts.CoreCmpPartialEqFsId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId : core.cmp.PartialEq
+  ids.SnapshotId ids.SnapshotId := {
+  eq := ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.SandboxId.Insts.CoreCmpPartialEqSandboxId : core.cmp.PartialEq
+  ids.SandboxId ids.SandboxId := {
+  eq := ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+}
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Command> for sandbox_controller_core::model::Command}::eq]:
     Source: 'controller-core/src/model.rs', lines 228:23-228:32
@@ -2041,6 +1365,893 @@ def model.Command.Insts.CoreCmpPartialEqCommand.eq
         else ok false
   else ok false
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq]:
+    Source: 'controller-core/src/model.rs', lines 349:23-349:32
+    Visibility: public -/
+def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
+  (self : model.LogicalEffectId) (other : model.LogicalEffectId) :
+  Result Bool
+  := do
+  model.Command.Insts.CoreCmpPartialEqCommand.eq self.command other.command
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
+    Source: 'controller-core/src/model.rs', lines 355:23-355:32
+    Visibility: public -/
+def model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
+  (self : model.EffectId) (other : model.EffectId) : Result Bool := do
+  let b ←
+    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq self.logical
+      other.logical
+  if b
+  then ok (self.attempt = other.attempt)
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}]
+    Source: 'controller-core/src/model.rs', lines 355:23-355:32 -/
+@[reducible]
+impl_def model.EffectId.Insts.CoreCmpPartialEqEffectId : core.cmp.PartialEq
+  model.EffectId model.EffectId := {
+  eq := model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.EffectId.Insts.CoreCmpPartialEqEffectId
+}
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}]
+    Source: 'controller-core/src/model.rs', lines 349:23-349:32 -/
+@[reducible]
+impl_def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId :
+  core.cmp.PartialEq model.LogicalEffectId model.LogicalEffectId := {
+  eq := model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone]:
+    Source: 'controller-core/src/model.rs', lines 97:9-97:14
+    Visibility: public -/
+def model.Ipv4Cidr.Insts.CoreCloneClone.clone
+  (self : model.Ipv4Cidr) : Result model.Ipv4Cidr := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}]
+    Source: 'controller-core/src/model.rs', lines 97:9-97:14 -/
+@[reducible]
+def model.Ipv4Cidr.Insts.CoreCloneClone : core.clone.Clone model.Ipv4Cidr := {
+  clone := model.Ipv4Cidr.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone]:
+    Source: 'controller-core/src/model.rs', lines 67:9-67:14
+    Visibility: public -/
+def model.Protocol.Insts.CoreCloneClone.clone
+  (self : model.Protocol) : Result model.Protocol := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone]:
+    Source: 'controller-core/src/model.rs', lines 74:9-74:14
+    Visibility: public -/
+def model.Endpoint.Insts.CoreCloneClone.clone
+  (self : model.Endpoint) : Result model.Endpoint := do
+  let s ← alloc.string.String.Insts.CoreCloneClone.clone self.address
+  let i ← lift (core.clone.impls.CloneU64.clone self.prefix_length)
+  let p ← model.Protocol.Insts.CoreCloneClone.clone self.protocol
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.port)
+  ok { address := s, prefix_length := i, protocol := p, port := i1 }
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}]
+    Source: 'controller-core/src/model.rs', lines 74:9-74:14 -/
+@[reducible]
+def model.Endpoint.Insts.CoreCloneClone : core.clone.Clone model.Endpoint := {
+  clone := model.Endpoint.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone]:
+    Source: 'controller-core/src/model.rs', lines 83:9-83:14
+    Visibility: public -/
+def model.NetworkPolicy.Insts.CoreCloneClone.clone
+  (self : model.NetworkPolicy) : Result model.NetworkPolicy := do
+  match self with
+  | model.NetworkPolicy.DenyAll => ok model.NetworkPolicy.DenyAll
+  | model.NetworkPolicy.StaticAllowlist __self_0 =>
+    let v ←
+      alloc.vec.CloneVec.clone model.Endpoint.Insts.CoreCloneClone __self_0
+    ok (model.NetworkPolicy.StaticAllowlist v)
+  | model.NetworkPolicy.Ipv4 __self_0 __self_1 __self_2 =>
+    let b ← lift (core.clone.impls.CloneBool.clone __self_0)
+    let v ←
+      alloc.vec.CloneVec.clone model.Ipv4Cidr.Insts.CoreCloneClone __self_1
+    let v1 ←
+      alloc.vec.CloneVec.clone model.Ipv4Cidr.Insts.CoreCloneClone __self_2
+    ok (model.NetworkPolicy.Ipv4 b v v1)
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone]:
+    Source: 'controller-core/src/model.rs', lines 60:9-60:14
+    Visibility: public -/
+def model.RestoreSource.Insts.CoreCloneClone.clone
+  (self : model.RestoreSource) : Result model.RestoreSource := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}]
+    Source: 'controller-core/src/model.rs', lines 60:9-60:14 -/
+@[reducible]
+def model.RestoreSource.Insts.CoreCloneClone : core.clone.Clone
+  model.RestoreSource := {
+  clone := model.RestoreSource.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone]:
+    Source: 'controller-core/src/model.rs', lines 54:9-54:14
+    Visibility: public -/
+def model.SnapshotManifestRef.Insts.CoreCloneClone.clone
+  (self : model.SnapshotManifestRef) : Result model.SnapshotManifestRef := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone]:
+    Source: 'controller-core/src/model.rs', lines 48:9-48:14
+    Visibility: public -/
+def model.FilePolicyRef.Insts.CoreCloneClone.clone
+  (self : model.FilePolicyRef) : Result model.FilePolicyRef := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.SnapshotId.Insts.CoreCloneClone.clone
+  (self : ids.SnapshotId) : Result ids.SnapshotId := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.NetSlotId.Insts.CoreCloneClone.clone
+  (self : ids.NetSlotId) : Result ids.NetSlotId := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.VmId.Insts.CoreCloneClone.clone
+  (self : ids.VmId) : Result ids.VmId := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.SandboxId.Insts.CoreCloneClone.clone
+  (self : ids.SandboxId) : Result ids.SandboxId := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.FsId.Insts.CoreCloneClone.clone
+  (self : ids.FsId) : Result ids.FsId := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone]:
+    Source: 'controller-core/src/model.rs', lines 228:9-228:14
+    Visibility: public -/
+def model.Command.Insts.CoreCloneClone.clone
+  (self : model.Command) : Result model.Command := do
+  match self with
+  | model.Command.InstallFence __self_0 __self_1 __self_2 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let b ← lift (core.clone.impls.CloneBool.clone __self_2)
+    ok (model.Command.InstallFence si i b)
+  | model.Command.PrepareVm __self_0 __self_1 __self_2 __self_3 __self_4
+    __self_5 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    let o ←
+      core.option.Option.Insts.CoreCloneClone.clone
+        model.RestoreSource.Insts.CoreCloneClone __self_5
+    ok (model.Command.PrepareVm si i i1 vi nsi o)
+  | model.Command.ConfigureNetwork __self_0 __self_1 __self_2 __self_3 __self_4
+    __self_5 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_5
+    ok (model.Command.ConfigureNetwork si i i1 vi nsi np)
+  | model.Command.ActivateVm __self_0 __self_1 __self_2 __self_3 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (model.Command.ActivateVm si i i1 vi)
+  | model.Command.FreezeVm __self_0 __self_1 __self_2 __self_3 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (model.Command.FreezeVm si i i1 vi)
+  | model.Command.ApplyFilePolicy __self_0 __self_1 __self_2 __self_3 __self_4
+    =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_3
+    let fpr ← model.FilePolicyRef.Insts.CoreCloneClone.clone __self_4
+    ok (model.Command.ApplyFilePolicy si i i1 fi fpr)
+  | model.Command.SealSnapshot __self_0 __self_1 __self_2 __self_3 __self_4
+    __self_5 __self_6 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_4
+    let si1 ← ids.SnapshotId.Insts.CoreCloneClone.clone __self_5
+    let smr ← model.SnapshotManifestRef.Insts.CoreCloneClone.clone __self_6
+    ok (model.Command.SealSnapshot si i i1 vi fi si1 smr)
+  | model.Command.CommitSnapshot __self_0 __self_1 __self_2 __self_3 __self_4
+    =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let si1 ← ids.SnapshotId.Insts.CoreCloneClone.clone __self_3
+    let smr ← model.SnapshotManifestRef.Insts.CoreCloneClone.clone __self_4
+    ok (model.Command.CommitSnapshot si i i1 si1 smr)
+  | model.Command.StopVm __self_0 __self_1 __self_2 __self_3 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    ok (model.Command.StopVm si i i1 vi)
+  | model.Command.AbortPrepare __self_0 __self_1 __self_2 __self_3 __self_4 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let i1 ← lift (core.clone.impls.CloneU64.clone __self_2)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_3
+    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_4
+    ok (model.Command.AbortPrepare si i i1 vi nsi)
+  | model.Command.CleanupVm __self_0 __self_1 __self_2 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_2
+    ok (model.Command.CleanupVm si i vi)
+  | model.Command.CleanupSlot __self_0 __self_1 __self_2 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_2
+    ok (model.Command.CleanupSlot si i nsi)
+
+/-- [sandbox_controller_core::effect::effect_succeeded_check]:
+    Source: 'controller-core/src/effect.rs', lines 259:0-281:1
+    Visibility: public -/
+def effect.effect_succeeded_check
+  (world : model.World) (command : model.Command) : Result Bool := do
+  let c ← model.Command.Insts.CoreCloneClone.clone command
+  let o ←
+    store.Store.get_copy
+      model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+      model.LogicalEffectRecord.Insts.CoreMarkerCopy world.logical_effects
+      { command := c }
+  let attempt ←
+    match o with
+    | none => ok 0#u64
+    | some record => ok record.current_attempt
+  let o1 ←
+    store.Store.get model.EffectId.Insts.CoreCmpPartialEqEffectId world.effects
+      { logical := { command := c }, attempt }
+  match o1 with
+  | none => ok false
+  | some es =>
+    match es with
+    | model.EffectStatus.Committed => ok false
+    | model.EffectStatus.Dispatched => ok false
+    | model.EffectStatus.OutcomeUnknown => ok false
+    | model.EffectStatus.Acknowledged eo =>
+      match eo with
+      | model.EffectOutcome.Succeeded _ => ok true
+      | model.EffectOutcome.Failed _ => ok false
+    | model.EffectStatus.RetiredByStop _ => ok false
+    | model.EffectStatus.RetiredByCaptureEnd _ => ok false
+    | model.EffectStatus.RetiredByCaptureDrain _ => ok false
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}]
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
+@[reducible]
+def ids.VmId.Insts.CoreCloneClone : core.clone.Clone ids.VmId := {
+  clone := ids.VmId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}]
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
+@[reducible]
+def ids.NetSlotId.Insts.CoreCloneClone : core.clone.Clone ids.NetSlotId := {
+  clone := ids.NetSlotId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}]
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
+@[reducible]
+def ids.SandboxId.Insts.CoreCloneClone : core.clone.Clone ids.SandboxId := {
+  clone := ids.SandboxId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}]
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
+@[reducible]
+def ids.FsId.Insts.CoreCloneClone : core.clone.Clone ids.FsId := {
+  clone := ids.FsId.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}]
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22 -/
+@[reducible]
+def ids.SnapshotId.Insts.CoreCloneClone : core.clone.Clone ids.SnapshotId := {
+  clone := ids.SnapshotId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone]:
+    Source: 'controller-core/src/ids.rs', lines 3:17-3:22
+    Visibility: public -/
+def ids.TenantId.Insts.CoreCloneClone.clone
+  (self : ids.TenantId) : Result ids.TenantId := do
+  ok self
+
+/-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq]:
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46
+    Visibility: public -/
+def ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+  (self : ids.TenantId) (other : ids.TenantId) : Result Bool := do
+  ok (self = other)
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.TenantId.Insts.CoreCmpPartialEqTenantId : core.cmp.PartialEq
+  ids.TenantId ids.TenantId := {
+  eq := ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest :
+  core.cmp.PartialEq ids.ResultDigest ids.ResultDigest := {
+  eq := ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest
+}
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq]:
+    Source: 'controller-core/src/maintenance/slots.rs', lines 10:29-10:38
+    Visibility: public -/
+def maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
+  (self : maintenance.slots.HostBinding)
+  (other : maintenance.slots.HostBinding) :
+  Result Bool
+  := do
+  let b ←
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq self.owner other.owner
+  if b
+  then
+    let b1 ←
+      ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq self.sandbox
+        other.sandbox
+    if b1
+    then
+      if self.generation = other.generation
+      then
+        let b2 ← ids.VmId.Insts.CoreCmpPartialEqVmId.eq self.vm other.vm
+        if b2
+        then
+          ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq self.network
+            other.network
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotId> for sandbox_controller_core::maintenance::slots::HostSlotId}::eq]:
+    Source: 'controller-core/src/maintenance/slots.rs', lines 6:29-6:38
+    Visibility: public -/
+def maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq
+  (self : maintenance.slots.HostSlotId) (other : maintenance.slots.HostSlotId)
+  :
+  Result Bool
+  := do
+  ok (self = other)
+
+/-- [sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::eq]:
+    Source: 'controller-core/src/maintenance/released_execution.rs', lines 14:29-14:38
+    Visibility: public -/
+def
+  maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution.eq
+  (self : maintenance.released_execution.ReleasedExecution)
+  (other : maintenance.released_execution.ReleasedExecution) :
+  Result Bool
+  := do
+  if self.release_input_sequence = other.release_input_sequence
+  then
+    let b ←
+      model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq self.key
+        other.key
+    if b
+    then
+      if self.epoch = other.epoch
+      then
+        let b1 ←
+          maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq
+            self.position other.position
+        if b1
+        then
+          let b2 ←
+            core.option.Option.Insts.CoreCmpPartialEqOption.eq
+              ids.VmId.Insts.CoreCmpPartialEqVmId self.expected_previous
+              other.expected_previous
+          if b2
+          then
+            maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq
+              self.binding other.binding
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}]
+    Source: 'controller-core/src/maintenance/released_execution.rs', lines 14:29-14:38 -/
+@[reducible]
+impl_def
+  maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution
+  : core.cmp.PartialEq maintenance.released_execution.ReleasedExecution
+  maintenance.released_execution.ReleasedExecution := {
+  eq :=
+    maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone]:
+    Source: 'controller-core/src/model.rs', lines 190:9-190:14
+    Visibility: public -/
+def model.Operation.Insts.CoreCloneClone.clone
+  (self : model.Operation) : Result model.Operation := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone]:
+    Source: 'controller-core/src/model.rs', lines 162:9-162:14
+    Visibility: public -/
+def model.OperationResult.Insts.CoreCloneClone.clone
+  (self : model.OperationResult) : Result model.OperationResult := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}]
+    Source: 'controller-core/src/model.rs', lines 162:9-162:14 -/
+@[reducible]
+def model.OperationResult.Insts.CoreCloneClone : core.clone.Clone
+  model.OperationResult := {
+  clone := model.OperationResult.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone]:
+    Source: 'controller-core/src/model.rs', lines 119:9-119:14
+    Visibility: public -/
+def model.OperationInput.Insts.CoreCloneClone.clone
+  (self : model.OperationInput) : Result model.OperationInput := do
+  match self with
+  | model.OperationInput.Create __self_0 __self_1 __self_2 =>
+    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_0
+    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_1
+    let fpr ← model.FilePolicyRef.Insts.CoreCloneClone.clone __self_2
+    ok (model.OperationInput.Create fi np fpr)
+  | model.OperationInput.Pause __self_0 =>
+    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
+    ok (model.OperationInput.Pause i)
+  | model.OperationInput.Resume __self_0 =>
+    let rs ← model.RestoreSource.Insts.CoreCloneClone.clone __self_0
+    ok (model.OperationInput.Resume rs)
+  | model.OperationInput.Kill __self_0 =>
+    let i ← lift (core.clone.impls.CloneU64.clone __self_0)
+    ok (model.OperationInput.Kill i)
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone]:
+    Source: 'controller-core/src/model.rs', lines 491:9-491:14
+    Visibility: public -/
+def model.OperationLedgerRecord.Insts.CoreCloneClone.clone
+  (self : model.OperationLedgerRecord) :
+  Result model.OperationLedgerRecord
+  := do
+  let si ← ids.SandboxId.Insts.CoreCloneClone.clone self.sandbox
+  let o ← model.Operation.Insts.CoreCloneClone.clone self.operation
+  let oi ← model.OperationInput.Insts.CoreCloneClone.clone self.input
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone
+      model.OperationResult.Insts.CoreCloneClone self.result
+  ok { sandbox := si, operation := o, input := oi, result := o1 }
+
+/-- [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone]:
+    Source: 'controller-core/src/maintenance/retirement.rs', lines 58:9-58:14
+    Visibility: public -/
+def maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
+  (self : maintenance.retirement.RetainedOperation) :
+  Result maintenance.retirement.RetainedOperation
+  := do
+  let ti ← ids.TenantId.Insts.CoreCloneClone.clone self.owner
+  let olr ←
+    model.OperationLedgerRecord.Insts.CoreCloneClone.clone self.ledger
+  let i ← lift (core.clone.impls.CloneU64.clone self.expires_at)
+  ok { owner := ti, ledger := olr, expires_at := i }
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}]
+    Source: 'controller-core/src/maintenance/retirement.rs', lines 58:9-58:14 -/
+@[reducible]
+def maintenance.retirement.RetainedOperation.Insts.CoreCloneClone :
+  core.clone.Clone maintenance.retirement.RetainedOperation := {
+  clone := maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone]:
+    Source: 'controller-core/src/maintenance/slots.rs', lines 6:9-6:14
+    Visibility: public -/
+def maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
+  (self : maintenance.slots.HostSlotId) :
+  Result maintenance.slots.HostSlotId
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 6:9-6:14 -/
+@[reducible]
+def maintenance.slots.HostSlotId.Insts.CoreCloneClone : core.clone.Clone
+  maintenance.slots.HostSlotId := {
+  clone := maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone]:
+    Source: 'controller-core/src/maintenance/slots.rs', lines 28:9-28:14
+    Visibility: public -/
+def maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
+  (self : maintenance.slots.HostSlotRecord) :
+  Result maintenance.slots.HostSlotRecord
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 28:9-28:14 -/
+@[reducible]
+def maintenance.slots.HostSlotRecord.Insts.CoreCloneClone : core.clone.Clone
+  maintenance.slots.HostSlotRecord := {
+  clone := maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone]:
+    Source: 'controller-core/src/maintenance/windows.rs', lines 44:9-44:14
+    Visibility: public -/
+def maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone
+  (self : maintenance.windows.WindowLimits) :
+  Result maintenance.windows.WindowLimits
+  := do
+  ok self
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone]:
+    Source: 'controller-core/src/maintenance/windows.rs', lines 94:9-94:14
+    Visibility: public -/
+def maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
+  (self : maintenance.windows.WindowRecord) :
+  Result maintenance.windows.WindowRecord
+  := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}]
+    Source: 'controller-core/src/maintenance/windows.rs', lines 94:9-94:14 -/
+@[reducible]
+def maintenance.windows.WindowRecord.Insts.CoreCloneClone : core.clone.Clone
+  maintenance.windows.WindowRecord := {
+  clone := maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone]:
+    Source: 'controller-core/src/maintenance/windows.rs', lines 128:9-128:14
+    Visibility: public -/
+def maintenance.windows.WindowState.Insts.CoreCloneClone.clone
+  (self : maintenance.windows.WindowState) :
+  Result maintenance.windows.WindowState
+  := do
+  let wl ←
+    maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone self.limits
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.issued_through
+  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor_ms)
+  let v ←
+    alloc.vec.CloneVec.clone
+      maintenance.windows.WindowRecord.Insts.CoreCloneClone self.open
+  ok { limits := wl, issued_through := o, time_floor_ms := i, «open» := v }
+
+/-- [sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone]:
+    Source: 'controller-core/src/store.rs', lines 5:9-5:14
+    Visibility: public -/
+def store.Store.Insts.CoreCloneClone.clone
+  {K : Type} {V : Type} (corecloneCloneInst : core.clone.Clone K)
+  (corecloneCloneInst1 : core.clone.Clone V) (self : store.Store K V) :
+  Result (store.Store K V)
+  := do
+  let v ← alloc.vec.CloneVec.clone (BuiltinClone (K × V)) self.entries
+  ok { entries := v }
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone]:
+    Source: 'controller-core/src/model.rs', lines 410:9-410:14
+    Visibility: public -/
+def model.OperationKey.Insts.CoreCloneClone.clone
+  (self : model.OperationKey) : Result model.OperationKey := do
+  ok self
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}]
+    Source: 'controller-core/src/model.rs', lines 410:9-410:14 -/
+@[reducible]
+def model.OperationKey.Insts.CoreCloneClone : core.clone.Clone
+  model.OperationKey := {
+  clone := model.OperationKey.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone]:
+    Source: 'controller-core/src/maintenance.rs', lines 28:9-28:14
+    Visibility: public -/
+def maintenance.MaintenanceState.Insts.CoreCloneClone.clone
+  (self : maintenance.MaintenanceState) :
+  Result maintenance.MaintenanceState
+  := do
+  let o ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.sandbox_frontier
+  let o1 ←
+    core.option.Option.Insts.CoreCloneClone.clone core.clone.CloneU64
+      self.workspace_frontier
+  let s ←
+    store.Store.Insts.CoreCloneClone.clone
+      model.OperationKey.Insts.CoreCloneClone
+      maintenance.retirement.RetainedOperation.Insts.CoreCloneClone
+      self.retained
+  let i ← lift (core.clone.impls.CloneU64.clone self.time_floor)
+  let i1 ← lift (core.clone.impls.CloneU64.clone self.max_retained_results)
+  let i2 ← lift (core.clone.impls.CloneU64.clone self.max_host_slots)
+  let s1 ←
+    store.Store.Insts.CoreCloneClone.clone
+      maintenance.slots.HostSlotId.Insts.CoreCloneClone
+      maintenance.slots.HostSlotRecord.Insts.CoreCloneClone self.slots
+  let ws ←
+    maintenance.windows.WindowState.Insts.CoreCloneClone.clone self.windows
+  ok
+    {
+      sandbox_frontier := o,
+      workspace_frontier := o1,
+      retained := s,
+      time_floor := i,
+      max_retained_results := i1,
+      max_host_slots := i2,
+      slots := s1,
+      windows := ws
+    }
+
+/-- Trait implementation: [sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}]
+    Source: 'controller-core/src/maintenance.rs', lines 28:9-28:14 -/
+@[reducible]
+def maintenance.MaintenanceState.Insts.CoreCloneClone : core.clone.Clone
+  maintenance.MaintenanceState := {
+  clone := maintenance.MaintenanceState.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone]:
+    Source: 'controller-core/src/model.rs', lines 14:9-14:14
+    Visibility: public -/
+def model.Phase.Insts.CoreCloneClone.clone
+  (self : model.Phase) : Result model.Phase := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}::eq]:
+    Source: 'controller-core/src/model.rs', lines 14:29-14:38
+    Visibility: public -/
+def model.Phase.Insts.CoreCmpPartialEqPhase.eq
+  (self : model.Phase) (other : model.Phase) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}]
+    Source: 'controller-core/src/model.rs', lines 14:29-14:38 -/
+@[reducible]
+impl_def model.Phase.Insts.CoreCmpPartialEqPhase : core.cmp.PartialEq
+  model.Phase model.Phase := {
+  eq := model.Phase.Insts.CoreCmpPartialEqPhase.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.Phase.Insts.CoreCmpPartialEqPhase
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq]:
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38
+    Visibility: public -/
+def model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
+  (self : model.VmStatus) (other : model.VmStatus) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}]
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38 -/
+@[reducible]
+impl_def model.VmStatus.Insts.CoreCmpPartialEqVmStatus : core.cmp.PartialEq
+  model.VmStatus model.VmStatus := {
+  eq := model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.VmStatus.Insts.CoreCmpPartialEqVmStatus
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq]:
+    Source: 'controller-core/src/model.rs', lines 35:29-35:38
+    Visibility: public -/
+def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
+  (self : model.SnapshotStage) (other : model.SnapshotStage) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}]
+    Source: 'controller-core/src/model.rs', lines 35:29-35:38 -/
+@[reducible]
+impl_def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage :
+  core.cmp.PartialEq model.SnapshotStage model.SnapshotStage := {
+  eq := model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone]:
+    Source: 'controller-core/src/model.rs', lines 42:9-42:14
+    Visibility: public -/
+def model.WorkspaceApiAccess.Insts.CoreCloneClone.clone
+  (self : model.WorkspaceApiAccess) : Result model.WorkspaceApiAccess := do
+  ok self
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq]:
+    Source: 'controller-core/src/model.rs', lines 138:29-138:38
+    Visibility: public -/
+def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
+  (self : model.FailureKind) (other : model.FailureKind) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}]
+    Source: 'controller-core/src/model.rs', lines 138:29-138:38 -/
+@[reducible]
+impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
+  core.cmp.PartialEq model.FailureKind model.FailureKind := {
+  eq := model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.FailureKind.Insts.CoreCmpPartialEqFailureKind
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}::eq]:
+    Source: 'controller-core/src/model.rs', lines 171:29-171:38
+    Visibility: public -/
+def model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
+  (self : model.OperationKind) (other : model.OperationKind) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}]
+    Source: 'controller-core/src/model.rs', lines 171:29-171:38 -/
+@[reducible]
+impl_def model.OperationKind.Insts.CoreCmpPartialEqOperationKind :
+  core.cmp.PartialEq model.OperationKind model.OperationKind := {
+  eq := model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.OperationKind.Insts.CoreCmpPartialEqOperationKind
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}::eq]:
+    Source: 'controller-core/src/model.rs', lines 180:29-180:38
+    Visibility: public -/
+def model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
+  (self : model.OperationStatus) (other : model.OperationStatus) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | model.OperationStatus.Pending => ok true
+    | model.OperationStatus.OutcomeUnknown => ok true
+    | model.OperationStatus.Compensating __self_0 =>
+      match other with
+      | model.OperationStatus.Pending => ok true
+      | model.OperationStatus.OutcomeUnknown => ok true
+      | model.OperationStatus.Compensating __arg1_0 =>
+        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
+          __arg1_0
+      | model.OperationStatus.Succeeded => ok true
+      | model.OperationStatus.Failed _ => ok true
+    | model.OperationStatus.Succeeded => ok true
+    | model.OperationStatus.Failed __self_0 =>
+      match other with
+      | model.OperationStatus.Pending => ok true
+      | model.OperationStatus.OutcomeUnknown => ok true
+      | model.OperationStatus.Compensating _ => ok true
+      | model.OperationStatus.Succeeded => ok true
+      | model.OperationStatus.Failed __arg1_0 =>
+        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
+          __arg1_0
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}]
+    Source: 'controller-core/src/model.rs', lines 190:9-190:14 -/
+@[reducible]
+def model.Operation.Insts.CoreCloneClone : core.clone.Clone model.Operation
+  := {
+  clone := model.Operation.Insts.CoreCloneClone.clone
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}::eq]:
+    Source: 'controller-core/src/model.rs', lines 190:29-190:38
+    Visibility: public -/
+def model.Operation.Insts.CoreCmpPartialEqOperation.eq
+  (self : model.Operation) (other : model.Operation) : Result Bool := do
+  let b ←
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq self.id other.id
+  if b
+  then
+    if self.epoch = other.epoch
+    then
+      let b1 ←
+        model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq self.kind
+          other.kind
+      if b1
+      then
+        model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq
+          self.status other.status
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}]
+    Source: 'controller-core/src/model.rs', lines 190:29-190:38 -/
+@[reducible]
+impl_def model.Operation.Insts.CoreCmpPartialEqOperation : core.cmp.PartialEq
+  model.Operation model.Operation := {
+  eq := model.Operation.Insts.CoreCmpPartialEqOperation.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.Operation.Insts.CoreCmpPartialEqOperation
+}
+
+/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone]:
+    Source: 'controller-core/src/model.rs', lines 199:9-199:14
+    Visibility: public -/
+def model.Authority.Insts.CoreCloneClone.clone
+  (self : model.Authority) : Result model.Authority := do
+  match self with
+  | model.Authority.Closed => ok model.Authority.Closed
+  | model.Authority.Running __self_0 __self_1 __self_2 __self_3 __self_4
+    __self_5 __self_6 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let i ← lift (core.clone.impls.CloneU64.clone __self_1)
+    let vi ← ids.VmId.Insts.CoreCloneClone.clone __self_2
+    let fi ← ids.FsId.Insts.CoreCloneClone.clone __self_3
+    let waa ← model.WorkspaceApiAccess.Insts.CoreCloneClone.clone __self_4
+    let nsi ← ids.NetSlotId.Insts.CoreCloneClone.clone __self_5
+    let np ← model.NetworkPolicy.Insts.CoreCloneClone.clone __self_6
+    ok (model.Authority.Running si i vi fi waa nsi np)
+  | model.Authority.Paused __self_0 __self_1 =>
+    let si ← ids.SandboxId.Insts.CoreCloneClone.clone __self_0
+    let rs ← model.RestoreSource.Insts.CoreCloneClone.clone __self_1
+    ok (model.Authority.Paused si rs)
+
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox]:
     Source: 'controller-core/src/model.rs', lines 314:4-329:5
     Visibility: public -/
@@ -2093,25 +2304,6 @@ def model.LogicalEffectId.Insts.CoreCloneClone : core.clone.Clone
   clone := model.LogicalEffectId.Insts.CoreCloneClone.clone
 }
 
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq]:
-    Source: 'controller-core/src/model.rs', lines 349:23-349:32
-    Visibility: public -/
-def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
-  (self : model.LogicalEffectId) (other : model.LogicalEffectId) :
-  Result Bool
-  := do
-  model.Command.Insts.CoreCmpPartialEqCommand.eq self.command other.command
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}]
-    Source: 'controller-core/src/model.rs', lines 349:23-349:32 -/
-@[reducible]
-impl_def model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId :
-  core.cmp.PartialEq model.LogicalEffectId model.LogicalEffectId := {
-  eq := model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
-}
-
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone]:
     Source: 'controller-core/src/model.rs', lines 355:9-355:14
     Visibility: public -/
@@ -2126,28 +2318,6 @@ def model.EffectId.Insts.CoreCloneClone.clone
 @[reducible]
 def model.EffectId.Insts.CoreCloneClone : core.clone.Clone model.EffectId := {
   clone := model.EffectId.Insts.CoreCloneClone.clone
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
-    Source: 'controller-core/src/model.rs', lines 355:23-355:32
-    Visibility: public -/
-def model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
-  (self : model.EffectId) (other : model.EffectId) : Result Bool := do
-  let b ←
-    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq self.logical
-      other.logical
-  if b
-  then ok (self.attempt = other.attempt)
-  else ok false
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}]
-    Source: 'controller-core/src/model.rs', lines 355:23-355:32 -/
-@[reducible]
-impl_def model.EffectId.Insts.CoreCmpPartialEqEffectId : core.cmp.PartialEq
-  model.EffectId model.EffectId := {
-  eq := model.EffectId.Insts.CoreCmpPartialEqEffectId.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.EffectId.Insts.CoreCmpPartialEqEffectId
 }
 
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial]:
@@ -2522,29 +2692,6 @@ impl_def model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult :
     model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult
 }
 
-/-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone]:
-    Source: 'controller-core/src/model.rs', lines 482:9-482:14
-    Visibility: public -/
-def model.LogicalEffectRecord.Insts.CoreCloneClone.clone
-  (self : model.LogicalEffectRecord) : Result model.LogicalEffectRecord := do
-  ok self
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}]
-    Source: 'controller-core/src/model.rs', lines 482:9-482:14 -/
-@[reducible]
-def model.LogicalEffectRecord.Insts.CoreCloneClone : core.clone.Clone
-  model.LogicalEffectRecord := {
-  clone := model.LogicalEffectRecord.Insts.CoreCloneClone.clone
-}
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::marker::Copy for sandbox_controller_core::model::LogicalEffectRecord}]
-    Source: 'controller-core/src/model.rs', lines 482:16-482:20 -/
-@[reducible]
-def model.LogicalEffectRecord.Insts.CoreMarkerCopy : core.marker.Copy
-  model.LogicalEffectRecord := {
-  cloneInst := model.LogicalEffectRecord.Insts.CoreCloneClone
-}
-
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}]
     Source: 'controller-core/src/model.rs', lines 491:9-491:14 -/
 @[reducible]
@@ -2718,6 +2865,25 @@ def model.WorkerFence.Insts.CoreCloneClone : core.clone.Clone model.WorkerFence
   clone := model.WorkerFence.Insts.CoreCloneClone.clone
 }
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkerFence> for sandbox_controller_core::model::WorkerFence}::eq]:
+    Source: 'controller-core/src/model.rs', lines 572:29-572:38
+    Visibility: public -/
+def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence.eq
+  (self : model.WorkerFence) (other : model.WorkerFence) : Result Bool := do
+  if self.terminal = other.terminal
+  then ok (self.epoch = other.epoch)
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkerFence> for sandbox_controller_core::model::WorkerFence}]
+    Source: 'controller-core/src/model.rs', lines 572:29-572:38 -/
+@[reducible]
+impl_def model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence :
+  core.cmp.PartialEq model.WorkerFence model.WorkerFence := {
+  eq := model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence
+}
+
 /-- [sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone]:
     Source: 'controller-core/src/model.rs', lines 678:9-678:14
     Visibility: public -/
@@ -2799,53 +2965,6 @@ def model.World.Insts.CoreCloneClone.clone
       controller_up := b
     }
 
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop body 0:
-    Source: 'controller-core/src/store.rs', lines 22:8-29:5
-    Visibility: public -/
-@[rust_loop_body]
-def store.Store.get_loop.body
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (index : Std.Usize) :
-  Result (ControlFlow Std.Usize (Option V))
-  := do
-  let i := alloc.vec.Vec.len self.entries
-  if index < i
-  then
-    let (t, t1) ←
-      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
-        self.entries index
-    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
-    if b
-    then ok (done (some t1))
-    else let index1 ← index + 1#usize
-         ok (cont index1)
-  else ok (done none)
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]: loop 0:
-    Source: 'controller-core/src/store.rs', lines 22:8-29:5
-    Visibility: public -/
-@[rust_loop]
-def store.Store.get_loop
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (index : Std.Usize) :
-  Result (Option V)
-  := do
-  loop
-    (fun index1 => store.Store.get_loop.body corecmpPartialEqInst self key
-      index1)
-    index
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get]:
-    Source: 'controller-core/src/store.rs', lines 20:4-29:5
-    Visibility: public -/
-@[reducible]
-def store.Store.get
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) :
-  Result (Option V)
-  := do
-  store.Store.get_loop corecmpPartialEqInst self key 0#usize
-
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_record]:
     Source: 'controller-core/src/model.rs', lines 748:4-750:5
     Visibility: public -/
@@ -2883,54 +3002,6 @@ def model.World.operation_plan
   store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey
     self.operation_plans key
 
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop body 0:
-    Source: 'controller-core/src/store.rs', lines 66:8-73:5
-    Visibility: public -/
-@[rust_loop_body]
-def store.Store.get_copy_loop.body
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (index : Std.Usize) :
-  Result (ControlFlow Std.Usize (Option V))
-  := do
-  let i := alloc.vec.Vec.len self.entries
-  if index < i
-  then
-    let (t, t1) ←
-      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
-        self.entries index
-    let b ← core.cmp.impls.PartialEqShared.eq corecmpPartialEqInst t key
-    if b
-    then ok (done (some t1))
-    else let index1 ← index + 1#usize
-         ok (cont index1)
-  else ok (done none)
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]: loop 0:
-    Source: 'controller-core/src/store.rs', lines 66:8-73:5
-    Visibility: public -/
-@[rust_loop]
-def store.Store.get_copy_loop
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (index : Std.Usize) :
-  Result (Option V)
-  := do
-  loop
-    (fun index1 => store.Store.get_copy_loop.body corecmpPartialEqInst self key
-      index1)
-    index
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy]:
-    Source: 'controller-core/src/store.rs', lines 64:4-73:5
-    Visibility: public -/
-@[reducible]
-def store.Store.get_copy
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (coremarkerCopyInst : core.marker.Copy V) (self : store.Store K V) 
-  (key : K) :
-  Result (Option V)
-  := do
-  store.Store.get_copy_loop corecmpPartialEqInst self key 0#usize
-
 /-- [sandbox_controller_core::model::{sandbox_controller_core::model::World}::logical_effect]:
     Source: 'controller-core/src/model.rs', lines 788:4-790:5
     Visibility: public -/
@@ -2957,6 +3028,565 @@ def model.World.resource_index
       o
   core.option.Option.unwrap_or_default
     model.ResourceIndex.Insts.CoreDefaultDefault o1
+
+/-- [sandbox_controller_core::publication::indexed_vms_closed]: loop body 0:
+    Source: 'controller-core/src/publication.rs', lines 57:4-67:1 -/
+@[rust_loop_body]
+def publication.indexed_vms_closed_loop.body
+  (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i := alloc.vec.Vec.len index.vms
+  if cursor < i
+  then
+    let vi ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice ids.VmId)
+        index.vms cursor
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vi
+    match o with
+    | none => ok (done false)
+    | some vm =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          model.VmStatus.Insts.CoreCmpPartialEqVmStatus vm.status
+          model.VmStatus.Stopped
+      if b
+      then
+        let b1 ←
+          core.cmp.PartialEq.ne.trait_default
+            model.VmStatus.Insts.CoreCmpPartialEqVmStatus vm.status
+            model.VmStatus.Reclaimed
+        if b1
+        then ok (done false)
+        else let cursor1 ← cursor + 1#usize
+             ok (cont cursor1)
+      else let cursor1 ← cursor + 1#usize
+           ok (cont cursor1)
+  else ok (done true)
+
+/-- [sandbox_controller_core::publication::indexed_vms_closed]: loop 0:
+    Source: 'controller-core/src/publication.rs', lines 57:4-67:1 -/
+@[rust_loop]
+def publication.indexed_vms_closed_loop
+  (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun cursor1 => publication.indexed_vms_closed_loop.body world index
+      cursor1)
+    cursor
+
+/-- [sandbox_controller_core::publication::indexed_vms_closed]:
+    Source: 'controller-core/src/publication.rs', lines 54:0-67:1 -/
+def publication.indexed_vms_closed
+  (world : model.World) (sandbox : ids.SandboxId) : Result Bool := do
+  let index ← model.World.resource_index world sandbox
+  publication.indexed_vms_closed_loop world index 0#usize
+
+/-- [sandbox_controller_core::publication::indexed_slots_closed]: loop body 0:
+    Source: 'controller-core/src/publication.rs', lines 72:4-82:1 -/
+@[rust_loop_body]
+def publication.indexed_slots_closed_loop.body
+  (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i := alloc.vec.Vec.len index.slots
+  if cursor < i
+  then
+    let nsi ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice ids.NetSlotId)
+        index.slots cursor
+    let o ←
+      store.Store.get ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+        world.net_slots nsi
+    match o with
+    | none => ok (done false)
+    | some slot =>
+      if slot.active
+      then ok (done false)
+      else let cursor1 ← cursor + 1#usize
+           ok (cont cursor1)
+  else ok (done true)
+
+/-- [sandbox_controller_core::publication::indexed_slots_closed]: loop 0:
+    Source: 'controller-core/src/publication.rs', lines 72:4-82:1 -/
+@[rust_loop]
+def publication.indexed_slots_closed_loop
+  (world : model.World) (index : model.ResourceIndex) (cursor : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun cursor1 => publication.indexed_slots_closed_loop.body world index
+      cursor1)
+    cursor
+
+/-- [sandbox_controller_core::publication::indexed_slots_closed]:
+    Source: 'controller-core/src/publication.rs', lines 69:0-82:1 -/
+def publication.indexed_slots_closed
+  (world : model.World) (sandbox : ids.SandboxId) : Result Bool := do
+  let index ← model.World.resource_index world sandbox
+  publication.indexed_slots_closed_loop world index 0#usize
+
+/-- [sandbox_controller_core::transition::operation_key]:
+    Source: 'controller-core/src/transition.rs', lines 15:0-17:1
+    Visibility: public -/
+def transition.operation_key
+  (sandbox : ids.SandboxId) (operation : ids.OperationId) :
+  Result model.OperationKey
+  := do
+  ok { sandbox, operation }
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop body 0:
+    Source: 'controller-core/src/store.rs', lines 38:8-46:5
+    Visibility: public -/
+@[rust_loop_body]
+def store.Store.put_loop.body
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (value : V) (index : Std.Usize) :
+  Result (ControlFlow Std.Usize (alloc.vec.Vec (K × V)))
+  := do
+  let i := alloc.vec.Vec.len self.entries
+  if index < i
+  then
+    let (t, _) ←
+      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
+        self.entries index
+    let b ← corecmpPartialEqInst.eq t key
+    if b
+    then
+      let ((t1, _), index_mut_back) ←
+        alloc.vec.Vec.index_mut (core.slice.index.SliceIndexUsizeSlice (K ×
+          V)) self.entries index
+      let v := index_mut_back (t1, value)
+      ok (done v)
+    else let index1 ← index + 1#usize
+         ok (cont index1)
+  else let v ← alloc.vec.Vec.push self.entries (key, value)
+       ok (done v)
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop 0:
+    Source: 'controller-core/src/store.rs', lines 38:8-46:5
+    Visibility: public -/
+@[rust_loop]
+def store.Store.put_loop
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (value : V) (index : Std.Usize) :
+  Result (alloc.vec.Vec (K × V))
+  := do
+  loop
+    (fun index1 => store.Store.put_loop.body corecmpPartialEqInst self key
+      value index1)
+    index
+
+/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]:
+    Source: 'controller-core/src/store.rs', lines 36:4-46:5
+    Visibility: public -/
+def store.Store.put
+  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
+  (self : store.Store K V) (key : K) (value : V) :
+  Result (store.Store K V)
+  := do
+  let v ← store.Store.put_loop corecmpPartialEqInst self key value 0#usize
+  ok { entries := v }
+
+/-- [sandbox_controller_core::publication::update_operation_result]:
+    Source: 'controller-core/src/publication.rs', lines 194:0-207:1 -/
+def publication.update_operation_result
+  (world : model.World) (sandbox : ids.SandboxId) (operation : model.Operation)
+  (result : model.OperationResult) :
+  Result model.World
+  := do
+  let key ← transition.operation_key sandbox operation.id
+  let o ←
+    store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+      world.operations key
+  match o with
+  | none => ok world
+  | some stored =>
+    let ledger ←
+      model.OperationLedgerRecord.Insts.CoreCloneClone.clone stored
+    let s ←
+      store.Store.put model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+        world.operations key { ledger with operation, result := (some result) }
+    ok { world with operations := s }
+
+/-- [sandbox_controller_core::publication::publish_paused]:
+    Source: 'controller-core/src/publication.rs', lines 251:0-281:1 -/
+def publication.publish_paused
+  (world : model.World) (sandbox : ids.SandboxId)
+  (record : model.SandboxRecord) (source : model.RestoreSource) :
+  Result model.World
+  := do
+  let next ← model.World.Insts.CoreCloneClone.clone world
+  let paused ← model.SandboxRecord.Insts.CoreCloneClone.clone record
+  let o ←
+    match paused.current_operation with
+    | none => ok none
+    | some operation =>
+      ok (some { operation with status := model.OperationStatus.Succeeded })
+  let a ←
+    model.Authority.Insts.CoreCloneClone.clone (model.Authority.Paused sandbox
+      source)
+  let sr ←
+    model.SandboxRecord.Insts.CoreCloneClone.clone
+      {
+        paused
+          with
+          phase := model.Phase.Paused,
+          current_vm := none,
+          durable_snapshot := (some source),
+          restore_from := none,
+          net_slot := none,
+          desired := a,
+          effective := (model.Authority.Paused sandbox source),
+          current_operation := o
+      }
+  let s ←
+    store.Store.put ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      next.sandboxes sandbox sr
+  match o with
+  | none => ok { next with sandboxes := s }
+  | some operation =>
+    publication.update_operation_result { next with sandboxes := s } sandbox
+      operation (model.OperationResult.Paused source)
+
+/-- [sandbox_controller_core::transition::current_capture]:
+    Source: 'controller-core/src/transition.rs', lines 21:0-36:1
+    Visibility: public -/
+def transition.current_capture
+  (world : model.World) (sandbox : ids.SandboxId)
+  (record : model.SandboxRecord) :
+  Result (Option capture.CaptureHandoff)
+  := do
+  let cf ←
+    core.option.Option.Insts.CoreOpsTry_traitTry.branch
+      record.current_operation
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let b ←
+      core.cmp.PartialEq.ne.trait_default
+        model.OperationKind.Insts.CoreCmpPartialEqOperationKind val.kind
+        model.OperationKind.Pause
+    if b
+    then ok none
+    else
+      if val.epoch != record.epoch
+      then ok none
+      else
+        let key ← transition.operation_key sandbox val.id
+        let o ←
+          store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+            world.operation_plans key
+        let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
+        match cf1 with
+        | core.ops.control_flow.ControlFlow.Continue val1 =>
+          let b1 ←
+            core.cmp.PartialEq.ne.trait_default
+              model.OperationKey.Insts.CoreCmpPartialEqOperationKey val1.key
+              key
+          if b1
+          then ok none
+          else
+            if val1.epoch != record.epoch
+            then ok none
+            else
+              if val1.generation != record.generation
+              then ok none
+              else ok val1.capture
+        | core.ops.control_flow.ControlFlow.Break residual =>
+          core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+            capture.CaptureHandoff residual
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+      capture.CaptureHandoff residual
+
+/-- [sandbox_controller_core::publication::handle_publish_paused]:
+    Source: 'controller-core/src/publication.rs', lines 474:0-590:1
+    Visibility: public -/
+def publication.handle_publish_paused
+  (world : model.World) (sandbox : ids.SandboxId)
+  (source : model.RestoreSource) :
+  Result (core.result.Result publication.PublicationDecision
+    publication.PublicationReject)
+  := do
+  if world.controller_up
+  then
+    let o ←
+      store.Store.get ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        world.sandboxes sandbox
+    match o with
+    | none =>
+      ok (core.result.Result.Err publication.PublicationReject.SandboxNotFound)
+    | some record =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          model.Phase.Insts.CoreCmpPartialEqPhase record.phase
+          model.Phase.Pausing
+      if b
+      then ok (core.result.Result.Err publication.PublicationReject.WrongPhase)
+      else
+        if record.terminal
+        then
+          ok (core.result.Result.Err
+            publication.PublicationReject.TerminalMismatch)
+        else
+          let o1 ←
+            store.Store.get ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+              world.snapshots source.snapshot
+          match o1 with
+          | none =>
+            ok (core.result.Result.Err
+              publication.PublicationReject.SnapshotNotFound)
+          | some snapshot =>
+            let b1 ←
+              core.cmp.PartialEq.ne.trait_default
+                ids.TenantId.Insts.CoreCmpPartialEqTenantId snapshot.owner
+                record.owner
+            if b1
+            then
+              ok (core.result.Result.Err
+                publication.PublicationReject.ResourceNotReady)
+            else
+              let b2 ←
+                core.cmp.PartialEq.ne.trait_default
+                  ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                  snapshot.sandbox sandbox
+              if b2
+              then
+                ok (core.result.Result.Err
+                  publication.PublicationReject.ResourceNotReady)
+              else
+                if snapshot.source_generation != record.generation
+                then
+                  ok (core.result.Result.Err
+                    publication.PublicationReject.ResourceNotReady)
+                else
+                  let b3 ←
+                    core.cmp.PartialEq.ne.trait_default
+                      ids.FsId.Insts.CoreCmpPartialEqFsId snapshot.workspace
+                      record.workspace
+                  if b3
+                  then
+                    ok (core.result.Result.Err
+                      publication.PublicationReject.ResourceNotReady)
+                  else
+                    let b4 ←
+                      core.cmp.PartialEq.ne.trait_default
+                        model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef
+                        snapshot.manifest source.manifest
+                    if b4
+                    then
+                      ok (core.result.Result.Err
+                        publication.PublicationReject.ResourceNotReady)
+                    else
+                      let b5 ←
+                        core.cmp.PartialEq.ne.trait_default
+                          model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
+                          snapshot.stage model.SnapshotStage.Durable
+                      if b5
+                      then
+                        ok (core.result.Result.Err
+                          publication.PublicationReject.ResourceNotReady)
+                      else
+                        if snapshot.immutable
+                        then
+                          let o2 ←
+                            store.Store.get
+                              ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                              world.worker_fences sandbox
+                          let b6 ←
+                            core.cmp.PartialEq.ne.trait_default
+                              (core.option.Option.Insts.CoreCmpPartialEqOption
+                              (core.cmp.PartialEqShared
+                              model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence))
+                              o2 (some
+                              { epoch := record.epoch, terminal := false })
+                          if b6
+                          then
+                            ok (core.result.Result.Err
+                              publication.PublicationReject.FenceNotInstalled)
+                          else
+                            match record.current_vm with
+                            | none =>
+                              ok (core.result.Result.Err
+                                publication.PublicationReject.VmNotFound)
+                            | some vm_id =>
+                              let b7 ←
+                                effect.effect_succeeded_check world
+                                  (model.Command.InstallFence sandbox
+                                  record.epoch false)
+                              if b7
+                              then
+                                let b8 ←
+                                  effect.effect_succeeded_check world
+                                    (model.Command.FreezeVm sandbox
+                                    record.epoch record.generation vm_id)
+                                if b8
+                                then
+                                  let b9 ←
+                                    effect.effect_succeeded_check world
+                                      (model.Command.SealSnapshot sandbox
+                                      record.epoch record.generation vm_id
+                                      record.workspace source.snapshot
+                                      source.manifest)
+                                  if b9
+                                  then
+                                    let b10 ←
+                                      effect.effect_succeeded_check world
+                                        (model.Command.CommitSnapshot sandbox
+                                        record.epoch record.generation
+                                        source.snapshot source.manifest)
+                                    if b10
+                                    then
+                                      let b11 ←
+                                        effect.effect_succeeded_check world
+                                          (model.Command.StopVm sandbox
+                                          record.epoch record.generation vm_id)
+                                      if b11
+                                      then
+                                        let b12 ←
+                                          publication.indexed_vms_closed world
+                                            sandbox
+                                        if b12
+                                        then
+                                          let b13 ←
+                                            publication.indexed_slots_closed
+                                              world sandbox
+                                          if b13
+                                          then
+                                            match record.current_operation with
+                                            | none =>
+                                              ok (core.result.Result.Err
+                                                publication.PublicationReject.OperationUnavailable)
+                                            | some operation =>
+                                              let key ←
+                                                transition.operation_key
+                                                  sandbox operation.id
+                                              let o3 ←
+                                                store.Store.get
+                                                  model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+                                                  world.operations key
+                                              match o3 with
+                                              | none =>
+                                                ok (core.result.Result.Err
+                                                  publication.PublicationReject.OperationUnavailable)
+                                              | some ledger =>
+                                                let b14 ←
+                                                  core.cmp.PartialEq.ne.trait_default
+                                                    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+                                                    ledger.sandbox sandbox
+                                                if b14
+                                                then
+                                                  ok (core.result.Result.Err
+                                                    publication.PublicationReject.LedgerMismatch)
+                                                else
+                                                  let b15 ←
+                                                    core.cmp.PartialEq.ne.trait_default
+                                                      model.Operation.Insts.CoreCmpPartialEqOperation
+                                                      ledger.operation
+                                                      operation
+                                                  if b15
+                                                  then
+                                                    ok (core.result.Result.Err
+                                                      publication.PublicationReject.LedgerMismatch)
+                                                  else
+                                                    let b16 :=
+                                                      core.option.Option.is_some
+                                                        ledger.result
+                                                    if b16
+                                                    then
+                                                      ok
+                                                        (core.result.Result.Err
+                                                        publication.PublicationReject.LedgerMismatch)
+                                                    else
+                                                      let o4 ←
+                                                        store.Store.get
+                                                          model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+                                                          world.operation_plans
+                                                          key
+                                                      match o4 with
+                                                      | none =>
+                                                        ok
+                                                          (core.result.Result.Err
+                                                          publication.PublicationReject.LedgerMismatch)
+                                                      | some plan =>
+                                                        let b17 ←
+                                                          core.cmp.PartialEq.ne.trait_default
+                                                            (core.option.Option.Insts.CoreCmpPartialEqOption
+                                                            model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource)
+                                                            plan.target_snapshot
+                                                            (some source)
+                                                        if b17
+                                                        then
+                                                          ok
+                                                            (core.result.Result.Err
+                                                            publication.PublicationReject.ResourceNotReady)
+                                                        else
+                                                          let b18 ←
+                                                            core.cmp.PartialEq.ne.trait_default
+                                                              (core.option.Option.Insts.CoreCmpPartialEqOption
+                                                              ids.VmId.Insts.CoreCmpPartialEqVmId)
+                                                              plan.vm
+                                                              record.current_vm
+                                                          if b18
+                                                          then
+                                                            ok
+                                                              (core.result.Result.Err
+                                                              publication.PublicationReject.ResourceNotReady)
+                                                          else
+                                                            let o5 ←
+                                                              transition.current_capture
+                                                                world sandbox
+                                                                record
+                                                            let b19 ←
+                                                              core.option.Option.is_some_and
+                                                                P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool
+                                                                o5
+                                                                (capture.CaptureHandoff.may_stop_original)
+                                                            if b19
+                                                            then
+                                                              let w ←
+                                                                publication.publish_paused
+                                                                  world sandbox
+                                                                  record source
+                                                              ok
+                                                                (core.result.Result.Ok
+                                                                {
+                                                                  event :=
+                                                                    (publication.PublicationEvent.PublishPaused
+                                                                    sandbox
+                                                                    source.snapshot),
+                                                                  next := w
+                                                                })
+                                                            else
+                                                              ok
+                                                                (core.result.Result.Err
+                                                                publication.PublicationReject.ResourceNotReady)
+                                          else
+                                            ok (core.result.Result.Err
+                                              publication.PublicationReject.ResourcesNotClosed)
+                                        else
+                                          ok (core.result.Result.Err
+                                            publication.PublicationReject.ResourcesNotClosed)
+                                      else
+                                        ok (core.result.Result.Err
+                                          publication.PublicationReject.PrerequisiteNotSucceeded)
+                                    else
+                                      ok (core.result.Result.Err
+                                        publication.PublicationReject.PrerequisiteNotSucceeded)
+                                  else
+                                    ok (core.result.Result.Err
+                                      publication.PublicationReject.PrerequisiteNotSucceeded)
+                                else
+                                  ok (core.result.Result.Err
+                                    publication.PublicationReject.PrerequisiteNotSucceeded)
+                              else
+                                ok (core.result.Result.Err
+                                  publication.PublicationReject.PrerequisiteNotSucceeded)
+                        else
+                          ok (core.result.Result.Err
+                            publication.PublicationReject.ResourceNotReady)
+  else ok (core.result.Result.Err publication.PublicationReject.ControllerDown)
 
 /-- [sandbox_controller_core::request::supplied_compensation_evidence]:
     Source: 'controller-core/src/request.rs', lines 497:0-525:1 -/
@@ -3021,15 +3651,6 @@ def request.supplied_compensation_evidence
           else ok false
         else ok false
       else ok false
-
-/-- [sandbox_controller_core::transition::operation_key]:
-    Source: 'controller-core/src/transition.rs', lines 15:0-17:1
-    Visibility: public -/
-def transition.operation_key
-  (sandbox : ids.SandboxId) (operation : ids.OperationId) :
-  Result model.OperationKey
-  := do
-  ok { sandbox, operation }
 
 /-- [sandbox_controller_core::transition::inferred_effect_origin]:
     Source: 'controller-core/src/transition.rs', lines 177:0-186:1
@@ -3149,59 +3770,6 @@ def transition.insert_unique
     Visibility: public -/
 @[global_simps, irreducible]
 def transition.DEFAULT_RETRY_LIMIT : Std.U64 := 3#u64
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop body 0:
-    Source: 'controller-core/src/store.rs', lines 38:8-46:5
-    Visibility: public -/
-@[rust_loop_body]
-def store.Store.put_loop.body
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (value : V) (index : Std.Usize) :
-  Result (ControlFlow Std.Usize (alloc.vec.Vec (K × V)))
-  := do
-  let i := alloc.vec.Vec.len self.entries
-  if index < i
-  then
-    let (t, _) ←
-      alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (K × V))
-        self.entries index
-    let b ← corecmpPartialEqInst.eq t key
-    if b
-    then
-      let ((t1, _), index_mut_back) ←
-        alloc.vec.Vec.index_mut (core.slice.index.SliceIndexUsizeSlice (K ×
-          V)) self.entries index
-      let v := index_mut_back (t1, value)
-      ok (done v)
-    else let index1 ← index + 1#usize
-         ok (cont index1)
-  else let v ← alloc.vec.Vec.push self.entries (key, value)
-       ok (done v)
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]: loop 0:
-    Source: 'controller-core/src/store.rs', lines 38:8-46:5
-    Visibility: public -/
-@[rust_loop]
-def store.Store.put_loop
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (value : V) (index : Std.Usize) :
-  Result (alloc.vec.Vec (K × V))
-  := do
-  loop
-    (fun index1 => store.Store.put_loop.body corecmpPartialEqInst self key
-      value index1)
-    index
-
-/-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put]:
-    Source: 'controller-core/src/store.rs', lines 36:4-46:5
-    Visibility: public -/
-def store.Store.put
-  {K : Type} {V : Type} (corecmpPartialEqInst : core.cmp.PartialEq K K)
-  (self : store.Store K V) (key : K) (value : V) :
-  Result (store.Store K V)
-  := do
-  let v ← store.Store.put_loop corecmpPartialEqInst self key value 0#usize
-  ok { entries := v }
 
 /-- [sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::contains_key]:
     Source: 'controller-core/src/store.rs', lines 32:4-34:5
@@ -3626,56 +4194,6 @@ def transition.begin_compensation
     transition.enqueue
       { next with sandboxes := s, operations := s1, operation_plans := s2 }
       (model.Command.InstallFence sandbox record.epoch true)
-
-/-- [sandbox_controller_core::transition::current_capture]:
-    Source: 'controller-core/src/transition.rs', lines 21:0-36:1
-    Visibility: public -/
-def transition.current_capture
-  (world : model.World) (sandbox : ids.SandboxId)
-  (record : model.SandboxRecord) :
-  Result (Option capture.CaptureHandoff)
-  := do
-  let cf ←
-    core.option.Option.Insts.CoreOpsTry_traitTry.branch
-      record.current_operation
-  match cf with
-  | core.ops.control_flow.ControlFlow.Continue val =>
-    let b ←
-      core.cmp.PartialEq.ne.trait_default
-        model.OperationKind.Insts.CoreCmpPartialEqOperationKind val.kind
-        model.OperationKind.Pause
-    if b
-    then ok none
-    else
-      if val.epoch != record.epoch
-      then ok none
-      else
-        let key ← transition.operation_key sandbox val.id
-        let o ←
-          store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey
-            world.operation_plans key
-        let cf1 ← core.option.Option.Insts.CoreOpsTry_traitTry.branch o
-        match cf1 with
-        | core.ops.control_flow.ControlFlow.Continue val1 =>
-          let b1 ←
-            core.cmp.PartialEq.ne.trait_default
-              model.OperationKey.Insts.CoreCmpPartialEqOperationKey val1.key
-              key
-          if b1
-          then ok none
-          else
-            if val1.epoch != record.epoch
-            then ok none
-            else
-              if val1.generation != record.generation
-              then ok none
-              else ok val1.capture
-        | core.ops.control_flow.ControlFlow.Break residual =>
-          core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
-            capture.CaptureHandoff residual
-  | core.ops.control_flow.ControlFlow.Break residual =>
-    core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
-      capture.CaptureHandoff residual
 
 /-- [sandbox_controller_core::request::handle_compensation]:
     Source: 'controller-core/src/request.rs', lines 536:0-589:1

@@ -63,17 +63,17 @@ def ids.ManifestDigest := Std.U64
 structure model.SnapshotManifestRef where
   digest : ids.ManifestDigest
 
-/-- [sandbox_controller_core::ids::SnapshotId]
-    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
-    Visibility: public -/
-@[reducible]
-def ids.SnapshotId := Std.U64
-
 /-- [sandbox_controller_core::ids::FsId]
     Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
 def ids.FsId := Std.U64
+
+/-- [sandbox_controller_core::ids::SnapshotId]
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
+    Visibility: public -/
+@[reducible]
+def ids.SnapshotId := Std.U64
 
 /-- [sandbox_controller_core::capture::continuation::CaptureSealEnd]
     Source: 'controller-core/src/capture/continuation.rs', lines 76:0-81:1
@@ -184,17 +184,18 @@ structure capture.CaptureHandoff where
   original_continuation : Option capture.continuation.OriginalContinuation
   terminal_drain : Option capture.drain.CaptureDrainCoverage
 
-/-- [sandbox_controller_core::ids::NetSlotId]
-    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
+/-- [sandbox_controller_core::store::Store]
+    Source: 'controller-core/src/store.rs', lines 6:0-8:1
     Visibility: public -/
-@[reducible]
-def ids.NetSlotId := Std.U64
+structure store.Store (K : Type) (V : Type) where
+  entries : alloc.vec.Vec (K × V)
 
-/-- [sandbox_controller_core::ids::TenantId]
-    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
+/-- [sandbox_controller_core::model::WorkerFence]
+    Source: 'controller-core/src/model.rs', lines 574:0-577:1
     Visibility: public -/
-@[reducible]
-def ids.TenantId := Std.U64
+structure model.WorkerFence where
+  epoch : Std.U64
+  terminal : Bool
 
 /-- [sandbox_controller_core::ids::PolicyDigest]
     Source: 'controller-core/src/ids.rs', lines 5:8-5:34
@@ -202,32 +203,161 @@ def ids.TenantId := Std.U64
 @[reducible]
 def ids.PolicyDigest := Std.U64
 
-/-- [sandbox_controller_core::maintenance::slots::HostBinding]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 12:0-18:1
+/-- [sandbox_controller_core::model::FilePolicyRef]
+    Source: 'controller-core/src/model.rs', lines 50:0-52:1
     Visibility: public -/
-structure maintenance.slots.HostBinding where
+structure model.FilePolicyRef where
+  digest : ids.PolicyDigest
+
+/-- [sandbox_controller_core::model::AppliedFilePolicy]
+    Source: 'controller-core/src/model.rs', lines 565:0-570:1
+    Visibility: public -/
+structure model.AppliedFilePolicy where
+  sandbox : ids.SandboxId
+  generation : Std.U64
+  workspace : ids.FsId
+  policy : model.FilePolicyRef
+
+/-- [sandbox_controller_core::model::Ipv4Cidr]
+    Source: 'controller-core/src/model.rs', lines 99:0-103:1
+    Visibility: public -/
+structure model.Ipv4Cidr where
+  network : Std.U32
+  prefix_length : Std.U8
+
+/-- [sandbox_controller_core::model::Protocol]
+    Source: 'controller-core/src/model.rs', lines 69:0-72:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.Protocol where
+| Tcp : model.Protocol
+| Udp : model.Protocol
+
+/-- [sandbox_controller_core::model::Endpoint]
+    Source: 'controller-core/src/model.rs', lines 76:0-81:1
+    Visibility: public -/
+structure model.Endpoint where
+  address : String
+  prefix_length : Std.U64
+  protocol : model.Protocol
+  port : Std.U64
+
+/-- [sandbox_controller_core::model::NetworkPolicy]
+    Source: 'controller-core/src/model.rs', lines 85:0-95:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.NetworkPolicy where
+| DenyAll : model.NetworkPolicy
+| StaticAllowlist : alloc.vec.Vec model.Endpoint → model.NetworkPolicy
+| Ipv4 :
+  Bool →
+  alloc.vec.Vec model.Ipv4Cidr →
+  alloc.vec.Vec model.Ipv4Cidr →
+  model.NetworkPolicy
+
+/-- [sandbox_controller_core::ids::TenantId]
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
+    Visibility: public -/
+@[reducible]
+def ids.TenantId := Std.U64
+
+/-- [sandbox_controller_core::model::NetSlot]
+    Source: 'controller-core/src/model.rs', lines 552:0-561:1
+    Visibility: public -/
+structure model.NetSlot where
   owner : ids.TenantId
   sandbox : ids.SandboxId
   generation : Std.U64
   vm : ids.VmId
-  network : ids.NetSlotId
+  policy : model.NetworkPolicy
+  configured : Bool
+  active : Bool
+  reclaimed : Bool
 
-/-- [sandbox_controller_core::maintenance::slots::HostSlotId]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 8:0-8:31
+/-- [sandbox_controller_core::model::SnapshotStage]
+    Source: 'controller-core/src/model.rs', lines 37:0-40:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.SnapshotStage where
+| LocalSealed : model.SnapshotStage
+| Durable : model.SnapshotStage
+
+/-- [sandbox_controller_core::model::Snapshot]
+    Source: 'controller-core/src/model.rs', lines 540:0-548:1
+    Visibility: public -/
+structure model.Snapshot where
+  owner : ids.TenantId
+  sandbox : ids.SandboxId
+  source_generation : Std.U64
+  workspace : ids.FsId
+  manifest : model.SnapshotManifestRef
+  stage : model.SnapshotStage
+  immutable : Bool
+
+/-- [sandbox_controller_core::model::Filesystem]
+    Source: 'controller-core/src/model.rs', lines 532:0-536:1
+    Visibility: public -/
+structure model.Filesystem where
+  owner : ids.TenantId
+  sandbox : ids.SandboxId
+  created_generation : Std.U64
+
+/-- [sandbox_controller_core::model::VmStatus]
+    Source: 'controller-core/src/model.rs', lines 27:0-33:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.VmStatus where
+| Prepared : model.VmStatus
+| Executing : model.VmStatus
+| Frozen : model.VmStatus
+| Stopped : model.VmStatus
+| Reclaimed : model.VmStatus
+
+/-- [sandbox_controller_core::model::Vm]
+    Source: 'controller-core/src/model.rs', lines 523:0-528:1
+    Visibility: public -/
+structure model.Vm where
+  owner : ids.TenantId
+  sandbox : ids.SandboxId
+  generation : Std.U64
+  status : model.VmStatus
+
+/-- [sandbox_controller_core::model::RestoreSource]
+    Source: 'controller-core/src/model.rs', lines 62:0-65:1
+    Visibility: public -/
+structure model.RestoreSource where
+  snapshot : ids.SnapshotId
+  manifest : model.SnapshotManifestRef
+
+/-- [sandbox_controller_core::model::WorkspaceApiAccess]
+    Source: 'controller-core/src/model.rs', lines 44:0-46:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.WorkspaceApiAccess where
+| ManagedReadWrite : model.WorkspaceApiAccess
+
+/-- [sandbox_controller_core::ids::NetSlotId]
+    Source: 'controller-core/src/ids.rs', lines 5:8-5:34
     Visibility: public -/
 @[reducible]
-def maintenance.slots.HostSlotId := Std.U64
+def ids.NetSlotId := Std.U64
 
-/-- [sandbox_controller_core::maintenance::released_execution::ReleasedExecution]
-    Source: 'controller-core/src/maintenance/released_execution.rs', lines 16:0-23:1
+/-- [sandbox_controller_core::model::Authority]
+    Source: 'controller-core/src/model.rs', lines 201:0-216:1
     Visibility: public -/
-structure maintenance.released_execution.ReleasedExecution where
-  key : model.OperationKey
-  epoch : Std.U64
-  position : maintenance.slots.HostSlotId
-  expected_previous : Option ids.VmId
-  binding : maintenance.slots.HostBinding
-  release_input_sequence : Std.U64
+@[discriminant isize]
+inductive model.Authority where
+| Closed : model.Authority
+| Running :
+  ids.SandboxId →
+  Std.U64 →
+  ids.VmId →
+  ids.FsId →
+  model.WorkspaceApiAccess →
+  ids.NetSlotId →
+  model.NetworkPolicy →
+  model.Authority
+| Paused : ids.SandboxId → model.RestoreSource → model.Authority
 
 /-- [sandbox_controller_core::model::FailureKind]
     Source: 'controller-core/src/model.rs', lines 140:0-147:1
@@ -271,12 +401,38 @@ structure model.Operation where
   kind : model.OperationKind
   status : model.OperationStatus
 
-/-- [sandbox_controller_core::model::RestoreSource]
-    Source: 'controller-core/src/model.rs', lines 62:0-65:1
+/-- [sandbox_controller_core::model::Phase]
+    Source: 'controller-core/src/model.rs', lines 16:0-23:1
     Visibility: public -/
-structure model.RestoreSource where
-  snapshot : ids.SnapshotId
-  manifest : model.SnapshotManifestRef
+@[discriminant isize]
+inductive model.Phase where
+| Starting : model.Phase
+| Running : model.Phase
+| Pausing : model.Phase
+| Paused : model.Phase
+| Revoking : model.Phase
+| Destroyed : model.Phase
+
+/-- [sandbox_controller_core::model::SandboxRecord]
+    Source: 'controller-core/src/model.rs', lines 502:0-519:1
+    Visibility: public -/
+structure model.SandboxRecord where
+  owner : ids.TenantId
+  phase : model.Phase
+  terminal : Bool
+  epoch : Std.U64
+  generation : Std.U64
+  current_vm : Option ids.VmId
+  workspace : ids.FsId
+  workspace_access : model.WorkspaceApiAccess
+  file_policy : model.FilePolicyRef
+  durable_snapshot : Option model.RestoreSource
+  restore_from : Option model.RestoreSource
+  net_slot : Option ids.NetSlotId
+  policy : model.NetworkPolicy
+  desired : model.Authority
+  effective : model.Authority
+  current_operation : Option model.Operation
 
 /-- [sandbox_controller_core::model::OperationResult]
     Source: 'controller-core/src/model.rs', lines 164:0-169:1
@@ -287,49 +443,6 @@ inductive model.OperationResult where
 | Paused : model.RestoreSource → model.OperationResult
 | Destroyed : model.OperationResult
 | Failed : model.FailureKind → model.OperationResult
-
-/-- [sandbox_controller_core::model::Ipv4Cidr]
-    Source: 'controller-core/src/model.rs', lines 99:0-103:1
-    Visibility: public -/
-structure model.Ipv4Cidr where
-  network : Std.U32
-  prefix_length : Std.U8
-
-/-- [sandbox_controller_core::model::Protocol]
-    Source: 'controller-core/src/model.rs', lines 69:0-72:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.Protocol where
-| Tcp : model.Protocol
-| Udp : model.Protocol
-
-/-- [sandbox_controller_core::model::Endpoint]
-    Source: 'controller-core/src/model.rs', lines 76:0-81:1
-    Visibility: public -/
-structure model.Endpoint where
-  address : String
-  prefix_length : Std.U64
-  protocol : model.Protocol
-  port : Std.U64
-
-/-- [sandbox_controller_core::model::NetworkPolicy]
-    Source: 'controller-core/src/model.rs', lines 85:0-95:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.NetworkPolicy where
-| DenyAll : model.NetworkPolicy
-| StaticAllowlist : alloc.vec.Vec model.Endpoint → model.NetworkPolicy
-| Ipv4 :
-  Bool →
-  alloc.vec.Vec model.Ipv4Cidr →
-  alloc.vec.Vec model.Ipv4Cidr →
-  model.NetworkPolicy
-
-/-- [sandbox_controller_core::model::FilePolicyRef]
-    Source: 'controller-core/src/model.rs', lines 50:0-52:1
-    Visibility: public -/
-structure model.FilePolicyRef where
-  digest : ids.PolicyDigest
 
 /-- [sandbox_controller_core::model::OperationInput]
     Source: 'controller-core/src/model.rs', lines 121:0-136:1
@@ -354,144 +467,119 @@ structure model.OperationLedgerRecord where
   input : model.OperationInput
   result : Option model.OperationResult
 
-/-- [sandbox_controller_core::maintenance::retirement::RetainedOperation]
-    Source: 'controller-core/src/maintenance/retirement.rs', lines 60:0-64:1
+/-- [sandbox_controller_core::maintenance::slots::HostBinding]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 12:0-18:1
     Visibility: public -/
-structure maintenance.retirement.RetainedOperation where
+structure maintenance.slots.HostBinding where
   owner : ids.TenantId
-  ledger : model.OperationLedgerRecord
-  expires_at : Std.U64
+  sandbox : ids.SandboxId
+  generation : Std.U64
+  vm : ids.VmId
+  network : ids.NetSlotId
 
-/-- [sandbox_controller_core::maintenance::slots::HostSlotPhase]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 22:0-26:1
-    Visibility: public -/
-@[discriminant isize]
-inductive maintenance.slots.HostSlotPhase where
-| Occupied : maintenance.slots.HostSlotPhase
-| Releasing : maintenance.slots.HostSlotPhase
-| Free : maintenance.slots.HostSlotPhase
-
-/-- [sandbox_controller_core::maintenance::slots::HostSlotRecord]
-    Source: 'controller-core/src/maintenance/slots.rs', lines 30:0-33:1
-    Visibility: public -/
-structure maintenance.slots.HostSlotRecord where
-  binding : maintenance.slots.HostBinding
-  phase : maintenance.slots.HostSlotPhase
-
-/-- [sandbox_controller_core::maintenance::windows::WindowId]
-    Source: 'controller-core/src/maintenance/windows.rs', lines 28:0-28:25
+/-- [sandbox_controller_core::maintenance::slots::HostSlotId]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 8:0-8:31
     Visibility: public -/
 @[reducible]
-def maintenance.windows.WindowId := Std.U64
+def maintenance.slots.HostSlotId := Std.U64
 
-/-- [sandbox_controller_core::maintenance::windows::WindowLimits]
-    Source: 'controller-core/src/maintenance/windows.rs', lines 47:0-50:1
+/-- [sandbox_controller_core::maintenance::released_execution::ReleasedExecution]
+    Source: 'controller-core/src/maintenance/released_execution.rs', lines 16:0-23:1
     Visibility: public -/
-structure maintenance.windows.WindowLimits where
-  max_open_windows : Std.U64
-  max_duration_ms : Std.U64
+structure maintenance.released_execution.ReleasedExecution where
+  key : model.OperationKey
+  epoch : Std.U64
+  position : maintenance.slots.HostSlotId
+  expected_previous : Option ids.VmId
+  binding : maintenance.slots.HostBinding
+  release_input_sequence : Std.U64
 
-/-- [sandbox_controller_core::maintenance::windows::WindowRecord]
-    Source: 'controller-core/src/maintenance/windows.rs', lines 97:0-102:1
-    Visibility: public -/
-structure maintenance.windows.WindowRecord where
-  id : maintenance.windows.WindowId
-  tenant : ids.TenantId
-  issued_at_ms : Std.U64
-  expires_at_ms : Std.U64
-
-/-- [sandbox_controller_core::maintenance::windows::WindowState]
-    Source: 'controller-core/src/maintenance/windows.rs', lines 131:0-136:1
-    Visibility: public -/
-structure maintenance.windows.WindowState where
-  limits : maintenance.windows.WindowLimits
-  issued_through : Option Std.U64
-  time_floor_ms : Std.U64
-  «open» : alloc.vec.Vec maintenance.windows.WindowRecord
-
-/-- [sandbox_controller_core::store::Store]
-    Source: 'controller-core/src/store.rs', lines 6:0-8:1
-    Visibility: public -/
-structure store.Store (K : Type) (V : Type) where
-  entries : alloc.vec.Vec (K × V)
-
-/-- [sandbox_controller_core::maintenance::MaintenanceState]
-    Source: 'controller-core/src/maintenance.rs', lines 29:0-38:1
-    Visibility: public -/
-structure maintenance.MaintenanceState where
-  sandbox_frontier : Option Std.U64
-  workspace_frontier : Option Std.U64
-  retained : store.Store model.OperationKey
-    maintenance.retirement.RetainedOperation
-  time_floor : Std.U64
-  max_retained_results : Std.U64
-  max_host_slots : Std.U64
-  slots : store.Store maintenance.slots.HostSlotId
-    maintenance.slots.HostSlotRecord
-  windows : maintenance.windows.WindowState
-
-/-- [sandbox_controller_core::model::Actor]
-    Source: 'controller-core/src/model.rs', lines 9:0-12:1
+/-- [sandbox_controller_core::model::LogicalEffectResult]
+    Source: 'controller-core/src/model.rs', lines 456:0-480:1
     Visibility: public -/
 @[discriminant isize]
-inductive model.Actor where
-| Tenant : ids.TenantId → model.Actor
-| SystemController : model.Actor
-
-/-- [sandbox_controller_core::model::Phase]
-    Source: 'controller-core/src/model.rs', lines 16:0-23:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.Phase where
-| Starting : model.Phase
-| Running : model.Phase
-| Pausing : model.Phase
-| Paused : model.Phase
-| Revoking : model.Phase
-| Destroyed : model.Phase
-
-/-- [sandbox_controller_core::model::VmStatus]
-    Source: 'controller-core/src/model.rs', lines 27:0-33:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.VmStatus where
-| Prepared : model.VmStatus
-| Executing : model.VmStatus
-| Frozen : model.VmStatus
-| Stopped : model.VmStatus
-| Reclaimed : model.VmStatus
-
-/-- [sandbox_controller_core::model::SnapshotStage]
-    Source: 'controller-core/src/model.rs', lines 37:0-40:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.SnapshotStage where
-| LocalSealed : model.SnapshotStage
-| Durable : model.SnapshotStage
-
-/-- [sandbox_controller_core::model::WorkspaceApiAccess]
-    Source: 'controller-core/src/model.rs', lines 44:0-46:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.WorkspaceApiAccess where
-| ManagedReadWrite : model.WorkspaceApiAccess
-
-/-- [sandbox_controller_core::model::Authority]
-    Source: 'controller-core/src/model.rs', lines 201:0-216:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.Authority where
-| Closed : model.Authority
-| Running :
-  ids.SandboxId →
+inductive model.LogicalEffectResult where
+| ReleasedExecution :
+  maintenance.released_execution.ReleasedExecution →
+  model.LogicalEffectResult
+| Succeeded : Std.U64 → ids.ResultDigest → model.LogicalEffectResult
+| Failed : Std.U64 → model.FailureKind → model.LogicalEffectResult
+| RetiredByStop : Std.U64 → model.StopCoverage → model.LogicalEffectResult
+| RetiredByCaptureEnd :
   Std.U64 →
-  ids.VmId →
-  ids.FsId →
-  model.WorkspaceApiAccess →
-  ids.NetSlotId →
-  model.NetworkPolicy →
-  model.Authority
-| Paused : ids.SandboxId → model.RestoreSource → model.Authority
+  capture.continuation.CaptureWorkEndReceipt →
+  model.LogicalEffectResult
+| RetiredByCaptureDrain :
+  Std.U64 →
+  capture.drain.CaptureDrainCoverage →
+  model.LogicalEffectResult
+
+/-- [sandbox_controller_core::model::EffectOrigin]
+    Source: 'controller-core/src/model.rs', lines 449:0-452:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.EffectOrigin where
+| Operation : model.OperationKey → model.EffectOrigin
+| Maintenance : ids.SandboxId → model.EffectOrigin
+
+/-- [sandbox_controller_core::model::LogicalEffectRecord]
+    Source: 'controller-core/src/model.rs', lines 484:0-489:1
+    Visibility: public -/
+structure model.LogicalEffectRecord where
+  origin : model.EffectOrigin
+  current_attempt : Std.U64
+  remaining_retries : Std.U64
+  result : Option model.LogicalEffectResult
+
+/-- [sandbox_controller_core::model::ResourceIndex]
+    Source: 'controller-core/src/model.rs', lines 441:0-445:1
+    Visibility: public -/
+structure model.ResourceIndex where
+  vms : alloc.vec.Vec ids.VmId
+  slots : alloc.vec.Vec ids.NetSlotId
+  snapshots : alloc.vec.Vec ids.SnapshotId
+
+/-- [sandbox_controller_core::model::OperationPlan]
+    Source: 'controller-core/src/model.rs', lines 419:0-437:1
+    Visibility: public -/
+structure model.OperationPlan where
+  key : model.OperationKey
+  epoch : Std.U64
+  generation : Std.U64
+  vm : Option ids.VmId
+  slot : Option ids.NetSlotId
+  restore_from : Option model.RestoreSource
+  target_snapshot : Option model.RestoreSource
+  capture : Option capture.CaptureHandoff
+  stop_vms : alloc.vec.Vec ids.VmId
+  close_slots : alloc.vec.Vec ids.NetSlotId
+  retry_limit : Std.U64
+  sealed : Bool
+
+/-- [sandbox_controller_core::model::EffectOutcome]
+    Source: 'controller-core/src/model.rs', lines 379:0-382:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.EffectOutcome where
+| Succeeded : ids.ResultDigest → model.EffectOutcome
+| Failed : model.FailureKind → model.EffectOutcome
+
+/-- [sandbox_controller_core::model::EffectStatus]
+    Source: 'controller-core/src/model.rs', lines 386:0-399:1
+    Visibility: public -/
+@[discriminant isize]
+inductive model.EffectStatus where
+| Committed : model.EffectStatus
+| Dispatched : model.EffectStatus
+| OutcomeUnknown : model.EffectStatus
+| Acknowledged : model.EffectOutcome → model.EffectStatus
+| RetiredByStop : model.StopCoverage → model.EffectStatus
+| RetiredByCaptureEnd :
+  capture.continuation.CaptureWorkEndReceipt →
+  model.EffectStatus
+| RetiredByCaptureDrain :
+  capture.drain.CaptureDrainCoverage →
+  model.EffectStatus
 
 /-- [sandbox_controller_core::model::Command]
     Source: 'controller-core/src/model.rs', lines 230:0-310:1
@@ -574,171 +662,108 @@ structure model.EffectId where
   logical : model.LogicalEffectId
   attempt : Std.U64
 
-/-- [sandbox_controller_core::model::EffectOutcome]
-    Source: 'controller-core/src/model.rs', lines 379:0-382:1
+/-- [sandbox_controller_core::maintenance::windows::WindowId]
+    Source: 'controller-core/src/maintenance/windows.rs', lines 28:0-28:25
+    Visibility: public -/
+@[reducible]
+def maintenance.windows.WindowId := Std.U64
+
+/-- [sandbox_controller_core::maintenance::windows::WindowRecord]
+    Source: 'controller-core/src/maintenance/windows.rs', lines 97:0-102:1
+    Visibility: public -/
+structure maintenance.windows.WindowRecord where
+  id : maintenance.windows.WindowId
+  tenant : ids.TenantId
+  issued_at_ms : Std.U64
+  expires_at_ms : Std.U64
+
+/-- [sandbox_controller_core::maintenance::windows::WindowLimits]
+    Source: 'controller-core/src/maintenance/windows.rs', lines 47:0-50:1
+    Visibility: public -/
+structure maintenance.windows.WindowLimits where
+  max_open_windows : Std.U64
+  max_duration_ms : Std.U64
+
+/-- [sandbox_controller_core::maintenance::windows::WindowState]
+    Source: 'controller-core/src/maintenance/windows.rs', lines 131:0-136:1
+    Visibility: public -/
+structure maintenance.windows.WindowState where
+  limits : maintenance.windows.WindowLimits
+  issued_through : Option Std.U64
+  time_floor_ms : Std.U64
+  «open» : alloc.vec.Vec maintenance.windows.WindowRecord
+
+/-- [sandbox_controller_core::maintenance::slots::HostSlotPhase]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 22:0-26:1
     Visibility: public -/
 @[discriminant isize]
-inductive model.EffectOutcome where
-| Succeeded : ids.ResultDigest → model.EffectOutcome
-| Failed : model.FailureKind → model.EffectOutcome
+inductive maintenance.slots.HostSlotPhase where
+| Occupied : maintenance.slots.HostSlotPhase
+| Releasing : maintenance.slots.HostSlotPhase
+| Free : maintenance.slots.HostSlotPhase
 
-/-- [sandbox_controller_core::model::EffectStatus]
-    Source: 'controller-core/src/model.rs', lines 386:0-399:1
+/-- [sandbox_controller_core::maintenance::slots::HostSlotRecord]
+    Source: 'controller-core/src/maintenance/slots.rs', lines 30:0-33:1
+    Visibility: public -/
+structure maintenance.slots.HostSlotRecord where
+  binding : maintenance.slots.HostBinding
+  phase : maintenance.slots.HostSlotPhase
+
+/-- [sandbox_controller_core::maintenance::retirement::RetainedOperation]
+    Source: 'controller-core/src/maintenance/retirement.rs', lines 60:0-64:1
+    Visibility: public -/
+structure maintenance.retirement.RetainedOperation where
+  owner : ids.TenantId
+  ledger : model.OperationLedgerRecord
+  expires_at : Std.U64
+
+/-- [sandbox_controller_core::maintenance::MaintenanceState]
+    Source: 'controller-core/src/maintenance.rs', lines 29:0-38:1
+    Visibility: public -/
+structure maintenance.MaintenanceState where
+  sandbox_frontier : Option Std.U64
+  workspace_frontier : Option Std.U64
+  retained : store.Store model.OperationKey
+    maintenance.retirement.RetainedOperation
+  time_floor : Std.U64
+  max_retained_results : Std.U64
+  max_host_slots : Std.U64
+  slots : store.Store maintenance.slots.HostSlotId
+    maintenance.slots.HostSlotRecord
+  windows : maintenance.windows.WindowState
+
+/-- [sandbox_controller_core::model::World]
+    Source: 'controller-core/src/model.rs', lines 679:0-700:1
+    Visibility: public -/
+structure model.World where
+  maintenance : Option maintenance.MaintenanceState
+  sandboxes : store.Store ids.SandboxId model.SandboxRecord
+  vms : store.Store ids.VmId model.Vm
+  filesystems : store.Store ids.FsId model.Filesystem
+  snapshots : store.Store ids.SnapshotId model.Snapshot
+  net_slots : store.Store ids.NetSlotId model.NetSlot
+  applied_file_policies : store.Store ids.SandboxId model.AppliedFilePolicy
+  worker_fences : store.Store ids.SandboxId model.WorkerFence
+  operations : store.Store model.OperationKey model.OperationLedgerRecord
+  operation_plans : store.Store model.OperationKey model.OperationPlan
+  resource_indexes : store.Store ids.SandboxId model.ResourceIndex
+  logical_effects : store.Store model.LogicalEffectId model.LogicalEffectRecord
+  effect_keys : alloc.vec.Vec model.EffectId
+  effects : store.Store model.EffectId model.EffectStatus
+  next_vm_id : Std.U64
+  next_slot_id : Std.U64
+  next_snapshot_id : Std.U64
+  next_manifest_digest : Std.U64
+  inflight : alloc.vec.Vec model.EffectId
+  controller_up : Bool
+
+/-- [sandbox_controller_core::model::Actor]
+    Source: 'controller-core/src/model.rs', lines 9:0-12:1
     Visibility: public -/
 @[discriminant isize]
-inductive model.EffectStatus where
-| Committed : model.EffectStatus
-| Dispatched : model.EffectStatus
-| OutcomeUnknown : model.EffectStatus
-| Acknowledged : model.EffectOutcome → model.EffectStatus
-| RetiredByStop : model.StopCoverage → model.EffectStatus
-| RetiredByCaptureEnd :
-  capture.continuation.CaptureWorkEndReceipt →
-  model.EffectStatus
-| RetiredByCaptureDrain :
-  capture.drain.CaptureDrainCoverage →
-  model.EffectStatus
-
-/-- [sandbox_controller_core::model::OperationPlan]
-    Source: 'controller-core/src/model.rs', lines 419:0-437:1
-    Visibility: public -/
-structure model.OperationPlan where
-  key : model.OperationKey
-  epoch : Std.U64
-  generation : Std.U64
-  vm : Option ids.VmId
-  slot : Option ids.NetSlotId
-  restore_from : Option model.RestoreSource
-  target_snapshot : Option model.RestoreSource
-  capture : Option capture.CaptureHandoff
-  stop_vms : alloc.vec.Vec ids.VmId
-  close_slots : alloc.vec.Vec ids.NetSlotId
-  retry_limit : Std.U64
-  sealed : Bool
-
-/-- [sandbox_controller_core::model::ResourceIndex]
-    Source: 'controller-core/src/model.rs', lines 441:0-445:1
-    Visibility: public -/
-structure model.ResourceIndex where
-  vms : alloc.vec.Vec ids.VmId
-  slots : alloc.vec.Vec ids.NetSlotId
-  snapshots : alloc.vec.Vec ids.SnapshotId
-
-/-- [sandbox_controller_core::model::EffectOrigin]
-    Source: 'controller-core/src/model.rs', lines 449:0-452:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.EffectOrigin where
-| Operation : model.OperationKey → model.EffectOrigin
-| Maintenance : ids.SandboxId → model.EffectOrigin
-
-/-- [sandbox_controller_core::model::LogicalEffectResult]
-    Source: 'controller-core/src/model.rs', lines 456:0-480:1
-    Visibility: public -/
-@[discriminant isize]
-inductive model.LogicalEffectResult where
-| ReleasedExecution :
-  maintenance.released_execution.ReleasedExecution →
-  model.LogicalEffectResult
-| Succeeded : Std.U64 → ids.ResultDigest → model.LogicalEffectResult
-| Failed : Std.U64 → model.FailureKind → model.LogicalEffectResult
-| RetiredByStop : Std.U64 → model.StopCoverage → model.LogicalEffectResult
-| RetiredByCaptureEnd :
-  Std.U64 →
-  capture.continuation.CaptureWorkEndReceipt →
-  model.LogicalEffectResult
-| RetiredByCaptureDrain :
-  Std.U64 →
-  capture.drain.CaptureDrainCoverage →
-  model.LogicalEffectResult
-
-/-- [sandbox_controller_core::model::LogicalEffectRecord]
-    Source: 'controller-core/src/model.rs', lines 484:0-489:1
-    Visibility: public -/
-structure model.LogicalEffectRecord where
-  origin : model.EffectOrigin
-  current_attempt : Std.U64
-  remaining_retries : Std.U64
-  result : Option model.LogicalEffectResult
-
-/-- [sandbox_controller_core::model::SandboxRecord]
-    Source: 'controller-core/src/model.rs', lines 502:0-519:1
-    Visibility: public -/
-structure model.SandboxRecord where
-  owner : ids.TenantId
-  phase : model.Phase
-  terminal : Bool
-  epoch : Std.U64
-  generation : Std.U64
-  current_vm : Option ids.VmId
-  workspace : ids.FsId
-  workspace_access : model.WorkspaceApiAccess
-  file_policy : model.FilePolicyRef
-  durable_snapshot : Option model.RestoreSource
-  restore_from : Option model.RestoreSource
-  net_slot : Option ids.NetSlotId
-  policy : model.NetworkPolicy
-  desired : model.Authority
-  effective : model.Authority
-  current_operation : Option model.Operation
-
-/-- [sandbox_controller_core::model::Vm]
-    Source: 'controller-core/src/model.rs', lines 523:0-528:1
-    Visibility: public -/
-structure model.Vm where
-  owner : ids.TenantId
-  sandbox : ids.SandboxId
-  generation : Std.U64
-  status : model.VmStatus
-
-/-- [sandbox_controller_core::model::Filesystem]
-    Source: 'controller-core/src/model.rs', lines 532:0-536:1
-    Visibility: public -/
-structure model.Filesystem where
-  owner : ids.TenantId
-  sandbox : ids.SandboxId
-  created_generation : Std.U64
-
-/-- [sandbox_controller_core::model::Snapshot]
-    Source: 'controller-core/src/model.rs', lines 540:0-548:1
-    Visibility: public -/
-structure model.Snapshot where
-  owner : ids.TenantId
-  sandbox : ids.SandboxId
-  source_generation : Std.U64
-  workspace : ids.FsId
-  manifest : model.SnapshotManifestRef
-  stage : model.SnapshotStage
-  immutable : Bool
-
-/-- [sandbox_controller_core::model::NetSlot]
-    Source: 'controller-core/src/model.rs', lines 552:0-561:1
-    Visibility: public -/
-structure model.NetSlot where
-  owner : ids.TenantId
-  sandbox : ids.SandboxId
-  generation : Std.U64
-  vm : ids.VmId
-  policy : model.NetworkPolicy
-  configured : Bool
-  active : Bool
-  reclaimed : Bool
-
-/-- [sandbox_controller_core::model::AppliedFilePolicy]
-    Source: 'controller-core/src/model.rs', lines 565:0-570:1
-    Visibility: public -/
-structure model.AppliedFilePolicy where
-  sandbox : ids.SandboxId
-  generation : Std.U64
-  workspace : ids.FsId
-  policy : model.FilePolicyRef
-
-/-- [sandbox_controller_core::model::WorkerFence]
-    Source: 'controller-core/src/model.rs', lines 574:0-577:1
-    Visibility: public -/
-structure model.WorkerFence where
-  epoch : Std.U64
-  terminal : Bool
+inductive model.Actor where
+| Tenant : ids.TenantId → model.Actor
+| SystemController : model.Actor
 
 /-- [sandbox_controller_core::model::Event]
     Source: 'controller-core/src/model.rs', lines 581:0-676:1
@@ -826,30 +851,52 @@ inductive model.Event where
 | FinalizeEffectFailure : model.EffectId → model.FailureKind → model.Event
 | RetireActivation : model.EffectId → model.EffectId → model.Event
 
-/-- [sandbox_controller_core::model::World]
-    Source: 'controller-core/src/model.rs', lines 679:0-700:1
+/-- [sandbox_controller_core::publication::PublicationEvent]
+    Source: 'controller-core/src/publication.rs', lines 19:0-24:1
     Visibility: public -/
-structure model.World where
-  maintenance : Option maintenance.MaintenanceState
-  sandboxes : store.Store ids.SandboxId model.SandboxRecord
-  vms : store.Store ids.VmId model.Vm
-  filesystems : store.Store ids.FsId model.Filesystem
-  snapshots : store.Store ids.SnapshotId model.Snapshot
-  net_slots : store.Store ids.NetSlotId model.NetSlot
-  applied_file_policies : store.Store ids.SandboxId model.AppliedFilePolicy
-  worker_fences : store.Store ids.SandboxId model.WorkerFence
-  operations : store.Store model.OperationKey model.OperationLedgerRecord
-  operation_plans : store.Store model.OperationKey model.OperationPlan
-  resource_indexes : store.Store ids.SandboxId model.ResourceIndex
-  logical_effects : store.Store model.LogicalEffectId model.LogicalEffectRecord
-  effect_keys : alloc.vec.Vec model.EffectId
-  effects : store.Store model.EffectId model.EffectStatus
-  next_vm_id : Std.U64
-  next_slot_id : Std.U64
-  next_snapshot_id : Std.U64
-  next_manifest_digest : Std.U64
-  inflight : alloc.vec.Vec model.EffectId
-  controller_up : Bool
+@[discriminant isize]
+inductive publication.PublicationEvent where
+| PublishRunning : ids.SandboxId → publication.PublicationEvent
+| PublishPaused :
+  ids.SandboxId →
+  ids.SnapshotId →
+  publication.PublicationEvent
+| PublishDestroyed : ids.SandboxId → publication.PublicationEvent
+| PublishFailure :
+  ids.SandboxId →
+  model.FailureKind →
+  publication.PublicationEvent
+
+/-- [sandbox_controller_core::publication::PublicationReject]
+    Source: 'controller-core/src/publication.rs', lines 27:0-46:1
+    Visibility: public -/
+@[discriminant isize]
+inductive publication.PublicationReject where
+| ControllerDown : publication.PublicationReject
+| SandboxNotFound : publication.PublicationReject
+| VmNotFound : publication.PublicationReject
+| SlotNotFound : publication.PublicationReject
+| SnapshotNotFound : publication.PublicationReject
+| OperationUnavailable : publication.PublicationReject
+| WrongPhase : publication.PublicationReject
+| TerminalMismatch : publication.PublicationReject
+| FenceNotInstalled : publication.PublicationReject
+| ResourceMismatch : publication.PublicationReject
+| ResourceNotReady : publication.PublicationReject
+| PolicyNotApplied : publication.PublicationReject
+| PrerequisiteNotSucceeded : publication.PublicationReject
+| ResourcesNotClosed : publication.PublicationReject
+| StopReceiptsMissing : publication.PublicationReject
+| WrongOperationKind : publication.PublicationReject
+| WrongOperationStatus : publication.PublicationReject
+| LedgerMismatch : publication.PublicationReject
+
+/-- [sandbox_controller_core::publication::PublicationDecision]
+    Source: 'controller-core/src/publication.rs', lines 49:0-52:1
+    Visibility: public -/
+structure publication.PublicationDecision where
+  event : publication.PublicationEvent
+  next : model.World
 
 /-- [sandbox_controller_core::request::Reject]
     Source: 'controller-core/src/request.rs', lines 13:0-33:1
