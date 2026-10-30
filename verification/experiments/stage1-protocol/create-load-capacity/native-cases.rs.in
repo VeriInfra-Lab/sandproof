@@ -26,10 +26,7 @@ fn actual_load_rejects_owners_above_configured_limit() {
     let limit = inbox.config.max_sessions;
     inbox = with_owner_count(inbox, limit + 1);
     let connection = database(&inbox);
-    assert!(matches!(
-        codec::load(&connection),
-        Err(JournalError::CorruptStore)
-    ));
+    rejected(&connection);
     let mut tape = LoadTape::valid();
     tape.inbox = inbox;
     assert!(matches!(tape.run(), Err(JournalError::CorruptStore)));
