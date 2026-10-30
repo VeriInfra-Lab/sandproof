@@ -133,10 +133,12 @@ class PausePublicationScopeTests(unittest.TestCase):
                 mock.patch.object(suite, 'run_capture_caller_native') as capture, \
                 mock.patch.object(suite, 'run_stage1_native') as stage1, \
                 mock.patch.object(suite, 'run_pause_publication_native') as publication, \
+                mock.patch.object(suite, 'run_pause_stop_native') as stop, \
                 mock.patch('tools.tls_pin_reproduction.reproduce'), \
                 mock.patch.object(suite, 'publish_suite', return_value={'synthetic_router_only': True}):
             suite.run_suite(self.cache)
         publication.assert_called_once()
+        stop.assert_called_once()
         capture.assert_called_once()
         stage1.assert_called_once()
         labels = [call.args[0] for call in cases.call_args_list]

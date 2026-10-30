@@ -19,7 +19,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','stage1-protocol')
+           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -285,9 +285,9 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:
