@@ -42,6 +42,9 @@ class NativeScopeTests(unittest.TestCase):
             if label == 'capture-caller':
                 (output/'ignore-capture-target.stdout').write_text('synthetic original assertion stream\n')
                 (output/'ignore-capture-target.stderr').write_text('')
+            if label == 'pause-publication':
+                (output/'ignore-stop.stdout').write_text('synthetic original assertion stream\n')
+                (output/'ignore-stop.stderr').write_text('')
         return receipts.native_case(label, self.source, output, action, scope=scope)
 
     def packet(self, *, scope='stage1-protocol', extra=False, atomic=False):
