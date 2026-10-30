@@ -1,11 +1,11 @@
 # 普通暂停的登记与 Stop
 
-[证明工作流](../../../../docs/proof-workflow.md) · [生命周期计划](../../../../docs/formal/04-local-core.md)
+[证明工作流](../../../docs/proof-workflow.md) · [生命周期计划](../../../docs/formal/04-local-core.md)
 
 本切片检查真实 `handle_worker` 到 `worker::pause_stop::record` 的
 `CommitSnapshot`、`StopVm` 调用。真实函数的局部定理、具体接受见证、同性质错误证书及
 原生组件已有指定版本结果；准确输入、前提及边界见
-[覆盖记录](../../../../docs/proof-coverage.md#普通暂停登记与-stop真实函数局部证明与公共验收边界)。
+[覆盖记录](../../../docs/proof-coverage.md#普通暂停登记与-stop真实函数局部证明与公共验收边界)。
 完整公共入口按 [#636 本片验收记录](https://github.com/VeriInfra-Lab/sandproof/issues/636)
 的精确候选和原始凭据判断，局部结果不代替该批次验收。
 机器对应的目标是实际生产 `record` 及其调用体；外层 `handle_worker` 的唯一转发
