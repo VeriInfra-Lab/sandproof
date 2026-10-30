@@ -953,7 +953,7 @@ def transition.resume_cleanup_index.closure_1.closure :=
 def transition.resume_cleanup_index.closure := ids.SandboxId × Std.U64
 
 /-- [sandbox_controller_core::worker::WorkerEvent]
-    Source: 'controller-core/src/worker.rs', lines 11:0-64:1
+    Source: 'controller-core/src/worker.rs', lines 12:0-65:1
     Visibility: public -/
 @[discriminant isize]
 inductive worker.WorkerEvent where
@@ -988,14 +988,14 @@ inductive worker.WorkerEvent where
   worker.WorkerEvent
 
 /-- [sandbox_controller_core::worker::WorkerDecision]
-    Source: 'controller-core/src/worker.rs', lines 88:0-91:1
+    Source: 'controller-core/src/worker.rs', lines 89:0-92:1
     Visibility: public -/
 structure worker.WorkerDecision where
   event : worker.WorkerEvent
   next : model.World
 
 /-- [sandbox_controller_core::worker::WorkerReject]
-    Source: 'controller-core/src/worker.rs', lines 67:0-85:1
+    Source: 'controller-core/src/worker.rs', lines 68:0-86:1
     Visibility: public -/
 @[discriminant isize]
 inductive worker.WorkerReject where

@@ -977,7 +977,7 @@ structure sandbox_controller_core.model.World where
   controller_up : Bool
 
 /-- [sandbox_controller_core::worker::WorkerEvent]
-    Source: './controller-core/src/worker.rs', lines 11:0-11:20
+    Source: './controller-core/src/worker.rs', lines 12:0-12:20
     Name pattern: [sandbox_controller_core::worker::WorkerEvent]
     Visibility: public -/
 @[discriminant isize, rust_type "sandbox_controller_core::worker::WorkerEvent"]
@@ -1036,7 +1036,7 @@ inductive sandbox_controller_core.worker.WorkerEvent where
   sandbox_controller_core.worker.WorkerEvent
 
 /-- [sandbox_controller_core::worker::WorkerDecision]
-    Source: './controller-core/src/worker.rs', lines 88:0-88:25
+    Source: './controller-core/src/worker.rs', lines 89:0-89:25
     Name pattern: [sandbox_controller_core::worker::WorkerDecision]
     Visibility: public -/
 @[rust_type "sandbox_controller_core::worker::WorkerDecision"]
@@ -1045,7 +1045,7 @@ structure sandbox_controller_core.worker.WorkerDecision where
   next : sandbox_controller_core.model.World
 
 /-- [sandbox_controller_core::worker::WorkerReject]
-    Source: './controller-core/src/worker.rs', lines 67:0-67:21
+    Source: './controller-core/src/worker.rs', lines 68:0-68:21
     Name pattern: [sandbox_controller_core::worker::WorkerReject]
     Visibility: public -/
 @[discriminant isize, rust_type

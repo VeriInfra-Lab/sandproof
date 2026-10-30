@@ -4,7 +4,7 @@
   "crate": "sandbox_controller_core",
   "functions": [
     {
-      "def_id": 258,
+      "def_id": 276,
       "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
@@ -21,7 +21,7 @@
       "reducible": false
     },
     {
-      "def_id": 54,
+      "def_id": 55,
       "lean_name": "core.option.Option.is_some_and",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<T>}::is_some_and",
@@ -38,7 +38,7 @@
       "reducible": false
     },
     {
-      "def_id": 178,
+      "def_id": 187,
       "lean_name": "core.option.Option.unwrap_or_default",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<T>}::unwrap_or_default",
@@ -55,7 +55,7 @@
       "reducible": false
     },
     {
-      "def_id": 177,
+      "def_id": 186,
       "lean_name": "core.option.OptionShared0T.cloned",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{core::option::Option<&'_0 T>}::cloned",
@@ -72,7 +72,7 @@
       "reducible": false
     },
     {
-      "def_id": 132,
+      "def_id": 141,
       "lean_name": "core.option.Option.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::clone::Clone for core::option::Option<T>}::clone",
@@ -89,7 +89,7 @@
       "reducible": false
     },
     {
-      "def_id": 76,
+      "def_id": 78,
       "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
@@ -106,7 +106,7 @@
       "reducible": false
     },
     {
-      "def_id": 48,
+      "def_id": 49,
       "lean_name": "core.option.Option.Insts.CoreOpsTry_traitTry.branch",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::ops::try_trait::Try for core::option::Option<T>}::branch",
@@ -123,7 +123,7 @@
       "reducible": false
     },
     {
-      "def_id": 49,
+      "def_id": 50,
       "lean_name": "core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "core::option::{impl core::ops::try_trait::FromResidual<core::option::Option<core::convert::Infallible>> for core::option::Option<T>}::from_residual",
@@ -140,7 +140,7 @@
       "reducible": false
     },
     {
-      "def_id": 291,
+      "def_id": 309,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
@@ -157,7 +157,7 @@
       "reducible": false
     },
     {
-      "def_id": 272,
+      "def_id": 290,
       "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
@@ -174,7 +174,7 @@
       "reducible": false
     },
     {
-      "def_id": 242,
+      "def_id": 260,
       "lean_name": "alloc.vec.Vec.Insts.CoreDefaultDefault.default",
       "lean_file": "PauseStopWrong/FunsExternal_Template.lean",
       "rust_name": "alloc::vec::{impl core::default::Default for alloc::vec::Vec<T>}::default",
@@ -191,7 +191,7 @@
       "reducible": false
     },
     {
-      "def_id": 172,
+      "def_id": 181,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.core.option.Option.and_then",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "core::option::{core::option::Option<T>}::and_then",
@@ -208,7 +208,7 @@
       "reducible": false
     },
     {
-      "def_id": 98,
+      "def_id": 100,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::OperationId> for sandbox_controller_core::ids::OperationId}::eq",
@@ -225,7 +225,7 @@
       "reducible": false
     },
     {
-      "def_id": 69,
+      "def_id": 71,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
@@ -242,7 +242,7 @@
       "reducible": false
     },
     {
-      "def_id": 72,
+      "def_id": 74,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKey> for sandbox_controller_core::model::OperationKey}::eq",
@@ -259,7 +259,7 @@
       "reducible": false
     },
     {
-      "def_id": 117,
+      "def_id": 119,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::VmId> for sandbox_controller_core::ids::VmId}::eq",
@@ -276,7 +276,7 @@
       "reducible": false
     },
     {
-      "def_id": 265,
+      "def_id": 283,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::OriginalContinueIdentity> for sandbox_controller_core::capture::continuation::OriginalContinueIdentity}::eq",
@@ -293,7 +293,7 @@
       "reducible": false
     },
     {
-      "def_id": 173,
+      "def_id": 182,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ManifestDigest> for sandbox_controller_core::ids::ManifestDigest}::eq",
@@ -310,7 +310,7 @@
       "reducible": false
     },
     {
-      "def_id": 107,
+      "def_id": 109,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotManifestRef> for sandbox_controller_core::model::SnapshotManifestRef}::eq",
@@ -327,7 +327,7 @@
       "reducible": false
     },
     {
-      "def_id": 106,
+      "def_id": 108,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::FsId> for sandbox_controller_core::ids::FsId}::eq",
@@ -344,7 +344,7 @@
       "reducible": false
     },
     {
-      "def_id": 104,
+      "def_id": 106,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SnapshotId> for sandbox_controller_core::ids::SnapshotId}::eq",
@@ -361,7 +361,7 @@
       "reducible": false
     },
     {
-      "def_id": 281,
+      "def_id": 299,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureSealEnd.Insts.CoreCmpPartialEqCaptureSealEnd.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureSealEnd> for sandbox_controller_core::capture::continuation::CaptureSealEnd}::eq",
@@ -378,7 +378,7 @@
       "reducible": false
     },
     {
-      "def_id": 264,
+      "def_id": 282,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureWorkEnd.Insts.CoreCmpPartialEqCaptureWorkEnd.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureWorkEnd> for sandbox_controller_core::capture::continuation::CaptureWorkEnd}::eq",
@@ -395,7 +395,7 @@
       "reducible": false
     },
     {
-      "def_id": 233,
+      "def_id": 251,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt.Insts.CoreCmpPartialEqCaptureWorkEndReceipt.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureWorkEndReceipt> for sandbox_controller_core::capture::continuation::CaptureWorkEndReceipt}::eq",
@@ -412,7 +412,7 @@
       "reducible": false
     },
     {
-      "def_id": 282,
+      "def_id": 300,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.retirement.QuiescenceStatus.Insts.CoreCmpPartialEqQuiescenceStatus.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::retirement::QuiescenceStatus> for sandbox_controller_core::maintenance::retirement::QuiescenceStatus}::eq",
@@ -429,7 +429,7 @@
       "reducible": false
     },
     {
-      "def_id": 266,
+      "def_id": 284,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.drain.CaptureDrainEndReceipt.Insts.CoreCmpPartialEqCaptureDrainEndReceipt.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::drain::{impl core::cmp::PartialEq<sandbox_controller_core::capture::drain::CaptureDrainEndReceipt> for sandbox_controller_core::capture::drain::CaptureDrainEndReceipt}::eq",
@@ -446,7 +446,7 @@
       "reducible": false
     },
     {
-      "def_id": 231,
+      "def_id": 249,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}::eq",
@@ -463,7 +463,7 @@
       "reducible": false
     },
     {
-      "def_id": 232,
+      "def_id": 250,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::StopCoverage> for sandbox_controller_core::model::StopCoverage}::eq",
@@ -480,7 +480,7 @@
       "reducible": false
     },
     {
-      "def_id": 234,
+      "def_id": 252,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.drain.CaptureDrainCoverage.Insts.CoreCmpPartialEqCaptureDrainCoverage.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::drain::{impl core::cmp::PartialEq<sandbox_controller_core::capture::drain::CaptureDrainCoverage> for sandbox_controller_core::capture::drain::CaptureDrainCoverage}::eq",
@@ -497,7 +497,7 @@
       "reducible": false
     },
     {
-      "def_id": 34,
+      "def_id": 35,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.CaptureCommit.Insts.CoreCmpPartialEqCaptureCommit.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{impl core::cmp::PartialEq<sandbox_controller_core::capture::CaptureCommit> for sandbox_controller_core::capture::CaptureCommit}::eq",
@@ -514,7 +514,7 @@
       "reducible": false
     },
     {
-      "def_id": 35,
+      "def_id": 36,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.RestoreEligibility.Insts.CoreCmpPartialEqRestoreEligibility.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{impl core::cmp::PartialEq<sandbox_controller_core::capture::RestoreEligibility> for sandbox_controller_core::capture::RestoreEligibility}::eq",
@@ -531,7 +531,7 @@
       "reducible": false
     },
     {
-      "def_id": 210,
+      "def_id": 222,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.CaptureHandoff.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{impl core::clone::Clone for sandbox_controller_core::capture::CaptureHandoff}::clone",
@@ -701,7 +701,7 @@
       "reducible": false
     },
     {
-      "def_id": 224,
+      "def_id": 236,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffOptionCaptureHandoff.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), core::option::Option<sandbox_controller_core::capture::CaptureHandoff>> for sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::observe_bundle}::call_once",
@@ -769,7 +769,7 @@
       "reducible": false
     },
     {
-      "def_id": 118,
+      "def_id": 120,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::may_stop_original}::call_once",
@@ -786,7 +786,7 @@
       "reducible": false
     },
     {
-      "def_id": 113,
+      "def_id": 115,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_copy_loop.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -805,7 +805,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_copy"
     },
     {
-      "def_id": 113,
+      "def_id": 115,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_copy_loop",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -824,7 +824,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_copy"
     },
     {
-      "def_id": 113,
+      "def_id": 115,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_copy",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get_copy",
@@ -841,7 +841,7 @@
       "reducible": true
     },
     {
-      "def_id": 37,
+      "def_id": 38,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_loop.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
@@ -860,7 +860,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get"
     },
     {
-      "def_id": 37,
+      "def_id": 38,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get_loop",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
@@ -879,7 +879,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get"
     },
     {
-      "def_id": 37,
+      "def_id": 38,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.get",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::get",
@@ -896,7 +896,7 @@
       "reducible": true
     },
     {
-      "def_id": 197,
+      "def_id": 209,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone",
@@ -913,7 +913,7 @@
       "reducible": false
     },
     {
-      "def_id": 289,
+      "def_id": 307,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq",
@@ -930,7 +930,7 @@
       "reducible": false
     },
     {
-      "def_id": 292,
+      "def_id": 310,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq",
@@ -947,7 +947,7 @@
       "reducible": false
     },
     {
-      "def_id": 288,
+      "def_id": 306,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}::eq",
@@ -964,7 +964,7 @@
       "reducible": false
     },
     {
-      "def_id": 260,
+      "def_id": 278,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}::eq",
@@ -981,7 +981,7 @@
       "reducible": false
     },
     {
-      "def_id": 116,
+      "def_id": 118,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::RestoreSource> for sandbox_controller_core::model::RestoreSource}::eq",
@@ -998,7 +998,7 @@
       "reducible": false
     },
     {
-      "def_id": 277,
+      "def_id": 295,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq",
@@ -1015,7 +1015,7 @@
       "reducible": false
     },
     {
-      "def_id": 259,
+      "def_id": 277,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}::eq",
@@ -1032,7 +1032,7 @@
       "reducible": false
     },
     {
-      "def_id": 182,
+      "def_id": 191,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId> for sandbox_controller_core::ids::NetSlotId}::eq",
@@ -1049,7 +1049,7 @@
       "reducible": false
     },
     {
-      "def_id": 184,
+      "def_id": 196,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Command> for sandbox_controller_core::model::Command}::eq",
@@ -1066,7 +1066,7 @@
       "reducible": false
     },
     {
-      "def_id": 124,
+      "def_id": 133,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectId> for sandbox_controller_core::model::LogicalEffectId}::eq",
@@ -1083,7 +1083,7 @@
       "reducible": false
     },
     {
-      "def_id": 128,
+      "def_id": 137,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq",
@@ -1100,7 +1100,7 @@
       "reducible": false
     },
     {
-      "def_id": 238,
+      "def_id": 256,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone",
@@ -1117,7 +1117,7 @@
       "reducible": false
     },
     {
-      "def_id": 273,
+      "def_id": 291,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone",
@@ -1134,7 +1134,7 @@
       "reducible": false
     },
     {
-      "def_id": 237,
+      "def_id": 255,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone",
@@ -1151,7 +1151,7 @@
       "reducible": false
     },
     {
-      "def_id": 142,
+      "def_id": 151,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone",
@@ -1168,7 +1168,7 @@
       "reducible": false
     },
     {
-      "def_id": 183,
+      "def_id": 192,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone",
@@ -1185,7 +1185,7 @@
       "reducible": false
     },
     {
-      "def_id": 175,
+      "def_id": 184,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone",
@@ -1202,7 +1202,7 @@
       "reducible": false
     },
     {
-      "def_id": 141,
+      "def_id": 150,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone",
@@ -1219,7 +1219,7 @@
       "reducible": false
     },
     {
-      "def_id": 174,
+      "def_id": 183,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone",
@@ -1236,7 +1236,7 @@
       "reducible": false
     },
     {
-      "def_id": 160,
+      "def_id": 169,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone",
@@ -1253,7 +1253,7 @@
       "reducible": false
     },
     {
-      "def_id": 158,
+      "def_id": 167,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone",
@@ -1270,7 +1270,7 @@
       "reducible": false
     },
     {
-      "def_id": 147,
+      "def_id": 156,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone",
@@ -1287,7 +1287,7 @@
       "reducible": false
     },
     {
-      "def_id": 139,
+      "def_id": 148,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone",
@@ -1304,7 +1304,7 @@
       "reducible": false
     },
     {
-      "def_id": 112,
+      "def_id": 114,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone",
@@ -1321,7 +1321,7 @@
       "reducible": false
     },
     {
-      "def_id": 51,
+      "def_id": 52,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.effect.effect_succeeded_check",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::effect::effect_succeeded_check",
@@ -1338,7 +1338,7 @@
       "reducible": false
     },
     {
-      "def_id": 137,
+      "def_id": 146,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone",
@@ -1355,7 +1355,7 @@
       "reducible": false
     },
     {
-      "def_id": 105,
+      "def_id": 107,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq",
@@ -1372,7 +1372,7 @@
       "reducible": false
     },
     {
-      "def_id": 262,
+      "def_id": 280,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq",
@@ -1389,7 +1389,7 @@
       "reducible": false
     },
     {
-      "def_id": 261,
+      "def_id": 279,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostSlotId> for sandbox_controller_core::maintenance::slots::HostSlotId}::eq",
@@ -1406,7 +1406,7 @@
       "reducible": false
     },
     {
-      "def_id": 230,
+      "def_id": 248,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::eq",
@@ -1423,7 +1423,7 @@
       "reducible": false
     },
     {
-      "def_id": 148,
+      "def_id": 157,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone",
@@ -1440,7 +1440,7 @@
       "reducible": false
     },
     {
-      "def_id": 207,
+      "def_id": 219,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone",
@@ -1457,7 +1457,7 @@
       "reducible": false
     },
     {
-      "def_id": 149,
+      "def_id": 158,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone",
@@ -1474,7 +1474,7 @@
       "reducible": false
     },
     {
-      "def_id": 81,
+      "def_id": 83,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone",
@@ -1491,7 +1491,7 @@
       "reducible": false
     },
     {
-      "def_id": 267,
+      "def_id": 285,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone",
@@ -1508,7 +1508,7 @@
       "reducible": false
     },
     {
-      "def_id": 268,
+      "def_id": 286,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone",
@@ -1525,7 +1525,7 @@
       "reducible": false
     },
     {
-      "def_id": 269,
+      "def_id": 287,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone",
@@ -1542,7 +1542,7 @@
       "reducible": false
     },
     {
-      "def_id": 270,
+      "def_id": 288,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone",
@@ -1559,7 +1559,7 @@
       "reducible": false
     },
     {
-      "def_id": 283,
+      "def_id": 301,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone",
@@ -1576,7 +1576,7 @@
       "reducible": false
     },
     {
-      "def_id": 236,
+      "def_id": 254,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone",
@@ -1593,7 +1593,7 @@
       "reducible": false
     },
     {
-      "def_id": 133,
+      "def_id": 142,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone",
@@ -1610,7 +1610,7 @@
       "reducible": false
     },
     {
-      "def_id": 152,
+      "def_id": 161,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone",
@@ -1627,7 +1627,7 @@
       "reducible": false
     },
     {
-      "def_id": 186,
+      "def_id": 198,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone",
@@ -1644,7 +1644,7 @@
       "reducible": false
     },
     {
-      "def_id": 138,
+      "def_id": 147,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone",
@@ -1661,7 +1661,7 @@
       "reducible": false
     },
     {
-      "def_id": 92,
+      "def_id": 94,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Phase.Insts.CoreCmpPartialEqPhase.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Phase> for sandbox_controller_core::model::Phase}::eq",
@@ -1678,7 +1678,7 @@
       "reducible": false
     },
     {
-      "def_id": 180,
+      "def_id": 189,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq",
@@ -1695,7 +1695,7 @@
       "reducible": false
     },
     {
-      "def_id": 109,
+      "def_id": 111,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq",
@@ -1712,7 +1712,7 @@
       "reducible": false
     },
     {
-      "def_id": 140,
+      "def_id": 149,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone",
@@ -1729,7 +1729,7 @@
       "reducible": false
     },
     {
-      "def_id": 229,
+      "def_id": 247,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq",
@@ -1746,7 +1746,7 @@
       "reducible": false
     },
     {
-      "def_id": 40,
+      "def_id": 41,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationKind> for sandbox_controller_core::model::OperationKind}::eq",
@@ -1763,7 +1763,7 @@
       "reducible": false
     },
     {
-      "def_id": 122,
+      "def_id": 131,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}::eq",
@@ -1780,7 +1780,7 @@
       "reducible": false
     },
     {
-      "def_id": 73,
+      "def_id": 75,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Operation.Insts.CoreCmpPartialEqOperation.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Operation> for sandbox_controller_core::model::Operation}::eq",
@@ -1797,7 +1797,7 @@
       "reducible": false
     },
     {
-      "def_id": 119,
+      "def_id": 121,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone",
@@ -1814,7 +1814,7 @@
       "reducible": false
     },
     {
-      "def_id": 46,
+      "def_id": 47,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Command.sandbox",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::Command}::sandbox",
@@ -1831,7 +1831,7 @@
       "reducible": false
     },
     {
-      "def_id": 77,
+      "def_id": 79,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Command.epoch",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::Command}::epoch",
@@ -1848,7 +1848,7 @@
       "reducible": false
     },
     {
-      "def_id": 196,
+      "def_id": 208,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone",
@@ -1865,7 +1865,7 @@
       "reducible": false
     },
     {
-      "def_id": 198,
+      "def_id": 210,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone",
@@ -1882,7 +1882,7 @@
       "reducible": false
     },
     {
-      "def_id": 153,
+      "def_id": 162,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectId.initial",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::initial",
@@ -1899,7 +1899,7 @@
       "reducible": false
     },
     {
-      "def_id": 45,
+      "def_id": 46,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectId.command",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::command",
@@ -1916,7 +1916,7 @@
       "reducible": false
     },
     {
-      "def_id": 235,
+      "def_id": 253,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}::eq",
@@ -1933,7 +1933,7 @@
       "reducible": false
     },
     {
-      "def_id": 199,
+      "def_id": 211,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone",
@@ -1950,7 +1950,7 @@
       "reducible": false
     },
     {
-      "def_id": 129,
+      "def_id": 138,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCmpPartialEqEffectStatus.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectStatus> for sandbox_controller_core::model::EffectStatus}::eq",
@@ -1967,7 +1967,7 @@
       "reducible": false
     },
     {
-      "def_id": 82,
+      "def_id": 84,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone",
@@ -1984,7 +1984,7 @@
       "reducible": false
     },
     {
-      "def_id": 195,
+      "def_id": 207,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone",
@@ -2001,7 +2001,7 @@
       "reducible": false
     },
     {
-      "def_id": 225,
+      "def_id": 237,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault.default",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}::default",
@@ -2018,7 +2018,7 @@
       "reducible": false
     },
     {
-      "def_id": 75,
+      "def_id": 77,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectOrigin.Insts.CoreCmpPartialEqEffectOrigin.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOrigin> for sandbox_controller_core::model::EffectOrigin}::eq",
@@ -2035,7 +2035,7 @@
       "reducible": false
     },
     {
-      "def_id": 127,
+      "def_id": 136,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectResult.Insts.CoreCmpPartialEqLogicalEffectResult.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::LogicalEffectResult> for sandbox_controller_core::model::LogicalEffectResult}::eq",
@@ -2052,7 +2052,7 @@
       "reducible": false
     },
     {
-      "def_id": 79,
+      "def_id": 81,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone",
@@ -2069,7 +2069,7 @@
       "reducible": false
     },
     {
-      "def_id": 188,
+      "def_id": 200,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone",
@@ -2086,7 +2086,7 @@
       "reducible": false
     },
     {
-      "def_id": 190,
+      "def_id": 202,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone",
@@ -2103,7 +2103,7 @@
       "reducible": false
     },
     {
-      "def_id": 191,
+      "def_id": 203,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone",
@@ -2120,7 +2120,7 @@
       "reducible": false
     },
     {
-      "def_id": 192,
+      "def_id": 204,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone",
@@ -2137,7 +2137,7 @@
       "reducible": false
     },
     {
-      "def_id": 193,
+      "def_id": 205,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone",
@@ -2154,7 +2154,7 @@
       "reducible": false
     },
     {
-      "def_id": 194,
+      "def_id": 206,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone",
@@ -2171,7 +2171,7 @@
       "reducible": false
     },
     {
-      "def_id": 111,
+      "def_id": 113,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCmpPartialEqWorkerFence.eq",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::WorkerFence> for sandbox_controller_core::model::WorkerFence}::eq",
@@ -2188,7 +2188,7 @@
       "reducible": false
     },
     {
-      "def_id": 78,
+      "def_id": 80,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.Insts.CoreCloneClone.clone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone",
@@ -2205,7 +2205,7 @@
       "reducible": false
     },
     {
-      "def_id": 47,
+      "def_id": 48,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.sandbox_record",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_record",
@@ -2222,7 +2222,7 @@
       "reducible": false
     },
     {
-      "def_id": 162,
+      "def_id": 171,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.vm_record",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::vm_record",
@@ -2239,7 +2239,7 @@
       "reducible": false
     },
     {
-      "def_id": 163,
+      "def_id": 172,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.slot_record",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::slot_record",
@@ -2256,7 +2256,7 @@
       "reducible": false
     },
     {
-      "def_id": 97,
+      "def_id": 99,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.operation_plan",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::operation_plan",
@@ -2273,7 +2273,7 @@
       "reducible": false
     },
     {
-      "def_id": 93,
+      "def_id": 95,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.logical_effect",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::logical_effect",
@@ -2290,7 +2290,7 @@
       "reducible": false
     },
     {
-      "def_id": 115,
+      "def_id": 117,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.World.resource_index",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::resource_index",
@@ -2307,7 +2307,7 @@
       "reducible": false
     },
     {
-      "def_id": 52,
+      "def_id": 53,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_vms_closed_loop.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_vms_closed",
@@ -2326,7 +2326,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_vms_closed"
     },
     {
-      "def_id": 52,
+      "def_id": 53,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_vms_closed_loop",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_vms_closed",
@@ -2345,7 +2345,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_vms_closed"
     },
     {
-      "def_id": 52,
+      "def_id": 53,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_vms_closed",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_vms_closed",
@@ -2362,7 +2362,7 @@
       "reducible": false
     },
     {
-      "def_id": 53,
+      "def_id": 54,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_slots_closed_loop.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_slots_closed",
@@ -2381,7 +2381,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_slots_closed"
     },
     {
-      "def_id": 53,
+      "def_id": 54,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_slots_closed_loop",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_slots_closed",
@@ -2400,7 +2400,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_slots_closed"
     },
     {
-      "def_id": 53,
+      "def_id": 54,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.indexed_slots_closed",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::indexed_slots_closed",
@@ -2417,7 +2417,7 @@
       "reducible": false
     },
     {
-      "def_id": 38,
+      "def_id": 39,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.operation_key",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::operation_key",
@@ -2434,7 +2434,7 @@
       "reducible": false
     },
     {
-      "def_id": 80,
+      "def_id": 82,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.put_loop.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -2453,7 +2453,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.put"
     },
     {
-      "def_id": 80,
+      "def_id": 82,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.put_loop",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -2472,7 +2472,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.put"
     },
     {
-      "def_id": 80,
+      "def_id": 82,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.put",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::put",
@@ -2489,7 +2489,7 @@
       "reducible": false
     },
     {
-      "def_id": 120,
+      "def_id": 122,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.update_operation_result",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::update_operation_result",
@@ -2506,7 +2506,7 @@
       "reducible": false
     },
     {
-      "def_id": 55,
+      "def_id": 56,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.publication.publish_paused",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::publication::publish_paused",
@@ -2523,7 +2523,7 @@
       "reducible": false
     },
     {
-      "def_id": 41,
+      "def_id": 42,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.current_capture",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::current_capture",
@@ -2557,7 +2557,7 @@
       "reducible": false
     },
     {
-      "def_id": 43,
+      "def_id": 44,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.request.supplied_compensation_evidence",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::request::supplied_compensation_evidence",
@@ -2574,7 +2574,7 @@
       "reducible": false
     },
     {
-      "def_id": 213,
+      "def_id": 225,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.inferred_effect_origin",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::inferred_effect_origin",
@@ -2591,7 +2591,7 @@
       "reducible": false
     },
     {
-      "def_id": 155,
+      "def_id": 164,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique_loop0.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::insert_unique",
@@ -2610,7 +2610,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique"
     },
     {
-      "def_id": 155,
+      "def_id": 164,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique_loop0",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::insert_unique",
@@ -2629,7 +2629,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique"
     },
     {
-      "def_id": 155,
+      "def_id": 164,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique_loop1.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::insert_unique",
@@ -2648,7 +2648,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique"
     },
     {
-      "def_id": 155,
+      "def_id": 164,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique_loop1",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::insert_unique",
@@ -2667,7 +2667,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique"
     },
     {
-      "def_id": 155,
+      "def_id": 164,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.insert_unique",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::insert_unique",
@@ -2684,7 +2684,7 @@
       "reducible": false
     },
     {
-      "def_id": 212,
+      "def_id": 224,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.store.Store.contains_key",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::contains_key",
@@ -2701,7 +2701,7 @@
       "reducible": false
     },
     {
-      "def_id": 154,
+      "def_id": 163,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.commit_effect",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::commit_effect",
@@ -2718,7 +2718,7 @@
       "reducible": false
     },
     {
-      "def_id": 83,
+      "def_id": 85,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.enqueue",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::enqueue",
@@ -2735,7 +2735,7 @@
       "reducible": false
     },
     {
-      "def_id": 275,
+      "def_id": 293,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleSharedVmBool.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{closure#1}::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::Vm,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure#1}::{closure}<'_0, '_1>}::call_once",
@@ -2752,7 +2752,7 @@
       "reducible": false
     },
     {
-      "def_id": 215,
+      "def_id": 227,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedNetSlotBool.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::NetSlot,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure#1}<'_0, '_1, '_2>}::call_once",
@@ -2769,7 +2769,7 @@
       "reducible": false
     },
     {
-      "def_id": 214,
+      "def_id": 226,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure.Insts.CoreOpsFunctionFnOnceTupleSharedVmBool.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::Vm,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure}<'_0, '_1>}::call_once",
@@ -2786,7 +2786,7 @@
       "reducible": false
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index_loop0.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index",
@@ -2805,7 +2805,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index"
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index_loop0",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index",
@@ -2824,7 +2824,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index"
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index_loop1.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index",
@@ -2843,7 +2843,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index"
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index_loop1",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index",
@@ -2862,7 +2862,7 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index"
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index",
@@ -2879,7 +2879,7 @@
       "reducible": false
     },
     {
-      "def_id": 44,
+      "def_id": 45,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.begin_compensation",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::begin_compensation",
@@ -2913,15 +2913,15 @@
       "reducible": false
     },
     {
-      "def_id": 241,
+      "def_id": 259,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique_loop0_loop0.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::insert_unique",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 104,
-        "end_line": 107
+        "begin_line": 105,
+        "end_line": 108
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2932,15 +2932,15 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique"
     },
     {
-      "def_id": 241,
+      "def_id": 259,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique_loop0_loop0",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::insert_unique",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 104,
-        "end_line": 107
+        "begin_line": 105,
+        "end_line": 108
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2951,15 +2951,15 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique"
     },
     {
-      "def_id": 241,
+      "def_id": 259,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique_loop0.body",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::insert_unique",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 95,
-        "end_line": 109
+        "begin_line": 96,
+        "end_line": 110
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2970,15 +2970,15 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique"
     },
     {
-      "def_id": 241,
+      "def_id": 259,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique_loop0",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::insert_unique",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 95,
-        "end_line": 109
+        "begin_line": 96,
+        "end_line": 110
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2989,15 +2989,15 @@
       "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique"
     },
     {
-      "def_id": 241,
+      "def_id": 259,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.insert_unique",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::insert_unique",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 93,
-        "end_line": 109
+        "begin_line": 94,
+        "end_line": 110
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3006,15 +3006,15 @@
       "reducible": true
     },
     {
-      "def_id": 222,
+      "def_id": 234,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.register_snapshot",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::register_snapshot",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 186,
-        "end_line": 190
+        "begin_line": 187,
+        "end_line": 191
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3023,15 +3023,15 @@
       "reducible": false
     },
     {
-      "def_id": 171,
+      "def_id": 180,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.put_snapshot",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::put_snapshot",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 202,
-        "end_line": 205
+        "begin_line": 203,
+        "end_line": 206
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3040,7 +3040,7 @@
       "reducible": false
     },
     {
-      "def_id": 101,
+      "def_id": 103,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.late_capture.commit",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::late_capture::commit",
@@ -3057,7 +3057,7 @@
       "reducible": false
     },
     {
-      "def_id": 100,
+      "def_id": 102,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.late_capture.seal",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::late_capture::seal",
@@ -3074,15 +3074,15 @@
       "reducible": false
     },
     {
-      "def_id": 219,
+      "def_id": 231,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.register_vm",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::register_vm",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 174,
-        "end_line": 178
+        "begin_line": 175,
+        "end_line": 179
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3091,15 +3091,15 @@
       "reducible": false
     },
     {
-      "def_id": 170,
+      "def_id": 179,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.put_vm",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::put_vm",
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 192,
-        "end_line": 195
+        "begin_line": 193,
+        "end_line": 196
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3108,7 +3108,7 @@
       "reducible": false
     },
     {
-      "def_id": 99,
+      "def_id": 101,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.late_capture.freeze",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::late_capture::freeze",
@@ -3125,7 +3125,7 @@
       "reducible": false
     },
     {
-      "def_id": 165,
+      "def_id": 174,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.late_capture.record_inner.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::late_capture::record_inner::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::worker::late_capture::record_inner::{closure}}::call_once",
@@ -3142,7 +3142,7 @@
       "reducible": false
     },
     {
-      "def_id": 50,
+      "def_id": 51,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.late_capture.record_inner",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::worker::late_capture::record_inner",
@@ -3168,6 +3168,197 @@
         "file": "controller-core/src/worker/late_capture.rs",
         "begin_line": 8,
         "end_line": 24
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 127,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.effect_awaiting",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::effect_awaiting",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 141,
+        "end_line": 153
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 124,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.current_effect_id",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::current_effect_id",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 123,
+        "end_line": 132
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 126,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.contains_loop.body",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::contains",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 114,
+        "end_line": 121
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.contains"
+    },
+    {
+      "def_id": 126,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.contains_loop",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::contains",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 114,
+        "end_line": 121
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.contains"
+    },
+    {
+      "def_id": 126,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.contains",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::contains",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 112,
+        "end_line": 121
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 194,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.current_plan",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::current_plan",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 348,
+        "end_line": 361
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 195,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.stoppable_vm_status",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::stoppable_vm_status",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker.rs",
+        "begin_line": 162,
+        "end_line": 167
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 130,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.pause_stop.stop_vm",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::pause_stop::stop_vm",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker/pause_stop.rs",
+        "begin_line": 121,
+        "end_line": 204
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 129,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.pause_stop.commit_snapshot",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::pause_stop::commit_snapshot",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker/pause_stop.rs",
+        "begin_line": 54,
+        "end_line": 119
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 57,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.pause_stop.execute",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::pause_stop::execute",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker/pause_stop.rs",
+        "begin_line": 22,
+        "end_line": 52
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "PauseStopWrongRust.sandbox_controller_core.worker.pause_stop.record",
+      "lean_file": "PauseStopWrong/Funs.lean",
+      "rust_name": "sandbox_controller_core::worker::pause_stop::record",
+      "is_local": true,
+      "source": {
+        "file": "controller-core/src/worker/pause_stop.rs",
+        "begin_line": 15,
+        "end_line": 20
       },
       "is_opaque": false,
       "can_fail": true,
@@ -3286,7 +3477,7 @@
       }
     },
     {
-      "def_id": 81,
+      "def_id": 83,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureSealEnd",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::CaptureSealEnd",
@@ -3298,7 +3489,7 @@
       }
     },
     {
-      "def_id": 79,
+      "def_id": 81,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureWorkEnd",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::CaptureWorkEnd",
@@ -3334,7 +3525,7 @@
       }
     },
     {
-      "def_id": 82,
+      "def_id": 84,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.retirement.QuiescenceStatus",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::QuiescenceStatus",
@@ -3358,7 +3549,7 @@
       }
     },
     {
-      "def_id": 80,
+      "def_id": 82,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.ResultDigest",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::ids::ResultDigest",
@@ -3454,7 +3645,7 @@
       }
     },
     {
-      "def_id": 87,
+      "def_id": 89,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.PolicyDigest",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::ids::PolicyDigest",
@@ -3490,7 +3681,7 @@
       }
     },
     {
-      "def_id": 89,
+      "def_id": 91,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Ipv4Cidr",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::model::Ipv4Cidr",
@@ -3502,7 +3693,7 @@
       }
     },
     {
-      "def_id": 98,
+      "def_id": 100,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Protocol",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::model::Protocol",
@@ -3514,7 +3705,7 @@
       }
     },
     {
-      "def_id": 88,
+      "def_id": 90,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Endpoint",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::model::Endpoint",
@@ -3778,7 +3969,7 @@
       }
     },
     {
-      "def_id": 93,
+      "def_id": 95,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostBinding",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::HostBinding",
@@ -3790,7 +3981,7 @@
       }
     },
     {
-      "def_id": 84,
+      "def_id": 86,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotId",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotId",
@@ -3802,7 +3993,7 @@
       }
     },
     {
-      "def_id": 90,
+      "def_id": 92,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.released_execution.ReleasedExecution",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::released_execution::ReleasedExecution",
@@ -3934,7 +4125,7 @@
       }
     },
     {
-      "def_id": 105,
+      "def_id": 108,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowId",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::WindowId",
@@ -3946,7 +4137,7 @@
       }
     },
     {
-      "def_id": 96,
+      "def_id": 98,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowRecord",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::WindowRecord",
@@ -3958,7 +4149,7 @@
       }
     },
     {
-      "def_id": 95,
+      "def_id": 97,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowLimits",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::WindowLimits",
@@ -3970,7 +4161,7 @@
       }
     },
     {
-      "def_id": 86,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowState",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::WindowState",
@@ -3982,7 +4173,7 @@
       }
     },
     {
-      "def_id": 94,
+      "def_id": 96,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotPhase",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotPhase",
@@ -3994,7 +4185,7 @@
       }
     },
     {
-      "def_id": 85,
+      "def_id": 87,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotRecord",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::HostSlotRecord",
@@ -4006,7 +4197,7 @@
       }
     },
     {
-      "def_id": 83,
+      "def_id": 85,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.retirement.RetainedOperation",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::RetainedOperation",
@@ -4138,7 +4329,7 @@
       }
     },
     {
-      "def_id": 92,
+      "def_id": 94,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{closure#1}",
@@ -4150,7 +4341,7 @@
       }
     },
     {
-      "def_id": 106,
+      "def_id": 109,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1.closure",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{closure#1}::{closure}",
@@ -4162,7 +4353,7 @@
       }
     },
     {
-      "def_id": 91,
+      "def_id": 93,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure",
       "lean_file": "PauseStopWrong/Types.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{closure}",
@@ -4181,8 +4372,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 11,
-        "end_line": 64
+        "begin_line": 12,
+        "end_line": 65
       }
     },
     {
@@ -4193,8 +4384,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 88,
-        "end_line": 91
+        "begin_line": 89,
+        "end_line": 92
       }
     },
     {
@@ -4205,8 +4396,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/worker.rs",
-        "begin_line": 67,
-        "end_line": 85
+        "begin_line": 68,
+        "end_line": 86
       }
     },
     {
@@ -4224,7 +4415,7 @@
   ],
   "globals": [
     {
-      "def_id": 57,
+      "def_id": 64,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.DEFAULT_RETRY_LIMIT",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::DEFAULT_RETRY_LIMIT",
@@ -4255,7 +4446,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 161,
+      "def_id": 162,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureSealEnd.Insts.CoreCmpPartialEqCaptureSealEnd",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureSealEnd> for sandbox_controller_core::capture::continuation::CaptureSealEnd}",
@@ -4270,7 +4461,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 129,
+      "def_id": 130,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt.Insts.CoreCmpPartialEqCaptureWorkEndReceipt",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureWorkEndReceipt> for sandbox_controller_core::capture::continuation::CaptureWorkEndReceipt}",
@@ -4285,7 +4476,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 130,
+      "def_id": 131,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.drain.CaptureDrainCoverage.Insts.CoreCmpPartialEqCaptureDrainCoverage",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::drain::{impl core::cmp::PartialEq<sandbox_controller_core::capture::drain::CaptureDrainCoverage> for sandbox_controller_core::capture::drain::CaptureDrainCoverage}",
@@ -4315,7 +4506,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 112,
+      "def_id": 113,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.capture.CaptureHandoff.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{impl core::clone::Clone for sandbox_controller_core::capture::CaptureHandoff}",
@@ -4330,7 +4521,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 120,
+      "def_id": 121,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffOptionCaptureHandoff",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), core::option::Option<sandbox_controller_core::capture::CaptureHandoff>> for sandbox_controller_core::capture::{sandbox_controller_core::capture::CaptureHandoff}::observe_bundle}",
@@ -4360,7 +4551,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 88,
+      "def_id": 89,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}",
@@ -4390,7 +4581,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 160,
+      "def_id": 161,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}",
@@ -4405,7 +4596,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 159,
+      "def_id": 160,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}",
@@ -4420,7 +4611,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 136,
+      "def_id": 137,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::NetworkPolicy> for sandbox_controller_core::model::NetworkPolicy}",
@@ -4465,7 +4656,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 135,
+      "def_id": 136,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FilePolicyRef> for sandbox_controller_core::model::FilePolicyRef}",
@@ -4585,7 +4776,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 133,
+      "def_id": 134,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}",
@@ -4600,7 +4791,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 132,
+      "def_id": 133,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}",
@@ -4615,7 +4806,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 98,
+      "def_id": 99,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}",
@@ -4660,7 +4851,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 75,
+      "def_id": 76,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}",
@@ -4675,7 +4866,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 78,
+      "def_id": 79,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}",
@@ -4690,7 +4881,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 80,
+      "def_id": 81,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}",
@@ -4720,7 +4911,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 127,
+      "def_id": 128,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}",
@@ -4735,7 +4926,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 126,
+      "def_id": 127,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.released_execution.ReleasedExecution.Insts.CoreCmpPartialEqReleasedExecution",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::released_execution::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::released_execution::ReleasedExecution> for sandbox_controller_core::maintenance::released_execution::ReleasedExecution}",
@@ -4750,7 +4941,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 109,
+      "def_id": 110,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}",
@@ -4765,7 +4956,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 137,
+      "def_id": 138,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}",
@@ -4780,7 +4971,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 138,
+      "def_id": 139,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}",
@@ -4795,7 +4986,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 139,
+      "def_id": 140,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}",
@@ -4810,7 +5001,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 153,
+      "def_id": 154,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}",
@@ -4825,7 +5016,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 85,
+      "def_id": 86,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}",
@@ -4840,7 +5031,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 72,
+      "def_id": 73,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}",
@@ -4900,7 +5091,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 124,
+      "def_id": 125,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.FailureKind.Insts.CoreCmpPartialEqFailureKind",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}",
@@ -4930,7 +5121,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 103,
+      "def_id": 104,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}",
@@ -4960,7 +5151,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 87,
+      "def_id": 88,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}",
@@ -4975,7 +5166,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 89,
+      "def_id": 90,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}",
@@ -4990,7 +5181,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 131,
+      "def_id": 132,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}",
@@ -5005,7 +5196,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 90,
+      "def_id": 91,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}",
@@ -5020,7 +5211,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 128,
+      "def_id": 129,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::StopCoverage> for sandbox_controller_core::model::StopCoverage}",
@@ -5080,7 +5271,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 86,
+      "def_id": 87,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}",
@@ -5095,7 +5286,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 123,
+      "def_id": 124,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreDefaultDefault",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::ResourceIndex}",
@@ -5155,7 +5346,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 76,
+      "def_id": 77,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}",
@@ -5170,7 +5361,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 79,
+      "def_id": 80,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}",
@@ -5185,7 +5376,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 81,
+      "def_id": 82,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}",
@@ -5200,7 +5391,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 82,
+      "def_id": 83,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}",
@@ -5215,7 +5406,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 83,
+      "def_id": 84,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}",
@@ -5230,7 +5421,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 84,
+      "def_id": 85,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}",
@@ -5260,7 +5451,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 142,
+      "def_id": 143,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleSharedVmBool",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{closure#1}::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::Vm,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure#1}::{closure}<'_0, '_1>}",
@@ -5275,7 +5466,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 115,
+      "def_id": 116,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedNetSlotBool",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::NetSlot,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure#1}<'_0, '_1, '_2>}",
@@ -5290,7 +5481,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 114,
+      "def_id": 115,
       "lean_name": "PauseStopWrongRust.sandbox_controller_core.transition.resume_cleanup_index.closure.Insts.CoreOpsFunctionFnOnceTupleSharedVmBool",
       "lean_file": "PauseStopWrong/Funs.lean",
       "rust_name": "sandbox_controller_core::transition::resume_cleanup_index::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::Vm,), bool> for sandbox_controller_core::transition::resume_cleanup_index::{closure}<'_0, '_1>}",

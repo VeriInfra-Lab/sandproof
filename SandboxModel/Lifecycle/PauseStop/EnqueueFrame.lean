@@ -18,8 +18,9 @@ theorem commit_effect_initial_present_exact (world : model.World) (command : mod
     transition.commit_effect world command = .ok world := by
   simp only [transition.commit_effect, model_Command_clone_exact, bind_tc_ok,
     model.EffectId.initial]
-  simpa only [queueInitialId, present, bind_tc_ok] using
-    (show (.ok world : Result model.World) = .ok world from rfl)
+  have observed := present
+  simp only [queueInitialId] at observed
+  simp only [observed,bind_tc_ok,if_true]
 
 /-- A successful missing-initial-effect branch writes the actual effect and
 key results. The logical table may be preserved or updated by its own branch. -/
@@ -102,7 +103,7 @@ theorem commit_effect_existing_logical_table (world next : model.World)
     obtain ⟨keys, _keysEq, tail⟩ := bind_ok_inv _ _ _ tail
     rw [present] at tail
     have same : { world with effect_keys := keys, effects := effects } = next := by
-      simpa only [bind_tc_ok] using tail
+      simpa only [bind_tc_ok,if_true,Result.ok.injEq] using tail
     subst next
     rfl
 
@@ -111,8 +112,11 @@ successful values and every field outside these four is framed out. -/
 theorem enqueue_shape (world next : model.World) (command : model.Command)
     (evaluated : transition.enqueue world command = .ok next) :
     ∃ effects keys logical inflight,
-      next = { world with logical_effects := logical, effect_keys := keys,
-        effects := effects, inflight := inflight } := by
+      next = { world with
+        logical_effects := logical,
+        effect_keys := keys,
+        effects := effects,
+        inflight := inflight } := by
   simp only [transition.enqueue, model_Command_clone_exact, bind_tc_ok,
     model.EffectId.initial] at evaluated
   obtain ⟨registered, committed, tail⟩ := bind_ok_inv _ _ _ evaluated
@@ -152,8 +156,11 @@ theorem enqueue_existing_logical_table (world next : model.World)
 fences, snapshots, resource indexes, counters and all remaining fields. -/
 theorem enqueue_frame (world next : model.World) (command : model.Command)
     (evaluated : transition.enqueue world command = .ok next) :
-    next = { world with logical_effects := next.logical_effects,
-      effect_keys := next.effect_keys, effects := next.effects, inflight := next.inflight } := by
+    next = { world with
+      logical_effects := next.logical_effects,
+      effect_keys := next.effect_keys,
+      effects := next.effects,
+      inflight := next.inflight } := by
   obtain ⟨effects, keys, logical, inflight, shape⟩ := enqueue_shape world next command evaluated
   subst next
   rfl

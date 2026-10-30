@@ -1774,8 +1774,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 104,
-        "end_line": 107
+        "begin_line": 105,
+        "end_line": 108
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1793,8 +1793,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 104,
-        "end_line": 107
+        "begin_line": 105,
+        "end_line": 108
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1812,8 +1812,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 95,
-        "end_line": 109
+        "begin_line": 96,
+        "end_line": 110
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1831,8 +1831,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 95,
-        "end_line": 109
+        "begin_line": 96,
+        "end_line": 110
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1850,8 +1850,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 93,
-        "end_line": 93
+        "begin_line": 94,
+        "end_line": 94
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1867,8 +1867,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 186,
-        "end_line": 186
+        "begin_line": 187,
+        "end_line": 187
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1884,8 +1884,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 202,
-        "end_line": 202
+        "begin_line": 203,
+        "end_line": 203
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1935,8 +1935,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 174,
-        "end_line": 174
+        "begin_line": 175,
+        "end_line": 175
       },
       "is_opaque": false,
       "can_fail": true,
@@ -1952,8 +1952,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 192,
-        "end_line": 192
+        "begin_line": 193,
+        "end_line": 193
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2886,8 +2886,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 11,
-        "end_line": 11
+        "begin_line": 12,
+        "end_line": 12
       }
     },
     {
@@ -2898,8 +2898,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 88,
-        "end_line": 88
+        "begin_line": 89,
+        "end_line": 89
       }
     },
     {
@@ -2910,8 +2910,8 @@
       "is_local": false,
       "source": {
         "file": "./controller-core/src/worker.rs",
-        "begin_line": 67,
-        "end_line": 67
+        "begin_line": 68,
+        "end_line": 68
       }
     },
     {
