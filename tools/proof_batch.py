@@ -31,6 +31,7 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/btree-set-binding/model/InvertFlag.lean',
     'verification/experiments/capture-handoff/model/IgnoreTarget.lean',
     'verification/experiments/pause-publication/model/IgnoreStop.lean',
+    'verification/experiments/pause-stop/model/IgnoreHandoff.lean',
     *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
       ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
        'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))

@@ -3,10 +3,11 @@
 [证明工作流](../../../../docs/proof-workflow.md) · [生命周期计划](../../../../docs/formal/04-local-core.md)
 
 本切片检查真实 `handle_worker` 到 `worker::pause_stop::record` 的
-`CommitSnapshot`、`StopVm` 调用。已有 `b546da3` 的真实抽取/生成文件检查和
-`c0d97319` 的原生组件预检；精确输入、通过范围和失败记录见
-[覆盖记录](../../../../docs/proof-coverage.md#普通暂停登记与-stop局部实测通过最终验收未完成)。
-业务定理清单和最终完整入口仍待交付，局部预检不代替它们。
+`CommitSnapshot`、`StopVm` 调用。真实函数的局部定理、具体接受见证、同性质错误证书及
+原生组件已有指定版本结果；准确输入、前提及边界见
+[覆盖记录](../../../../docs/proof-coverage.md#普通暂停登记与-stop真实函数局部证明与公共验收边界)。
+完整公共入口按 [#636 本片验收记录](https://github.com/VeriInfra-Lab/sandproof/issues/636)
+的精确候选和原始凭据判断，局部结果不代替该批次验收。
 机器对应的目标是实际生产 `record` 及其调用体；外层 `handle_worker` 的唯一转发
 通过源码审查和原生连接回归核对，不是整个 worker 的一般等价机器证明。
 
@@ -27,6 +28,11 @@ VM 与 sandbox 记录的 generation。普通 Commit 没有快照 owner 或记录
 原生夹具复用原控制器的 create、running、pause、seal 和 commit 历史，均经真实
 `handle_worker` 入口。少数行替换用于检查接口输入域，不声称这些状态都能从合法初态到达。
 成功 Stop 的完整 World 对照包含 VM 表和资源索引；不是只检查单个状态字段。
+
+形式正常接受还保留一个首次创建 Stop 的具体见证：原 effects/logicals 没有该 Stop，
+真实 Commit 创建完整效果/逻辑行并放入两个队列。这不表示所有合法输入都能成功。
+Commit 到后来 Stop 的 generation 连接另以中间 sandbox/VM 两表保持及后来真实 Stop
+成功为条件；实际派发器落实这些保持仍须连接，不由 Tokio 自动保证。
 
 ## 正确版与错误版
 
@@ -53,8 +59,9 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 同一稳定源码上复用 functional 时仍使用原收据和完整原始证据检查，不改标签或键。
 
 形式入口 `scripts/verify-pause-stop.sh` 已接固定工具、原始生成字节比对、同一服务诊断
-及审计流程，复用原声明读取和诊断检查器。最终冻结清单、正错真实生成物、实际定理
-清单和完整审计仍须全部就绪；缺一即拒绝，不生成占位成功。
+及审计流程，复用原声明读取和诊断检查器。实际定理清单、正错生成物、冻结范围和完整
+审计必须与候选一致；缺一即拒绝，不生成占位成功。无定理的 Conditions 页仍检查文件，
+关键定理子集不能代替全部公开声明和审计。
 完整入口须逐字节重抽正确/错误版，检查全部实际文件、同一服务诊断和内核依赖。
 共享生成闭包变化时另核对受影响旧模块，分别保留它们原来的范围。
 

@@ -222,6 +222,9 @@ bash scripts/verify-capture-caller.sh
 `handle_worker`；错误版须真实编译并被同一许可性质拒绝，格式、编译或工具失败不能
 代替性质反例。最终文件、必需定理、冻结输入、实际生成物或审计缺失时拒绝入场，
 不以空清单或接线准备完成表示正式验收通过。默认 `all` 保留旧全部义务并登记本组件一次。
+公共总根仅导入参数化的 `PauseStop.Conditions`，独立 `PauseHandoffWrong` 库保留错误版
+命名空间；正例 `Audit`、错误证书及没有定理声明的 `Conditions` 页仍须进入实际文件
+诊断和冻结范围。关键定理子集用于防漏，不能替代全部声明和审计。
 
 这三个切片共享 `CaptureCaller` 正确生成环境。改变其实际根或生成闭包时，先核对
 `pause-stop`、`capture-caller`、`pause-publication` 的影响，再在同一稳定候选上验收
