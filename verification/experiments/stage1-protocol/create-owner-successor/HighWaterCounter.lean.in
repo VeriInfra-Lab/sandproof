@@ -1,0 +1,65 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCommon
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorValues
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater
+open OwnerMapping OwnerMapping.Values
+
+abbrev rows := alloc.vec.Vec.deref worldTriple.sandboxes.entries
+
+theorem observed : run (noOwners 64#u64) worldTriple 2#u64 = .ok (.Ok 18#u64) := by
+  have bump (index next : Usize) (value : next.val = index.val + 1) :
+      ((index + 1#usize) : Result Usize) = .ok next := by
+    obtain ⟨result, calculated, resultVal⟩ := next_counter index (by scalar_tac)
+    have same : result = next := by
+      apply UScalar.eq_of_val_eq
+      omega
+    exact calculated.trans (congrArg Result.ok same)
+  have body0 : maxBody 2#u64 rows 0#u64 0#usize = .ok (.cont (9#u64, 1#usize)) := by
+    simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+      Slice.index_usize, rows, worldTriple, record, alloc.vec.Vec.deref,
+      sandbox_ne, max_run]
+    erw [bump 0#usize 1#usize (by scalar_tac)]
+    simp only [bind_tc_ok]
+  have body1 : maxBody 2#u64 rows 9#u64 1#usize = .ok (.cont (9#u64, 2#usize)) := by
+    simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+      Slice.index_usize, rows, worldTriple, record, alloc.vec.Vec.deref,
+      sandbox_ne, max_run]
+    erw [bump 1#usize 2#usize (by scalar_tac)]
+    simp only [bind_tc_ok]
+  have body2 : maxBody 2#u64 rows 9#u64 2#usize = .ok (.cont (17#u64, 3#usize)) := by
+    simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+      Slice.index_usize, rows, worldTriple, record, alloc.vec.Vec.deref,
+      sandbox_ne, max_run]
+    erw [bump 2#usize 3#usize (by scalar_tac)]
+    simp only [bind_tc_ok]
+  have finish := max_end 2#u64 rows 17#u64 3#usize (by simp [rows, worldTriple, alloc.vec.Vec.deref])
+  have scanned : maxLoop 2#u64 rows 0#u64 0#usize = .ok 17#u64 := by
+    rw [max_unfold, body0]
+    simp only [bind_tc_ok]
+    rw [max_unfold, body1]
+    simp only [bind_tc_ok]
+    rw [max_unfold, body2]
+    simpa only [bind_tc_ok] using finish
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor
+  simp only [sandbox_controller_core.model.World.sandbox_records,
+    sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+  unfold maxLoop at scanned
+  erw [scanned]
+  simp only [bind_tc_ok, lift]
+  rw [allocation_checked]
+  have known : allocation (17#u64).val = .Ok 18#u64 :=
+    allocation_known 17 18#u64 (by scalar_tac) (by scalar_tac)
+  rw [known]
+  simp [core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem violates_full_contract : ¬ FullSuccessorContract run := by
+  intro contract
+  have required := contract (noOwners 64#u64) worldTriple 2#u64
+  rw [observed] at required
+  simp [Values.high_water_expected] at required
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater.violates_full_contract

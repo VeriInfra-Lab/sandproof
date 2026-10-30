@@ -1,0 +1,8 @@
+import SandproofBoundedWriter.TypesExternal
+
+/- Original registered error-value carriers only; no SQL/IO call is modelled here. -/
+namespace SandproofStage1OwnerMappingRust
+abbrev core.io.error.Error := SandproofBoundedWriterRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofBoundedWriterRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofBoundedWriterRust.serde_json.error.Error
+end SandproofStage1OwnerMappingRust

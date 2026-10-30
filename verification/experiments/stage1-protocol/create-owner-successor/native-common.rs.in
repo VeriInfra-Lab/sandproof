@@ -1,0 +1,165 @@
+use super::*;
+
+fn proof_owner_inbox(rows: &[(&str, u64)], high_water: u64) -> Inbox {
+    let config = config();
+    Inbox {
+        lanes: (1..=config.max_sessions)
+            .map(LifecycleRetentionLane::fresh)
+            .collect(),
+        config,
+        host_epoch_observation: None,
+        owner_high_water: high_water,
+        owners: rows
+            .iter()
+            .map(|(external, local)| Owner {
+                external: (*external).try_into().unwrap(),
+                local: core::TenantId(*local),
+            })
+            .collect(),
+        sessions: Vec::new(),
+    }
+}
+
+// Build the World through the public original core reducer. The tested V3
+// allocator is never used to manufacture its own input or expected result.
+fn proof_owner_world(owners: &[u64]) -> core::World {
+    let mut world = core::initial_world();
+    for (index, owner) in owners.iter().enumerate() {
+        let number = u64::try_from(index).unwrap() + 1;
+        world = core::handle_create(
+            &world,
+            core::CreateRequest {
+                actor: core::Actor::Tenant(core::TenantId(*owner)),
+                owner: core::TenantId(*owner),
+                sandbox: core::SandboxId(number),
+                workspace: core::FsId(number),
+                file_policy: core::FilePolicyRef {
+                    digest: core::PolicyDigest(7),
+                },
+                policy: core::NetworkPolicy::DenyAll,
+                operation: core::OperationId(1),
+            },
+        )
+        .unwrap()
+        .next;
+    }
+    world
+}
+
+
+#[test]
+fn proof_successor_empty() {
+    let inbox = proof_owner_inbox(&[], 0);
+    assert!(inbox.validate().is_ok());
+    assert_eq!(
+        create_owner_successor(
+            &inbox,
+            &proof_owner_world(&[]),
+            core::SandboxId(1)
+        )
+        .unwrap(),
+        core::TenantId(1)
+    );
+}
+
+#[test]
+fn proof_successor_excluded_largest() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[9, 40, 17]),
+            core::SandboxId(2)
+        )
+        .unwrap(),
+        core::TenantId(18)
+    );
+}
+
+#[test]
+fn proof_successor_absent_exclusion() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[9, 40, 17]),
+            core::SandboxId(9)
+        )
+        .unwrap(),
+        core::TenantId(41)
+    );
+}
+
+#[test]
+fn proof_successor_high_water() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 64),
+            &proof_owner_world(&[9, 40, 17]),
+            core::SandboxId(2)
+        )
+        .unwrap(),
+        core::TenantId(65)
+    );
+}
+
+#[test]
+fn proof_successor_excluded_maximum() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[u64::MAX]),
+            core::SandboxId(1)
+        )
+        .unwrap(),
+        core::TenantId(6)
+    );
+}
+
+#[test]
+fn proof_successor_other_maximum() {
+    assert!(matches!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 5),
+            &proof_owner_world(&[u64::MAX]),
+            core::SandboxId(2)
+        ),
+        Err(JournalError::IdentifierExhausted)
+    ));
+}
+
+#[test]
+fn proof_successor_high_water_exhausted() {
+    assert!(matches!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], u64::MAX),
+            &proof_owner_world(&[]),
+            core::SandboxId(1)
+        ),
+        Err(JournalError::IdentifierExhausted)
+    ));
+}
+
+#[test]
+fn proof_successor_boundary() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], u64::MAX - 1),
+            &proof_owner_world(&[]),
+            core::SandboxId(1)
+        )
+        .unwrap(),
+        core::TenantId(u64::MAX)
+    );
+}
+
+#[test]
+fn proof_successor_all_excluded() {
+    assert_eq!(
+        create_owner_successor(
+            &proof_owner_inbox(&[], 7),
+            &proof_owner_world(&[9]),
+            core::SandboxId(1)
+        )
+        .unwrap(),
+        core::TenantId(8)
+    );
+}
