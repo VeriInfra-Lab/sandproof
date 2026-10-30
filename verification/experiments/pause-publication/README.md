@@ -82,6 +82,11 @@ python3 verification/experiments/pause-publication/replay.py \
 
 ## 必须显式保留的条件
 
+公共总根只导入纯 `PausePublication.Conditions`；其中 `RequiresStop` 表示
+“任何成功发布都具有相应 Stop 成功回执”。正错实现必须实例化这同一性质，
+不能为错误版改用另一个较弱目标。该接口只依赖 Aeneas，不导入正确或错误生成库；
+实际实现对应仍由各自独立的内核构建、审计和服务检查提供。
+
 本切片最多证明：给定当前 `World` 的查询结果，真实 Rust 纯处理函数只在相应条件满足时发布。
 `Acknowledged(Succeeded ...)` 是逻辑回执，不自动证明物理 VM 已退出；
 持久快照字段也不自动证明文件内容、同步落盘或恢复资格真实成立。
