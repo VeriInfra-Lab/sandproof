@@ -1,8 +1,8 @@
 //! The actual Commit/Stop worker route, isolated from unrelated continuation code.
 //!
 //! For these commands `released_execution::discharged` and the startup-abort
-//! selector are structurally false: their commands are terminal InstallFence
-//! and ActivateVm/startup commands respectively. Keep those predicates intact.
+//! selector are structurally false: their commands are terminal `InstallFence`
+//! and `ActivateVm`/startup commands respectively. Keep those predicates intact.
 //! The live worker delegates here before its general dispatch. Other command
 //! tags return None without reading World or cloning values.
 use super::{
