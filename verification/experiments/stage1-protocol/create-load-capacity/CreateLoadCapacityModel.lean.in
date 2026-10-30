@@ -1,0 +1,253 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity
+noncomputable section
+open InboxLoad
+
+abbrev OwnerLimit (inbox : Inbox) : Prop :=
+  inbox.owners.val.length ≤ inbox.config.max_sessions.val
+
+theorem validation_owner_limit {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (accepted : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ())) :
+    OwnerLimit inbox := by
+  by_contra missing
+  have over : inbox.owners.val.length > inbox.config.max_sessions.val := Nat.lt_of_not_ge missing
+  have rejected : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Err .CorruptStore) := by
+    simp [InboxValidation.inboxView, over, InboxValidation.rejected]
+  rw [rejected] at accepted
+  cases Result.ok_injective accepted
+
+theorem bind_return {α β : Type} (input : Result α) (next : α → Result β) (output : β)
+    (returned : (do let value ← input; next value) = .ok output) :
+    ∃ value, input = .ok value ∧ next value = .ok output := by
+  cases input using Result.cases with
+  | ret value => exact ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩
+  | vis effect continuation => simp only [bind_tc_vis, vis_not_ok] at returned
+  | div => simp only [bind_tc_div, div_not_ok] at returned
+
+def BoundedOutcome {E : Type} (output : core.result.Result (Option Inbox) JournalError × E) : Prop :=
+  match output.1 with
+  | .Ok (some inbox) => OwnerLimit inbox
+  | _ => True
+
+/-- A corollary of the unchanged full contract, not a replacement for it or a progress assertion. -/
+def Safe {E : Type} (run : Outcome E) : Prop :=
+  ∀ output, run = .ok output → BoundedOutcome output
+
+theorem error_safe {E : Type} (error : JournalError) (state : E) :
+    Safe (.ok (.Err error, state)) := by
+  intro output returned
+  cases Result.ok_injective returned
+  trivial
+
+theorem none_safe {E : Type} (state : E) : Safe (.ok (.Ok none, state)) := by
+  intro output returned
+  cases Result.ok_injective returned
+  trivial
+
+theorem some_safe {E : Type} (inbox : Inbox) (bounded : OwnerLimit inbox) (state : E) :
+    Safe (.ok (.Ok (some inbox), state)) := by
+  intro output returned
+  cases Result.ok_injective returned
+  exact bounded
+
+theorem bind_safe {α E : Type} (input : Result α) (next : α → Outcome E)
+    (continuation : ∀ value, input = .ok value → Safe (next value)) :
+    Safe (do let value ← input; next value) := by
+  intro output returned
+  obtain ⟨value, observed, rest⟩ := bind_return input next output returned
+  exact continuation value observed output rest
+
+theorem attempt_safe {α E : Type} (input : Result (core.result.Result α JournalError × E))
+    (next : α → E → Outcome E) (continuation : ∀ value after, Safe (next value after)) :
+    Safe (attempt input next) := by
+  unfold attempt
+  apply bind_safe
+  rintro ⟨answer, after⟩ _
+  cases answer with
+  | Ok value => exact continuation value after
+  | Err error => exact error_safe error after
+
+theorem finish_safe {E : Type} (io : InboxLoadEffects E) (inbox : Inbox)
+    (bounded : OwnerLimit inbox) (state : E) : Safe (finishView io inbox state) := by
+  unfold finishView
+  apply attempt_safe
+  intro policy after
+  change Safe (match policy with
+    | some config =>
+        if inbox.config.max_operations_per_session.val > config.max_operations_per_sandbox.val
+        then corrupt after else .ok (.Ok (some inbox), after)
+    | none => unsupported after)
+  cases policy with
+  | none => exact error_safe .UnsupportedStore after
+  | some config =>
+      change Safe (if inbox.config.max_operations_per_session.val > config.max_operations_per_sandbox.val
+        then corrupt after else .ok (.Ok (some inbox), after))
+      by_cases over : inbox.config.max_operations_per_session.val > config.max_operations_per_sandbox.val
+      · simpa only [over, if_true, InboxLoad.corrupt] using error_safe (E := E) .CorruptStore after
+      · simpa only [over, if_false] using some_safe inbox bounded after
+
+theorem validated_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox) (reserve : U64) (state : E) :
+    Safe (validatedView io validate budget inbox reserve state) := by
+  unfold validatedView
+  apply bind_safe
+  intro required _
+  split
+  · exact error_safe .CorruptStore state
+  · apply bind_safe
+    intro checked accepted
+    cases checked with
+    | Err error => exact error_safe error state
+    | Ok trivialValue =>
+        cases trivialValue
+        exact finish_safe io inbox (law inbox accepted) state
+
+theorem canonical_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes : alloc.vec.Vec U8) (reserve : U64) (state : E) :
+    Safe (canonicalView io validate budget inbox bytes reserve state) := by
+  unfold canonicalView
+  apply attempt_safe
+  intro encoded after
+  apply bind_safe
+  intro different _
+  cases different with
+  | true => exact error_safe .CorruptStore after
+  | false => exact validated_safe io validate law budget inbox reserve after
+
+theorem digest_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes digest : alloc.vec.Vec U8) (reserve : U64) (state : E) :
+    Safe (digestView io validate budget inbox bytes digest reserve state) := by
+  unfold digestView
+  apply bind_safe
+  rintro ⟨calculated, after⟩ _
+  change Safe (if calculated.val ≠ digest.val then corrupt after
+    else canonicalView io validate budget inbox bytes reserve after)
+  split
+  · exact error_safe .CorruptStore after
+  · exact canonical_safe io validate law budget inbox bytes reserve after
+
+theorem body_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (reserve : U64) (state : E) :
+    Safe (bodyView io validate budget reserve state) := by
+  unfold bodyView
+  apply attempt_safe
+  rintro ⟨bytes, digest⟩ afterBytes
+  apply bind_safe
+  rintro ⟨decoded, afterDecode⟩ _
+  cases decoded with
+  | Err _ => exact error_safe .CorruptStore afterDecode
+  | Ok inbox => exact digest_safe io validate law budget inbox bytes digest reserve afterDecode
+
+theorem limits_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (capacity : controller.capacity.CapacityConfig)
+    (length reserve : I64) (state : E) : Safe (limitsView io validate budget capacity length reserve state) := by
+  unfold limitsView
+  split
+  · exact error_safe .CorruptStore state
+  · apply bind_safe
+    intro unsignedLength _
+    split
+    · exact error_safe .CorruptStore state
+    · apply bind_safe
+      intro unsignedReserve _
+      split
+      · exact error_safe .CorruptStore state
+      · split
+        · exact error_safe .CorruptStore state
+        · split
+          · exact error_safe .CorruptStore state
+          · exact body_safe io validate law budget unsignedReserve state
+
+theorem capacity_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Safe (capacityView io validate budget state) := by
+  unfold capacityView
+  apply attempt_safe
+  intro policy after
+  cases policy with
+  | none => exact error_safe .UnsupportedStore after
+  | some capacity =>
+      apply attempt_safe
+      rintro ⟨length, reserve⟩ afterLengths
+      exact limits_safe io validate law budget capacity length reserve afterLengths
+
+theorem current_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Safe (currentView io validate budget state) := by
+  unfold currentView
+  apply attempt_safe
+  intro internal after
+  cases internal with
+  | true => exact error_safe .CorruptStore after
+  | false => exact capacity_safe io validate law budget after
+
+theorem load_safe {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (law : ∀ inbox, validate inbox = .ok (.Ok ()) → OwnerLimit inbox)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) : Safe (loadView io validate budget state) := by
+  unfold loadView
+  apply attempt_safe
+  intro hasInbox afterExists
+  apply attempt_safe
+  intro version afterVersion
+  apply attempt_safe
+  intro source afterSource
+  split
+  · exact error_safe .CorruptStore afterSource
+  · split
+    · apply bind_safe
+      intro current _
+      split
+      · exact current_safe io validate law budget afterSource
+      · exact error_safe .CorruptStore afterSource
+    · apply bind_safe
+      intro current _
+      split
+      · exact error_safe .CorruptStore afterSource
+      · exact none_safe afterSource
+
+theorem full_load_safe {R T N U E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (io : InboxLoadEffects E) (state : E) :
+    Safe (fullLoadView saved terminal renewal unload io state) := by
+  apply load_safe
+  intro inbox accepted
+  exact validation_owner_limit saved terminal renewal.encode unload.encode inbox accepted
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.validation_owner_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.bind_return
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.error_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.none_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.some_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.bind_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.attempt_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.finish_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.validated_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.canonical_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.digest_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.body_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.limits_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.capacity_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.current_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.load_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.full_load_safe

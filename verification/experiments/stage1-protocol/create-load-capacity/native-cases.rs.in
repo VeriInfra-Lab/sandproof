@@ -1,0 +1,71 @@
+// Same assertions for actual, omitted-owner-limit and restored actual Rust.
+// SQL/Serde/SHA below use the existing native fixture; Lean uses explicit effects.
+fn with_owner_count(mut inbox: Inbox, count: u16) -> Inbox {
+    inbox.owners = (0..count)
+        .map(|index| Owner {
+            external: format!("owner-{index}").try_into().unwrap(),
+            local: core::TenantId(u64::from(index)),
+        })
+        .collect();
+    inbox.owner_high_water = u64::from(count.saturating_sub(1));
+    inbox
+}
+
+#[test]
+fn full_validator_rejects_owners_above_configured_limit() {
+    let mut inbox = empty();
+    let limit = inbox.config.max_sessions;
+    inbox = with_owner_count(inbox, limit + 1);
+    assert_eq!(inbox.owners.len(), usize::from(limit) + 1);
+    assert!(matches!(inbox.validate(), Err(JournalError::CorruptStore)));
+}
+
+#[test]
+fn actual_load_rejects_owners_above_configured_limit() {
+    let mut inbox = empty();
+    let limit = inbox.config.max_sessions;
+    inbox = with_owner_count(inbox, limit + 1);
+    let connection = database(&inbox);
+    assert!(matches!(
+        codec::load(&connection),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut tape = LoadTape::valid();
+    tape.inbox = inbox;
+    assert!(matches!(tape.run(), Err(JournalError::CorruptStore)));
+    assert_eq!(tape.calls, full_load_calls()[..12]);
+}
+
+#[test]
+fn loaded_recorded_create_selects_and_installs_the_same_complete_value() {
+    let mut inbox = recorded();
+    inbox.owners = vec![
+        Owner {
+            external: "owner".try_into().unwrap(),
+            local: core::TenantId(20),
+        },
+        Owner {
+            external: "other".try_into().unwrap(),
+            local: core::TenantId(21),
+        },
+    ];
+    inbox.owner_high_water = 21;
+    inbox.validate().unwrap();
+    assert_eq!(inbox.owners.len(), usize::from(inbox.config.max_sessions));
+    let connection = database(&inbox);
+    let mut loaded = codec::load(&connection).unwrap().unwrap();
+    assert_eq!(loaded, inbox);
+    let intent = loaded.sessions[0].entries[0].intent.clone();
+    let (s, e, _) = super::super::create_attachment_selection(&loaded, &intent).unwrap();
+    assert_eq!((s, e), (0, 0));
+    let binding = crate::InternalLocalBinding {
+        sandbox: core::SandboxId(10),
+        owner: core::TenantId(20),
+        operation: core::OperationId(30),
+    };
+    let mut expected = loaded.clone();
+    expected.sessions[s].local = Some(binding);
+    expected.sessions[s].entries[e].local_operation = Some(binding.operation);
+    super::super::create_attachment_install(&mut loaded, s, e, binding);
+    assert_eq!(loaded, expected);
+}

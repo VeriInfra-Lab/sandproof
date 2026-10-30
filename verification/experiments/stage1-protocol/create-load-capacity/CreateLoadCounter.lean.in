@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.CreateLoadOwnerLimitCounter
+import SandboxModel.Lifecycle.Protocol.CreateLoadFixture
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
+noncomputable section
+open InboxLoad InboxLoad.Values
+
+theorem represented : DecodedStringsRepresentable (Fixture.ioFor crowded) := by
+  intro state input decoded after equation
+  simp only [Fixture.ioFor, effects, Result.ok.injEq, Prod.mk.injEq,
+    core.result.Result.Ok.injEq] at equation
+  rcases equation with ⟨same, _⟩
+  rw [← same]
+  exact InboxValidation.Values.fixture_representable
+
+theorem charged : LifecycleInboxConfig.required_bytes crowded.config = .ok 286720#u64 := by
+  rw [budget_refines]
+  exact congrArg Result.ok normal_budget
+
+theorem actually_loaded (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (Fixture.ioFor crowded) trace =
+      .ok (.Ok (some crowded), trace ++ completeTrace crowded) := by
+  exact Fixture.actual_loaded saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic crowded actually_accepts charged (by decide) trace
+
+theorem violates_full_load_contract : ¬ FullLoadContract load_using := by
+  intro contract
+  have required := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic (Fixture.ioFor crowded) ComposedConfig.standard_graphic_contract represented []
+  change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic (Fixture.ioFor crowded) [] =
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (Fixture.ioFor crowded) [] at required
+  have returned := actually_loaded []
+  rw [required] at returned
+  exact exceeds_owner_limit (full_load_safe saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    (Fixture.ioFor crowded) [] (.Ok (some crowded), [] ++ completeTrace crowded) returned)
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.charged
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.actually_loaded
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.violates_full_load_contract

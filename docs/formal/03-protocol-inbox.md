@@ -135,8 +135,12 @@ session/entry 位置和 startup deadline。随后由
 [`create_attachment_install`](../../verification/experiments/stage1-protocol/create-install/README.md)，
 按原 session.owner 完整匹配决定是否追加映射；追加时把高水位赋为本次 local.owner，
 已有映射时保留原表和高水位。写入完整 local 和选中 entry.local_operation 后，其余完整 Inbox、
-session 和 entry 字段保留。索引由原完整选择给出，追加空间还需连接原 load/validate 的
-owner 数量上限；高水位单调性还需原 successor/owner 检查，不能从独立赋值推出。
+session 和 entry 字段保留。索引由原完整选择给出；
+[容量连接](../../verification/experiments/stage1-protocol/create-load-capacity/README.md)
+在同一次真实抽取的 Inbox 表示下，从完整 load/validate 接受结果给出 owner 数量上限，
+供给完整写入的追加空间条件。该结论只约束实际返回的同一个值；不把合成解码/摘要效果
+当作真实 JSON/SHA/SQL 或同事务证明。当前存储格式为 24，旧 Store23 冻结保持其原范围，
+不直接改摘要沿用。高水位单调性仍需原 successor/owner 检查，不能从独立赋值推出。
 
 deadline 转换、固定 ID、原 UPDATE 与 save 仍属于同一原父函数的业务义务；原寿命
 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行。外层同事务插入、提交未知与
