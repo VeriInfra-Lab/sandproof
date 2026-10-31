@@ -1,0 +1,18 @@
+--- a/docs/formal/03-protocol-inbox.md
++++ b/docs/formal/03-protocol-inbox.md
+@@ -212,3 +212,15 @@
+ 公共 SQL 定义、完整生成错误／值载体和原字节数学继续复用；数组不得套用五元组提前
+ 计数条件。该值／错误切片不闭合标准实例的对象／guard、同一事务、物理行效果、提交
+ 未知、重启或字节／认证链；采用后的当前生成体、普通与正式共享验收仍分别取得。
++
++
++## 8. 完整回执返回边界
++
++正式 record 路由在原完整 intent/context 的 handler await 之后调用同步
++[record_reply](../../verification/experiments/stage1-protocol/record-reply/README.md)。
++它复用原 Recorded.matches，成功返回完整原回执（包括 terminal），保留原错误分类；
++匹配关系不增加 terminal 认证条件，也不把 current/version 关系收窄。
++
++该同步值决定与实际 producer 持久责任、await 的 receiver/context/结果、原有界 Writer、
++认证来源、提交未知和重启分别连接；它不将整个 handler 或收件事务变成可信前提。
++正式采用版本和验收仍由覆盖记录及本批 issue 维护。

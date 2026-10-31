@@ -1,0 +1,46 @@
+import SandboxModel.Lifecycle.Protocol.RecordReplyModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.RecordReply
+noncomputable section
+
+def original : AcceptedLifecycleIntent := EnvelopeValues.intent 1#u64
+def received : RecordedLifecycleIntent := EnvelopeValues.receipt 1#u64
+def terminalReceived : RecordedLifecycleIntent := { received with terminal := true }
+def changedCapture : RecordedLifecycleIntent := EnvelopeValues.receipt 2#u64
+
+theorem normal_relation : Validation.RecordsOriginal received original :=
+  (Recorded.accepts_iff received original).mp Recorded.normal_recorded_matches
+
+theorem terminal_relation : Validation.RecordsOriginal terminalReceived original := by
+  apply (Recorded.accepts_iff terminalReceived original).mp
+  change proof_record_reply_roots.recorded_matches { received with terminal := true } original = .ok true
+  rw [Recorded.terminal_flag_not_certified]
+  exact Recorded.normal_recorded_matches
+
+theorem changed_capture_refused : ¬Validation.RecordsOriginal changedCapture original := by
+  intro matched
+  exact EnvelopeValues.changed_complete_intent matched.1
+
+theorem expected_normal : expected original (.Ok received) = .Ok received := by
+  classical
+  simp [expected, Validation.expectedRecorded, normal_relation]
+
+theorem expected_terminal : expected original (.Ok terminalReceived) = .Ok terminalReceived := by
+  classical
+  simp [expected, Validation.expectedRecorded, terminal_relation]
+
+theorem expected_changed : expected original (.Ok changedCapture) = .Err .Unavailable := by
+  classical
+  simp [expected, Validation.expectedRecorded, changed_capture_refused]
+
+end
+end SandboxModel.Stage1Protocol.RecordReply
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.normal_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.terminal_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.changed_capture_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.expected_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.expected_terminal
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.expected_changed

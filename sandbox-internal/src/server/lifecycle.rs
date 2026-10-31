@@ -4,7 +4,7 @@ use super::{
     ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
 use crate::lifecycle::{CREATE_OBSERVATION_BODY_BYTES, CenterPeerRegistration, REQUEST_BODY_BYTES};
-use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
 
 #[derive(Clone, Copy)]
 pub(super) enum Call {
@@ -116,11 +116,33 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
             }
         };
     }
-    match handler.record_lifecycle(intent.clone(), context).await {
-        Ok(recorded) if recorded.matches(&intent) => json_response(&recorded, REQUEST_BODY_BYTES),
-        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
-        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+    let received = handler.record_lifecycle(intent.clone(), context).await;
+    match record_reply(&intent, received) {
+        Ok(recorded) => json_response(&recorded, REQUEST_BODY_BYTES),
+        Err(RecordReplyError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Err(RecordReplyError::Unavailable) => {
             response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+
+// Preserve the complete receipt with the original transport classifications.
+// A matching value is not authorization or evidence of durable effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RecordReplyError {
+    Conflict,
+    Unavailable,
+}
+
+pub(super) fn record_reply(
+    intent: &AcceptedLifecycleIntent,
+    received: Result<RecordedLifecycleIntent, ReceiveError>,
+) -> Result<RecordedLifecycleIntent, RecordReplyError> {
+    match received {
+        Ok(recorded) if recorded.matches(intent) => Ok(recorded),
+        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
+            Err(RecordReplyError::Unavailable)
         }
     }
 }

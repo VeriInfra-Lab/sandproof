@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.RecordReplyCore
+import SandboxModel.Lifecycle.Protocol.RecordReplyValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.RecordReply
+noncomputable section
+
+theorem normal_complete_receipt : actual original (.Ok received) = .ok (.Ok received) := by
+  rw [actual_refines, expected_normal]
+
+theorem terminal_complete_receipt :
+    actual original (.Ok terminalReceived) = .ok (.Ok terminalReceived) := by
+  rw [actual_refines, expected_terminal]
+
+theorem changed_capture_rejected : actual original (.Ok changedCapture) = .ok (.Err .Unavailable) := by
+  rw [actual_refines, expected_changed]
+
+theorem original_conflict : actual original (.Err .Conflict) = .ok (.Err .Conflict) := by
+  rw [actual_refines]
+  rfl
+
+theorem capacity_unavailable : actual original (.Err .Capacity) = .ok (.Err .Unavailable) := by
+  rw [actual_refines]
+  rfl
+
+theorem original_unavailable : actual original (.Err .Unavailable) = .ok (.Err .Unavailable) := by
+  rw [actual_refines]
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.RecordReply
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.normal_complete_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.terminal_complete_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.changed_capture_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.original_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.capacity_unavailable
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.original_unavailable

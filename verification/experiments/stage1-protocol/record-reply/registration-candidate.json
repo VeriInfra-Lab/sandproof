@@ -1,0 +1,57 @@
+{
+  "kind": "record-reply-main-registration-candidate",
+  "requires_prior_registration_packages": [
+    "create-attachment-flow",
+    "create-fixed-identity",
+    "create-lifetime-sql",
+    "create-standard-adapter",
+    "create-standard-identity",
+    "create-standard-sql",
+    "digest-uses"
+  ],
+  "current_shared_source_sha256": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+  "after_prior_registration_sha256": "8e0a450e6065830c0f4553372a541ae26fb39a514a95f56c540099bbc911fd65",
+  "after_this_registration_sha256": "182f982f59d1daf89c845042fa6a1545147dc0c3bc1e7995653fdb1f55a6a60b",
+  "patch_sha256": "20d67e50d91e9a7df5bf3ffc683ed29be255699878e18bd0f882e1bae226d497",
+  "shared_files_modified": false,
+  "ordinary_or_native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "native_label": "stage1-record-reply",
+  "formal_cases": [
+    "actual",
+    "skip-match",
+    "clear-terminal"
+  ],
+  "native_views": [
+    "actual",
+    "skip-match",
+    "clear-terminal",
+    "restored"
+  ],
+  "native_assertions_per_view": 7,
+  "requires_affected_input_readmission": true,
+  "global_counts_must_be_recomputed": true,
+  "public_root_imports_not_required": "Actual correspondence is checked in the private original request namespace, not co-imported with other generated roots.",
+  "shared_input_hashes": {
+    "docs/formal/dependencies.md": {
+      "root": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+      "after_prior": "82d7e9f3f65bc51222bbe7ba2dbe6424660d7a83e92ff8eaf193fb7fb0a8e59e",
+      "after_this": "2740c4600ecc4b225a520dd45f2e4327a6d61a7e4ca6e37366ee63b606defd26"
+    },
+    "docs/proof-coverage.md": {
+      "root": "f8da14f2bf47cddd414734500ae3d1eea89843f30994adb858f293118f739698",
+      "after_prior": "40bc8828d7a0feb9d6f0774e11ba5be6300a20bdca2a724d1187fd8e8b428a5e",
+      "after_this": "2beab749087fa7b8ce96f661643d8d71e733cae0ef4020c3840e5911690d4874"
+    }
+  },
+  "patches": {
+    "production-candidate.patch": "63fb8d66cb0830f97a1452bc1a629b22a49cacfd8e001a30b91f090a227a2d14",
+    "dependencies-candidate.patch": "af99489abb99696339d63849aabe64d207fe0417d5853815e395c8e95bf65555",
+    "registration-candidate.patch": "20d67e50d91e9a7df5bf3ffc683ed29be255699878e18bd0f882e1bae226d497",
+    "scope-candidate.patch": "28b1e16977303daad22a80aa2978e0ff53100a3866b1df002b61eaedc0747ae5",
+    "coverage-candidate.patch": "6f65e07007cf4084a2af12e3f2ee4cf18d4bb3d2874bb1a1e46f90fca897142d"
+  },
+  "scope_doc_applied": false,
+  "scope_doc_requires_affected_input_readmission": true
+}

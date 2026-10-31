@@ -1,0 +1,72 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -67,6 +67,7 @@
+     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
+       if name != 'inbox-record-total'),
+     ('stage1-digest-uses', str(HERE/'digest-uses/native.py'), False),
++    ('stage1-record-reply', str(HERE/'record-reply/native.py'), False),
+ )
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+@@ -349,7 +350,7 @@
+         output = work/label
+         args = ['--output', output]
+         native_pass_fds = ()
+-        if label == 'stage1-digest-uses':
++        if label in ('stage1-digest-uses', 'stage1-record-reply'):
+             path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
+             descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
+             if not path or descriptor is None:
+@@ -451,10 +452,14 @@
+         native=('stage1-create-standard-sql',), cases=('actual', 'zero-deadline', 'empty-sandbox'))
+     add('digest-uses', HERE/'digest-uses/formal.py',
+         native=('stage1-digest-uses',), cases=('actual', 'input-empty', 'tail-zero'))
++    add('record-reply', HERE/'record-reply/formal.py',
++        native=('stage1-record-reply',), cases=('actual', 'skip-match', 'clear-terminal'))
+     return jobs
+ 
+ 
+ def _actuals(result):
++    if result.get('kind') == 'actual-adopted-record-reply-complete-development-batch':
++        return [row.get('actual', {}) for row in result.get('variants', {}).values()]
+     if result.get('kind') == 'current-adopted-digest-uses-complete-development-batch':
+         return [row.get('actual', {}) for row in result.get('variants', {}).values()]
+     if result.get('kind') == 'actual-fixed-identity-development-batch':
+@@ -585,6 +590,28 @@
+                        or row.get('actual', {}).get('audits') != row.get('audits')
+                        for name, row in variants.items())):
+             raise ValueError('missing complete current digest correct/two-mutant or fixed-library binding evidence')
++    if job['name'] == 'record-reply':
++        variants = result.get('variants', {})
++        if (result.get('kind') != 'actual-adopted-record-reply-complete-development-batch'
++                or result.get('prepare_only') is not False
++                or result.get('registry_source_admitted_before_capture') is not True
++                or set(variants) != set(job['cases'])
++                or result.get('same_complete_contract_values_recorded_and_library') is not True
++                or result.get('source_worktree_inputs_and_modes_unchanged') is not True
++                or result.get('fixed_runtime_before') != result.get('fixed_runtime_after')
++                or any(None in {row.get(key) for row in variants.values()}
++                       or len({row.get(key) for row in variants.values()}) != 1
++                       for key in ('common_contract_sha256', 'common_values_sha256',
++                                   'common_recorded_sha256', 'common_library_sha256'))
++                or any(row.get('complete') is not True
++                       or row.get('capture_complete') is not True
++                       or row.get('translation_complete') is not True
++                       or row.get('original_kernel_service_dependencies_read_back') is not True
++                       or row.get('property_rejected') is not (name != 'actual')
++                       or row.get('actual', {}).get('files') != row.get('files')
++                       or row.get('actual', {}).get('audits') != row.get('audits')
++                       for name, row in variants.items())):
++            raise ValueError('missing complete actual reply correct/two-mutant evidence')
+     if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
+         if result.get('source_admission_rejected') is not True:
+             raise ValueError('missing actual source-admission rejection: ' + job['name'])
+@@ -1086,7 +1113,7 @@
+         seed_sha256 = hashlib.sha256(content).hexdigest()
+     args = list(job['args'])
+     pass_fds = ()
+-    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter', 'create-standard-identity', 'create-standard-sql', 'digest-uses'):
++    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter', 'create-standard-identity', 'create-standard-sql', 'digest-uses', 'record-reply'):
+         path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
+         descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
+         if not path or descriptor is None:

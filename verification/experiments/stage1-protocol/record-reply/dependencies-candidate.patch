@@ -1,0 +1,18 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -993,3 +993,15 @@
+ 返回上下文表示本次调用的完整引用和值观察，不断言数据库堆不变或跨调用历史。
+ A4 仍须提供实际同一物理连接、参数/执行/事务的连贯历史；V5 仍须建立活对象、
+ writer lease 与提交/未知提交/恢复事实。不得把整个收件事务设为可信。
++
++
++### B2/B4 完整回执返回使用点（候选）
++
++`record_reply` 复用既有 `RecordsOriginal`、完整 Accepted/Recorded 表示及四个固定 A6
++String、Vec、Bool、Option/原字典模型，不新增“整个 handler 正确”的库条件。
++实际正常同步分支保留原完整回执和 Conflict/Unavailable 分类；terminal 不属于原 matches
++认证内容，但必须在返回时保留。值对应不证明持久接受、授权或资源存在。
++
++原 `record_lifecycle(intent.clone(), context).await` 的实际 receiver、完整 intent/context/结果
++以及原 Writer 仍须分别连接；同步 helper 的机器对应不覆盖整个 async/取消/Drop/OOM。
++接口和真实正反视图见 [回执组件](../../verification/experiments/stage1-protocol/record-reply/README.md)。

@@ -1,0 +1,23 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2208,3 +2208,20 @@
+ 输入冻结／累计审计及受影响五包的当前适用版本仍须同批验收，不能仅更新hash。
+ 其它直接SHA使用、上层预算、实际JSON／TLS／对象、SQL／同事务、提交未知／重启、
+ producer／driver及完整V3仍开放；六处方法不代替全部收件或材料证明。
++
++
++### 完整回执返回切片（登记候选）
++
++[record-reply](../verification/experiments/stage1-protocol/record-reply/README.md)连接唯一实际
++`respond → record_reply` 的同步返回决定。从完整已解码 Accepted 和原接收结果开始，
++复用原 Recorded 规格，正确版保留全部回执字段和原错误类别；skip-match、clear-terminal
++两个实际编译/抽取错误版针对同一个 FullReplyContract，仍保留正常见证。
++
++适用生产函数全文 SHA-256 为 `6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669`；
++精确交付提交、原始执行身份和完整输入闭包由主控正式接收时绑定，不能将先前隔离执行改签。
++完整文件/审计清单由组件 generated-index 给出：22项本切片引理，37项既有支持复用，
++共59个唯一名；公共总数须在组合后重算。普通/原生、公共接线和共享套件分别取得当前回执。
++
++该切片不关闭 R13 或整个 V3；实际 producer、await/context/接收结果连接、JSON/Writer、
++TLS/认证来源、事务提交未知/重启和资源事实仍开放。不把已有同步值定理降格为未开发，
++也不把本候选或一次局部通过当作完整持久收件和系统验收。

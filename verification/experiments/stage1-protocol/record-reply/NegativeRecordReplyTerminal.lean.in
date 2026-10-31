@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.RecordReplyModel
+import SandboxModel.Lifecycle.Protocol.RecordReplyValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.RecordReply
+namespace SandboxModel.Stage1Protocol.NegativeRecordReplyTerminal
+noncomputable section
+
+abbrev actual := server.lifecycle.record_reply
+
+theorem common_normal : actual original (.Ok received) = .ok (.Ok received) := by
+  have guarded : RecordedLifecycleIntent.matches received original = .ok true := by
+    simpa only [proof_record_reply_roots.recorded_matches] using
+      (Recorded.accepts_iff received original).mpr normal_relation
+  simp only [actual, server.lifecycle.record_reply, guarded, bind_tc_ok, ↓reduceIte]
+  rfl
+
+theorem actual_clears_terminal : actual original (.Ok terminalReceived) = .ok (.Ok received) := by
+  have guarded : RecordedLifecycleIntent.matches terminalReceived original = .ok true := by
+    simpa only [proof_record_reply_roots.recorded_matches] using
+      (Recorded.accepts_iff terminalReceived original).mpr terminal_relation
+  simp only [actual, server.lifecycle.record_reply, guarded, bind_tc_ok, ↓reduceIte]
+  rfl
+
+theorem not_full_contract : ¬FullReplyContract actual := by
+  intro contract
+  have impossible := contract original (.Ok terminalReceived)
+  rw [actual_clears_terminal, expected_terminal] at impossible
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at impossible
+  have flags := congrArg RecordedLifecycleIntent.terminal impossible
+  change false = true at flags
+  cases flags
+
+end
+end SandboxModel.Stage1Protocol.NegativeRecordReplyTerminal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplyTerminal.common_normal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplyTerminal.actual_clears_terminal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplyTerminal.not_full_contract
