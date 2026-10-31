@@ -209,7 +209,7 @@
     "CreateAttachmentCounterValues.lean.in": "cdc57e4559ae1cc3affb59979dd2297d54dfadc11d93885ed44b06914687f20d",
     "CreateAttachmentFlowModel.lean.in": "10e79340139392f0aa6006bc30cdd1490a05c2f72a9a7ccaca490fce09be108a",
     "CreateAttachmentFlow.lean.in": "ca263e10a83c81f37916f6f64f9c0d50059343839bd8a286cef6fbd7e072b728",
-    "native-cases.rs.in": "62ee9494d59aa4c3c66afccec347a71d7afbb350335a1be157aa86401fb3357f",
+    "native-cases.rs.in": "00e8116421bd719dcae82ca700ee3e0c2a30e67188bd68a9ae8048db7dbed8cb",
     "root.rs.in": "cd60801e537129578e4ef4862c894fe77ba0e319130eb8a336c1f85577573652",
     "CreateAttachmentFlowValues.lean.in": "d1019331887d9ba8cde9c52aaa22c2a36a631ddec7a436429eb78d0369ad724f",
     "CreateAttachmentPath.lean.in": "1dd6acb163b5bfa5bf4d6f412b5453c8d63e4690606cc700c8e12a69c488b10e",
@@ -4547,6 +4547,9 @@
   "published_input_fingerprints": {
     "source_inputs": {
       "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    },
+    "templates": {
+      "native-cases.rs.in": "62ee9494d59aa4c3c66afccec347a71d7afbb350335a1be157aa86401fb3357f"
     }
   }
 }

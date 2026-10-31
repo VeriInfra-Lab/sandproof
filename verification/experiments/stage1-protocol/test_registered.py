@@ -2,12 +2,14 @@
 import ast
 import copy
 import fcntl
+import io
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import sys
+import tarfile
 import tempfile
 import threading
 from types import SimpleNamespace
@@ -140,6 +142,132 @@ class CreateDelivery(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'original Create native log'):
                     registered._check_create_native_result(registered.ROOT, name, folder, result)
 
+    def test_create_worker_counts_and_four_cpu_slots_are_explicit(self):
+        self.assertEqual(registered._execution_options(profile='create-delivery')['workers'], 1)
+        self.assertEqual(registered._execution_options()['workers'], 1)
+        for count in (8, 12):
+            self.assertEqual(registered._execution_options(count, profile='create-delivery')['workers'], count)
+            with self.assertRaises(ValueError):
+                registered._execution_options(count)
+            with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS=str(count)):
+                with self.assertRaises(ValueError):
+                    registered._execution_options()
+        for jobs in (1, 2, 4, 8, 12):
+            slots = registered._cpu_slots('create-delivery', jobs, range(8, 8+4*jobs))
+            self.assertEqual(len(slots), jobs)
+            self.assertTrue(all(len(slot) == 4 for slot in slots))
+            self.assertEqual(len({n for slot in slots for n in slot}), 4*jobs)
+            with self.assertRaisesRegex(ValueError, 'admitted CPUs'):
+                registered._cpu_slots('create-delivery', jobs, range(4*jobs-1))
+
+    def test_child_bootstrap_checks_actual_affinity_before_exec(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            admission = Path(temporary)/'cpu.json'
+            state = {'cpus':set(range(48))}
+            executed = []
+            def set_affinity(pid, cpus):
+                self.assertEqual(pid, 0)
+                state['cpus'] = set(cpus)
+            def execute(path, args):
+                executed.append((path, args))
+            fake_os = SimpleNamespace(sched_getaffinity=lambda pid:set(state['cpus']),
+                sched_setaffinity=set_affinity, getpid=lambda:123, execv=execute)
+            argv = ['bootstrap','8,9,10,11',str(admission),'/fixed/python','/original/driver.py','--lock-fd','9']
+            with patch.dict(sys.modules, os=fake_os), patch.object(sys, 'argv', argv):
+                exec(registered.CPU_BOOTSTRAP, {})
+            self.assertEqual(state['cpus'], {8,9,10,11})
+            self.assertEqual(executed, [('/fixed/python',argv[3:])])
+            self.assertEqual(registered._check_cpu_admission(admission,[8,9,10,11])['actual'],[8,9,10,11])
+            bad = registered._read(admission);bad['actual']=[8,9,10,12]
+            admission.write_text(json.dumps(bad))
+            with self.assertRaises(ValueError):
+                registered._check_cpu_admission(admission)
+            # The parent's subprocess call preserves the same already-open FD
+            # through the fresh child/exec boundary, without preexec_fn.
+            with patch.object(registered.subprocess,'run') as run, \
+                    patch.object(registered.os,'sched_setaffinity',create=True) as parent_set:
+                registered._invoke(Path(temporary),Path('driver.py'),['--lock-fd','9'],
+                    pass_fds=(9,),cpu_affinity=(8,9,10,11),cpu_admission=admission)
+            self.assertEqual(run.call_args.kwargs['pass_fds'],(9,))
+            self.assertNotIn('preexec_fn',run.call_args.kwargs)
+            parent_set.assert_not_called()
+            self.assertEqual(run.call_args.args[0][1:4],['-c',registered.CPU_BOOTSTRAP,'8,9,10,11'])
+
+    def test_create_pool_uses_distinct_slots_and_stops_dispatch_after_first_failure(self):
+        for workers, fail in ((12,False),(4,True)):
+            with self.subTest(workers=workers,fail=fail), tempfile.TemporaryDirectory() as temporary:
+                output=Path(temporary);plan=registered.formal_plan(output,profile='create-delivery')
+                barrier=threading.Barrier(workers);release=threading.Event();started={};mutex=threading.Lock()
+                def launch(root,job,directory,paths,runtime_seed=None,cpu_affinity=None):
+                    with mutex:started[job['name']]=cpu_affinity
+                    directory.mkdir(parents=True);barrier.wait(timeout=10)
+                    if fail and job['name']==plan[0]['name']:
+                        raise ValueError('controlled first Create failure')
+                    if fail and not release.wait(timeout=10):
+                        raise ValueError('parent did not publish first failure')
+                    folder=Path(job['output']);folder.mkdir()
+                    result=folder/'result.json';result.write_text('{"synthetic_scheduler_only":true}')
+                    log=directory/'command.log';log.write_text('synthetic scheduling; no compiler or proof\n')
+                    return dict(name=job['name'],argv=['synthetic'],result_path=str(result),
+                                seconds=0,command_log=str(log))
+                def progress(rows,failures,misses):
+                    if failures:release.set()
+                with patch.object(registered.os,'sched_getaffinity',return_value=set(range(48)),create=True), \
+                        patch.object(registered,'_launch_job',side_effect=launch), \
+                        patch.object(registered,'_check_actual'), \
+                        patch.object(registered,'_checkpoint_evidence',return_value={}), \
+                        patch.object(registered,'_execution_helper',return_value=SimpleNamespace()):
+                    rows,failures=registered.execute_formal_jobs(registered.ROOT,output,plan,
+                        {},{},jobs=workers,profile='create-delivery',progress=progress)
+                self.assertEqual(len(started), workers)
+                self.assertEqual(len({n for slot in started.values() for n in slot}),workers*4)
+                self.assertTrue(all(len(slot)==4 for slot in started.values()))
+                self.assertEqual(bool(failures),fail)
+                self.assertEqual(len(rows), workers-1 if fail else workers)
+
+    def test_source_capsule_and_physical_leaf_bytes_are_both_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)/'source'
+            root.mkdir()
+            archive = Path(temporary)/'sources.tar'
+            files = {}
+            with tarfile.open(archive,'w') as tar:
+                for name in registered.CREATE_SOURCE_MEMBERS:
+                    data = ('-- synthetic readonly source '+name+'\n').encode()
+                    info=tarfile.TarInfo(name);info.size=len(data);tar.addfile(info,io.BytesIO(data))
+                    path=root/'.tools'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+                    files[name]=dict(sha256=registered._sha(path),bytes=len(data))
+            definition=root/registered.HERE/'native-source-inputs.json';definition.parent.mkdir(parents=True)
+            model=dict(schema=1,kind='stage1-create-fixed-readonly-sources',environment=registered.CREATE_SOURCE_ENV,
+                archive_sha256=registered._sha(archive),archive_bytes=archive.stat().st_size,files=files,contains_tool_binaries=False)
+            definition.write_text(json.dumps(model))
+            with patch.dict(os.environ,{registered.CREATE_SOURCE_ENV:str(archive)}):
+                registered.check_create_sources(root)
+                with patch.dict(os.environ,{registered.CREATE_SOURCE_ENV:''}), self.assertRaises(ValueError):
+                    registered.check_create_sources(root)
+                leaf=root/'.tools'/registered.CREATE_SOURCE_MEMBERS[0];original=leaf.read_bytes()
+                leaf.write_bytes(original+b'changed')
+                with self.assertRaisesRegex(ValueError,'source bytes differ'):
+                    registered.check_create_sources(root)
+                leaf.write_bytes(original)
+                with patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal'), self.assertRaises(ValueError):
+                    registered.prepare_create_sources(root)
+                with patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='native'):
+                    leaf.unlink();registered.prepare_create_sources(root)
+                    self.assertEqual(leaf.stat().st_mode&0o777,0o444)
+                    leaf.chmod(0o644);leaf.write_bytes(b'existing different tool/source')
+                    with self.assertRaisesRegex(ValueError,'never overwrite'):
+                        registered.prepare_create_sources(root)
+                    leaf.write_bytes(original)
+                # Existing formal tool-root directory aliases remain legal;
+                # only actual leaf bytes/type and declared archive are checked.
+                seed=Path(temporary)/'fixed-seed';(root/'.tools/aeneas').rename(seed)
+                (root/'.tools/aeneas').symlink_to(seed,target_is_directory=True)
+                registered.check_create_sources(root)
+                with archive.open('ab') as stream:stream.write(b'changed')
+                with self.assertRaisesRegex(ValueError,'archive changed'):
+                    registered.check_create_sources(root)
+
     def test_inherited_lock_survives_exec_and_child_does_not_unlock_parent(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -148,6 +276,8 @@ class CreateDelivery(unittest.TestCase):
             driver = root/'child.py'
             driver.write_text('import fcntl, os, sys\n'
                 'fd=int(sys.argv[1])\nfcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
+                'if len(sys.argv)>3:\n'
+                ' assert sorted(os.sched_getaffinity(0))==[int(n) for n in sys.argv[3].split(",")]\n'
                 'with open(sys.argv[2],"r+") as other:\n'
                 ' try: fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
                 ' except BlockingIOError: pass\n'
@@ -157,7 +287,15 @@ class CreateDelivery(unittest.TestCase):
                 fcntl.flock(parent, fcntl.LOCK_EX|fcntl.LOCK_NB)
                 fd, identity = registered.inherited_lock()
                 self.assertEqual(identity['inode'], lock.stat().st_ino)
-                registered._invoke(root, driver, [fd, lock], pass_fds=(fd,))
+                args = [fd, lock]
+                options = {}
+                if hasattr(os,'sched_getaffinity') and len(os.sched_getaffinity(0)) >= 4:
+                    cpus = tuple(sorted(os.sched_getaffinity(0))[:4])
+                    args += [','.join(map(str,cpus))]
+                    options = dict(cpu_affinity=cpus,cpu_admission=root/'cpu-admission.json')
+                registered._invoke(root, driver, args, pass_fds=(fd,), **options)
+                if options:
+                    self.assertEqual(registered._check_cpu_admission(root/'cpu-admission.json',cpus)['actual'],list(cpus))
                 with lock.open('r+') as other, self.assertRaises(BlockingIOError):
                     fcntl.flock(other, fcntl.LOCK_EX|fcntl.LOCK_NB)
                 wrong = root/'wrong-lock'
@@ -344,6 +482,7 @@ class Registration(unittest.TestCase):
         shared = SimpleNamespace(native_case=native_case)
         with tempfile.TemporaryDirectory() as temporary, \
                 patch.object(registered, 'validate_registration'), \
+                patch.object(registered, 'check_create_sources'), \
                 patch.object(registered, '_shared', return_value=shared), \
                 patch.object(registered, '_original_file', return_value=Path('/unused/source.tar')), \
                 patch.object(registered, '_invoke'), \
@@ -1125,6 +1264,7 @@ class CheckpointExecution(unittest.TestCase):
         before_umask = os.umask(0o077)
         try:
             with patch.object(registered,'validate_registration'), \
+                    patch.object(registered,'check_create_sources'), \
                     patch.object(registered,'_shared',return_value=shared), \
                     patch.object(registered,'_evidence',return_value=evidence), \
                     patch.object(registered,'_original_file',return_value=retained), patch.object(registered,'_retained_result'), \

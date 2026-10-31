@@ -139,11 +139,14 @@ attachment-flow、fixed-identity、lifetime-sql、standard-adapter 十二包。
 
 ```sh
 # 普通机，同一干净候选；完整 functional 依原键只执行一次。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope stage1-create-delivery --output /private/create-native-evidence
 # 证明机，复制原 commands/runtime/complete 全部证据；不传 Cargo target。
 export SANDPROOF_ACCEPTANCE_ROLE=formal
 export SANDPROOF_NATIVE_EVIDENCE=/private/create-native-evidence
+# 同一原归档的本机路径；六份实际工具源文件仍须匹配。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
 # 操作者已持原协调锁；本进程继承仍打开的同一 FD，不能只传数字而关闭 FD。
 export SANDPROOF_LOCK_FILE=/private/held-component.lock
 export SANDPROOF_LOCK_FD=9
@@ -158,3 +161,15 @@ Create 和 full/all 的整份封口相互拒绝。此 profile 不运行历史 re
 这批覆盖同步 Create 的真实函数和有限接口条件，不包括认证来源、JSON/TLS、物理事务
 同一性、持久提交、崩溃恢复或整个标准库；详见[依赖合同](../../../docs/formal/dependencies.md#v3-create-同步流程的接口条件)。
 准确适用提交和完成情况以[覆盖记录](../../../docs/proof-coverage.md)及 #635 为准。
+
+上述第五档只含 `native-source-inputs.json` 固定的六份 Lean 文本，用于原检查器核对
+来源哈希。普通入口先验证整个原 tar 及完整成员，再把缺失源文件只读放到本次
+`.tools` 相应目录，拒绝覆盖不同内容；不安装或运行任何证明工具。
+证明入口使用原真实工具目录核对同样六文件，不以这份源档代替工具运行检查。
+原四档不变；本批三个旧有限范围也保守携带同一第五档的来源键，以复用同一完整
+`functional`，不能省略、替换或改写旧回执。
+
+Create 可显式设 `SANDPROOF_STAGE1_JOBS=12`，前提是外层已获准 48 CPU；8 路需
+32 CPU，4 路需 16 CPU。原调度器给每个新任务一个不重叠四核组，子进程设置并
+实际读回后才执行原驱动，原锁 FD 保留。每任务原独立目录、缓存、完整文件与审计、
+首失败停止新派发均不变。默认一路，`full` 原 1/2/4 路不受此选项扩展。

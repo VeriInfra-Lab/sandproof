@@ -58,8 +58,8 @@
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorExamples.lean.in": "f7f5b0bf20f0aa70298f736dc70bfc5464ccc8c92bb13f557046d8b8534d7fc3",
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorModel.lean.in": "801d02858897e7b8a361223ecb84bc4addaa7d6334e86ada5c9c162187a86fb3",
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorValues.lean.in": "cfe224f9b66c4efe5b31e29a00cb615ec81d38844f53ee015905eedcc3ab93e9",
-    "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "d901051d1033330217ee152efa178ad5edb6032c81f97b3eafa8af413754b1b9",
-    "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303",
+    "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "cd129fd80ffc2095b8af9160492d9135805c1b79f1312aa7e6730bf7995a4fb8",
+    "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in": "e00f0573a9a00ad5795d6f437d13bd6f66b7ceecf48f0a28e687bbfeef542d65",
     "verification/experiments/stage1-protocol/create-owner-successor/reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
     "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
     "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
@@ -763,7 +763,7 @@
         "before": "    if inbox.sessions[s].terminal\n        || inbox.sessions[s].refusal.is_some()",
         "after": "    if inbox.sessions[s].refusal.is_some()"
       },
-      "function_marker": "pub(super) fn create_attachment_selection(",
+      "function_marker": "fn create_attachment_selection(",
       "expected_failures": [
         "proof_selection_terminal"
       ],
@@ -776,7 +776,7 @@
         "before": "        || inbox.sessions[s].refusal.is_some()\n",
         "after": ""
       },
-      "function_marker": "pub(super) fn create_attachment_selection(",
+      "function_marker": "fn create_attachment_selection(",
       "expected_failures": [
         "proof_selection_refusal"
       ],
@@ -789,7 +789,7 @@
         "before": "inbox.sessions[s].current_version != intent.accepted_version",
         "after": "inbox.sessions[s].current_version < intent.accepted_version"
       },
-      "function_marker": "pub(super) fn create_attachment_selection(",
+      "function_marker": "fn create_attachment_selection(",
       "expected_failures": [
         "proof_selection_older_version"
       ],
@@ -802,7 +802,7 @@
         "before": "        || inbox.sessions[s].local.is_some()\n",
         "after": ""
       },
-      "function_marker": "pub(super) fn create_attachment_selection(",
+      "function_marker": "fn create_attachment_selection(",
       "expected_failures": [
         "proof_selection_existing_local"
       ],
@@ -815,7 +815,7 @@
         "before": "Ok((s, e, create.startup_deadline_ms))",
         "after": "Ok((s, e, create.timeout_ms))"
       },
-      "function_marker": "pub(super) fn create_attachment_selection(",
+      "function_marker": "fn create_attachment_selection(",
       "expected_failures": [
         "proof_selection_normal",
         "proof_selection_first_position"
@@ -828,7 +828,7 @@
         "before": "if record.0 != sandbox {",
         "after": "if record.0 == sandbox {"
       },
-      "function_marker": "pub(super) fn create_owner_successor(",
+      "function_marker": "fn create_owner_successor(",
       "expected_failures": [
         "proof_successor_excluded_largest",
         "proof_successor_absent_exclusion",
@@ -844,7 +844,7 @@
         "before": "if record.0 != sandbox {",
         "after": "if core::SandboxId(record.1.owner.0) != sandbox {"
       },
-      "function_marker": "pub(super) fn create_owner_successor(",
+      "function_marker": "fn create_owner_successor(",
       "expected_failures": [
         "proof_successor_excluded_largest",
         "proof_successor_excluded_maximum",
@@ -855,10 +855,10 @@
     "successor-wrong-high-water": {
       "group": "successor",
       "mutation": {
-        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
-        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+        "before": "fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
       },
-      "function_marker": "pub(super) fn create_owner_successor(",
+      "function_marker": "fn create_owner_successor(",
       "expected_failures": [
         "proof_successor_high_water",
         "proof_successor_excluded_maximum",
@@ -874,7 +874,7 @@
         "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))",
         "after": "    Ok(core::TenantId(highest.wrapping_add(1)))"
       },
-      "function_marker": "pub(super) fn create_owner_successor(",
+      "function_marker": "fn create_owner_successor(",
       "expected_failures": [
         "proof_successor_other_maximum",
         "proof_successor_high_water_exhausted"
@@ -906,8 +906,79 @@
       "verification/experiments/stage1-protocol/adopted-create/formal.py": "f3d8434702c3e832bc76db17192db54ae05edc04d51ee28d1de40b16f9378999",
       "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "96391005575339a348624d0aa61f73afe6936c523b8b12d7606b5dba20c337a8",
       "verification/experiments/stage1-protocol/create-owner-successor/support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
-      "verification/experiments/stage1-protocol/create-selection/support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77"
+      "verification/experiments/stage1-protocol/create-selection/support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77",
+      "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303"
     }
   },
-  "published_production_source_sha256": "e2a722904fe9283cf069029551e8b0058ff297ff56f959fd954cef42f62f3f40"
+  "published_production_source_sha256": "e2a722904fe9283cf069029551e8b0058ff297ff56f959fd954cef42f62f3f40",
+  "published_native_variant_locators": {
+    "selection-wrong-terminal": {
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "    if inbox.sessions[s].terminal\n        || inbox.sessions[s].refusal.is_some()",
+        "after": "    if inbox.sessions[s].refusal.is_some()"
+      }
+    },
+    "selection-wrong-refusal": {
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "        || inbox.sessions[s].refusal.is_some()\n",
+        "after": ""
+      }
+    },
+    "selection-wrong-version": {
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "inbox.sessions[s].current_version != intent.accepted_version",
+        "after": "inbox.sessions[s].current_version < intent.accepted_version"
+      }
+    },
+    "selection-wrong-local": {
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "        || inbox.sessions[s].local.is_some()\n",
+        "after": ""
+      }
+    },
+    "selection-wrong-deadline": {
+      "function_marker": "pub(super) fn create_attachment_selection(",
+      "mutation": {
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "before": "Ok((s, e, create.startup_deadline_ms))",
+        "after": "Ok((s, e, create.timeout_ms))"
+      }
+    },
+    "successor-wrong-exclusion": {
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if record.0 == sandbox {"
+      }
+    },
+    "successor-wrong-sandbox-field": {
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if core::SandboxId(record.1.owner.0) != sandbox {"
+      }
+    },
+    "successor-wrong-high-water": {
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "mutation": {
+        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+      }
+    },
+    "successor-wrong-overflow": {
+      "function_marker": "pub(super) fn create_owner_successor(",
+      "mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))"
+      }
+    }
+  }
 }

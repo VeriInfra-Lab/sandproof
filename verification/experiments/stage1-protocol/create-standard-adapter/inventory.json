@@ -32,7 +32,7 @@
     "StandardCreateModel.lean.in": "1ca04332c112e639cb0d9bc61ef9f7af1c25105ce565479d566d0b1e77b684ab",
     "StandardCreateWitnesses.lean.in": "d8769981591397530c4e17588ad985231c4eadbb70e24d500ea51baecb4d0f7d",
     "TypesExternal.lean.in": "968be1eb530f48569c916d324596e04f7024882d35f27b636a4cc06a5b921ae8",
-    "native-cases.rs.in": "7fe3b0b946ee6e7b4803ef9efe8fd4aba79d0a65ca4a45eef643fbc3a6bc1893",
+    "native-cases.rs.in": "bd07025f5711493d836a1531c9ee364d5c3f9f4317ea7f604196e7429d927a73",
     "root.rs.in": "c24b9f36290308e31d49eeb9e3a973a071b640e3dc216ccea1c0aad2a09120b5"
   },
   "drivers": {
@@ -954,6 +954,9 @@
     },
     "source_inputs": {
       "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    },
+    "templates": {
+      "native-cases.rs.in": "7fe3b0b946ee6e7b4803ef9efe8fd4aba79d0a65ca4a45eef643fbc3a6bc1893"
     }
   }
 }

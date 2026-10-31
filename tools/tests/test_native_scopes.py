@@ -17,6 +17,28 @@ from tools.tests import test_acceptance_receipts as fixtures
 class NativeScopeTests(unittest.TestCase):
     def setUp(self):
         fixtures.ReceiptTests.setUp(self)
+        source_admission = mock.patch.object(suite, 'stage1_source_admission')
+        source_admission.start(); self.addCleanup(source_admission.stop)
+        # A synthetic packet needs a synthetic fixed source identity too. The
+        # actual six-member archive/physical-source gate is tested separately.
+        source_only = self.base/'synthetic-create-source.tar'
+        source_only.write_bytes(b'synthetic source identity; not a real source capsule\n')
+        expected_source = receipts.sha(source_only)
+        source_environment = mock.patch.dict(os.environ,
+            SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=str(source_only))
+        source_environment.start(); self.addCleanup(source_environment.stop)
+        original_registration = receipts.stage1_registration
+        def registration():
+            registered = original_registration()
+            original_profile = registered.create_profile
+            def profile(root=receipts.ROOT):
+                result = original_profile(root)
+                result['source_only']['archive_sha256'] = expected_source
+                return result
+            registered.create_profile = profile
+            return registered
+        registration_patch = mock.patch.object(receipts, 'stage1_registration', side_effect=registration)
+        registration_patch.start(); self.addCleanup(registration_patch.stop)
         self.labels = receipts.stage1_native_labels()
         temporary = mock.patch.dict(os.environ, {'TMPDIR': str(self.base)})
         temporary.start(); self.addCleanup(temporary.stop)
@@ -82,7 +104,7 @@ class NativeScopeTests(unittest.TestCase):
         for scope in ('all', 'stage1-protocol', 'capture-caller', 'pause-stop', 'pause-publication'):
             with self.subTest(scope=scope), self.assertRaises(ValueError):
                 receipts.validate_native(self.cache, scope=scope)
-        for defect in ('missing-command', 'missing-package', 'wrong-profile', 'changed-inventory'):
+        for defect in ('missing-command', 'missing-package', 'wrong-profile', 'changed-inventory', 'missing-source'):
             bad = copy.deepcopy(seal)
             if defect == 'missing-command':
                 bad['commands'].pop(next(iter(bad['commands'])))
@@ -90,6 +112,8 @@ class NativeScopeTests(unittest.TestCase):
                 bad['create_definition']['packages'].pop()
             elif defect == 'wrong-profile':
                 bad['profile'] = 'full'
+            elif defect == 'missing-source':
+                del bad['source_archives']['SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE']
             else:
                 bad['create_definition']['packages'][0]['inventory_sha256'] = '0'*64
             receipts.write_json(self.cache/'complete.json', bad)
@@ -99,6 +123,22 @@ class NativeScopeTests(unittest.TestCase):
         self.packet(scope='all')
         with self.assertRaises(ValueError):
             receipts.validate_native(self.cache, scope='stage1-create-delivery')
+
+    def test_public_native_entry_sets_role_before_source_preparation(self):
+        private = self.base/'controlled-native-temporary'
+        private.mkdir()
+        def admit(scope, *, prepare=False):
+            self.assertTrue(prepare)
+            self.assertEqual(os.environ.get('SANDPROOF_ACCEPTANCE_ROLE'),'native')
+            raise RuntimeError('controlled stop after source admission')
+        for scope in ('all','stage1-protocol','stage1-create-delivery'):
+            os.environ.pop('SANDPROOF_ACCEPTANCE_ROLE',None)
+            with self.subTest(scope=scope), \
+                    mock.patch.object(suite,'trusted_checkout'), \
+                    mock.patch.object(suite,'private_temporary_root',return_value=private), \
+                    mock.patch.object(suite,'stage1_source_admission',side_effect=admit), \
+                    self.assertRaisesRegex(RuntimeError,'controlled stop after source admission'):
+                suite.run_locked_suite(self.base/('entry-'+scope),scope=scope)
 
     def test_create_delegates_all_twelve_without_running_retained_or_old_drivers(self):
         registered = mock.Mock()

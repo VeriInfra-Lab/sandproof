@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,6 +27,29 @@ sys.path.insert(0, str(ROOT))
 
 PROFILES = ('full', 'create-delivery')
 CREATE_SCOPE = 'stage1-create-delivery'
+CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
+FULL_WORKERS = (1, 2, 4)
+CREATE_WORKERS = (1, 2, 4, 8, 12)
+CREATE_CPUS_PER_JOB = 4
+# This runs in a fresh child, before exec of the original driver. The threaded
+# parent never changes its own affinity and never uses preexec_fn.
+CPU_BOOTSTRAP = """import json, os, sys
+requested = [int(n) for n in sys.argv[1].split(',')]
+before = sorted(os.sched_getaffinity(0))
+if len(requested) != 4 or len(set(requested)) != 4 or not set(requested) <= set(before):
+    raise RuntimeError('invalid admitted four-CPU child slot')
+os.sched_setaffinity(0, set(requested))
+actual = sorted(os.sched_getaffinity(0))
+if actual != sorted(requested):
+    raise RuntimeError('child CPU affinity differs from admission')
+with open(sys.argv[2], 'x') as stream:
+    json.dump(dict(kind='stage1-create-four-cpu-admission', requested=sorted(requested),
+                   actual=actual, parent_allowed=before, pid=os.getpid()), stream)
+os.execv(sys.argv[3], sys.argv[3:])
+"""
+CREATE_SOURCE_MEMBERS = tuple('aeneas/backends/lean/Aeneas/'+name for name in (
+    'Std/Scalar/CoreConvertNum.lean', 'Std/Scalar/Ops/Mul.lean', 'Std/Scalar/Ops/Add.lean',
+    'Std/Scalar/Core.lean', 'Std/Core/Result.lean', 'Data/Discriminant.lean'))
 # Fixed published package order. This is a complete delivery profile, not an
 # operator-supplied subset of the full V3 obligations.
 CREATE_CASES = {
@@ -127,7 +151,87 @@ def create_profile(root=ROOT):
     if sum(len(row['native_views']) for row in packages) != 66:
         raise ValueError('Create delivery must retain all 66 native views')
     return dict(profile='create-delivery', scope=CREATE_SCOPE, packages=packages,
+                source_only=source_definition(root),
+                cpus_per_job=CREATE_CPUS_PER_JOB, explicit_workers=list(CREATE_WORKERS), default_workers=1,
                 formal_view_count=42, native_view_count=66, whole_v3=False)
+
+
+def source_definition(root=ROOT):
+    path = root/HERE/'native-source-inputs.json'
+    data = _read(path)
+    if (data.get('schema') != 1 or data.get('kind') != 'stage1-create-fixed-readonly-sources'
+            or data.get('environment') != CREATE_SOURCE_ENV
+            or data.get('contains_tool_binaries') is not False
+            or set(data.get('files', {})) != set(CREATE_SOURCE_MEMBERS)
+            or re.fullmatch('[0-9a-f]{64}', str(data.get('archive_sha256'))) is None
+            or type(data.get('archive_bytes')) is not int or data['archive_bytes'] <= 0):
+        raise ValueError('Create requires exactly its six fixed readonly source members')
+    for row in data['files'].values():
+        if (re.fullmatch('[0-9a-f]{64}', str(row.get('sha256'))) is None
+                or type(row.get('bytes')) is not int or row['bytes'] <= 0):
+            raise ValueError('invalid fixed readonly source identity')
+    return dict(data, definition_sha256=_sha(path))
+
+
+def _create_source_bytes(root=ROOT):
+    definition = source_definition(root)
+    value = os.environ.get(CREATE_SOURCE_ENV)
+    if not value:
+        raise ValueError('missing fixed source-only archive: '+CREATE_SOURCE_ENV)
+    archive = Path(value)
+    if (archive.is_symlink() or not archive.is_file()
+            or archive.stat().st_size != definition['archive_bytes']
+            or _sha(archive) != definition['archive_sha256']):
+        raise ValueError('fixed Create source-only archive changed or missing')
+    payload = {}
+    with tarfile.open(archive, 'r:') as tar:
+        for member in tar:
+            name = member.name
+            if name in payload or name not in definition['files'] or not member.isfile():
+                raise ValueError('extra/duplicate/non-regular Create source member')
+            data = tar.extractfile(member).read()
+            wanted = definition['files'][name]
+            if member.size != wanted['bytes'] or hashlib.sha256(data).hexdigest() != wanted['sha256']:
+                raise ValueError('Create archived source bytes differ: '+name)
+            payload[name] = data
+    if set(payload) != set(CREATE_SOURCE_MEMBERS):
+        raise ValueError('missing fixed Create source member')
+    return definition, payload
+
+
+def check_create_sources(root=ROOT):
+    """Verify declared source bytes only; never install or execute a proof tool."""
+    definition, _ = _create_source_bytes(root)
+    for name, wanted in definition['files'].items():
+        actual = root/'.tools'/name
+        if (actual.is_symlink() or not actual.is_file() or actual.stat().st_size != wanted['bytes']
+                or _sha(actual) != wanted['sha256']):
+            raise ValueError('Create readonly source bytes differ: '+name)
+    return definition
+
+
+def prepare_create_sources(root=ROOT):
+    """Native-only, six fixed text leaves; never overwrite an installed tool."""
+    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
+        raise ValueError('source-only preparation belongs to the native host')
+    definition, payload = _create_source_bytes(root)
+    for name, content in payload.items():
+        target = root/'.tools'/name
+        if target.is_symlink() or (target.exists() and (not target.is_file()
+                or _sha(target) != definition['files'][name]['sha256'])):
+            raise ValueError('existing source/tool leaf differs; never overwrite it: '+name)
+        if target.exists():
+            continue
+        for parent in target.parents:
+            if parent == root:
+                break
+            if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+                raise ValueError('do not create a source leaf through an existing tool alias')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open('xb') as stream:
+            stream.write(content)
+        target.chmod(0o444)
+    return check_create_sources(root)
 
 
 # The inbox labels are the exact labels consumed by the existing formal.py.
@@ -200,9 +304,17 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _invoke(root, driver, args, env=None, *, log=None, pass_fds=()):
+def _invoke(root, driver, args, env=None, *, log=None, pass_fds=(), cpu_affinity=None, cpu_admission=None):
     # Inherit stdout: only the original actual_files checker emits Checked lines.
     argv = [sys.executable, str(root/driver), *map(str, args)]
+    if cpu_affinity is not None:
+        if (len(cpu_affinity) != CREATE_CPUS_PER_JOB
+                or len(set(cpu_affinity)) != CREATE_CPUS_PER_JOB
+                or any(type(n) is not int or n < 0 for n in cpu_affinity)
+                or cpu_admission is None):
+            raise ValueError('Create child requires an explicit four-CPU slot and admission path')
+        argv = [sys.executable, '-c', CPU_BOOTSTRAP, ','.join(map(str, cpu_affinity)),
+                str(cpu_admission), *argv]
     if log is None:
         subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, check=True, pass_fds=pass_fds)
     else:
@@ -447,6 +559,7 @@ def run_native(root, work, *, profile='full', scope=None):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
         raise ValueError('native registration must execute on the native host')
     validate_registration(root, profile=profile)
+    check_create_sources(root)
     scope = native_scope(profile) if scope is None else scope
     if scope not in ('all', native_scope(profile)):
         raise ValueError('native scope differs from the explicit Stage1 profile')
@@ -490,6 +603,7 @@ def run_native(root, work, *, profile='full', scope=None):
             lambda name=name, output=output: _crate_native(root, output, name), scope=scope)
         _original_file(receipt, 'result.json')
         receipts[label] = receipt
+    check_create_sources(root)
     return receipts
 
 
@@ -1134,7 +1248,42 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
+    if 'create_package' in job:
+        admission = log.parent/'cpu-admission.json'
+        _check_cpu_admission(admission)
+        evidence[str(admission.resolve())] = _sha(admission)
     return evidence
+
+
+def _check_cpu_admission(path, expected=None):
+    row = _read(path)
+    cpus = row.get('actual')
+    before = row.get('parent_allowed')
+    if (row.get('kind') != 'stage1-create-four-cpu-admission'
+            or not isinstance(cpus, list) or len(cpus) != CREATE_CPUS_PER_JOB
+            or any(type(n) is not int or n < 0 for n in cpus)
+            or cpus != sorted(set(cpus)) or row.get('requested') != cpus
+            or not isinstance(before, list) or any(type(n) is not int or n < 0 for n in before)
+            or before != sorted(set(before)) or not set(cpus) <= set(before)
+            or (expected is not None and cpus != sorted(expected))
+            or type(row.get('pid')) is not int or row['pid'] <= 0):
+        raise ValueError('missing or changed original four-CPU child admission')
+    return row
+
+
+def _cpu_slots(profile, jobs, allowed=None):
+    """Exclusive slots for explicit Create; full keeps its original workers."""
+    allowed = list(os.sched_getaffinity(0) if allowed is None else allowed)
+    if not allowed or any(type(n) is not int or n < 0 for n in allowed) or len(set(allowed)) != len(allowed):
+        raise ValueError('invalid actual parent CPU affinity')
+    allowed.sort()
+    if profile == 'create-delivery' and len(allowed) < jobs*CREATE_CPUS_PER_JOB:
+        raise ValueError(f'Create requires {jobs*CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
+    if len(allowed) < CREATE_CPUS_PER_JOB:
+        raise ValueError('Create jobs require four admitted CPUs')
+    groups = [tuple(allowed[i:i+CREATE_CPUS_PER_JOB])
+              for i in range(0, len(allowed)-CREATE_CPUS_PER_JOB+1, CREATE_CPUS_PER_JOB)]
+    return [groups[i % len(groups)] for i in range(jobs)]
 
 
 def _resume_rows(path):
@@ -1179,13 +1328,19 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
+        if 'create_package' in job:
+            admission = Path(receipt['command_log']).parent/'cpu-admission.json'
+            if (previous.get('cpu_admission') != _check_cpu_admission(admission)
+                    or previous.get('cpu_admission_path') != str(admission)
+                    or previous.get('cpu_admission_sha256') != _sha(admission)):
+                raise ValueError('original CPU placement record differs from its checkpoint evidence')
         row = dict(previous, use='REUSE', reuse_seconds=0, reuse_basis=basis)
         return row, None
     except (OSError, ValueError, KeyError, TypeError) as error:
         return None, repr(error)
 
 
-def _launch_job(root, job, directory, paths, runtime_seed=None):
+def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=None):
     started = time.monotonic()
     directory.mkdir(mode=0o700, parents=True)
     for name in ('runtime-cache', 'cargo-target'):
@@ -1215,10 +1370,17 @@ def _launch_job(root, job, directory, paths, runtime_seed=None):
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
+    if 'create_package' in job:
+        transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
     argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log', **transport)
-    return dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
+    row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
+    if 'create_package' in job:
+        admission = directory/'cpu-admission.json'
+        row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
+                   cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
+    return row
 
 
 def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=None, recompute=False,
@@ -1228,8 +1390,9 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
     The parent alone validates and publishes checkpoints. Failures stop new
     dispatch; already-started independent jobs finish and retain their evidence.
     """
-    if jobs not in (1, 2, 4):
-        raise ValueError('registered worker count must be 1, 2 or 4')
+    allowed_workers = CREATE_WORKERS if check_profile(profile) == 'create-delivery' else FULL_WORKERS
+    if type(jobs) is not int or jobs not in allowed_workers:
+        raise ValueError('registered worker count is outside the explicit profile')
     if len({job['name'] for job in plan}) != len(plan):
         raise ValueError('duplicate registered execution job')
     expected = {job['name']:_job_description(job) for job in formal_plan(output, root=root, profile=profile)}
@@ -1239,6 +1402,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                 or Path(job['output']).resolve() != (output/job['name']).resolve()
                 or Path(job['output']).exists()):
             raise ValueError('job must use its original descriptor and new private output')
+    slots = (_cpu_slots(profile, jobs) if any('create_package' in j for j in plan) else [None]*jobs)
     helper, shared = _execution_helper(root), _shared()
     context_path = output/'execution-inputs.json'
     shared.write_json(context_path, context)
@@ -1261,17 +1425,22 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
     stopped = False
     with ThreadPoolExecutor(max_workers=jobs) as executor:
         inflight = {}
+        free_slots = list(range(jobs))
         while pending or inflight:
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
+                slot = free_slots.pop(0)
+                options = dict(cpu_affinity=slots[slot]) if 'create_package' in job else {}
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
-                                         runtime_seed)
-                inflight[future] = job
+                                         runtime_seed, **options)
+                inflight[future] = (job, slot)
             if not inflight:
                 break
             done, _ = wait(inflight, return_when=FIRST_COMPLETED)
             for future in done:
-                job = inflight.pop(future)
+                job, slot = inflight.pop(future)
+                free_slots.append(slot)
+                free_slots.sort()
                 directory = output/'execution'/job['name']
                 try:
                     row = future.result()
@@ -1301,20 +1470,22 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
     return [results[job['name']] for job in plan if job['name'] in results], failures
 
 
-def _execution_options(jobs=None, resume_from=None, recompute=False):
+def _execution_options(jobs=None, resume_from=None, recompute=False, *, profile='full'):
+    allowed = CREATE_WORKERS if check_profile(profile) == 'create-delivery' else FULL_WORKERS
+    choices = '1, 2, 4, 8 or 12' if profile == 'create-delivery' else '1, 2 or 4'
     sources = dict(workers='argument' if jobs is not None else 'default',
                    resume_from='argument' if resume_from is not None else 'default')
     if jobs is None:
         value = os.environ.get('SANDPROOF_STAGE1_JOBS')
         if value is not None:
-            if value not in ('1', '2', '4'):
-                raise ValueError('SANDPROOF_STAGE1_JOBS must be 1, 2 or 4')
+            if value not in tuple(map(str, allowed)):
+                raise ValueError('SANDPROOF_STAGE1_JOBS must be '+choices)
             jobs = int(value)
             sources['workers'] = 'SANDPROOF_STAGE1_JOBS'
         else:
             jobs = 1
-    if type(jobs) is not int or jobs not in (1, 2, 4):
-        raise ValueError('registered worker count must be 1, 2 or 4')
+    if type(jobs) is not int or jobs not in allowed:
+        raise ValueError('registered worker count must be '+choices)
     if resume_from is None and os.environ.get('SANDPROOF_STAGE1_RESUME_FROM'):
         resume_from = Path(os.environ['SANDPROOF_STAGE1_RESUME_FROM'])
         sources['resume_from'] = 'SANDPROOF_STAGE1_RESUME_FROM'
@@ -1331,7 +1502,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     """Call after the unchanged retained component, on the proof host only."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('formal registration consumes shared native receipts only')
-    options = _execution_options(jobs, resume_from, recompute)
+    options = _execution_options(jobs, resume_from, recompute, profile=profile)
     jobs, resume_from = options['workers'], options['resume_from']
     validate_registration(root, profile=profile)
     if (profile == 'full') != (retained_result is not None):
@@ -1349,6 +1520,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     for label, driver, _ in CREATE_NATIVE_DRIVERS:
         original = _original_file(receipts[label], 'result.json')
         _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+    check_create_sources(root)
     source_before = shared.repository_inputs(root)
     output = Path(output)
     output.mkdir(mode=0o700, parents=True)
@@ -1368,6 +1540,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
                 or shared.repository_inputs(root) != source_before
                 or _source_modes(root) != context['repository']['modes']):
             raise ValueError('shared native seal or registered source changed during execution')
+        check_create_sources(root)
     def progress(rows, failures, misses):
         record.update(results=rows, execution_failures=failures, reuse_misses=misses)
         shared.write_json(output/'registered-result.json', record)
@@ -1428,6 +1601,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
         elif expected_audits != observed_audits:
             raise ValueError('unexpected Create audit declarations')
         shared.validate_native(cache, scope=scope)
+        check_create_sources(root)
         source_guard()
         if helper.runtime() != context['runtime']:
             raise ValueError('actual formal tools/libraries/options changed during execution')
@@ -1442,7 +1616,7 @@ def main():
     parser.add_argument('mode', choices=('native', 'formal', 'plan'))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--retained-result', type=Path)
-    parser.add_argument('--jobs', type=int, choices=(1, 2, 4))
+    parser.add_argument('--jobs', type=int, choices=CREATE_WORKERS)
     parser.add_argument('--resume-from', type=Path)
     parser.add_argument('--recompute', action='store_true')
     parser.add_argument('--profile', choices=PROFILES, default='full')

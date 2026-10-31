@@ -86,7 +86,7 @@
     "OverflowCounter.lean.in": "9ee7068fd77a728fd54d106d65262f40cf240d1fd8fc9d610a8fe31c17c611f8",
     "TypesExternal.lean.in": "2f7204935558782389719e0bc4d7aa2f9f581edc6738a9b3a0548aa1ff958b7c",
     "candidate.patch": "2c4d4a2bc2d5ff51731b7eeb80f019cab194c2bd6f4f7949fcd2e35064378543",
-    "native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303",
+    "native-common.rs.in": "e00f0573a9a00ad5795d6f437d13bd6f66b7ceecf48f0a28e687bbfeef542d65",
     "reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
     "reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
     "reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
@@ -461,6 +461,9 @@
       "support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
       "formal.py": "396b66d4f1065d6211ad48798c88817daae457b1d2f13ff81e2ca9e68995ca9d",
       "native.py": "9be5e59b9d2c9e13c592ae3c7ae806bd52f9c003a17c5685dbe12b5085b6f8b3"
+    },
+    "templates": {
+      "native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303"
     }
   },
   "published_candidate_kind": "unadopted-create-owner-successor-proof-candidate"

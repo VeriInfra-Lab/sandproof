@@ -25,7 +25,7 @@
   },
   "templates": {
     "TypesExternal.lean.in": "f5a3833e38da6e1143a20bc21ffa454a407344973637cac2df8abb8373df40ab",
-    "native-cases.rs.in": "ee36a71e82e9f99ca07d709da2ecb20dcebb4d7b5733187a97cf894c36926061",
+    "native-cases.rs.in": "6ca8e2dac2d81a4d8da756594cd470ed094793f78c4da4efc4df53e03da282cb",
     "root.rs.in": "8441206b14cec49fa52c2b4c0229c4ad5ab6a4265263222e5eb1255449a0de0e",
     "LifetimeSqlWitnesses.lean.in": "89ca847c0cc6dfdd9cd4dc5240fd202f330f6068adfe7c2fd00624c02a96b64a",
     "LifetimeSqlComplete.lean.in": "0ef60749886ec2b9dd51ad0fe8baa375f4a668c9bf11ca9dc2bacf29e1724f58",
@@ -595,6 +595,9 @@
     },
     "source_inputs": {
       "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    },
+    "templates": {
+      "native-cases.rs.in": "ee36a71e82e9f99ca07d709da2ecb20dcebb4d7b5733187a97cf894c36926061"
     }
   }
 }

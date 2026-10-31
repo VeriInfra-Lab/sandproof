@@ -157,7 +157,7 @@
     "verification/experiments/stage1-protocol/create-install/CreateInstallExamples.lean.in": "b81ab1d73d342da57819a9480a08495a9769ba476c78d8c955f737e51295371d",
     "verification/experiments/stage1-protocol/create-install/CreateInstallSelection.lean.in": "27a293b7c6d02c05a13abb37a6704f28c4b30201524ae3709c710ab1d99ec90d",
     "verification/experiments/stage1-protocol/inbox-load/inventory.json": "c1ac14fae5e32e97ba8bf8d46a1c19df73c7edd9f95facae76a545396b4fd410",
-    "verification/experiments/stage1-protocol/create-install/inventory.json": "949a501e61a07552013110577425715e231e66fc8d603bec0cfc8e12df231383",
+    "verification/experiments/stage1-protocol/create-install/inventory.json": "8a1bc4c2248436ece2f5cc4a8c20cce9ab9278510931ec608af46a01b8b3d9cf",
     "verification/experiments/stage1-protocol/inbox-validation/generic-root.rs.in": "5cc9d0b47a0de88b645f79e033b06de03d9890c95bcea9b8a0c3f5dd5460ad54",
     "verification/experiments/stage1-protocol/inbox-validation/primitive-roots.rs.in": "d11ec157cfd880f89e9400f8cdc152a2488e774ca034eb4a8a1049eca4b3e4d6",
     "verification/experiments/stage1-protocol/terminal-binding/roots.rs.in": "4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115",

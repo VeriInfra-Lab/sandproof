@@ -122,6 +122,13 @@ def run_suite(output, *, scope='all'):
         return run_locked_suite(output, scope=scope)
 
 
+def stage1_source_admission(scope, *, prepare=False):
+    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery'):
+        registered = load('stage1_source_only_admission',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        (registered.prepare_create_sources if prepare else registered.check_create_sources)(ROOT)
+
+
 def run_locked_suite(output, *, scope='all'):
     check_native_scope(scope)
     trusted_checkout(ROOT)
@@ -135,6 +142,7 @@ def run_locked_suite(output, *, scope='all'):
         uid=private_tmp.stat().st_uid,mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
+    stage1_source_admission(scope, prepare=True)
     initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
                    contracts=contract_inputs(ROOT),source_archives=source_archive_inputs())
     write_json(output / 'runtime.json', initial['runtime'])
@@ -288,6 +296,7 @@ def run_stage1_native(work, *, scope='all'):
 
 def publish_suite(output, work, initial, started, *, scope='all', builds=None):
     check_native_scope(scope)
+    stage1_source_admission(scope)
     if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
             contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')

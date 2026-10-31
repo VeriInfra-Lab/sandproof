@@ -34,7 +34,7 @@
     "verification/experiments/stage1-protocol/create-install/CreateInstallQuery.lean.in": "4c43ca17cc7af2b59a232b96d9c9ab71754b68c8b29a53ef70733fa2baba9107",
     "verification/experiments/stage1-protocol/create-install/CreateInstallSelection.lean.in": "27a293b7c6d02c05a13abb37a6704f28c4b30201524ae3709c710ab1d99ec90d",
     "verification/experiments/stage1-protocol/create-install/CreateInstallValues.lean.in": "ad007da1a9159f13ea8ff07ee2850cd06c25c43fd2154e1a50ca94828c703217",
-    "verification/experiments/stage1-protocol/create-install/inventory.json": "949a501e61a07552013110577425715e231e66fc8d603bec0cfc8e12df231383",
+    "verification/experiments/stage1-protocol/create-install/inventory.json": "8a1bc4c2248436ece2f5cc4a8c20cce9ab9278510931ec608af46a01b8b3d9cf",
     "verification/experiments/stage1-protocol/create-install/root.rs.in": "f0f95cf99af530c307f831e37bb77b11fa5a2e69ec8c88889a506d06139cce50",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadCapacityModel.lean.in": "2b4390867cbb1727c04aeec8ac2b28481a3871a93c6c54f2e493c8fcb10f74d3",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadCounter.lean.in": "93c0b92733347cad677b1171e45f77f2c69cbce0b36212778b7e4d565b7bbce1",
@@ -45,7 +45,7 @@
     "verification/experiments/stage1-protocol/create-load-capacity/README.md": "a173f09144b66550c4cea2718330485a71ec58b29f1b7c2dbf56c04a0dd5fbff",
     "verification/experiments/stage1-protocol/create-load-capacity/binding.py": "077e58945d42834416d58acace4d8ce564e4ee0ef1b60473dd785527f961ef86",
     "verification/experiments/stage1-protocol/create-load-capacity/formal.py": "bf5db9b1337b1140bb63dbf7f74e98ed7f9c21cda26f219a7f0c654759f5e23c",
-    "verification/experiments/stage1-protocol/create-load-capacity/inventory.json": "c6506632f1cd45f312d139de9a2d202b9e3ba122bfaaa9b6b90b86ee47ad034b",
+    "verification/experiments/stage1-protocol/create-load-capacity/inventory.json": "2a99682f4f5f544bec47d30eb43d2933cd6915097c34dc232334e22aff00a3a4",
     "verification/experiments/stage1-protocol/create-load-capacity/native-cases.rs.in": "38eb6b4602d67f1cd3014039b08861739a79e6b9e5781b6d317fecd5569e668f",
     "verification/experiments/stage1-protocol/create-load-capacity/native.py": "a594fdff4f3e3a3a17b2bd362cf0737dc6c29be923b86823fe09688a08a5c86c",
     "verification/experiments/stage1-protocol/create-load-capacity/support.py": "0a880bc00fd9f5355b17ad011af0453e23937f20a818077d2e49ab1346f40c8d",
@@ -62,7 +62,7 @@
     "verification/experiments/stage1-protocol/create-owner-check/OmitLocalCounter.lean.in": "17f97481c53a17512df802896697c20a5d271a5a5f3b87ad07ac938adcbdb2c8",
     "verification/experiments/stage1-protocol/create-owner-check/README.md": "38fce20b27c950bc5fd5cb202ea35e1e5e4f50af767c251687a5b659e3f4d21b",
     "verification/experiments/stage1-protocol/create-owner-check/formal.py": "0050f88a58eb3acf7bbd657d624b1115f65cf51a3fe8c9bf690ea829f36a929b",
-    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "cea5457a85203387755e59a017cfc6bf3f2e86c760fe623e929802e38c9100a2",
+    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "5a2b7606f46e82bc953899b2809af31abb15de55bc27fbd65a4e70ee66689d2c",
     "verification/experiments/stage1-protocol/create-owner-check/native-common.rs.in": "a299edce69c9bdf9b2acbcb0715554be706bbdb7642aa9d6f90111e4e63d2ba3",
     "verification/experiments/stage1-protocol/create-owner-check/native.py": "d16660952088075b1b424d825b110788f2a34a4fad153e8f8ea80413f8d4349b",
     "verification/experiments/stage1-protocol/create-owner-check/root.rs.in": "ea8d07584eba80659d8ebbd5b80a1847230063d7917787e3848288b9266f44b2",
@@ -4105,7 +4105,7 @@
     },
     "wrong-seed": {
       "mutation": {
-        "function_marker": "pub(super) fn create_owner_successor(",
+        "function_marker": "fn create_owner_successor(",
         "before": "let mut highest = inbox.owner_high_water;",
         "after": "let mut highest = 0;"
       },
@@ -7157,7 +7157,7 @@
     },
     "wrong-write": {
       "mutation": {
-        "function_marker": "pub(super) fn create_attachment_install(",
+        "function_marker": "fn create_attachment_install(",
         "before": "inbox.owner_high_water = local.owner.0;",
         "after": "inbox.owner_high_water = 0;"
       },
@@ -10205,7 +10205,7 @@
     },
     "wrong-seed": {
       "mutation": {
-        "function_marker": "pub(super) fn create_owner_successor(",
+        "function_marker": "fn create_owner_successor(",
         "before": "let mut highest = inbox.owner_high_water;",
         "after": "let mut highest = 0;"
       },
@@ -10225,7 +10225,7 @@
     },
     "wrong-write": {
       "mutation": {
-        "function_marker": "pub(super) fn create_attachment_install(",
+        "function_marker": "fn create_attachment_install(",
         "before": "inbox.owner_high_water = local.owner.0;",
         "after": "inbox.owner_high_water = 0;"
       },
@@ -10259,6 +10259,30 @@
     },
     "drivers": {
       "formal.py": "2f0e74e0ab5b3e1a503eff47e965f472ce01222a735ae3629dd14e896f3d848d"
+    }
+  },
+  "published_formal_variant_locators": {
+    "wrong-seed": {
+      "function_marker": "pub(super) fn create_owner_successor("
+    },
+    "wrong-write": {
+      "function_marker": "pub(super) fn create_attachment_install("
+    }
+  },
+  "published_native_variant_locators": {
+    "wrong-seed": {
+      "mutation": {
+        "function_marker": "pub(super) fn create_owner_successor(",
+        "before": "let mut highest = inbox.owner_high_water;",
+        "after": "let mut highest = 0;"
+      }
+    },
+    "wrong-write": {
+      "mutation": {
+        "function_marker": "pub(super) fn create_attachment_install(",
+        "before": "inbox.owner_high_water = local.owner.0;",
+        "after": "inbox.owner_high_water = 0;"
+      }
     }
   }
 }

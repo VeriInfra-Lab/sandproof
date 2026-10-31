@@ -69,7 +69,9 @@ fn zero_changed_rows_is_success() {
 #[test]
 fn sqlite_errors_keep_the_original_kind() {
     let connection = database();
-    let original = connection.execute("!", params![2, "sb-normal-2"]).unwrap_err();
+    let original = connection
+        .execute("!", params![2, "sb-normal-2"])
+        .unwrap_err();
     assert!(matches!(
         execute(&connection, "!", 2, "sb-normal-2"),
         Err(JournalError::Sqlite(error)) if error == original
@@ -84,7 +86,9 @@ fn array_count_errors_keep_order() {
         ("SELECT ?1", 2, 1),
         ("SELECT ?1,?2,?3", 2, 3),
     ] {
-        let original = connection.execute(statement, params![2, "sb-normal-2"]).unwrap_err();
+        let original = connection
+            .execute(statement, params![2, "sb-normal-2"])
+            .unwrap_err();
         assert_eq!(
             original,
             rusqlite::Error::InvalidParameterCount(observed, expected)

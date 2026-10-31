@@ -93,7 +93,7 @@
     "root.rs.in": "f0f95cf99af530c307f831e37bb77b11fa5a2e69ec8c88889a506d06139cce50"
   },
   "drivers": {
-    "support.py": "629c440d777acd2cc8387768bacfcddbf354aa80549956f1abb6009e118f1d0b",
+    "support.py": "385e41d8ee3dcabf5537ff8ccc6dd04fc350c2242dc5197286299ffd66515be6",
     "formal.py": "ba5bb732d602d2c17184a019c79e2e04ffd906fa33a490d64f21d32f212a554d",
     "native.py": "de67992a5cc63dc30b55767a7a790b1b1990cad739bdaccfcccfc3b5b4fcae8c"
   },
@@ -1362,7 +1362,7 @@
         "before": "inbox.sessions[s].local = Some(local);",
         "after": "inbox.sessions[s].local = Some(InternalLocalBinding {\n        sandbox: core::SandboxId(0),\n        ..local\n    });"
       },
-      "function_marker": "pub(super) fn create_attachment_install(",
+      "function_marker": "fn create_attachment_install(",
       "group": "all",
       "test_count": 4,
       "expected_failures": [
@@ -1377,7 +1377,7 @@
         "before": "inbox.sessions[s].entries[e].local_operation = Some(local.operation);",
         "after": "inbox.sessions[s].entries[e].local_operation = Some(core::OperationId(0));"
       },
-      "function_marker": "pub(super) fn create_attachment_install(",
+      "function_marker": "fn create_attachment_install(",
       "group": "all",
       "test_count": 4,
       "expected_failures": [
@@ -1392,7 +1392,7 @@
         "before": "inbox.owner_high_water = local.owner.0;",
         "after": "inbox.owner_high_water = 0;"
       },
-      "function_marker": "pub(super) fn create_attachment_install(",
+      "function_marker": "fn create_attachment_install(",
       "group": "all",
       "test_count": 4,
       "expected_failures": [
@@ -1406,7 +1406,7 @@
         "before": "inbox.sessions[s].local = Some(local);",
         "after": "inbox.sessions[s].local = Some(local);\n    inbox.sessions[s].current_version = 0;"
       },
-      "function_marker": "pub(super) fn create_attachment_install(",
+      "function_marker": "fn create_attachment_install(",
       "group": "all",
       "test_count": 4,
       "expected_failures": [
@@ -1437,7 +1437,38 @@
       "verification/experiments/stage1-protocol/create-selection/support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77"
     },
     "drivers": {
-      "formal.py": "dd1cba6d9a725f47d61df13bb063738422fd313ec433f5df6d114ff5d4e2f58f"
+      "formal.py": "dd1cba6d9a725f47d61df13bb063738422fd313ec433f5df6d114ff5d4e2f58f",
+      "support.py": "629c440d777acd2cc8387768bacfcddbf354aa80549956f1abb6009e118f1d0b"
+    }
+  },
+  "published_native_variant_locators": {
+    "wrong-sandbox": {
+      "function_marker": "pub(super) fn create_attachment_install(",
+      "mutation": {
+        "before": "inbox.sessions[s].local = Some(local);",
+        "after": "inbox.sessions[s].local = Some(InternalLocalBinding {\n        sandbox: core::SandboxId(0),\n        ..local\n    });"
+      }
+    },
+    "wrong-operation": {
+      "function_marker": "pub(super) fn create_attachment_install(",
+      "mutation": {
+        "before": "inbox.sessions[s].entries[e].local_operation = Some(local.operation);",
+        "after": "inbox.sessions[s].entries[e].local_operation = Some(core::OperationId(0));"
+      }
+    },
+    "wrong-high-water": {
+      "function_marker": "pub(super) fn create_attachment_install(",
+      "mutation": {
+        "before": "inbox.owner_high_water = local.owner.0;",
+        "after": "inbox.owner_high_water = 0;"
+      }
+    },
+    "wrong-frame": {
+      "function_marker": "pub(super) fn create_attachment_install(",
+      "mutation": {
+        "before": "inbox.sessions[s].local = Some(local);",
+        "after": "inbox.sessions[s].local = Some(local);\n    inbox.sessions[s].current_version = 0;"
+      }
     }
   }
 }

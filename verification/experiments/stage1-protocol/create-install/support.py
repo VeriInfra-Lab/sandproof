@@ -33,7 +33,7 @@ def prepare(project,variant,data,command,folder,append_root=True):
  if sha(project/SOURCE)!=data['source_inputs'][SOURCE]:raise ValueError('actual production source differs')
  mutation=data['variants'][variant]['mutation']
  if mutation:
-  path=project/SOURCE;text=path.read_text();start=text.index('pub(super) fn create_attachment_install(');brace=text.index('{',start);depth=0;end=None
+  path=project/SOURCE;text=path.read_text();start=text.index('fn create_attachment_install(');brace=text.index('{',start);depth=0;end=None
   for i in range(brace,len(text)):
    depth+=int(text[i]=='{')-int(text[i]=='}')
    if depth==0:end=i+1;break

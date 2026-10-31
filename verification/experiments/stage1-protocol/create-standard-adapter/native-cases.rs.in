@@ -10,11 +10,8 @@ fn normal_candidate_full_value() {
     // Normal open uses the actual Maintenance::Enable input, so this candidate
     // contains complete configured state and differs from the default World.
     assert_ne!(expected, core::initial_world());
-    let tx = WorldTransaction::begin(
-        &mut journal.journal.connection,
-        &journal.committed_world,
-    )
-    .unwrap();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
     let mut effects = StandardCreateAttachment {
         tx: &tx,
         connection: &tx,
@@ -27,11 +24,8 @@ fn candidate_remains_complete_after_read() {
     let directory = tempfile::tempdir().unwrap();
     let mut journal = super::tests::initialize(&directory.path().join("db"));
     let expected = journal.world().unwrap();
-    let tx = WorldTransaction::begin(
-        &mut journal.journal.connection,
-        &journal.committed_world,
-    )
-    .unwrap();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
     let mut effects = StandardCreateAttachment {
         tx: &tx,
         connection: &tx,
@@ -45,11 +39,8 @@ fn both_rebindings_use_actual_connection() {
     let directory = tempfile::tempdir().unwrap();
     let mut journal = super::tests::initialize(&directory.path().join("db"));
     let other = rusqlite::Connection::open_in_memory().unwrap();
-    let tx = WorldTransaction::begin(
-        &mut journal.journal.connection,
-        &journal.committed_world,
-    )
-    .unwrap();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
     let selected: &rusqlite::Connection = &tx;
     let mut effects = StandardCreateAttachment {
         tx: &tx,

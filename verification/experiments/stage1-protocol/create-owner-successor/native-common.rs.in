@@ -46,18 +46,12 @@ fn proof_owner_world(owners: &[u64]) -> core::World {
     world
 }
 
-
 #[test]
 fn proof_successor_empty() {
     let inbox = proof_owner_inbox(&[], 0);
     assert!(inbox.validate().is_ok());
     assert_eq!(
-        create_owner_successor(
-            &inbox,
-            &proof_owner_world(&[]),
-            core::SandboxId(1)
-        )
-        .unwrap(),
+        create_owner_successor(&inbox, &proof_owner_world(&[]), core::SandboxId(1)).unwrap(),
         core::TenantId(1)
     );
 }

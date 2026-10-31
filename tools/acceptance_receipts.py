@@ -29,7 +29,8 @@ ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
-                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE')
+                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE',
+                   'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
 
 
 def sha(path):
@@ -144,7 +145,7 @@ def contract_inputs(root):
 
 
 def source_archive_inputs(environment=None):
-    """Content, not machine-specific paths, binds the three original archives."""
+    """Bind original source archive bytes independently of machine paths."""
     environment = os.environ if environment is None else environment
     result = {}
     for name in SOURCE_ARCHIVES:
@@ -212,8 +213,11 @@ def current_native_seal(seal, runtime, *, scope='all'):
     # and Create can never stand in for full/all or another finite scope.
     create = scope == 'stage1-create-delivery'
     if create:
+        definition = stage1_registration().create_profile(ROOT)
         if (actual_scope != scope or seal.get('profile') != 'create-delivery'
-                or seal.get('create_definition') != stage1_registration().create_profile(ROOT)):
+                or seal.get('create_definition') != definition
+                or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
+                    != definition['source_only']['archive_sha256']):
             return False
     elif actual_scope == 'stage1-create-delivery':
         return False
