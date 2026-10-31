@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlLibrary
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSql
+open SandproofLifecycleSqlRust
+open LifetimeSqlLibrary
+
+theorem complete_inputs_equal_iff (d₁ d₂ : I64) (s₁ s₂ : Str) :
+    completeInputs d₁ s₁ = completeInputs d₂ s₂ ↔ d₁ = d₂ ∧ s₁ = s₂ := by
+  simp [completeInputs]
+
+theorem execute_complete (connection : Connection) (statement : Str)
+    (deadline : I64) (sandbox : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+      connection statement deadline sandbox = expected connection statement deadline sandbox := by
+  simp only [sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute,
+    core.str.Str.as_bytes, bind_tc_ok]
+  simp only [rusqlite.Connection.execute,
+    SandproofSqliteStatementsRust.rusqlite.Connection.execute]
+  change (do
+    let reply ← ((do
+      let prepared ← connection.prepare statement
+      match prepared with
+      | .Err error => pure (core.result.Result.Err error)
+      | .Ok count => do
+          let (bound, result) ← ArrayT2.Insts.RusqliteParamsParams.__bind_in
+            rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+            (inputs deadline sandbox) ⟨count, [], connection.countError count⟩
+          match bound with
+          | .Err error => pure (core.result.Result.Err error)
+          | .Ok () => connection.run statement result.arguments) :
+        Result (core.result.Result Usize rusqlite.error.Error))
+    let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+    match control with
+    | .Continue value => pure (core.result.Result.Ok value)
+    | .Break error =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Usize sandproof_controller_service.JournalError.Insts.CoreConvertFromError error)
+      = expected connection statement deadline sandbox
+  simp only [array_complete_inputs]
+  simp only [expected, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared <;> simp [
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from,
+    completeInputs]
+  congr 1
+  funext finished
+  cases finished <;> simp only [bind_tc_ok]
+  rfl
+
+theorem full_sql_values_contract :
+    FullSqlValuesContract
+      sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute :=
+  execute_complete
+
+end SandboxModel.Stage1Protocol.LifetimeSql
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSql.complete_inputs_equal_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSql.execute_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSql.full_sql_values_contract

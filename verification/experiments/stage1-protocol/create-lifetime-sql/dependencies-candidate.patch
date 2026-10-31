@@ -1,0 +1,24 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -930,0 +931,21 @@
++
++
++### A4/A6 V3 deadline/ID 两参数 execute 使用点（候选）
++
++固定 rusqlite 0.40.2 的逐源摘要与完整 Charon/Aeneas 根见
++`verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json`。
++原共享 Connection/Statement/SqlValue、bindValues 和 whole execute 定义保持单份；
++局部视图按公共原文片段连接当前完整 Params 类型，避免旧业务 discriminant 重复登记。
++
++| 精确接口 | 当前条件／结果 |
++|---|---|
++| 原 i64/str/shared-reference ToSql 与 Value::from(i64)、ValueRef::from(&Value)、ToSqlOutput::to_sql | 真实透明生成体；原整数为 Owned(Integer)，经实际转换得到相同完整 Integer；原文本保留所有字节 |
++| 实际 [ToSqlOutput;2] Params::__bind_in 与内置共享数组迭代 | 仅固定纯整数／全文 profile 的逻辑输入描述，原槽位和顺序；不表示物理 raw_bind 成功，不扩张任意自定义迭代／有状态字典 |
++| 现有 Connection.prepare/run whole execute 观察 | 来自同次一致库调用；run 包含 raw-bind、实际后置 count 检查与 step/reset 错误，不是 step-only oracle |
++| 原 Str.as_bytes、String bytes、字面量与 ByteArray | 使用原正常有限表示合同和原数学，不把完整 UTF-8/Std 内部实现冒称为新证明 |
++
++数组 count=0 的错误为 (1,0)；count=1 先处理首项，成功后才拒绝 (2,1)；
++count>2 先处理两项及其首错，之后拒绝 (2,count)。不能使用五元组的提前计数条件。
++原成功行数原样返回，包括零；字段／API 结果正确不推出物理行效果、同一事务、提交、
++恢复、认证或资源存在。动态旧宏未取得整个机器一般等价；有限 API 相符由库提供者给出，
++自有完整参数、错误与实际调用不得外包。公共库定义及最终登记由唯一维护者统一采用。

@@ -691,7 +691,7 @@ impl CreateAttachmentEffects for StandardCreateAttachment<'_, '_> {
         deadline: i64,
         sandbox: &str,
     ) -> Result<usize, JournalError> {
-        Ok(self.connection.execute(statement, params![deadline, sandbox])?)
+        lifetime_sql::execute(self.connection, statement, deadline, sandbox)
     }
     fn begin_inbox_save(&mut self) {
         self.connection = self.tx;
@@ -793,3 +793,5 @@ pub(super) fn dispatch_epoch_allows(
     };
     Ok(active.is_some() && active == inbox.host_epoch_observation.as_ref())
 }
+
+mod lifetime_sql;
