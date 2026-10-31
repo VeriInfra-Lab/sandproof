@@ -557,7 +557,8 @@
       "test_count": 5,
       "expected_failures": [
         "identity_keeps_complete_decimal_number",
-        "identity_allows_empty_namespace"
+        "identity_allows_empty_namespace",
+        "identity_keeps_complete_namespace"
       ],
       "expected_clippy_errors": []
     },
