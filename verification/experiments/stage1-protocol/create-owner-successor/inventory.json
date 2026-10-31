@@ -11,7 +11,7 @@
   "shared_acceptance": false,
   "full_v3": false,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",

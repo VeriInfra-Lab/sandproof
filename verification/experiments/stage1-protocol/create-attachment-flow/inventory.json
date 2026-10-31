@@ -2,7 +2,7 @@
   "kind": "actual-create-full-flow-reviewed-inputs",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
@@ -4543,5 +4543,10 @@
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.omitted_byte_changes_current_full_value",
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.rootfs_field_roundtrip",
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.standard_roundtrip"
-  ]
+  ],
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    }
+  }
 }

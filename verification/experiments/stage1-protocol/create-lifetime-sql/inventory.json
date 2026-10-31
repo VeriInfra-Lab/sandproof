@@ -1,7 +1,7 @@
 {
   "kind": "actual-lifetime-two-values-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
     "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
   },
@@ -592,6 +592,9 @@
   "published_input_fingerprints": {
     "drivers": {
       "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a"
+    },
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
     }
   }
 }

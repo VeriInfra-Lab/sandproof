@@ -7,7 +7,7 @@
   "source_inputs": {
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24"
@@ -157,7 +157,7 @@
     "verification/experiments/stage1-protocol/create-install/CreateInstallExamples.lean.in": "b81ab1d73d342da57819a9480a08495a9769ba476c78d8c955f737e51295371d",
     "verification/experiments/stage1-protocol/create-install/CreateInstallSelection.lean.in": "27a293b7c6d02c05a13abb37a6704f28c4b30201524ae3709c710ab1d99ec90d",
     "verification/experiments/stage1-protocol/inbox-load/inventory.json": "c1ac14fae5e32e97ba8bf8d46a1c19df73c7edd9f95facae76a545396b4fd410",
-    "verification/experiments/stage1-protocol/create-install/inventory.json": "5cd43f2dd0d116b60534615cb037a65d839b16b2b34486f55ad1bb8c28e86dcd",
+    "verification/experiments/stage1-protocol/create-install/inventory.json": "949a501e61a07552013110577425715e231e66fc8d603bec0cfc8e12df231383",
     "verification/experiments/stage1-protocol/inbox-validation/generic-root.rs.in": "5cc9d0b47a0de88b645f79e033b06de03d9890c95bcea9b8a0c3f5dd5460ad54",
     "verification/experiments/stage1-protocol/inbox-validation/primitive-roots.rs.in": "d11ec157cfd880f89e9400f8cdc152a2488e774ca034eb4a8a1049eca4b3e4d6",
     "verification/experiments/stage1-protocol/terminal-binding/roots.rs.in": "4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115",
