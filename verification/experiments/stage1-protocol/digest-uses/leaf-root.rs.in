@@ -1,0 +1,5 @@
+
+// Export only a call to the original fixed leaf, without copying the expression.
+pub fn proof_digest_fixed_leaf(bytes: &[u8]) -> [u8;32] {
+    digest(bytes)
+}

@@ -1,7 +1,6 @@
 use super::model::Inbox;
 use crate::JournalError;
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 
 pub(super) trait InboxLoadEffects: super::super::checkpoint::ReadConfigEffects {
     fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError>;
@@ -33,7 +32,7 @@ impl InboxLoadEffects for super::super::checkpoint::StandardConfigRead<'_> {
         Ok(serde_json::to_vec(inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
+        super::sha256::digest(bytes)
     }
 }
 
@@ -133,7 +132,7 @@ impl InboxSaveEffects for StandardInboxSave<'_> {
         Ok(serde_json::to_vec(inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
+        super::sha256::digest(bytes)
     }
     fn update(
         &mut self,

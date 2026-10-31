@@ -1,0 +1,958 @@
+{
+  "schema": 1,
+  "source_inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "controller-service/src/controller/checkpoint/config.rs": "81a0314c40c07552b58097387044f659288ef6b2bc5ecd0fc835e5ca954c1976",
+    "controller-service/src/controller/lifecycle_inbox.rs": "84fc0130dbadc820a3346822c8bad9187153035386fd2bae43cb70b6f9c54be2",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "add417322b165963096057f5d7debc9afd684df496c8f68a5a106df60a537f92",
+    "controller-service/src/controller/lifecycle_inbox/sha256.rs": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
+    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "docs/formal/03-protocol-inbox.md": "85c13b297e93188bbea6e46cb7291feecfcc601cf2166e2dbef5c44fdea08608",
+    "docs/formal/dependencies.md": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/lib.rs": "5979b781630c4ae9a4ecf120d135352309868d97aa117a928d870ef7457136c3",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/tls-pin-environment.json": "837f8c9611d076ce62b9f0ff00c25af3f8443977870215dfcf55ecc17f460f0a"
+  },
+  "providers": {
+    "verification/experiments/stage1-protocol/create-standard-adapter/TypesExternal.lean.in": "968be1eb530f48569c916d324596e04f7024882d35f27b636a4cc06a5b921ae8",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/inbox-load/formal.py": "ed5b3bc7e4b93d7a0acdbd7e9dca40522c36dce0d088ef82becf42527b162e92",
+    "verification/experiments/stage1-protocol/registered.py": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+    "verification/experiments/stage1-protocol/serde-binding/binding.py": "2b73a06aa372aa09cedc19e13a043a60ed1e5768937093cbb572d6871fdeb013",
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "SandboxModel/Foundations/ByteArray.lean": "32c29657733cb72eb74e1657e816b00dc1e74f27f2926b94a1b1a788cda78bc9",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/lean-mcp-requirements.txt": "2cf52b612090fddedde8a0c6278d572d53217f7651a497320666372658427fec",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf"
+  },
+  "templates": {
+    "DigestArray32Representation.lean.in": "d2477cb582900ceb3356d451107586fa3f23f0de2127f808e20dcf22e4bddd7f",
+    "DigestByteBridge.lean.in": "33db23fa4534f074efbad50bb75f86035e8e6f8a3120dfef73640378fd77b14a",
+    "DigestUses.lean.in": "3ec3e0d96bd0b0bf007e3922b27ea19f9f3052b3286a654916bf3a895e83eee8",
+    "DigestUsesInputCounter.lean.in": "e718fcc97c53c582aa7ee98948899910cb91a1ac56abfe0bbc3a68b45d59cf8d",
+    "DigestUsesModel.lean.in": "369b911e026afd0b90d03020127048adb4e3861b9895b1b506103f32a88b7c30",
+    "DigestUsesTailCounter.lean.in": "6d113a53a10323a0afb7e75a07a2a74e87a45bc440c26695e53a134aebfba891",
+    "DigestUsesValues.lean.in": "408a4b6cb7ae94fd2215005fbccf8c199f2a01dab27c3806c1bd4945223bd402",
+    "DigestUsesWitnesses.lean.in": "8db1601dd8c9117838006910510b7b2152b629d090e7b7ab53b11307c6cc61b1",
+    "FunsExternal.lean.in": "f1b08ed81e5815056a560c9e3d00121a0cdad09c991f34e2db9990b4a3f40b3f",
+    "README.md": "93857df1f1042f8e7ea6ccf83beb96f5766312d0291eb824d74c5840284d690b",
+    "REGISTRATION.md": "cb4d2559ebf4b1a381ee27ba3be779b26760c25ec6a0d177aed453eccd50ee7d",
+    "Sha256Bytes.lean.in": "589116992a3802fd78f811d44f0dbe2f59255c9827701d8c7623659bc3b3642d",
+    "Sha256BytesChecks.lean.in": "7aaf65dfa2f8e0f954d527554091c979ab0d140310051ecdb3a534fcb31b06ce",
+    "TypesExternal.lean.in": "5e54b4a6ae087f2a18c1bf76aefbe5863a375e28380253f78c0cf3590bd6a1dd",
+    "codec-roots.rs.in": "12e6ac74c079dcd5e594d36497bd4b93c1b2dac191af3001f64361defe7f9622",
+    "create-roots.rs.in": "7c1cf094395a3328b64b91ab0b4306fc95b0d732499e8dc9961ae23d3b9f15a0",
+    "fixed-interfaces.json": "6ed9ef0f12e69293c22007531bdedab34e1a493eb65a9e0a31d11f4e4d953f39",
+    "leaf-root.rs.in": "f90a565fde0d57d6f51892c7e3f026c5c98c1bc9cc14196460ca4683517c8686",
+    "native-cases.rs.in": "0d361b1c2ccb8dec168753e8b724cb51952bfb36fe2b63819a808d2eaea1eaec",
+    "native-codec-root.rs.in": "44ec916f8233ca80d07de281f0f57fbab25fd2a6721a50ab6df00e07f6fd45c9",
+    "reuse/verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean": "b1499342657eba6f5fd9053e506b35a6a4d08cd7caf362eb1bf5f36f8ad309d7",
+    "reuse/verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean": "a6fdf03e3b8fcb3a424e3578bf045433284bcc5c023f8847af46b9b4228b6b7e",
+    "source-work-root.rs.in": "b075c45f3c3d58988fa495f1cf580bbb32ca4bade8f39bbda8b844ae55be6a36"
+  },
+  "drivers": {
+    "binding.py": "7082e14a45d332e1df423dad9837ff8e60e4fa15fd65de5ff14b38af81ef6e08",
+    "capture.py": "b1e2f7c75ee3c2feb00d71334eb3a90fd6fbb61c146e53ce91f1e48c17927686",
+    "formal.py": "af6d27a1a25f0cfdb9bb3aa69bfa6a1a40d3a23752ed7e625a66a2125d25a7d0",
+    "native.py": "ee9ea67bf47849b4890c0c3e66a6393a2b48d1e6b6bd416cf0bcecec046e9937",
+    "support.py": "7e92416a7b8a65995f279aeee069cae3b3d4b6f7904b4d6a8830469887fbd609"
+  },
+  "driver_sha256": "b1e2f7c75ee3c2feb00d71334eb3a90fd6fbb61c146e53ce91f1e48c17927686",
+  "provider_sources": {
+    "sha2-0.10.9/Cargo.toml": "f5b86209df69360114aaee67a66c3fcd31d8c840b8f34b9ad383aacd63cd15da",
+    "sha2-0.10.9/tests/mod.rs": "61be596fd9b45a8db345950ff2ed6f87eaf4d239ac156885f36e819da0597644",
+    "sha2-0.10.9/benches/mod.rs": "c32d9f91a541821ea988c14eee710963e623ef1edf69b02b41a29bc44e04ba95",
+    "sha2-0.10.9/src/lib.rs": "b519427535b1855bbe8c3d0517b2f3d04a607cf0cb4327cc716cd5d90da5dbf1",
+    "sha2-0.10.9/src/core_api.rs": "73b160d98bfa6737688875ad73da5e3c2c93582604dc313d208200e12fdab676",
+    "sha2-0.10.9/src/sha512.rs": "e088bde0980702a591f8d60dd1d41dc13f0a810e29e1e5a5d6344228b2de965d",
+    "sha2-0.10.9/src/sha256.rs": "6ced9112d4ceb4eff20b56d93a063f72ecef4c6ec3b215f08696a853b09083c3",
+    "sha2-0.10.9/src/consts.rs": "2f820349fa7cbf9fecc1d4aabbd1a721bb1badc3f32ef9e903826960b6f42523",
+    "sha2-0.10.9/src/sha512/soft.rs": "0183ad89418b886859d2afa9bf061bc92759ae337c1d26147b4300042e63ef42",
+    "sha2-0.10.9/src/sha512/soft_compact.rs": "437ad870b8cd5c5590d6fe85afc63428f1994dffdc9a4592cde46c9ee857ba9f",
+    "sha2-0.10.9/src/sha512/aarch64.rs": "2ed929329a0fa66180e4726d028713a49f99cc223e635078fc1f3252a44981e0",
+    "sha2-0.10.9/src/sha512/loongarch64_asm.rs": "58a7b54d95a0e037ba80570d96ffe0dd7c0014c7fcb45b90725e522cc4992d8a",
+    "sha2-0.10.9/src/sha512/x86.rs": "c7dd8bdf3212e1e8c4cc9cc6b380dc0468f79dcfd0f61a445d0d38cead45a03a",
+    "sha2-0.10.9/src/sha256/soft.rs": "98e765a8e8dfa0af31f2b76570f212e6b3099522bf300e1554cbbd9fd5d02960",
+    "sha2-0.10.9/src/sha256/soft_compact.rs": "6273c3f5603de24143f29d0aa08f441b3919acbc251daea5f323a08570a8470f",
+    "sha2-0.10.9/src/sha256/aarch64.rs": "18121a25867a575fec8ef64da763693ece4e3e3e84da095254b8471234c6f1f8",
+    "sha2-0.10.9/src/sha256/loongarch64_asm.rs": "79e2d5e3c039581e2319f8789de9ed13a8dd819ebffd13532dbd83448c7ad662",
+    "sha2-0.10.9/src/sha256/x86.rs": "70f1597f2029522b35bfd026df0a8908f086523ab2a80ba3ef35e6231b56353c",
+    "digest-0.10.7/Cargo.toml": "f0cc2fc18c6e7f3533658b9e59d71b55e641e7d8226e5d1b915a5e7c0a1d3f36",
+    "digest-0.10.7/src/lib.rs": "5128199102bf0f7638fba0bbcf42b23822e31065841fb0c4304b64f681fde961",
+    "digest-0.10.7/src/mac.rs": "6303caa2c5b76513346c082dd600e007354179ad440fc83dad3d7f4240281803",
+    "digest-0.10.7/src/core_api.rs": "b52728aba8a84f980f3f9cc8a94a64d3a97f1eb5f4db144904822c2f8eefb1f8",
+    "digest-0.10.7/src/dev.rs": "cbaeab07489efcadec917d7b7bcf2fdade79e78a4839ab3c3d8ad442f8f82833",
+    "digest-0.10.7/src/digest.rs": "8beab74640774c9f6811daa6dac9b5a8867f5beeb0b552a9b5ddbc5cfc196ed0",
+    "digest-0.10.7/src/dev/xof.rs": "b3971175e50f615247e4158cba87d77c369461eda22751d888725cec45b61985",
+    "digest-0.10.7/src/dev/mac.rs": "e8837d3b99dc8b6ddb398e7fad5731c2ed36931f851ed625d3ae59fb31244165",
+    "digest-0.10.7/src/dev/rng.rs": "156f42e9eb8fb2083cd12dc4a9bff9d57a321d33367efe6cd42cdc02c17ed2dc",
+    "digest-0.10.7/src/dev/fixed.rs": "1cbabc651645c1e781d31825791132b4e3741f426e99d7e40988e2a5ee49bddd",
+    "digest-0.10.7/src/dev/variable.rs": "51939602b43f5a813fc725bc603a34246bbf76facaa7930cb7bf78c283ec94a7",
+    "digest-0.10.7/src/core_api/rt_variable.rs": "b57f89bf3991a313e2ddde09c701375e23539e7df74d685a161707ba1fbc99e4",
+    "digest-0.10.7/src/core_api/wrapper.rs": "033777bed7d140b158e15d50fda8a6e06557ce89bd0738fcca692be2c39e8b8a",
+    "digest-0.10.7/src/core_api/ct_variable.rs": "703bd62fb693a437e319d1192988bd674f9127a6b76f73b4c58c71afc79bc013",
+    "digest-0.10.7/src/core_api/xof_reader.rs": "f33ca7b2c17eb99d84ea460d5567af68690e4fa6c2d94069a5d6748f8c8620eb",
+    "generic-array-0.14.7/build.rs": "08fa30c4a2c1ad24fe5f987e721dfb20131f45ea5b5dc3e836dcf88a8e33248c",
+    "generic-array-0.14.7/Cargo.toml": "4b5daed75505275d11f4854dd9172f910da61d9856ca2936d95e2e6e0c9040e4",
+    "generic-array-0.14.7/src/lib.rs": "20b64b4359b0e82a3523fd536ad06de25e174cead734cffd3fa5f7c48f659247",
+    "generic-array-0.14.7/src/arr.rs": "c115d6926deb769ced772e9c4e1c84baf1bdea4fe4b9eb2061658a63869eab62",
+    "generic-array-0.14.7/src/impl_serde.rs": "f046daba067522b4c3e79437d04f43a001e83353c81e6b2188c37a2e63dba7a3",
+    "generic-array-0.14.7/src/functional.rs": "7dd6ddd5db3000054cbbd76959f745c7de73c8493cbfb745be80509b306e4a83",
+    "generic-array-0.14.7/src/iter.rs": "4f50253f4130caa0780984b64467ca1916a881410f631f7eb85a1724b3ab4ced",
+    "generic-array-0.14.7/src/impls.rs": "18b285821421eea0cdbbcfcc896eef67bd55d72f8d85b5827cca6687e9c0fc27",
+    "generic-array-0.14.7/src/sequence.rs": "26679cfec035bae7298f067f37e8d42a1eda8fe241e9cf2c2977ba4bddddab1d",
+    "generic-array-0.14.7/src/hex.rs": "091fb78f6d373a6ef1c467d85c461472fcdb1e91efc294039f4c870151c3ee9f",
+    "generic-array-0.14.7/src/impl_zeroize.rs": "dd1af63ef2cba2120c6f775350c98eb12bb1be6ba784d5350d07d4ae5419c292",
+    "crypto-common-0.1.7/Cargo.toml": "303682a6a66fdc98de8a011ac275e18c523f1535ed8de2a291a4fcad91de8348",
+    "crypto-common-0.1.7/src/lib.rs": "5dd00d7ea362d1e4fc06141aae07a0f15166a0b8836ac8e8713f7d7f31d26a1e",
+    "block-buffer-0.10.4/Cargo.toml": "c76e4bd298cd6223882238449e31939d75613e82757ca87e249df843decf5f9a",
+    "block-buffer-0.10.4/tests/mod.rs": "a42403629557eea432a8797f2d81a4ab65de15ce9a2db933496c53f05669e1d7",
+    "block-buffer-0.10.4/src/lib.rs": "b437252d389042d894b1ef17859b043e827d2bd2a1bca4b5311c67dff565274d",
+    "block-buffer-0.10.4/src/sealed.rs": "9327ee3e567ae779b83c2b7f4f3ff56fcb2117163e023e7b0e37759e7e8d1f5c",
+    "typenum-1.20.1/Cargo.toml": "00785a81eae34b3298dfdde78a6bd96fe3ec000de46edd509bd13b7cab7a9870",
+    "typenum-1.20.1/tests/generated.rs": "3034ec2bce8abe6c70d1d0aa87bec56f6c5f95db16dde365377973f7d8f3911d",
+    "typenum-1.20.1/src/lib.rs": "0cf99cbd6f5597dd42618d603e1f453f6484e01e8f6e72d328ca5206191bc9f3",
+    "typenum-1.20.1/src/gen.rs": "77e44de90067aa126d3697e514c8641af67eb9c509399bb6fcb551071d7e64ea",
+    "typenum-1.20.1/src/private.rs": "c7008d1cd4215e0fc58897ea885058879e0c700a2fe0be46784f20d612753a48",
+    "typenum-1.20.1/src/uint.rs": "525f229da5bd7cbef775b478821b5422497ed3eea319b712fee137a6ad84dd40",
+    "typenum-1.20.1/src/operator_aliases.rs": "4666925ecdd4321e28d9654bad61e34defdba7fc1e8fa7b033b2283e4b542b93",
+    "typenum-1.20.1/src/int.rs": "62412ed76dfd63e76e5e0252ee950914629443d4023a1031c511191588d95694",
+    "typenum-1.20.1/src/marker_traits.rs": "5a58d16edc16853b4b793a6b46068d926911273aa9dc57fd9dc64df77986b7dd",
+    "typenum-1.20.1/src/bit.rs": "1d2a81b9dcc3fbaaad0df29e5cbd4595b02fdc3efbc08ec35932ea521ac6619c",
+    "typenum-1.20.1/src/tuple.rs": "b2a3d3906a446e5ce96a9da6da511c256475084cc78205c97c11caf7634db57f",
+    "typenum-1.20.1/src/type_operators.rs": "c3ea12ffc00d1d438db095d48abae94af9dd46adf0b25c90871c1c4d6f15ae7b",
+    "typenum-1.20.1/src/array.rs": "e7112e04302b9df5491e69fdf3a2b765de18f3d7cf098702051c79e8a1e978f2",
+    "typenum-1.20.1/src/gen/generic_const_mappings.rs": "891e3a1917e39eebd1306765158c26c4ff2d9a85b197844100638591ec6658fb",
+    "typenum-1.20.1/src/gen/op.rs": "b91eadcee885bc0ab929b64492f7b04641cde71ddf8e9aa455d324f1723c61de",
+    "typenum-1.20.1/src/gen/consts.rs": "9aa17739639f2e3f516cd9136e05beb19492491431df71a1e2aa4e3ec78e176c",
+    "cpufeatures-0.2.17/Cargo.toml": "25160ea4dfa195721d352d42827b882a41f18f4c55fff58e5c3878ecae84ca44",
+    "cpufeatures-0.2.17/tests/aarch64.rs": "f6f0f55d821dbcac61e54cec8d35bf944cd09f90f3422eee2b6d55a1e9899635",
+    "cpufeatures-0.2.17/tests/loongarch64.rs": "1b95140c68f673721699dcb40176540818641785f7863a99214bcad2014aa181",
+    "cpufeatures-0.2.17/tests/x86.rs": "fcf476ca6ebd0845ab547cea4fe40c2ba2a2324c024264d9a86f666586f3a480",
+    "cpufeatures-0.2.17/src/lib.rs": "3d633614ff24afdba603e4f2d3e36bdb7b190fff9e7f0d2b385c1f9d5d8144d1",
+    "cpufeatures-0.2.17/src/aarch64.rs": "e85b099f40f51f99f82ff9ffae97078ec7991da5bca4eb61e29abf15c44a8d01",
+    "cpufeatures-0.2.17/src/loongarch64.rs": "431cf8c3cdcc55cb46275da5c778033e3bd60e03d04910e7756f5ce3a89c3a32",
+    "cpufeatures-0.2.17/src/miri.rs": "acf1a7e7ae31a1de07941084c6b589a2d4c6ea5f87012c811592c865d04c02cb",
+    "cpufeatures-0.2.17/src/x86.rs": "b23201081392c38084f15200b071b16f5467aadba98616cce878be16b836f03f"
+  },
+  "std_sources": {
+    "production": {
+      "core/src/convert/mod.rs": "45a0dd7cb34dcd592018f5b463493bf83254aaf3a2c909152060be8a4ea9b873"
+    },
+    "extraction": {
+      "core/src/convert/mod.rs": "e3e2314f58cede71077d46befcab3a381f2082130e0672b1bf01f79b5199347c"
+    }
+  },
+  "extraction_frontend": "nightly-2026-08-18",
+  "modes": {
+    "actual": {
+      "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+      "roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save"
+      ],
+      "include": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::checkpoint::config::StandardConfigRead",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_protocol::lifecycle::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save",
+        "sandproof_controller_service::controller::transaction::WorldTransaction",
+        "rusqlite::transaction::Transaction"
+      ],
+      "opaque": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"
+      ],
+      "retained_actual_roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest"
+      ],
+      "instrumentation": [
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+          "root_file": "codec-roots.rs.in",
+          "root_marker": "proof_digest_instance_load"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+          "root_file": "source-work-root.rs.in",
+          "root_marker": "proof_digest_instance_source_work"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "root_file": "create-roots.rs.in",
+          "root_marker": "proof_digest_instance_create_load"
+        }
+      ],
+      "scope": "Current adopted Rust. Correct private view only appends thin roots; library boundary is explicit and business callers remain transparent.",
+      "mutation": null,
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ]
+    },
+    "input-empty": {
+      "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+      "roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save"
+      ],
+      "include": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::checkpoint::config::StandardConfigRead",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_protocol::lifecycle::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save",
+        "sandproof_controller_service::controller::transaction::WorldTransaction",
+        "rusqlite::transaction::Transaction"
+      ],
+      "opaque": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"
+      ],
+      "retained_actual_roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest"
+      ],
+      "instrumentation": [
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+          "root_file": "codec-roots.rs.in",
+          "root_marker": "proof_digest_instance_load"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+          "root_file": "source-work-root.rs.in",
+          "root_marker": "proof_digest_instance_source_work"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "root_file": "create-roots.rs.in",
+          "root_marker": "proof_digest_instance_create_load"
+        }
+      ],
+      "scope": "Current adopted Rust. Correct private view only appends thin roots; library boundary is explicit and business callers remain transparent.",
+      "mutation": {
+        "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "before": "ContentDigest::from_sha256(super::sha256::digest(bytes))",
+        "after": "ContentDigest::from_sha256(super::sha256::digest(&bytes[..0]))",
+        "count": 1
+      },
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ]
+    },
+    "tail-zero": {
+      "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+      "roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save"
+      ],
+      "include": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save",
+        "sandproof_controller_service::controller::checkpoint::config::StandardConfigRead",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_protocol::lifecycle::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::proof_digest_instance_source_work",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_digest_instance_save_rebind",
+        "sandproof_controller_service::controller::lifecycle_inbox::_::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_load",
+        "sandproof_controller_service::controller::lifecycle_inbox::proof_digest_instance_create_save",
+        "sandproof_controller_service::controller::transaction::WorldTransaction",
+        "rusqlite::transaction::Transaction"
+      ],
+      "opaque": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"
+      ],
+      "retained_actual_roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest"
+      ],
+      "instrumentation": [
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+          "root_file": "codec-roots.rs.in",
+          "root_marker": "proof_digest_instance_load"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+          "root_file": "source-work-root.rs.in",
+          "root_marker": "proof_digest_instance_source_work"
+        },
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "root_file": "create-roots.rs.in",
+          "root_marker": "proof_digest_instance_create_load"
+        }
+      ],
+      "scope": "Current adopted Rust. Correct private view only appends thin roots; library boundary is explicit and business callers remain transparent.",
+      "mutation": {
+        "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "before": "ContentDigest::from_sha256(super::sha256::digest(bytes))",
+        "after": "let mut output = super::sha256::digest(bytes);\n    output[31] = 0;\n    ContentDigest::from_sha256(output)",
+        "count": 1
+      },
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ]
+    },
+    "leaf-binding": {
+      "manifest": "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+      "roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::proof_digest_fixed_leaf"
+      ],
+      "include": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::proof_digest_fixed_leaf"
+      ],
+      "opaque": [],
+      "retained_actual_roots": [
+        "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"
+      ],
+      "instrumentation": [
+        {
+          "source": "controller-service/src/controller/lifecycle_inbox/sha256.rs",
+          "root_file": "leaf-root.rs.in",
+          "root_marker": "proof_digest_fixed_leaf"
+        }
+      ],
+      "scope": "Current adopted Rust. Correct private view only appends thin roots; library boundary is explicit and business callers remain transparent.",
+      "mutation": null
+    }
+  },
+  "variants": {
+    "actual": {
+      "proofs": [
+        "DigestUses",
+        "DigestUsesWitnesses"
+      ],
+      "seeds": [
+        "DigestUsesWitnesses"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestArray32Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestByteBridge.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUses.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesModel.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesValues.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesWitnesses.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256Bytes.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256BytesChecks.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Funs.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.DigestArray32.flat32_length",
+        "SandboxModel.Stage1Protocol.DigestArray32.leaf_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.join_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.toArray32_fromArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.fromArray32_toArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.full_value_iff",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.fromByte_toByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.toByte_fromByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_bytes_exact",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_length",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.supported_of_input_bound",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_output_complete",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_raw_array",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.finite_contract_has_normal_witness",
+        "SandboxModel.Stage1Protocol.DigestUses.library_model_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.content_digest_full",
+        "SandboxModel.Stage1Protocol.DigestUses.config_load_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.inbox_save_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.config_save_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.create_load_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.create_save_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.source_digest_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.all_six_complete",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_full_payload",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_full_payload",
+        "SandboxModel.Stage1Protocol.DigestUses.normal_abc_all_six",
+        "SandboxModel.Stage1Protocol.DigestUses.empty_all_six",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.output_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.complete_digest_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_known_value",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_known_value"
+      ]
+    },
+    "input-empty": {
+      "proofs": [
+        "DigestUsesInputCounter"
+      ],
+      "seeds": [
+        "DigestUsesInputCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestArray32Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestByteBridge.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesInputCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesModel.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesValues.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256Bytes.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256BytesChecks.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Funs.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.DigestArray32.flat32_length",
+        "SandboxModel.Stage1Protocol.DigestArray32.leaf_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.join_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.toArray32_fromArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.fromArray32_toArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.full_value_iff",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.fromByte_toByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.toByte_fromByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_bytes_exact",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_length",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.supported_of_input_bound",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_output_complete",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_raw_array",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.finite_contract_has_normal_witness",
+        "SandboxModel.Stage1Protocol.DigestUses.InputCounter.original_slice_truncated",
+        "SandboxModel.Stage1Protocol.DigestUses.InputCounter.actual_input_lost",
+        "SandboxModel.Stage1Protocol.DigestUses.InputCounter.empty_still_matches",
+        "SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_source_contract_rejected",
+        "SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_full_contract_rejected",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_full_payload",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_full_payload",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.output_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.complete_digest_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_known_value",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_known_value"
+      ]
+    },
+    "tail-zero": {
+      "proofs": [
+        "DigestUsesTailCounter"
+      ],
+      "seeds": [
+        "DigestUsesTailCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "sandproof_controller_service.controller.lifecycle_inbox.sha256.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+          "is_opaque": true,
+          "lean_file": "SandproofDigestUses/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{sandproof_protocol::lifecycle::digest::ContentDigest}::from_sha256",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.source_work.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofDigestUsesRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::digest",
+          "is_opaque": false,
+          "lean_file": "SandproofDigestUses/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestArray32Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestByteBridge.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesModel.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesTailCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/DigestUsesValues.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256Bytes.lean",
+        "SandboxModel/Lifecycle/Protocol/Sha256BytesChecks.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Funs.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/Types.lean",
+        "verification/aeneas/stage1-protocol/digest-uses/SandproofDigestUses/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.DigestArray32.flat32_length",
+        "SandboxModel.Stage1Protocol.DigestArray32.leaf_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.join_full",
+        "SandboxModel.Stage1Protocol.DigestArray32.toArray32_fromArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.fromArray32_toArray32",
+        "SandboxModel.Stage1Protocol.DigestArray32.full_value_iff",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.fromByte_toByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.toByte_fromByte",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_bytes_exact",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.input_length",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.supported_of_input_bound",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_output_complete",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.reference_raw_array",
+        "SandboxModel.Stage1Protocol.DigestByteBridge.finite_contract_has_normal_witness",
+        "SandboxModel.Stage1Protocol.DigestUses.TailCounter.actual_tail_overwritten",
+        "SandboxModel.Stage1Protocol.DigestUses.TailCounter.overwritten_byte_zero",
+        "SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_source_contract_rejected",
+        "SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_full_contract_rejected",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_normal",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.abc_full_payload",
+        "SandboxModel.Stage1Protocol.DigestUses.Values.empty_full_payload",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.output_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.complete_digest_length",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_supported",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.empty_known_value",
+        "SandboxModel.Stage1Protocol.Sha256Bytes.abc_known_value"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 5,
+      "expected_clippy_codes": []
+    },
+    "input-empty": {
+      "mutation": {
+        "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "before": "ContentDigest::from_sha256(super::sha256::digest(bytes))",
+        "after": "ContentDigest::from_sha256(super::sha256::digest(&bytes[..0]))",
+        "count": 1
+      },
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "test_count": 5,
+      "expected_clippy_codes": []
+    },
+    "tail-zero": {
+      "mutation": {
+        "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "before": "ContentDigest::from_sha256(super::sha256::digest(bytes))",
+        "after": "let mut output = super::sha256::digest(bytes);\n    output[31] = 0;\n    ContentDigest::from_sha256(output)",
+        "count": 1
+      },
+      "expected_failures": [
+        "empty_known_digest",
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "test_count": 5,
+      "expected_clippy_codes": []
+    },
+    "restored": {
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 5,
+      "expected_clippy_codes": []
+    }
+  },
+  "canonical_generated_data": {
+    "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean": {
+      "provider": "reuse/verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean",
+      "sha256": "b1499342657eba6f5fd9053e506b35a6a4d08cd7caf362eb1bf5f36f8ad309d7",
+      "hand_edited": false,
+      "origin": "Existing exact tool-generated data provider, reused in the checked canonical complete-carrier/Raw32 view; original execution identity retained."
+    },
+    "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean": {
+      "provider": "reuse/verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+      "sha256": "a6fdf03e3b8fcb3a424e3578bf045433284bcc5c023f8847af46b9b4228b6b7e",
+      "hand_edited": false,
+      "origin": "Existing exact tool-generated data provider, reused in the checked canonical complete-carrier/Raw32 view; original execution identity retained."
+    }
+  },
+  "own_structure_fields": {
+    "rusqlite.transaction.Transaction": [
+      "conn",
+      "drop_behavior"
+    ],
+    "sandproof_controller_service.controller.checkpoint.config.StandardConfigRead": [
+      "connection"
+    ],
+    "sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave": [
+      "connection"
+    ],
+    "sandproof_controller_service.controller.transaction.WorldTransaction": [
+      "transaction",
+      "committed",
+      "candidate",
+      "input_start"
+    ],
+    "sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment": [
+      "tx",
+      "connection"
+    ]
+  },
+  "actual_leaf_source": "//! Fixed SHA-256 library use; no lifecycle decision or object access.\nuse sha2::{Digest, Sha256};\n\npub(super) fn digest(bytes: &[u8]) -> [u8; 32] {\n    Sha256::digest(bytes).into()\n}\n",
+  "common_proofs": [
+    "DigestArray32Representation",
+    "Sha256Bytes",
+    "Sha256BytesChecks",
+    "DigestByteBridge",
+    "DigestUsesModel",
+    "DigestUsesValues"
+  ],
+  "kernel_library_implementation_refinement": false,
+  "public_dependency_adopted": false,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}

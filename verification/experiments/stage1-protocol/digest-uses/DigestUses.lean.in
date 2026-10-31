@@ -1,0 +1,67 @@
+import SandboxModel.Lifecycle.Protocol.DigestUsesModel
+open Aeneas Aeneas.Std SandproofDigestUsesRust
+namespace SandboxModel.Stage1Protocol.DigestUses
+
+/-- Realization by the candidate model only, not a crypto implementation proof. -/
+theorem library_model_normal (bytes : Slice U8) (normal : Normal bytes) :
+    libraryCall bytes = .ok (expected bytes) := by
+  have bound : bytes.val.length < 2^61 := by
+    simpa only [Normal, Sha256Bytes.SupportedInput, DigestByteBridge.input_length] using normal
+  exact if_pos bound
+
+theorem content_digest_full (bytes : Array U8 32#usize) :
+    sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256 bytes = .ok bytes := by rfl
+
+theorem config_load_complete : EffectDigestContract configLoad := by
+  intro state bytes normal
+  simp only [configLoad,
+    sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    library_model_normal bytes normal, bind_tc_ok]
+
+theorem inbox_save_complete : EffectDigestContract inboxSave := by
+  intro state bytes normal
+  simp only [inboxSave,
+    sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    library_model_normal bytes normal, bind_tc_ok]
+
+theorem config_save_complete : EffectDigestContract configSave := by
+  intro state bytes normal
+  simp only [configSave,
+    sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    inbox_save_complete _ bytes normal, bind_tc_ok]
+  rfl
+
+theorem create_load_complete : EffectDigestContract createLoad := by
+  intro state bytes normal
+  simp only [createLoad,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    config_load_complete _ bytes normal, bind_tc_ok]
+  rfl
+
+theorem create_save_complete : EffectDigestContract createSave := by
+  intro state bytes normal
+  simp only [createSave,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    config_save_complete _ bytes normal, bind_tc_ok]
+  rfl
+
+theorem source_digest_complete : SourceDigestContract sourceDigest := by
+  intro bytes normal
+  simp only [sourceDigest,
+    sandproof_controller_service.controller.lifecycle_inbox.source_work.digest,
+    library_model_normal bytes normal, bind_tc_ok, content_digest_full]
+
+theorem all_six_complete : FullDigestUsesContract actualCalls :=
+  ⟨config_load_complete, inbox_save_complete, config_save_complete,
+    create_load_complete, create_save_complete, source_digest_complete⟩
+
+end SandboxModel.Stage1Protocol.DigestUses
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.library_model_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.content_digest_full
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.config_load_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.inbox_save_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.config_save_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.create_load_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.create_save_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.source_digest_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.all_six_complete

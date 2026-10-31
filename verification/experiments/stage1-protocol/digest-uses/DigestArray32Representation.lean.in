@@ -1,0 +1,97 @@
+import SandproofDigestArray32.Types
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofDigestArray32Rust
+namespace SandboxModel.Stage1Protocol.DigestArray32
+
+abbrev Size32 := typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt
+  (typenum.uint.UInt (typenum.uint.UInt (typenum.uint.UInt
+  typenum.uint.UTerm typenum.bit.B1) typenum.bit.B0) typenum.bit.B0)
+  typenum.bit.B0) typenum.bit.B0) typenum.bit.B0
+abbrev Tree1 (T : Type) := generic_array.GenericArrayImplOdd T (Array T 0#usize)
+abbrev Tree2 (T : Type) := generic_array.GenericArrayImplEven T (Tree1 T)
+abbrev Tree4 (T : Type) := generic_array.GenericArrayImplEven T (Tree2 T)
+abbrev Tree8 (T : Type) := generic_array.GenericArrayImplEven T (Tree4 T)
+abbrev Tree16 (T : Type) := generic_array.GenericArrayImplEven T (Tree8 T)
+abbrev Tree32 (T : Type) := generic_array.GenericArrayImplEven T (Tree16 T)
+abbrev Raw32 (T : Type) := generic_array.GenericArray T Size32 (Tree32 T)
+
+def leaf {T : Type} (value : T) : Tree1 T :=
+  ⟨Aeneas.Std.Array.empty T, Aeneas.Std.Array.empty T, value⟩
+def join {T A : Type} (left right : A) : generic_array.GenericArrayImplEven T A :=
+  ⟨left, right, ()⟩
+def flat1 {T : Type} (value : Tree1 T) : List T := [value.data]
+def flat2 {T : Type} (value : Tree2 T) : List T :=
+  flat1 value.parent1 ++ flat1 value.parent2
+def flat4 {T : Type} (value : Tree4 T) : List T :=
+  flat2 value.parent1 ++ flat2 value.parent2
+def flat8 {T : Type} (value : Tree8 T) : List T :=
+  flat4 value.parent1 ++ flat4 value.parent2
+def flat16 {T : Type} (value : Tree16 T) : List T :=
+  flat8 value.parent1 ++ flat8 value.parent2
+def flat32 {T : Type} (value : Tree32 T) : List T :=
+  flat16 value.parent1 ++ flat16 value.parent2
+
+theorem flat32_length {T : Type} (value : Tree32 T) : (flat32 value).length = 32 := by
+  simp [flat32, flat16, flat8, flat4, flat2, flat1]
+
+def toArray32 {T : Type} (value : Raw32 T) : Array T 32#usize :=
+  Array.from (flat32 value.data) (flat32_length value.data)
+
+def index32 {T : Type} (value : Array T 32#usize) (index : Fin 32) : T :=
+  value.val[index.val]'(by
+    have length : value.val.length = 32 := by simp
+    have := index.isLt
+    omega)
+
+def fromArray32 {T : Type} (value : Array T 32#usize) : Raw32 T :=
+  ⟨join (join (join (join (join (leaf (index32 value ⟨0, by decide⟩)) (leaf (index32 value ⟨1, by decide⟩))) (join (leaf (index32 value ⟨2, by decide⟩)) (leaf (index32 value ⟨3, by decide⟩)))) (join (join (leaf (index32 value ⟨4, by decide⟩)) (leaf (index32 value ⟨5, by decide⟩))) (join (leaf (index32 value ⟨6, by decide⟩)) (leaf (index32 value ⟨7, by decide⟩))))) (join (join (join (leaf (index32 value ⟨8, by decide⟩)) (leaf (index32 value ⟨9, by decide⟩))) (join (leaf (index32 value ⟨10, by decide⟩)) (leaf (index32 value ⟨11, by decide⟩)))) (join (join (leaf (index32 value ⟨12, by decide⟩)) (leaf (index32 value ⟨13, by decide⟩))) (join (leaf (index32 value ⟨14, by decide⟩)) (leaf (index32 value ⟨15, by decide⟩)))))) (join (join (join (join (leaf (index32 value ⟨16, by decide⟩)) (leaf (index32 value ⟨17, by decide⟩))) (join (leaf (index32 value ⟨18, by decide⟩)) (leaf (index32 value ⟨19, by decide⟩)))) (join (join (leaf (index32 value ⟨20, by decide⟩)) (leaf (index32 value ⟨21, by decide⟩))) (join (leaf (index32 value ⟨22, by decide⟩)) (leaf (index32 value ⟨23, by decide⟩))))) (join (join (join (leaf (index32 value ⟨24, by decide⟩)) (leaf (index32 value ⟨25, by decide⟩))) (join (leaf (index32 value ⟨26, by decide⟩)) (leaf (index32 value ⟨27, by decide⟩)))) (join (join (leaf (index32 value ⟨28, by decide⟩)) (leaf (index32 value ⟨29, by decide⟩))) (join (leaf (index32 value ⟨30, by decide⟩)) (leaf (index32 value ⟨31, by decide⟩))))))⟩
+
+theorem leaf_full {T : Type} (value : Tree1 T) : leaf value.data = value := by
+  rcases value with ⟨⟨first⟩, ⟨second⟩, item⟩
+  cases first
+  cases second
+  rfl
+
+theorem join_full {T A : Type} (value : generic_array.GenericArrayImplEven T A) :
+    join value.parent1 value.parent2 = value := by
+  rcases value with ⟨left, right, marker⟩
+  cases marker
+  rfl
+
+theorem toArray32_fromArray32 {T : Type} (value : Array T 32#usize) :
+    toArray32 (fromArray32 value) = value := by
+  apply Aeneas.Std.Array.ext
+  simp only [toArray32, Array.from_val]
+  have expanded : flat32 (fromArray32 value).data =
+      List.ofFn (fun i : Fin 32 => index32 value i) := by rfl
+  rw [expanded]
+  have length : value.val.length = 32 := by simp
+  apply List.ext_getElem
+  · simp
+  · intro i leftBound rightBound
+    simp only [List.getElem_ofFn, index32]
+
+theorem fromArray32_toArray32 {T : Type} (value : Raw32 T) :
+    fromArray32 (toArray32 value) = value := by
+  cases value with
+  | mk data =>
+    simp [fromArray32, toArray32, index32, flat32, flat16, flat8, flat4, flat2, flat1,
+      leaf_full, join_full]
+
+theorem full_value_iff {T : Type} (left right : Raw32 T) :
+    toArray32 left = toArray32 right ↔ left = right := by
+  constructor
+  · intro same
+    have back := congrArg fromArray32 same
+    simpa only [fromArray32_toArray32] using back
+  · intro same
+    cases same
+    rfl
+
+end SandboxModel.Stage1Protocol.DigestArray32
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.flat32_length
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.leaf_full
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.join_full
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.toArray32_fromArray32
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.fromArray32_toArray32
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestArray32.full_value_iff

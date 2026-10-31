@@ -1,0 +1,73 @@
+import SandboxModel.Lifecycle.Protocol.DigestArray32Representation
+import SandboxModel.Lifecycle.Protocol.Sha256BytesChecks
+import SandproofFoundations.IdentifierLibrary
+import SandboxModel.Foundations.ByteArray
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.DigestByteBridge
+open DigestArray32
+open SandproofFoundationsRust.IdentifierLibrary
+
+def fromByte (byte : UInt8) : U8 :=
+  U8.ofNatCore byte.toNat (by have := byte.toNat_lt; omega)
+
+theorem fromByte_toByte (byte : U8) : fromByte (UInt8.ofNat byte.val) = byte := by
+  apply UScalar.eq_of_val_eq
+  simp only [fromByte, UInt8.toNat_ofNat']
+  exact Nat.mod_eq_of_lt byte.hmax
+
+theorem toByte_fromByte (byte : UInt8) : UInt8.ofNat (fromByte byte).val = byte := by
+  simp [fromByte]
+
+/-- The existing public raw-byte representation; no UTF-8 premise. -/
+def inputBytes (bytes : Slice U8) : List UInt8 := (byteArray bytes.val).toList
+
+theorem input_bytes_exact (bytes : Slice U8) :
+    inputBytes bytes = bytes.val.map (fun byte => UInt8.ofNat byte.val) := by
+  rw [inputBytes, SandboxModel.Foundations.byteArray_toList_data]
+  simp [byteArray]
+
+theorem input_length (bytes : Slice U8) : (inputBytes bytes).length = bytes.val.length := by
+  simp only [input_bytes_exact, List.length_map]
+
+theorem supported_of_input_bound (bytes : Slice U8) (bound : bytes.val.length < 2^61) :
+    Sha256Bytes.SupportedInput (inputBytes bytes) := by
+  simpa only [Sha256Bytes.SupportedInput, input_length] using bound
+
+def referenceOutput (bytes : Slice U8) : Aeneas.Std.Array U8 32#usize :=
+  Aeneas.Std.Array.from ((Sha256Bytes.digest (inputBytes bytes)).map fromByte)
+    (by simp [Sha256Bytes.complete_digest_length])
+
+def referenceRaw (bytes : Slice U8) : Raw32 U8 := fromArray32 (referenceOutput bytes)
+
+/-- Every output byte, including leading zeros, agrees with the byte specification. -/
+theorem reference_output_complete (bytes : Slice U8) :
+    (byteArray (referenceOutput bytes).val).toList = Sha256Bytes.digest (inputBytes bytes) := by
+  rw [SandboxModel.Foundations.byteArray_toList_data]
+  simp [referenceOutput, byteArray, List.map_map, Function.comp_def, toByte_fromByte]
+
+theorem reference_raw_array (bytes : Slice U8) :
+    toArray32 (referenceRaw bytes) = referenceOutput bytes := by
+  exact toArray32_fromArray32 _
+
+/-- A normal-domain interface requirement; the concrete original symbol is bound separately. -/
+def FixedSha256NormalContract (compute : Slice U8 → Result (Raw32 U8)) : Prop :=
+  ∀ bytes, Sha256Bytes.SupportedInput (inputBytes bytes) →
+    compute bytes = .ok (referenceRaw bytes)
+
+def referenceLibrary (bytes : Slice U8) : Result (Raw32 U8) := .ok (referenceRaw bytes)
+
+/-- This realizes the value requirement; it does not prove the real cryptographic library. -/
+theorem finite_contract_has_normal_witness : FixedSha256NormalContract referenceLibrary := by
+  intro bytes _
+  rfl
+
+
+end SandboxModel.Stage1Protocol.DigestByteBridge
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.fromByte_toByte
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.toByte_fromByte
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.input_bytes_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.input_length
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.supported_of_input_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.reference_output_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.reference_raw_array
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestByteBridge.finite_contract_has_normal_witness

@@ -6,6 +6,7 @@ mod codec;
 pub(in crate::controller) mod native_retirement;
 mod renewal;
 mod renewal_confirmation;
+mod sha256;
 mod validation;
 mod window;
 pub use audit::{LifecycleAudit, LifecycleAuditOperation};
@@ -485,12 +486,7 @@ fn create_owner_present(inbox: &Inbox, owner: &sandproof_protocol::TenantId) -> 
     false
 }
 
-fn create_attachment_install(
-    inbox: &mut Inbox,
-    s: usize,
-    e: usize,
-    local: InternalLocalBinding,
-) {
+fn create_attachment_install(inbox: &mut Inbox, s: usize, e: usize, local: InternalLocalBinding) {
     if !create_owner_present(inbox, &inbox.sessions[s].owner) {
         inbox.owner_high_water = local.owner.0;
         inbox.owners.push(Owner {
@@ -581,7 +577,10 @@ impl super::checkpoint::ReadConfigEffects for StandardCreateAttachment<'_, '_> {
             statement,
         )
     }
-    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<crate::MaintenanceConfig, JournalError> {
+    fn decode_maintenance(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<crate::MaintenanceConfig, JournalError> {
         super::checkpoint::ReadConfigEffects::decode_maintenance(
             &mut super::checkpoint::StandardConfigRead {
                 connection: self.connection,
@@ -719,7 +718,11 @@ pub(super) fn attach_create(
         unload_resolution::StandardUnloadEncoding,
         crate::capture::StandardGraphicBytes,
         _,
-    >(&mut StandardCreateAttachment { tx, connection }, namespace, a)
+    >(
+        &mut StandardCreateAttachment { tx, connection },
+        namespace,
+        a,
+    )
 }
 
 fn attach_create_using<
@@ -734,8 +737,8 @@ fn attach_create_using<
     namespace: &str,
     a: &CreateAttachment,
 ) -> Result<(), JournalError> {
-    let mut inbox = codec::load_using::<R, T, N, U, B, E>(effects)?
-        .ok_or(JournalError::UnsupportedStore)?;
+    let mut inbox =
+        codec::load_using::<R, T, N, U, B, E>(effects)?.ok_or(JournalError::UnsupportedStore)?;
     let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
     let owner = &inbox.sessions[s].owner;
     if !check_existing_create_owner(&inbox, owner, a.local.owner)? {

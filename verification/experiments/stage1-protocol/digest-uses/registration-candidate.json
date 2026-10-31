@@ -1,0 +1,125 @@
+{
+  "kind": "candidate-only-fixed-digest-public-registration",
+  "requires_prior_packages": [
+    "create-attachment-flow",
+    "create-fixed-identity",
+    "create-lifetime-sql",
+    "create-standard-adapter",
+    "create-standard-identity",
+    "create-standard-sql"
+  ],
+  "shared_input_hashes": {
+    "verification/experiments/stage1-protocol/registered.py": {
+      "root": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+      "after_prior": "9a08dfcb5fcbdbb984acb104305559d194bf557b3369ad81c7ae116fa25c32f7",
+      "after_this": "8e0a450e6065830c0f4553372a541ae26fb39a514a95f56c540099bbc911fd65"
+    },
+    "docs/formal/dependencies.md": {
+      "root": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+      "after_prior": "c42613d4a9e8df02f070f421a55e61fc042436d7d9bc787615c42afdcdf1f139",
+      "after_this": "82d7e9f3f65bc51222bbe7ba2dbe6424660d7a83e92ff8eaf193fb7fb0a8e59e"
+    },
+    "docs/proof-coverage.md": {
+      "root": "f8da14f2bf47cddd414734500ae3d1eea89843f30994adb858f293118f739698",
+      "after_prior": "456de6b1e4e1dbbde3f29136e5d634078f0fc1c2164289a339fc02bd82403514",
+      "after_this": "40bc8828d7a0feb9d6f0774e11ba5be6300a20bdca2a724d1187fd8e8b428a5e"
+    }
+  },
+  "patches": {
+    "registration-candidate.patch": "0353c2a5918620065d94a9560f0b438c6cfa74df39ccab8a236f0241fdbf4eb0",
+    "dependencies-candidate.patch": "ad1fc81ce370bca5d8482b3469b316383dffd9f308eb0d719bbb20c8c80fff02",
+    "coverage-candidate.patch": "52eb4bc74549c15386abf08666c3722620432c28fa69f7e54ec4f6f32aa76dca"
+  },
+  "patch_application_and_syntax_only_checked": true,
+  "shared_files_modified": false,
+  "native_label": "stage1-digest-uses",
+  "native_lock_requires_existing_path_and_inherited_descriptor": true,
+  "formal_cases": [
+    "actual",
+    "input-empty",
+    "tail-zero"
+  ],
+  "native_views": [
+    "actual",
+    "input-empty",
+    "tail-zero",
+    "restored"
+  ],
+  "native_assertions_per_view": 5,
+  "current_formal_entry_complete": true,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "global_counts_must_be_recomputed": true,
+  "public_adoption_requires_affected_input_readmission": true,
+  "all_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.DigestArray32.flat32_length",
+    "SandboxModel.Stage1Protocol.DigestArray32.fromArray32_toArray32",
+    "SandboxModel.Stage1Protocol.DigestArray32.full_value_iff",
+    "SandboxModel.Stage1Protocol.DigestArray32.join_full",
+    "SandboxModel.Stage1Protocol.DigestArray32.leaf_full",
+    "SandboxModel.Stage1Protocol.DigestArray32.toArray32_fromArray32",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.finite_contract_has_normal_witness",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.fromByte_toByte",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.input_bytes_exact",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.input_length",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.reference_output_complete",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.reference_raw_array",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.supported_of_input_bound",
+    "SandboxModel.Stage1Protocol.DigestByteBridge.toByte_fromByte",
+    "SandboxModel.Stage1Protocol.DigestUses.InputCounter.actual_input_lost",
+    "SandboxModel.Stage1Protocol.DigestUses.InputCounter.empty_still_matches",
+    "SandboxModel.Stage1Protocol.DigestUses.InputCounter.original_slice_truncated",
+    "SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_source_contract_rejected",
+    "SandboxModel.Stage1Protocol.DigestUses.TailCounter.actual_tail_overwritten",
+    "SandboxModel.Stage1Protocol.DigestUses.TailCounter.overwritten_byte_zero",
+    "SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_source_contract_rejected",
+    "SandboxModel.Stage1Protocol.DigestUses.Values.abc_full_payload",
+    "SandboxModel.Stage1Protocol.DigestUses.Values.abc_normal",
+    "SandboxModel.Stage1Protocol.DigestUses.Values.empty_full_payload",
+    "SandboxModel.Stage1Protocol.DigestUses.Values.empty_normal",
+    "SandboxModel.Stage1Protocol.DigestUses.all_six_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.config_load_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.config_save_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.content_digest_full",
+    "SandboxModel.Stage1Protocol.DigestUses.create_load_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.create_save_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.empty_all_six",
+    "SandboxModel.Stage1Protocol.DigestUses.inbox_save_complete",
+    "SandboxModel.Stage1Protocol.DigestUses.library_model_normal",
+    "SandboxModel.Stage1Protocol.DigestUses.normal_abc_all_six",
+    "SandboxModel.Stage1Protocol.DigestUses.source_digest_complete",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.abc_known_value",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.abc_supported",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.complete_digest_length",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.empty_known_value",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.empty_supported",
+    "SandboxModel.Stage1Protocol.Sha256Bytes.output_length"
+  ],
+  "expected_views": {
+    "actual": {
+      "files": 21,
+      "audits": 35
+    },
+    "input-empty": {
+      "files": 20,
+      "audits": 29
+    },
+    "tail-zero": {
+      "files": 20,
+      "audits": 28
+    }
+  },
+  "proof_execution_identity": "d7c9f962 plus exact recorded working-tree inputs; original identity retained",
+  "actual_result_validator_checked": true,
+  "incomplete_or_weakened_results_rejected": [
+    "prepare-only",
+    "missing-tail",
+    "missing-source-binding",
+    "not-property-rejected",
+    "different-contract",
+    "missing-full-service"
+  ]
+}

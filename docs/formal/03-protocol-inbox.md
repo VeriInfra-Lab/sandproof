@@ -99,6 +99,12 @@ load 的正文、完整摘要、重编码、预算及完整校验必须属于同
 各自保留，不能假定它们一致，也不补上原实现没有检查的 length 查询与正文长度等式。
 标准读取/编码/摘要实例的逐接口结果、SQL 列与参数顺序仍须显式连接。
 
+[固定摘要使用点](../../verification/experiments/stage1-protocol/digest-uses/README.md)
+将原固定 SHA 表达式集中到唯一窄库接口，六处业务调用者保留透明连接和同一完整值合同。
+有限库正常返回条件、完整32字节转换与源码／MIR 接线不能当作库实现的一般机器精化；
+完整接收者值相等也不推出物理事务相同。清除材料的另一个空输入摘要使用点、上层预算、
+JSON／TLS、SQL／提交和持久收件仍单列，公共登记及实际验收状态由覆盖记录负责。
+
 record 成功本身不保证后态通过完整校验。已有 capture frontier 的相同或更旧 Unload
 可被 record 追加，随后由 lineage/save 拒绝；严格更大的 capture 允许编号空洞。
 公共 Resume 请求只要求目标代严格更大，当前 record/lineage 还检查 checked successor

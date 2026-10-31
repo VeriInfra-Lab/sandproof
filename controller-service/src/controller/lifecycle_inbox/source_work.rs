@@ -178,7 +178,7 @@ where
 }
 
 pub(super) fn digest(bytes: &[u8]) -> ContentDigest {
-    ContentDigest::from_sha256(Sha256::digest(bytes).into())
+    ContentDigest::from_sha256(super::sha256::digest(bytes))
 }
 
 pub(in crate::controller) use codec::remove_retired;
