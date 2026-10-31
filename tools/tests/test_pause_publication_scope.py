@@ -125,6 +125,7 @@ class PausePublicationScopeTests(unittest.TestCase):
         with mock.patch.dict(os.environ, environment), \
                 mock.patch.object(suite, 'ROOT', self.source), \
                 mock.patch.object(suite, 'trusted_checkout'), \
+                mock.patch.object(suite, 'stage1_source_admission'), \
                 mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
                 mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
                 mock.patch.object(suite, 'native_case') as cases, \
