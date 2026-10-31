@@ -62,7 +62,7 @@
     "verification/experiments/stage1-protocol/create-owner-check/OmitLocalCounter.lean.in": "17f97481c53a17512df802896697c20a5d271a5a5f3b87ad07ac938adcbdb2c8",
     "verification/experiments/stage1-protocol/create-owner-check/README.md": "38fce20b27c950bc5fd5cb202ea35e1e5e4f50af767c251687a5b659e3f4d21b",
     "verification/experiments/stage1-protocol/create-owner-check/formal.py": "0050f88a58eb3acf7bbd657d624b1115f65cf51a3fe8c9bf690ea829f36a929b",
-    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "5be56e5a3ccc00a3bc573d9d6b1b9943ab149348c647af5a95104259c6130511",
+    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "3764974931653b92488e67155d5e0c79b7f8af0c39f1bb613b376671e19f62dc",
     "verification/experiments/stage1-protocol/create-owner-check/native-common.rs.in": "a299edce69c9bdf9b2acbcb0715554be706bbdb7642aa9d6f90111e4e63d2ba3",
     "verification/experiments/stage1-protocol/create-owner-check/native.py": "f7ec687c4d9ce0af122a7e8dc0c6523c4454b0349c8d971e0b9d7ebec680cdb7",
     "verification/experiments/stage1-protocol/create-owner-check/root.rs.in": "ea8d07584eba80659d8ebbd5b80a1847230063d7917787e3848288b9266f44b2",

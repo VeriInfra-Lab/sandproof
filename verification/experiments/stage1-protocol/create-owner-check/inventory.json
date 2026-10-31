@@ -895,6 +895,20 @@
       "expected_failures": [
         "proof_check_new_other_maximum_first_error",
         "proof_check_new_high_water_first_error"
+      ],
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::manual_let_else",
+          "message": "this could be rewritten as `let...else`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 524
+        },
+        {
+          "code": "clippy::manual_let_else",
+          "message": "this could be rewritten as `let...else`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 524
+        }
       ]
     },
     "restored-actual": {
