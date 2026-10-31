@@ -204,3 +204,14 @@ Load 规格；最小命名/零参数表示候选与五符号读库解释须另�
 同次实际读结果提供 c_int32 BLOB 界，连接原摘要正常输入域，不要求所有手造 Row 合法。
 其它 IO、正常摘要 agrees、完整字符串表示和 Graphic 条件仍显式保留；单次值对应
 不闭合 JSON/SHA 全链、同事务、两读一致、16MiB业务限额、授权或持久接受。
+
+## 9. 标准 SHA 字段与原 Load 的连接
+
+[标准摘要切片](../../verification/experiments/stage1-protocol/standard-digest/README.md)保留原
+字节数学和 FullLoad，仅对原标准摘要字段准备最小纯库命名候选。完整输入、全部32字节
+及整个接收者值属于同一 FullDigestContract；两错共用同一合同/库/合法见证。
+原方法与候选叶子的完整具体字典和数据流来源分别核对，原 FixedOutput/BlockSize 后端
+障碍保留；不把该来源检查称为库实现或一般旧新内核精化。源候选和有限 A9/A6/B4
+接口均待主控/V0协调采用，不扩大到 handler、收件事务或认证。
+接回独立标准 BLOB/Load 视图只消去正常摘要 agrees；其他 IO、完整字符串表示、Graphic、
+物理连接/事务、未知提交/重启、JSON/TLS、实际材料和完整 V3 仍分别保留原义务。

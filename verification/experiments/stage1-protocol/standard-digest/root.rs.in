@@ -1,0 +1,9 @@
+
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_stage1_load_digest(
+    receiver: &mut super::super::checkpoint::StandardConfigRead<'_>,
+    bytes: &[u8],
+) -> [u8; 32] {
+    InboxLoadEffects::digest(receiver, bytes)
+}

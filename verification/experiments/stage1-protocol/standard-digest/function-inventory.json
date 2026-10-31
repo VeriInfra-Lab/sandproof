@@ -1,0 +1,22 @@
+{
+  "functions": [
+    {
+      "lean_name": "controller.lifecycle_inbox.codec.sha256_bytes",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::sha256_bytes",
+      "is_opaque": true,
+      "lean_file": "SandproofStandardDigest/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "SandproofStandardDigestRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardDigest/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStandardDigestRust.controller.lifecycle_inbox.codec.proof_stage1_load_digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardDigest/Funs.lean"
+    }
+  ]
+}

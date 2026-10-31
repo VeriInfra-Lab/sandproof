@@ -1,0 +1,16 @@
+{
+  "kind": "minimal-current-standard-SHA-naming-candidate",
+  "base_commit": "ef9aaf820a4e584550fa4b7d928d88f933db3e99",
+  "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+  "original_method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        Sha256::digest(bytes).into()\n    }",
+  "candidate_method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        sha256_bytes(bytes)\n    }",
+  "helper": "\nfn sha256_bytes(bytes: &[u8]) -> [u8; 32] {\n    Sha256::digest(bytes).into()\n}\n",
+  "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+  "candidate_without_thin_root_sha256": "0e320936f3a906e8355d9c81c01f6da22b0191470c8e027c15c5e8b8994d6678",
+  "unrelated_bytes_preserved": true,
+  "original_library_expression_unchanged": true,
+  "source_adopted": false,
+  "protocol_modified": false,
+  "shared_configuration_modified": false,
+  "full_original_machine_equivalence": false
+}
