@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotal
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxRecordTotal.Connection
+open InboxLookup InboxRecord InboxAppend
+open scoped Classical
+
+-- This frame is needed to carry the load representation condition into save.
+-- It makes no claim that record preserves complete Inbox validation.
+theorem post_config (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (out : RecordReturn) (post : RecordPost inbox intent out) :
+    out.2.config = inbox.config := by
+  cases lookup : inboxSpec intent inbox.sessions.val 0 with
+  | conflict =>
+    simp only [RecordPost, lookup] at post
+    cases post
+    rfl
+  | found session entry =>
+    simp only [RecordPost, lookup] at post
+    obtain ⟨si, ei, _, _, same⟩ := post
+    cases same
+    rfl
+  | absent =>
+    simp only [RecordPost, lookup] at post
+    cases selected : firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 with
+    | none =>
+      simp only [selected] at post
+      cases decision : freshDecision inbox intent with
+      | reject error =>
+        simp only [FreshPost, decision] at post
+        cases post
+        rfl
+      | insert terminal incarnation =>
+        simp only [FreshPost, decision] at post
+        obtain ⟨index, _, _, frame, _⟩ := post
+        have config_frame := congrArg Inbox.config frame
+        exact config_frame
+    | some index =>
+      simp only [selected] at post
+      obtain ⟨s, bound, _, existing⟩ := post
+      cases decision : existingDecision inbox inbox.sessions.val[s.val] intent with
+      | reject error =>
+        simp only [ExistingPost, decision] at existing
+        cases existing
+        rfl
+      | append terminal =>
+        simp only [ExistingPost, decision] at existing
+        obtain ⟨entries, i, _, _, same⟩ := existing
+        cases same
+        rfl
+
+theorem record_config_frame (inbox : Inbox) (intent : AcceptedLifecycleIntent) :
+    Inbox.record inbox intent ⦃ out => out.2.config = inbox.config ⦄ := by
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists (record_contract inbox intent)
+  rw [returned]
+  exact WP.spec.ret (post_config inbox intent out post)
+
+end SandboxModel.Stage1Protocol.InboxRecordTotal.Connection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.post_config
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.Connection.record_config_frame

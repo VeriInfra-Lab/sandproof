@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesStep
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.admission
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+
+theorem loop_spec (values : Slice Entry) (lifetime : Lifetime) (start : I64)
+    (state : LifetimeState) (index : Nat) (upper : index ≤ values.val.length) :
+    validate_applied_lifetimes_loop (cursor values index) lifetime start
+      state.priorEnd state.priorVersion state.lastApplied
+      ⦃ result => result = observed (scan lifetime start (values.val.drop index) state) ⦄ := by
+  unfold validate_applied_lifetimes_loop
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun (value : LoopState) => values.val.length - value.1.i)
+    (fun value => ∃ position current, value =
+      (cursor values position, current.priorEnd, current.priorVersion, current.lastApplied) ∧
+      position ≤ values.val.length ∧
+      observed (scan lifetime start (values.val.drop position) current) =
+        observed (scan lifetime start (values.val.drop index) state))
+    (fun result => result = observed (scan lifetime start (values.val.drop index) state))
+  · rintro value ⟨position, current, rfl, bound, same⟩
+    dsimp only
+    by_cases inside : position < values.val.length
+    · rw [body_next values position lifetime start current inside]
+      cases decision : step lifetime start current values.val[position] with
+      | error reason =>
+          simp only [bodyResult, decision]
+          apply WP.spec.ret
+          rw [List.drop_eq_getElem_cons inside] at same
+          simpa [scan, decision, observed] using same
+      | ok next =>
+          simp only [bodyResult, decision]
+          apply WP.spec.ret
+          constructor
+          · refine ⟨position + 1, next, rfl, by omega, ?_⟩
+            rw [List.drop_eq_getElem_cons inside] at same
+            simpa [scan, decision] using same
+          · dsimp [cursor]; omega
+    · rw [body_end values position lifetime start current (Nat.le_of_not_gt inside)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt inside)] at same
+      exact same
+  · exact ⟨index, state, rfl, upper, rfl⟩
+
+theorem loop_refines (values : Slice Entry) (lifetime : Lifetime) (start : I64)
+    (state : LifetimeState) (index : Nat) (upper : index ≤ values.val.length) :
+    validate_applied_lifetimes_loop (cursor values index) lifetime start
+      state.priorEnd state.priorVersion state.lastApplied =
+      .ok (observed (scan lifetime start (values.val.drop index) state)) := by
+  obtain ⟨result, returned, same⟩ :=
+    WP.spec_imp_exists (loop_spec values lifetime start state index upper)
+  simpa only [same] using returned
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.loop_refines

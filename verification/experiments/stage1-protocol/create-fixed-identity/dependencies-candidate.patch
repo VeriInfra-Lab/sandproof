@@ -1,0 +1,24 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -904,0 +905,21 @@
++
++
++### A6 V3 固定 sandbox 编号的双参数格式使用点（候选）
++
++`create-fixed-identity` 复用公共 Formatter、Display、Argument、Arguments、String writer、
++字面量包装、u64 默认十进制及完整标识符数学。固定生产与抽取 Std 的精确来源在本包
++inventory.json 的 standard_library_sources；不更换工具或扩大整个格式库的信任边界。
++
++| 精确接口 | 当前条件／结果 |
++|---|---|
++| `Shared0T.Insts.CoreFmtDisplay.fmt`、`core.fmt.num.imp.DisplayU64.fmt` | 直接使用原公共字典转发和完整无符号十进制；任意 u64 位均保留 |
++| `core.fmt.rt.Argument.new_display`、`core.fmt.Arguments.new` | 原惰性回调及两项输入、顺序和九个程序字节全部保留；不是 Unit |
++| 默认 `Str.Insts.CoreFmtDisplay.fmt` | 当前无额外宽度／精度／格式标志的 str 实例，在既有正常分配和有效 UTF-8 域转发原默认 String writer |
++| `alloc.fmt.format` | 仅解释固定 `[3,115,98,45,192,1,45,192,0]` 的两参数程序，先完整 namespace、再 `-`、再 u64 十进制；当前两个正常回调各执行一次 |
++| 原标识符字节、迭代、String deref 与字面量接口 | 使用原 A6 合同和证明；整个业务 SandboxId 校验、构造及 JournalError 转换保持真实透明生成体 |
++
++`core::hint::must_use` 已从同版 Std 透明抽取并核对恒等输入／输出，不新设外部假设。
++固定默认格式接口与实际 Std 正常返回符合仍是具名依赖，不冒称 Std 内部实现已机器证明、
++任意 Display／Formatter、OOM／abort 或格式器失败可恢复。现有单 u16 的 InternalError
++格式合同不扩张。格式值正确不推出授权、资源存在、持久接受、全局 ID 唯一或同一事务。
++公共定义与最终登记由唯一维护者采用，本候选不代表已经完成共享库或整套 V3 验收。

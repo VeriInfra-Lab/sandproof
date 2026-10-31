@@ -3,21 +3,27 @@
 //! values. Unknown partial initialization is retained and cannot be adopted.
 
 use super::{RuntimeError, jail::DirectoryIdentity};
-use crate::snapshot_store::{SnapshotStore, matches_entry, open_store};
+use crate::snapshot_store::{
+    SnapshotStore, clone_whole_file, matches_entry, open_store, require_same_xfs_mount,
+};
 use rustix::fs::{self, AtFlags, Mode, OFlags, RenameFlags};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsStr,
     fs::File,
     io::{self, Read, Write},
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{FileExt, MetadataExt},
     path::{Path, PathBuf},
 };
 
-const VERSION: u32 = 1;
+// Only this format attests that initialization completed the real CoW probe.
+// Reopening never migrates or adopts an older, unprobed development layout.
+const VERSION: u32 = 2;
 const PROFILE: &str = "layout.json";
 const INITIALIZING: &str = ".layout-initializing.json";
 const MAX_PROFILE_BYTES: u64 = 16_384;
+const PROBE_SOURCE: &str = ".layout-cow-source";
+const PROBE_TARGET: &str = ".layout-cow-target";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,7 +45,12 @@ pub struct SnapshotLayout {
     store: File,
     record: LayoutRecord,
     owner: u32,
+    material_project: Option<crate::material_project::MaterialProject>,
 }
+
+#[path = "snapshot_full_retirement.rs"]
+mod full_retirement;
+pub use full_retirement::FullMaterialRetirement;
 
 fn error(message: &'static str) -> RuntimeError {
     RuntimeError::IdentityMismatch(message)
@@ -71,6 +82,10 @@ fn child(parent: &File, name: &str, owner: u32) -> Result<File, RuntimeError> {
     Ok(opened)
 }
 fn distinct(parent: &File, runtime: &File, store: &File) -> Result<(), RuntimeError> {
+    // Compare current FD mounts, never a persisted mount number. Same device
+    // alone would admit an independently bound mount of the same filesystem.
+    require_same_xfs_mount(parent, runtime)?;
+    require_same_xfs_mount(parent, store)?;
     let base = parent.metadata()?;
     let first = runtime.metadata()?;
     let second = store.metadata()?;
@@ -84,6 +99,35 @@ fn distinct(parent: &File, runtime: &File, store: &File) -> Result<(), RuntimeEr
             "layout must be distinct original sibling directories",
         ));
     }
+    Ok(())
+}
+fn probe_clone(parent: &File) -> Result<(), RuntimeError> {
+    let flags = OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut source = File::from(
+        fs::openat(parent, PROBE_SOURCE, flags, Mode::RUSR | Mode::WUSR).map_err(errno)?,
+    );
+    let target = File::from(
+        fs::openat(parent, PROBE_TARGET, flags, Mode::RUSR | Mode::WUSR).map_err(errno)?,
+    );
+    source.write_all(b"C")?;
+    source.sync_all()?;
+    clone_whole_file(&source, &target)?;
+    let mut bytes = [0_u8; 1];
+    target.read_exact_at(&mut bytes, 0)?;
+    if bytes != *b"C" {
+        return Err(error("layout CoW probe content differs"));
+    }
+    source.sync_all()?;
+    target.sync_all()?;
+    parent.sync_all()?;
+    // Probe files remain on any preceding error. The already-created v/s
+    // directories also retain initialization responsibility if a later sync
+    // fails after both probe names were removed.
+    matches_entry(parent, OsStr::new(PROBE_SOURCE), &source)?;
+    fs::unlinkat(parent, PROBE_SOURCE, AtFlags::empty()).map_err(errno)?;
+    matches_entry(parent, OsStr::new(PROBE_TARGET), &target)?;
+    fs::unlinkat(parent, PROBE_TARGET, AtFlags::empty()).map_err(errno)?;
+    parent.sync_all()?;
     Ok(())
 }
 fn empty(parent: &File) -> Result<(), RuntimeError> {
@@ -165,6 +209,24 @@ impl SnapshotLayout {
         require_root()?;
         Self::initialize_for_owner(path, binding, 0)
     }
+    /// Explicit deployment only: create the fresh layout and label its empty
+    /// store. This never enables or changes filesystem quotas. A partial error
+    /// preserves the same layout and cannot be retried as fresh initialization.
+    /// # Errors
+    /// Rejects existing/unsafe roots, changed tools or failed project readback.
+    pub fn initialize_material_project(
+        path: &Path,
+        binding: [u8; 32],
+        settings: crate::MaterialProjectSettings,
+    ) -> Result<Self, RuntimeError> {
+        let mut layout = Self::initialize(path, binding)?;
+        layout.material_project = Some(crate::material_project::MaterialProject::provision(
+            settings,
+            &layout.store,
+        )?);
+        Ok(layout)
+    }
+
     fn initialize_for_owner(
         path: &Path,
         binding: [u8; 32],
@@ -172,11 +234,13 @@ impl SnapshotLayout {
     ) -> Result<Self, RuntimeError> {
         let parent = open_store(path, owner)?;
         empty(&parent)?;
+        require_same_xfs_mount(&parent, &parent)?;
         fs::mkdirat(&parent, "v", Mode::RWXU).map_err(errno)?;
         fs::mkdirat(&parent, "s", Mode::RWXU).map_err(errno)?;
         let runtime = child(&parent, "v", owner)?;
         let store = child(&parent, "s", owner)?;
         distinct(&parent, &runtime, &store)?;
+        probe_clone(&parent)?;
         let record = LayoutRecord {
             version: VERSION,
             binding,
@@ -195,6 +259,7 @@ impl SnapshotLayout {
             store,
             record,
             owner,
+            material_project: None,
         })
     }
     /// Reopen the original registered layout, including populated runtime/store
@@ -234,8 +299,32 @@ impl SnapshotLayout {
             store,
             record,
             owner,
+            material_project: None,
         })
     }
+    /// Bind the original store's pre-provisioned project to protected tools.
+    /// This checks labels only; deployment must have read back actual hard quotas.
+    /// # Errors
+    /// Changed tools, device, labels or original store identities reject assembly.
+    pub fn with_material_project(
+        mut self,
+        settings: crate::MaterialProjectSettings,
+    ) -> Result<Self, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?;
+        self.material_project = Some(crate::material_project::MaterialProject::open(
+            settings,
+            &self.store,
+        )?);
+        Ok(self)
+    }
+
+    pub(super) fn assign_new_capture_project(&self, directory: &File) -> Result<(), RuntimeError> {
+        if let Some(project) = &self.material_project {
+            project.assign_new_empty(directory)?;
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn runtime_root(&self) -> PathBuf {
         self.path.join("v")
@@ -257,6 +346,27 @@ impl SnapshotLayout {
             .open_bundle(directory_key, limits)
     }
 
+    /// Persist one bounded physical worker completion under this original layout.
+    /// This does not adopt materials or grant Stop/Free permission.
+    /// # Errors
+    /// Duplicate/partial publication retains the same work and byte charge.
+    pub fn publish_capture_completion(
+        &self,
+        key: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<(), RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .publish_completion(key, bytes)
+    }
+
+    /// Read the original bounded completion, without starting or repairing Full.
+    /// # Errors
+    /// Missing, altered, foreign or incomplete records remain unknown.
+    pub fn read_capture_completion(&self, key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .read_completion(key)
+    }
+
     pub(crate) fn store_for_runtime(&self, path: &Path) -> Result<SnapshotStore, RuntimeError> {
         if path != self.runtime_root() {
             return Err(error("runtime root differs from original layout"));
@@ -268,6 +378,9 @@ impl SnapshotLayout {
             || !self.record.store.matches(&self.store)?
         {
             return Err(error("cached layout no longer matches original"));
+        }
+        if let Some(project) = &self.material_project {
+            project.require(&self.store)?;
         }
         let store =
             SnapshotStore::from_layout(self.store_root(), self.store.try_clone()?, self.owner);

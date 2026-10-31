@@ -89,6 +89,9 @@ def validate_runtime_configuration(settings, rounds, wait_seconds):
     bounded = settings.get('bounded_host', {})
     maintenance = settings.get('maintenance', {})
     capacity = maintenance.get('capacity')
+    operations=maintenance.get('max_operations_per_sandbox')
+    if type(operations) is not int or not 0 < operations < 2**64:
+        raise ValueError('explicit finite maintenance operation bound required')
     if (not capacity or bounded.get('console_policy') != 'discard'
             or bounded.get('maintenance', {}).get('max_host_slots') != 2
             or settings.get('max_active_global') != 2
@@ -365,7 +368,7 @@ def exercise(args):
         max_artifact_bytes_global=sum(sizes),max_artifact_bytes_per_tenant=sum(sizes),validation_timeout_secs=60)
     services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[catalog],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=2,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        retained_sessions=2 + settings['max_active_global'],registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
     try:
         services.start()
         services.wait_ready()

@@ -1043,8 +1043,8 @@
       "is_local": false,
       "source": {
         "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lifecycle.rs",
-        "begin_line": 45,
-        "end_line": 45
+        "begin_line": 50,
+        "end_line": 50
       },
       "can_fail": false
     }

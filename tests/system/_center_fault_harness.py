@@ -29,6 +29,7 @@ from tools.system_acceptance import digest, json_file, private_path, write_once
 from _center_host_services import local_binding, process_facts
 from _internal_fault_relay import InternalFaultRelay, RelayMaterials
 from _runtime_services import MAX_ACTIVATION_BYTES
+from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 from server_process_crash import fetch, free_loopback_port, prepare_fault_services, process_start_ticks
 from server_unready_abort import wait_for
 from server_vm_id_capacity import check_no_resources
@@ -110,7 +111,7 @@ def physical_record(root, host_audit, identity):
         raise ValueError('original physical position binding changed')
     node = json_file(Path(root)/'control/host.json')['native']
     name = 'vm-' + node['namespace'] + '-' + str(native[0]['current_vm'])
-    claim_directory = private_path(Path(root)/'jails/.claims'/name, directory=True)
+    claim_directory = private_path(Path(node['chroot_base'])/'.claims'/name, directory=True)
     directory_fd = os.open(claim_directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         directory_before = os.fstat(directory_fd)
@@ -163,8 +164,9 @@ def vm_gone(root, identity, firecracker, cgroup_parent):
     name = identity['resource_id']
     if same_running_process(identity):
         return False
+    native=json_file(private_path(Path(root)/'control/host.json'))['native']
     return not any(path.exists() for path in (
-        Path(root)/'jails'/Path(firecracker).name/name,
+        Path(native['chroot_base'])/Path(firecracker).name/name,
         Path('/run/netns')/name, Path(cgroup_parent)/name))
 
 
@@ -173,7 +175,7 @@ def prepared_native(args, root, namespace):
     disk = Path(args.rootfs).stat().st_size
     return dict(namespace=namespace, database=str(root/'db/controller.db'),
         node_state_dir=str(root/'state'), jailer=str(args.jailer), firecracker=str(args.firecracker),
-        chroot_base=str(root/'jails'), kernel=str(args.kernel), rootfs=str(args.rootfs),
+        chroot_base=str(root/'p/v'), kernel=str(args.kernel), rootfs=str(args.rootfs),
         uid_base=args.uid_base, vcpu_count=1, memory_mib=256, file_policy_digest=1,
         max_active_global=2, max_active_per_tenant=2, max_disk_bytes_global=disk*4,
         max_disk_bytes_per_tenant=disk*4, cleanup_reserve_bytes=disk,
@@ -191,13 +193,14 @@ class Harness:
         self.known, self.history = {}, []
         self.cases, self.last_processes = [], None
         self.next_center_audit = 0
-        for part in ('db','state','jails'):
+        for part in ('db','state','p'):
             (self.root/part).mkdir(mode=0o700)
         native = prepared_native(args,self.root,secrets.token_hex(8))
         self.services = prepare_fault_services(args,self.root,native,slots=2,key=self.key,
             port=free_loopback_port(),job_count=2,shared_template=True,
             extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
-            checkpoint_tail_inputs=args.checkpoint_tail_inputs)
+            checkpoint_tail_inputs=args.checkpoint_tail_inputs,
+            activation_ceiling_bytes=getattr(args,'activation_ceiling_bytes',MAX_ACTIVATION_BYTES))
         self.native = self.services.native_pools[0]
         profile = self.native['bounded_host']['physical_storage']
         control=self.services.layout['host_controls'][0]
@@ -208,7 +211,8 @@ class Harness:
             raise ValueError('original declared private host-control evidence budget missing')
         self.evidence_budget=services[0]
         peak, inodes = envelope(profile)
-        assert 2*peak <= MAX_ACTIVATION_BYTES == 200*1024**3
+        ceiling=getattr(args,'activation_ceiling_bytes',MAX_ACTIVATION_BYTES)
+        assert 2*peak <= ceiling <= PREPARED_CI_MAX_ACTIVATION_BYTES
         self.policy = dict(schema_version=1,rounds=args.rounds,case_wait_seconds=args.wait_seconds,
             checkpoint_tail_inputs=args.checkpoint_tail_inputs,
             controlled_test_debug_assertions=True,

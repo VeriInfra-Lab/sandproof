@@ -1,0 +1,47 @@
+import SandproofStage1OwnerMapping.Funs
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+open OwnerMapping
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor
+abbrev maxLoop := sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop
+abbrev maxBody := sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body
+
+theorem sandbox_ne (left right : sandbox_controller_core.ids.SandboxId) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq]
+  exact ⟨congrArg UScalar.val, UScalar.eq_of_val_eq⟩
+
+theorem max_unfold (sandbox : sandbox_controller_core.ids.SandboxId)
+    (records : Slice Record) (highest : U64) (index : Usize) :
+    maxLoop sandbox records highest index = (do
+      let step ← maxBody sandbox records highest index
+      match step with
+      | .done value => .ok value
+      | .cont (next, nextIndex) => maxLoop sandbox records next nextIndex) := by
+  unfold maxLoop sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (maxBody sandbox records highest index))
+  funext step
+  cases step with
+  | done value => rfl
+  | cont pair => cases pair; rfl
+
+theorem max_end (sandbox : sandbox_controller_core.ids.SandboxId)
+    (records : Slice Record) (highest : U64) (index : Usize)
+    (outside : records.val.length ≤ index.val) :
+    maxLoop sandbox records highest index = .ok highest := by
+  rw [max_unfold]
+  have missing : ¬ index < Slice.len records := by scalar_tac
+  simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body, missing]
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end

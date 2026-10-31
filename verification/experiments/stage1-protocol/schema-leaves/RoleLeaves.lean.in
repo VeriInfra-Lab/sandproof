@@ -1,0 +1,283 @@
+import SandboxModel.Boundaries.JsonRequest.SliceBinding
+import SandboxModel.ProofAuditCommand
+
+set_option autoImplicit false
+
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Boundaries
+namespace SandboxModel.Stage1Protocol.RoleLeaves
+
+theorem session_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.session_decode provider input = JsonIdentifiers.actual .sandbox provider input := by
+  unfold protocol_leaves.session_decode
+    sandproof_protocol.lifecycle.identity.SessionId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result String E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__1.DeserializeDeSessionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleSandboxIdSessionId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__1.DeserializeDeSessionId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleSandboxIdSessionId.call_once]
+  simp only [pass]
+  change (JsonIdentifiers.actual .sandbox provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem center_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.center_decode provider input = JsonIdentifiers.actual .deployment provider input := by
+  unfold protocol_leaves.center_decode
+    sandproof_protocol.lifecycle.authority.CenterId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result String E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.authority.__1.DeserializeDeCenterId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleDeploymentIdCenterId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.authority.__1.DeserializeDeCenterId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTupleDeploymentIdCenterId.call_once]
+  simp only [pass]
+  change (JsonIdentifiers.actual .deployment provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem incarnation_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.incarnation_decode provider input = JsonCounter.actual provider input := by
+  unfold protocol_leaves.incarnation_decode
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result U64 E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__3.DeserializeDeIncarnationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterIncarnationId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__3.DeserializeDeIncarnationId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterIncarnationId.call_once]
+  simp only [pass]
+  change (JsonCounter.actual provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem capture_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.capture_decode provider input = JsonCounter.actual provider input := by
+  unfold protocol_leaves.capture_decode
+    sandproof_protocol.lifecycle.identity.CaptureId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result U64 E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__5.DeserializeDeCaptureId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterCaptureId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__5.DeserializeDeCaptureId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterCaptureId.call_once]
+  simp only [pass]
+  change (JsonCounter.actual provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem request_window_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.request_window_decode provider input = JsonCounter.actual provider input := by
+  unfold protocol_leaves.request_window_decode
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result U64 E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__7.DeserializeDeRequestWindowId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRequestWindowId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__7.DeserializeDeRequestWindowId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRequestWindowId.call_once]
+  simp only [pass]
+  change (JsonCounter.actual provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem request_sequence_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.request_sequence_decode provider input = JsonCounter.actual provider input := by
+  unfold protocol_leaves.request_sequence_decode
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result U64 E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__9.DeserializeDeRequestSequence.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRequestSequence provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__9.DeserializeDeRequestSequence.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRequestSequence.call_once]
+  simp only [pass]
+  change (JsonCounter.actual provider input >>= pure) = _
+  exact bind_pure _
+
+
+theorem retention_window_refines {D E : Type}
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    protocol_leaves.retention_window_decode provider input = JsonCounter.actual provider input := by
+  unfold protocol_leaves.retention_window_decode
+    sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.Serde_coreDeDeserialize.deserialize
+  have pass (r : core.result.Result U64 E) :
+      core.result.Result.map
+        (sandproof_protocol.lifecycle.identity.__11.DeserializeDeRetentionWindowId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRetentionWindowId provider)
+        r () = .ok r := by
+    cases r <;> simp [Aeneas.Std.core.result.Result.map, SandproofProtocolResultRust.core.result.Result.map,
+      sandproof_protocol.lifecycle.identity.__11.DeserializeDeRetentionWindowId.deserialize.closure.Insts.CoreOpsFunctionFnOnceTuplePositiveCounterRetentionWindowId.call_once]
+  simp only [pass]
+  change (JsonCounter.actual provider input >>= pure) = _
+  exact bind_pure _
+
+
+
+inductive IdentifierRole where
+  | session | center
+  deriving DecidableEq
+
+inductive CounterRole where
+  | incarnation | capture | requestWindow | requestSequence | retentionWindow
+  deriving DecidableEq
+
+def IdentifierRole.kind : IdentifierRole → SandboxModel.Foundations.OpaqueKind
+  | .session => .sandbox
+  | .center => .deployment
+
+def identifier {D E : Type} (role : IdentifierRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) : Result (core.result.Result String E) :=
+  match role with
+  | .session => protocol_leaves.session_decode provider input
+  | .center => protocol_leaves.center_decode provider input
+
+def counter {D E : Type} (role : CounterRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) : Result (core.result.Result U64 E) :=
+  match role with
+  | .incarnation => protocol_leaves.incarnation_decode provider input
+  | .capture => protocol_leaves.capture_decode provider input
+  | .requestWindow => protocol_leaves.request_window_decode provider input
+  | .requestSequence => protocol_leaves.request_sequence_decode provider input
+  | .retentionWindow => protocol_leaves.retention_window_decode provider input
+
+theorem identifier_refines {D E : Type} (role : IdentifierRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    identifier role provider input = JsonIdentifiers.actual role.kind provider input := by
+  cases role <;> simp only [identifier, IdentifierRole.kind, session_refines, center_refines]
+
+theorem counter_refines {D E : Type} (role : CounterRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    counter role provider input = JsonCounter.actual provider input := by
+  cases role <;> simp only [counter, incarnation_refines, capture_refines,
+    request_window_refines, request_sequence_refines, retention_window_refines]
+
+theorem identifier_schema {D E : Type} (role : IdentifierRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    identifier role provider input = (do
+      let decoded ← JsonIdentifiers.primitive provider input
+      JsonIdentifiers.finish role.kind (provider.ErrorInst.custom JsonIdentifiers.originalDisplay) decoded) := by
+  rw [identifier_refines, JsonIdentifiers.actual_schema]
+
+theorem counter_schema {D E : Type} (role : CounterRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    counter role provider input = (do
+      let decoded ← JsonCounter.primitive provider input
+      JsonCounter.finish (provider.ErrorInst.custom JsonCounter.originalDisplay JsonCounter.invalid) decoded) := by
+  rw [counter_refines, JsonCounter.actual_schema]
+
+theorem identifiers_safe {D E : Type} (role : IdentifierRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    JsonIdentifiers.IdentifierSafe (identifier role provider input) := by
+  rw [identifier_refines]
+  exact JsonIdentifiers.actual_safe role.kind provider input
+
+theorem counters_safe {D E : Type} (role : CounterRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    JsonCounter.CounterSafe (counter role provider input) := by
+  rw [counter_refines]
+  exact JsonCounter.actual_safe provider input
+
+theorem identifiers_preserve_valid_text {D E : Type} (role : IdentifierRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) (text : String)
+    (read : JsonIdentifiers.primitive provider input = .ok (.Ok text))
+    (valid : SandboxModel.Foundations.opaqueValid text) :
+    identifier role provider input = .ok (.Ok text) := by
+  rw [identifier_refines]
+  exact JsonIdentifiers.valid_read_preserved role.kind provider input text read valid
+
+theorem counters_preserve_nonzero {D E : Type} (role : CounterRole)
+    (provider : serde_core.de.Deserializer D E) (input : D) (number : U64)
+    (read : JsonCounter.primitive provider input = .ok (.Ok number)) (nonzero : number ≠ 0#u64) :
+    counter role provider input = .ok (.Ok number) := by
+  rw [counter_refines]
+  exact JsonCounter.nonzero_preserved provider input number read nonzero
+
+-- The common binding is an explicit condition on this concrete reader, slice,
+-- cursor and error dictionary; finite value readers below do not establish it.
+theorem zero_uses_original_error (role : CounterRole) (reader : JsonRequest.SliceFieldReader)
+    (bytes : Slice U8) (bound : reader.BoundTo bytes)
+    (read : JsonCounter.primitive reader.provider reader.input = .ok (.Ok 0#u64)) :
+    counter role reader.provider reader.input =
+      .ok (.Err ⟨"invalid or exhausted internal counter", .data, 0, 0⟩) := by
+  rw [counter_refines]
+  exact JsonRequest.bound_zero_uses_original_json_error reader bytes bound read
+
+theorem invalid_id_uses_original_error (role : IdentifierRole) (reader : JsonRequest.SliceFieldReader)
+    (bytes : Slice U8) (bound : reader.BoundTo bytes) (text : String)
+    (read : JsonIdentifiers.primitive reader.provider reader.input = .ok (.Ok text))
+    (bounded : IdentifierLibrary.StringRepresentable text) (invalid : ¬SandboxModel.Foundations.opaqueValid text) :
+    identifier role reader.provider reader.input =
+      .ok (.Err ⟨"invalid opaque identifier", .data, 0, 0⟩) := by
+  rw [identifier_refines]
+  exact JsonRequest.bound_invalid_id_uses_original_json_error reader bytes bound role.kind text read bounded invalid
+
+theorem zero_error_precedes_document_end (role : CounterRole) (reader : JsonRequest.SliceFieldReader)
+    (bytes : Slice U8) (bound : reader.BoundTo bytes)
+    (read : JsonCounter.primitive reader.provider reader.input = .ok (.Ok 0#u64))
+    (endCheck : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    JsonRequest.finishDocument (counter role reader.provider reader.input) endCheck =
+      .ok (.Err ⟨"invalid or exhausted internal counter", .data, 0, 0⟩) := by
+  exact JsonRequest.decoder_error_precedes_end _ _ _ (zero_uses_original_error role reader bytes bound read)
+
+theorem invalid_id_precedes_document_end (role : IdentifierRole) (reader : JsonRequest.SliceFieldReader)
+    (bytes : Slice U8) (bound : reader.BoundTo bytes) (text : String)
+    (read : JsonIdentifiers.primitive reader.provider reader.input = .ok (.Ok text))
+    (bounded : IdentifierLibrary.StringRepresentable text) (invalid : ¬SandboxModel.Foundations.opaqueValid text)
+    (endCheck : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    JsonRequest.finishDocument (identifier role reader.provider reader.input) endCheck =
+      .ok (.Err ⟨"invalid opaque identifier", .data, 0, 0⟩) := by
+  exact JsonRequest.decoder_error_precedes_end _ _ _
+    (invalid_id_uses_original_error role reader bytes bound text read bounded invalid)
+
+theorem normal_identifier_witnesses (role : IdentifierRole) :
+    identifier role (JsonIdentifiers.valueReader "id.A-1_") 0#u64 = .ok (.Ok "id.A-1_") := by
+  rw [identifier_refines]
+  exact JsonIdentifiers.actual_accepts_example role.kind
+
+theorem invalid_identifier_witnesses (role : IdentifierRole) :
+    identifier role (JsonIdentifiers.valueReader "") 0#u64 = .ok (.Err ()) := by
+  rw [identifier_refines]
+  exact JsonIdentifiers.actual_rejects_empty role.kind
+
+theorem normal_counter_witnesses (role : CounterRole) :
+    counter role JsonCounter.Examples.valueReader 1#u64 = .ok (.Ok 1#u64) := by
+  rw [counter_refines]
+  exact JsonCounter.Examples.actual_accepts_one
+
+theorem invalid_counter_witnesses (role : CounterRole) :
+    counter role JsonCounter.Examples.valueReader 0#u64 = .ok (.Err ()) := by
+  rw [counter_refines]
+  exact JsonCounter.Examples.actual_rejects_zero
+
+end SandboxModel.Stage1Protocol.RoleLeaves
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.session_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.center_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.incarnation_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.capture_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.request_window_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.request_sequence_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.retention_window_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.identifier_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.counter_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.identifier_schema
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.counter_schema
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.identifiers_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.counters_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.identifiers_preserve_valid_text
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.counters_preserve_nonzero
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.zero_uses_original_error
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.invalid_id_uses_original_error
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.zero_error_precedes_document_end
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.invalid_id_precedes_document_end
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.normal_identifier_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.invalid_identifier_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.normal_counter_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RoleLeaves.invalid_counter_witnesses

@@ -5,27 +5,43 @@ use super::{
     artifact_file_digest, check_trusted_path, core, fs, hash_token, launch_observation,
 };
 
+pub(super) fn secret_file_name(
+    namespace: &str,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+) -> String {
+    format!("sb-{namespace}-{}-{generation}", sandbox.0)
+}
+
 impl LinuxWorker {
-    /// Create a one-time root-only credential before accepting a sandbox.
+    /// Create the root-only credential for one already bound native generation.
     /// The caller must use a CSPRNG and not log or pass the token in argv.
     /// # Errors
     /// Rejects reuse, malformed tokens, or a hash computation failure.
-    pub fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> NodeResult<()> {
-        self.put_launch_secret(sandbox, token, &BTreeMap::new())
+    pub fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> NodeResult<()> {
+        self.put_launch_secret(sandbox, generation, token, &BTreeMap::new())
     }
 
     /// Store the exact creation environment in the same root-only record as
-    /// the token. This record exists before the VM can be reserved or booted.
+    /// the token. The original position is bound before this record; the VM
+    /// cannot be booted until the same generation's credential is registered.
     /// # Errors
     /// Rejects reuse, invalid variables or an unsafe credential location.
     pub fn put_launch_secret(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &BTreeMap<String, String>,
     ) -> NodeResult<()> {
         self.put_bound_launch_secret(
             sandbox,
+            generation,
             token,
             &CreateOptions {
                 env_vars: env_vars.clone(),
@@ -40,10 +56,11 @@ impl LinuxWorker {
     pub fn put_bound_launch_secret(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> NodeResult<()> {
-        self.require_occupied_sandbox(sandbox)?;
+        self.credential_context(sandbox, generation)?;
         options.validate()?;
         if let Some(template) = &options.template {
             self.validate_template(template)?;
@@ -64,33 +81,52 @@ impl LinuxWorker {
         }
         let sha512 = hash_token(token);
         let value = GuestSecret {
+            generation,
             token: token.to_owned(),
             sha512,
             env_vars: env_vars.clone(),
             template: options.template.clone(),
         };
-        let path = self.secret_path(sandbox);
+        let path = self.secret_path(sandbox, generation);
         self.write_node_json(&path, &value)
     }
 
     /// Read a credential only for the authenticated API response or worker.
     /// # Errors
     /// Rejects a missing or malformed stored secret.
-    pub fn token_for(&self, sandbox: core::SandboxId) -> NodeResult<String> {
-        Ok(self.secret(sandbox)?.token)
+    pub fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<String> {
+        self.credential_context(sandbox, generation)?;
+        Ok(self.secret(sandbox, generation)?.token)
     }
 
     /// A missing secret is distinguishable from a malformed or untrusted one.
     /// # Errors
     /// Refuses to treat a corrupt credential as safe to replace.
-    pub fn has_secret(&self, sandbox: core::SandboxId) -> NodeResult<bool> {
-        let path = self.secret_path(sandbox);
+    pub fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<bool> {
+        self.credential_context(sandbox, generation)?;
+        self.has_secret_record(sandbox, generation)
+    }
+
+    pub(super) fn has_secret_record(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<bool> {
+        let path = self.secret_path(sandbox, generation);
         match fs::symlink_metadata(&path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error.into()),
             Ok(_) => {
                 self.sync_node_record(&path)?;
-                self.secret(sandbox)?;
+                self.secret(sandbox, generation)?;
                 Ok(true)
             }
         }
@@ -103,12 +139,13 @@ impl LinuxWorker {
     pub fn has_launch_secret(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &BTreeMap<String, String>,
     ) -> NodeResult<bool> {
-        if !self.has_secret(sandbox)? {
+        if !self.has_secret(sandbox, generation)? {
             return Ok(false);
         }
-        if self.secret(sandbox)?.env_vars != *env_vars {
+        if self.secret(sandbox, generation)?.env_vars != *env_vars {
             return Err("stored guest initialization differs from admitted create".into());
         }
         Ok(true)
@@ -119,12 +156,13 @@ impl LinuxWorker {
     pub fn has_bound_launch_secret(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> NodeResult<bool> {
-        if !self.has_secret(sandbox)? {
+        if !self.has_secret(sandbox, generation)? {
             return Ok(false);
         }
-        let stored = self.secret(sandbox)?;
+        let stored = self.secret(sandbox, generation)?;
         if stored.env_vars != options.env_vars || stored.template != options.template {
             return Err("stored template or initialization differs from admitted create".into());
         }
@@ -139,10 +177,16 @@ impl LinuxWorker {
     pub fn audit_launch_credential(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
         original_digest: &[u8; 32],
     ) -> NodeResult<LaunchCredentialStatus> {
-        launch_observation::credential_status(&self.secret_path(sandbox), options, original_digest)
+        launch_observation::credential_status(
+            &self.secret_path(sandbox, generation),
+            generation,
+            options,
+            original_digest,
+        )
     }
 
     /// Check protected inputs and cgroup limits before controller admission.
@@ -220,19 +264,45 @@ impl LinuxWorker {
         Ok(())
     }
 
-    pub(super) fn secret_path(&self, sandbox: core::SandboxId) -> PathBuf {
-        self.config
-            .state_dir
-            .join("secrets")
-            .join(format!("sb-{}-{}", self.config.namespace, sandbox.0))
+    pub(super) fn secret_for_vm(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+    ) -> NodeResult<GuestSecret> {
+        let context = self.original_source_context(&sandproof_protocol::ResourceRef {
+            kind: sandproof_protocol::ResourceKind::Vm,
+            id: sandproof_protocol::ResourceId::try_from(self.vm_name(vm))?,
+        })?;
+        if context.binding.sandbox != sandbox || context.binding.vm != vm {
+            return Err("credential VM differs from original sandbox binding".into());
+        }
+        self.secret(sandbox, context.binding.generation)
     }
 
-    pub(super) fn secret(&self, sandbox: core::SandboxId) -> NodeResult<GuestSecret> {
-        let path = self.secret_path(sandbox);
+    pub(super) fn secret_path(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> PathBuf {
+        self.config.state_dir.join("secrets").join(secret_file_name(
+            &self.config.namespace,
+            sandbox,
+            generation,
+        ))
+    }
+
+    pub(super) fn secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<GuestSecret> {
+        let path = self.secret_path(sandbox, generation);
         check_trusted_path(&path)?;
         let value: GuestSecret = serde_json::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("secret parent")?)?.sync_all()?;
-        if value.token.len() < 32
+        if generation == 0
+            || value.generation != generation
+            || value.token.len() < 32
             || value.sha512.len() != 128
             || hash_token(&value.token) != value.sha512
             || value
@@ -243,5 +313,21 @@ impl LinuxWorker {
             return Err("stored guest secret hash mismatch".into());
         }
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn explicit_generation_names_are_distinct_and_fit_the_original_entry_bound() {
+        assert_eq!(secret_file_name("ns", core::SandboxId(1), 1), "sb-ns-1-1");
+        assert_ne!(
+            secret_file_name("ns", core::SandboxId(1), 1),
+            secret_file_name("ns", core::SandboxId(1), 2)
+        );
+        let maximum = secret_file_name("0123456789abcdef", core::SandboxId(u64::MAX), u64::MAX);
+        assert!(maximum.len() <= 64);
+        assert!(sandproof_protocol::ResourceId::try_from(maximum).is_ok());
     }
 }

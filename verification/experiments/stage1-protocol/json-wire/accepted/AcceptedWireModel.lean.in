@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.ValidationModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+open sandproof_internal.lifecycle
+open SandboxModel.Stage1Protocol.Validation
+namespace SandboxModel.Stage1Protocol.AcceptedWire
+
+noncomputable def expectedPost {E : Type} (context : AuthenticatedCenterContext)
+    (decoded : core.result.Result AcceptedLifecycleIntent E) :
+    core.result.Result AcceptedLifecycleIntent AcceptedBodyError :=
+  match decoded with
+  | .Err _ => .Err .InvalidJson
+  | .Ok intent => match expectedAccepted intent context with
+    | .Ok _ => .Ok intent
+    | .Err _ => .Err .InvalidIntent
+
+noncomputable def expectedRun {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F) :
+    Result (core.result.Result AcceptedLifecycleIntent AcceptedBodyError) := do
+  let decoded ← reader.call_once decode bytes
+  .ok (expectedPost context decoded)
+
+def WireContract {F E : Type}
+    (run : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E) →
+      Slice U8 → AuthenticatedCenterContext → F →
+      Result (core.result.Result AcceptedLifecycleIntent AcceptedBodyError)) : Prop :=
+  ∀ reader bytes context decode, run reader bytes context decode = expectedRun reader bytes context decode
+
+def valueReader : core.ops.function.FnOnce
+    (core.result.Result AcceptedLifecycleIntent Unit) (Slice U8)
+    (core.result.Result AcceptedLifecycleIntent Unit) :=
+  ⟨fun value _ => .ok value⟩
+
+def foreignCenterIntent : AcceptedLifecycleIntent :=
+  { EnvelopeValues.intent 1#u64 with center := ⟨"deployment", "foreign"⟩ }
+
+theorem foreign_center_witness_invalid : ¬ValidEnvelope foreignCenterIntent EnvelopeValues.context := by
+  simp [ValidEnvelope, foreignCenterIntent, EnvelopeValues.context, EnvelopeValues.center]
+
+
+end SandboxModel.Stage1Protocol.AcceptedWire
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.foreign_center_witness_invalid

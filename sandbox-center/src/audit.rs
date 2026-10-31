@@ -27,6 +27,8 @@ pub struct AuditView<'a> {
     revision: Revision,
     sandbox_highwater: u64,
     operation_highwater: u64,
+    /// Original whole-center reservation calculation, not a second quota model.
+    reserved_resources: Resources,
     nodes: &'a [NodeRegistration],
     retention_lanes: &'a [RetentionLane],
     sandboxes: Vec<SandboxAudit<'a>>,
@@ -57,9 +59,10 @@ struct OperationAudit<'a> {
     running: Option<&'a CurrentReadyFacts>,
     create_refusal: Option<CreateRefusalReason>,
     terminal: Option<&'a TerminalLifecycleObservation>,
+    unloaded: Option<&'a sandproof_protocol::lifecycle::UnloadObservation>,
 }
 /// The complete operation parameters except user Create options. Those are
-/// represented only by the allowlisted CreateAudit fields and content hashes.
+/// represented only by the allowlisted `CreateAudit` fields and content hashes.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum OperationKind {
@@ -163,6 +166,7 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
                         running: operation.running(),
                         create_refusal: operation.create_refusal(),
                         terminal: operation.terminal(),
+                        unloaded: operation.unloaded(),
                     })
                     .collect(),
                 terminating: record.terminating(),
@@ -181,6 +185,10 @@ pub fn view(envelope: &Envelope, revision: Revision) -> Result<AuditView<'_>, &'
         revision,
         sandbox_highwater,
         operation_highwater,
+        reserved_resources: envelope
+            .center
+            .reserved(None, None)
+            .ok_or("invalid original center reservations")?,
         nodes: envelope.center.nodes(),
         retention_lanes: envelope.center.retention_lanes(),
         sandboxes,

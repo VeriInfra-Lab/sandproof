@@ -1,5 +1,6 @@
 use super::{CaptureCommit, CaptureHandoff, RestoreEligibility};
 use crate::*;
+mod caller_identity;
 
 const SID: SandboxId = SandboxId(10);
 const OWNER: TenantId = TenantId(1);
@@ -552,6 +553,8 @@ fn finite_capture_state_space_preserves_uses_and_never_revives_failed_registrati
                         eligibility,
                         capture_work,
                         unload_source,
+                        original_continuation: None,
+                        terminal_drain: None,
                     };
                     let failed = original.ordinary_failure();
                     assert_eq!(failed.commit(), original.commit());

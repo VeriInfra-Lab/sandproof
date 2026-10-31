@@ -1,0 +1,109 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotal
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+
+-- Decoded values and explicit encoding providers; no durable-acceptance or resource claim.
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxRecordValidation
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxSave.Values (saved terminal renewal unload)
+
+abbrev create := SavedRetirement.Values.createIntent
+
+def unloadIntent (version previous sequence capture : U64) : AcceptedLifecycleIntent := {
+  create with
+  accepted_version := version,
+  request := { create.request with
+    binding := { create.request.binding with
+      expected := .Version previous,
+      key := { create.request.binding.key with sequence := sequence } },
+    operation := .Unload 101#u64 capture } }
+
+def first := unloadIntent 2#u64 1#u64 2#u64 7#u64
+def next (capture : U64) := unloadIntent 3#u64 2#u64 3#u64 capture
+
+def facts : UnloadResolution.Facts := {
+  started_at_ms := 1#u64, observed_at_ms := 2#u64,
+  end_at_ms := 3#u64, max_end_at_ms := 4#u64, startup_deadline_ms := 2#u64 }
+def created : Entry := { InboxRecord.pendingEntry create with local_operation := some 30#u64 }
+def resolved : Entry := { InboxRecord.pendingEntry first with
+  local_operation := some 31#u64,
+  unload_resolution := some (.AfterCapture facts) }
+def entries (later : Option U64) : alloc.vec.Vec Entry :=
+  vector ([created, resolved] ++ later.toList.map (fun capture => InboxRecord.pendingEntry (next capture)))
+    (by cases later <;> simp)
+def session (later : Option U64) : Session := {
+  InboxValidation.Values.recordedSession with
+  current_version := later.elim 2#u64 (fun _ => 3#u64),
+  «local» := some SavedRetirement.Values.binding, entries := entries later }
+def config : LifecycleInboxConfig := { ConfigValidation.Values.fixture with
+  host_epoch := some ConfigValidation.Values.host }
+def owner : Owner := ⟨create.request.binding.key.owner, 20#u64⟩
+def inbox (later : Option U64) : Inbox := {
+  InboxValidation.Values.normal with
+  config := config,
+  host_epoch_observation := some ⟨config.node, ConfigValidation.Values.host⟩,
+  owner_high_water := 20#u64, owners := vector [owner] (by decide),
+  sessions := vector [session later] (by simp) }
+
+theorem config_valid : ConfigValidation.Valid config := by decide
+
+theorem config_representable : ConfigValidation.Representable config := by
+  simp [ConfigValidation.Representable, config, ConfigValidation.Values.host,
+    SandproofFoundationsRust.IdentifierLibrary.StringRepresentable,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes]
+  change 2 ≤ Usize.max
+  scalar_tac
+
+theorem first_envelope : Validation.ValidEnvelope first EnvelopeValues.context := by
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK,
+    Validation.versionOK, first, unloadIntent, create, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center, EnvelopeValues.node]
+  decide
+
+
+theorem next_envelope (capture : U64) :
+    Validation.ValidEnvelope (next capture) EnvelopeValues.context := by
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK,
+    Validation.versionOK, next, unloadIntent, create, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center, EnvelopeValues.node]
+  decide
+
+theorem before_shape (later : Option U64) :
+    SessionShape.BeforePrior (inbox later) (session later) := by
+  cases later <;>
+    simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, inbox, session, entries,
+      config, vector, InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+      SavedRetirement.Values.normal, InboxValidation.Values.normal,
+      ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem shape_accepted (later : Option U64) :
+    SessionShape.validateView saved terminal (inbox later) 0#usize (session later) = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView saved (session later) = .ok (.Ok ()) := rfl
+  rw [SessionShape.validateView, receipt]
+  simp only [bind_tc_ok, before_shape, ↓reduceIte]
+  simp [inbox, session, vector, InboxValidation.Values.recordedSession,
+    SessionShape.Values.normal, SavedRetirement.Values.normal, SessionShape.checkConfirmed]
+
+theorem renewal_accepted (later : Option U64) :
+    InboxRenewal.validateView renewal (session later) = .ok (.Ok ()) := rfl
+
+
+end
+end SandboxModel.Stage1Protocol.InboxRecordValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.config_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.config_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.first_envelope
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.next_envelope
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.before_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.shape_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.renewal_accepted

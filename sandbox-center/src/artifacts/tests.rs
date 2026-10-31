@@ -9,6 +9,8 @@ mod cache_fairness;
 )]
 #[path = "../../../sandbox-center-store/tests/support/engine.rs"]
 mod engine;
+#[path = "tests/lifecycle_listener.rs"]
+mod lifecycle_listener;
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 use sandproof_center_core::{
@@ -457,7 +459,15 @@ impl CacheReceiver for VerifiedCache {
         })
     }
 }
-impl LifecycleReceiver for VerifiedCache {}
+impl LifecycleReceiver for VerifiedCache {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for VerifiedCache {
     async fn receive_data(
         &self,

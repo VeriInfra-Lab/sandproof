@@ -15,9 +15,10 @@ fn live_pair() -> (TempDir, SandboxSession, SandboxSession) {
 fn saved_host(first: &SandboxSession, second: &SandboxSession) -> FakeHost {
     FakeHost {
         secrets: BTreeMap::from([
-            (1, (first.envd_access_token.clone(), BTreeMap::new())),
-            (2, (second.envd_access_token.clone(), BTreeMap::new())),
-        ]).into(),
+            ((1, 1), (first.envd_access_token.clone(), BTreeMap::new())),
+            ((2, 1), (second.envd_access_token.clone(), BTreeMap::new())),
+        ])
+        .into(),
         ..FakeHost::default()
     }
 }
@@ -30,9 +31,9 @@ fn one_host_credential_fault_does_not_block_the_other_sandbox_after_restart() {
         match fault {
             "unreadable" => host.token_error_for = Some(core::SandboxId(1)),
             "missing" => {
-                host.secrets.lock().unwrap().remove(&1);
+                host.secrets.lock().unwrap().remove(&(1, 1));
             }
-            "changed" => host.secrets.lock().unwrap().get_mut(&1).unwrap().0 = "f".repeat(64),
+            "changed" => host.secrets.lock().unwrap().get_mut(&(1, 1)).unwrap().0 = "f".repeat(64),
             _ => unreachable!(),
         }
         let port = new_port(
@@ -105,9 +106,10 @@ fn starting_credential_fault_is_local_and_never_rotates_or_repairs_a_claimed_ide
         let healthy_token = format!("{:064x}", 2);
         let host = FakeHost {
             secrets: BTreeMap::from([
-                (1, (first_token, BTreeMap::new())),
-                (2, (healthy_token.clone(), BTreeMap::new())),
-            ]).into(),
+                ((1, 1), (first_token, BTreeMap::new())),
+                ((2, 1), (healthy_token.clone(), BTreeMap::new())),
+            ])
+            .into(),
             prepare: PrepareObservation::Successful.into(),
             prepare_calls: Some(Arc::clone(&prepare_calls)),
             ..FakeHost::default()

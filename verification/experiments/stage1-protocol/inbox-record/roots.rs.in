@@ -1,0 +1,8 @@
+// Extraction-only full-input forwarder; production business bodies stay selected.
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_record(
+    inbox: &mut Inbox,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<(usize, usize), JournalError> {
+    inbox.record(intent)
+}

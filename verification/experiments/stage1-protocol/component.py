@@ -22,9 +22,9 @@ def load(name, path):
 
 def admit_native(cache, root):
     from tools.acceptance_receipts import native_case, validate_native
-    validate_native(cache)  # Original seal/receipt integrity, not current docs.
-    native_case('functional', root, None)
-    return native_case('stage1-protocol', root, None)
+    validate_native(cache, scope='stage1-protocol')  # Original seal/receipt integrity, not current docs.
+    native_case('functional', root, None, scope='stage1-protocol')
+    return native_case('stage1-protocol', root, None, scope='stage1-protocol')
 
 
 def run(output, native_only):
@@ -79,7 +79,8 @@ def run(output, native_only):
             record['native_source_archive_sha256'] = historical['archive_sha256']
             record['native_docs_scope'] = 'historical native snapshot; current docs require the functional seal'
             if [step['name'] for step in correct['steps']] != [
-                    'format', 'extract-format', 'clean-own', 'build', 'test', 'clippy', 'docs', 'fmt-check']:
+                    'driver-tests', 'format', 'extract-format', 'clean-own', 'build', 'test',
+                    'clippy', 'docs', 'fmt-check']:
                 raise ValueError('native positive required phase inventory differs')
             for step in correct['steps']:
                 if (step['exit_code'] != 0 or archive_builder.sha(
@@ -88,7 +89,8 @@ def run(output, native_only):
             native_driver = load('stage1_positive_inventory', HERE/'native.py')
             integration = correct['integration_test_results']['current_envelope']
             if (sorted(integration['test_names']) != sorted(native_driver.ENVELOPE_TESTS)
-                    or (integration['passed'], integration['failed'], integration['ignored']) != (7, 0, 0)
+                    or (integration['passed'], integration['failed'], integration['ignored']) !=
+                        (len(native_driver.ENVELOPE_TESTS), 0, 0)
                     or integration['test_source_sha256'] != historical['files'][
                         'sandbox-protocol/tests/current_envelope.rs']['sha256']):
                 raise ValueError('native positive integration inventory differs')

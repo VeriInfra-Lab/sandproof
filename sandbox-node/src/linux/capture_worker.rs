@@ -7,28 +7,39 @@ use crate::{
     full_snapshot::{self, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    FullCaptureLimits, OriginalPauseObservation, PreparedTrackedChild, RuntimeConfig,
-    RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout, snapshot_store::BundleReadLimits,
+    FullCaptureApiContext, FullCaptureLimits, HelperLimits, OriginalPauseObservation, OwnedChild,
+    RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout,
+    snapshot_store::BundleReadLimits,
 };
 use sandproof_controller_service::capture::{
-    FullCaptureWorkRequest, RawSourceObservation, SourceObservationRequirement,
+    CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureWorkRequest, RawSourceObservation,
+    SourceObservationRequirement, SourceProcessIdentity,
 };
 use sandproof_controller_service::templates::TemplateBinding;
 use sandproof_protocol::lifecycle::ContentDigest;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    io::{Read, Write},
     path::PathBuf,
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+#[path = "capture_worker_handshake.rs"]
+mod handshake;
+
+#[path = "capture_worker_completion.rs"]
+mod completion;
+pub(super) use completion::read_completion;
 
 pub const CAPTURE_WORKER_INPUT_BYTES: usize = 1_048_576;
 pub const CAPTURE_WORKER_OUTPUT_BYTES: usize = 4096;
 
-/// Only an actual prepared process. It grants no release, budget or Full success.
+/// A complete bound Ready from the original worker, not permission for Full.
 pub struct PreparedCaptureWorker {
-    pub(super) child: PreparedTrackedChild,
+    pub(super) child: OwnedChild,
+    process: RuntimeProcessIdentity,
+    ready_bytes: usize,
+    started: Instant,
     pub(super) gate: RuntimeHelperGuard,
     pub(super) job: CaptureWorkerJob,
     pub(super) body: Vec<u8>,
@@ -38,7 +49,7 @@ pub struct PreparedCaptureWorker {
 impl PreparedCaptureWorker {
     #[must_use]
     pub fn process(&self) -> &RuntimeProcessIdentity {
-        self.child.process()
+        &self.process
     }
     #[must_use]
     pub const fn job_digest(&self) -> &ContentDigest {
@@ -48,9 +59,66 @@ impl PreparedCaptureWorker {
     pub const fn full_work_binding(&self) -> &ContentDigest {
         &self.full_work_binding
     }
-    /// Stop only this still-prepared child before dropping its slot lock.
-    /// This is not an exit/Full-end or budget-release receipt; uncertain child
-    /// exits remain in the original witness/reaper for separate observation.
+    /// Actual prepared process/job data for the original authorization callback.
+    /// This value has no release or completion authority.
+    /// # Errors
+    /// Refuses a process representation that cannot enter the original record.
+    pub fn worker_binding(&self) -> NodeResult<CaptureWorkerBinding> {
+        let process = self.process();
+        Ok(CaptureWorkerBinding::new(
+            SourceProcessIdentity {
+                pid: process.pid,
+                start_time_ticks: process.start_time_ticks,
+                boot_id: process.boot_id.clone(),
+            },
+            self.job_digest,
+        )?)
+    }
+
+    pub(crate) fn require_launch_permit(&self, permit: &FullCaptureLaunchPermit) -> NodeResult<()> {
+        let payload = handshake::frame_payload(&self.body)?;
+        if permit.action() != &self.job.action
+            || permit.full_work_binding() != &self.full_work_binding
+            || self.job.full.binding_digest()? != self.full_work_binding
+            || permit.worker() != &self.worker_binding()?
+            || self.body.len() > CAPTURE_WORKER_INPUT_BYTES
+            || serde_json::to_vec(&self.job)? != payload
+            || digest(payload) != self.job_digest
+            || !self.job.full.valid()
+        {
+            return Err("original committed Full/action/process/job permission differs".into());
+        }
+        Ok(())
+    }
+
+    // Keep the same gate alive through exchange AND the original material readback.
+    // Every error is unknown to the durable capture owner, never NoEffect/refund.
+    pub(super) fn release_and_read<T>(
+        self,
+        permit: FullCaptureLaunchPermit,
+        read: impl FnOnce(&CaptureWorkerJob, ContentDigest) -> NodeResult<T>,
+    ) -> NodeResult<T> {
+        self.require_launch_permit(&permit)?;
+        // Consume this unique post-commit permission before opening the child gate.
+        drop(permit);
+        let timeout = Duration::from_millis(self.job.full.worker_timeout_ms)
+            .checked_sub(self.started.elapsed())
+            .filter(|value| !value.is_zero())
+            .ok_or("Full caller deadline elapsed before release")?;
+        let limits = HelperLimits {
+            timeout,
+            input_bytes: CAPTURE_WORKER_INPUT_BYTES,
+            stdout_bytes: CAPTURE_WORKER_OUTPUT_BYTES - self.ready_bytes,
+            stderr_bytes: 0,
+        };
+        let mut child = self.child;
+        let output = child.exchange(handshake::RELEASE, limits)?;
+        let manifest = decode_reply(self.job_digest, &output)?;
+        read(&self.job, manifest)
+    }
+
+    /// Close the Ready worker's release pipe. Only that worker may persist its
+    /// `NoRequest` decision; dropping these handles supplies no end receipt.
     pub fn cancel(self) {
         drop(self.child);
         drop(self.gate);
@@ -63,12 +131,13 @@ impl PreparedCaptureWorker {
         executable: &std::path::Path,
         job: CaptureWorkerJob,
     ) -> NodeResult<Self> {
+        let started = Instant::now();
         sandbox_runtime::check_trusted_path(executable)?;
         if !executable.is_file() {
             return Err("capture worker executable is not a protected file".into());
         }
         let body = serde_json::to_vec(&job)?;
-        if body.len() > CAPTURE_WORKER_INPUT_BYTES {
+        if body.len() > CAPTURE_WORKER_INPUT_BYTES - 4 {
             return Err("capture worker input exceeds bound".into());
         }
         let job_digest = digest(&body);
@@ -77,12 +146,33 @@ impl PreparedCaptureWorker {
             .to_str()
             .ok_or("capture worker executable path is not UTF-8")?;
         let hex = format!("{:x}", Sha256::digest(&body));
-        let child = gate.prepare_tracked(slot, name, &["capture-worker", &hex])?;
+        let prepared = gate.prepare_tracked(slot, name, &["capture-worker", &hex])?;
+        let process = prepared.process().clone();
+        let mut child = gate.release_tracked(prepared)?;
+        let frame = handshake::job_frame(body)?;
+        let expected_ready = handshake::ready_frame(job_digest, process.clone())?;
+        let ready = child.prepare_full(
+            &frame,
+            &expected_ready,
+            HelperLimits {
+                timeout: Duration::from_millis(job.full.worker_timeout_ms),
+                input_bytes: CAPTURE_WORKER_INPUT_BYTES,
+                stdout_bytes: 1024,
+                stderr_bytes: 0,
+            },
+        )?;
+        handshake::check_ready(&ready, job_digest, &process)?;
+        if !process.is_alive()? {
+            return Err("Full worker exited before Ready handoff".into());
+        }
         Ok(Self {
             child,
+            process,
+            ready_bytes: ready.len(),
+            started,
             gate,
             job,
-            body,
+            body: frame,
             job_digest,
             full_work_binding,
         })
@@ -103,6 +193,10 @@ pub(super) struct CaptureWorkerJob {
     pub(super) bootstrap_path: PathBuf,
     pub(super) layout_parent: PathBuf,
     pub(super) layout_binding: ContentDigest,
+    pub(super) material_project: sandbox_runtime::MaterialProjectSettings,
+    #[cfg(debug_assertions)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) measurement_gate: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -117,8 +211,43 @@ pub(super) enum CaptureWorkerOutcome {
     Captured { manifest_digest: ContentDigest },
     Failed,
 }
+pub(super) fn api_context(
+    action: &WorkAction<core::EffectId>,
+    full: &FullCaptureWorkRequest,
+    job_digest: ContentDigest,
+) -> NodeResult<FullCaptureApiContext> {
+    Ok(FullCaptureApiContext {
+        work_sha256: *full.binding_digest()?.as_bytes(),
+        job_sha256: *job_digest.as_bytes(),
+        action_sha256: Sha256::digest(serde_json::to_vec(action)?).into(),
+    })
+}
+
 fn digest(body: &[u8]) -> ContentDigest {
     ContentDigest::from_sha256(Sha256::digest(body).into())
+}
+
+fn decode_reply(
+    expected: ContentDigest,
+    output: &std::process::Output,
+) -> NodeResult<ContentDigest> {
+    if !output.status.success()
+        || !output.stderr.is_empty()
+        || output.stdout.is_empty()
+        || output.stdout.len() > CAPTURE_WORKER_OUTPUT_BYTES
+    {
+        return Err("capture worker exit/output is not a complete bounded reply".into());
+    }
+    let reply: CaptureWorkerReply = serde_json::from_slice(&output.stdout)?;
+    if reply.job_digest != expected {
+        return Err("capture worker reply names another original job".into());
+    }
+    match reply.outcome {
+        CaptureWorkerOutcome::Captured { manifest_digest } => Ok(manifest_digest),
+        CaptureWorkerOutcome::Failed => {
+            Err("capture worker reported an unknown Full outcome".into())
+        }
+    }
 }
 
 fn decode_digest(text: &str) -> NodeResult<ContentDigest> {
@@ -150,7 +279,7 @@ fn decode_job(expected: ContentDigest, body: &[u8]) -> NodeResult<CaptureWorkerJ
 }
 
 impl CaptureWorkerJob {
-    fn execute(&self) -> NodeResult<ContentDigest> {
+    fn validate_job(&self) -> NodeResult<()> {
         require_source_binding(&self.full.pause, &self.source)?;
         self.action.identity.validate_version()?;
         let core::Command::SealSnapshot { vm, .. } = self.action.command.command() else {
@@ -169,6 +298,11 @@ impl CaptureWorkerJob {
         {
             return Err("capture worker original machine/work binding differs".into());
         }
+        Ok(())
+    }
+
+    fn execute(&self, job_digest: ContentDigest) -> NodeResult<ContentDigest> {
+        self.validate_job()?;
         let provider = ProtectedHostEpochSource::at(self.bootstrap_path.clone())?;
         let inputs = crate::host_epoch::Inputs {
             namespace: &self.namespace,
@@ -193,7 +327,8 @@ impl CaptureWorkerJob {
         if expected != self.full.compatibility {
             return Err("capture worker independent compatibility differs".into());
         }
-        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?;
+        let layout = SnapshotLayout::reopen(&self.layout_parent, *self.layout_binding.as_bytes())?
+            .with_material_project(self.material_project.clone())?;
         if layout.runtime_root() != self.runtime.chroot_base {
             return Err("capture worker layout differs".into());
         }
@@ -207,7 +342,7 @@ impl CaptureWorkerJob {
                 return Err("capture worker original source not paused".into());
             }
         };
-        let captured = full_snapshot::capture_paused_original(
+        let captured = self.capture_original(
             &runtime,
             &layout,
             &paused,
@@ -217,23 +352,103 @@ impl CaptureWorkerJob {
                 binding: &self.full.pause.binding,
                 compatibility: &expected,
             },
-            FullCaptureLimits {
-                state_bytes: self.full.state_bytes,
-                disk_bytes: self.full.disk_bytes,
-                api_timeout: Duration::from_millis(self.full.api_timeout_ms),
-            },
-            BundleReadLimits {
-                state_bytes: self.full.state_bytes,
-                memory_bytes: self.full.memory_bytes,
-                disk_bytes: self.full.disk_bytes,
-            },
+            job_digest,
         )?;
         self.check_source(&runtime, &original, &allowed)?;
         provider.observe_original(&self.source.node, &self.source.host_bootstrap, inputs)?;
-        Ok(ContentDigest::from_sha256(
-            captured.stored().manifest_sha256(),
-        ))
+        let manifest = ContentDigest::from_sha256(captured.stored().manifest_sha256());
+        let material_bytes = captured
+            .stored()
+            .manifest()
+            .files
+            .iter()
+            .try_fold(0_u64, |n, f| n.checked_add(f.length))
+            .ok_or("completed Full material length overflow")?;
+        self.persist_completion(&layout, job_digest, manifest, material_bytes)?;
+        Ok(manifest)
     }
+    fn capture_original(
+        &self,
+        runtime: &Runtime,
+        layout: &SnapshotLayout,
+        paused: &sandbox_runtime::PausedOriginalVm,
+        expected: &ExpectedFullCapture<'_>,
+        job_digest: ContentDigest,
+    ) -> NodeResult<full_snapshot::FullCaptureObservation> {
+        let limits = FullCaptureLimits {
+            api_context: api_context(&self.action, &self.full, job_digest)?,
+            state_bytes: self.full.state_bytes,
+            disk_bytes: self.full.disk_bytes,
+            api_timeout: Duration::from_millis(self.full.api_timeout_ms),
+        };
+        let reads = BundleReadLimits {
+            state_bytes: self.full.state_bytes,
+            memory_bytes: self.full.memory_bytes,
+            disk_bytes: self.full.disk_bytes,
+        };
+        #[cfg(debug_assertions)]
+        if self.measurement_gate.is_some() {
+            let mut observed = false;
+            return full_snapshot::capture_paused_original_observed(
+                runtime,
+                layout,
+                paused,
+                expected,
+                limits,
+                reads,
+                &mut |artifact, event| {
+                    let sandbox_runtime::snapshot_store::SnapshotArtifactEvent::Measuring {
+                        measured_bytes,
+                        total_bytes,
+                    } = event
+                    else {
+                        return Ok(());
+                    };
+                    if !observed
+                        && artifact == sandbox_runtime::snapshot_store::SnapshotArtifact::Memory
+                        && measured_bytes > 0
+                        && measured_bytes < total_bytes
+                    {
+                        observed = true;
+                        self.wait_copy(job_digest, measured_bytes, total_bytes)?;
+                    }
+                    Ok(())
+                },
+            );
+        }
+        full_snapshot::capture_paused_original(runtime, layout, paused, expected, limits, reads)
+    }
+
+    #[cfg(debug_assertions)]
+    fn wait_copy(
+        &self,
+        job_digest: ContentDigest,
+        measured: u64,
+        total: u64,
+    ) -> Result<(), sandbox_runtime::RuntimeError> {
+        let failure = |message| sandbox_runtime::RuntimeError::Io(std::io::Error::other(message));
+        let Some(path) = &self.measurement_gate else {
+            return Ok(());
+        };
+        let gate = crate::adapter::faults::CaptureCopyGate::configured(path.clone(), &self.action)
+            .map_err(|_| failure("capture copy selector rejected"))?;
+        if let Some(gate) = gate {
+            let process = RuntimeProcessIdentity::capture(std::process::id())?;
+            let binding = CaptureWorkerBinding::new(
+                SourceProcessIdentity {
+                    pid: std::process::id(),
+                    start_time_ticks: process.start_time_ticks,
+                    boot_id: process.boot_id,
+                },
+                job_digest,
+            )
+            .map_err(|_| failure("capture copy original worker rejected"))?;
+            gate.wait(&self.action, &self.full, &binding, measured, total)
+                .map_err(|_| failure("capture interrupted while measuring the complete clone"))?;
+        }
+        Ok(())
+    }
+
     fn check_source(
         &self,
         runtime: &Runtime,
@@ -276,30 +491,7 @@ impl CaptureWorkerJob {
 /// # Errors
 /// Invalid invocation or reply I/O fails the process; no VM Stop/Resume occurs.
 pub fn run_capture_worker(expected_job_digest: &str) -> NodeResult<()> {
-    let expected = decode_digest(expected_job_digest)?;
-    let mut body = Vec::new();
-    let outcome = match std::io::stdin()
-        .take(u64::try_from(CAPTURE_WORKER_INPUT_BYTES)? + 1)
-        .read_to_end(&mut body)
-    {
-        Ok(_) => match decode_job(expected, &body).and_then(|job| job.execute()) {
-            Ok(manifest_digest) => CaptureWorkerOutcome::Captured { manifest_digest },
-            Err(_) => CaptureWorkerOutcome::Failed,
-        },
-        Err(_) => CaptureWorkerOutcome::Failed,
-    };
-    let reply = serde_json::to_vec(&CaptureWorkerReply {
-        job_digest: expected,
-        outcome,
-    })?;
-    if reply.len() > CAPTURE_WORKER_OUTPUT_BYTES {
-        return Err("capture worker reply exceeds bound".into());
-    }
-    let mut output = std::io::stdout().lock();
-    output.write_all(&reply)?;
-    output.write_all(b"\n")?;
-    output.flush()?;
-    Ok(())
+    handshake::run(expected_job_digest)
 }
 
 #[cfg(test)]
@@ -319,6 +511,44 @@ mod tests {
         let oversized = vec![b' '; CAPTURE_WORKER_INPUT_BYTES + 1];
         assert!(decode_job(digest(&oversized), &oversized).is_err());
     }
+    #[test]
+    fn parent_requires_exact_successful_job_and_bounded_complete_frame() {
+        use std::os::unix::process::ExitStatusExt;
+        let expected = ContentDigest::from_sha256([1; 32]);
+        let manifest = ContentDigest::from_sha256([2; 32]);
+        let reply = CaptureWorkerReply {
+            job_digest: expected,
+            outcome: CaptureWorkerOutcome::Captured {
+                manifest_digest: manifest,
+            },
+        };
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: serde_json::to_vec(&reply).unwrap(),
+            stderr: vec![],
+        };
+        assert_eq!(decode_reply(expected, &output).unwrap(), manifest);
+        assert!(decode_reply(ContentDigest::from_sha256([3; 32]), &output).is_err());
+        for variant in 0..6 {
+            let mut bad = output.clone();
+            match variant {
+                0 => bad.status = std::process::ExitStatus::from_raw(1 << 8),
+                1 => bad.stderr.push(b'x'),
+                2 => bad.stdout.clear(),
+                3 => bad.stdout = vec![b' '; CAPTURE_WORKER_OUTPUT_BYTES + 1],
+                4 => bad.stdout.extend_from_slice(b"warning"),
+                _ => {
+                    bad.stdout = serde_json::to_vec(&CaptureWorkerReply {
+                        job_digest: expected,
+                        outcome: CaptureWorkerOutcome::Failed,
+                    })
+                    .unwrap();
+                }
+            }
+            assert!(decode_reply(expected, &bad).is_err(), "variant {variant}");
+        }
+    }
+
     #[test]
     fn diagnostic_noise_cannot_be_accepted_as_a_success_frame() {
         let reply = CaptureWorkerReply {

@@ -1,6 +1,7 @@
 """Shared assembly contracts only: no product process, TLS, Redis or KVM."""
 import argparse
 import copy
+import json
 from contextlib import ExitStack
 import os
 from pathlib import Path
@@ -16,6 +17,66 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
+
+
+class CaptureProvisionTests(unittest.TestCase):
+    def fixture(self, root):
+        control=root/'control';control.mkdir(mode=0o700)
+        parent=root/'p';parent.mkdir(mode=0o700)
+        return control,dict(inbox=dict(host_epoch=None),capture=dict(layout_parent=str(parent)))
+
+    def write_role(self,path,value,*,uid,gid):
+        self.assertEqual((uid,gid),(0,0))
+        path.write_text(json.dumps(value));path.chmod(0o600)
+
+    def test_original_capture_command_precedes_bootstrap_and_final_role_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);control,config=self.fixture(root)
+            calls=[]
+            def capture(command,**kwargs):
+                self.assertEqual(command,['original-cgroup',str(control/'sandproof-host'),
+                    'provision-capture-layout','--config',str(control/'host-provision.json')])
+                self.assertEqual(kwargs['timeout'],30)
+                self.assertTrue(kwargs['check'])
+                self.assertFalse((control/'host.json').exists())
+                calls.append('capture')
+                for name in ('v','s'):
+                    (root/'p'/name).mkdir(mode=0o700)
+            registration=dict(version=1,boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),policy=[1]*32)
+            def bootstrap(command,*args,**kwargs):
+                self.assertEqual(command,['original-cgroup',str(control/'sandproof-host'),
+                    'provision-bootstrap','--config',str(control/'host-provision.json')])
+                self.assertEqual(calls,['capture'])
+                calls.append('bootstrap')
+                return registration
+            with patch.object(services,'write_role',side_effect=self.write_role), \
+                    patch('tools.service_cgroup.prefix',return_value=['original-cgroup']), \
+                    patch.object(services.subprocess,'run',side_effect=capture), \
+                    patch('tools.ci_e2e_prepare.bounded_json_command',side_effect=bootstrap):
+                path=services._provision_host(control/'sandproof-host',control,config,root/'group.json')
+            self.assertEqual(calls,['capture','bootstrap'])
+            self.assertEqual(json.loads(path.read_text())['inbox']['host_epoch'],registration)
+            self.assertIsNone(json.loads((control/'host-provision.json').read_text())['inbox']['host_epoch'])
+
+    def test_partial_capture_error_is_preserved_and_never_starts_bootstrap_or_retries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);control,config=self.fixture(root)
+            failure=services.subprocess.CalledProcessError(1,['capture'])
+            def partial(*args,**kwargs):
+                (root/'p/v').mkdir(mode=0o700)
+                raise failure
+            with patch.object(services,'write_role',side_effect=self.write_role), \
+                    patch('tools.service_cgroup.prefix',return_value=['original-cgroup']), \
+                    patch.object(services.subprocess,'run',side_effect=partial) as command, \
+                    patch('tools.ci_e2e_prepare.bounded_json_command') as bootstrap, \
+                    self.assertRaises(services.subprocess.CalledProcessError) as caught:
+                services._provision_host(control/'sandproof-host',control,config,root/'group.json')
+            self.assertIs(caught.exception,failure)
+            command.assert_called_once()
+            bootstrap.assert_not_called()
+            self.assertTrue((root/'p/v').is_dir())
+            self.assertTrue((control/'host-provision.json').is_file())
+            self.assertFalse((control/'host.json').exists())
 
 
 class ReadinessSimulation:
@@ -171,7 +232,7 @@ class RuntimeServicesTests(unittest.TestCase):
         """Keep the original artifact validator; stop before any role allocation."""
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
-            for part in ('db','state','jails'):
+            for part in ('db','state','p'):
                 (root/part).mkdir()
             paths={role:str(root/('sandproof-'+role)) for role in ('center','host')}
             versions=dict(internal_protocol=2,center_store=6,host_store=16)
@@ -181,14 +242,25 @@ class RuntimeServicesTests(unittest.TestCase):
                 artifacts={role:dict(path=path,sha256='b'*64) for role,path in paths.items()})
             args=SimpleNamespace(**paths,center_uid=1001,center_gid=1001,redis_uid=1002,
                 redis_gid=1002,candidate_manifest=root/'manifest.json',redis_material=root/'redis',
-                service_staging_parent=root/'staging')
+                service_staging_parent=root/'staging',capture_settings=root/'capture.json',
+                redis_operation_timeout_ms=1000)
+            disk=root/'disk';disk.write_bytes(bytes(512))
             native=dict(uid_base=3200000,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'))
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),
+                max_active_global=1,memory_mib=1,rootfs=str(disk))
+            catalog=dict(templates=[dict(rootfs=dict(path=str(disk),size_bytes=512),
+                                        resources=dict(memory_mib=1,disk_bytes=512))])
+            tool=dict(path='/approved/project-tool',sha256=[1]*32)
+            captures=[dict(layout_parent=str(root/'p'),layout_binding=[1]*32,
+                state_copy_bytes=32,memory_copy_bytes=1024**2,disk_copy_bytes=512,
+                api_timeout_ms=1000,worker_timeout_ms=2000,
+                material_project=dict(project_id=63801,hard_bytes=128*1024**2,hard_inodes=1024,
+                    chattr=tool,lsattr=tool))]
             class BeforeStaging(RuntimeError):
                 pass
             with patch.object(services.os,'geteuid',return_value=0), \
                     patch.object(services,'private_path',side_effect=lambda path,**_:Path(path)), \
-                    patch.object(services,'json_file',return_value=manifest), \
+                    patch.object(services,'json_file',side_effect=lambda path,**_: manifest if path==args.candidate_manifest else captures), \
                     patch.object(services.artifacts,'json_file',return_value=manifest), \
                     patch.object(services.artifacts,'private_path',side_effect=lambda path,**_:Path(path)), \
                     patch.object(services.artifacts,'_fingerprint',return_value='b'*64), \
@@ -197,8 +269,8 @@ class RuntimeServicesTests(unittest.TestCase):
                     patch.object(services,'check_material',return_value={}), \
                     patch.object(services,'stage_role_directories',side_effect=BeforeStaging) as stage, \
                     self.assertRaises(BeforeStaging):
-                services.RuntimeServices.prepare(args,root,[native],[{}],'test-key',
-                    '127.0.0.1:12345',root/'record.json',2,registry_config={})
+                services.RuntimeServices.prepare(args,root,[native],[catalog],'test-key',
+                    '127.0.0.1:12345',root/'record.json',(2) + native['max_active_global'],registry_config={})
             stage.assert_called_once()
 
     def node(self):
@@ -416,6 +488,33 @@ class RuntimeServicesTests(unittest.TestCase):
         self.assertIn('--candidate-manifest',options)
         self.assertNotIn('--server',options)
 
+    def test_common_cli_preserves_default_and_accepts_explicit_redis_wait(self):
+        parser=argparse.ArgumentParser()
+        services.add_arguments(parser,required=False)
+        self.assertEqual(parser.parse_args([]).redis_operation_timeout_ms,1000)
+        for value in (1,5000,60000):
+            with self.subTest(value=value):
+                parsed=parser.parse_args(['--redis-operation-timeout-ms',str(value)])
+                self.assertEqual(parsed.redis_operation_timeout_ms,value)
+        for value in ('0','-1','60001','1.5','true'):
+            with self.subTest(value=value),patch('sys.stderr'),self.assertRaises(SystemExit) as rejected:
+                parser.parse_args(['--redis-operation-timeout-ms',value])
+            self.assertEqual(rejected.exception.code,2)
+
+    def test_invalid_redis_wait_is_rejected_before_any_deployment_effect(self):
+        for value in (None,True,0,60001,5000.0,'5000'):
+            with self.subTest(value=value), \
+                    patch.object(services,'private_path') as paths, \
+                    patch.object(services,'stage_role_directories') as stage, \
+                    patch.object(services,'_copy') as copy_file, \
+                    patch.object(services,'_provision_host') as provision, \
+                    patch.object(services,'render') as render, \
+                    self.assertRaisesRegex(ValueError,'Redis operation timeout'):
+                services.RuntimeServices.prepare(SimpleNamespace(redis_operation_timeout_ms=value),
+                    Path('/not-prepared'),[],[],'test-key','127.0.0.1:12345',None,2)
+            for effect in (paths,stage,copy_file,provision,render):
+                effect.assert_not_called()
+
     def test_native_mapping_refuses_live_host_before_any_audit_or_global_suffix_parse(self):
         instance=services.RuntimeServices()
         instance.host_configs=[dict(inbox=dict(node={'node_id':'exact-node'}))]
@@ -434,10 +533,10 @@ class RuntimeServicesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
             native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=1,max_active_per_tenant=1,max_disk_bytes_global=8192,
-                max_disk_bytes_per_tenant=4096,cleanup_reserve_bytes=4096),slots=1,file_size=lambda _:1024)
+                max_disk_bytes_per_tenant=4096,cleanup_reserve_bytes=4096),slots=1,inbox_sessions=2,file_size=lambda _:1024)
             original=copy.deepcopy(native['bounded_host']['physical_storage']['pools'])
             layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
             catalog=dict(templates=[dict(kernel=dict(size_bytes=1024),rootfs=dict(size_bytes=1024))])
@@ -463,10 +562,10 @@ class RuntimeServicesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as temporary:
             root=Path(temporary).resolve()
             native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
-                node_state_dir=str(root/'state'),chroot_base=str(root/'jails'),kernel=str(root/'kernel'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel=str(root/'kernel'),
                 rootfs=str(root/'rootfs'),firecracker=str(root/'firecracker'),uid_base=3200000,
                 max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=48*gib,
-                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,file_size=lambda _:1024)
+                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=8*gib),slots=2,inbox_sessions=3,file_size=lambda _:1024)
             physical=native['bounded_host']['physical_storage']
             physical['filesystem_overhead_bytes']=2*gib
             physical['pools'][0].update(rootfs_budget_bytes=40*gib,cleanup_reserve_bytes=8*gib)
@@ -488,7 +587,8 @@ class RuntimeServicesTests(unittest.TestCase):
                 profile=bind(1)
                 native['bounded_host']['physical_storage']['service_data']=[]
                 native['bounded_host']['physical_storage']['host_template_caches']=[]
-                for invalid in (0,True,services.MAX_ACTIVATION_BYTES+1):
+                from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
+                for invalid in (0,True,PREPARED_CI_MAX_ACTIVATION_BYTES+1):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
                 generic_profile=bind(2,None)
@@ -498,6 +598,44 @@ class RuntimeServicesTests(unittest.TestCase):
             # envelope and actual free-space check, not the two-task CI ceiling.
             self.assertGreater(2*services.envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(generic_profile['pools'],original)
+
+    def test_explicit_capture_bytes_and_inodes_still_require_the_full_double_envelope(self):
+        from tools.runtime_acceptance_budget import profile_declaration
+        gib=1024**3
+        with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as directory:
+            root=Path(directory).resolve()
+            native=complete_runtime(dict(namespace='a'*16,database=str(root/'db/controller.db'),
+                node_state_dir=str(root/'state'),chroot_base=str(root/'p/v'),kernel='/fixed/kernel',
+                rootfs='/fixed/rootfs',firecracker='/fixed/firecracker',uid_base=3200000,
+                max_active_global=2,max_active_per_tenant=2,max_disk_bytes_global=41*gib,
+                max_disk_bytes_per_tenant=40*gib,cleanup_reserve_bytes=gib),slots=2,
+                inbox_sessions=3,file_size=lambda _:1024)
+            catalog=dict(templates=[dict(kernel=dict(size_bytes=1024),rootfs=dict(size_bytes=10*gib))])
+            layout=dict(hosts=[root],center_identity=(1001,1001),registry=root/'registry')
+            kwargs=dict(registry=dict(max_artifact_bytes_global=10*gib+1024,max_templates_global=1),
+                service_peaks=[dict(root=str(root/'p/s'),owner_uid=0,peak_bytes=88*gib,inode_budget=65536)])
+            with self.assertRaisesRegex(ValueError,'inode provision'):
+                profile_declaration([native],[catalog],layout,**copy.deepcopy(kwargs))
+            for value in (True,0,native['bounded_host']['physical_storage']['filesystem_overhead_inodes']-1):
+                with self.subTest(inodes=value),self.assertRaisesRegex(ValueError,'inode provision'):
+                    profile_declaration([native],[catalog],layout,physical_inodes=value,**copy.deepcopy(kwargs))
+            with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling'):
+                profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                    activation_ceiling_bytes=200*gib,**copy.deepcopy(kwargs))
+            expected=profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                        activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            needed,inodes=services.envelope(expected)
+            for free,files in ((2*needed-1,2*inodes),(2*needed,2*inodes-1)):
+                with self.subTest(free=free,files=files),patch.object(services.os,'statvfs',
+                        return_value=SimpleNamespace(f_bavail=free,f_frsize=1,f_favail=files)), \
+                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes'):
+                    services._bind_profile([native],[catalog],layout,physical_inodes=131072,
+                        activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
+                    f_bavail=2*needed,f_frsize=1,f_favail=2*inodes)):
+                actual=services._bind_profile([native],[catalog],layout,physical_inodes=131072,
+                    activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+            self.assertEqual(actual,expected)
 
     def test_role_cleanup_requires_original_exit_and_parent_identity(self):
         instance=services.RuntimeServices()

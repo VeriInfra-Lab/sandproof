@@ -21,14 +21,15 @@ mod linux;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureLimits, HostResources,
-    JailObservation, MAX_CLAIM_RECORD_BYTES, MAX_HELPER_MARKER_BYTES, Observation,
-    OriginalConfigurationObservation, OriginalPauseObservation, PausedOriginalVm,
-    PreparedTrackedChild, PublishedFullCapture, RetirementManifest, Runtime, RuntimeConfig,
-    RuntimeError, RuntimeHelperGate, RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig,
-    RuntimePhysicalObserver, RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState,
-    SnapshotLayout, SourceConfigurationLimits, VmState, check_trusted_path,
-    check_trusted_path_for_owner,
+    CLAIM_RECORD_NAMES, CapturedFullSnapshot, ConsolePolicy, FullCaptureApiContext,
+    FullCaptureLimits, FullCaptureRequestEnd, FullCaptureRequestOutcome, FullMaterialRetirement,
+    HostResources, JailObservation, LoadedSnapshotObservation, LoadedSnapshotState,
+    MAX_CLAIM_RECORD_BYTES, MAX_HELPER_MARKER_BYTES, Observation, OriginalConfigurationObservation,
+    OriginalPauseObservation, PausedOriginalVm, PreparedTrackedChild, PublishedFullCapture,
+    RetirementManifest, Runtime, RuntimeConfig, RuntimeError, RuntimeHelperGate,
+    RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig, RuntimePhysicalObserver,
+    RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState, SnapshotLayout,
+    SourceConfigurationLimits, VmState, check_trusted_path, check_trusted_path_for_owner,
 };
 
 #[cfg(target_os = "linux")]
@@ -36,3 +37,8 @@ pub mod snapshot_store;
 
 #[cfg(target_os = "linux")]
 mod snapshot_policy;
+
+#[cfg(target_os = "linux")]
+mod material_project;
+#[cfg(target_os = "linux")]
+pub use material_project::{MaterialProjectSettings, ProjectTool};

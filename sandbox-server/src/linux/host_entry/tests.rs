@@ -29,7 +29,13 @@ fn host_settings() -> Value {
         "max_entry_bytes":4096,"artifact_bytes":8192,"temporary_bytes":4096,
         "metadata_bytes":282_624,"inode_budget":19});
     native["bounded_host"]["physical_storage"]["host_template_caches"] = json!([cache.clone()]);
-    native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"] = json!(128);
+    native["chroot_base"] = json!("/fixture/capture/v");
+    native["bounded_host"]["physical_storage"]["pools"][0]["chroot_base"] =
+        native["chroot_base"].clone();
+    native["bounded_host"]["physical_storage"]["service_data"] = json!([
+        {"root":"/fixture/capture/s", "owner_uid":0,"peak_bytes":1_073_741_824,"inode_budget":32}
+    ]);
+    native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"] = json!(4096);
     let mut value = json!({
         "native": native,
         "inbox": {
@@ -41,7 +47,14 @@ fn host_settings() -> Value {
         },
         "protected_bootstrap_path": "/fixture/host-bootstrap.json",
         "source_observation": {"max_work_bytes":4096,"max_configuration_bytes":1024,
-            "max_executable_bytes":67108864,"max_kernel_bytes":268435456,"max_disk_bytes":4096},
+            "max_executable_bytes":67_108_864,"max_kernel_bytes":268_435_456,"max_disk_bytes":4096,
+            "max_material_bytes":1_073_741_824},
+        "capture": {"layout_parent":"/fixture/capture", "layout_binding":vec![1_u8;32],
+            "state_copy_bytes":1_000_000,"memory_copy_bytes":536_870_912,"disk_copy_bytes":4096,
+            "api_timeout_ms":1000,"worker_timeout_ms":300_000,
+            "material_project":{"project_id":63801,"hard_bytes":1_073_741_824,"hard_inodes":32,
+                "chattr":{"path":"/protected/chattr","sha256":vec![2_u8;32]},
+                "lsattr":{"path":"/protected/lsattr","sha256":vec![3_u8;32]}}},
         "internal": {
             "bind": "127.0.0.1:3044", "max_connections": 10,
             "handshake_timeout_ms": 1000, "request_timeout_ms": 5000,
@@ -63,7 +76,7 @@ fn host_settings() -> Value {
         .as_u64()
         .unwrap();
     value["native"]["maintenance"]["capacity"]["max_sql_value_bytes"] =
-        json!(original_value_cap.max(u64::try_from(inbox.required_bytes()).unwrap()));
+        json!(original_value_cap.max(inbox.required_bytes()));
     value
 }
 
@@ -98,14 +111,53 @@ fn host_budget_retains_management_and_destroy_capacity() {
         ("/inbox/max_sessions", json!(0)),
         ("/inbox/max_operations_per_session", json!(7)),
         ("/inbox/max_operations_per_session", json!(129)),
+        ("/inbox/max_operations_per_session", json!(9)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(0)),
+        ("/native/maintenance/max_operations_per_sandbox", json!(7)),
+        (
+            "/native/maintenance/max_operations_per_sandbox",
+            json!(u64::MAX),
+        ),
         ("/inbox/max_profile_bytes", json!(0)),
-        ("/inbox/max_manifest_bytes", json!(262145)),
+        ("/inbox/max_manifest_bytes", json!(262_145)),
         ("/internal/request_timeout_ms", json!(0)),
     ] {
         let mut settings = host_settings();
         *settings.pointer_mut(path).unwrap() = value;
         assert!(!check(settings));
     }
+}
+
+#[test]
+fn original_host_requires_explicit_native_operation_bound() {
+    let mut value = host_settings();
+    value["native"]["maintenance"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max_operations_per_sandbox");
+    assert!(!check(value));
+}
+
+#[test]
+fn stage1_example_initializes_the_original_retained_graph_and_inbox() {
+    // Real HostConfig + original SQLite initialization, without Node/VM,
+    // provisioning, sockets, guest calls or a parallel budget validator.
+    let source = include_str!("../../../../deploy/host.example.json");
+    let value: Value = serde_json::from_str(source).unwrap();
+    let config: HostConfig = serde_json::from_value(value).unwrap();
+    let (contract, _) = config.validate_static().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = ControllerJournal::open_complete(
+        directory.path().join("controller.db"),
+        &config.native.namespace,
+        contract.bounded,
+        contract.maintenance,
+        0,
+    )
+    .unwrap();
+    journal
+        .initialize_lifecycle_inbox(config.inbox, config.source_observation, &mut NeverCrash)
+        .unwrap();
 }
 
 #[test]
@@ -187,6 +239,7 @@ fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_ol
         "inbox",
         "protected_bootstrap_path",
         "source_observation",
+        "capture",
         "internal",
         "template_cache",
         "artifact_source",
@@ -224,4 +277,30 @@ fn documented_host_example_uses_the_original_validator_and_rejects_missing_or_ol
         .peak_bytes()
         .unwrap();
     assert!(peak.checked_mul(2).unwrap() < 200 * 1024 * 1024 * 1024);
+}
+
+#[test]
+fn capture_requires_same_original_layout_and_reserved_material_project() {
+    assert!(check(host_settings()));
+    for (pointer, replacement) in [
+        ("/capture/layout_parent", json!("/foreign/layout")),
+        ("/capture/material_project/project_id", json!(0)),
+        (
+            "/capture/material_project/hard_bytes",
+            json!(1_073_741_825_u64),
+        ),
+        ("/capture/material_project/hard_inodes", json!(33)),
+        (
+            "/capture/material_project/chattr/path",
+            json!("relative/chattr"),
+        ),
+        ("/capture/worker_timeout_ms", json!(999)),
+    ] {
+        let mut value = host_settings();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        assert!(
+            !check(value),
+            "accepted unsupported capture input {pointer}"
+        );
+    }
 }

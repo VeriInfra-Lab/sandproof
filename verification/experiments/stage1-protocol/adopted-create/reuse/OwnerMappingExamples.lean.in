@@ -1,0 +1,57 @@
+import SandboxModel.Lifecycle.Protocol.OwnerMapping
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.owner_for
+
+theorem normal_empty_allocates_one :
+    run (noOwners 0#u64) emptyWorld "new-owner" = .ok (.Ok 1#u64) := by
+  apply (owner_complete (noOwners 0#u64) emptyWorld "new-owner").trans
+  change Result.ok (allocation 0) = _
+  congr 1
+  exact allocation_known 0 1#u64 (by scalar_tac) (by scalar_tac)
+
+theorem normal_full_owner_match :
+    run twoOwners emptyWorld "bravo" = .ok (.Ok 9#u64) := by
+  exact (owner_complete twoOwners emptyWorld "bravo").trans (by rfl)
+
+theorem repeated_first_match :
+    run repeatedOwner emptyWorld "alpha" = .ok (.Ok 7#u64) := by
+  exact (owner_complete repeatedOwner emptyWorld "alpha").trans (by rfl)
+
+theorem world_maximum_all_records :
+    run (noOwners 5#u64) worldTriple "new-owner" = .ok (.Ok 41#u64) := by
+  apply (owner_complete (noOwners 5#u64) worldTriple "new-owner").trans
+  change Result.ok (allocation 40) = _
+  congr 1
+  exact allocation_known 40 41#u64 (by scalar_tac) (by scalar_tac)
+
+theorem high_water_not_omitted :
+    run (noOwners 64#u64) worldTriple "new-owner" = .ok (.Ok 65#u64) := by
+  apply (owner_complete (noOwners 64#u64) worldTriple "new-owner").trans
+  change Result.ok (allocation 64) = _
+  congr 1
+  exact allocation_known 64 65#u64 (by scalar_tac) (by scalar_tac)
+
+theorem allocation_exhausted :
+    run (noOwners (U64.ofNatCore U64.max (by scalar_tac))) emptyWorld "new-owner" = .ok (.Err .IdentifierExhausted) := by
+  apply (owner_complete (noOwners (U64.ofNatCore U64.max (by scalar_tac))) emptyWorld "new-owner").trans
+  change Result.ok (allocation (U64.ofNatCore U64.max (by scalar_tac)).val) = _
+  have val : (U64.ofNatCore U64.max (by scalar_tac)).val = U64.max := by scalar_tac
+  rw [val]
+  simp [allocation]
+
+theorem lookup_before_allocator_exhaustion :
+    run exhaustedExisting worldMaximum "alpha" = .ok (.Ok 7#u64) := by
+  exact (owner_complete exhaustedExisting worldMaximum "alpha").trans (by rfl)
+
+end SandboxModel.Stage1Protocol.OwnerMapping
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.normal_empty_allocates_one
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.normal_full_owner_match
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.repeated_first_match
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.world_maximum_all_records
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.high_water_not_omitted
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.allocation_exhausted
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.lookup_before_allocator_exhaustion

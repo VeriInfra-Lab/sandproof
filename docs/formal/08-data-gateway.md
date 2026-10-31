@@ -2,13 +2,15 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#640](https://github.com/VeriInfra-Lab/sandproof/issues/640)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#640](https://github.com/VeriInfra-Lab/sandproof/issues/640)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 收缩范围
 
 对应 center/host 两端网关、[sandbox-data-transport](../../sandbox-data-transport/src/lib.rs) 和必要 guest 连接。保留已有后台持额、完整请求绑定、授权重查/撤销、锁和排空试点；只完成本阶段状态交接所需真实连接，不把全部 PTY/压缩/文件内容协议加入前置。
 
 端点模型维护当前 `(owner,session,incarnation,permission,deadline,credential)`、开放/关闭门、已登记连接/工作及撤销代次。物理用户流、宿主 relay、guest 进程是不同对象；关闭 HTTP/vsock 不自动证明命令退出，也不应误杀应保留进程。
+
+当前许可登记、重派发时的凭据/寿命/Access 重查、卸载撤销及排空已沿真实路径接线；已有模型和旧读体定理不自动覆盖新 LifecycleAccessIdentity 分支。恢复链已接逐代凭据、同候选激活时的授权元数据更新与 guest 授权核对；新代开门、旧凭据拒绝及故障后补完的完整连接仍须统一实机验收和实现对应。取消 future 不等于 guest 进程已结束；排空仍须说明覆盖了哪些实际写者。
 
 ## 2. 三组合同
 

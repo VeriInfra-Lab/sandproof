@@ -392,6 +392,10 @@ pub enum EffectStatus {
     /// has been stopped by this terminal operation, so it must never execute
     /// again. This is deliberately not a successful or failed receipt.
     RetiredByStop(StopCoverage),
+    /// The original capture definitely ended or was never released. This is
+    /// neither a successful snapshot nor a host failure or material deletion.
+    RetiredByCaptureEnd(crate::capture::CaptureWorkEndReceipt),
+    RetiredByCaptureDrain(crate::capture::drain::CaptureDrainCoverage),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -450,6 +454,9 @@ pub enum EffectOrigin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LogicalEffectResult {
+    /// The original execution was already durably released. The actual effect
+    /// status/unknown receipt is retained; this is not successful fence I/O.
+    ReleasedExecution(crate::maintenance::released_execution::ReleasedExecution),
     Succeeded {
         attempt: AttemptNo,
         result: ResultDigest,
@@ -461,6 +468,14 @@ pub enum LogicalEffectResult {
     RetiredByStop {
         attempt: AttemptNo,
         coverage: StopCoverage,
+    },
+    RetiredByCaptureEnd {
+        attempt: AttemptNo,
+        end_receipt: crate::capture::CaptureWorkEndReceipt,
+    },
+    RetiredByCaptureDrain {
+        attempt: AttemptNo,
+        coverage: crate::capture::drain::CaptureDrainCoverage,
     },
 }
 

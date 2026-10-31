@@ -1,0 +1,8 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_retained_history(
+    session: &Session,
+    previous: u64,
+    intent: &AcceptedLifecycleIntent,
+) -> bool {
+    super::renewal_confirmation::follows_retained(session, previous, intent)
+}

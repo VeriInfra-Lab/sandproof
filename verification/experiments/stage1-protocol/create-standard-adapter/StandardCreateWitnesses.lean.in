@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.StandardCreateComplete
+import SandboxModel.Lifecycle.Protocol.StandardCreateFixture
+
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+namespace SandboxModel.Stage1Protocol.StandardCreate
+
+theorem normal_world_read (world : World) (connection : rusqlite.Connection) :
+    readWorld (normalEffects world connection) =
+      .ok (world, normalEffects world connection) := by
+  apply standard_world_complete
+  constructor
+  · norm_num [normalEffects, NormalWorldBorrow]
+  · rfl
+
+theorem normal_lifetime_rebind (world : World) (connection : rusqlite.Connection) :
+    beginLifetime (normalEffects world connection) = .ok (normalEffects world connection) := by
+  exact begin_lifetime_complete (normalEffects world connection)
+    { conn := connection, drop_behavior := .Rollback } rfl
+
+theorem normal_save_rebind (world : World) (connection : rusqlite.Connection) :
+    beginSave (normalEffects world connection) = .ok (normalEffects world connection) := by
+  exact begin_save_complete (normalEffects world connection)
+    { conn := connection, drop_behavior := .Rollback } rfl
+
+theorem normal_complete_selected_world :
+    readWorld (normalEffects selectedWorld observingConnection) =
+      .ok (selectedWorld, normalEffects selectedWorld observingConnection) := by
+  exact normal_world_read selectedWorld observingConnection
+
+end SandboxModel.Stage1Protocol.StandardCreate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.normal_world_read
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.normal_lifetime_rebind
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.normal_save_rebind
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.normal_complete_selected_world

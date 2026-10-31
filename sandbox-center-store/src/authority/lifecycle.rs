@@ -1,10 +1,31 @@
 //! Same original Redis CAS for canonical intent, original reservation and outbox.
+//! Each observation/expiry call confirms once before its pure decision while
+//! holding the same exclusive authority borrow. A no-op reuses that confirmation;
+//! a real update must still commit before success. No host I/O occurs here.
 use super::{AuthorityError, AuthorityState, CenterAuthority};
 use sandproof_center_core::{LifecycleSubmission, Sandbox};
 use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, SessionId};
 
 impl<S: AuthorityState> CenterAuthority<S> {
+    /// Persist the exact current restore result with the original complete
+    /// business envelope and CAS. This does not authorize any host action.
+    /// # Errors
+    /// Unknown commit fences the same authority until explicit recovery.
+    pub fn accept_lifecycle_resume_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::ResumeObservation,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self
+            .state()?
+            .accept_lifecycle_resume_observation(observation)?;
+        if &next != self.state()? {
+            self.commit_center(next)?;
+        }
+        Ok(())
+    }
+
     /// Persist only the original Host's exact renewal acknowledgement. The
     /// complete same envelope still validates business references before CAS.
     /// # Errors
@@ -15,9 +36,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     ) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.confirm_lifecycle_renewal(acknowledgement)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -32,9 +51,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     ) -> Result<AcceptedLifecycleIntent, AuthorityError> {
         self.snapshot()?;
         let (next, destroy) = self.state()?.accept_lifecycle_create_refusal(observation)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(destroy)
@@ -45,9 +62,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
     pub fn terminate_expired(&mut self, now_ms: u64) -> Result<(), AuthorityError> {
         self.snapshot()?;
         let next = self.state()?.terminate_expired(now_ms)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -103,9 +118,25 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_create_observation(observation)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
+            self.commit_center(next)?;
+        }
+        Ok(())
+    }
+
+    /// Persist only a completed current Unload, preserving unknown-CAS fencing.
+    /// # Errors
+    /// A changed original or an uncertain commit cannot publish success.
+    pub fn accept_lifecycle_unload_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::UnloadObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.snapshot()?;
+        let next = self
+            .state()?
+            .accept_lifecycle_unload_observation(observation, now_ms)?;
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())
@@ -123,9 +154,7 @@ impl<S: AuthorityState> CenterAuthority<S> {
         let next = self
             .state()?
             .accept_lifecycle_terminal_observation(result, now_ms)?;
-        if &next == self.state()? {
-            self.snapshot()?;
-        } else {
+        if &next != self.state()? {
             self.commit_center(next)?;
         }
         Ok(())

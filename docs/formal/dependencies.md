@@ -2,9 +2,12 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明工作流](../proof-workflow.md)
 
-状态：依赖合同与接入规则；包含已有模型和待连接接口，具体完成情况以覆盖记录为准。适用代码定位基线与实际证明状态分别见总览和[覆盖记录](../proof-coverage.md)，不因本页完成而新增已证明结论。
+状态：依赖合同与接入规则；包含已有模型和待连接接口，具体完成情况以覆盖记录为准。适用源码、生成体和实际证明状态见[覆盖记录](../proof-coverage.md)，不因本页完成而新增已证明结论。
 
 本页是外部依赖 A1–A12 和获批可信薄适配 B1–B4 的唯一明细；模块计划引用合同编号，不再各自列一套“依赖不会出错”。当前采用原 Charon/Aeneas 抽取真实同步业务核心、窄接口模型和显式可信适配的路线，不以开发通用 async/Pin/Drop 翻译器为前置。可信范围来自项目 owner 的明确选择；其余自有业务继续由对应模块证明。
+
+
+每次新生命周期实例都须核对同一实际对象、完整参数、结果类别、资源持有者和调用顺序。已登记 Tokio/存储/OS 合同可复用，不意味着所有新调用已满足前提；当前源码新增字段或回调须重新连接。Resume 的唯一认领、激活前不可逆标记、材料 pin/GC 和自有 SQL/Lua 决策仍由 V1–V8 提供，不因它们尚缺实现就扩大可信边界。
 
 ### 当前中心身份的薄连接
 
@@ -30,11 +33,44 @@ SQLite 提交与回执匹配是自有业务，仍需对应证明。超时/错误
 | 编号/调用 | 可以依赖的准确后果与条件 | 错误、取消、崩溃及不保证什么 | 必须由自有实现提供 |
 |---|---|---|---|
 | S-C1 / A1：原 VM Pause、Full snapshot | 在支持的 CPU/内核/设备组合、精确受控 VMM 和成功暂停条件下，成功捕获给出该暂停 VM 的内存与设备状态；只采用 Full | 请求/响应丢失可能动作已做；不假设超时未暂停、不假设输出文件不存在；不含外置磁盘或业务提交 | V6 绑定原 VM/参数，V4/V5 禁止在完整来源接管前停止原 VM；V8 排空相关访问 |
-| S-C2 / A1/A3：设备完成与磁盘复制 | 只在声明设备写入已完成到宿主文件系统、原 VM 持续暂停且无宿主写者时，按原 FD 完整复制得到与捕获匹配的 disk；固定支持的磁盘模式 | snapshot 返回不单独证明磁盘介质持久；文件复制可短写/ENOSPC/留下部分对象；不支持任意外部块设备或并发写者 | V6 建立截面/关闭写者/核全字节和盘集合，V5 预留临时峰值与恢复责任 |
+| S-C2 / A1/A3：设备完成与磁盘克隆 | 只在声明设备写入已完成到宿主文件系统、原 VM 持续暂停且无宿主写者时，按原 FD 整文件 CoW 克隆得到与捕获匹配的 disk；固定支持的磁盘模式与文件系统 | snapshot 返回不单独证明磁盘介质持久；克隆、后续写入和同步可遇 ENOSPC/EDQUOT/I/O 错误并留下部分对象；不支持任意外部块设备或并发写者 | V6 建立截面/关闭写者/核全字节和盘集合，V5 预留临时峰值与恢复责任 |
 | S-C3 / A3：write/fsync/rename/dir sync | 原受保护目录、同文件系统、无替换写者、成功完整写入及规定文件/目录同步下，发布的唯一对象可在声明 manager-crash 故障域重新打开；rename 只管目录可见性 | 文件与 SQLite 不原子；sync/rename 错误或崩溃可能已产生效果；不覆盖断电/盘损坏/任意旧备份回滚 | 原路径/FD/身份、manifest 内容校验、发布次序、对账和失败保留由 V5/V6 证明；不能从存在即推可恢复 |
 | S-C4 / A1：snapshot Load | 完整兼容的受保护材料、精确新 VMM、File 后端且 resume_vm=false 成功时装载为暂停；设备路径/配置满足固定约束 | 超时可能已装载，加载失败可能有进程/映射；不保证 envd/current credentials 就绪、不赋予运行资格 | V6 核材料/参数/新原对象，V5 pin 先于使用；V4/V5 唯一 claim 和激活前消费由自身证明 |
-| S-C5 / A1/A3：File backing 生命周期 | 原内存文件保持不可变且可用、所有已登记 reader/mapper 受控时，VMM 可按固定实现使用 backing；原 VMM 与相关 worker 结束后对应使用才结束 | load 返回不是使用结束；unlink、Arc 数量、manager Drop 或旧路径缺席均不证明物理释放；外部修改不支持 | V5/V6 持久具名 pin、先取后用、真实退出、retire/取用互斥、精确删除和计费全部是业务证明 |
+| S-C5 / A1/A3：File backing 生命周期 | 原内存文件保持不可变且可用、所有已登记 reader/mapper 受控时，VMM 可按固定实现使用 backing；原 VMM 与相关 worker 结束后对应使用才结束 | load 返回不是使用结束；unlink、Arc 数量、manager Drop 或旧路径缺席均不证明物理释放；独立 CoW inode 不取消本阶段使用结束的前提；外部修改不支持 | V5/V6 持久具名 pin、先取后用、原 loader/activation/capture worker 结束、private backing/位置真实释放、后继持久接管、retire/取用互斥、固定计划精确删除和计费全部是业务证明 |
 | S-C6 / A1/A7/A9：设备重置与恢复连接 | 只按固定设备/guest 接口解释恢复后的连接与初始化；现有连接可断，外部时钟/网络按原合同重新观察 | 不承诺 TCP/vsock 无缝延续、外部副作用回滚或旧凭据自动失效；自有 Rust guest 不能整体当 A7 | V8 关闭旧入口、当前凭据重授权、必要 guest hook 与保留进程断线行为；V6/V7 对接就绪和结果 |
+
+### A3：整文件 CoW 克隆的准确边界
+
+固定 Linux/XFS 部署采用 [FICLONE](https://man7.org/linux/man-pages/man2/FICLONE.2const.html)：
+对已核对的两个普通文件描述符，源可读、目标可写、同一支持 reflink 的文件系统，
+成功时目标获得源的完整逻辑字节和长度，后续对任一文件的写入不改变另一文件的字节。
+调用方须先独占创建并核对独立的新目标 inode，helper 检查原 FD 的独立身份和单链接；
+FICLONE 只修改已有目标文件的数据，不负责创建文件，也不用 hardlink 代替。共享的是
+底层块。对源路径 unlink 不会使独立目标丢失
+可读内容，但不保证立即释放同量物理块，也不解除本项目已有 pin/loader/backing 责任。
+单文件克隆的原子性不构成 RAM、设备状态和全部磁盘的共同冻结截面。
+
+因此后继接管的材料退休只结算已经按原计划结束的逻辑预留；其它活文件仍共享的块继续
+存在，实际磁盘释放量单独计量。完整后继接管、旧资格消费、具名使用结束与同事务关闭
+新引用均由 V4/V5/V6 提供，不能从 FICLONE 的独立 inode 性质推出它们，也不能把材料级
+结束提供方整体列为可信公理。系统继续预留当前来源、当前工作和未决收尾的最坏情况额度。
+
+内核的同文件系统保证不等于项目的同挂载策略：同一 XFS 设备经不同 bind mount 进入时
+也可能克隆成功。自有 `require_same_xfs_mount` 对原文件或目录 FD 核对 XFS、设备和
+`statx` 的 MNT_ID 字段可用且当次相等；`clone_whole_file` 及布局检查复用这一入口。
+字段不可用或不同即拒绝，不能只凭 `st_dev` 或预期的 EXDEV 放行。挂载 ID 只用于本次
+原 FD 的观察，不作为跨重启的永久卷身份，不替代原目录/文件的持久身份。
+
+`FICLONE` 不提供 fsync、目录项持久化、权限/属主设置、来源真实性、manifest/SQL 提交
+或恢复资格。失败时保留目标及工作责任，不推断目标为空或原操作未发生；不支持、跨挂载、
+配额不足和 I/O 错误明确失败，不静默回退到字节复制。克隆成功后的 CoW 写入仍可能需要
+新空间，不能按初始共享块的少量占用放宽逻辑准入或承诺以后写入不会失败。
+
+自有实现仍须建立原源/目标 FD、独立单链接与长度边界，核对完整摘要和前后身份，执行
+原属主/权限及文件和目录同步，并将结果绑定原工作、发布和失败保留路径。这些检查是
+V5/V6 的实现对应义务，不把整个克隆 helper 或恢复函数加入可信薄适配。实际支持的
+reflink/项目配额组合须由部署预检和固定环境测试确认；本合同不声称文件系统或其自有
+调用代码已经 Lean 证明。Firecracker Full 写 RAM 及全量摘要读取仍按原接口执行。
 
 **S-C7（来源/资格）和 S-C8（退休/成功/回滚）不是依赖保证。** 它们分别由 V4/V5/V6 及 V1/V7/V8 提供业务定理：选定正确 manifest、唯一认领、激活前消费、普通失败保状态、当前事实发布、pin/GC 竞争与旧工作失效。这里保留编号仅为防止把它们挪入可信边界，不新增公理。
 
@@ -154,6 +190,98 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 正常分配域中，固定紧凑 renderer 对本 schema 的安全长度上界为 `2048 + 6 × 六个编号的 UTF-8 字节数之和 + 4 × options 字节数`。2048 覆盖固定键名、标记、标点、有界整数和 32 字节摘要；6 覆盖最坏字符转义，4 覆盖 u8 的三位十进制与分隔符。源/属性改变后必须重查这个界，不能沿用给新 schema。第三方 renderer 的完成及此结构长度保证属于明确 A6 正常分配条件；自有编号每项不超过 128 字节、options 不超过 65536，以及由此得到总长不超过原 270336 字节，则由自有输入域和原创建守卫的已证结论推出。所有合法有界请求有完整往返见证，初始请求有真正接受见证；不只证明拒绝安全，也不假设编码已经成功。物理 OOM/abort 或任意自定义序列化器不在该完成条件内。
 
 本项纯值析构仅限普通 String、Vec<u8> 和 SliceRead/Vec 路径产生且不含自定义 IO 错误来源的库错误；原输入/请求为借用，parser 的可变游标与 scratch 由这次固定库调用私有持有。FD、许可、锁、任意自定义 Drop、panic/unwind 收尾、OOM/abort 和 async 取消均不在此域。真实服务器中 receiver、连接和任务所有权仍需其原模块提供条件，不能因 JSON 编解码采用 A6 而一并排除。
+
+### V3 同步协议与收件的具体使用点
+
+本表把既有 A6/B4 限定到当前生命周期使用点，说明条件的含义和仍由自有代码负责的事。
+它不是本批已经验收的声明；源码、库特性、生成体及实际检查结果必须由对应入口绑定，
+适用提交与完成程度只记在[证明覆盖](../proof-coverage.md)。不能把旧生命周期请求的
+派生登记直接沿用到新增的完整封套。
+
+| 使用点 | 依赖或薄接线必须提供什么 | 本项目继续证明什么 |
+|---|---|---|
+| `decode_accepted_with` 的解析参数 | 对同一输入字节调用固定 `serde_json::from_slice<AcceptedLifecycleIntent>`；保留完整字段和值、原解析失败及消费行为；不预设结果合法或已获授权 | 实际同步函数先解析再校验完整封套与独立上下文；解析失败不调用守卫；成功只返回同一封套。异步读体、认证来源和 handler 调用由相应模块连接 |
+| Accepted/Recorded 的标准派生 | 固定类型、属性、字段字典和库特性对应[序列化来源](../../verification/experiments/stage1-protocol/serde-binding/README.md)与[解码组装来源](../../verification/experiments/stage1-protocol/decode-assembly/README.md)；对象与序列、缺失/重复/未知字段按各分支实际行为处理 | 自有编号转换、完整字段投影、业务守卫与首错；源码/LLBC 接线核对并不是第三方解析器的机器证明 |
+| 有界输出的 `StandardSerialize` 与普通 `Vec<u8>` | 对同一个 Writer 和同一个值调用原 `serde_json::to_writer`；普通字节缓冲的长度、reserve、追加与移出按已有 Writer 合同；完整正常输出与该值的渲染对应 | 真实 `write_bounded` 的溢出/限额检查、错误前缀、`finish_bounded` 的超限优先级和错误传播，以及 HTTP 成功分支采用同一字节。`StandardCalls`/渲染条件须显式提供，不由通用 Writer 定理自行证明 |
+| `RenewalEncoding`、`UnloadEncoding` 的标准实例 | 分别把同一次原 `serde_json::to_vec` 的结果接给原完整确认/决议值；保持错误、字节长度和调用位置。正常返回条件不承诺一定成功 | 任意编码结果下的短路和首错、续期 8192/卸载 4096 字节界、首个全文匹配、阶段和时间条件。其它编码参数的定理不能冒充标准实例的字节连接 |
+| 借用 Vec 的顺序遍历与既有 String/Option/Result 模型 | 有效借用的有限普通值列表；迭代从第一个元素开始、按原顺序前进，结束不制造新元素；完整字符串相等、可选值与结果按原标签表示，回调结果/失败不被改变 | 首次命中/冲突、后项不能补救先遇到的拒绝、循环的业务条件及完整返回值；`BorrowedVecBinding` 的模型成立不表示标准库实现已机器证明 |
+
+[解析组合](../../verification/experiments/stage1-protocol/parser-binding/README.md)保留原字段错误、
+容器收尾与文档结束顺序。对固定引擎/标准派生的可信条件不包括任意自有 visitor 或校验器；
+同类型字段交换、遗漏字典和吞掉错误必须由来源检查或相同性质的错误版暴露，不能以工具
+抽取失败代替业务反例。生产特性与抽取视图有差别时分别核对，不因库版本号相同就视为同一输入。
+
+上述条件限普通值和正常返回；分配失败在已有结果模型能表达的范围内保留，物理 OOM/abort、
+可观察自定义 Drop、panic 展开、异步取消、锁/许可/FD 的释放不由它们推出。JSON 失败不代表
+输入或输出回滚。收件事务、身份真实性、网络最终交付、持久提交、真实 VM/材料和系统唯一
+执行均有各自提供方，不纳入这些编码/容器条件。
+
+### V3 Create 同步流程的接口条件
+
+本条用于 [Create 完整流程](../../verification/experiments/stage1-protocol/create-attachment-flow/README.md)
+及其固定身份、寿命 SQL、标准适配切片。精确源码、标准库正文、生成根和支持域分别由各包
+`inventory.json` 绑定；公共入口的实际结果见[覆盖记录](../proof-coverage.md)和
+[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635) 的精确候选证据。
+
+真实 `attach_create_using` 保留完整效果状态、六类类型/编码字典和三个运行时输入。
+顺序为 load、完整查找与选择、首次 owner 检查、必要时读取完整 World 并计算后继、
+完整安装、重新选择寿命连接、deadline 转换、固定身份构造、寿命 UPDATE、重新选择
+收件连接、save。每个早期错误和中间效果都保留。一般流程结论仍显式使用原
+`FullGraphicContract` 和本次成功 load 的字符串表示条件；save 的配置表示条件由同次
+load 和完整安装框架推出。自有 load/save/校验、错误传播及效果顺序由实际生成体对应，
+没有把整个 codec、事务或业务回调列为可信函数。
+
+### A6 V3 固定双输入身份格式
+
+[固定身份切片](../../verification/experiments/stage1-protocol/create-fixed-identity/README.md)
+复用已登记的 Formatter、Display、Arguments、String writer、无符号十进制及完整
+标识符数学。本条只补实际默认 str 格式和固定九字节程序的正常返回条件。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| `Shared0T.Insts.CoreFmtDisplay.fmt`、`DisplayU64.fmt` | 原字典转发与完整 u64 十进制表示保留；最高位也不截断 | 实际 namespace、sandbox 编号及全部错误载荷仍由调用者绑定 |
+| `Argument.new_display`、`Arguments.new`、默认 str Display | 保留两个惰性输入和原索引；在有效 UTF-8、普通有限值与正常分配域内，str 向原 String writer 写入完整内容 | 无额外宽度、精度或格式标志；不覆盖任意自定义 Display/Formatter |
+| 固定 `alloc.fmt.format` 调用 | 精确程序为 `[3,115,98,45,192,1,45,192,0]`；按原程序生成 `sb-`、完整 namespace、`-`、原 u64 十进制，两个正常回调各调用一次 | 实际身份校验、构造及 InvalidIdentifier 到 JournalError 的完整转换保留透明生成体 |
+
+同版 `core::hint::must_use` 已按透明生成体连接恒等返回。现有单 u16 错误文本的格式条件
+保持原范围。固定接口与 Std 正常返回的一致性属于 A6；源码核对和这些值定理不提供
+OOM/abort、任意格式器错误恢复、授权、全局唯一性、资源存在或持久接受的保证。
+
+### A4/A6 V3 寿命 UPDATE 的两个参数
+
+[寿命 SQL 切片](../../verification/experiments/stage1-protocol/create-lifetime-sql/README.md)
+限定 rusqlite 0.40.2 的当前纯两值调用。共享 Connection/Statement/SqlValue、绑定和
+execute 定义继续保持单份；实际自有参数与错误转换保留透明生成体。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| i64、str、共享引用的 ToSql 及 Value/ValueRef 转换 | 旧整数的 `Owned(Integer)` 与当前数组的 `Borrowed(Integer)` 原始枚举不同，经过实际转换得到相同完整有效整数；文本保留全部原字节 | 这是有效 ValueRef 的连接，不是旧动态 `params!` 宏整体的一般机器等价证明 |
+| `[ToSqlOutput; 2]` 的 Params 绑定和原数组迭代 | 保留 deadline、sandbox 两槽的完整值及次序，限本次纯整数/全文参数 | 逻辑参数正确不表示物理 raw-bind 成功；自定义迭代或有状态 ToSql 不在范围内 |
+| 原 Connection 的 prepare/run 结果 | 来自同一次一致库调用；保留先准备失败、绑定首错、实际后置参数计数检查以及 step/reset 错误，成功返回原完整 usize 行数 | A4 提供实际连接和事务历史；自有代码负责原 SQL、参数、调用位置和结果处理 |
+
+这里的数组规则按实际调用顺序处理：参数计数为 0 时拒绝 `(1,0)`；计数为 1 时先处理
+首项，成功后才拒绝 `(2,1)`；计数大于 2 时先处理两项及其首错，再拒绝 `(2,count)`。
+不能将现有五参数接口的提前计数规则套用到此处。寿命 UPDATE 对任意成功行数继续执行，
+包括 0；最后的收件 save 独立要求恰好 1 行。数值关系不证明物理行效果、同一事务、
+提交、未知提交或重启正确；这些条件继续由实际 A4/V5 提供方落实。
+
+### A6/V5 V3 完整 World 读取与连接重绑定
+
+[标准适配切片](../../verification/experiments/stage1-protocol/create-standard-adapter/README.md)
+检查当前 `StandardCreateAttachment` 的 world 和两个 begin 方法、实际
+`WorldTransaction::world` 及两层 Deref。World、事务载体和自有逐字段 clone 保持真实生成体。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| `RefCell<Option<完整 World>>::borrow` | 限 x86_64 的本次只读区间；实际 signed-isize64 借用计数非负且小于 MAX 时正常发出同一对象的 guard，冲突或溢出走原 panic 分支 | V5 提供本次真实 candidate 对象、活事务、writer lease 和连贯 API 历史 |
+| 已发出 `Ref<Option<完整 World>>::deref` 及临时 guard 正常释放 | 有效 guard 读取同一完整值；本次普通 World 克隆不回写单元，正常结束时释放这份借用 | 单次观察不是跨调用不变的共享堆快照；自定义 Drop、重入、unwind、OOM/abort、崩溃不在本条内 |
+| String/Option/Vec 的正常值克隆与原字面量 | 复用原逐符号合同；完整 World/记录/计划和 CaptureHandoff 的 clone 仍由实际自有函数连接 | 普通值克隆条件不保证物理分配或任意资源析构 |
+| 原 WorldTransaction/Transaction Deref 和两处 Connection 赋值 | 槽、字段和完整连接值的转交由实际生成体对应，缺 candidate/transaction 的原 panic 分支保留 | 连接字段值相等不推出物理对象或 SQL 事务相同；V5 的活对象/lease 历史和 A4 的物理连接/事务条件保留 |
+
+两份固定 Std 正文的 borrow/try_borrow/BorrowRef::new/drop/Ref::deref 核对只支持上述
+A6 使用条件，不表示整个 RefCell 内部实现已机器证明。begin/recovery 建立与保持不变量、
+实际 JSON/SHA/SQL 来源、持久收件、producer/driver、Resume 和真实资源仍由各自提供方
+闭合；不能由这几份值定理推出完整标准实例或整个 V3 系统正确。
 
 ## Redis 与 SQLite 的落地合同
 

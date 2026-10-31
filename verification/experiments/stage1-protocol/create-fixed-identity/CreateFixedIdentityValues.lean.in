@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateFixedIdentity.Values
+open SandproofFoundationsRust.IdentifierLibrary
+
+def normal : Str := .from (stringBytes "normal") (by change 6 ≤ Usize.max; scalar_tac)
+def empty : Str := .from [] (by decide)
+def invalid : Str := .from (stringBytes "bad space") (by change 9 ≤ Usize.max; scalar_tac)
+def unicode : Str := .from (stringBytes "中文") (by change 6 ≤ Usize.max; scalar_tac)
+
+theorem normal_represented : normal.val = stringBytes "normal" := rfl
+theorem normal_output_representable : StringRepresentable (rendered "normal" 2#u64) := by
+  change 11 ≤ Usize.max
+  scalar_tac
+theorem normal_expected : expected "normal" 2#u64 = .Ok "sb-normal-2" := rfl
+theorem invalid_expected : expected "bad space" 2#u64 = .Err (.Contract .InvalidIdentifier) := rfl
+theorem unicode_expected : expected "中文" 2#u64 = .Err (.Contract .InvalidIdentifier) := rfl
+
+end SandboxModel.Stage1Protocol.CreateFixedIdentity.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected

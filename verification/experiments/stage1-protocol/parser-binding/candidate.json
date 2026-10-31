@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "a6_instance_adopted": false,
+  "whole_parser_refinement_proved": false,
+  "inputs": {
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean": "298ba2cf1b4e0ee6776c044b4a6d85fdf7fde4c97afee33f48dc47713351cf61",
+    "SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean": "74745662f8b6c55b9bc16870c3a7e50b4bb66087acc2ba1ccfd231755ee109b4",
+    "SandboxModel/Boundaries/JsonRequest/SliceBinding.lean": "4ed819805e5c007669725ec818143ee46545b8e091040ef17744e26bb311f8e0"
+  },
+  "library_inputs": {
+    "features": {
+      "production": {
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "raw_value",
+            "std"
+          ]
+        }
+      },
+      "extracted_wrappers": {
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "std"
+          ]
+        }
+      },
+      "native_parser": {
+        "serde": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "derive",
+            "serde_derive",
+            "std"
+          ]
+        },
+        "serde_core": {
+          "version": "1.0.228",
+          "features": [
+            "alloc",
+            "default",
+            "result",
+            "std"
+          ]
+        },
+        "serde_derive": {
+          "version": "1.0.228",
+          "features": [
+            "default"
+          ]
+        },
+        "serde_json": {
+          "version": "1.0.142",
+          "features": [
+            "default",
+            "raw_value",
+            "std"
+          ]
+        }
+      }
+    },
+    "sources": {
+      "serde-1.0.228/src/private/de.rs": "68ee17774d3bbc693d9f19803747fa2c3afdb7046482e6d94ac6cf7db5a4fe20",
+      "serde_core-1.0.228/src/de/mod.rs": "5ec8602d593915e0cf480b0ce67b02f6ab066dac34725237d2c7b4a6ef12a845",
+      "serde_core-1.0.228/src/de/value.rs": "fb6fef6d23d95d516c6e1d6b5cefd8b98ba3881214a82a8a7e0a8ffbb0a12083",
+      "serde_core-1.0.228/src/de/impls.rs": "9fb7a0322af51971fe1fa8f5b56c7ca3716622a6e9127b86bddfc0742c11383c",
+      "serde_core-1.0.228/src/private/content.rs": "5fdfb2bb95ecc80375507acb813a4c640496385e56fc99ab448f6b19e01fcc01",
+      "serde_derive-1.0.228/src/de.rs": "08fc2db0db3e7263ccfb8999ecc6249e5a8c3d9d3a3b85ea3b8995e865f08c83",
+      "serde_derive-1.0.228/src/de/struct_.rs": "7b26982ce59504a9bb5a18c3ab56eee2d75e70fd465774ff035d15c50452c118",
+      "serde_derive-1.0.228/src/de/enum_.rs": "5a099a25034e4f9364d421a53cfb4428ea8a94fd66515c66207bf8bfb7c4db4f",
+      "serde_derive-1.0.228/src/de/enum_internally.rs": "9d898dbc1c46262f695ef7ba1660b2af70de48e07bbac8f44b740326b7c5b303",
+      "serde_derive-1.0.228/src/de/enum_adjacently.rs": "3105e85ab86ece0483ac811da2dca41f8580ac59859719a6592c87bc1424d4b0",
+      "serde_derive-1.0.228/src/de/enum_untagged.rs": "b66ad3cea36ee786d50270f6648f1075c1e615b5f04173b47f034a251df5220e",
+      "serde_derive-1.0.228/src/de/identifier.rs": "b653c26f4274e5c323e3f893c6f9a2b21bd5c873abdc2a801f0289a5e56a9f6c",
+      "serde_json-1.0.142/src/de.rs": "db7adf3ef0074e15426d31e1cf4bec78ad92c20e4642c136325f0a78547218c7",
+      "serde_json-1.0.142/src/read.rs": "17a2efe49e5a6937c8d7d4a5c0b9eac84453de0f86bf8e7ee421387e82341bb3",
+      "serde_json-1.0.142/src/error.rs": "a9b5de0a82f95608b51b8e8875c7c49f94fb60b9f976fc6277aec0213926dec9",
+      "serde_json-1.0.142/src/lib.rs": "afaae0fbc466612354af660292dfb6dbaff990691339399184bdf06dd18c5b09"
+    }
+  }
+}

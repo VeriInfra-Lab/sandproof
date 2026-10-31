@@ -1,0 +1,109 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem attempt_ok {E α : Type} (value : α) (state : E) (next : α → E → Outcome E) :
+    attempt (.ok (.Ok value, state)) next = next value state := by
+  simp [attempt]
+
+theorem header_to_current {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state afterExists afterVersion afterSource : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, afterSource)) :
+    loadView io validate budget state = currentView io validate budget afterSource := by
+  simp only [loadView, first, attempt_ok, second, third]
+  simp [LIFECYCLE_STORE_FORMAT_VERSION]
+  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv]
+
+theorem current_to_capacity {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state after : E)
+    (first : io.query_bool state internalStatement = .ok (.Ok false, after)) :
+    currentView io validate budget state = capacityView io validate budget after := by
+  simp [currentView, first, attempt_ok]
+
+theorem capacity_to_limits {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state afterCapacity afterLengths : E)
+    (first : InboxLoadConfig.capacityReadView io.checkpointconfigReadConfigEffectsInst state =
+      .ok (.Ok (some InboxLoadConfig.LifecycleValues.capacity), afterCapacity))
+    (second : io.query_i64_pair afterCapacity lengthsStatement = .ok (.Ok (2#i64, 286720#i64), afterLengths)) :
+    capacityView io validate budget state =
+      limitsView io validate budget InboxLoadConfig.LifecycleValues.capacity 2#i64 286720#i64 afterLengths := by
+  simp [capacityView, first, second, attempt_ok]
+
+theorem limits_to_body {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) :
+    limitsView io validate budget InboxLoadConfig.LifecycleValues.capacity 2#i64 286720#i64 state =
+      bodyView io validate budget 286720#u64 state := by
+  unfold limitsView
+  rw [if_neg (by decide : ¬ (2#i64 < 0#i64))]
+  rw [show core.num.I64.cast_unsigned 2#i64 = .ok 2#u64 from rfl]
+  simp only [bind_tc_ok]
+  rw [if_neg (by decide : ¬ (286720#i64 < 0#i64))]
+  rw [show core.num.I64.cast_unsigned 286720#i64 = .ok 286720#u64 from rfl]
+  simp only [bind_tc_ok]
+  rw [if_neg (by decide : ¬ (286720#u64 < 2#u64))]
+  rw [if_neg (by decide : ¬ (286720#u64 > InboxLoadConfig.LifecycleValues.capacity.max_sql_value_bytes))]
+  rw [if_neg (by decide : ¬ (286720#u64 > maximumBytes))]
+
+def beforeBody : Trace :=
+  [.boolQuery existsStatement, .integerQuery versionStatement,
+   .boolQuery sourceStatement, .boolQuery internalStatement] ++ policyTrace ++
+  [.lengthQuery lengthsStatement]
+
+theorem fixture_to_body (decoded : core.result.Result Inbox JournalError)
+    (encoded hash : alloc.vec.Vec U8) (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      (effects decoded encoded bytes hash 286720#i64 InboxLoadConfig.LifecycleValues.normal) trace =
+    bodyView (effects decoded encoded bytes hash 286720#i64 InboxLoadConfig.LifecycleValues.normal)
+      validation budget 286720#u64 (trace ++ beforeBody) := by
+  let io := effects decoded encoded bytes hash 286720#i64 InboxLoadConfig.LifecycleValues.normal
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have existsReturns (state : Trace) : io.query_bool state existsStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery existsStatement]) := by
+    simp [io, effects, existsDifferent]
+  have sourceReturns (state : Trace) : io.query_bool state sourceStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery sourceStatement]) := by
+    simp [io, effects, sourceDifferent]
+  have versionReturns (state : Trace) : io.checkpointconfigReadConfigEffectsInst.query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp [io, effects, policyEffects, versionDifferent]
+  have internalReturns (state : Trace) : io.query_bool state internalStatement =
+      .ok (.Ok false, state ++ [Event.boolQuery internalStatement]) := by
+    simp [io, effects]
+  change loadView io validation budget trace = _
+  rw [header_to_current io validation budget _ _ _ _ (existsReturns trace) (versionReturns _) (sourceReturns _)]
+  rw [current_to_capacity io validation budget _ _ (internalReturns _)]
+  rw [capacity_to_limits io validation budget _ _ _ (capacity_read _) (by rfl)]
+  rw [limits_to_body]
+  apply congrArg (bodyView io validation budget 286720#u64)
+  simp [beforeBody, List.append_assoc]
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.header_to_current
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.current_to_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.capacity_to_limits
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.limits_to_body
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.fixture_to_body
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.attempt_ok

@@ -1,0 +1,136 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+
+theorem branch_bind {α β : Type} (result : core.result.Result α JournalError)
+    (next : core.ops.control_flow.ControlFlow (core.result.Result core.convert.Infallible JournalError) α → Result β) :
+    (do let control ← core.result.Result.Insts.CoreOpsTry.branch result; next control) =
+      (match result with
+       | .Ok value => next (.Continue value)
+       | .Err error => next (.Break (.Err error))) := by
+  cases result <;> simp [core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem optional_bind {α β : Type} (value : Option α)
+    (next : core.result.Result α JournalError → Result β) :
+    (do let checked ← core.option.Option.ok_or value JournalError.UnsupportedStore; next checked) =
+      (match value with | some value => next (.Ok value) | none => next (.Err .UnsupportedStore)) := by
+  cases value <;> simp [core.option.Option.ok_or]
+
+theorem version_match (version : I64) :
+    (match version with | 23#iscalar => (Result.ok true) | _ => .ok false) =
+      .ok (decide (version = 23#i64)) := by
+  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  split <;> simp_all [IScalar.eq_equiv]
+
+theorem decode_map_bind {R T N U B E α : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+    (result : core.result.Result Inbox JournalError)
+    (next : core.result.Result Inbox JournalError → Result α) :
+    (do let mapped ← core.result.Result.map_err
+          (load_using.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError
+            saved terminal renewal unload graphic io) result ()
+        next mapped) =
+      match result with
+      | .Ok inbox => next (.Ok inbox)
+      | .Err _ => next (.Err .CorruptStore) := by
+  cases result <;> simp [core.result.Result.map_err,
+    load_using.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError.call_once]
+
+theorem continue_congr {α β : Type} (run : Result α) (left right : α → Result β)
+    (same : ∀ value, left value = right value) :
+    Bind.bind run left = Bind.bind run right := congrArg (fun next => Bind.bind run next) (funext same)
+
+theorem pair_continue_congr {α β E : Type} (run : Result (α × E))
+    (left right : α × E → Result β) (same : ∀ value after, left (value, after) = right (value, after)) :
+    Bind.bind run left = Bind.bind run right := by
+  apply continue_congr
+  intro pair
+  rcases pair with ⟨value, after⟩
+  exact same value after
+
+theorem guard_congr {α : Type} (condition : Prop) [Decidable condition]
+    (rejected left right : α) (same : left = right) :
+    (if condition then rejected else left) = (if condition then rejected else right) :=
+  congrArg (fun next => if condition then rejected else next) same
+
+theorem bind_return_congr {α β : Type} (run : Result α) (left right : α → Result β)
+    (same : ∀ value, run = .ok value → left value = right value) :
+    Bind.bind run left = Bind.bind run right := by
+  cases run with
+  | ret value =>
+    simp only [bind_tc_ok]
+    exact same value rfl
+  | div => simp only [bind_tc_div]
+  | vis effect continuation =>
+    cases effect with
+    | fail error =>
+      simp only [bind_tc_vis]
+      apply congrArg (Result.vis (RustEffect.Input.fail error))
+      funext impossible
+      cases impossible
+
+-- The existing Inbox specification needs only the registered string-size
+-- representation condition here. This is not a promise that decoded Inbox
+-- business fields are valid, authenticated, accepted or durable.
+
+theorem decode_continue_congr {E β : Type} (io : InboxLoadEffects E)
+    (represented : DecodedStringsRepresentable io) (state : E) (bytes : Slice U8)
+    (left right : core.result.Result Inbox JournalError × E → Result β)
+    (errorSame : ∀ error after, left (.Err error, after) = right (.Err error, after))
+    (valueSame : ∀ inbox after, ConfigValidation.Representable inbox.config →
+      left (.Ok inbox, after) = right (.Ok inbox, after)) :
+    Bind.bind (m := Result) (io.decode_inbox state bytes) left = Bind.bind (m := Result) (io.decode_inbox state bytes) right := by
+  apply bind_return_congr
+  intro returned equation
+  rcases returned with ⟨decoded, after⟩
+  cases decoded with
+  | Err error => exact errorSame error after
+  | Ok inbox => exact valueSame inbox after (represented state bytes inbox after equation)
+
+-- The budget is a total natural-number formula already proved for every config.
+
+theorem budget_value_exact (config : LifecycleInboxConfig) :
+    (budgetValue config).val = ConfigBudget.bytes config := by
+  apply U64.ofNatCore_val_eq
+
+theorem budget_refines (config : LifecycleInboxConfig) :
+    LifecycleInboxConfig.required_bytes config = .ok (budgetValue config) :=
+  (ConfigBudget.required_bytes_iff config (budgetValue config)).2 (budget_value_exact config)
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.branch_bind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.optional_bind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.version_match
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.decode_map_bind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.continue_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.pair_continue_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.guard_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.bind_return_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.decode_continue_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.budget_value_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.budget_refines

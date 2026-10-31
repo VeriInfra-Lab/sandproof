@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.UnloadModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.UnloadResolution.Values
+open scoped Classical
+noncomputable section
+
+def intent := EnvelopeValues.intent 1#u64
+def facts : Facts := ⟨0#u64, 10#u64, 20#u64, 3#u64, 1#u64⟩
+def snapshot : Snapshot := {
+  owner := 20#u64, phase := .Running, terminal := false, epoch := 1#u64, generation := 1#u64,
+  current_vm := some 40#u64, current_operation := none,
+  lifetime := some ⟨some 0#i64, 10#i64, 20#i64, 3#i64, 0#u64⟩,
+  uncertain_actions := alloc.vec.Vec.from [] (by simp) }
+
+def before : Entry :=
+  ⟨intent, none, none, none, some (.BeforeAdmission snapshot (some facts))⟩
+def after : Entry := { before with
+  local_operation := some 30#u64, unload_resolution := some (.AfterCapture facts) }
+def beforeNoResult : Entry := { before with
+  unload_resolution := some (.BeforeAdmission snapshot none) }
+def wrongPhase : Entry := { before with
+  unload_resolution := some (.BeforeAdmission { snapshot with phase := .Paused } (some facts)) }
+def wrongOperation : Entry := { after with local_operation := none }
+def wrongMaximum : Entry := { after with
+  unload_resolution := some (.AfterCapture { facts with max_end_at_ms := 5#u64 }) }
+def weakSnapshot : Entry := { before with
+  applied_deadline := some (-1)#i64, previous_effective_end_at_ms := some (-2)#i64,
+  unload_resolution := some (.BeforeAdmission { snapshot with
+    owner := 999#u64, epoch := 0#u64, generation := 0#u64,
+    lifetime := some ⟨some 0#i64, (-1)#i64, 20#i64, 3#i64, 0#u64⟩ } (some facts)) }
+def equalityBoundaries : Entry := { after with
+  unload_resolution := some (.AfterCapture ⟨1#u64, 2#u64, 2#u64, 1#u64, 1#u64⟩) }
+def bytes : alloc.vec.Vec U8 := alloc.vec.Vec.from [] (by simp)
+def encode : Encoding := fun _ => .ok (.Ok bytes)
+
+theorem legal_intent : Validation.ValidEnvelope intent EnvelopeValues.context :=
+  EnvelopeValues.both_inputs_have_valid_shape.1
+
+theorem expected_outcomes :
+    validateView encode before = .ok (.Ok ()) ∧
+    validateView encode after = .ok (.Ok ()) ∧
+    validateView encode beforeNoResult = .ok (.Ok ()) ∧
+    validateView encode wrongPhase = .ok corrupt ∧
+    validateView encode wrongOperation = .ok corrupt ∧
+    validateView encode wrongMaximum = .ok corrupt ∧
+    validateView encode weakSnapshot = .ok (.Ok ()) ∧
+    validateView encode equalityBoundaries = .ok (.Ok ()) := by
+  simp [validateView, before, after, beforeNoResult, wrongPhase, wrongOperation, wrongMaximum,
+    weakSnapshot, equalityBoundaries, encode, unload, intent, EnvelopeValues.intent,
+    afterEncoding, metadataInvalid, snapshotInvalid, resultOf, factsInvalid, corrupt, snapshot, facts, bytes]
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.Values.legal_intent
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.Values.expected_outcomes

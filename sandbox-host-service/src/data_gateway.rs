@@ -29,6 +29,8 @@ use tokio::{
 
 mod admission;
 mod drain;
+#[cfg(all(target_os = "linux", debug_assertions))]
+pub(crate) use drain::test_unload_busy;
 #[cfg(target_os = "linux")]
 mod relay_stdio;
 pub use admission::Gateway;
@@ -220,7 +222,15 @@ async fn handle_prepared<P: DataAccessPort>(
     let connection_lease = lease.clone();
     let mut connection_revocation = permit.revocation().clone();
     tokio::spawn(async move {
-        let _ = until_revoked(&mut connection_revocation, connection).await;
+        let revoked = until_revoked(&mut connection_revocation, connection)
+            .await
+            .is_none();
+        #[cfg(debug_assertions)]
+        if revoked {
+            relay_exit.wait_test_revocation_gate(&child).await;
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = revoked;
         relay_exit.stop(&mut child).await;
         drop(connection_lease);
     });

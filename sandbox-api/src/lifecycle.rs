@@ -11,7 +11,8 @@ use axum::{
     routing::{get, post},
 };
 use sandproof_protocol::lifecycle::{
-    PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicRequestWindow, PublicSessionView, PublicUnloadRequest, SessionId,
+    PublicAcceptance, PublicCreateRequest, PublicDestroyRequest, PublicRequestWindow,
+    PublicResumeRequest, PublicSessionView, PublicUnloadRequest, SessionId,
 };
 use std::sync::Arc;
 #[cfg(test)]
@@ -23,7 +24,12 @@ pub trait LifecyclePort: Send + Sync + 'static {
     fn request_window(&self, owner: &str) -> Result<PublicRequestWindow, PortError>;
     /// # Errors
     /// Records termination without waiting for slow physical cleanup.
-    fn destroy_lifecycle(&self, owner: &str, session: SessionId, request: PublicDestroyRequest) -> Result<PublicAcceptance, PortError>;
+    fn destroy_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicDestroyRequest,
+    ) -> Result<PublicAcceptance, PortError>;
     /// # Errors
     /// Only durable acceptance returns; this is not a completed VM result.
     fn create_lifecycle(
@@ -38,6 +44,14 @@ pub trait LifecyclePort: Send + Sync + 'static {
         owner: &str,
         session: SessionId,
         request: PublicUnloadRequest,
+    ) -> Result<PublicAcceptance, PortError>;
+    /// # Errors
+    /// The original authority chooses material and a fresh execution identity.
+    fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicResumeRequest,
     ) -> Result<PublicAcceptance, PortError>;
     /// # Errors
     /// Missing/foreign sessions share `NotFound`; unknown authority fails closed.
@@ -63,11 +77,24 @@ pub fn router_with_admission<P: LifecyclePort>(
         admission,
     };
     Ok(Router::new()
-        .route("/sandproof/lifecycle/request-window", get(request_window::<P>))
+        .route(
+            "/sandproof/lifecycle/request-window",
+            get(request_window::<P>),
+        )
         .route("/sandproof/lifecycle/create", post(create::<P>))
         .route("/sandproof/lifecycle/sessions/{session}", get(query::<P>))
-        .route("/sandproof/lifecycle/sessions/{session}/unload", post(unload::<P>))
-        .route("/sandproof/lifecycle/sessions/{session}/destroy", post(destroy::<P>))
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/unload",
+            post(unload::<P>),
+        )
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/resume",
+            post(resume::<P>),
+        )
+        .route(
+            "/sandproof/lifecycle/sessions/{session}/destroy",
+            post(destroy::<P>),
+        )
         .layer(DefaultBodyLimit::max(MAX_JSON_BYTES))
         .with_state(state))
 }
@@ -77,8 +104,11 @@ async fn request_window<P: LifecyclePort>(
     headers: HeaderMap,
 ) -> Result<Json<PublicRequestWindow>, ApiFailure> {
     let owner = authenticate(&state, &headers)?;
-    blocking(state.admission, RequestClass::Ordinary, move || state.port.request_window(&owner))
-        .await.map(Json)
+    blocking(state.admission, RequestClass::Ordinary, move || {
+        state.port.request_window(&owner)
+    })
+    .await
+    .map(Json)
 }
 
 async fn create<P: LifecyclePort>(
@@ -125,6 +155,22 @@ async fn query<P: LifecyclePort>(
     .map(Json)
 }
 
+async fn resume<P: LifecyclePort>(
+    State(state): State<ApiState<P>>,
+    headers: HeaderMap,
+    Path(session): Path<String>,
+    request: Result<Json<PublicResumeRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<PublicAcceptance>), ApiFailure> {
+    let owner = authenticate(&state, &headers)?;
+    let session = SessionId::try_from(session.as_str()).map_err(|_| PortError::NotFound)?;
+    let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
+    let result = blocking(state.admission, RequestClass::Ordinary, move || {
+        state.port.resume_lifecycle(&owner, session, request)
+    })
+    .await?;
+    Ok((StatusCode::ACCEPTED, Json(result)))
+}
+
 async fn destroy<P: LifecyclePort>(
     State(state): State<ApiState<P>>,
     headers: HeaderMap,
@@ -136,6 +182,7 @@ async fn destroy<P: LifecyclePort>(
     let Json(request) = request.map_err(|_| ApiFailure::BadRequest)?;
     let result = blocking(state.admission, RequestClass::Control, move || {
         state.port.destroy_lifecycle(&owner, session, request)
-    }).await?;
+    })
+    .await?;
     Ok((StatusCode::ACCEPTED, Json(result)))
 }

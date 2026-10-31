@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCommon
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorValues
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow
+open OwnerMapping OwnerMapping.Values
+
+open Values
+
+theorem wrapped_zero : core.num.U64.wrapping_add limit 1#u64 = 0#u64 := by
+  apply UScalar.eq_of_val_eq
+  simp only [core.num.U64.wrapping_add_val_eq]
+  have at_max : limit.val = U64.max := by unfold limit; scalar_tac
+  simp only [at_max]
+  scalar_tac
+
+theorem observed : run (noOwners limit) emptyWorld 1#u64 = .ok (.Ok 0#u64) := by
+  have scanned := max_end 1#u64 (alloc.vec.Vec.deref emptyWorld.sandboxes.entries) limit 0#usize
+    (by simp [emptyWorld, emptyStore, alloc.vec.Vec.deref])
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor
+  simp only [sandbox_controller_core.model.World.sandbox_records,
+    sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+  unfold maxLoop at scanned
+  erw [scanned]
+  simp only [bind_tc_ok, lift, wrapped_zero]
+
+theorem violates_full_contract : ¬ FullSuccessorContract run := by
+  intro contract
+  have required := contract (noOwners Values.limit) emptyWorld 1#u64
+  rw [observed] at required
+  simp [Values.high_water_exhausted_expected] at required
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.wrapped_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.violates_full_contract

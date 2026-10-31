@@ -116,9 +116,21 @@ pub(super) fn reserve_host_slot(
     let state = world
         .maintenance_state()
         .ok_or(JournalError::CorruptStore)?;
-    let position = (0..config.maintenance.max_host_slots)
-        .map(HostSlotId)
-        .find(|position| position_available(state, *position))
+    // The node retains one position identity per sandbox, including Free
+    // history and its sandbox-scoped fence retirement. Replace that original
+    // row when available; migrate only after another sandbox has reused it.
+    let position = state
+        .host_slots()
+        .iter()
+        .find_map(|(position, row)| {
+            (row.binding.sandbox == sandbox && row.phase == HostSlotPhase::Free)
+                .then_some(*position)
+        })
+        .or_else(|| {
+            (0..config.maintenance.max_host_slots)
+                .map(HostSlotId)
+                .find(|position| position_available(state, *position))
+        })
         .ok_or(AdmissionError::QuotaExceeded)?;
     let record = world
         .sandbox_record(sandbox)

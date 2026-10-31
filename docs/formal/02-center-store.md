@@ -2,7 +2,7 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#634](https://github.com/VeriInfra-Lab/sandproof/issues/634)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#634](https://github.com/VeriInfra-Lab/sandproof/issues/634)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 状态与真实边界
 
@@ -10,17 +10,18 @@
 
 模型分开：内存候选、已提交 Redis 状态、待发送意图、发送/回执、结果确认。明确未提交、确认提交、可能提交但未知。Redis 与宿主 SQLite 不同事务；中心失联不允许重新创建替代 VM。
 
-首个显式生命周期 profile 直接扩展原 `CenterState`，沿原 `AuthorityState`、`CenterAuthority` 和 `RedisLedger` 保存；不新增权威 key、outbox key 或内存替代账本。新增未来容量同时计入原包络预算，`BusinessEnvelope` 仍保存同一个中心投影。普通初始化必须明确选择此 profile，原 `open/attach/recover` 不把缺失/损坏记录当新状态。
+当前 `CenterState` 单行会话状态由原 `AuthorityState`、`CenterAuthority`、`RedisLedger` 和 `BusinessEnvelope` 保存，不另建权威 key 或内存账本。注册与当前格式为必需条件；原 open/attach/recover 不把缺失或损坏记录当作新状态。
 
-| 实际接口 | 同一原提交保存/读取什么 | 限制 |
-|---|---|---|
-| `accept_lifecycle` | 完整提交参数、原分配/预留、规范请求、owner/固定 node、接受版本与待发送责任同一次 CAS；确认后才返回意图 | 自有决定和 codec 尚须实现对应；成功组件测试不是整个提交图已证 |
-| 原键重放 | 返回原规范请求；即使不改业务状态仍经原 reaffirm 确认当前权威 | Redis revision 可增加，接受版本/编号/原时间不增加或重算 |
-| `lifecycle_dispatch_batch` | 从原完整包络耐久确认后枚举 v3 意图；旧 `dispatch_batch` 排除受管会话 | 只提供可派发工作，不证明实际后台 driver 已接通或最终完成 |
-| `observe_lifecycle_ready/query_lifecycle` | 全文绑定的原 Ready 与当前 owner/session 查询经原提交/确认 | 认证和原 Host 事实由 V3/V5/V6 提供；本片不构造 Unloaded |
-| 原 `recover` | 所有未知提交投影先围栏，重连、读原块并耐久 reaffirm；随后按原键取回原意图 | 不能另分配会话、换 node、释额或只信缓存；完整 manager HTTP 重启仍另验收 |
+| 实际接口 | 行为及待证边界 |
+|---|---|
+| `accept_lifecycle` | 原请求、预留、意图与待发送责任同一 CAS，确认后返回；完整 codec/状态修改仍须对应 |
+| 原键重放 | 同原规范请求，经 reaffirm 确认当前权威；Redis 修订可变，原接受版本和时间不能重算 |
+| `lifecycle_dispatch_batch` | 从耐久包络枚举原意图，已由真实后台消费；枚举与最终进展是不同义务 |
+| Ready / Unloaded 保存与查询 | 当前正式路径已接；HTTP、认证、Host 事实和提交后确认仍须组合 |
+| 生命周期观察与到期 wrapper | 七个方法的首次确认、完整状态相等的无变化复用、真实更新提交和未知结果恢复须对应；不得以阶段相同省略更新，精确合同见模块合同 |
+| `recover` | 未知提交围栏、读回与耐久确认；不得重新分配或仅信缓存。首次卸载后的双管理重启有有限实机证据，不代表任意故障恢复已证 |
 
-固定窗口、退休/恢复边界和内部终止尚未完成的部分沿 V1 计划保留；无默认启用、无不受限留史。新 profile 内部版本与原外层格式分别检查，不将 checkpoint schema version 2 称为中心 V2 已完成。
+历史 storage 生成体及条件证明限定于原候选，不能视为当前整个 RedisLedger/CenterAuthority 的证明。可以先对未变的实际 Lua 文本正常控制路径做源绑定证明；这不自动证明所有返回值、字段后态或耐久性。
 
 ## 2. 必须证明
 

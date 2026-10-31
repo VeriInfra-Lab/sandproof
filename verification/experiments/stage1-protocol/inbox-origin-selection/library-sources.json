@@ -1,0 +1,18 @@
+{
+  "production": {
+    "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e",
+    "core/src/iter/adapters/rev.rs": "2c733c153c7ca12c09f3d7639709ab005843e25fb80fd348480db349b80004ff",
+    "core/src/iter/traits/iterator.rs": "db43b7acc33fca53d85fef3ddea29ec9f8c1e768df428676fe2de160f21d5f6b",
+    "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d",
+    "core/src/slice/index.rs": "16c924deb46e5e027872853736f082abae1eb45f74e55935814a20979899a935",
+    "core/src/slice/iter/macros.rs": "0ac47d295999ba8847d0df93557292fbad65d256db0c6521c396798d2e37677d"
+  },
+  "extraction": {
+    "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9",
+    "core/src/iter/adapters/rev.rs": "2c733c153c7ca12c09f3d7639709ab005843e25fb80fd348480db349b80004ff",
+    "core/src/iter/traits/iterator.rs": "a6a1e6fb4032fa5b21376322c1b52f290b47d27944abbacb30c4fc3f9f4ada6f",
+    "core/src/result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196",
+    "core/src/slice/index.rs": "8c2d4f2dd29808136d4a45878010f2edb7c64c3c197d564f86d034b33df4e8ec",
+    "core/src/slice/iter/macros.rs": "8db181ab6087b436dcc4c350efc7283ecc4912e34ca20d8bf7460fca5084c26c"
+  }
+}

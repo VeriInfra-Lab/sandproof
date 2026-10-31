@@ -7,8 +7,16 @@
 use super::{
     Runtime, RuntimeError, RuntimeProcessIdentity, SnapshotLayout, validate_id, verified_process,
 };
+#[path = "snapshot_full_wait.rs"]
+pub(crate) mod full_wait;
+#[path = "snapshot_request_end.rs"]
+mod request_end;
+use request_end::full_capture_request;
+pub use request_end::{FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome};
+
 use crate::snapshot_store::{
-    PublishedSnapshotFiles, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStage,
+    PublishedSnapshotFiles, SnapshotArtifact, SnapshotArtifactEvent, SnapshotFileMeasurement,
+    SnapshotStage,
 };
 use rustix::{
     fs::{self, Mode, OFlags},
@@ -18,7 +26,7 @@ use serde_json::json;
 use std::{
     fmt::Write as _,
     fs::File,
-    io,
+    io::{self, Write as _},
     os::{
         fd::OwnedFd,
         unix::fs::{MetadataExt, PermissionsExt},
@@ -29,8 +37,10 @@ use std::{
 /// Budgets were reserved by the controller before starting physical work.
 #[derive(Clone, Copy, Debug)]
 pub struct FullCaptureLimits {
+    pub api_context: FullCaptureApiContext,
     pub state_bytes: u64,
     pub disk_bytes: u64,
+    /// Poll interval on the original Full connection, not permission to stop it.
     pub api_timeout: Duration,
 }
 
@@ -276,7 +286,7 @@ impl Runtime {
         Ok(())
     }
 
-    /// Produce Full RAM/state and copy the fixed profile's original private disk
+    /// Produce Full RAM/state and clone the fixed profile's original private disk
     /// into a separate protected store during the same frozen interval.
     /// # Errors
     /// Preserves the original VMM and every partial source/store directory. The
@@ -287,6 +297,34 @@ impl Runtime {
         layout: &SnapshotLayout,
         directory_key: [u8; 32],
         limits: FullCaptureLimits,
+    ) -> Result<CapturedFullSnapshot, RuntimeError> {
+        self.capture_full_cloning(paused, layout, directory_key, limits, &mut |_, _| Ok(()))
+    }
+
+    /// Observe clone/target-measurement/sync boundaries in controlled debug builds.
+    /// Measurement is full logical content read progress, not physical writes. The
+    /// original Full request, identity checks, files and publication are shared.
+    /// # Errors
+    /// An observation failure preserves the same original/partial materials.
+    #[cfg(debug_assertions)]
+    pub fn capture_full_into_observed(
+        &self,
+        paused: &PausedOriginalVm,
+        layout: &SnapshotLayout,
+        directory_key: [u8; 32],
+        limits: FullCaptureLimits,
+        observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
+    ) -> Result<CapturedFullSnapshot, RuntimeError> {
+        self.capture_full_cloning(paused, layout, directory_key, limits, observe)
+    }
+
+    fn capture_full_cloning(
+        &self,
+        paused: &PausedOriginalVm,
+        layout: &SnapshotLayout,
+        directory_key: [u8; 32],
+        limits: FullCaptureLimits,
+        observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
     ) -> Result<CapturedFullSnapshot, RuntimeError> {
         if limits.state_bytes == 0
             || limits.disk_bytes == 0
@@ -305,6 +343,10 @@ impl Runtime {
         }
         fs::mkdirat(&paused.original.root, capture_name.as_str(), Mode::RWXU).map_err(errno)?;
         let directory = open_directory_at(&paused.original.root, &capture_name)?;
+        // The newly created, still root-owned EMPTY directory receives the
+        // fixed material project before ownership transfer or first VMM write.
+        // Failure leaves the original paused VM and charged partial directory.
+        layout.assign_new_capture_project(&directory)?;
         fs::fchown(
             &directory,
             Some(Uid::from_raw(self.config.vm_uid)),
@@ -313,18 +355,37 @@ impl Runtime {
         .map_err(errno)?;
         directory.sync_all()?;
         paused.original.root.sync_all()?;
-        let request = serde_json::to_vec(&json!({
-            "snapshot_type": "Full",
-            "snapshot_path": format!("/{capture_name}/state.bin"),
-            "mem_file_path": format!("/{capture_name}/memory.bin"),
-        }))?;
-        self.api_with_timeout(
-            &paused.original.resource_id,
-            "PUT",
-            "/snapshot/create",
-            Some(&request),
-            limits.api_timeout,
+        let request = full_capture_request(directory_key)?;
+        let worker = RuntimeProcessIdentity::capture(std::process::id())?;
+        let mut stream = full_wait::OriginalFullStream {
+            stream: self.api_stream(&paused.original.resource_id, limits.api_timeout)?,
+            source: &paused.original.identity,
+        };
+        write!(
+            stream,
+            "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            request.len()
         )?;
+        stream.write_all(&request)?;
+        let (status, response) = super::api_response::read_reply(&mut stream)?;
+        // Only a complete response on the checked original VMM connection can
+        // create this marker. Timeouts/short frames cannot reach this point.
+        let api_end = FullCaptureRequestEnd::returned(
+            &paused.original.resource_id,
+            &paused.original.identity,
+            directory_key,
+            limits.api_context,
+            worker,
+            status,
+            &response,
+        )?;
+        layout.publish_full_request_end(&api_end, &paused.original.identity)?;
+        if !(200..300).contains(&status) {
+            return Err(RuntimeError::Api {
+                status,
+                body: String::from_utf8_lossy(&response).into_owned(),
+            });
+        }
         self.verify_original_capture(paused, true)?;
         let mut state_file = source_at(&directory, "state.bin", self.config.vm_uid)?;
         let mut memory = source_at(&directory, "memory.bin", self.config.vm_uid)?;
@@ -335,23 +396,26 @@ impl Runtime {
         // This profile is exactly the drive configured by stage_and_boot, never
         // a guest-supplied path. Later profiles must enumerate every drive.
         let mut disk = source_at(&paused.original.root, "rootfs.ext4", self.config.vm_uid)?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut state_file,
             self.config.vm_uid,
             SnapshotArtifact::State,
             limits.state_bytes,
+            observe,
         )?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut memory,
             self.config.vm_uid,
             SnapshotArtifact::Memory,
             memory_bytes,
+            observe,
         )?;
-        stage.copy_artifact(
+        stage.copy_artifact_observing(
             &mut disk,
             self.config.vm_uid,
             SnapshotArtifact::Disk(0),
             limits.disk_bytes,
+            observe,
         )?;
         self.verify_original_capture(paused, true)?;
         Ok(CapturedFullSnapshot {

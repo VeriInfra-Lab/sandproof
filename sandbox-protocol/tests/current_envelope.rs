@@ -216,3 +216,119 @@ fn renewal_shape_does_not_check_the_business_deadline() {
     };
     assert_eq!(intent.validate(&context), Ok(()));
 }
+
+#[test]
+fn unload_outcomes_are_exclusive_and_old_optional_shape_is_rejected() {
+    use sandproof_protocol::lifecycle::{
+        ContentDigest, CurrentReadyFacts, UnloadObservation, UnloadOutcome, UnloadedFacts,
+    };
+    let (request, _) = original();
+    let running = CurrentReadyFacts {
+        started_at_ms: 1,
+        startup_deadline_ms: 2,
+        observed_at_ms: 3,
+        end_at_ms: 4,
+        max_end_at_ms: 5,
+    };
+    let unloaded = UnloadedFacts {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([1; 32]),
+        material_bytes: 1,
+        started_at_ms: 1,
+        startup_deadline_ms: 2,
+        end_at_ms: 4,
+        max_end_at_ms: 5,
+    };
+    for outcome in [
+        UnloadOutcome::Pending,
+        UnloadOutcome::Unloaded { facts: unloaded },
+        UnloadOutcome::OriginalContinued { facts: running },
+    ] {
+        let observation = UnloadObservation {
+            request: request.clone(),
+            outcome,
+        };
+        assert!(observation.matches_request(&request));
+        let phase = match &observation.outcome {
+            UnloadOutcome::Pending => sandproof_protocol::lifecycle::PublicSessionPhase::Unloading,
+            UnloadOutcome::Unloaded { .. } => {
+                sandproof_protocol::lifecycle::PublicSessionPhase::Unloaded
+            }
+            UnloadOutcome::OriginalContinued { .. } => {
+                sandproof_protocol::lifecycle::PublicSessionPhase::Running
+            }
+        };
+        let view = sandproof_protocol::lifecycle::PublicSessionView {
+            session: request.request.binding.session.clone(),
+            operation: request.request.binding.key.clone(),
+            current_version: request.accepted_version,
+            phase,
+            unload_outcome: Some(observation.outcome.clone()),
+            create_refusal: None,
+        };
+        let public = serde_json::to_value(&view).unwrap();
+        assert!(public.get("unloaded").is_none());
+        assert_eq!(
+            serde_json::from_value::<sandproof_protocol::lifecycle::PublicSessionView>(
+                public.clone()
+            )
+            .unwrap(),
+            view
+        );
+        let mut old_public = public;
+        old_public.as_object_mut().unwrap().remove("unload_outcome");
+        old_public["unloaded"] = serde_json::Value::Null;
+        assert!(
+            serde_json::from_value::<sandproof_protocol::lifecycle::PublicSessionView>(old_public)
+                .is_err()
+        );
+        let encoded = serde_json::to_vec(&observation).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<UnloadObservation>(&encoded).unwrap(),
+            observation
+        );
+        let mut changed = observation.clone();
+        changed.request.accepted_version += 1;
+        assert!(!changed.matches_request(&request));
+        let mut value = serde_json::to_value(&observation).unwrap();
+        value["unloaded"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<UnloadObservation>(value).is_err());
+    }
+    let old = serde_json::json!({"request": request, "unloaded": null});
+    assert!(serde_json::from_value::<UnloadObservation>(old).is_err());
+}
+
+#[test]
+fn original_continued_does_not_accept_expired_or_unstarted_running_facts() {
+    use sandproof_protocol::lifecycle::{CurrentReadyFacts, UnloadObservation, UnloadOutcome};
+    let (request, _) = original();
+    for observed_at_ms in [0, 4, 5] {
+        let observation = UnloadObservation {
+            request: request.clone(),
+            outcome: UnloadOutcome::OriginalContinued {
+                facts: CurrentReadyFacts {
+                    started_at_ms: 1,
+                    startup_deadline_ms: 2,
+                    observed_at_ms,
+                    end_at_ms: 4,
+                    max_end_at_ms: 5,
+                },
+            },
+        };
+        assert!(!observation.matches_request(&request));
+    }
+}
+
+#[test]
+fn lifecycle_outcome_contract_rejects_previous_wire_version() {
+    let (mut intent, context) = original();
+    assert_eq!(PROTOCOL_VERSION, 4);
+    intent.request.binding.protocol_version = 3;
+    assert_eq!(
+        intent.validate(&context),
+        Err(AcceptedIntentError::Request(
+            ValidationError::UnsupportedVersion
+        ))
+    );
+}

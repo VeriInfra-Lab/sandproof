@@ -1,0 +1,962 @@
+{
+  "kind": "actual-create-standard-read-and-rebind-review",
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3"
+  },
+  "providers": {
+    "SandboxModel/Access/Cloning.lean": "4af0b705b4f12df99ed3927249ce3d1c69e085c0fbf967d2561d732a016d598a",
+    "SandboxModel/Foundations/Cloning.lean": "506d1b9f1a2b487bfe821ba8075fbf39a69f9f4a472195f177f828fb90b42090",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/network/SandproofNetwork/FunsExternal.lean": "b17d3cc41e54c25a39ba00b063cda23bc30567a31b896d28def65711e7bcf260",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+  },
+  "templates": {
+    "FunsExternal.lean.in": "ff1df8c22d30902ed5e755c35181b692f8d24c4000604458cd7e3f83d8ba1814",
+    "StandardCreateCloningDelta.lean.in": "9abf9e54e1ac16b86b6c2356c320a929edbf7a8e563a579e768f248040b1d32c",
+    "StandardCreateComplete.lean.in": "a14653ec50b0f957bd5a13fe5f4a7cc80182ac2f6b5d5ebc3ae8a0cfbf75acba",
+    "StandardCreateDefaultWorldCounter.lean.in": "89166e9b7241b839f7b8035597289ccf82d30578f1e27699eab54f0c7bec331c",
+    "StandardCreateFixture.lean.in": "78a15be26b13bdef7b7d4a842d4c5d5a64b6e9f1eb85e40e6cab8ddb7183bfac",
+    "StandardCreateLibrary.lean.in": "f36469453d0aaa0049e579bd11806d5b48433783ae9c7c1b08d117e5c7164d2a",
+    "StandardCreateModel.lean.in": "1ca04332c112e639cb0d9bc61ef9f7af1c25105ce565479d566d0b1e77b684ab",
+    "StandardCreateWitnesses.lean.in": "d8769981591397530c4e17588ad985231c4eadbb70e24d500ea51baecb4d0f7d",
+    "TypesExternal.lean.in": "968be1eb530f48569c916d324596e04f7024882d35f27b636a4cc06a5b921ae8",
+    "native-cases.rs.in": "bd07025f5711493d836a1531c9ee364d5c3f9f4317ea7f604196e7429d927a73",
+    "root.rs.in": "c24b9f36290308e31d49eeb9e3a973a071b640e3dc216ccea1c0aad2a09120b5"
+  },
+  "drivers": {
+    "formal.py": "26e66651c8a033d355998246ec37e0ee48dbb474f7d17a3ec5de68d37e328763",
+    "llbc_metadata.py": "c64f99af21a42cd61dc60ad61bb4f55dd1bd37cadce91909b6499b54180bebf9",
+    "native.py": "ec38dfd9385cc8ade99b88980e8430d16e50d43baa98e56188619a585b44a302",
+    "support.py": "6b3bcf670b61348a02860bb5136a40e2604ac40f47d55fff7d354140fc440ba7"
+  },
+  "rust_library_sources": {
+    "production": {
+      "toolchain": "1.97.0-x86_64-unknown-linux-gnu",
+      "files": {
+        "core/src/cell.rs": "751d7301e865f9557103f9ddfeaa770ef7d0e12b63a4406db8747e874dcec4d8",
+        "core/src/option.rs": "ddba805a572e9cdbae5c1809bec07b36afdabd67a918bbccc7dab4cfe27cf067",
+        "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+        "alloc/src/vec/mod.rs": "93e3f8bad8de514ccd23c84d9c036405f32cf0b24c40e11f69f012b5264ad08e"
+      }
+    },
+    "extraction": {
+      "toolchain": "nightly-2026-08-18-x86_64-unknown-linux-gnu",
+      "files": {
+        "core/src/cell.rs": "f78f2e33f61efb0eb454850214fbc9912f779fadb2f72079d69b2397fc10d027",
+        "core/src/option.rs": "2dab92cdbec51b006307496b24cc757d7b2bc4056eff156d0fff445f66c1d2f5",
+        "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+        "alloc/src/vec/mod.rs": "161d97d3549abee6416787475f3da48780f70a34065b333478e2b1f629fff2e9"
+      }
+    }
+  },
+  "rusqlite_sources": {
+    "src/transaction.rs": "ed5d3f13f057415607efaff56eb4e8a46f985a7f4c1c7b7899063604b6809cfd"
+  },
+  "actual_method_names": [
+    "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.world",
+    "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref",
+    "SandproofStandardCreateRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref",
+    "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world",
+    "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update",
+    "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save"
+  ],
+  "complete_structure_fields": {
+    "sandbox_controller_core.model.World": [
+      "maintenance",
+      "sandboxes",
+      "vms",
+      "filesystems",
+      "snapshots",
+      "net_slots",
+      "applied_file_policies",
+      "worker_fences",
+      "operations",
+      "operation_plans",
+      "resource_indexes",
+      "logical_effects",
+      "effect_keys",
+      "effects",
+      "next_vm_id",
+      "next_slot_id",
+      "next_snapshot_id",
+      "next_manifest_digest",
+      "inflight",
+      "controller_up"
+    ],
+    "sandproof_controller_service.controller.transaction.WorldTransaction": [
+      "transaction",
+      "committed",
+      "candidate",
+      "input_start"
+    ],
+    "sandproof_controller_service.controller.transaction.CommittedWorld": [
+      "value",
+      "data_version"
+    ],
+    "sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment": [
+      "tx",
+      "connection"
+    ],
+    "rusqlite.transaction.Transaction": [
+      "conn",
+      "drop_behavior"
+    ]
+  },
+  "common_templates": [
+    "StandardCreateModel",
+    "StandardCreateLibrary",
+    "StandardCreateFixture",
+    "StandardCreateCloningDelta"
+  ],
+  "variants": {
+    "actual": {
+      "mutation": null,
+      "templates": [
+        "StandardCreateComplete",
+        "StandardCreateWitnesses"
+      ],
+      "seeds": [
+        "StandardCreateWitnesses"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "core.cell.RefCell.borrow",
+          "rust_name": "core::cell::{core::cell::RefCell<T>}::borrow",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.cell.Ref.Insts.CoreOpsDerefDeref.deref",
+          "rust_name": "core::cell::{impl core::ops::deref::Deref<T> for core::cell::Ref<'_0, T>}::deref",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.option.Option.Insts.CoreCloneClone.clone",
+          "rust_name": "core::option::{impl core::clone::Clone for core::option::Option<T>}::clone",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
+          "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.core.option.Option.as_ref",
+          "rust_name": "core::option::{core::option::Option<T>}::as_ref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref",
+          "rust_name": "rusqlite::transaction::{impl core::ops::deref::Deref<rusqlite::Connection> for rusqlite::transaction::Transaction<'_0>}::deref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.capture.CaptureHandoff.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::capture::{impl core::clone::Clone for sandbox_controller_core::capture::CaptureHandoff}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.World.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.world",
+          "rust_name": "sandproof_controller_service::controller::transaction::{sandproof_controller_service::controller::transaction::WorldTransaction<'a>}::world",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::world",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref",
+          "rust_name": "sandproof_controller_service::controller::transaction::{impl core::ops::deref::Deref<rusqlite::transaction::Transaction<'a>> for sandproof_controller_service::controller::transaction::WorldTransaction<'a>}::deref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::begin_lifetime_update",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::begin_inbox_save",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        }
+      ],
+      "external_functions": [
+        "core.cell.RefCell.borrow",
+        "core.cell.Ref.Insts.CoreOpsDerefDeref.deref",
+        "core.option.Option.Insts.CoreCloneClone.clone",
+        "alloc.string.String.Insts.CoreCloneClone.clone"
+      ],
+      "expected_files": [
+        "SandboxModel/Access/Cloning.lean",
+        "SandboxModel/Foundations/Cloning.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateCloningDelta.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateComplete.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateFixture.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateModel.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateWitnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Funs.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Access.capture_CaptureHandoff_clone_exact",
+        "SandboxModel.Stage1Protocol.StandardCreate.standard_world_complete",
+        "SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_complete",
+        "SandboxModel.Stage1Protocol.StandardCreate.begin_save_complete",
+        "SandboxModel.Stage1Protocol.StandardCreate.both_stages_select_same_complete_value",
+        "SandboxModel.Stage1Protocol.StandardCreate.standard_world_expected",
+        "SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_expected",
+        "SandboxModel.Stage1Protocol.StandardCreate.begin_save_expected",
+        "SandboxModel.Stage1Protocol.StandardCreate.full_read_and_rebind_contract",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_candidate_at",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_expected_read",
+        "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_complete",
+        "SandboxModel.Stage1Protocol.StandardCreate.live_transaction_deref",
+        "SandboxModel.Stage1Protocol.StandardCreate.database_connection_deref",
+        "SandboxModel.Stage1Protocol.StandardCreate.unavailable_candidate_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.conflicting_or_overflowed_borrow_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.unavailable_transaction_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_expected",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_world_read",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_lifetime_rebind",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_save_rebind",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_complete_selected_world"
+      ]
+    },
+    "default-world": {
+      "mutation": {
+        "before": "fn world(&mut self) -> core::World {\n        self.tx.world()\n    }",
+        "after": "fn world(&mut self) -> core::World {\n        let _ = self.tx.world();\n        core::World::default()\n    }"
+      },
+      "templates": [
+        "StandardCreateDefaultWorldCounter"
+      ],
+      "seeds": [
+        "StandardCreateDefaultWorldCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "core.cell.RefCell.borrow",
+          "rust_name": "core::cell::{core::cell::RefCell<T>}::borrow",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.cell.Ref.Insts.CoreOpsDerefDeref.deref",
+          "rust_name": "core::cell::{impl core::ops::deref::Deref<T> for core::cell::Ref<'_0, T>}::deref",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.option.Option.Insts.CoreCloneClone.clone",
+          "rust_name": "core::option::{impl core::clone::Clone for core::option::Option<T>}::clone",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCloneClone.clone",
+          "rust_name": "alloc::string::{impl core::clone::Clone for alloc::string::String}::clone",
+          "is_opaque": true,
+          "lean_file": "SandproofStandardCreate/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.core.option.Option.as_ref",
+          "rust_name": "core::option::{core::option::Option<T>}::as_ref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref",
+          "rust_name": "rusqlite::transaction::{impl core::ops::deref::Deref<rusqlite::Connection> for rusqlite::transaction::Transaction<'_0>}::deref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.capture.CaptureHandoff.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::capture::{impl core::clone::Clone for sandbox_controller_core::capture::CaptureHandoff}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SandboxId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::VmId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::FsId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::SnapshotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::NetSlotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.ids.TenantId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::ids::{impl core::clone::Clone for sandbox_controller_core::ids::TenantId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Operation.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Operation}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationResult.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationResult}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Ipv4Cidr}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Protocol}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Endpoint}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetworkPolicy}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::RestoreSource}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::FilePolicyRef}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationInput.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationInput}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationLedgerRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationLedgerRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.retirement.RetainedOperation.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::clone::Clone for sandbox_controller_core::maintenance::retirement::RetainedOperation}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.slots.HostSlotId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.slots.HostSlotRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::slots::{impl core::clone::Clone for sandbox_controller_core::maintenance::slots::HostSlotRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowLimits.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowLimits}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.windows.WindowState.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowState}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.store.Store.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::store::{impl core::clone::Clone for sandbox_controller_core::store::Store<K, V>}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationKey.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationKey}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.maintenance.MaintenanceState.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::maintenance::{impl core::clone::Clone for sandbox_controller_core::maintenance::MaintenanceState}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Phase.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Phase}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.WorkspaceApiAccess.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkspaceApiAccess}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SnapshotManifestRef}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Authority.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Authority}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Command}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectId}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.EffectStatus.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::EffectStatus}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.OperationPlan.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::OperationPlan}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.ResourceIndex.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::ResourceIndex}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.LogicalEffectRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::LogicalEffectRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.SandboxRecord.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::SandboxRecord}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Vm.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Vm}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Filesystem.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Filesystem}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.Snapshot.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::Snapshot}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.NetSlot.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::NetSlot}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.AppliedFilePolicy.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::AppliedFilePolicy}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.WorkerFence.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::WorkerFence}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.World.Insts.CoreCloneClone.clone",
+          "rust_name": "sandbox_controller_core::model::{impl core::clone::Clone for sandbox_controller_core::model::World}::clone",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default",
+          "rust_name": "sandbox_controller_core::store::{impl core::default::Default for sandbox_controller_core::store::Store<K, V>}::default",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default",
+          "rust_name": "sandbox_controller_core::model::{impl core::default::Default for sandbox_controller_core::model::World}::default",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.world",
+          "rust_name": "sandproof_controller_service::controller::transaction::{sandproof_controller_service::controller::transaction::WorldTransaction<'a>}::world",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::world",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref",
+          "rust_name": "sandproof_controller_service::controller::transaction::{impl core::ops::deref::Deref<rusqlite::transaction::Transaction<'a>> for sandproof_controller_service::controller::transaction::WorldTransaction<'a>}::deref",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::begin_lifetime_update",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStandardCreateRust.sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::{impl sandproof_controller_service::controller::lifecycle_inbox::CreateAttachmentEffects for sandproof_controller_service::controller::lifecycle_inbox::StandardCreateAttachment<'_0, '_1>}::begin_inbox_save",
+          "is_opaque": false,
+          "lean_file": "SandproofStandardCreate/Funs.lean"
+        }
+      ],
+      "external_functions": [
+        "core.cell.RefCell.borrow",
+        "core.cell.Ref.Insts.CoreOpsDerefDeref.deref",
+        "core.option.Option.Insts.CoreCloneClone.clone",
+        "alloc.string.String.Insts.CoreCloneClone.clone"
+      ],
+      "expected_files": [
+        "SandboxModel/Access/Cloning.lean",
+        "SandboxModel/Foundations/Cloning.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateCloningDelta.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateDefaultWorldCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateFixture.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/StandardCreateModel.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Funs.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean",
+        "verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Access.capture_CaptureHandoff_clone_exact",
+        "SandboxModel.Stage1Protocol.StandardCreate.default_world_observed",
+        "SandboxModel.Stage1Protocol.StandardCreate.still_preserves_empty_world",
+        "SandboxModel.Stage1Protocol.StandardCreate.same_complete_contract_rejected",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_candidate_at",
+        "SandboxModel.Stage1Protocol.StandardCreate.normal_expected_read",
+        "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_complete",
+        "SandboxModel.Stage1Protocol.StandardCreate.live_transaction_deref",
+        "SandboxModel.Stage1Protocol.StandardCreate.database_connection_deref",
+        "SandboxModel.Stage1Protocol.StandardCreate.unavailable_candidate_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.conflicting_or_overflowed_borrow_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.unavailable_transaction_panics",
+        "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_expected"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 3,
+      "expected_clippy_codes": []
+    },
+    "default-world": {
+      "mutation": {
+        "before": "fn world(&mut self) -> core::World {\n        self.tx.world()\n    }",
+        "after": "fn world(&mut self) -> core::World {\n        let _ = self.tx.world();\n        core::World::default()\n    }"
+      },
+      "expected_failures": [
+        "normal_candidate_full_value"
+      ],
+      "test_count": 3,
+      "expected_clippy_codes": []
+    },
+    "restored": {
+      "mutation": null,
+      "expected_failures": [],
+      "test_count": 3,
+      "expected_clippy_codes": []
+    }
+  },
+  "proof_scope": "Complete conditional values and failure branches of actual ordinary World read and both actual connection field rebindings; no physical transaction/commit/recovery proof.",
+  "provider_conditions": [
+    "fixed finite normal borrow/guard/release interval",
+    "existing normal full-value cloning/library contracts",
+    "actual V5 candidate/live transaction/lease history",
+    "A4 actual Connection identity and coherent SQL history"
+  ],
+  "published_input_fingerprints": {
+    "drivers": {
+      "formal.py": "fee3b98fc874cc88377d4c9e8014c2434cb8a9f3f6529e346a3869fd8bfe4ee7"
+    },
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    },
+    "templates": {
+      "native-cases.rs.in": "7fe3b0b946ee6e7b4803ef9efe8fd4aba79d0a65ca4a45eef643fbc3a6bc1893"
+    }
+  }
+}

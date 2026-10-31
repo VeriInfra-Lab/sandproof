@@ -1,0 +1,67 @@
+import SandproofFoundations.FunsExternal
+import SandproofStage1Request.Types
+
+/-! Reuse of fixed A6 bindings plus an unadopted borrowed-Vec call binding.
+No standard-library or sender-authentication proof is claimed here. -/
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+
+/- Reuse the registered A6 Option/Result contracts. -/
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_some_and callback value state
+
+def core.option.Option.is_none_or {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_none_or callback value state
+
+def core.result.Result.ok {T E : Type} (value : core.result.Result T E) : Result (Option T) :=
+  SandproofFoundationsRust.core.result.Result.ok value
+
+/- A6-network-stdlib String::clone, the exact registered normal-value body.
+Importing Network.Types here collides with generated discriminant declarations. -/
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String :=
+  .ok value
+
+
+/-- Candidate mechanical binding for the original &Vec IntoIterator wrapper.
+The Rust body is self.iter(); actual call adoption remains a V0 obligation. -/
+def SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
+    {T : Type} (_allocator : Type) (value : alloc.vec.Vec T) :
+    Result (core.slice.iter.Iter T) :=
+  core.slice.Slice.iter (alloc.vec.Vec.deref value)
+
+/- Exact existing A6 bodies from SqliteStatements (integer conversion) and TLS
+(slice first), without importing their unrelated generated discriminants.
+Source/model correspondence is a call-site obligation, not a stdlib proof. -/
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+    (value : Std.U64) : Result (core.result.Result Std.I64 core.num.error.TryFromIntError) :=
+  if (value.val : Int) ≤ Aeneas.Std.I64.max then
+    .ok (.Ok (UScalar.hcast .I64 value))
+  else .ok (.Err ())
+
+def core.slice.Slice.first {T : Type} (values : Slice T) : Result (Option T) :=
+  .ok values.val.head?
+
+end SandproofStage1RequestRust

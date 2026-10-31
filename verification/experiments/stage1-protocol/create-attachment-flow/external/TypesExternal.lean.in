@@ -1,0 +1,13 @@
+import SandproofStorage.TypesExternal
+import SandproofBoundedWriter.TypesExternal
+import SandproofFoundations.Types
+
+/- Original registered error-value carriers only; no SQL/IO call is modelled here. -/
+namespace SandproofStage1RequestRust
+abbrev alloc.collections.btree.map.BTreeMap (K V A : Type) :=
+  SandproofStorageRust.alloc.collections.btree.map.BTreeMap K V A
+abbrev core.io.error.Error := SandproofBoundedWriterRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofBoundedWriterRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofBoundedWriterRust.serde_json.error.Error
+abbrev sandproof_protocol.ContractError := SandproofFoundationsRust.sandproof_protocol.ContractError
+end SandproofStage1RequestRust

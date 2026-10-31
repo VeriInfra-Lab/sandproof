@@ -6,6 +6,18 @@ defaultTargets = ["SandboxModel"]
 name = "SandboxModel"
 
 [[lean_lib]]
+name = "CaptureCaller"
+srcDir = "verification/aeneas/capture-handoff/caller"
+
+[[lean_lib]]
+name = "PauseStopWrong"
+srcDir = "verification/aeneas/pause-publication/wrong-stop"
+
+[[lean_lib]]
+name = "PauseHandoffWrong"
+srcDir = "verification/aeneas/pause-stop/wrong-permit"
+
+[[lean_lib]]
 name = "SandproofFoundations"
 srcDir = "verification/aeneas/foundations"
 

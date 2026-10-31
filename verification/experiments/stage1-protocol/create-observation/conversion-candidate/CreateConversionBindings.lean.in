@@ -1,0 +1,110 @@
+import SandboxModel.Lifecycle.Protocol.ReadyFactBindings
+/-! Isolated V0 review candidate over the actual generated converter.
+The type interpretation is not approved or adopted globally. The single-field
+Rust representation below is source-reviewed; the roundtrip lemmas prove this
+specified relation, not the correctness of the Charon/Aeneas translation.
+No statement here proves the complete Create observation guard. -/
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open SandboxModel.Stage1Protocol
+namespace SandboxModel.Stage1Protocol.CreateConversion
+
+theorem actual_result (value : I64) :
+    U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value =
+      .ok (if 0 ≤ value.val then .Ok (IScalar.hcast .U64 value)
+        else .Err core.num.error.IntErrorKind.NegOverflow) := by
+  by_cases nonnegative : 0 ≤ value.val <;>
+    simp [U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from, lift, nonnegative]
+
+theorem succeeds_iff (value : I64) :
+    (∃ converted, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value = .ok (.Ok converted)) ↔
+      0 ≤ value.val := by
+  by_cases nonnegative : 0 ≤ value.val <;> simp [actual_result, nonnegative]
+
+theorem failure_iff (value : I64) :
+    U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value =
+      .ok (.Err core.num.error.IntErrorKind.NegOverflow) ↔ value.val < 0 := by
+  by_cases nonnegative : 0 ≤ value.val
+  · simp [actual_result, nonnegative, not_lt.mpr nonnegative]
+  · simp [actual_result, nonnegative, lt_of_not_ge nonnegative]
+
+theorem success_value (value : I64) (converted : U64)
+    (accepted : U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value = .ok (.Ok converted)) :
+    (converted.val : Int) = value.val := by
+  have nonnegative := (succeeds_iff value).mp ⟨converted, accepted⟩
+  have exact_cast : IScalar.hcast .U64 value = converted := by
+    simpa [actual_result, nonnegative] using accepted
+  rw [← exact_cast]
+  exact ReadyFacts.cast_nonnegative_exact value nonnegative
+
+/- A source-reviewed one-field Rust representation, not a second conversion algorithm. -/
+structure RustErrorFields where
+  kind : core.num.error.IntErrorKind
+
+def toLeanError (error : RustErrorFields) :
+    SandproofStage1RequestRust.core.num.error.TryFromIntError := error.kind
+
+def fromLeanError (error : SandproofStage1RequestRust.core.num.error.TryFromIntError) :
+    RustErrorFields := ⟨error⟩
+
+theorem error_fields_roundtrip (error : RustErrorFields) :
+    fromLeanError (toLeanError error) = error := by rfl
+
+theorem error_value_roundtrip (error : SandproofStage1RequestRust.core.num.error.TryFromIntError) :
+    toLeanError (fromLeanError error) = error := by rfl
+
+theorem error_kind_preserved (error : RustErrorFields) :
+    (fromLeanError (toLeanError error)).kind = error.kind := by rfl
+
+theorem failure_payload_iff (value : I64)
+    (error : SandproofStage1RequestRust.core.num.error.TryFromIntError) :
+    U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value = .ok (.Err error) ↔
+      value.val < 0 ∧ error = core.num.error.IntErrorKind.NegOverflow := by
+  by_cases nonnegative : 0 ≤ value.val
+  · simp [actual_result, nonnegative, not_lt.mpr nonnegative]
+  · simp [actual_result, nonnegative, lt_of_not_ge nonnegative, eq_comm]
+
+theorem never_panics (value : I64) :
+    ∃ result, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value = .ok result := by
+  rw [actual_result]
+  exact ⟨_, rfl⟩
+
+def eraseError {T : Type} (result : core.result.Result T SandproofStage1RequestRust.core.num.error.TryFromIntError) :
+    core.result.Result T Unit :=
+  match result with
+  | .Ok value => .Ok value
+  | .Err _ => .Err ()
+
+theorem erase_preserves_actual_is_err {T : Type}
+    (result : core.result.Result T SandproofStage1RequestRust.core.num.error.TryFromIntError) :
+    SandproofStage1RequestRust.core.result.Result.is_err (eraseError result) =
+      SandproofStage1RequestRust.core.result.Result.is_err result := by
+  cases result <;> rfl
+
+theorem erasure_does_not_preserve_kind :
+    eraseError (core.result.Result.Err core.num.error.IntErrorKind.NegOverflow : core.result.Result U64 _) =
+      eraseError (.Err core.num.error.IntErrorKind.PosOverflow) ∧
+    core.num.error.IntErrorKind.NegOverflow ≠ core.num.error.IntErrorKind.PosOverflow := by
+  simp [eraseError]
+
+theorem zero_negative_boundaries :
+    U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from 0#i64 = .ok (.Ok 0#u64) ∧
+    U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from ((-1)#i64) =
+      .ok (.Err core.num.error.IntErrorKind.NegOverflow) := by
+  simp [actual_result, IScalar.hcast]
+  rfl
+
+end SandboxModel.Stage1Protocol.CreateConversion
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.actual_result
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.succeeds_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.failure_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.erase_preserves_actual_is_err
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.erasure_does_not_preserve_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.zero_negative_boundaries
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.error_fields_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.error_value_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.error_kind_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.failure_payload_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateConversion.never_panics

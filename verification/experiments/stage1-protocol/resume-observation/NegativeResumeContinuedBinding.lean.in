@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.ResumeValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.resume sandproof_protocol.lifecycle.observation
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Validation
+open SandboxModel.Stage1Protocol.ReadyFactValues SandboxModel.Stage1Protocol.ResumeValues
+namespace SandboxModel.Stage1Protocol.NegativeResumeContinuedBinding
+
+theorem actual_mutant_accepts : resume_matches_request (observation wrongUnloadSource .StateLost) resumeIntent = .ok true := by
+  have checked1 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  have checked2 : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [resume_matches_request, ResumeObservation.matches_request,
+    observation, wrongUnloadSource, unloadIntent,
+    currentIntent, resumeIntent, EnvelopeValues.intent, EnvelopeValues.center, EnvelopeValues.node,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.accepted_eq, Replay.center_eq, Replay.retention_eq, Replay.node_eq, Replay.key_eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    validate_body_refines, expectedResult, expectationOK, AcceptedLifecycleIntent.accepted_version_for_request, Library.option_u64_eq,
+    RetentionBinding.valid_for,
+    CurrentResumeReadiness.Insts.CoreCmpPartialEqCurrentResumeReadiness.eq,
+    CurrentResumeReadiness.read_discriminant, sandproof_protocol.lifecycle.observation.continued_request,
+    IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq, checked1, checked2]
+
+theorem violates_same_full_contract : ¬ ResumeBinding.FullContract resume_matches_request := by
+  classical
+  intro contract
+  have exact_result := contract (observation wrongUnloadSource .StateLost) resumeIntent
+  rw [actual_mutant_accepts] at exact_result
+  have rejected := counterexamples_outside_contract.2.2.1
+  simp [rejected] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeResumeContinuedBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeResumeContinuedBinding.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeResumeContinuedBinding.violates_same_full_contract

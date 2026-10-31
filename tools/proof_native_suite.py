@@ -1,4 +1,4 @@
-"""Run all proof-batch native obligations on ning; consume them on a6000."""
+"""Run proof-batch native obligations on the test host for the proof host."""
 import argparse
 import importlib.util
 import json
@@ -15,7 +15,9 @@ import stat
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
-    contract_inputs, source_archive_inputs, NATIVE_SCHEMA)
+    contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
+    check_native_scope, check_native_components)
+from tools.ci_retention import NativeBuildRun
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
                          'check_json_identifiers_negative.py',
@@ -29,7 +31,7 @@ def load(name, path):
     return module
 
 
-def runtime():
+def runtime(*, temporary_parent=None):
     result = {}
     for name, arguments in [('rustc', ['-vV']), ('cargo', ['-V']),
                             ('rustfmt', ['--version']), ('clippy-driver', ['--version']),
@@ -51,6 +53,8 @@ def runtime():
     result['platform'] = sys.platform
     result['uid'] = os.getuid()
     result['gid'] = os.getgid()
+    if temporary_parent is not None:
+        result['temporary_parent'] = temporary_parent_identity(temporary_parent)
     cargo_home=Path(os.environ.get('CARGO_HOME',str(Path.home()/'.cargo')))
     result['registry']=tree_digest(cargo_home/'registry/src')
     result['cargo_config']={str(p):sha(p) for p in
@@ -86,34 +90,66 @@ def trusted_checkout(root):
             raise ValueError('untrusted checkout ancestry; prepare a private checkout with umask 077: '+str(path))
 
 
-def run_suite(output):
+
+def temporary_parent_identity(parent):
+    info = parent.lstat()
+    return dict(path=str(parent), device=info.st_dev, inode=info.st_ino,
+                uid=info.st_uid, gid=info.st_gid, mode=oct(info.st_mode & 0o7777))
+
+
+def private_temporary_root():
+    """Keep the configured filesystem and the original trusted-parent policy."""
+    configured = os.environ.get('TMPDIR')
+    parent = Path('/tmp') if configured is None else Path(configured)
+    if configured == '' or not parent.is_absolute() or '..' in parent.parts:
+        raise ValueError('native temporary parent must be an absolute nonempty path')
+    for path in (parent, *parent.parents):
+        info = path.lstat()
+        writes_ok = not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.getuid()) or not writes_ok):
+            raise ValueError('untrusted native temporary ancestry: ' + str(path))
+    if parent == Path('/tmp'):
+        info = parent.lstat()
+        if info.st_uid != 0 or not info.st_mode & stat.S_ISVTX:
+            raise ValueError('native fixture requires the normal root-owned sticky /tmp')
+    return Path(tempfile.mkdtemp(prefix='sandproof-native-', dir=parent))
+
+
+def run_suite(output, *, scope='all'):
+    check_native_scope(scope)
     output.mkdir(parents=True,exist_ok=True,mode=0o700)
     with locked(output/'batch-lock'):
-        return run_locked_suite(output)
+        return run_locked_suite(output, scope=scope)
 
 
-def run_locked_suite(output):
+def stage1_source_admission(scope, *, prepare=False):
+    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery'):
+        registered = load('stage1_source_only_admission',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        (registered.prepare_create_sources if prepare else registered.check_create_sources)(ROOT)
+
+
+def run_locked_suite(output, *, scope='all'):
+    check_native_scope(scope)
     trusted_checkout(ROOT)
     os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
-    # A permissive caller TMPDIR would cause genuine protected-file rejection.
-    # Use a private child of Linux's root-owned sticky /tmp; no shared modes or
-    # production checks are changed. Keep its identity in the private evidence.
-    system_tmp=Path('/tmp');info=system_tmp.lstat()
-    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0
-            or not info.st_mode & stat.S_ISVTX):
-        raise ValueError('native fixture requires the normal root-owned sticky /tmp')
-    private_tmp=Path(tempfile.mkdtemp(prefix='sandproof-native-',dir=system_tmp))
+    # A private child keeps protected-file tests strict while retaining the
+    # operator's configured filesystem (the CoW cases require qualified XFS).
+    private_tmp = private_temporary_root()
     os.environ['TMPDIR']=str(private_tmp);tempfile.tempdir=None
-    write_json(output/'temporary-root.json',dict(path=str(private_tmp),uid=private_tmp.stat().st_uid,
-                                               mode=oct(private_tmp.stat().st_mode&0o777)))
+    write_json(output/'temporary-root.json',dict(path=str(private_tmp),parent=str(private_tmp.parent),
+        uid=private_tmp.stat().st_uid,mode=oct(private_tmp.stat().st_mode&0o777)))
     os.environ['SANDPROOF_NATIVE_EVIDENCE'] = str(output)
     os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'native'
-    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+    stage1_source_admission(scope, prepare=True)
+    initial = dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
                    contracts=contract_inputs(ROOT),source_archives=source_archive_inputs())
     write_json(output / 'runtime.json', initial['runtime'])
     started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix='run-', dir=output))
+    builds = NativeBuildRun(work, subprocess.check_output(
+        ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
     previous=work/'previous-complete.json'
     if (output/'complete.json').exists():
         previous.write_bytes((output/'complete.json').read_bytes())
@@ -125,7 +161,19 @@ def run_locked_suite(output):
         subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
-    native_case('functional', ROOT, work / 'functional', lambda: functional(work))
+    native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
+    if scope in ('stage1-protocol', 'stage1-create-delivery'):
+        run_stage1_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'capture-caller':
+        run_capture_caller_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'pause-publication':
+        run_pause_publication_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'pause-stop':
+        run_pause_stop_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # These are the exact commands previously embedded in proof shell entries.
     # Identical commands/inputs execute once even when several modules ask.
     for cmd in [['cargo','fmt','--all','--','--check'],['cargo','test','--workspace'],
@@ -161,10 +209,10 @@ def run_locked_suite(output):
         call(['verification/experiments/protected-directory/test_checks.py'])
         call(['verification/experiments/protected-directory/native.py','--archive',library_archive,'--output',target])
     native_case('protected-directory',ROOT,target,protected_directory_native)
-    target = work / 'stage1-protocol'
-    native_case('stage1-protocol', ROOT, target, lambda p=target:
-        call(['verification/experiments/stage1-protocol/component.py',
-              '--native-only', '--output', p]))
+    run_capture_caller_native(work)
+    run_pause_publication_native(work)
+    run_pause_stop_native(work)
+    run_stage1_native(work)
     target = work / 'schema-domains'
     native_case('schema-domains', ROOT, target, lambda p=target:
         call(['verification/experiments/schema-domains/native.py', '--output', p]))
@@ -205,11 +253,55 @@ def run_locked_suite(output):
             source, env=dict(os.environ, RUST_TEST_THREADS='1'))
     from tools.tls_pin_reproduction import reproduce
     reproduce(ROOT, ROOT / '.tools', work / 'tls', native_only=True)
-    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(),repository=repository_inputs(ROOT),
+    return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+
+
+def run_capture_caller_native(work, *, scope='all'):
+    target = work / 'capture-caller'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_capture_caller_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('capture-caller', ROOT, target, original_component, scope=scope)
+
+
+def run_pause_publication_native(work, *, scope='all'):
+    target = work / 'pause-publication'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_pause_publication_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('pause-publication', ROOT, target, original_component, scope=scope)
+
+
+def run_pause_stop_native(work, *, scope='all'):
+    target = work / 'pause-stop'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_pause_stop_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('pause-stop', ROOT, target, original_component, scope=scope)
+
+
+def run_stage1_native(work, *, scope='all'):
+    target = work / 'stage1-protocol'
+    def retained():
+        subprocess.run([sys.executable,
+            'verification/experiments/stage1-protocol/component.py',
+            '--native-only', '--output', str(target)], cwd=ROOT, check=True)
+    if scope != 'stage1-create-delivery':
+        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
+    registered = load('stage1_registered_components',
+                      ROOT / 'verification/experiments/stage1-protocol/registered.py')
+    registered.run_native(ROOT, work / 'stage1-v3',
+        profile='create-delivery' if scope == 'stage1-create-delivery' else 'full', scope=scope)
+
+
+def publish_suite(output, work, initial, started, *, scope='all', builds=None):
+    check_native_scope(scope)
+    stage1_source_admission(scope)
+    if dict(rust=rust_inputs(ROOT), rules=rules(), runtime=runtime(temporary_parent=Path(os.environ['TMPDIR']).parent),repository=repository_inputs(ROOT),
             contracts=contract_inputs(ROOT),source_archives=source_archive_inputs()) != initial:
         raise ValueError('source, rules or native tools changed during the suite')
     trusted_checkout(ROOT)
-    commands={};uses=[]
+    commands={};uses=[];keys={}
     for line in (work/'commands-used.jsonl').read_text().splitlines():
         row=json.loads(line);identity=row['identity'];value=row['sha256']
         uses.append(row)
@@ -220,12 +312,27 @@ def run_locked_suite(output):
         if sha(entry/'receipt.json')!=value or load_success(entry,receipt['key']) is None:
             raise ValueError('native evidence lost before complete publication')
         commands[identity]=value
-    result = dict(schema=NATIVE_SCHEMA, complete=True, exit_code=0, rules=initial['rules'],
+        keys[identity]=receipt['key']
+    check_native_components(keys.values(), scope=scope)
+    result = dict(schema=NATIVE_SCHEMA, scope=scope, scope_complete=True,
+                  full_native_suite_complete=scope=='all',
+                  complete=True, exit_code=0, rules=initial['rules'],
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
                   contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
+    if scope == 'stage1-create-delivery':
+        registered = load('stage1_create_native_definition',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        result.update(profile='create-delivery', create_definition=registered.create_profile(ROOT))
+    # Keep the original completion plus a precise target inventory. Publication
+    # never moves/deletes build bytes or guesses resource cleanup from exit 0.
+    original = work / 'native-complete.json'
+    write_json(original, result)
+    if builds is not None:
+        builds.finish(original)
     write_json(output / 'complete.json', result)
-    print(json.dumps(dict(native_suite_complete=True, seconds=round(time.monotonic()-started,3),
+    print(json.dumps(dict(scope=scope, scope_complete=True, full_native_suite_complete=scope=='all',
+                         native_suite_complete=scope=='all', seconds=round(time.monotonic()-started,3),
                          commands=len(commands), evidence=str(output))))
 
 
@@ -242,13 +349,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='mode', required=True)
     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol'])
+    run.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
+    registered = load('stage1_registered_components',
+                      ROOT / 'verification/experiments/stage1-protocol/registered.py')
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol', *registered.native_labels()])
+    req.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.mode == 'run':
-        run_suite(args.output.resolve())
+        run_suite(args.output.resolve(), scope=args.scope)
     elif args.mode == 'require':
-        native_case(args.case, ROOT, None)
+        native_case(args.case, ROOT, None, scope=args.scope)
     else:
         if not args.command:
             parser.error('missing native command')

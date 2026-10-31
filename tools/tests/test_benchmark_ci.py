@@ -337,7 +337,7 @@ class BenchmarkCITests(unittest.TestCase):
         self.assertEqual(result['fixture_sha256'], 'e'*64)
         self.assertFalse(result['original_oracle_verifier'])
         self.assertFalse(result['original_environment'])
-        for field, value in (('disk_budget_bytes', 201 * 1024**3), ('activation_bytes', 200 * 1024**3 + 1),
+        for field, value in (('disk_budget_bytes', 385 * 1024**3), ('activation_bytes', 200 * 1024**3 + 1),
                              ('activation_bytes', True), ('pool_roles', ['runtime','builder']),
                              ('builder_dispatched', True), ('public_build', True)):
             changed = copy.deepcopy(original)
@@ -345,6 +345,7 @@ class BenchmarkCITests(unittest.TestCase):
             (self.root / 'report.json').write_text(json.dumps(changed))
             with self.subTest(physical_field=field), self.assertRaises(ValueError):
                 self.batch_result(self.root, **args)
+
         changed = copy.deepcopy(original)
         del changed['prepared_ci_physical']
         (self.root / 'report.json').write_text(json.dumps(changed))
@@ -381,6 +382,19 @@ class BenchmarkCITests(unittest.TestCase):
         (self.root / 'report.json').write_text(json.dumps(original))
         with self.assertRaises(ValueError):
             self.batch_result(self.root, **args)
+
+    def test_explicit_prepared_ceiling_accepts_complete_capture_envelope_but_not_old_200_limit(self):
+        original = self.prepared_report()
+        original['prepared_ci_physical'].update(disk_budget_bytes=384*1024**3,
+                                                activation_bytes=358*1024**3)
+        (self.root / 'report.json').write_text(json.dumps(original))
+        self.assertTrue(self.batch_result(self.root, **self.prepared_args())['passed'])
+        for budget, actual in ((200*1024**3,358*1024**3),(384*1024**3,384*1024**3+1)):
+            changed=copy.deepcopy(original)
+            changed['prepared_ci_physical'].update(disk_budget_bytes=budget,activation_bytes=actual)
+            (self.root / 'report.json').write_text(json.dumps(changed))
+            with self.subTest(budget=budget,actual=actual),self.assertRaises(ValueError):
+                self.batch_result(self.root, **self.prepared_args())
 
     def test_prepared_ci_failure_remains_failed_and_does_not_waive_template_identity(self):
         report = self.prepared_report()
@@ -575,13 +589,40 @@ class BenchmarkCITests(unittest.TestCase):
             path.chmod(0o600)
             config['host_assets'][str(path)] = file_digest(path)
         config['prepared_ci_disk_budget_bytes'] = 200 * 1024**3
+        config['physical_inode_budget'] = 131072
         for key in ('kernel','rootfs','firecracker','jailer','policy_template','budget_profile','ci_fixtures','uv','cargo'):
             path = self.root / (key + '.json')
             path.write_text('{}')
             path.chmod(0o600)
             config[key] = str(path)
             config['host_assets'][str(path)] = file_digest(path)
+        project=dict(project_id=63801,hard_bytes=128*1024**3,hard_inodes=4096)
+        for key in ('chattr','lsattr'):
+            path=self.root/(key+'-capture-tool')
+            path.write_bytes(('controlled-'+key).encode())
+            path.chmod(0o600)
+            checksum=file_digest(path)
+            project[key]=dict(path=str(path),sha256=list(bytes.fromhex(checksum)))
+            config['host_assets'][str(path)]=checksum
+        profile=self.root/'capture-profile.json'
+        profile.write_text(json.dumps(dict(schema_version=1,hosts=[dict(state_copy_bytes=1_000_000,
+            memory_copy_bytes=512*1024**2,disk_copy_bytes=4*1024**3,api_timeout_ms=1000,
+            worker_timeout_ms=2000,material_project=project)])))
+        profile.chmod(0o600)
+        config['capture_profile']=str(profile)
+        config['host_assets'][str(profile)]=file_digest(profile)
         return config
+
+    def capture_hosts(self, config, count):
+        from tools.system_acceptance import digest as file_digest
+        path=Path(config['capture_profile'])
+        profile=json.loads(path.read_text())
+        base=profile['hosts'][0]
+        profile['hosts']=[copy.deepcopy(base) for _ in range(count)]
+        for index,host in enumerate(profile['hosts']):
+            host['material_project']['project_id']+=index
+        path.write_text(json.dumps(profile))
+        config['host_assets'][str(path)]=file_digest(path)
 
     def test_prepared_host_manifest_is_private_fingerprinted_and_mode_is_explicit(self):
         config = self.host_config()
@@ -593,7 +634,8 @@ class BenchmarkCITests(unittest.TestCase):
                             {key:value for key,value in config.items() if key != 'dk_checkpoint_tail_inputs'},
                             dict(config, prepared_ci_disk_budget_bytes=None),
                             dict(config, prepared_ci_disk_budget_bytes=True),
-                            dict(config, prepared_ci_disk_budget_bytes=201 * 1024**3),
+                            dict(config, prepared_ci_disk_budget_bytes=385 * 1024**3),
+                            *[dict(config, physical_inode_budget=value) for value in (None,True,0,2**32)],
                             dict(config, dataset='terminal-bench@2.1'),
                             dict(config, check_name='E2E / terminal-bench-2.0-compat'),
                             dict(config, host_assets={k:v for k,v in config['host_assets'].items()
@@ -610,6 +652,7 @@ class BenchmarkCITests(unittest.TestCase):
                 ci.validate_host_inputs(config)
         old = dict(config, source_kind='oci', proxy_binary=config['kernel'])
         old.pop('ci_fixtures')
+        self.capture_hosts(old,2)
         with patch.object(ci, 'trusted_path', side_effect=lambda path:path), patch.object(ci, 'redis_material'):
             ci.validate_host_inputs(old)
 
@@ -677,6 +720,7 @@ class BenchmarkCITests(unittest.TestCase):
         config = self.host_config()
         config.update(source_kind='dockerfile', proxy_binary='/approved/proxy')
         config.pop('ci_fixtures')
+        self.capture_hosts(config,2)
         for name in ('host-runtime.der', 'host-builder.der'):
             leaf = Path(config['tls_material']) / name
             leaf.write_bytes(b'the-same-invalid-node-identity')
@@ -705,9 +749,11 @@ class BenchmarkCITests(unittest.TestCase):
             build_timeout_sec=600, agent_timeout_sec=900, verifier_timeout_sec=900)} for name in names},
             batches=[batch])
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}), \
-                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest):
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare(batch, 0)
         args = batch['command']
+        preflight.assert_called_once_with(args, config)
         self.assertEqual(args[args.index('--ci-fixtures') + 1], config['ci_fixtures'])
         self.assertEqual(args[args.index('--source-kind') + 1], 'prepared-ci')
         self.assertEqual(args[args.index('--prepared-ci-disk-budget-bytes') + 1], str(200 * 1024**3))
@@ -725,12 +771,15 @@ class BenchmarkCITests(unittest.TestCase):
         # The optional mode must not strip the original proxy/build interface.
         old = dict(config, source_kind='oci', proxy_binary='/fixed-proxy', proxy_sha256='f'*64)
         old.pop('ci_fixtures')
+        self.capture_hosts(old,2)
         supervisor.config = old
         supervisor.state['id'] = 'c'*64
         old_batch = dict(names=names, oracle_mode='original', phase='new')
         with patch.object(ci, 'validate_host_inputs'), patch.object(ci, 'instantiate_policy', return_value={}), \
-                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest):
+                patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare(old_batch, 0)
+        preflight.assert_called_once_with(old_batch['command'], old)
         self.assertNotIn('--ci-fixtures', old_batch['command'])
         self.assertNotIn('--prepared-ci-disk-budget-bytes', old_batch['command'])
         self.assertIn('--proxy-binary', old_batch['command'])
@@ -1283,12 +1332,14 @@ class BenchmarkCITests(unittest.TestCase):
         with patch.object(ci, 'validate_host_inputs'), \
                 patch.object(supervisor, 'verified_candidate', return_value=self.services_manifest), \
                 patch.object(ci, 'trusted_path', side_effect=lambda path: path), \
-                patch.object(ci, 'launch') as launch:
+                patch.object(ci, 'launch') as launch, \
+                patch('tools.ci_e2e_prepare.check_candidate_arguments') as preflight:
             supervisor.prepare_dk()
         launch.assert_not_called()
         saved = json.loads((self.root / 'state.json').read_text())['dk']
         self.assertEqual(saved['phase'], 'launching')
         command = saved['command']
+        preflight.assert_called_once_with(command, supervisor.config)
         self.assertEqual(command[0], str(self.root / 'benchmarks/.venv/bin/python'))
         for flag, value in (('--cgroup-parent', supervisor.config['cgroup_parent']),
                             ('--service-cgroup-parent', supervisor.config['service_cgroup_parent']),

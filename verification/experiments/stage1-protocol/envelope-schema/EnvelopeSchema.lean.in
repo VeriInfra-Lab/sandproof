@@ -1,0 +1,265 @@
+import SandboxModel.Boundaries.JsonRequest.Encoding
+import SandboxModel.Lifecycle.Protocol.Accepted
+import SandboxModel.Lifecycle.Protocol.Recorded
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.internal.lifecycle
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.EnvelopeSchema
+open SandboxModel.Boundaries.JsonRequest (JsonOutput)
+
+/-! This is the exact field representation of the current standard derives,
+not a parser, a second protocol model, or a claim about all accepted JSON.+It uses the actual generated value types and the existing shared output syntax. -/
+
+def nodeFields (node : NodeIdentity) : JsonOutput :=
+  SandboxModel.Boundaries.JsonRequest.nodeOutput ⟨node.deployment_id, node.node_id, node.node_generation⟩
+
+def createFields (create : CreateBinding) : JsonOutput :=
+  SandboxModel.Boundaries.JsonRequest.createOutput ⟨create.template_revision, create.template_digest,
+    ⟨create.resources.instances, create.resources.cpu, create.resources.memory_bytes,
+      create.resources.disk_bytes⟩, create.options, create.startup_deadline_ms,
+    create.timeout_ms, create.max_lifetime_ms⟩
+
+def keyFields (key : OperationKey) : JsonOutput := .object [
+  ("deployment", .text key.deployment), ("owner", .text key.owner),
+  ("window", .unsigned key.window.val), ("sequence", .unsigned key.sequence.val)]
+
+def expectedFields : ExpectedSession → JsonOutput
+  | .Absent => .object [("state", .text "absent")]
+  | .Version version => .object [("state", .text "version"), ("version", .unsigned version.val)]
+
+def bindingFields (binding : OperationBinding) : JsonOutput := .object [
+  ("protocol_version", .unsigned binding.protocol_version.val),
+  ("node", nodeFields binding.node), ("session", .text binding.session),
+  ("key", keyFields binding.key), ("expected", expectedFields binding.expected)]
+
+def operationFields : LifecycleOperation → JsonOutput
+  | .Create create target => .object [("kind", .text "create"),
+      ("create", createFields create), ("target_incarnation", .unsigned target.val)]
+  | .Unload source capture => .object [("kind", .text "unload"),
+      ("source_incarnation", .unsigned source.val), ("capture", .unsigned capture.val)]
+  | .Resume source capture target digest => .object [("kind", .text "resume"),
+      ("source_incarnation", .unsigned source.val), ("capture", .unsigned capture.val),
+      ("target_incarnation", .unsigned target.val),
+      ("manifest_digest", .array (digest.val.map (fun byte => .unsigned byte.val)))]
+  | .Renew incarnation endAt extendOnly => .object [("kind", .text "renew"),
+      ("incarnation", .unsigned incarnation.val), ("end_at_ms", .signed endAt.val),
+      ("extend_only", .boolean extendOnly)]
+  | .Destroy => .object [("kind", .text "destroy")]
+
+def requestFields (request : LifecycleRequest) : JsonOutput := .object [
+  ("binding", bindingFields request.binding), ("operation", operationFields request.operation)]
+
+def centerFields (center : CenterIdentity) : JsonOutput := .object [
+  ("deployment", .text center.deployment), ("center", .text center.center)]
+
+def retentionFields (retention : RetentionBinding) : JsonOutput := .object [
+  ("slot", .unsigned retention.slot.val), ("window", .unsigned retention.window.val)]
+
+def acceptedFields (intent : AcceptedLifecycleIntent) : JsonOutput := .object [
+  ("request", requestFields intent.request), ("accepted_version", .unsigned intent.accepted_version.val),
+  ("center", centerFields intent.center), ("retention", retentionFields intent.retention)]
+
+def recordedFields (recorded : RecordedLifecycleIntent) : JsonOutput := .object [
+  ("intent", acceptedFields recorded.intent),
+  ("current_session_version", .unsigned recorded.current_session_version.val),
+  ("current", .boolean recorded.current), ("terminal", .boolean recorded.terminal)]
+
+theorem unsigned_value_eq_iff {ty : UScalarTy} (a b : UScalar ty) :
+    a.val = b.val ↔ a = b := ⟨UScalar.eq_of_val_eq, congrArg UScalar.val⟩
+
+theorem signed_value_eq_iff {ty : IScalarTy} (a b : IScalar ty) :
+    a.val = b.val ↔ a = b := ⟨IScalar.eq_of_val_eq, congrArg IScalar.val⟩
+
+theorem byte_fields_injective :
+    Function.Injective (List.map (fun byte : U8 => JsonOutput.unsigned byte.val)) := by
+  apply Function.Injective.list_map
+  intro left right same
+  exact UScalar.eq_of_val_eq (JsonOutput.unsigned.inj same)
+
+theorem byte_fields_eq_iff (a b : List U8) :
+    a.map (fun byte => JsonOutput.unsigned byte.val) =
+      b.map (fun byte => JsonOutput.unsigned byte.val) ↔ a = b :=
+  ⟨fun same => byte_fields_injective same, congrArg _⟩
+
+theorem node_fields_eq_iff (a b : NodeIdentity) : nodeFields a = nodeFields b ↔ a = b := by
+  cases a; cases b
+  simp [nodeFields, SandboxModel.Boundaries.JsonRequest.nodeOutput, unsigned_value_eq_iff]
+
+theorem create_fields_eq_iff (a b : CreateBinding) : createFields a = createFields b ↔ a = b := by
+  cases a with
+  | mk ar ad ares ao ast atl am =>
+    cases b with
+    | mk br bd bres bo bst bt bm =>
+      cases ares; cases bres
+      simp [createFields, SandboxModel.Boundaries.JsonRequest.createOutput, SandboxModel.Boundaries.JsonRequest.resourceOutput, unsigned_value_eq_iff,
+        byte_fields_eq_iff, ← Array.eq_iff, ← alloc.vec.Vec.eq_iff]
+
+theorem key_fields_eq_iff (a b : OperationKey) : keyFields a = keyFields b ↔ a = b := by
+  cases a; cases b
+  simp [keyFields, unsigned_value_eq_iff]
+
+theorem expected_fields_eq_iff (a b : ExpectedSession) : expectedFields a = expectedFields b ↔ a = b := by
+  cases a <;> cases b <;> simp [expectedFields, unsigned_value_eq_iff]
+
+theorem binding_fields_eq_iff (a b : OperationBinding) : bindingFields a = bindingFields b ↔ a = b := by
+  cases a; cases b
+  simp [bindingFields, node_fields_eq_iff, key_fields_eq_iff, expected_fields_eq_iff,
+    unsigned_value_eq_iff]
+
+theorem operation_fields_eq_iff (a b : LifecycleOperation) :
+    operationFields a = operationFields b ↔ a = b := by
+  cases a <;> cases b <;>
+    simp [operationFields, create_fields_eq_iff, unsigned_value_eq_iff, signed_value_eq_iff,
+      byte_fields_eq_iff, ← Array.eq_iff]
+
+theorem request_fields_eq_iff (a b : LifecycleRequest) : requestFields a = requestFields b ↔ a = b := by
+  cases a; cases b
+  simp [requestFields, binding_fields_eq_iff, operation_fields_eq_iff]
+
+theorem center_fields_eq_iff (a b : CenterIdentity) : centerFields a = centerFields b ↔ a = b := by
+  cases a; cases b
+  simp [centerFields]
+
+theorem retention_fields_eq_iff (a b : RetentionBinding) :
+    retentionFields a = retentionFields b ↔ a = b := by
+  cases a; cases b
+  simp [retentionFields, unsigned_value_eq_iff]
+
+theorem accepted_fields_eq_iff (a b : AcceptedLifecycleIntent) :
+    acceptedFields a = acceptedFields b ↔ a = b := by
+  cases a; cases b
+  simp [acceptedFields, request_fields_eq_iff, center_fields_eq_iff, retention_fields_eq_iff,
+    unsigned_value_eq_iff]
+
+theorem recorded_fields_eq_iff (a b : RecordedLifecycleIntent) :
+    recordedFields a = recordedFields b ↔ a = b := by
+  cases a; cases b
+  simp [recordedFields, accepted_fields_eq_iff, unsigned_value_eq_iff]
+
+
+/-- Reuses the original complete replay contract; no finite sample premise. -/
+theorem replay_iff_fields (a b : LifecycleRequest) :
+    replay_matches a b = .ok true ↔ requestFields a = requestFields b := by
+  rw [Replay.replay_accepts_iff, request_fields_eq_iff]
+
+/-- Every success and first error is preserved, with the independent context unchanged. -/
+theorem same_fields_same_guard (a b : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (same : acceptedFields a = acceptedFields b) :
+    accepted_validate a context = accepted_validate b context := by
+  exact congrArg (fun value => accepted_validate value context) ((accepted_fields_eq_iff a b).mp same)
+
+theorem changed_fields_recorded_rejected (recorded : RecordedLifecycleIntent)
+    (original : AcceptedLifecycleIntent)
+    (changed : acceptedFields recorded.intent ≠ acceptedFields original) :
+    recorded_matches recorded original = .ok false := by
+  apply Recorded.rejects_changed_intent
+  exact fun same => changed (congrArg acceptedFields same)
+
+/-- The existing complete validator remains required after deserialization. -/
+theorem fields_do_not_imply_validation :
+    let invalid := { EnvelopeValues.intent 1#u64 with accepted_version := 0#u64 }
+    acceptedFields invalid = acceptedFields invalid ∧
+      ¬ Validation.ValidEnvelope invalid EnvelopeValues.context := by
+  exact ⟨rfl, Recorded.matching_does_not_establish_validation.2⟩
+
+/-- Omission counterexample: equal keys and sessions cannot replace the complete view. -/
+theorem capture_omission_changes_fields :
+    (EnvelopeValues.intent 1#u64).request.binding = (EnvelopeValues.intent 2#u64).request.binding ∧
+      acceptedFields (EnvelopeValues.intent 1#u64) ≠ acceptedFields (EnvelopeValues.intent 2#u64) := by
+  constructor
+  · rfl
+  · rw [ne_eq, accepted_fields_eq_iff]
+    simp [EnvelopeValues.intent]
+
+theorem signed_time_and_boolean_are_distinct :
+    operationFields (.Renew 1#u64 ((-1)#i64) false) ≠
+      operationFields (.Renew 1#u64 1#i64 false) ∧
+    operationFields (.Renew 1#u64 ((-1)#i64) false) ≠
+      operationFields (.Renew 1#u64 ((-1)#i64) true) := by
+  simp [ne_eq, operation_fields_eq_iff]
+
+/-- Serialization retains terminal, though the existing matching guard does not certify it. -/
+theorem terminal_is_preserved_but_not_certified :
+    let left := EnvelopeValues.receipt 1#u64
+    let right := { left with terminal := true }
+    recordedFields left ≠ recordedFields right ∧
+      recorded_matches left left.intent = recorded_matches right left.intent := by
+  dsimp only
+  constructor
+  · rw [ne_eq, recorded_fields_eq_iff]
+    simp [EnvelopeValues.receipt]
+  · exact (Recorded.terminal_flag_not_certified _ _ true).symm
+
+/-- Retention and request windows are separate fields; equality is not a hidden domain restriction. -/
+theorem retention_window_is_independent :
+    let original := EnvelopeValues.intent 1#u64
+    let changed := { original with retention := ⟨1#u16, 9#u64⟩ }
+    acceptedFields original ≠ acceptedFields changed ∧
+      accepted_validate changed EnvelopeValues.context = .ok (.Ok ()) := by
+  dsimp only
+  constructor
+  · rw [ne_eq, accepted_fields_eq_iff]
+    simp [EnvelopeValues.intent]
+  · apply (Validation.envelope_accepts_iff _ _).mpr
+    have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+    simp [Validation.ValidEnvelope, EnvelopeValues.intent, EnvelopeValues.context,
+      EnvelopeValues.node, EnvelopeValues.center, Validation.ValidRequest,
+      Validation.headersOK, Validation.expectationOK, Validation.operationOK,
+      Validation.retentionOK, Validation.versionOK, checked]
+
+def normalRequests : List (LifecycleRequest × U64) := [
+  (Validation.Examples.createRequest, 1#u64), (Request.unload 1#u64, 2#u64),
+  (Request.resume 1#u64 9#u64, 2#u64),
+  (⟨Request.binding, .Renew 1#u64 ((-1)#i64) false⟩, 2#u64),
+  (Validation.Examples.destroyRequest, 2#u64)]
+
+def envelopeFor (request : LifecycleRequest) (version : U64) : AcceptedLifecycleIntent :=
+  ⟨request, version, EnvelopeValues.center, ⟨1#u16, 9#u64⟩⟩
+
+theorem all_five_normal_envelopes (request : LifecycleRequest) (version : U64)
+    (member : (request, version) ∈ normalRequests) :
+    accepted_validate (envelopeFor request version) ⟨EnvelopeValues.center, Request.node⟩ =
+      .ok (.Ok ()) := by
+  apply (Validation.envelope_accepts_iff _ _).mpr
+  simp only [normalRequests, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at member
+  rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    have checked : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+    simp [envelopeFor, Validation.ValidEnvelope, EnvelopeValues.center, Request.node,
+      Validation.ValidRequest, Validation.headersOK, Validation.expectationOK,
+      Validation.operationOK, Validation.retentionOK, Validation.versionOK, checked,
+      Validation.Examples.createRequest, Validation.Examples.createPayload,
+      Validation.Examples.destroyRequest, Request.unload, Request.resume, Request.binding,
+      Validation.createView, Validation.resourceView, SandboxModel.Foundations.CreatePlan.valid,
+      SandboxModel.Foundations.ResourceVector.positive, SandboxModel.Foundations.maxCounter]
+
+end SandboxModel.Stage1Protocol.EnvelopeSchema
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.unsigned_value_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.signed_value_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.byte_fields_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.byte_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.node_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.create_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.key_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.expected_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.binding_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.operation_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.request_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.center_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.retention_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.accepted_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.recorded_fields_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.replay_iff_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.same_fields_same_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.changed_fields_recorded_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.fields_do_not_imply_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.capture_omission_changes_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.signed_time_and_boolean_are_distinct
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.terminal_is_preserved_but_not_certified
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.retention_window_is_independent
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeSchema.all_five_normal_envelopes

@@ -14,6 +14,7 @@ import stat
 from tools.benchmark_tasks import PIN21, canonical, digest, InvalidInput, pin_for
 from tools.bounded_acceptance import bounded_acceptance_layout
 from tools.system_acceptance import json_file, private_path
+from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 from benchmarks.ci_verifier import (BOOTSTRAP_SHA256, LAUNCHER, MODE as CI_VERIFIER_MODE,
                                     REQUIREMENTS_SHA256)
 
@@ -155,7 +156,7 @@ def instantiate_policy(template, root, namespaces, *, job_count):
         pool = next(p for p in profile['pools'] if p['role'] == role)
         original_namespace = pool['namespace']
         pool.update(namespace=namespaces[index], database=str(root / str(index) / 'db/controller.db'),
-                    node_state_dir=str(root / str(index) / 'state'), chroot_base=str(root / str(index) / 'jails'))
+                    node_state_dir=str(root / str(index) / 'state'), chroot_base=str(root / str(index) / 'p/v'))
         for cache in profile['host_template_caches']:
             if cache['namespace'] == original_namespace:
                 cache.update(namespace=namespaces[index], root=str(root / str(index) / 'template-cache'))
@@ -220,7 +221,7 @@ def batch_result(root, *, candidate, names, exit_code, proxy_required=True, expe
                 or physical.get('builder_dispatched') is not False or physical.get('public_build') is not False
                 or type(physical.get('disk_budget_bytes')) is not int
                 or type(physical.get('activation_bytes')) is not int
-                or not 0 < physical['activation_bytes'] <= physical['disk_budget_bytes'] <= 200 * 1024**3):
+                or not 0 < physical['activation_bytes'] <= physical['disk_budget_bytes'] <= PREPARED_CI_MAX_ACTIVATION_BYTES):
             raise ValueError('prepared CI runtime-only physical budget evidence is incomplete')
     if (report.get('commit') != candidate or report.get('dataset') != dataset
             or report.get('task_source') != {'repository': pin.repository, 'commit': pin.commit}

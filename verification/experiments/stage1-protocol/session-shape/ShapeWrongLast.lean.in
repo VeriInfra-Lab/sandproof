@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.ShapeLane
+import SandboxModel.Lifecycle.Protocol.ShapePrior
+import SandboxModel.Lifecycle.Protocol.ShapeRefusal
+import SandboxModel.Lifecycle.Protocol.ShapeBoundaryValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.SessionShape.WrongLast
+noncomputable section
+open scoped Classical
+
+theorem terminal_self :
+    TerminalLifecycleObservation.matches_request ⟨Values.destroyIntent, .Cleaned⟩ Values.destroyIntent = .ok true := by
+  have matching := Values.terminal_fields.2.2.1
+  simpa only [terminal_matches, Terminal.expected, matching, decide_true] using
+    Terminal.terminal_refines ⟨Values.destroyIntent, .Cleaned⟩ Values.destroyIntent
+
+theorem wrong_accepts :
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.wrongLast = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView Values.savedEncoding Values.wrongLast = .ok (.Ok ()) := rfl
+  simp only [Inbox.validate_session_shape_using, SavedRetirement.validate_saved_spec, receipt,
+    core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    first_window_spec, prior_spec, SavedRetirement.last_saved_spec, option_some_spec,
+    core.option.Option.is_none, lift, decide_eq_true_eq, UScalar.lt_equiv, alloc.vec.Vec.len_val,
+    core.convert.num.FromUsizeU16.from_val_eq]
+  simp only [Values.wrongLast, Values.stopped, Values.normal]
+  simp only [terminal_self, bind_tc_ok]
+  simp [FirstWindowMatches, Values.inbox, Values.vector, Values.lane, Values.entry,
+    Values.foreignIntent, SavedRetirement.Values.normal,
+    SavedRetirement.Values.destroyIntent, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+    Values.small, Values.terminalEncoding, SavedRetirement.Values.bytes,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    TerminalStatus.Insts.CoreCmpPartialEqTerminalStatus.eq, TerminalStatus.read_discriminant,
+    core.option.Option.is_none_or, SandproofFoundationsRust.core.option.Option.is_none_or,
+    Inbox.validate_session_shape_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem violates_full_contract :
+    ¬FullShapeContract (Inbox.validate_session_shape_using (R := Unit) (E := Unit)) := by
+  intro contract
+  have mismatch := contract Values.savedEncoding Values.small Values.inbox 0#usize Values.wrongLast
+  rw [wrong_accepts, Values.model_last_intent_rejection] at mismatch
+  simp [corrupt, SavedRetirement.corrupt] at mismatch
+
+end
+end SandboxModel.Stage1Protocol.SessionShape.WrongLast
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongLast.terminal_self
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongLast.wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongLast.violates_full_contract

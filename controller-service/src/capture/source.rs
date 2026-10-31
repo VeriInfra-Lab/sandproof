@@ -12,6 +12,8 @@ pub struct SourceObservationConfig {
     pub max_executable_bytes: u64,
     pub max_kernel_bytes: u64,
     pub max_disk_bytes: u64,
+    /// Persistent host-wide material reservation, including unknown work.
+    pub max_material_bytes: u64,
 }
 impl SourceObservationConfig {
     #[must_use]
@@ -21,13 +23,24 @@ impl SourceObservationConfig {
             && (1..=67_108_864).contains(&self.max_executable_bytes)
             && (1..=268_435_456).contains(&self.max_kernel_bytes)
             && (1..=i64::MAX as u64).contains(&self.max_disk_bytes)
+            && (1..=i64::MAX as u64).contains(&self.max_material_bytes)
     }
     #[cfg(feature = "durable")]
-    pub(crate) fn required_bytes(&self, sessions: u16) -> u64 {
+    pub(crate) fn required_bytes(&self, records: u64) -> u64 {
         // Each byte in the raw JSON array takes at most four characters.
         // Fixed result envelopes and table metadata are separately reserved.
-        u64::from(sessions)
-            * (u64::from(self.max_work_bytes) + 4 * u64::from(self.max_configuration_bytes) + 8192)
+        records
+            * (u64::from(self.max_work_bytes)
+                + 4 * u64::from(self.max_configuration_bytes)
+                + 8192
+                // Original Full/action/worker record cap is reserved before
+                // source reception; later authorization cannot add a debt.
+                + 131_072
+                // The same source can eventually require its exact original
+                // physical retirement plan. Reserve before any capture/Load,
+                // including unknown outcomes; do not rely on spare row bytes.
+                + super::MATERIAL_RETIREMENT_RECORD_MAX_BYTES
+                + super::MATERIAL_RELEASE_RECORD_MAX_BYTES)
             + 8192
     }
 }

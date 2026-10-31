@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadValueLibrary
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.InboxLoadLibrary
+
+theorem checked_mul_exact (left right output : U64)
+    (value : output.val = left.val * right.val) :
+    U64.checked_mul left right = some output := by
+  have specification := U64.checked_mul_bv_spec left right
+  cases returned : U64.checked_mul left right with
+  | none =>
+    simp only [returned] at specification
+    have bound := output.hBounds
+    rw [← value] at specification
+    scalar_tac
+  | some actual =>
+    simp only [returned] at specification
+    have equal : actual = output := UScalar.eq_of_val_eq (specification.2.1.trans value.symm)
+    simp only [equal]
+
+theorem checked_add_exact (left right output : U64)
+    (value : output.val = left.val + right.val) :
+    U64.checked_add left right = some output := by
+  have specification := U64.checked_add_bv_spec left right
+  cases returned : U64.checked_add left right with
+  | none =>
+    simp only [returned] at specification
+    have bound := output.hBounds
+    rw [← value] at specification
+    scalar_tac
+  | some actual =>
+    simp only [returned] at specification
+    have equal : actual = output := UScalar.eq_of_val_eq (specification.2.1.trans value.symm)
+    simp only [equal]
+
+theorem checked_mul_overflow (left right : U64)
+    (overflow : U64.max < left.val * right.val) : U64.checked_mul left right = none := by
+  have specification := U64.checked_mul_bv_spec left right
+  cases returned : U64.checked_mul left right with
+  | none => rfl
+  | some actual =>
+    simp only [returned] at specification
+    omega
+
+theorem checked_add_overflow (left right : U64)
+    (overflow : U64.max < left.val + right.val) : U64.checked_add left right = none := by
+  have specification := U64.checked_add_bv_spec left right
+  cases returned : U64.checked_add left right with
+  | none => rfl
+  | some actual =>
+    simp only [returned] at specification
+    omega
+
+end SandboxModel.Stage1Protocol.InboxLoadLibrary
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.checked_mul_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.checked_add_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.checked_mul_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadLibrary.checked_add_overflow

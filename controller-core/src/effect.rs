@@ -272,7 +272,9 @@ pub fn effect_succeeded_check(world: &World, command: &Command) -> bool {
             | EffectStatus::Dispatched
             | EffectStatus::OutcomeUnknown
             | EffectStatus::Acknowledged(EffectOutcome::Failed(_))
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         )
         | None => false,
     }
@@ -443,7 +445,8 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
     let Some(status) = world.effect_status(effect) else {
         return false;
     };
-    status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown
+    (status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown)
+        && !crate::maintenance::released_execution::discharged(world, effect)
 }
 
 /// Dispatch the current attempt, rejecting new capture work after revocation.
@@ -452,6 +455,9 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
 /// # Errors
 /// Returns the first failed guard; rejection leaves `world` unchanged.
 pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
     if !world.controller_up {
         return Err(EffectReject::ControllerDown);
     }
@@ -461,21 +467,8 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
             if startup_dispatch_revoked(world, id.command()) {
                 return Err(EffectReject::NotDispatchable);
             }
-            if matches!(
-                id.command(),
-                Command::FreezeVm { .. }
-                    | Command::SealSnapshot { .. }
-                    | Command::CommitSnapshot { .. }
-            ) {
-                let sandbox = id.command().sandbox();
-                let Some(record) = world.sandboxes.get(&sandbox) else {
-                    return Err(EffectReject::NotDispatchable);
-                };
-                if !crate::transition::current_capture(world, sandbox, record)
-                    .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
-                {
-                    return Err(EffectReject::NotDispatchable);
-                }
+            if !crate::capture::continuation::capture_dispatch_allowed(world, &id) {
+                return Err(EffectReject::NotDispatchable);
             }
             Ok(EffectDecision {
                 event: Event::DispatchEffect(id.clone()),
@@ -485,7 +478,9 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
         Some(
             EffectStatus::Dispatched
             | EffectStatus::Acknowledged(_)
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatchable),
     }
 }
@@ -499,6 +494,9 @@ pub fn handle_effect_receipt(
     id: EffectId,
     outcome: EffectOutcome,
 ) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
@@ -508,6 +506,7 @@ pub fn handle_effect_receipt(
                     .get(&id.command().sandbox())
                     .is_some_and(|record| record.terminal)
                 && !crate::terminal::startup_effect_in_current_abort(world, &id)
+                && !crate::capture::continuation::activation_in_current_abort(world, &id)
             {
                 return Err(EffectReject::NotAwaitingResult);
             }
@@ -529,7 +528,11 @@ pub fn handle_effect_receipt(
             })
         }
         Some(EffectStatus::Committed) => Err(EffectReject::NotAwaitingResult),
-        Some(EffectStatus::RetiredByStop(_)) => Err(EffectReject::EffectRetired),
+        Some(
+            EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
+        ) => Err(EffectReject::EffectRetired),
     }
 }
 
@@ -538,6 +541,9 @@ pub fn handle_effect_receipt(
 /// # Errors
 /// Returns the first failed guard in the same order as the Lean reducer.
 pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched) => Ok(EffectDecision {
@@ -551,7 +557,9 @@ pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecisi
         Some(
             EffectStatus::Committed
             | EffectStatus::Acknowledged(_)
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatched),
     }
 }

@@ -13,16 +13,17 @@ use sandproof_controller_service::{
     templates::TemplateBinding,
 };
 use sandproof_protocol::{WorkAction, WorkReceipt};
+use std::sync::Arc;
 #[cfg(debug_assertions)]
-mod faults;
+pub(crate) mod faults;
 
 /// Production adapter: one worker, physical lease and trusted relay executable.
 pub struct NodeHost {
-    worker: LinuxWorker,
-    physical_storage: PhysicalProfileLease,
+    worker: Arc<LinuxWorker>,
+    physical_storage: Arc<PhysicalProfileLease>,
     relay_executable: std::path::PathBuf,
     host_epoch_source: Option<ProtectedHostEpochSource>,
-    capture_profile: Option<crate::linux::ProtectedCaptureProfile>,
+    capture_profile: Option<Arc<crate::linux::ProtectedCaptureProfile>>,
 }
 impl NodeHost {
     /// The relay executable is selected only by trusted service assembly.
@@ -33,8 +34,8 @@ impl NodeHost {
         relay_executable: std::path::PathBuf,
     ) -> Self {
         Self {
-            worker,
-            physical_storage,
+            worker: Arc::new(worker),
+            physical_storage: Arc::new(physical_storage),
             relay_executable,
             host_epoch_source: None,
             capture_profile: None,
@@ -69,6 +70,51 @@ impl NodeHost {
             action,
             request,
             original_source,
+        )
+    }
+
+    /// Stop only the original Unload source after V5 has definitely committed
+    /// material adoption and claimed this exact Stop action. This adapter does
+    /// not establish that SQL condition or release any physical position.
+    /// # Errors
+    /// Any error retains the same source/action responsibility, including a
+    /// possible signal followed by an unavailable exit observation.
+    pub fn stop_unload_source(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.stop_capture_source(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            full,
+            source,
+            false,
+        )
+    }
+
+    /// Observe the same original Stop without resending a signal. This does
+    /// not prove helper drain or authorize Free; original retirement remains
+    /// independently required after the Stop receipt is durably accepted.
+    /// # Errors
+    /// A live, replaced or unobservable original source remains unknown.
+    pub fn observe_unload_source_stopped(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.stop_capture_source(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing original protected bootstrap source")?,
+            action,
+            full,
+            source,
+            true,
         )
     }
 
@@ -110,12 +156,12 @@ impl NodeHost {
             .host_epoch_source
             .as_ref()
             .ok_or("missing original protected bootstrap source")?;
-        self.capture_profile = Some(crate::linux::ProtectedCaptureProfile::assemble(
+        self.capture_profile = Some(Arc::new(crate::linux::ProtectedCaptureProfile::assemble(
             &self.worker,
             provider,
             settings,
             original,
-        )?);
+        )?));
         Ok(self)
     }
 
@@ -168,55 +214,6 @@ impl NodeHost {
             &self.relay_executable,
         )
     }
-
-    /// Execute only an originally claimed Full with independently checked local
-    /// parameters. The original V5 claim/resource plan and closed/drained V8
-    /// access are required; no untrusted DTO can install the private profile.
-    /// # Errors
-    /// Every error may follow actual Full/Seal or publication. Preserve original
-    /// Dispatched/Unknown Full concurrency and material responsibility: callback
-    /// return, Paused/Exited or a directory does NOT prove the FC writer ended.
-    pub fn capture_original(
-        &self,
-        action: &WorkAction<core::EffectId>,
-        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
-        original: &sandproof_controller_service::capture::SourceObservationRequirement,
-    ) -> Result<crate::full_snapshot::FullCaptureObservation, Box<dyn std::error::Error>> {
-        self.worker.capture_original(
-            self.host_epoch_source
-                .as_ref()
-                .ok_or("missing original protected bootstrap source")?,
-            self.capture_profile
-                .as_ref()
-                .ok_or("protected Full profile not assembled")?,
-            action,
-            request,
-            original,
-        )
-    }
-
-    /// Read only the exact saved key. Returned file facts have no captured-source
-    /// provenance, durable handoff, worker-end, Stop or resource-release claim.
-    /// # Errors
-    /// Missing, foreign or incomplete materials remain unresolved; no retry Full.
-    pub fn observe_full_capture(
-        &self,
-        request: &sandproof_controller_service::capture::FullCaptureWorkRequest,
-        original: &sandproof_controller_service::capture::SourceObservationRequirement,
-        manifest: Option<sandproof_protocol::lifecycle::ContentDigest>,
-    ) -> Result<crate::full_snapshot::CheckedStoredCapture, Box<dyn std::error::Error>> {
-        self.worker.observe_full_capture(
-            self.host_epoch_source
-                .as_ref()
-                .ok_or("missing original protected bootstrap source")?,
-            self.capture_profile
-                .as_ref()
-                .ok_or("protected Full profile not assembled")?,
-            request,
-            original,
-            manifest.map(|digest| *digest.as_bytes()),
-        )
-    }
 }
 
 impl NodeHost {
@@ -240,10 +237,195 @@ impl NodeHost {
     }
 }
 
+fn restore_action_receipt(
+    action: &WorkAction<core::EffectId>,
+    observation: Result<HostObservation, Box<dyn std::error::Error>>,
+) -> Result<WorkReceipt<HostObservation>, WorkerTransportError> {
+    let outcome = match observation {
+        Ok(observed) => sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+        Err(error) => {
+            project(
+                FaultStage::Execute,
+                FaultContext::action(action),
+                error.as_ref(),
+            )
+            .emit();
+            sandproof_protocol::WorkOutcome::Unknown {
+                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                last_observation: None,
+            }
+        }
+    };
+    let result = Ok(WorkReceipt {
+        identity: action.identity.clone(),
+        outcome,
+    });
+    #[cfg(debug_assertions)]
+    faults::after_execute(action, &result);
+    result
+}
+
+fn capture_action_receipt(
+    action: &WorkAction<core::EffectId>,
+    observation: Result<HostObservation, Box<dyn std::error::Error>>,
+) -> Result<WorkReceipt<HostObservation>, WorkerTransportError> {
+    let outcome = match observation {
+        Ok(value) => sandproof_protocol::WorkOutcome::ObservedSuccess(value),
+        Err(error) => {
+            project(
+                FaultStage::Observe,
+                FaultContext::action(action),
+                error.as_ref(),
+            )
+            .emit();
+            sandproof_protocol::WorkOutcome::Unknown {
+                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                last_observation: None,
+            }
+        }
+    };
+    let result = Ok(WorkReceipt {
+        identity: action.identity.clone(),
+        outcome,
+    });
+    // The actual Pause/Commit/Stop has returned. This cut is before the
+    // original journal receives the result, never permission to execute it.
+    #[cfg(debug_assertions)]
+    faults::after_execute(action, &result);
+    result
+}
+
 impl WorkEvidence for NodeHost {
     type Evidence = HostObservation;
 }
 impl WorkExecution for NodeHost {
+    fn retire_lifecycle_material(
+        &self,
+        request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+        plan: &[u8],
+        permit: &sandproof_controller_service::capture::MaterialRetirementPermit,
+    ) -> Result<
+        sandproof_controller_service::capture::MaterialRetirementObservation,
+        ApplicationError,
+    > {
+        let profile = self
+            .capture_profile
+            .as_ref()
+            .ok_or(ApplicationError::Invalid)?;
+        let observation = self
+            .worker
+            .retire_material(profile, request, plan, permit)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Execute,
+                    FaultContext::instance(request.sandbox(), None),
+                )
+            })?;
+        // Only an actual completed physical deletion reaches this boundary.
+        // The original journal has not received or settled the observation.
+        #[cfg(debug_assertions)]
+        faults::after_material_delete(request, plan, &observation).map_err(|error| {
+            busy(
+                error.as_ref(),
+                FaultStage::Execute,
+                FaultContext::instance(request.sandbox(), None),
+            )
+        })?;
+        Ok(observation)
+    }
+
+    fn execute_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: &sandproof_controller_service::capture::OriginalContinuePermit,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        restore_action_receipt(
+            action,
+            self.original_continue_observation(action, work, Some(permit), false),
+        )
+    }
+
+    fn execute_lifecycle_restore_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+        activation: Option<&sandproof_controller_service::capture::RestoreActivationPermit>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        restore_action_receipt(
+            action,
+            self.restore_action_observation(action, work, activation, false),
+        )
+    }
+
+    fn execute_lifecycle_capture_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
+        committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
+    ) -> Result<WorkReceipt<Self::Evidence>, WorkerTransportError> {
+        capture_action_receipt(
+            action,
+            self.capture_action_observation(action, full, source, worker, committed, false),
+        )
+    }
+
+    fn propose_lifecycle_full(
+        &self,
+        pause: &sandproof_controller_service::capture::PauseWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<sandproof_controller_service::capture::FullCaptureWorkRequest, ApplicationError>
+    {
+        self.prepare_full_capture(pause, source)
+            .map_err(|_| ApplicationError::Busy)
+    }
+
+    fn prepare_lifecycle_capture_worker(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+    ) -> Result<
+        Box<dyn sandproof_controller_service::capture::PreparedFullCapture<Self::Evidence>>,
+        ApplicationError,
+    > {
+        let prepared = self
+            .prepare_capture_worker(action, full, source)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                )
+            })?;
+        let binding = prepared
+            .worker_binding()
+            .map_err(|_| ApplicationError::Busy)?;
+        let provider = ProtectedHostEpochSource::at(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or(ApplicationError::Busy)?
+                .original_path()
+                .to_path_buf(),
+        )
+        .map_err(|_| ApplicationError::Busy)?;
+        Ok(Box::new(PreparedNodeCapture {
+            worker: Arc::clone(&self.worker),
+            _physical_storage: Arc::clone(&self.physical_storage),
+            provider,
+            profile: Arc::clone(
+                self.capture_profile
+                    .as_ref()
+                    .ok_or(ApplicationError::Busy)?,
+            ),
+            prepared,
+            binding,
+        }))
+    }
+
     fn execute(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -258,6 +440,146 @@ impl WorkExecution for NodeHost {
 }
 
 impl WorkRecovery for NodeHost {
+    fn prepare_lifecycle_material_retirement(
+        &self,
+        request: &sandproof_controller_service::capture::CaptureMaterialRetirementRequest,
+    ) -> Result<Vec<u8>, ApplicationError> {
+        let profile = self
+            .capture_profile
+            .as_ref()
+            .ok_or(ApplicationError::Invalid)?;
+        self.worker
+            .prepare_material_retirement(profile, request)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::Observe,
+                    FaultContext::instance(request.sandbox(), None),
+                )
+            })
+    }
+
+    fn observe_lifecycle_capture_request_end(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        worker: &sandproof_controller_service::capture::CaptureWorkerBinding,
+    ) -> Option<sandproof_controller_service::capture::CaptureRequestEndObservation> {
+        self.worker
+            .recover_full_request_end(
+                self.host_epoch_source.as_ref()?,
+                self.capture_profile.as_ref()?,
+                action,
+                full,
+                source,
+                worker,
+            )
+            .ok()
+    }
+
+    fn observe_lifecycle_terminated_capture(
+        &self,
+        work: &sandproof_controller_service::capture::TerminatedCaptureWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::TerminatedCaptureObservation> {
+        self.worker
+            .observe_terminated_capture(self.host_epoch_source.as_ref()?, work)
+            .ok()
+    }
+
+    fn observe_lifecycle_original_continue(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.original_continue_observation(action, work, None, true)
+            .ok()
+            .map(|observed| WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+            })
+    }
+
+    fn observe_lifecycle_restore_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.restore_action_observation(action, work, None, true)
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
+            .ok()
+            .map(|observed| WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(observed),
+            })
+    }
+
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        self.worker
+            .observe_original_continue_exit(self.host_epoch_source.as_ref()?, action, work)
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
+            .ok()
+            .flatten()
+    }
+
+    fn observe_lifecycle_restore_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        self.worker
+            .observe_restore_exit(
+                self.host_epoch_source.as_ref()?,
+                self.capture_profile.as_ref()?,
+                action,
+                work,
+            )
+            .inspect_err(|error| {
+                project(
+                    FaultStage::Observe,
+                    FaultContext::action(action),
+                    error.as_ref(),
+                )
+                .emit();
+            })
+            .ok()
+            .flatten()
+    }
+
+    fn observe_lifecycle_capture_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
+        committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
+    ) -> Option<WorkReceipt<Self::Evidence>> {
+        self.capture_action_observation(action, full, source, worker, committed, true)
+            .ok()
+            .map(|value| WorkReceipt {
+                identity: action.identity.clone(),
+                outcome: sandproof_protocol::WorkOutcome::ObservedSuccess(value),
+            })
+    }
+
     fn observe(&self, action: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Self::Evidence>> {
         match self.worker.observe_action(action) {
             Ok(receipt) => Some(receipt),
@@ -407,6 +729,40 @@ impl WorkRecovery for NodeHost {
 }
 
 impl HostSlots for NodeHost {
+    fn release_lifecycle_host_slot(
+        &self,
+        context: &HostSlotContext,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        committed: &sandproof_controller_service::capture::CommittedCaptureExpectation,
+    ) -> Result<(), ApplicationError> {
+        if committed.work() != full {
+            return Err(ApplicationError::Busy);
+        }
+        let provider = self
+            .host_epoch_source
+            .as_ref()
+            .ok_or(ApplicationError::Busy)?;
+        provider
+            .observe_original(
+                &source.node,
+                &source.host_bootstrap,
+                self.worker.host_bootstrap_inputs(),
+            )
+            .map_err(|_| ApplicationError::Busy)?;
+        self.observe_committed_capture(committed)
+            .map_err(|_| ApplicationError::Busy)?;
+        self.worker
+            .release_unload_host_slot(context, full, source, committed.seal_action())
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::ReleaseSlot,
+                    FaultContext::slot(context),
+                )
+            })
+    }
+
     fn bind_host_slot(
         &self,
         context: &HostSlotContext,
@@ -575,28 +931,45 @@ impl HostCapacity for NodeHost {
 }
 
 impl LaunchConfiguration for NodeHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), ApplicationError> {
-        self.worker.put_secret(sandbox, token).map_err(|error| {
-            busy(
-                error.as_ref(),
-                FaultStage::PutCredential,
-                FaultContext::instance(sandbox, None),
-            )
-        })
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), ApplicationError> {
+        self.worker
+            .put_secret(sandbox, generation, token)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PutCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, ApplicationError> {
-        self.worker.has_secret(sandbox).map_err(|error| {
-            busy(
-                error.as_ref(),
-                FaultStage::CheckCredential,
-                FaultContext::instance(sandbox, None),
-            )
-        })
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, ApplicationError> {
+        self.worker
+            .has_secret(sandbox, generation)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::CheckCredential,
+                    FaultContext::instance(sandbox, None),
+                )
+            })
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, ApplicationError> {
-        self.worker.token_for(sandbox).map_err(|error| {
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, ApplicationError> {
+        self.worker.token_for(sandbox, generation).map_err(|error| {
             busy(
                 error.as_ref(),
                 FaultStage::ReadCredential,
@@ -608,11 +981,12 @@ impl LaunchConfiguration for NodeHost {
     fn put_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         env_vars: &std::collections::BTreeMap<String, String>,
     ) -> Result<(), ApplicationError> {
         self.worker
-            .put_launch_secret(sandbox, token, env_vars)
+            .put_launch_secret(sandbox, generation, token, env_vars)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -625,10 +999,11 @@ impl LaunchConfiguration for NodeHost {
     fn has_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         env_vars: &std::collections::BTreeMap<String, String>,
     ) -> Result<bool, ApplicationError> {
         self.worker
-            .has_launch_secret(sandbox, env_vars)
+            .has_launch_secret(sandbox, generation, env_vars)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -641,11 +1016,12 @@ impl LaunchConfiguration for NodeHost {
     fn put_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         token: &str,
         options: &CreateOptions,
     ) -> Result<(), ApplicationError> {
         self.worker
-            .put_bound_launch_secret(sandbox, token, options)
+            .put_bound_launch_secret(sandbox, generation, token, options)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -658,10 +1034,11 @@ impl LaunchConfiguration for NodeHost {
     fn has_bound_launch_config(
         &self,
         sandbox: core::SandboxId,
+        generation: core::Generation,
         options: &CreateOptions,
     ) -> Result<bool, ApplicationError> {
         self.worker
-            .has_bound_launch_secret(sandbox, options)
+            .has_bound_launch_secret(sandbox, generation, options)
             .map_err(|error| {
                 busy(
                     error.as_ref(),
@@ -692,3 +1069,195 @@ impl TemplateArtifacts for NodeHost {
             .cache_candidate_verification(template, verification);
     }
 }
+
+// This owner retains the original host lease/profile and the SAME closed child
+// across the SQL commit callback. Dropping it drops only that owned child;
+// the durable witness, Full reservation and source responsibilities remain.
+struct PreparedNodeCapture {
+    worker: Arc<LinuxWorker>,
+    _physical_storage: Arc<PhysicalProfileLease>,
+    provider: ProtectedHostEpochSource,
+    profile: Arc<crate::linux::ProtectedCaptureProfile>,
+    prepared: crate::PreparedCaptureWorker,
+    binding: sandproof_controller_service::capture::CaptureWorkerBinding,
+}
+impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
+    for PreparedNodeCapture
+{
+    fn binding(&self) -> sandproof_controller_service::capture::CaptureWorkerBinding {
+        self.binding.clone()
+    }
+
+    fn release(
+        self: Box<Self>,
+        permit: sandproof_controller_service::capture::FullCaptureLaunchPermit,
+    ) -> sandproof_controller_service::capture::FullCaptureResult<HostObservation> {
+        #[cfg(debug_assertions)]
+        {
+            let selected: Result<bool, Box<dyn std::error::Error>> = (|| {
+                let Some(gate) = faults::CaptureCancelGate::configured(permit.action())? else {
+                    return Ok(false);
+                };
+                self.prepared.require_launch_permit(&permit)?;
+                gate.wait(&permit)?;
+                Ok(true)
+            })();
+            if !matches!(selected, Ok(false)) {
+                if let Err(error) = selected {
+                    project(
+                        FaultStage::Observe,
+                        FaultContext::action(permit.action()),
+                        error.as_ref(),
+                    )
+                    .emit();
+                }
+                // Close only this original Ready child's release pipe. Its
+                // own durable NoRequest and actual exit must be observed by
+                // the original service; this result asserts neither fact.
+                self.prepared.cancel();
+                return sandproof_controller_service::capture::FullCaptureResult::UnknownCapture;
+            }
+        }
+        #[cfg(debug_assertions)]
+        let original_action = permit.action().clone();
+        let result = self.worker.execute_prepared_full_capture(
+            &self.provider,
+            &self.profile,
+            self.prepared,
+            permit,
+        );
+        #[cfg(debug_assertions)]
+        if let sandproof_controller_service::capture::FullCaptureResult::Captured(receipt) = &result
+        {
+            // Actual bundle readback and original worker completion already
+            // happened; V5 has not received/adopted this receipt yet.
+            faults::after_execute(&original_action, &Ok(receipt.clone()));
+        }
+        result
+    }
+}
+
+impl NodeHost {
+    fn capture_action_observation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        worker: Option<&sandproof_controller_service::capture::CaptureWorkerBinding>,
+        committed: Option<&sandproof_controller_service::capture::CommittedCaptureExpectation>,
+        observe_only: bool,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        match action.command.command() {
+            core::Command::FreezeVm { .. } => {
+                if observe_only {
+                    self.observe_pause_original(action, &full.pause, source)
+                } else {
+                    self.pause_original(action, &full.pause, source)
+                }
+            }
+            core::Command::SealSnapshot { .. } if observe_only => {
+                self.worker.recover_completed_full(
+                    self.host_epoch_source
+                        .as_ref()
+                        .ok_or("missing original protected bootstrap source")?,
+                    self.capture_profile
+                        .as_ref()
+                        .ok_or("protected Full profile not assembled")?,
+                    action,
+                    full,
+                    source,
+                    worker.ok_or("missing original persisted Full worker")?,
+                )
+            }
+            core::Command::CommitSnapshot { .. } => self.worker.observe_capture_commit(
+                self.host_epoch_source
+                    .as_ref()
+                    .ok_or("missing original protected bootstrap source")?,
+                self.capture_profile
+                    .as_ref()
+                    .ok_or("protected Full profile not assembled")?,
+                action,
+                full,
+                source,
+                committed.ok_or("missing durable original Seal expectation")?,
+            ),
+            core::Command::StopVm { .. } => {
+                if observe_only {
+                    self.observe_unload_source_stopped(action, full, source)
+                } else {
+                    self.stop_unload_source(action, full, source)
+                }
+            }
+            core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. } => {
+                let expected = committed.ok_or("missing original adopted capture expectation")?;
+                if expected.work() != full {
+                    return Err("Unload cleanup differs from original saved Full".into());
+                }
+                self.worker.cleanup_capture_source(
+                    self.host_epoch_source
+                        .as_ref()
+                        .ok_or("missing protected bootstrap source")?,
+                    self.capture_profile
+                        .as_ref()
+                        .ok_or("protected Full profile not assembled")?,
+                    action,
+                    source,
+                    expected,
+                    observe_only,
+                )
+            }
+            // A gate-exited helper or existing bundle cannot establish that an
+            // interrupted Firecracker Full writer ended. Never redispatch Full.
+            _ => Err("capture action has no confirmed physical observation".into()),
+        }
+    }
+}
+
+impl NodeHost {
+    fn original_continue_observation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+        permit: Option<&sandproof_controller_service::capture::OriginalContinuePermit>,
+        observe_only: bool,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.original_continue_action(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing protected original-continuation bootstrap")?,
+            action,
+            work,
+            permit,
+            observe_only,
+        )
+    }
+
+    fn restore_action_observation(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+        activation: Option<&sandproof_controller_service::capture::RestoreActivationPermit>,
+        observe_only: bool,
+    ) -> Result<HostObservation, Box<dyn std::error::Error>> {
+        self.worker.restore_action(
+            self.host_epoch_source
+                .as_ref()
+                .ok_or("missing protected restore bootstrap")?,
+            self.capture_profile
+                .as_ref()
+                .ok_or("missing protected restore profile")?,
+            action,
+            work,
+            activation,
+            observe_only,
+        )
+    }
+}
+
+#[cfg(test)]
+#[path = "adapter/restore_receipt_tests.rs"]
+mod restore_receipt_tests;
+
+#[cfg(test)]
+#[path = "adapter/capture_receipt_tests.rs"]
+mod capture_receipt_tests;

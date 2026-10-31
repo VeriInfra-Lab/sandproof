@@ -5,7 +5,9 @@ import unittest
 
 from tools.check_first_chain_extraction import check, OPTION_EQ
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class FirstChainExtractionTests(unittest.TestCase):

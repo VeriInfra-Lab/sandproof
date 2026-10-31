@@ -348,13 +348,13 @@ def exercise(args):
     for i in range(1 if ci_fixtures is not None else 2):
         pool = root / str(i)
         pool.mkdir(mode=0o700)
-        for name in ('db', 'state', 'jails'):
+        for name in ('db', 'state', 'p'):
             (pool / name).mkdir(mode=0o700)
         cpu = deployment['builder_shape']['cpu_count'] if i else 1
         memory = deployment['builder_shape']['memory_mib'] if i else 2048
         base = descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, memory)
         cfg = {'namespace': namespaces[i], 'database': str(pool / 'db/controller.db'),
-            'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'jails'),
+            'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'p/v'),
             'jailer': str(args.jailer), 'firecracker': str(firecracker),
             'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base + stride * i,
             'vcpu_count': cpu, 'memory_mib': memory,
@@ -400,7 +400,7 @@ def exercise(args):
                 'max_lifetime_secs','startup_timeout_secs')})
     registry = {'root': str(root / 'registry'), **deployment['registry']}
     services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
-        key,public_address,record=service_record,job_count=capacity['jobs'],
+        key,public_address,record=service_record,retained_sessions=(capacity['jobs']) + sum(pool['max_active_global'] for pool in settings),
         private_builds=private_builds,registry_config=registry,activation_ceiling_bytes=disk_ceiling)
     settings = services.native_pools  # Exactly the profile Rust initializes.
     registry_root = services.layout['registry']
@@ -461,7 +461,7 @@ def exercise(args):
         try:
             native_id=services.native_id_for(env.sandbox_id)
             secret,name,claim=record_for(root/'0',native_id=native_id)
-            network=json.loads((root/'0/jails/.claims'/name/'network.json').read_text())
+            network=json.loads((Path(settings[0]['chroot_base'])/'.claims'/name/'network.json').read_text())
             if network['resource_id']!=name:
                 raise RuntimeError('original network resource differs from mapped VM')
             physical=claim|dict(network_inode=network['namespace_inode'])
@@ -476,7 +476,7 @@ def exercise(args):
         assert bound['template_id'] == template['templateId'] and bound['revision'] == template['revision']
         assert bound['rootfs']['sha256'] == template['rootfsSha256']
         assert process_start_ticks(claim['pid']) == claim['start_time_ticks']
-        disk = root / '0/jails' / firecracker.name / name / 'root/rootfs.ext4'
+        disk = Path(settings[0]['chroot_base']) / firecracker.name / name / 'root/rootfs.ext4'
         assert disk.stat().st_size == template['diskBytes']
         source = Path(bound['rootfs']['path'])
         assert (disk.stat().st_dev, disk.stat().st_ino) != (source.stat().st_dev, source.stat().st_ino)
@@ -550,7 +550,7 @@ def exercise(args):
                     pending_actions = db.execute("SELECT COUNT(*) FROM outbox WHERE dispatch_state='dispatched'").fetchone()[0]
                 try:
                     assert not pending_actions and all(p == 'Destroyed' for p in phases)
-                    claims = pool / 'jails/.claims'
+                    claims = Path(settings[i]['chroot_base']) / '.claims'
                     if claims.exists():
                         check_no_resources(pool, namespaces[i], firecracker, args.uid_base + i * stride,
                                            physical_identities if i==0 else (),native=settings[i])
@@ -684,14 +684,14 @@ def exercise(args):
                     phases = [json.loads(r[0])['phase'] for r in db.execute('SELECT state_blob FROM sandboxes')]
                 if any(p != 'Destroyed' for p in phases):
                     raise RuntimeError('durable terminal cleanup incomplete')
-                claims = root / str(i) / 'jails/.claims'
+                claims = Path(settings[i]['chroot_base']) / '.claims'
                 if claims.exists():
                     check_no_resources(root / str(i), namespaces[i], firecracker, args.uid_base + i * stride,
                                        physical_identities if i==0 else (),native=settings[i])
                     for claim in claims.iterdir():
                         audit_gone(root / str(i), firecracker, args.build_cgroup_parent if i else args.cgroup_parent, claim.name)
                 else:
-                    for parent in (root / str(i) / 'jails', Path('/run/netns'), Path('/sys/fs/cgroup')):
+                    for parent in (Path(settings[i]['chroot_base']), Path('/run/netns'), Path('/sys/fs/cgroup')):
                         assert not list(parent.rglob(f'vm-{namespaces[i]}-*'))
                 if i==0:
                     for identity in physical_identities:
@@ -809,7 +809,7 @@ def exercise(args):
             raise RuntimeError('service cleanup incomplete; retain recorded resources')
 
 
-if __name__ == '__main__':
+def parser():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--run-identity',required=True,help='approved supervisor run SHA256')
@@ -835,7 +835,7 @@ if __name__ == '__main__':
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
-                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 200 GiB')
+                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,
@@ -864,13 +864,26 @@ if __name__ == '__main__':
     parser.add_argument('--build-expanded-max-bytes', type=int, default=EXPANDED_BYTES,
                         help='bounded expanded image layers; default 8 GiB, service maximum 32 GiB')
     add_artifact_arguments(parser)
-    args = parser.parse_args()
+    parser.add_argument('--check-arguments', action='store_true',
+                        help='parse the complete command only; no host, service or VM actions')
+    return parser
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
+    if args.check_arguments:
+        print(json.dumps(dict(entry=Path(__file__).name, arguments_valid=True)))
+        return 0
     args.artifact_limits = artifact_limits_from_args(args)
     forward = Path('/proc/sys/net/ipv4/ip_forward').read_text().strip()
     try:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=1'], check=True)
-        sys.exit(exercise(args))
+        return exercise(args)
     finally:
         if forward == '0' and args.temporarily_forward:
             subprocess.run(['/usr/sbin/sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

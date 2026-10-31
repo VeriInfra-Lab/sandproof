@@ -1,0 +1,42 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SandboxModel.Lifecycle.Protocol.EnvelopeWriter"]
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/stage1-protocol/json-foundations"
+# Original Rust anonymous implementation names contain __1/__3. Keep the
+# generator's names intact; only this generated library's naming style is exempt.
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofProtocolResult"
+srcDir = "verification/aeneas/stage1-protocol/schema-result"
+
+[[lean_lib]]
+name = "SandproofStage1Carriers"
+srcDir = "verification/aeneas/stage1-protocol/carriers"
+
+[[lean_lib]]
+name = "SandproofStage1Request"
+srcDir = "verification/aeneas/stage1-protocol/request"
+
+[[lean_lib]]
+name = "SandproofStage1Manifest"
+srcDir = "verification/aeneas/stage1-protocol/manifest"
+
+[[lean_lib]]
+name = "SandproofEnvelopeBudget"
+srcDir = "verification/aeneas/stage1-protocol/envelope-budget"
+
+[[lean_lib]]
+name = "SandproofBoundedWriter"
+srcDir = "verification/aeneas/stage1-protocol/envelope-writer"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"

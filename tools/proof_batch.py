@@ -1,5 +1,6 @@
 """Formal-only module acceptance with checked, conservative result reuse."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')
+           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -28,6 +29,9 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/callback-state/DoubleRecord.lean',
     'verification/experiments/bounded-writer/negative/Counterexample.lean',
     'verification/experiments/btree-set-binding/model/InvertFlag.lean',
+    'verification/experiments/capture-handoff/model/IgnoreTarget.lean',
+    'verification/experiments/pause-publication/model/IgnoreStop.lean',
+    'verification/experiments/pause-stop/model/IgnoreHandoff.lean',
     *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
       ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
        'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))
@@ -52,7 +56,7 @@ def tracked_inputs(root=ROOT):
     return {n:file_digest(root/n) for n in names if n}
 
 
-def closure(root, seeds):
+def closure(root, seeds, *, active_view=None):
     """Resolve every local Lean import, including imports omitted by roots.
 
     External packages and the installed compiler/stdlib are covered by the
@@ -60,7 +64,11 @@ def closure(root, seeds):
     """
     import tomllib
     libraries = {'SandboxModel': root}
-    for view in root.glob('lake*.toml'):
+    if active_view is not None and (Path(active_view).name != active_view
+            or not (root / active_view).is_file()):
+        raise ValueError('missing or non-local active Lake view')
+    views = root.glob('lake*.toml') if active_view is None else [root / active_view]
+    for view in views:
         for lib in tomllib.loads(view.read_text()).get('lean_lib', []):
             libraries[lib['name']] = root / lib.get('srcDir', '.')
     result = {}
@@ -105,10 +113,48 @@ def module_key(name, command, root=ROOT):
     seeds += [n for n in ('lean-toolchain','lake-manifest.json','rust-toolchain.toml') if (root/n).is_file()]
     # Full Rust closure is deliberately conservative. A Rust change can
     # invalidate extra modules, but can never silently miss an indirect use.
-    return dict(schema=1, module=name, command=command, rust=rust_inputs(root),
+    result = dict(schema=1, module=name, command=command, rust=rust_inputs(root),
                 rules=rules(root), inputs=closure(root,seeds),
                 runtime=json.loads(Path(os.environ['SANDPROOF_FORMAL_RUNTIME']).read_text()),
                 native=native_dependencies(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])))
+    if name == 'retained':
+        _, result['scoped_proofs'] = stage1_retained_coverage(root)
+    return result
+
+
+def stage1_retained_coverage(root=ROOT):
+    """Require checked current V3 files in their original generated views.
+
+    A filename list or a development success is insufficient: use the original
+    successful module receipt, its current complete key and every raw artifact.
+    """
+    cache = Path(os.environ['SANDPROOF_FORMAL_CACHE']).resolve()
+    key = module_key('stage1-protocol', ['bash', 'scripts/verify-stage1-protocol.sh'], root)
+    entry = cache/'modules/stage1-protocol'/digest(key)
+    receipt = load_success(entry, key)
+    if receipt is None or not receipt.get('evidence'):
+        raise ValueError('retained V3 files require the current complete stage1 module receipt')
+    for name, expected in receipt['evidence'].items():
+        path = Path(name)
+        if path.is_symlink() or not path.is_file() or sha(path) != expected:
+            raise ValueError('retained V3 original formal evidence changed: ' + name)
+    records = [Path(name) for name in receipt['evidence']
+               if Path(name).parts[-2:] == ('registered', 'registered-result.json')]
+    if len(records) != 1:
+        raise ValueError('one original registered V3 result is required')
+    record_path, = records
+    record = json.loads(record_path.read_text())
+    if record.get('complete') is not True:
+        raise ValueError('registered V3 result is incomplete')
+    spec = importlib.util.spec_from_file_location('stage1_retained_admission',
+        root/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    covered = registered.validate_retained_coverage(root, record)
+    if not covered:
+        raise ValueError('retained V3 file coverage is empty')
+    return covered, dict(module_receipt_sha256=sha(entry/'receipt.json'),
+                         registered_result_sha256=sha(record_path))
 
 
 def native_dependencies(cache):
@@ -121,20 +167,28 @@ def native_dependencies(cache):
             commands[identity]=value
     # The full functional gate is mandatory admission for every batch, but a
     # Markdown-only change to that gate's inputs does not change a Lean module.
-    return dict(schema=seal.get('schema'),rules=seal.get('rules'),rust=seal.get('rust'),
+    return dict(schema=seal.get('schema'),scope=seal.get('scope'),rules=seal.get('rules'),rust=seal.get('rust'),
                 contracts=seal.get('contracts'),source_archives=seal.get('source_archives'),
                 runtime=seal.get('runtime'),commands=commands)
 
 
-def evidence_files(directory, include_sources=False):
+def evidence_files(directory, include_sources=False, *, capture_caller=False):
     result = {}
     for parent, dirs, files in os.walk(directory):
-        dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]
+        if capture_caller:
+            # wrong-target is actual proof evidence, not a Cargo build tree.
+            dirs[:] = [n for n in dirs if not (
+                n in ('target', 'extract-target', 'formal-target', '.git', '.lake', '.tools', 'node_modules')
+                or n.startswith(('target-', 'cargo-target')))]
+        else:
+            dirs[:] = [n for n in dirs if not ('target' in n or n in ('.git','.lake','.tools','node_modules'))]
         for name in files:
             path = Path(parent)/name
             suffixes=('.log','.json','.jsonl','.llbc','.lean','.sha256')
             if include_sources:
                 suffixes += ('.rs','.toml','.lock','.patch','.txt','.py','.sh','.gz','.tar')
+            if capture_caller:
+                suffixes += ('.stdout', '.stderr')
             if path.is_symlink() or path.suffix not in suffixes:
                 continue
             result[str(path.resolve())] = sha(path)
@@ -215,8 +269,17 @@ def step(name, command, root=ROOT):
         log = entry/'command.log'
         # Remove an old success before execution so a killed rerun stays failed.
         (entry/'receipt.json').unlink(missing_ok=True)
+        inherited_fds = ()
+        if name == 'stage1-protocol' and os.environ.get('SANDPROOF_LOCK_FD'):
+            spec = importlib.util.spec_from_file_location('stage1_lock_transport',
+                root/'verification/experiments/stage1-protocol/registered.py')
+            registration = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(registration)
+            fd, _ = registration.inherited_lock()
+            inherited_fds = (fd,)
         with log.open('wb') as stream:
-            code = subprocess.run(command,cwd=root,stdout=stream,stderr=subprocess.STDOUT).returncode
+            code = subprocess.run(command,cwd=root,stdout=stream,stderr=subprocess.STDOUT,
+                                  pass_fds=inherited_fds).returncode
         sys.stdout.write(log.read_text())
         if code:
             raise subprocess.CalledProcessError(code,command)
@@ -232,9 +295,9 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','stage1-protocol')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:
@@ -392,6 +455,14 @@ def expected_audits(root=ROOT):
     paths += [p for directory in ('SandboxModel', 'verification/aeneas')
               for p in (root/directory).rglob('*.lean')]
     paths += [root/name for name in EXTRA_AUDIT_FILES]
+    # These proofs have deliberately separate generated-library views. Their
+    # annotated templates must still appear in the total audit inventory;
+    # each registered driver checks the instantiated physical files itself.
+    spec = importlib.util.spec_from_file_location('stage1_registered_audits',
+        root/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    paths += [root/name for name in registered.audit_template_paths(root)]
     return {name for path in paths
             for name in re.findall(r'^#audit_controller_proof (\S+)$', path.read_text(), re.M)}
 
@@ -455,9 +526,13 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='mode',required=True)
     run=sub.add_parser('run');run.add_argument('--cache',type=Path,required=True);run.add_argument('--recompute',action='store_true')
+    sub.add_parser('retained-protocol-files')
     task=sub.add_parser('step');task.add_argument('name',choices=['foundations-generation','foundations']);task.add_argument('command',nargs=argparse.REMAINDER)
     args=parser.parse_args(argv)
     if args.mode=='run': run_batch(args.cache.resolve(),args.recompute)
+    elif args.mode=='retained-protocol-files':
+        covered, _ = stage1_retained_coverage()
+        print('\n'.join(sorted(covered)))
     else:
         command=args.command
         if command and command[0]=='--': command=command[1:]

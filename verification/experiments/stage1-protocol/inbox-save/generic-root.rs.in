@@ -1,0 +1,14 @@
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_inbox_save_using<
+    R: super::native_retirement::RetirementEncoding,
+    T: super::model::TerminalEncoding,
+    N: super::renewal_confirmation::RenewalEncoding,
+    U: super::unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: InboxSaveEffects,
+>(
+    inbox: &Inbox,
+    effects: &mut E,
+) -> Result<(), JournalError> {
+    save_using::<R, T, N, U, B, E>(inbox, effects)
+}

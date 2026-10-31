@@ -1,0 +1,143 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryArithmetic
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+theorem next_some (values : Slice α) (index : Nat) (inside : index < values.val.length) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (some values.val[index], cursor values (index + 1)) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, inside]
+
+theorem next_none (values : Slice α) (index : Nat) (outside : values.val.length ≤ index) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr outside]
+
+theorem entries_loop_end (values : Slice Entry) (index : Nat) (key : OperationKey)
+    (count : Usize) (outside : values.val.length ≤ index) :
+    Session.count_entry_key_from_loop (cursor values index) key count = .ok count := by
+  unfold Session.count_entry_key_from_loop
+  rw [loop]
+  simp [Session.count_entry_key_from_loop.body, next_none values index outside]
+
+theorem bind_then (value : Result α) (f : α → Result β) (g : β → Result γ) :
+    Aeneas.Std.bind (Bind.bind value f) g =
+      Bind.bind value (fun x => Aeneas.Std.bind (f x) g) := by
+  change Bind.bind (Bind.bind value f) g = Bind.bind value (fun x => Bind.bind (f x) g)
+  exact bind_assoc_eq value f g
+
+theorem entries_loop_step (values : Slice Entry) (index : Nat) (key : OperationKey)
+    (count : Usize) (inside : index < values.val.length) :
+    Session.count_entry_key_from_loop (cursor values index) key count =
+      (do
+        let next ← if values.val[index].intent.request.binding.key = key
+          then countResult (count.val + 1) else .ok count
+        Session.count_entry_key_from_loop (cursor values (index + 1)) key next) := by
+  unfold Session.count_entry_key_from_loop
+  conv_lhs => rw [loop]
+  simp only [Session.count_entry_key_from_loop.body, next_some values index inside,
+    bind_tc_ok, Replay.key_eq, decide_eq_true_eq]
+  split <;> rename_i h <;> simp [h, count_add_one, bind_then]
+
+theorem entries_loop_refines (values : Slice Entry) (index : Nat) (key : OperationKey)
+    (count : Usize) :
+    Session.count_entry_key_from_loop (cursor values index) key count =
+      countResult (count.val + countEntries key (values.val.drop index)) := by
+  induction remaining : values.val.length - index using Nat.strong_induction_on
+      generalizing index count with
+  | h remaining ih =>
+    by_cases inside : index < values.val.length
+    · rw [entries_loop_step values index key count inside]
+      have stepIH (next : Usize) := ih (values.val.length - (index + 1)) (by omega)
+        (index + 1) next rfl
+      simp_rw [stepIH]
+      rw [List.drop_eq_getElem_cons inside]
+      by_cases same : values.val[index].intent.request.binding.key = key
+      · simp only [same, ↓reduceIte, count_result_bind]
+        simp only [countEntries, List.filter_cons, same, decide_true, ↓reduceIte, List.length_cons]
+        congr 1; omega
+      · simp only [same, ↓reduceIte, bind_tc_ok, countEntries, List.filter_cons, decide_false, Bool.false_eq_true, ↓reduceIte]
+    · rw [entries_loop_end values index key count (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index),
+        countEntries, count_result_val]
+
+theorem entries_refines (binding : BorrowedVecBinding Entry) (session : Session)
+    (key : OperationKey) (count : Usize) :
+    session.count_entry_key_from key count =
+      countResult (count.val + countEntries key session.entries.val) := by
+  unfold Session.count_entry_key_from
+  rw [binding]
+  simp [entries_loop_refines, alloc.vec.Vec.deref]
+
+theorem sessions_loop_end (values : Slice Session) (index : Nat) (key : OperationKey)
+    (count : Usize) (outside : values.val.length ≤ index) :
+    Inbox.count_entry_key_loop (cursor values index) key count = .ok count := by
+  unfold Inbox.count_entry_key_loop
+  rw [loop]
+  simp [Inbox.count_entry_key_loop.body, next_none values index outside]
+
+theorem sessions_loop_step (binding : BorrowedVecBinding Entry)
+    (values : Slice Session) (index : Nat) (key : OperationKey)
+    (count : Usize) (inside : index < values.val.length) :
+    Inbox.count_entry_key_loop (cursor values index) key count =
+      (do
+        let next ← countResult (count.val + countEntries key values.val[index].entries.val)
+        Inbox.count_entry_key_loop (cursor values (index + 1)) key next) := by
+  unfold Inbox.count_entry_key_loop
+  conv_lhs => rw [loop]
+  simp [Inbox.count_entry_key_loop.body, next_some values index inside,
+    entries_refines binding, bind_then]
+
+theorem sessions_loop_refines (binding : BorrowedVecBinding Entry)
+    (values : Slice Session) (index : Nat) (key : OperationKey) (count : Usize) :
+    Inbox.count_entry_key_loop (cursor values index) key count =
+      countResult (count.val + countSessions key (values.val.drop index)) := by
+  induction remaining : values.val.length - index using Nat.strong_induction_on
+      generalizing index count with
+  | h remaining ih =>
+    by_cases inside : index < values.val.length
+    · rw [sessions_loop_step binding values index key count inside]
+      have stepIH (next : Usize) := ih (values.val.length - (index + 1)) (by omega)
+        (index + 1) next rfl
+      simp_rw [stepIH]
+      rw [count_result_bind, List.drop_eq_getElem_cons inside]
+      simp only [countSessions, List.map_cons, List.sum_cons, Nat.add_assoc]
+    · rw [sessions_loop_end values index key count (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index),
+        countSessions, count_result_val]
+
+theorem count_with_bindings (entries : BorrowedVecBinding Entry)
+    (sessions : BorrowedVecBinding Session) : FullCountContract Inbox.count_entry_key := by
+  intro inbox key
+  unfold Inbox.count_entry_key
+  rw [sessions]
+  simp [sessions_loop_refines entries, alloc.vec.Vec.deref]
+
+theorem candidate_iterator_binding (α : Type) : BorrowedVecBinding α := by
+  intro values
+  rfl
+
+theorem candidate_count_contract : FullCountContract Inbox.count_entry_key :=
+  count_with_bindings (candidate_iterator_binding Entry) (candidate_iterator_binding Session)
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entries_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.bind_then
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entries_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entries_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entries_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.sessions_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.sessions_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.sessions_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_with_bindings
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.candidate_iterator_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.candidate_count_contract

@@ -11,6 +11,7 @@ _require_assertions = _runpy.run_path(
 )['require_assertions']
 _require_assertions()
 
+import argparse
 import copy
 import hashlib
 import json
@@ -27,7 +28,8 @@ import urllib.request
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from _center_host_services import (Processes, identities, local_binding, render,
-    redis_configuration, role_facts, stage_role_directories, stage_tls, write_role,test_credentials,process_facts)
+    redis_configuration, role_facts, stage_role_directories, stage_tls, write_role,test_credentials,process_facts,
+    validate_redis_operation_timeout_ms)
 from tools.service_storage_observation import ServiceStoragePeaks
 from server_process_crash import fetch, free_loopback_port
 from tools import ci_e2e_artifacts as artifacts
@@ -37,6 +39,8 @@ from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
 from tools.template_physical_storage import envelope
+from tools.capture_acceptance import instantiate_copy_limits, require_capacity, validate_settings
+from tools.runtime_acceptance_budget import profile_declaration as _profile_declaration, service_declarations
 
 MIB = 1024**2
 MAX_ACTIVATION_BYTES = 200 * 1024**3
@@ -46,10 +50,21 @@ RETIRED_NATIVE_FIELDS = frozenset({'bind','domain','credentials','request_admiss
 
 def add_arguments(parser, *, required=True):
     for name in ('center','host','candidate-manifest','redis-material','tls-material',
-                 'service-staging-parent','service-cgroup-record'):
+                 'service-staging-parent','service-cgroup-record','capture-settings'):
         parser.add_argument('--' + name, type=Path, required=required)
     for name in ('center-uid','center-gid','redis-uid','redis-gid'):
         parser.add_argument('--' + name, type=int, required=required)
+    parser.add_argument('--redis-operation-timeout-ms',type=_redis_operation_timeout_argument,
+        default=1000,help='Explicit deployment-only Redis wait budget, 1..60000 ms (default: 1000)')
+    parser.add_argument('--physical-inodes',type=int,
+        help='explicit complete filesystem inode provision; cannot reduce the original declaration')
+
+
+def _redis_operation_timeout_argument(value):
+    try:
+        return validate_redis_operation_timeout_ms(int(value))
+    except (TypeError,ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def _mkdir(path, identity):
@@ -89,15 +104,6 @@ def _copy(source, target, *, identity, executable=False, expected=None):
     return target
 
 
-def _static_cache(pool, catalog, root):
-    sizes = [item['kernel']['size_bytes'] + item['rootfs']['size_bytes'] for item in catalog['templates']]
-    if not sizes:
-        raise ValueError('explicit immutable registered catalog required')
-    entries = len(sizes)
-    return dict(namespace=pool['namespace'],root=str(root),max_entries=entries,max_downloads=1,
-        max_entry_bytes=max(sizes),artifact_bytes=sum(sizes),temporary_bytes=max(sizes),
-        metadata_bytes=4096+entries*2*(65536+4096),inode_budget=4+entries*5+5)
-
 
 def _wait_redis(config,process):
     """Bounded fixed-test AUTH/PING; not a Redis health/authority replacement."""
@@ -121,50 +127,14 @@ def _wait_redis(config,process):
     raise RuntimeError('fixed Redis startup unobserved; no center initialized')
 
 
-def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, activation_ceiling_bytes=None):
-    """Bind one fresh test declaration; never raise supplied task/cache quotas."""
-    profiles = [native['bounded_host']['physical_storage'] for native in native_pools]
-    if any(profile != profiles[0] for profile in profiles[1:]):
-        raise ValueError('one original shared physical declaration required')
-    profile = copy.deepcopy(profiles[0])
-    caches = profile['host_template_caches']
-    if not caches:
-        if len(native_pools) != 1:
-            raise ValueError('dynamic two-pool acceptance requires explicit approved cache capacities')
-        caches.append(_static_cache(native_pools[0],catalogs[0],layout['hosts'][0]/'template-cache'))
-    if len(caches) != len(native_pools):
-        raise ValueError('one distinct physical cache for every exact host pool required')
-    for index,native in enumerate(native_pools):
-        matched=[cache for cache in caches if cache['namespace']==native['namespace']]
-        if len(matched)!=1:
-            raise ValueError('physical cache does not name its original pool')
-        required=[item['kernel']['size_bytes']+item['rootfs']['size_bytes']
-                  for item in catalogs[index]['templates']]
-        if (len(required)>matched[0]['max_entries'] or max(required)>matched[0]['max_entry_bytes']
-                or sum(required)>matched[0]['artifact_bytes']):
-            raise ValueError('approved cache cannot contain static catalog; no capacity is raised')
-        matched[0]['root']=str(layout['hosts'][index]/'template-cache')
-    public=profile['public_build']
-    registry_peak=registry['max_artifact_bytes_global']+registry['max_templates_global']*(65536+87)
-    if public is not None:
-        # Only the fresh layout/role owner changes. Original workspace, registry,
-        # jobs, templates and cleanup provisions remain the supplied ceilings.
-        if public['registry_bytes'] < registry_peak:
-            raise ValueError('original registry budget cannot cover declared registry')
-        public.update(registry_root=str(layout['registry']),registry_owner_uid=layout['center_identity'][0])
-    else:
-        service_peaks.append(dict(root=str(layout['registry']),owner_uid=layout['center_identity'][0],
-            peak_bytes=registry_peak,inode_budget=8+5*registry['max_templates_global']))
-    if profile['service_data']:
-        raise ValueError('fresh service declarations required; existing service roots are not relocated')
-    profile['service_data']=copy.deepcopy(service_peaks)
+
+def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks,
+                  activation_ceiling_bytes=None, physical_inodes=None):
+    """Validate the full original physical admission before any large copy."""
+    profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
+        service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,
+        physical_inodes=physical_inodes)
     peak,inodes=envelope(profile)
-    if activation_ceiling_bytes is not None:
-        if (type(activation_ceiling_bytes) is not int
-                or not 0<activation_ceiling_bytes<=MAX_ACTIVATION_BYTES):
-            raise ValueError('explicit prepared CI activation ceiling at most 200 GiB required')
-        if 2*peak>activation_ceiling_bytes:
-            raise ValueError('complete dual-service activation exceeds prepared CI ceiling; no quota is reduced')
     free=os.statvfs(layout['hosts'][0])
     if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
         raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed')
@@ -173,15 +143,49 @@ def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks, ac
     return profile
 
 
+def _provision_host(binary, control, config, record):
+    """One fresh layout and epoch; errors retain the exact partial deployment."""
+    # Fresh provisioning is explicit and occurs before the final role
+    # configuration is written. serve/restart never repeats it.
+    provision=control/'host-provision.json'
+    write_role(provision,config,uid=0,gid=0)
+    from tools.service_cgroup import prefix
+    from tools.ci_e2e_prepare import bounded_json_command
+    # Only this fresh-run preparation creates the layout. Restart uses
+    # the same final role config and never re-enters this method.
+    with (control/'capture-provision.log').open('xb') as output:
+        os.chmod(control/'capture-provision.log',0o600)
+        subprocess.run([*prefix(record),str(binary),
+            'provision-capture-layout','--config',str(provision)],check=True,timeout=30,
+            stdout=output,stderr=output,env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'})
+    if (control/'capture-provision.log').stat().st_size>65536:
+        raise ValueError('capture provision output exceeds its finite evidence budget')
+    for child in ('v','s'):
+        private_path(Path(config['capture']['layout_parent'])/child,directory=True)
+    registration=bounded_json_command([*prefix(record),str(binary),
+        'provision-bootstrap','--config',str(provision)],
+        {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},timeout=30,max_bytes=4096)
+    if (set(registration)!={'version','boot_id','policy'} or registration['version']!=1
+            or registration['boot_id']!=Path('/proc/sys/kernel/random/boot_id').read_text().strip()):
+        raise ValueError('actual original bootstrap provisioning not confirmed')
+    config['inbox']['host_epoch']=registration
+    path=control/'host.json'
+    write_role(path,config,uid=0,gid=0)
+    return path
+
+
 class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
-                job_count,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
+                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
+        redis_operation_timeout_ms=validate_redis_operation_timeout_ms(args.redis_operation_timeout_ms)
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
         if registry_config is None or any(RETIRED_NATIVE_FIELDS & native.keys() for native in native_pools):
             raise ValueError('new native inputs and explicit registry declaration required')
+        if type(retained_sessions) is not int or not 1<=retained_sessions<=2**16-1:
+            raise ValueError('explicit finite retained-session count required')
         test_credentials(key,extra_credentials)
         root=private_path(root,directory=True)
         pools=copy.deepcopy(native_pools)
@@ -196,14 +200,23 @@ class RuntimeServices:
             raise ValueError('actual service metadata disagrees')
         manifest=artifacts.load(Path(args.candidate_manifest),candidate=candidate,
             paths={role:str(path) for role,path in paths.items()},versions=versions)
+        captures=validate_settings(json_file(private_path(args.capture_settings),limit=65536),len(pools))
+        captures=[instantiate_copy_limits(capture,native,catalog)
+                  for capture,native,catalog in zip(captures,pools,registered_catalogs)]
+        for native,capture in zip(pools,captures):
+            pool_root=Path(native['database']).parent.parent
+            parent=Path(capture['layout_parent'])
+            if parent!=pool_root/'p' or parent/'v'!=Path(native['chroot_base']):
+                raise ValueError('capture profile must bind the exact fresh runtime sibling')
+            require_capacity(capture,native,retained_sessions)
         redis_receipt=check_material(Path(args.redis_material),protected=True)
         hosts=[]
-        for native in pools:
+        for native,capture in zip(pools,captures):
             host_root=Path(native['database']).parent.parent
             if host_root not in (root,root/'0',root/'1'):
                 raise ValueError('explicit original host roots must belong to this fresh evidence root')
             hosts.append(private_path(host_root,directory=True))
-            for path in (Path(native['database']).parent,Path(native['node_state_dir']),Path(native['chroot_base'])):
+            for path in (Path(native['database']).parent,Path(native['node_state_dir']),Path(capture['layout_parent'])):
                 private_path(path,directory=True)
                 if any(path.iterdir()):
                     raise ValueError('never adopt existing native history or physical resources')
@@ -249,19 +262,10 @@ class RuntimeServices:
         center_bin=layout['center_control']/'sandproof-center'
         host_bins=[control/'sandproof-host' for control in layout['host_controls']]
         redis_bin=layout['redis']/'redis-server'
-        service_peaks=[dict(root=str(directory),owner_uid=uid,peak_bytes=budget,inode_budget=inodes)
-            for directory,uid,budget,inodes in (
-                (layout['center_control'],ids['center'][0],paths['center'].stat().st_size+8*MIB,32),
-                (layout['assets'],ids['center'][0],asset_bytes+MIB,32),
-                (layout['writer'],ids['center'][0],MIB,16),
-                (layout['redis'],ids['redis'][0],redis_receipt['binary_bytes']+512*MIB,64),
-                (layout['logs'],0,64*MIB,64),
-                *((control,0,paths['host'].stat().st_size+8*MIB,32)
-                  for control in layout['host_controls']))]
-        if private_builds is not None:
-            service_peaks.append(dict(root=str(layout['build_control']),owner_uid=0,peak_bytes=8*MIB,inode_budget=32))
+        service_peaks=service_declarations(layout,ids,paths,asset_bytes,redis_receipt,private_builds,captures)
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
-                              activation_ceiling_bytes=activation_ceiling_bytes)
+                              activation_ceiling_bytes=activation_ceiling_bytes,
+                              physical_inodes=getattr(args,'physical_inodes',None))
         # Complete original byte/inode activation is checked BEFORE any large
         # disk copy. Rust checks the same final profile independently at init.
         for source,target,checksum in pending_copies:
@@ -306,17 +310,16 @@ class RuntimeServices:
             host_tls_roots=[control/'tls' for control in layout['host_controls']],
             host_addresses=host_addresses,public_address=public_address,
             artifact_address='127.0.0.1:'+str(artifact_port),redis_address='127.0.0.1:'+str(redis_port),
-            password=password,key=key,job_count=job_count,registry=registry,versions=versions,
-            private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials)
+            password=password,key=key,retained_sessions=retained_sessions,registry=registry,versions=versions,
+            capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials,
+            redis_operation_timeout_ms=redis_operation_timeout_ms)
         center['redis']['writer_root']=str(layout['writer'])
         write_role(layout['center_control']/'token.key',secrets.token_bytes(32),uid=ids['center'][0],gid=ids['center'][1])
         center_path=layout['center_control']/'center.json'
         write_role(center_path,center,uid=ids['center'][0],gid=ids['center'][1])
         host_paths=[]
         for control,config in zip(layout['host_controls'],host_configs):
-            path=control/'host.json'
-            write_role(path,config,uid=0,gid=0)
-            host_paths.append(path)
+            host_paths.append(_provision_host(control/'sandproof-host',control,config,record))
         redis_path=layout['redis']/'redis.conf'
         write_role(redis_path,redis_configuration(layout['redis'],port=redis_port,password=password).encode(),
                    uid=ids['redis'][0],gid=ids['redis'][1])

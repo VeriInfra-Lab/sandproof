@@ -35,7 +35,7 @@ def current_create_fixture():
     create.update(binding=copy.deepcopy(binding), options_sha256=hashlib.sha256(bytes(options)).hexdigest(),
         metadata_sha256=hashlib.sha256(b'{}').hexdigest())
     operation = copy.deepcopy(identity) | dict(operation=dict(kind='create',target_incarnation=1),
-        acceptance_time=dict(kind='sampled',at_ms=800),running=None,create_refusal=None,terminal=None)
+        acceptance_time=dict(kind='sampled',at_ms=800),running=None,create_refusal=None,terminal=None,unloaded=None)
     record = dict(create=create,private=False,operations=[operation],terminating=False,
         released=False,phase='creating',last_running=None,terminal_confirmation=None)
     return node, identity, record, observation
@@ -602,9 +602,9 @@ class CenterHostFaultsTests(unittest.TestCase):
         control=self.root/'control'
         control.mkdir(mode=0o700)
         path=control/'host.json'
-        path.write_text(json.dumps(dict(native=dict(namespace='a'*16))))
+        path.write_text(json.dumps(dict(native=dict(namespace='a'*16,chroot_base=str(self.root/'p/v')))))
         path.chmod(0o600)
-        claim=self.root/'jails/.claims'/('vm-'+'a'*16+'-42')
+        claim=self.root/'p/v/.claims'/('vm-'+'a'*16+'-42')
         claim.mkdir(parents=True,mode=0o700)
         record=claim/'record.json'
         boot=Path('/proc/sys/kernel/random/boot_id').read_text().strip()

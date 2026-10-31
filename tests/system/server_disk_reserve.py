@@ -143,13 +143,13 @@ def prepare_services(args, mounted, template):
     """
     from server_templates import descriptor
     config = dict(template)
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (mounted / name).mkdir(mode=0o700)
     key = secrets.token_hex(32)
     port = free_loopback_port()
     config.update(
         namespace=secrets.token_hex(8), database=str(mounted / "db/controller.db"),
-        node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "jails"),
+        node_state_dir=str(mounted / "state"), chroot_base=str(mounted / "p/v"),
         max_active_global=4, max_active_per_tenant=4,
         max_disk_bytes_global=8192 * MIB, max_disk_bytes_per_tenant=4096 * MIB,
         cleanup_reserve_bytes=RESERVE, public_ipv4_enabled=False,
@@ -161,12 +161,12 @@ def prepare_services(args, mounted, template):
         max_vcpus_global=4,max_vcpus_per_tenant=4,
         max_memory_bytes_global=4*768*MIB,max_memory_bytes_per_tenant=4*768*MIB))
     config['templates']=catalog
-    config=complete_runtime(config,slots=4)
+    config=complete_runtime(config,slots=4,inbox_sessions=4+config["max_active_global"])
     registry=dict(root=str(mounted/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
         max_artifact_bytes_global=2*1024*MIB,max_artifact_bytes_per_tenant=2*1024*MIB,
         max_template_disk_bytes=1024*MIB,validation_timeout_secs=120)
     services=RuntimeServices.prepare(args,mounted,[config],[catalog],key,f'127.0.0.1:{port}',
-        args.service_cgroup_record,job_count=4,registry_config=registry)
+        args.service_cgroup_record,retained_sessions=4 + config['max_active_global'],registry_config=registry)
     return services,services.native_pools[0],key,services.sdk_url
 
 

@@ -1,4 +1,4 @@
-//! Original-FD copy and durable publication for full snapshot materials.
+//! Original-FD `CoW` cloning and durable publication for full snapshot materials.
 //!
 //! This module owns files, not restore eligibility or VM lifetime. In particular,
 //! dropping a stage (including on error) never removes its partial files and never
@@ -16,6 +16,7 @@ use crate::{
 use rustix::fs::{
     AtFlags, Mode, OFlags, RenameFlags, mkdirat, open, openat, renameat_with, statat,
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     ffi::OsStr,
@@ -27,7 +28,18 @@ use std::{
 
 #[path = "snapshot_bundle.rs"]
 mod bundle;
+#[path = "snapshot_clone.rs"]
+mod file_clone;
+pub(crate) use file_clone::{clone_whole_file, require_same_xfs_mount};
+#[path = "snapshot_completion.rs"]
+mod completion;
+pub(crate) use completion::MAX_COMPLETION_BYTES;
+#[path = "snapshot_material_retirement.rs"]
+pub(crate) mod material_retirement;
+#[path = "snapshot_retirement.rs"]
+mod retirement;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
+pub use material_retirement::CaptureStoreRetirement;
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
 const COPY_BUFFER_BYTES: usize = 65_536;
@@ -41,6 +53,20 @@ pub enum SnapshotArtifact {
     Disk(u32),
 }
 
+/// Real single-artifact work boundaries. Measurement counts bytes READ from the
+/// complete clone for SHA-256; it is never physical-copy or disk-write progress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapshotArtifactEvent {
+    BeforeClone,
+    Cloned,
+    Measuring {
+        measured_bytes: u64,
+        total_bytes: u64,
+    },
+    BeforeSync,
+    Synced,
+}
+
 impl SnapshotArtifact {
     #[must_use]
     pub fn relative_path(self) -> String {
@@ -52,7 +78,7 @@ impl SnapshotArtifact {
     }
 }
 
-/// SHA-256 of actual copied bytes. This is not `core::ManifestDigest(u64)`.
+/// SHA-256 of actual logical file bytes. This is not `core::ManifestDigest(u64)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotFileMeasurement {
     pub artifact: SnapshotArtifact,
@@ -60,7 +86,8 @@ pub struct SnapshotFileMeasurement {
     pub sha256: [u8; 32],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FileStamp {
     device: u64,
     inode: u64,
@@ -143,6 +170,46 @@ fn invalid(message: &'static str) -> RuntimeError {
 
 fn os_error(error: rustix::io::Errno) -> RuntimeError {
     RuntimeError::Io(io::Error::from(error))
+}
+
+fn measure_clone_observing(
+    file: &mut File,
+    cloned: &FileStamp,
+    artifact: SnapshotArtifact,
+    observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
+) -> Result<[u8; 32], RuntimeError> {
+    if *cloned != FileStamp::from_metadata(&file.metadata()?) {
+        return Err(invalid("snapshot clone changed before measurement"));
+    }
+    file.seek(SeekFrom::Start(0))?;
+    let mut digest = Sha256::new();
+    let mut buffer = Vec::new();
+    buffer.try_reserve_exact(COPY_BUFFER_BYTES).map_err(|_| {
+        RuntimeError::Io(io::Error::other(
+            "snapshot measurement buffer allocation failed",
+        ))
+    })?;
+    buffer.resize(COPY_BUFFER_BYTES, 0_u8);
+    let mut remaining = cloned.length;
+    while remaining > 0 {
+        let count = usize::try_from(remaining.min(buffer.len() as u64))
+            .map_err(|_| invalid("snapshot measurement block length"))?;
+        file.read_exact(&mut buffer[..count])?;
+        digest.update(&buffer[..count]);
+        remaining -= count as u64;
+        observe(
+            artifact,
+            SnapshotArtifactEvent::Measuring {
+                measured_bytes: cloned.length - remaining,
+                total_bytes: cloned.length,
+            },
+        )?;
+    }
+    let mut extra = [0_u8; 1];
+    if file.read(&mut extra)? != 0 || *cloned != FileStamp::from_metadata(&file.metadata()?) {
+        return Err(invalid("snapshot clone changed during measurement"));
+    }
+    Ok(digest.finalize().into())
 }
 
 fn file_facts(metadata: &Metadata) -> SnapshotFileFacts {
@@ -318,10 +385,10 @@ impl SnapshotStage {
             .collect()
     }
 
-    /// Copy and hash one original open regular file while its writers are drained.
-    /// The descriptor, metadata and length are checked again after the copy.
+    /// Clone an original open file, then read/hash its complete logical bytes.
+    /// Writers stay drained; file identity/metadata are checked throughout.
     /// # Errors
-    /// Short reads/writes, budget overflow, links, duplicate roles and mutation
+    /// Clone/read/sync errors, budget overflow, links, duplicate roles and mutation
     /// retain the partial destination under the same capture responsibility.
     pub fn copy_artifact(
         &mut self,
@@ -329,6 +396,19 @@ impl SnapshotStage {
         source_owner: u32,
         artifact: SnapshotArtifact,
         max_length: u64,
+    ) -> Result<SnapshotFileMeasurement, RuntimeError> {
+        self.copy_artifact_observing(source, source_owner, artifact, max_length, &mut |_, _| {
+            Ok(())
+        })
+    }
+
+    pub(crate) fn copy_artifact_observing(
+        &mut self,
+        source: &mut File,
+        source_owner: u32,
+        artifact: SnapshotArtifact,
+        max_length: u64,
+        observe: &mut impl FnMut(SnapshotArtifact, SnapshotArtifactEvent) -> Result<(), RuntimeError>,
     ) -> Result<SnapshotFileMeasurement, RuntimeError> {
         if self
             .copied
@@ -353,26 +433,26 @@ impl SnapshotStage {
             )
             .map_err(os_error)?,
         );
-        source.seek(SeekFrom::Start(0))?;
-        let mut digest = Sha256::new();
-        let mut buffer = Vec::new();
-        buffer.try_reserve_exact(COPY_BUFFER_BYTES).map_err(|_| {
-            RuntimeError::Io(io::Error::other("snapshot copy buffer allocation failed"))
-        })?;
-        buffer.resize(COPY_BUFFER_BYTES, 0_u8);
-        let mut remaining = original.len();
-        while remaining > 0 {
-            let count = usize::try_from(remaining.min(buffer.len() as u64))
-                .map_err(|_| invalid("snapshot copy block length"))?;
-            source.read_exact(&mut buffer[..count])?;
-            destination.write_all(&buffer[..count])?;
-            digest.update(&buffer[..count]);
-            remaining -= count as u64;
+        if destination.metadata()?.uid() != self.owner {
+            return Err(invalid("snapshot clone destination owner"));
         }
-        let mut extra = [0_u8; 1];
-        if source.read(&mut extra)? != 0 || before != FileStamp::from_metadata(&source.metadata()?)
+        matches_entry(&self.directory, OsStr::new(&name), &destination)?;
+        observe(artifact, SnapshotArtifactEvent::BeforeClone)?;
+        if before != FileStamp::from_metadata(&source.metadata()?) {
+            return Err(invalid("snapshot source changed before FICLONE"));
+        }
+        clone_whole_file(source, &destination)?;
+        let cloned = FileStamp::from_metadata(&destination.metadata()?);
+        observe(artifact, SnapshotArtifactEvent::Cloned)?;
+        if before != FileStamp::from_metadata(&source.metadata()?) {
+            return Err(invalid("snapshot source changed before measurement"));
+        }
+        let digest = measure_clone_observing(&mut destination, &cloned, artifact, observe)?;
+        observe(artifact, SnapshotArtifactEvent::BeforeSync)?;
+        if cloned != FileStamp::from_metadata(&destination.metadata()?)
+            || before != FileStamp::from_metadata(&source.metadata()?)
         {
-            return Err(invalid("snapshot source changed during copy"));
+            return Err(invalid("snapshot source or clone changed before sync"));
         }
         destination.set_permissions(Permissions::from_mode(0o400))?;
         destination.sync_all()?;
@@ -383,10 +463,17 @@ impl SnapshotStage {
             return Err(invalid("snapshot destination identity or length"));
         }
         matches_entry(&self.directory, OsStr::new(&name), &destination)?;
+        observe(artifact, SnapshotArtifactEvent::Synced)?;
+        if FileStamp::from_metadata(&metadata) != FileStamp::from_metadata(&destination.metadata()?)
+            || before != FileStamp::from_metadata(&source.metadata()?)
+        {
+            return Err(invalid("snapshot source or clone changed after sync"));
+        }
+        matches_entry(&self.directory, OsStr::new(&name), &destination)?;
         let measurement = SnapshotFileMeasurement {
             artifact,
             length: original.len(),
-            sha256: digest.finalize().into(),
+            sha256: digest,
         };
         self.copied.push(CopiedFile {
             file: destination,

@@ -1,0 +1,103 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+import SandboxModel.Lifecycle.Protocol.InboxSaveModel
+import SandboxModel.Lifecycle.Protocol.CreateInstallModel
+import SandboxModel.Lifecycle.Protocol.CreateDeadline
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow
+noncomputable section
+
+abbrev Outcome (E : Type) := Result (core.result.Result Unit JournalError × E)
+
+def lifetimeStatement : Str := SandproofStage1RequestRust.toStr
+  "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2"
+
+-- All prior effects remain in the returned state, including on a later error.
+-- The successful UPDATE row count is intentionally ignored, as in real Rust.
+def persistView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : CreateAttachmentEffects E) (post : Inbox) (ns : Str)
+    (attachment : CreateAttachment) (deadline : U64) (state : E) : Outcome E := do
+  let beforeArguments ← io.begin_lifetime_update state
+  let converted ← CreateDeadline.run deadline
+  match converted with
+  | .Err error => .ok (.Err error, beforeArguments)
+  | .Ok signed =>
+    let (identified, afterIdentity) ← io.sandbox_id beforeArguments ns attachment.local.sandbox
+    match identified with
+    | .Err error => .ok (.Err error, afterIdentity)
+    | .Ok sandbox =>
+      let key ← sandproof_protocol.SandboxId.as_str sandbox
+      let (updated, afterUpdate) ← io.execute_lifetime_update afterIdentity lifetimeStatement signed key
+      match updated with
+      | .Err error => .ok (.Err error, afterUpdate)
+      | .Ok _ =>
+        let beforeSave ← io.begin_inbox_save afterUpdate
+        InboxSave.saveView saved terminal renewal unload io.codecInboxSaveEffectsInst post beforeSave
+
+def installedView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : CreateAttachmentEffects E) (inbox : Inbox) (ns : Str)
+    (attachment : CreateAttachment) (s e : Usize) (deadline : U64) (state : E) : Outcome E := do
+  let post ← CreateInstall.run inbox s e attachment.local
+  persistView saved terminal renewal unload io post ns attachment deadline state
+
+-- Existing mappings never read World. Missing mappings pass the same whole
+-- returned World and original local binding to the existing proved new-owner check.
+def selectedView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : CreateAttachmentEffects E) (inbox : Inbox) (ns : Str)
+    (attachment : CreateAttachment) (s e : Usize) (deadline : U64) (state : E) : Outcome E := do
+  let session ← alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session) inbox.sessions s
+  let existing ← check_existing_create_owner inbox session.owner attachment.local.owner
+  match existing with
+  | .Err error => .ok (.Err error, state)
+  | .Ok true => installedView saved terminal renewal unload io inbox ns attachment s e deadline state
+  | .Ok false =>
+    let (world, afterWorld) ← io.world state
+    let fresh ← check_new_create_owner inbox world attachment.local
+    match fresh with
+    | .Err error => .ok (.Err error, afterWorld)
+    | .Ok () => installedView saved terminal renewal unload io inbox ns attachment s e deadline afterWorld
+
+def loadedView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : CreateAttachmentEffects E) (inbox : Inbox) (ns : Str)
+    (attachment : CreateAttachment) (state : E) : Outcome E := do
+  let selected ← create_attachment_selection inbox attachment.intent
+  match selected with
+  | .Err error => .ok (.Err error, state)
+  | .Ok (s,e,deadline) => selectedView saved terminal renewal unload io inbox ns attachment s e deadline state
+
+def flowView {R T N U E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (io : CreateAttachmentEffects E) (state : E) (ns : Str) (attachment : CreateAttachment) : Outcome E := do
+  let (loaded, afterLoad) ← InboxLoad.fullLoadView saved terminal renewal unload io.codecInboxLoadEffectsInst state
+  match loaded with
+  | .Err error => .ok (.Err error, afterLoad)
+  | .Ok none => .ok (.Err .UnsupportedStore, afterLoad)
+  | .Ok (some inbox) => loadedView saved terminal renewal.encode unload.encode io inbox ns attachment afterLoad
+
+abbrev Implementation := ∀ {R T N U B E : Type},
+  RetirementEncoding R → TerminalEncoding T → RenewalEncoding N → UnloadEncoding U →
+  GraphicBytes B → CreateAttachmentEffects E → E → Str → CreateAttachment → Outcome E
+
+-- Independent complete load/save specifications, exact pure lower operations,
+-- and every intermediate effect state. No whole codec/handler/transaction oracle.
+def FullCreateFlowContract (run : Implementation) : Prop :=
+  ∀ {R T N U B E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+    (io : CreateAttachmentEffects E),
+    ComposedConfig.FullGraphicContract graphic →
+    InboxLoad.DecodedStringsRepresentable io.codecInboxLoadEffectsInst →
+    ∀ state ns attachment, run saved terminal renewal unload graphic io state ns attachment =
+      flowView saved terminal renewal unload io state ns attachment
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow

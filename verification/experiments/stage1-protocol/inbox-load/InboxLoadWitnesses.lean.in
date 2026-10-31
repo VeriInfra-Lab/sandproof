@@ -1,0 +1,21 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+import SandboxModel.Lifecycle.Protocol.InboxLoadComposition
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem normal_loaded (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic normalEffects trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ completeTrace InboxValidation.Values.normal) := by
+  rw [full_load_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract normalEffects normal_represented trace]
+  exact normal_model_loaded trace
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.normal_loaded

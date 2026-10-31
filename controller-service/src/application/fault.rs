@@ -280,6 +280,7 @@ impl FaultRecord {
             JournalError::Conflict => (FaultKind::Conflict, None),
             JournalError::IdentifierExhausted => (FaultKind::IdentifierExhausted, None),
             JournalError::MaintenanceCapacity => (FaultKind::MaintenanceCapacity, None),
+            JournalError::CaptureMaterialQuotaExceeded => (FaultKind::MaintenanceCapacity, None),
             JournalError::RevisionConflict => (FaultKind::RevisionConflict, None),
             JournalError::ReceiptBeforeDispatch => (FaultKind::ReceiptBeforeDispatch, None),
             JournalError::ConflictingReceipt => (FaultKind::ConflictingReceipt, None),

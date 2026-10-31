@@ -1,0 +1,475 @@
+import SandboxModel.Lifecycle.Protocol.EnvelopeBytes
+import SandproofEnvelopeBudget.Funs
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Foundations SandboxModel.Boundaries
+namespace SandboxModel.Stage1Protocol.EnvelopeBudget
+open EnvelopeBytes
+open JsonRequest (JsonOutput)
+
+/-- Structural upper estimate for this ASCII-key, fixed-width integer schema.
+It is a size measure, not a renderer. Its meaning for actual emitted bytes is an
+explicit fixed-library condition, with the conditions below checked separately. -/
+def outputBound : JsonOutput → Nat
+  | .text text => 2 + 6 * (IdentifierLibrary.stringBytes text).length
+  | .unsigned number => if number ≤ 255 then 3 else 20
+  | .signed _ => 20
+  | .boolean _ => 5
+  | .array values => 2 + (values.map (fun value => outputBound value + 1)).sum
+  | .object fields => 2 + (fields.map (fun field =>
+      (IdentifierLibrary.stringBytes field.1).length + outputBound field.2 + 4)).sum
+termination_by value => sizeOf value
+decreasing_by
+  all_goals
+    simp_wf
+    have bound := List.sizeOf_lt_of_mem ‹_ ∈ _›
+    first
+    | omega
+    | have pair : sizeOf field = 1 + sizeOf field.1 + sizeOf field.2 := by cases field; rfl
+      omega
+
+def OutputConditions : JsonOutput → Prop
+  | .text _ => True
+  | .unsigned number => number ≤ 2^64 - 1
+  | .signed number => -(2^63) ≤ number ∧ number < 2^63
+  | .boolean _ => True
+  | .array values => ∀ value ∈ values, OutputConditions value
+  | .object fields => ∀ field ∈ fields,
+      (IdentifierLibrary.stringBytes field.1).all allowedByte = true ∧ OutputConditions field.2
+termination_by value => sizeOf value
+decreasing_by
+  all_goals
+    simp_wf
+    have bound := List.sizeOf_lt_of_mem ‹_ ∈ _›
+    first
+    | omega
+    | have pair : sizeOf field = 1 + sizeOf field.1 + sizeOf field.2 := by cases field; rfl
+      omega
+
+def identifierBytes (value : Accepted) : Nat :=
+  ((identifiers value).map (fun field => (IdentifierLibrary.stringBytes field.value).length)).sum
+
+def optionBytes (value : Accepted) : Nat :=
+  match value.request.operation with
+  | .Create create _ => create.options.val.length
+  | _ => 0
+
+def encodingBound (value : Accepted) : Nat := 2048 + 6 * identifierBytes value + 4 * optionBytes value
+
+theorem original_options_limit : SandproofEnvelopeBudgetRust.max_options_bytes = .ok 65536#usize := by
+  simp [SandproofEnvelopeBudgetRust.max_options_bytes,
+    SandproofEnvelopeBudgetRust.sandproof_protocol.internal.lifecycle.MAX_OPTIONS_BYTES]
+
+theorem original_body_limit : SandproofEnvelopeBudgetRust.request_body_bytes = .ok 278528#usize := by
+  simp [SandproofEnvelopeBudgetRust.request_body_bytes,
+    SandproofEnvelopeBudgetRust.sandproof_internal.lifecycle.REQUEST_BODY_BYTES,
+    SandproofEnvelopeBudgetRust.sandproof_protocol.internal.lifecycle.MAX_OPTIONS_BYTES]
+  simp [HMul.hMul, HAdd.hAdd, UScalar.mul, UScalar.add, UScalar.tryMk,
+    UScalar.tryMkOpt, UScalar.check_bounds]
+  cases System.Platform.numBits_eq with
+  | inl bits => simp [bits, Mul.mul, Add.add, UScalar.ofNatCore_val_eq]
+  | inr bits => simp [bits, Mul.mul, Add.add, UScalar.ofNatCore_val_eq]
+
+theorem unsigned_bound (number : Nat) : outputBound (.unsigned number) ≤ 20 := by
+  simp only [outputBound]
+  split <;> omega
+
+theorem byte_array_bound (bytes : List U8) :
+    outputBound (.array (bytes.map (fun byte => .unsigned byte.val))) = 2 + 4 * bytes.length := by
+  have each (byte : U8) : outputBound (.unsigned byte.val) = 3 := by
+    have bound := byte.hBounds
+    simp only [UScalarTy.numBits] at bound
+    simp [outputBound, show byte.val ≤ 255 by omega]
+  simp only [outputBound, List.map_map]
+  simp only [Function.comp_def, each]
+  simp
+  omega
+
+theorem node_fields_bound
+    (node : SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity) :
+    outputBound (EnvelopeSchema.nodeFields node) ≤ 100 +
+      6 * (IdentifierLibrary.stringBytes node.deployment_id).length +
+      6 * (IdentifierLibrary.stringBytes node.node_id).length := by
+  have generation := unsigned_bound node.node_generation.val
+  simp only [EnvelopeSchema.nodeFields, JsonRequest.nodeOutput, outputBound,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((13 + (2 + 6 * _) + 4) + ((7 + (2 + 6 * _) + 4) +
+    ((15 + (if node.node_generation.val ≤ 255 then 3 else 20) + 4) + 0))) ≤ _
+  simp only [outputBound] at generation
+  omega
+
+open SandproofStage1RequestRust.sandproof_protocol.internal
+open SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle
+open SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity
+open SandproofStage1RequestRust.sandproof_protocol.lifecycle.request
+open SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority
+
+theorem key_fields_bound (key : OperationKey) :
+    outputBound (EnvelopeSchema.keyFields key) ≤ 100 +
+      6 * (IdentifierLibrary.stringBytes key.deployment).length +
+      6 * (IdentifierLibrary.stringBytes key.owner).length := by
+  have window := unsigned_bound key.window.val
+  have sequence := unsigned_bound key.sequence.val
+  simp only [EnvelopeSchema.keyFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((10 + (2 + 6 * _) + 4) + ((5 + (2 + 6 * _) + 4) +
+    ((6 + outputBound (.unsigned key.window.val) + 4) +
+    ((8 + outputBound (.unsigned key.sequence.val) + 4) + 0)))) ≤ _
+  omega
+
+theorem expected_fields_bound (expected : ExpectedSession) :
+    outputBound (EnvelopeSchema.expectedFields expected) ≤ 100 := by
+  cases expected with
+  | Absent =>
+    simp only [EnvelopeSchema.expectedFields, outputBound, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    decide
+  | Version version =>
+    have numeric := unsigned_bound version.val
+    simp only [EnvelopeSchema.expectedFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    change 2 + ((5 + (2 + 6 * 7) + 4) + ((7 + outputBound (.unsigned version.val) + 4) + 0)) ≤ 100
+    omega
+
+theorem resource_fields_bound (resources : RustResources) :
+    outputBound (JsonRequest.resourceOutput resources) ≤ 150 := by
+  have instances := unsigned_bound resources.instances.val
+  have cpu := unsigned_bound resources.cpu.val
+  have memory := unsigned_bound resources.memory_bytes.val
+  have disk := unsigned_bound resources.disk_bytes.val
+  simp only [JsonRequest.resourceOutput, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((9 + outputBound (.unsigned resources.instances.val) + 4) +
+    ((3 + outputBound (.unsigned resources.cpu.val) + 4) +
+    ((12 + outputBound (.unsigned resources.memory_bytes.val) + 4) +
+    ((10 + outputBound (.unsigned resources.disk_bytes.val) + 4) + 0)))) ≤ 150
+  omega
+
+theorem create_fields_bound (create : CreateBinding) :
+    outputBound (EnvelopeSchema.createFields create) ≤ 500 +
+      6 * (IdentifierLibrary.stringBytes create.template_revision).length + 4 * create.options.val.length := by
+  have digest := byte_array_bound create.template_digest.val
+  have digestLength := create.template_digest.property
+  have options := byte_array_bound create.options.val
+  have resources := resource_fields_bound ⟨create.resources.instances, create.resources.cpu,
+    create.resources.memory_bytes, create.resources.disk_bytes⟩
+  have startup := unsigned_bound create.startup_deadline_ms.val
+  have timeout := unsigned_bound create.timeout_ms.val
+  have lifetime := unsigned_bound create.max_lifetime_ms.val
+  simp only [EnvelopeSchema.createFields, JsonRequest.createOutput, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((17 + (2 + 6 * _) + 4) +
+    ((15 + outputBound (.array (create.template_digest.val.map (fun byte => .unsigned byte.val))) + 4) +
+    ((9 + outputBound (JsonRequest.resourceOutput ⟨create.resources.instances, create.resources.cpu,
+      create.resources.memory_bytes, create.resources.disk_bytes⟩) + 4) +
+    ((7 + outputBound (.array (create.options.val.map (fun byte => .unsigned byte.val))) + 4) +
+    ((19 + outputBound (.unsigned create.startup_deadline_ms.val) + 4) +
+    ((10 + outputBound (.unsigned create.timeout_ms.val) + 4) +
+    ((15 + outputBound (.unsigned create.max_lifetime_ms.val) + 4) + 0))))))) ≤ _
+  change create.template_digest.val.length = 32 at digestLength
+  omega
+
+theorem binding_fields_bound (binding : OperationBinding) :
+    outputBound (EnvelopeSchema.bindingFields binding) ≤ 400 +
+      6 * (IdentifierLibrary.stringBytes binding.node.deployment_id).length +
+      6 * (IdentifierLibrary.stringBytes binding.node.node_id).length +
+      6 * (IdentifierLibrary.stringBytes binding.session).length +
+      6 * (IdentifierLibrary.stringBytes binding.key.deployment).length +
+      6 * (IdentifierLibrary.stringBytes binding.key.owner).length := by
+  have protocol := unsigned_bound binding.protocol_version.val
+  have node := node_fields_bound binding.node
+  have key := key_fields_bound binding.key
+  have expected := expected_fields_bound binding.expected
+  simp only [EnvelopeSchema.bindingFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((16 + outputBound (.unsigned binding.protocol_version.val) + 4) +
+    ((4 + outputBound (EnvelopeSchema.nodeFields binding.node) + 4) +
+    ((7 + (2 + 6 * _) + 4) +
+    ((3 + outputBound (EnvelopeSchema.keyFields binding.key) + 4) +
+    ((8 + outputBound (EnvelopeSchema.expectedFields binding.expected) + 4) + 0))))) ≤ _
+  omega
+
+theorem operation_fields_bound (operation : Operation) :
+    outputBound (EnvelopeSchema.operationFields operation) ≤ 800 +
+      6 * ((operationIdentifiers operation).map
+        (fun field => (IdentifierLibrary.stringBytes field.value).length)).sum +
+      4 * (match operation with | .Create create _ => create.options.val.length | _ => 0) := by
+  cases operation with
+  | Create create target =>
+    have payload := create_fields_bound create
+    have targetBound := unsigned_bound target.val
+    simp only [EnvelopeSchema.operationFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    change 2 + ((4 + (2 + 6 * 6) + 4) +
+      ((6 + outputBound (EnvelopeSchema.createFields create) + 4) +
+      ((18 + outputBound (.unsigned target.val) + 4) + 0))) ≤
+      800 + 6 * ((IdentifierLibrary.stringBytes create.template_revision).length + 0) + 4 * _
+    omega
+  | Unload source capture =>
+    have sourceBound := unsigned_bound source.val
+    have captureBound := unsigned_bound capture.val
+    simp only [EnvelopeSchema.operationFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    change 2 + ((4 + (2 + 6 * 6) + 4) +
+      ((18 + outputBound (.unsigned source.val) + 4) +
+      ((7 + outputBound (.unsigned capture.val) + 4) + 0))) ≤ 800 + 6 * 0 + 4 * 0
+    omega
+  | Resume source capture target digest =>
+    have sourceBound := unsigned_bound source.val
+    have captureBound := unsigned_bound capture.val
+    have targetBound := unsigned_bound target.val
+    have digestBound := byte_array_bound digest.val
+    have digestLength := digest.property
+    change digest.val.length = 32 at digestLength
+    simp only [EnvelopeSchema.operationFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    change 2 + ((4 + (2 + 6 * 6) + 4) +
+      ((18 + outputBound (.unsigned source.val) + 4) +
+      ((7 + outputBound (.unsigned capture.val) + 4) +
+      ((18 + outputBound (.unsigned target.val) + 4) +
+      ((15 + outputBound (.array (digest.val.map (fun byte => .unsigned byte.val))) + 4) + 0))))) ≤
+      800 + 6 * 0 + 4 * 0
+    omega
+  | Renew incarnation endAt extendOnly =>
+    have incarnationBound := unsigned_bound incarnation.val
+    simp only [EnvelopeSchema.operationFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+    change 2 + ((4 + (2 + 6 * 5) + 4) +
+      ((11 + outputBound (.unsigned incarnation.val) + 4) +
+      ((9 + 20 + 4) + ((11 + 5 + 4) + 0)))) ≤ 800 + 6 * 0 + 4 * 0
+    omega
+  | Destroy =>
+    simp only [EnvelopeSchema.operationFields, outputBound, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, operationIdentifiers]
+    decide
+
+theorem accepted_fields_bound (value : Accepted) :
+    outputBound (EnvelopeSchema.acceptedFields value) ≤ encodingBound value - 128 := by
+  have binding := binding_fields_bound value.request.binding
+  have operation := operation_fields_bound value.request.operation
+  have version := unsigned_bound value.accepted_version.val
+  have slot := unsigned_bound value.retention.slot.val
+  have window := unsigned_bound value.retention.window.val
+  simp only [EnvelopeSchema.acceptedFields, EnvelopeSchema.requestFields, EnvelopeSchema.centerFields, EnvelopeSchema.retentionFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((7 + (2 + ((7 + outputBound (EnvelopeSchema.bindingFields value.request.binding) + 4) +
+    ((9 + outputBound (EnvelopeSchema.operationFields value.request.operation) + 4) + 0))) + 4) +
+    ((16 + outputBound (.unsigned value.accepted_version.val) + 4) +
+    ((6 + (2 + ((10 + (2 + 6 * _) + 4) + ((6 + (2 + 6 * _) + 4) + 0))) + 4) +
+    ((9 + (2 + ((4 + outputBound (.unsigned value.retention.slot.val) + 4) +
+    ((6 + outputBound (.unsigned value.retention.window.val) + 4) + 0))) + 4) + 0)))) ≤ _
+  simp only [encodingBound, identifierBytes, identifiers, List.map_append, List.sum_append,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, optionBytes]
+  cases op : value.request.operation <;>
+    simp only [op, operationIdentifiers, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at operation ⊢ <;>
+    omega
+
+theorem recorded_fields_bound (value : Recorded) :
+    outputBound (EnvelopeSchema.recordedFields value) ≤ encodingBound value.intent := by
+  have intent := accepted_fields_bound value.intent
+  have version := unsigned_bound value.current_session_version.val
+  simp only [EnvelopeSchema.recordedFields, outputBound.eq_1, outputBound.eq_3, outputBound.eq_4, outputBound.eq_6,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  change 2 + ((6 + outputBound (EnvelopeSchema.acceptedFields value.intent) + 4) +
+    ((23 + outputBound (.unsigned value.current_session_version.val) + 4) +
+    ((7 + 5 + 4) + ((8 + 5 + 4) + 0)))) ≤ _
+  have positive : 2048 ≤ encodingBound value.intent := by unfold encodingBound; omega
+  omega
+
+theorem u64_output_conditions (number : U64) : OutputConditions (.unsigned number.val) := by
+  have bound := number.hBounds
+  simp only [UScalarTy.numBits] at bound
+  simp only [OutputConditions]
+  omega
+
+theorem u16_output_conditions (number : U16) : OutputConditions (.unsigned number.val) := by
+  have bound := number.hBounds
+  simp only [UScalarTy.numBits] at bound
+  simp only [OutputConditions]
+  omega
+
+theorem i64_output_conditions (number : I64) : OutputConditions (.signed number.val) := by
+  have bound := number.hBounds
+  simp only [IScalarTy.numBits] at bound
+  simpa only [OutputConditions] using bound
+
+theorem byte_array_conditions (bytes : List U8) :
+    OutputConditions (.array (bytes.map (fun byte => .unsigned byte.val))) := by
+  simp only [OutputConditions, List.mem_map, forall_exists_index, and_imp]
+  intro value byte member equal
+  subst value
+  have bound := byte.hBounds
+  simp only [UScalarTy.numBits] at bound
+  simp only [OutputConditions]
+  omega
+
+theorem accepted_output_conditions (value : Accepted) :
+    OutputConditions (EnvelopeSchema.acceptedFields value) := by
+  cases op : value.request.operation <;> cases expected : value.request.binding.expected <;>
+    simp only [EnvelopeSchema.acceptedFields, EnvelopeSchema.requestFields,
+      EnvelopeSchema.bindingFields, EnvelopeSchema.nodeFields, JsonRequest.nodeOutput,
+      EnvelopeSchema.keyFields, EnvelopeSchema.expectedFields, EnvelopeSchema.operationFields,
+      EnvelopeSchema.createFields, JsonRequest.createOutput, JsonRequest.resourceOutput,
+      EnvelopeSchema.centerFields, EnvelopeSchema.retentionFields, op, expected]
+  all_goals
+    simp only [OutputConditions.eq_1, OutputConditions.eq_4, OutputConditions.eq_6,
+      u64_output_conditions, u16_output_conditions, i64_output_conditions, byte_array_conditions,
+      List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
+    decide
+
+theorem recorded_output_conditions (value : Recorded) :
+    OutputConditions (EnvelopeSchema.recordedFields value) := by
+  simp only [EnvelopeSchema.recordedFields, OutputConditions.eq_4, OutputConditions.eq_6,
+    accepted_output_conditions, u64_output_conditions, List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
+  decide
+
+theorem identifier_list_sum_bound (fields : List IdentifierField)
+    (bounded : ∀ field ∈ fields, (IdentifierLibrary.stringBytes field.value).length ≤ 128) :
+    (fields.map (fun field => (IdentifierLibrary.stringBytes field.value).length)).sum ≤ 128 * fields.length := by
+  induction fields with
+  | nil => simp
+  | cons first rest ih =>
+    have firstBound := bounded first (by simp)
+    have restBound := ih (fun field member => bounded field (by simp [member]))
+    simp only [List.map_cons, List.sum_cons, List.length_cons]
+    omega
+
+theorem own_field_domain_bounds_all_identifier_bytes (value : Accepted) (domain : InputDomain value) :
+    identifierBytes value ≤ 1024 := by
+  have bounded := identifier_list_sum_bound (identifiers value)
+    (fun field member => (domain.1 field member).2.1)
+  have count := (field_counts value).1
+  have countBound : (identifiers value).length ≤ 8 := by
+    cases op : value.request.operation <;> simp [op] at count <;> omega
+  unfold identifierBytes
+  omega
+
+theorem original_guard_bounds_option_bytes (value : Accepted)
+    (context : SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (valid : Validation.ValidEnvelope value context) : optionBytes value ≤ 65536 := by
+  have shape := valid.2.2.1.2.2
+  cases op : value.request.operation with
+  | Create create target =>
+    have shape : (Validation.createView create).valid := by simpa [Validation.operationOK, op] using shape
+    simpa [optionBytes, op, Validation.createView, List.length_map] using shape.2.2.2.1
+  | Unload _ _ | Resume _ _ _ _ | Renew _ _ _ | Destroy => simp [optionBytes, op]
+
+theorem own_domain_and_guard_bound_encoding (value : Accepted)
+    (context : SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (domain : InputDomain value) (valid : Validation.ValidEnvelope value context) :
+    encodingBound value ≤ 270336 := by
+  have ids := own_field_domain_bounds_all_identifier_bytes value domain
+  have options := original_guard_bounds_option_bytes value context valid
+  unfold encodingBound
+  omega
+
+theorem encoding_estimate_fits_current_original_budget (value : Accepted)
+    (context : SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (domain : InputDomain value) (valid : Validation.ValidEnvelope value context) :
+    ∃ limit, SandproofEnvelopeBudgetRust.request_body_bytes = .ok limit ∧ encodingBound value ≤ limit.val := by
+  exact ⟨278528#usize, original_body_limit, by
+    have bounded := own_domain_and_guard_bound_encoding value context domain valid
+    change encodingBound value ≤ 278528
+    omega⟩
+
+/-- A6 normal-allocation compact rendering, restricted to the two exact standard
+schemas already registered by EnvelopeSchema. This is a provider condition,
+not a production instance or a claim about arbitrary serializers. Numeric/key
+conditions and the budget premise are discharged by this module. OOM/abort and
+actual BoundedWriter traces are outside this condition. -/
+structure NormalRenderer (library : JsonLibrary) : Prop where
+  accepted : ∀ value : Accepted,
+    OutputConditions (EnvelopeSchema.acceptedFields value) →
+    outputBound (EnvelopeSchema.acceptedFields value) ≤ 278528 →
+    ∃ encoded, library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok encoded) ∧
+      encoded.val.length ≤ outputBound (EnvelopeSchema.acceptedFields value)
+  recorded : ∀ value : Recorded,
+    OutputConditions (EnvelopeSchema.recordedFields value) →
+    outputBound (EnvelopeSchema.recordedFields value) ≤ 278528 →
+    ∃ encoded, library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok encoded) ∧
+      encoded.val.length ≤ outputBound (EnvelopeSchema.recordedFields value)
+
+theorem accepted_bounded_roundtrip (library : JsonLibrary) (slices : SliceContract library)
+    (renderer : NormalRenderer library) (value : Accepted) (context : AuthenticatedCenterContext)
+    (domain : InputDomain value) (valid : Validation.ValidEnvelope value context) :
+    ∃ encoded limit,
+      SandproofEnvelopeBudgetRust.request_body_bytes = .ok limit ∧
+      library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok encoded) ∧
+      library.decodeAccepted encoded.slice = .ok (.Ok value) ∧ encoded.val.length ≤ limit.val ∧
+      SandproofStage1RequestRust.accepted_validate value context = .ok (.Ok ()) := by
+  have estimate := own_domain_and_guard_bound_encoding value context domain valid
+  have fields := accepted_fields_bound value
+  obtain ⟨encoded, emitted, size⟩ := renderer.accepted value (accepted_output_conditions value) (by omega)
+  exact ⟨encoded, 278528#usize, original_body_limit, emitted,
+    accepted_conditional_roundtrip library slices value encoded domain emitted,
+    by change encoded.val.length ≤ 278528; omega,
+    (Validation.envelope_accepts_iff value context).mpr valid⟩
+
+theorem recorded_bounded_roundtrip (library : JsonLibrary) (slices : SliceContract library)
+    (renderer : NormalRenderer library) (value : Recorded) (context : AuthenticatedCenterContext)
+    (domain : InputDomain value.intent) (valid : Validation.ValidEnvelope value.intent context) :
+    ∃ encoded limit,
+      SandproofEnvelopeBudgetRust.request_body_bytes = .ok limit ∧
+      library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok encoded) ∧
+      library.decodeRecorded encoded.slice = .ok (.Ok value) ∧ encoded.val.length ≤ limit.val := by
+  have estimate := own_domain_and_guard_bound_encoding value.intent context domain valid
+  have fields := recorded_fields_bound value
+  obtain ⟨encoded, emitted, size⟩ := renderer.recorded value (recorded_output_conditions value) (by omega)
+  exact ⟨encoded, 278528#usize, original_body_limit, emitted,
+    recorded_conditional_roundtrip library slices value encoded domain emitted,
+    by change encoded.val.length ≤ 278528; omega⟩
+
+theorem all_five_normal_bounded_roundtrips (library : JsonLibrary) (slices : SliceContract library)
+    (renderer : NormalRenderer library) (request : LifecycleRequest) (version : U64)
+    (member : (request, version) ∈ EnvelopeSchema.normalRequests) :
+    ∃ encoded limit,
+      SandproofEnvelopeBudgetRust.request_body_bytes = .ok limit ∧
+      library.compact (EnvelopeSchema.acceptedFields (EnvelopeSchema.envelopeFor request version)) =
+        .ok (.Ok encoded) ∧
+      library.decodeAccepted encoded.slice = .ok (.Ok (EnvelopeSchema.envelopeFor request version)) ∧
+      encoded.val.length ≤ limit.val ∧
+      SandproofStage1RequestRust.accepted_validate (EnvelopeSchema.envelopeFor request version)
+        ⟨EnvelopeValues.center, Request.node⟩ = .ok (.Ok ()) := by
+  exact accepted_bounded_roundtrip library slices renderer _ _
+    (normal_five_domains request version member)
+    ((Validation.envelope_accepts_iff _ _).mp
+      (EnvelopeSchema.all_five_normal_envelopes request version member))
+
+/-- The array contribution cannot be replaced by a fixed overhead. This is a
+counterexample to an omitted-field estimate, not a Rust mutation experiment. -/
+theorem omitted_options_bound_fails :
+    2048 < outputBound (.array ((List.replicate 65536 (255#u8)).map
+      (fun byte => .unsigned byte.val))) := by
+  rw [byte_array_bound, List.length_replicate]
+  decide
+
+
+end SandboxModel.Stage1Protocol.EnvelopeBudget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.original_options_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.original_body_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.unsigned_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.byte_array_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.node_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.key_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.expected_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.resource_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.create_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.binding_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.operation_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.accepted_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.recorded_fields_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.u64_output_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.u16_output_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.i64_output_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.byte_array_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.accepted_output_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.recorded_output_conditions
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.identifier_list_sum_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.own_field_domain_bounds_all_identifier_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.original_guard_bounds_option_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.own_domain_and_guard_bound_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.encoding_estimate_fits_current_original_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.accepted_bounded_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.recorded_bounded_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.all_five_normal_bounded_roundtrips
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBudget.omitted_options_bound_fails

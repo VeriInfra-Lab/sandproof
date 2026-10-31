@@ -3,7 +3,7 @@ import SandboxModel.ProofAuditCommand
 open Aeneas Aeneas.Std SandproofStage1RequestRust
 namespace SandboxModel.Stage1Protocol.Request
 theorem unsupported_version_first (request : WireRequest) (expected : Node)
-    (wrong : request.binding.protocol_version ≠ 3#u16) :
+    (wrong : request.binding.protocol_version ≠ 4#u16) :
     request_validate request expected = .ok (.Err sandproof_protocol.lifecycle.request.ValidationError.UnsupportedVersion) := by
   simp [request_validate, sandproof_protocol.lifecycle.request.LifecycleRequest.validate,
     sandproof_protocol.lifecycle.PROTOCOL_VERSION, wrong]

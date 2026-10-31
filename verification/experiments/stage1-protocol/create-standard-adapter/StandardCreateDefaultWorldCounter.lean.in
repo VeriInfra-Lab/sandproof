@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.StandardCreateLibrary
+import SandboxModel.Lifecycle.Protocol.StandardCreateFixture
+
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+namespace SandboxModel.Stage1Protocol.StandardCreate
+
+-- This module is installed only with the actually compiled wrong Rust source.
+-- It never imports StandardCreateComplete or its correct method theorems.
+theorem default_world_observed (world : World) (connection : rusqlite.Connection) :
+    readWorld (normalEffects world connection) = .ok (emptyWorld, normalEffects world connection) := by
+  simp [readWorld,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world,
+    transaction_world_complete _ world (normal_candidate_at world connection),
+    sandbox_controller_core.model.World.Insts.CoreDefaultDefault.default,
+    sandbox_controller_core.store.Store.Insts.CoreDefaultDefault.default, emptyWorld]
+
+theorem still_preserves_empty_world (connection : rusqlite.Connection) :
+    readWorld (normalEffects emptyWorld connection) = expectedRead (normalEffects emptyWorld connection) := by
+  exact (default_world_observed emptyWorld connection).trans (normal_expected_read emptyWorld connection).symm
+
+theorem same_complete_contract_rejected : ¬ FullReadAndRebindContract readWorld beginLifetime beginSave := by
+  intro contract
+  have promised := contract.1 (normalEffects selectedWorld observingConnection)
+  have result := (default_world_observed selectedWorld observingConnection).symm.trans
+    (promised.trans (normal_expected_read selectedWorld observingConnection))
+  have worlds := congrArg Prod.fst (Result.ok_injective result)
+  have numbers := congrArg sandbox_controller_core.model.World.next_vm_id worlds
+  change (0#u64) = 2#u64 at numbers
+  exact (by decide : (0#u64) ≠ 2#u64) numbers
+
+end SandboxModel.Stage1Protocol.StandardCreate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.default_world_observed
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.still_preserves_empty_world
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.same_complete_contract_rejected

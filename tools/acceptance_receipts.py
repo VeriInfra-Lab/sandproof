@@ -5,8 +5,10 @@ Only an operator-controlled cache may be admitted. Source/command/tool changes,
 missing logs and interrupted executions never produce reusable success.
 """
 from contextlib import contextmanager
+from collections import Counter
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -19,10 +21,16 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
+NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery', 'capture-caller', 'pause-publication', 'pause-stop')
+CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
+PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
+PAUSE_STOP_LABELS = ('functional', 'pause-stop')
+ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
-                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE')
+                   'SANDPROOF_LIBRARY_SOURCE_ARCHIVE',
+                   'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
 
 
 def sha(path):
@@ -137,7 +145,7 @@ def contract_inputs(root):
 
 
 def source_archive_inputs(environment=None):
-    """Content, not machine-specific paths, binds the three original archives."""
+    """Bind original source archive bytes independently of machine paths."""
     environment = os.environ if environment is None else environment
     result = {}
     for name in SOURCE_ARCHIVES:
@@ -151,9 +159,73 @@ def source_archive_inputs(environment=None):
     return result
 
 
-def current_native_seal(seal, runtime):
+def check_native_scope(scope):
+    if scope not in NATIVE_SCOPES:
+        raise ValueError('unknown native acceptance scope: ' + str(scope))
+
+
+def stage1_registration():
+    spec = importlib.util.spec_from_file_location('native_scope_registration',
+        ROOT/'verification/experiments/stage1-protocol/registered.py')
+    registered = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registered)
+    return registered
+
+
+def stage1_native_labels(profile='full'):
+    """Fixed full or Create scope; no caller-supplied case selection."""
+    registered = stage1_registration()
+    labels = tuple(registered.native_labels(profile))
+    count = 12 if profile == 'create-delivery' else 53
+    if len(labels) != count or len(set(labels)) != count:
+        raise ValueError(f'stage1 native scope requires the exact {count} registered cases')
+    result = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *labels)
+    if len(set(result)) != count+(2 if profile == 'full' else 1):
+        raise ValueError('stage1 native scope has duplicate component labels')
+    return result
+
+
+def scoped_native_labels(scope):
+    check_native_scope(scope)
+    if scope in ('stage1-protocol', 'stage1-create-delivery'):
+        return stage1_native_labels('create-delivery' if scope == 'stage1-create-delivery' else 'full')
+    return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
+            else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
+
+
+def check_native_components(keys, *, scope='all', allow_additional=False):
+    check_native_scope(scope)
+    if scope == 'all':
+        return
+    expected = set(scoped_native_labels(scope))
+    labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
+    counts = Counter(labels)
+    if (not expected <= counts.keys() or any(counts[label] != 1 for label in expected)
+            or (not allow_additional and set(counts) != expected)):
+        raise ValueError(f'{scope} native scope requires exactly its {len(expected)} complete components')
+
+
+def current_native_seal(seal, runtime, *, scope='all'):
+    check_native_scope(scope)
+    actual_scope = seal.get('scope')
+    # Whole packet admission is deliberately stricter than component reuse.
+    # A complete full/all seal cannot stand in for the explicit Create profile,
+    # and Create can never stand in for full/all or another finite scope.
+    create = scope == 'stage1-create-delivery'
+    if create:
+        definition = stage1_registration().create_profile(ROOT)
+        if (actual_scope != scope or seal.get('profile') != 'create-delivery'
+                or seal.get('create_definition') != definition
+                or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
+                    != definition['source_only']['archive_sha256']):
+            return False
+    elif actual_scope == 'stage1-create-delivery':
+        return False
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
+            and actual_scope in ('all', scope)
+            and seal.get('scope_complete') is True
+            and seal.get('full_native_suite_complete') is (actual_scope == 'all')
             and seal.get('rules') == rules() and seal.get('runtime') == runtime
             and seal.get('contracts') == contract_inputs(ROOT)
             and seal.get('source_archives') == source_archive_inputs())
@@ -173,13 +245,13 @@ def native_key(label, command, source, root=ROOT, environment=None):
                 contracts=dict(review=contract_inputs(root), source=contract_inputs(source)),
                 source_archives=source_archive_inputs(env),
                 runtime=json.loads(runtime_path.read_text()))
-    if label == 'stage1-protocol':
+    if label in ARCHIVED_NATIVE_CASES:
         # Committed/clean is admission, not cache identity. Reports and a new
         # commit with identical native inputs must not invalidate every proof.
         subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=source)
         if subprocess.check_output(['git', 'status', '--porcelain', '-z',
                                     '--untracked-files=normal'], cwd=source):
-            raise ValueError('stage1 component requires a clean committed source')
+            raise ValueError(label + ' component requires a clean committed source')
         metadata = {}
         groups = {'source': (source, set(result['rust']) | set(result['contracts']['source'])),
                   'review': (root, set(result['rules']) | set(result['contracts']['review']))}
@@ -189,7 +261,7 @@ def native_key(label, command, source, root=ROOT, environment=None):
                 path = Path(name.removeprefix('@configuration:')) if name.startswith('@configuration:') else base/name
                 info = path.lstat()
                 if not stat.S_ISREG(info.st_mode):
-                    raise ValueError('stage1 native input is not a regular file: ' + name)
+                    raise ValueError(label + ' native input is not a regular file: ' + name)
                 metadata[role][name] = dict(kind='regular', executable=bool(info.st_mode & stat.S_IXUSR))
         result['input_metadata'] = metadata
     if label == 'functional':
@@ -215,12 +287,14 @@ def load_success(directory, key):
         return None
 
 
-def validate_native(cache):
+def validate_native(cache, *, scope='all'):
+    check_native_scope(scope)
     cache = Path(cache)
     seal = json.loads((cache/'complete.json').read_text())
-    if (not current_native_seal(seal,json.loads((cache/'runtime.json').read_text()))
+    if (not current_native_seal(seal,json.loads((cache/'runtime.json').read_text()),scope=scope)
             or not seal.get('commands')):
         raise ValueError('native suite is missing, incomplete or has changed rules/tools')
+    keys = []
     for identity, expected in seal['commands'].items():
         if len(identity)!=64 or set(identity)-set('0123456789abcdef'):
             raise ValueError('invalid native entry identity')
@@ -230,6 +304,8 @@ def validate_native(cache):
         receipt=json.loads((entry/'receipt.json').read_text())
         if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
+        keys.append(receipt['key'])
+    check_native_components(keys, scope=scope, allow_additional=seal['scope']=='all')
     return seal
 
 
@@ -309,23 +385,28 @@ def native_run(label, command, source, log, environment=None, expected=0):
     return code
 
 
-def native_case(label, source, output, action=None):
+def native_case(label, source, output, action=None, *, scope='all'):
     """Keep a component's existing fresh-binary and assertion checks together."""
+    check_native_scope(scope)
+    labels = scoped_native_labels(scope)
+    if scope != 'all' and label not in labels:
+        raise ValueError('component is outside requested native scope: ' + label)
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
     key = native_key(label, ['component-case'], Path(source).resolve())
     entry = cache / 'commands' / digest(key)
-    if label == 'stage1-protocol':
+    if label in ARCHIVED_NATIVE_CASES:
         archive = entry/'evidence/source.tar'
         if (archive.is_symlink() or (archive.exists() and not archive.is_file())
                 or not archive.parent.resolve().is_relative_to(entry.resolve())):
-            raise ValueError('stage1 cached source.tar must be inside its regular evidence directory')
+            raise ValueError(label + ' cached source.tar must be inside its regular evidence directory')
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
-        seal = json.loads((cache / 'complete.json').read_text())
+        seal = (validate_native(cache, scope=scope) if scope != 'all'
+                else json.loads((cache / 'complete.json').read_text()))
         receipt = load_success(entry, key)
-        if (label == 'stage1-protocol' and receipt is not None
+        if (label in ARCHIVED_NATIVE_CASES and receipt is not None
                 and 'evidence/source.tar' not in receipt['files']):
             receipt = None
-        if (not current_native_seal(seal,key['runtime']) or receipt is None
+        if (not current_native_seal(seal,key['runtime'],scope=scope) or receipt is None
                 or seal['commands'].get(entry.name) != sha(entry / 'receipt.json')):
             raise ValueError('missing/incomplete/changed native component: ' + label)
         return receipt
@@ -335,41 +416,51 @@ def native_case(label, source, output, action=None):
     # case boundary, never by relabelling a Cargo "fresh" artifact as new.
     with locked(entry):
         prior = load_success(entry, key)
-        if (label == 'stage1-protocol' and prior is not None
+        if (label in ARCHIVED_NATIVE_CASES and prior is not None
                 and 'evidence/source.tar' not in prior['files']):
             prior = None
         if prior:
             record_used(entry,reused=True)
             return prior
         start = time.monotonic()
-        if label == 'stage1-protocol':
+        if label in ARCHIVED_NATIVE_CASES:
             (entry/'receipt.json').unlink(missing_ok=True)
         action()
         if native_key(label, ['component-case'], Path(source).resolve()) != key:
             raise ValueError('component inputs changed: ' + label)
         files = {}
         for path in sorted(Path(output).rglob('*')):
-            if (not path.is_file() or path.is_symlink() or path.suffix not in ('.log', '.json', '.jsonl')
-                    or any('target' in part or part in ('.git', '.lake') for part in path.relative_to(output).parts)):
+            parts = path.relative_to(output).parts
+            suffixes = ('.log', '.json', '.jsonl')
+            if label in ('capture-caller', 'pause-publication', 'pause-stop'):
+                # Original CLI logs use .stdout/.stderr, including semantic
+                # names such as ignore-capture-target. Do not discard a log
+                # merely because its filename contains the word "target".
+                suffixes += ('.stdout', '.stderr')
+                build = any(part in ('.git', '.lake', 'target', 'extract-target', 'formal-target')
+                            or part.startswith(('target-', 'cargo-target')) for part in parts[:-1])
+            else:
+                build = any('target' in part or part in ('.git', '.lake') for part in parts)
+            if (not path.is_file() or path.is_symlink() or path.suffix not in suffixes or build):
                 continue
             name = str(path.relative_to(output))
             target = entry / 'evidence' / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
             files['evidence/' + name] = sha(target)
-        if label == 'stage1-protocol':
+        if label in ARCHIVED_NATIVE_CASES:
             # One explicitly named raw input, not arbitrary archives or Cargo
             # targets. Historical native source remains verifiable after docs
             # or proof-only commits without changing the receipt schema.
             archive = Path(output)/'source.tar'
             if archive.is_symlink() or not archive.is_file():
-                raise ValueError('stage1 component requires its original regular source.tar')
+                raise ValueError(label + ' component requires its original regular source.tar')
             expected = sha(archive)
             target = entry/'evidence/source.tar'
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(archive, target)
             if sha(target) != expected or sha(archive) != expected:
-                raise ValueError('stage1 original source archive changed while copying')
+                raise ValueError(label + ' original source archive changed while copying')
             files['evidence/source.tar'] = expected
         if not files:
             raise ValueError('component case has no original evidence')

@@ -1,0 +1,28 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.ResultValues
+import SandboxModel.Lifecycle.Protocol.Accepted
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal sandproof_protocol.lifecycle.confirmation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Confirmation
+open SandboxModel.Stage1Protocol.ConfirmationValues
+namespace SandboxModel.Stage1Protocol.NegativeTerminalKey
+
+theorem actual_mutant_accepts : terminal_matches changed intent = .ok true := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [terminal_matches, TerminalLifecycleObservation.matches_request, changed, intent,
+    EnvelopeValues.intent, Replay.key_eq, Validation.retention_valid,
+    Validation.version_comparison, Validation.versionOK, Validation.retentionOK, checked]
+
+theorem violates_same_full_contract : ¬ FullTerminalContract terminal_matches := by
+  classical
+  intro contract
+  have exact_result := contract changed intent
+  rw [actual_mutant_accepts] at exact_result
+  simp [TerminalMatches, TerminalShape, changed, intent, EnvelopeValues.intent] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeTerminalKey
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeTerminalKey.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeTerminalKey.violates_same_full_contract

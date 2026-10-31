@@ -1,0 +1,371 @@
+{
+  "schema": 1,
+  "kind": "protocol4-complete-field-representation-not-byte-parser",
+  "representation_only": true,
+  "a6_instance_adopted": false,
+  "base_commit": "2666ffe52a7fc873b648b9c82923322447a13720",
+  "production_base": "a9c9967889c4cf298e4378c7106948018835fc64",
+  "structs": {
+    "NodeIdentity": {
+      "source": "sandbox-protocol/src/internal.rs",
+      "fields_in_declaration_order": [
+        [
+          "deployment_id",
+          "DeploymentId"
+        ],
+        [
+          "node_id",
+          "NodeId"
+        ],
+        [
+          "node_generation",
+          "PositiveCounter"
+        ]
+      ]
+    },
+    "Resources": {
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "fields_in_declaration_order": [
+        [
+          "instances",
+          "u64"
+        ],
+        [
+          "cpu",
+          "u64"
+        ],
+        [
+          "memory_bytes",
+          "u64"
+        ],
+        [
+          "disk_bytes",
+          "u64"
+        ]
+      ]
+    },
+    "CreateBinding": {
+      "source": "sandbox-protocol/src/internal/lifecycle.rs",
+      "fields_in_declaration_order": [
+        [
+          "template_revision",
+          "ResourceId"
+        ],
+        [
+          "template_digest",
+          "[u8;32]"
+        ],
+        [
+          "resources",
+          "Resources"
+        ],
+        [
+          "options",
+          "Vec<u8>"
+        ],
+        [
+          "startup_deadline_ms",
+          "u64"
+        ],
+        [
+          "timeout_ms",
+          "u64"
+        ],
+        [
+          "max_lifetime_ms",
+          "u64"
+        ]
+      ]
+    },
+    "OperationKey": {
+      "source": "sandbox-protocol/src/lifecycle/identity.rs",
+      "fields_in_declaration_order": [
+        [
+          "deployment",
+          "DeploymentId"
+        ],
+        [
+          "owner",
+          "TenantId"
+        ],
+        [
+          "window",
+          "RequestWindowId"
+        ],
+        [
+          "sequence",
+          "RequestSequence"
+        ]
+      ]
+    },
+    "OperationBinding": {
+      "source": "sandbox-protocol/src/lifecycle/identity.rs",
+      "fields_in_declaration_order": [
+        [
+          "protocol_version",
+          "u16"
+        ],
+        [
+          "node",
+          "NodeIdentity"
+        ],
+        [
+          "session",
+          "SessionId"
+        ],
+        [
+          "key",
+          "OperationKey"
+        ],
+        [
+          "expected",
+          "ExpectedSession"
+        ]
+      ]
+    },
+    "RetentionBinding": {
+      "source": "sandbox-protocol/src/lifecycle/identity.rs",
+      "fields_in_declaration_order": [
+        [
+          "slot",
+          "u16"
+        ],
+        [
+          "window",
+          "RetentionWindowId"
+        ]
+      ]
+    },
+    "LifecycleRequest": {
+      "source": "sandbox-protocol/src/lifecycle/request.rs",
+      "fields_in_declaration_order": [
+        [
+          "binding",
+          "OperationBinding"
+        ],
+        [
+          "operation",
+          "LifecycleOperation"
+        ]
+      ]
+    },
+    "CenterIdentity": {
+      "source": "sandbox-protocol/src/lifecycle/authority.rs",
+      "fields_in_declaration_order": [
+        [
+          "deployment",
+          "DeploymentId"
+        ],
+        [
+          "center",
+          "CenterId"
+        ]
+      ]
+    },
+    "AcceptedLifecycleIntent": {
+      "source": "sandbox-protocol/src/lifecycle/authority.rs",
+      "fields_in_declaration_order": [
+        [
+          "request",
+          "LifecycleRequest"
+        ],
+        [
+          "accepted_version",
+          "u64"
+        ],
+        [
+          "center",
+          "CenterIdentity"
+        ],
+        [
+          "retention",
+          "RetentionBinding"
+        ]
+      ]
+    },
+    "RecordedLifecycleIntent": {
+      "source": "sandbox-protocol/src/lifecycle/authority.rs",
+      "fields_in_declaration_order": [
+        [
+          "intent",
+          "AcceptedLifecycleIntent"
+        ],
+        [
+          "current_session_version",
+          "u64"
+        ],
+        [
+          "current",
+          "bool"
+        ],
+        [
+          "terminal",
+          "bool"
+        ]
+      ]
+    }
+  },
+  "operations": {
+    "Create": [
+      [
+        "create",
+        "CreateBinding"
+      ],
+      [
+        "target_incarnation",
+        "IncarnationId"
+      ]
+    ],
+    "Unload": [
+      [
+        "source_incarnation",
+        "IncarnationId"
+      ],
+      [
+        "capture",
+        "CaptureId"
+      ]
+    ],
+    "Resume": [
+      [
+        "source_incarnation",
+        "IncarnationId"
+      ],
+      [
+        "capture",
+        "CaptureId"
+      ],
+      [
+        "target_incarnation",
+        "IncarnationId"
+      ],
+      [
+        "manifest_digest",
+        "ContentDigest"
+      ]
+    ],
+    "Renew": [
+      [
+        "incarnation",
+        "IncarnationId"
+      ],
+      [
+        "end_at_ms",
+        "i64"
+      ],
+      [
+        "extend_only",
+        "bool"
+      ]
+    ],
+    "Destroy": []
+  },
+  "expected_session": {
+    "tag": "state",
+    "content": "version",
+    "variants": {
+      "Absent": null,
+      "Version": "u64"
+    },
+    "rename_all": "snake_case",
+    "deny_unknown_fields": true
+  },
+  "inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "SandboxModel/Boundaries/JsonRequest/Encoding.lean": "122261da7c498c78bc8f9b8cb950c47a7775c3fea8ea57a76cc7583dfc8e936f",
+    "docs/formal/dependencies.md": "705cedcfa6d4bfa3acda03294102f4b27e11874cf063f6d59cc63479f1d9c433",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "lakefile.toml": "19b74b43bcaf5191e4ffd93ed39e494dc703cb3defc09fbd4b5512779288610a",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0",
+    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "verification/experiments/stage1-protocol/envelope-schema/Cargo.lock": "e7c2870219558c5691832b55f0fd1b6d07b6308573657c54270b3dd49914b5b6",
+    "verification/experiments/stage1-protocol/envelope-schema/Cargo.toml": "4b142e10a18438c660ad24cd6ec184d88926a20661c7eef9376f9d81376c8839",
+    "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
+    "verification/experiments/stage1-protocol/envelope-schema/README.md": "10fccc9d736c851fd7d77daa8bbb20a71bd3aac0fd10da06fc4f45e6f1377d1a",
+    "verification/experiments/stage1-protocol/envelope-schema/formal.py": "a93756ba1c1d182db35749f5fe0e81274a6f9609cbde24ff1236791ee77f664a",
+    "verification/experiments/stage1-protocol/envelope-schema/roots.rs.in": "c305d5b7e31da1177df460f9248b5eaf578533d57078b2c5ba4447897b5a8fa2",
+    "verification/experiments/stage1-protocol/envelope-schema/shared-candidate.patch": "f30cf33f3506ec023614d8c63a6157ff78ed0df028d9e5b8f992ac9b707d8388",
+    "verification/experiments/stage1-protocol/envelope-schema/test_formal.py": "3a57ee941e1d16c51a410114336c256dfffd8e28b1e4592b4445d246d2d49837",
+    "verification/experiments/stage1-protocol/envelope-schema/tests.rs": "21fbf41d285ea7a437afe0df8ce9d0c3d1eb7aebea779e83a0266e392c6181a0",
+    "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "verification/experiments/stage1-protocol/frozen.json": "c62faa523137dd873323e8249b042ffdb4910f792f62bb52496183506d0ebc42",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/aeneas/stage1-protocol/request/translation.json": "e2de8019902a7ebb31032f162b2a938c2886479ac288b24fedace23dcf8b584c",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request.lean": "85c9dffb144833059d5780f43dab050150c864579446ffa76a89d9edc327f96a",
+    "verification/aeneas/stage1-protocol/request/original.llbc": "9af03959971ffb35ef0e25901e0b9557ed7c824b21aeab2082fc946b11297a1e",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": "00fdd7431b3c304ea3d19ade4bc1d543433445260dd637d7f3ffe2f17dd9a8ba",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": "8e166ea90a3b4bfe578239f6fa3804bb53f8ea1f7559fdfb9db306669bdbdf10",
+    "verification/experiments/stage1-protocol/local_view.py": "95a41883b5d545de373bdfab2f9c013a37fc5178324cb841c33016254d480d03",
+    "verification/experiments/stage1-protocol/local-view.toml.in": "f38d6b65feaaaa8d64bcfffb4bf962790045f0ee162663b4dddf2deddebc67f2",
+    "verification/experiments/stage1-protocol/schema-leaves/protocol_leaves.rs.in": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5",
+    "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
+    "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf"
+  },
+  "audits": [
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.unsigned_value_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.signed_value_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.byte_fields_injective",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.byte_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.node_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.create_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.key_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.expected_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.binding_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.operation_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.request_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.center_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.retention_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.accepted_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.recorded_fields_eq_iff",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.replay_iff_fields",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.same_fields_same_guard",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.changed_fields_recorded_rejected",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.fields_do_not_imply_validation",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.capture_omission_changes_fields",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.signed_time_and_boolean_are_distinct",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.terminal_is_preserved_but_not_certified",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.retention_window_is_independent",
+    "SandboxModel.Stage1Protocol.EnvelopeSchema.all_five_normal_envelopes"
+  ],
+  "map_generation": {
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean": "f43c27c35f833ecd8c013cd48ca2c111eff70c1522a315232ea5cdc2c7a194b3",
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean": "d03187059baf5fe9d84dff9b71e8c64c136d8168f27d954bc726b9f9f6ca552e",
+    "verification/aeneas/stage1-protocol/schema-result/translation.json": "052f16b443cec58a6c091216d83422f9cc04241b258e6a7bc42bd580d45039ef"
+  },
+  "current_request_generation": {
+    "llbc": "9d2f2a450c2e886d69b22895b479ab48e5307406675920548248bec4edcbecd9",
+    "generated": {
+      "SandproofStage1Request/Funs.lean": "8e166ea90a3b4bfe578239f6fa3804bb53f8ea1f7559fdfb9db306669bdbdf10",
+      "SandproofStage1Request/Types.lean": "00fdd7431b3c304ea3d19ade4bc1d543433445260dd637d7f3ffe2f17dd9a8ba",
+      "translation.json": "e2de8019902a7ebb31032f162b2a938c2886479ac288b24fedace23dcf8b584c"
+    },
+    "templates": {
+      "SandproofStage1Request/FunsExternal_Template.lean": "a2ffd483dfa0debcceb035c0f3416c34c2f14b94e514ca5a4bc0c091a89bff35"
+    }
+  },
+  "preparation": "local_view.install in a private source; no historical shared-candidate patch is executed",
+  "migration": {
+    "integration_base": "9be262ea99f59726df1572ec5e76345da0ec0f3c",
+    "current_rust_source_anchor": "9300cc74be807c703d55e2bbca5fe56b351257b6",
+    "candidate_inputs_only": true,
+    "new_baseline_formal_complete": false,
+    "ning_acceptance": false,
+    "shared_acceptance": false
+  }
+}

@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationHost
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation
+noncomputable section
+
+theorem optional_host_refines (config : LifecycleInboxConfig) (bounded : Representable config) :
+    (match config.host_epoch with
+      | none => Result.ok true
+      | some host => HostEpochRegistration.valid_using graphicEncoding host) =
+        .ok (decide (hostAccepted config.host_epoch)) := by
+  cases found : config.host_epoch with
+  | none => rfl
+  | some host =>
+    have representable : StringRepresentable host.boot_id := bounded host (by simp [found])
+    exact host_refines host representable
+
+theorem config_refines (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid config = .ok (decide (Valid config)) := by
+  obtain ⟨budget, returned, exactValue⟩ := ConfigBudget.required_bytes_refines config
+  have host := optional_host_refines config bounded
+  have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
+  have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
+  cases found : config.host_epoch <;> simp only [found] at host
+  all_goals simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.ops.range.RangeInclusive.new, bind_tc_ok, found,
+    range_u16_refines, range_u32_refines, returned, kib, mib]
+  case none => split_ifs <;> simp_all [Valid, hostAccepted]
+  case some registration =>
+    rw [host]
+    simp only [bind_tc_ok]
+    split_ifs <;> simp_all [Valid, hostAccepted]
+
+theorem config_full_contract : FullConfigContract LifecycleInboxConfig.valid := config_refines
+
+theorem config_accepts_iff (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid config = .ok true ↔ Valid config := by
+  rw [config_refines config bounded]
+  simp
+
+theorem config_rejects_iff (config : LifecycleInboxConfig) (bounded : Representable config) :
+    LifecycleInboxConfig.valid config = .ok false ↔ ¬ Valid config := by
+  rw [config_refines config bounded]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.optional_host_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.config_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.config_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.config_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.config_rejects_iff

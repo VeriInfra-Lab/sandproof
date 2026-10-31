@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryCountModel
+import SandboxModel.Lifecycle.Protocol.ValidationModel
+import SandboxModel.Lifecycle.Protocol.UnloadModel
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.request sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+abbrev Return := core.result.Result Usize sandproof_controller_service.JournalError
+def corrupt : Return := .Err .CorruptStore
+
+def isRenew : LifecycleOperation → Bool
+  | .Renew _ _ _ => true
+  | _ => false
+
+def prefixInvalid (session : Session) (entry : Entry)
+    (context : AuthenticatedCenterContext) : Bool :=
+  RenewalResultTag.IsError (Validation.expectedAccepted entry.intent context) ||
+    decide (entry.intent.retention ≠ session.retention) ||
+    decide (entry.intent.request.binding.session ≠ session.id) ||
+    decide (entry.intent.request.binding.key.owner ≠ session.owner) ||
+    (session.local.isNone && entry.local_operation.isSome) ||
+    (!isRenew entry.intent.request.operation &&
+      (entry.applied_deadline.isSome || entry.previous_effective_end_at_ms.isSome))
+
+def deadlineMismatch (entry : Entry) (requested : I64) (extendOnly : Bool)
+    (applied : I64) : Bool :=
+  if extendOnly then entry.previous_effective_end_at_ms.all
+    (fun previous => decide (applied.val ≠ max previous.val requested.val))
+  else decide (applied ≠ requested)
+
+def renewInvalid (session : Session) (entry : Entry) (incarnation : IncarnationId)
+    (requested : I64) (extendOnly : Bool) : Bool :=
+  decide (incarnation.val = 0) || session.local.isNone || decide (requested < 0#i64) ||
+    (entry.applied_deadline.isSome != entry.previous_effective_end_at_ms.isSome) ||
+    entry.previous_effective_end_at_ms.any (fun previous => decide (previous < 0#i64)) ||
+    entry.applied_deadline.any (deadlineMismatch entry requested extendOnly)
+
+def operationResult (inbox : Inbox) (session : Session) (entry : Entry) : Return :=
+  match entry.intent.request.operation with
+  | .Create create _ =>
+    if create.options.val.length > inbox.config.max_options_bytes.val then corrupt else .Ok 0#usize
+  | .Unload source _ =>
+    if source.val = 0 ∨ session.local.isNone then corrupt else .Ok 1#usize
+  | .Destroy => .Ok 2#usize
+  | .Renew incarnation requested extendOnly =>
+    if renewInvalid session entry incarnation requested extendOnly then corrupt else .Ok 3#usize
+  | .Resume _ _ _ _ => .Ok 4#usize
+
+/-- Decoded-value specification: encoder errors and outer effects precede all
+later guards; count overflow precedes operation-specific checks. No membership,
+authorization, current resource or durable-acceptance premise is inferred. -/
+def entryView (encode : UnloadResolution.Encoding) (inbox : Inbox)
+    (session : Session) (entry : Entry) (context : AuthenticatedCenterContext) : Result Return := do
+  let unloaded ← UnloadResolution.validateView encode entry
+  match unloaded with
+  | .Err error => .ok (.Err error)
+  | .Ok () =>
+    if prefixInvalid session entry context then .ok corrupt
+    else do
+      let count ← countResult (countSessions entry.intent.request.binding.key inbox.sessions.val)
+      if count ≠ 1#usize then .ok corrupt else .ok (operationResult inbox session entry)
+
+def FullEntryContract
+    (run : UnloadResolution.Encoding → Inbox → Session → Entry → AuthenticatedCenterContext → Result Return) : Prop :=
+  ∀ encode inbox session entry context, run encode inbox session entry context =
+    entryView encode inbox session entry context
+
+def run (encode : UnloadResolution.Encoding) := Inbox.entry_kind_using (E := Unit) ⟨encode⟩
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry

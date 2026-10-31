@@ -1,0 +1,20 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredProofs
+import SandboxModel.Lifecycle.Protocol.InboxRetiredValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open Values
+
+theorem candidate_witnesses :
+    base.validate_retired_identities = .ok (.Ok ()) ∧
+    distinctKeys.validate_retired_identities = .ok (.Ok ()) ∧
+    activeConflict.validate_retired_identities = .ok (.Err .CorruptStore) ∧
+    priorConflict.validate_retired_identities = .ok (.Err .CorruptStore) := by
+  have proved (inbox : Inbox) := candidate_retired_contract inbox
+  simp only [proved, expected_outcomes.1, expected_outcomes.2.1,
+    expected_outcomes.2.2.1, expected_outcomes.2.2.2, and_self]
+
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.candidate_witnesses

@@ -289,13 +289,38 @@ fn gate_bytes(config: &NodeConfig, position: HostSlotId) -> NodeResult<Vec<u8>> 
     Ok(serde_json::to_vec(&(1_u32, config, position))?)
 }
 
+fn select_credential_context(
+    rows: &[HostPosition],
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+) -> NodeResult<HostSlotContext> {
+    if generation == 0 {
+        return Err("credential generation must be positive".into());
+    }
+    let mut matching = rows.iter().filter(|row| {
+        row.context.binding.sandbox == sandbox && row.context.binding.generation == generation
+    });
+    let row = matching
+        .next()
+        .ok_or("credential generation has no original host position")?;
+    if matching.next().is_some() {
+        return Err("ambiguous credential generation binding".into());
+    }
+    row.require_occupied(row.context.binding)?;
+    Ok(row.context)
+}
+
 pub(super) fn retirement_paths(config: &NodeConfig, binding: HostBinding) -> Vec<PathBuf> {
     let name = format!("vm-{}-{}", config.namespace, binding.vm.0);
     vec![
         config
             .state_dir
             .join("secrets")
-            .join(format!("sb-{}-{}", config.namespace, binding.sandbox.0)),
+            .join(super::credentials::secret_file_name(
+                &config.namespace,
+                binding.sandbox,
+                binding.generation,
+            )),
         config.state_dir.join("fences").join(format!(
             "sb-{}-{}.json",
             config.namespace, binding.sandbox.0
@@ -332,6 +357,7 @@ fn maximum_runtime_config(
     gate: &sandbox_runtime::RuntimeHelperGate,
 ) -> RuntimeConfig {
     RuntimeConfig {
+        guest_instance_id: format!("sb-{}-{}", config.namespace, u64::MAX),
         console_policy: bounded.console_policy.map(|policy| match policy {
             sandproof_controller_service::ConsolePolicy::Discard => {
                 sandbox_runtime::ConsolePolicy::Discard
@@ -977,6 +1003,68 @@ impl LinuxWorker {
     /// # Errors
     /// Refuses foreign resources, live VMs and unobservable exact cleanup.
     pub fn release_host_slot(&self, context: &HostSlotContext) -> NodeResult<()> {
+        self.release_host_slot_mode(context, None)
+    }
+
+    pub(crate) fn release_unload_host_slot(
+        &self,
+        context: &HostSlotContext,
+        full: &sandproof_controller_service::capture::FullCaptureWorkRequest,
+        source: &sandproof_controller_service::capture::SourceObservationRequirement,
+        seal: &sandproof_protocol::WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        super::capture::require_source_binding(&full.pause, source)?;
+        seal.identity.validate_version()?;
+        if !super::decisions::action_fields_match(seal, &self.config.namespace)
+            || seal.identity.resource
+                != super::decisions::command_resource(
+                    seal.command.command(),
+                    &self.config.namespace,
+                )?
+        {
+            return Err("Unload release original Seal identity differs".into());
+        }
+        let core::Command::SealSnapshot {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+            ..
+        } = seal.command.command()
+        else {
+            return Err("Unload release has no original SealSnapshot".into());
+        };
+        if context.binding.sandbox != *sandbox
+            || context.binding.generation != *generation
+            || context.binding.vm != *vm
+        {
+            return Err("Unload release differs from original captured incarnation".into());
+        }
+        let row = self
+            .read_host_positions()?
+            .into_iter()
+            .find(|row| row.context.position == context.position)
+            .ok_or("missing original Unload position")?;
+        if row.context != *context {
+            return Err("original Unload position changed".into());
+        }
+        if row.phase == HostSlotPhase::Occupied {
+            self.validate_action(seal)?;
+            self.require_fence(*sandbox, *epoch, false)?;
+            let runtime = self.runtime(*sandbox, *vm)?;
+            let original = crate::source_observation::expected_source(source)?;
+            runtime.observe_original_stopped(source.resource.id.as_str(), &original)?;
+        }
+        // Releasing/Free replay uses the original persisted retirement record;
+        // it cannot require deleted source claims or relaunch the old VM.
+        self.release_host_slot_mode(context, Some(*epoch))
+    }
+
+    fn release_host_slot_mode(
+        &self,
+        context: &HostSlotContext,
+        unload_epoch: Option<core::Epoch>,
+    ) -> NodeResult<()> {
         let mut row = self
             .read_host_positions()?
             .into_iter()
@@ -993,7 +1081,7 @@ impl LinuxWorker {
         }
         if row.phase == HostSlotPhase::Occupied {
             let binding = context.binding;
-            row.retirement = Some(self.capture_retirement(context)?);
+            row.retirement = Some(self.capture_retirement(context, unload_epoch)?);
             row.phase = reduce_slot(
                 Some(row.record()),
                 SlotInput::BeginRelease {
@@ -1042,12 +1130,19 @@ impl LinuxWorker {
         )
     }
 
-    fn capture_retirement(&self, context: &HostSlotContext) -> NodeResult<NodeRetirement> {
+    fn capture_retirement(
+        &self,
+        context: &HostSlotContext,
+        unload_epoch: Option<core::Epoch>,
+    ) -> NodeResult<NodeRetirement> {
         let binding = context.binding;
         for path in self.retirement_paths(binding) {
             node_staging::cleanup(&self.config, &path)?;
         }
-        if self.fence_path(binding.sandbox).try_exists()? && !self.fence(binding.sandbox)?.terminal
+        if let Some(epoch) = unload_epoch {
+            self.require_fence(binding.sandbox, epoch, false)?;
+        } else if self.fence_path(binding.sandbox).try_exists()?
+            && !self.fence(binding.sandbox)?.terminal
         {
             return Err("host release requires terminal fence".into());
         }
@@ -1086,7 +1181,7 @@ impl LinuxWorker {
         } else {
             require_absent(&request_path)?;
         }
-        let runtime = if self.has_secret(binding.sandbox)? {
+        let runtime = if self.has_secret_record(binding.sandbox, binding.generation)? {
             self.runtime_config(binding.sandbox, binding.vm)?
         } else {
             require_absent(
@@ -1097,6 +1192,7 @@ impl LinuxWorker {
                     .join(self.vm_name(binding.vm)),
             )?;
             RuntimeConfig {
+                guest_instance_id: format!("sb-{}-{}", self.config.namespace, binding.sandbox.0),
                 console_policy: self.config.bounded_host.console_policy.map(
                     |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {
@@ -1139,13 +1235,12 @@ impl LinuxWorker {
         })
     }
 
-    pub(super) fn require_occupied_sandbox(&self, sandbox: core::SandboxId) -> NodeResult<()> {
-        let rows = self.read_host_positions()?;
-        let row = rows
-            .iter()
-            .find(|row| row.context.binding.sandbox == sandbox)
-            .ok_or("sandbox has no occupied host position")?;
-        row.require_occupied(row.context.binding)
+    pub(super) fn credential_context(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<HostSlotContext> {
+        select_credential_context(&self.read_host_positions()?, sandbox, generation)
     }
 
     /// Pin the exact occupied incarnation while a data request is prepared.
@@ -1316,6 +1411,21 @@ impl LinuxWorker {
         row.require_occupied(expected)
     }
 
+    // Only the dedicated Full observer calls this. A bare CommitSnapshot
+    // remains unsupported by the generic occupied-action/worker dispatcher.
+    pub(super) fn require_capture_commit_action(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        seal: &WorkAction<core::EffectId>,
+    ) -> NodeResult<()> {
+        check_capture_commit_action(
+            &self.read_host_positions()?,
+            &self.config.namespace,
+            action,
+            seal,
+        )
+    }
+
     pub(super) fn require_occupied_action(
         &self,
         action: &WorkAction<core::EffectId>,
@@ -1350,6 +1460,52 @@ fn select_original_source_context(
 #[cfg(test)]
 #[path = "source_context_tests.rs"]
 mod source_context_tests;
+
+// Validate the dedicated Commit against the original SQL-saved Seal. This
+// gate alone grants no commit: the caller must still check Full/source/fence,
+// protected bootstrap, helper ownership and the actual complete stored bundle.
+fn check_capture_commit_action(
+    rows: &[HostPosition],
+    namespace: &str,
+    action: &WorkAction<core::EffectId>,
+    seal: &WorkAction<core::EffectId>,
+) -> NodeResult<()> {
+    super::decisions::validate_action_identity(action, namespace)?;
+    super::decisions::validate_action_identity(seal, namespace)?;
+    if action.identity.owner != seal.identity.owner
+        || action.identity.sandbox != seal.identity.sandbox
+        || action.identity.operation != seal.identity.operation
+        || action.identity.epoch != seal.identity.epoch
+        || action.identity.generation != seal.identity.generation
+    {
+        return Err("Commit differs from original durably completed Full".into());
+    }
+    let core::Command::SealSnapshot {
+        sandbox,
+        epoch,
+        generation,
+        snapshot,
+        manifest,
+        ..
+    } = seal.command.command()
+    else {
+        return Err("original saved material action is not SealSnapshot".into());
+    };
+    if action.command.command()
+        != &(core::Command::CommitSnapshot {
+            sandbox: *sandbox,
+            epoch: *epoch,
+            generation: *generation,
+            snapshot: *snapshot,
+            manifest: *manifest,
+        })
+    {
+        return Err("Commit does not name the complete original Seal command".into());
+    }
+    // Commit has no VM field: use the original Seal's VM and occupied binding,
+    // never infer a fresh VM from the snapshot number or bypass the shared gate.
+    check_occupied_action(rows, seal)
+}
 
 fn check_occupied_action(
     rows: &[HostPosition],
@@ -1437,6 +1593,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn credential_selection_ignores_old_free_generation_and_rejects_foreign_or_ambiguous_binding() {
+        let mut old = HostPosition {
+            context: context(1, None),
+            phase: HostSlotPhase::Free,
+            retirement: None,
+        };
+        old.context.binding.generation = 1;
+        let mut current = HostPosition {
+            context: context(2, None),
+            phase: HostSlotPhase::Occupied,
+            retirement: None,
+        };
+        current.context.position = HostSlotId(1);
+        current.context.binding.sandbox = old.context.binding.sandbox;
+        current.context.binding.generation = 2;
+        let rows = vec![old, current.clone()];
+        assert_eq!(
+            select_credential_context(&rows, core::SandboxId(1), 2).unwrap(),
+            current.context
+        );
+        assert!(select_credential_context(&rows, core::SandboxId(1), 1).is_err());
+        assert!(select_credential_context(&rows, core::SandboxId(2), 2).is_err());
+        assert!(select_credential_context(&rows, core::SandboxId(1), 0).is_err());
+        let mut duplicate = current;
+        duplicate.context.position = HostSlotId(2);
+        duplicate.context.binding.vm = core::VmId(3);
+        let mut ambiguous = rows;
+        ambiguous.push(duplicate);
+        assert!(select_credential_context(&ambiguous, core::SandboxId(1), 2).is_err());
+    }
+
     fn action(command: core::Command) -> WorkAction<core::EffectId> {
         let command = core::EffectId::initial(command);
         WorkAction {
@@ -1456,6 +1644,155 @@ mod tests {
             },
             command,
         }
+    }
+
+    fn capture_commit_actions() -> (
+        HostPosition,
+        WorkAction<core::EffectId>,
+        WorkAction<core::EffectId>,
+    ) {
+        let ctx = context(10, None);
+        let row = HostPosition::bind(None, &ctx, true).unwrap();
+        let mut seal = action(core::Command::SealSnapshot {
+            sandbox: ctx.binding.sandbox,
+            epoch: 1,
+            generation: ctx.binding.generation,
+            vm: ctx.binding.vm,
+            workspace: core::FsId(5),
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        });
+        seal.identity.sandbox =
+            sandproof_protocol::SandboxId::try_from(format!("sb-test-{}", ctx.binding.sandbox.0))
+                .unwrap();
+        seal.identity.resource =
+            super::super::decisions::command_resource(seal.command.command(), "test").unwrap();
+        let mut commit = seal.clone();
+        commit.command = core::EffectId::initial(core::Command::CommitSnapshot {
+            sandbox: ctx.binding.sandbox,
+            epoch: 1,
+            generation: ctx.binding.generation,
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        });
+        commit.identity.logical_action = LogicalActionId::try_from("effect-commit").unwrap();
+        (row, commit, seal)
+    }
+
+    #[test]
+    fn full_commit_entry_checks_original_seal_while_generic_commit_remains_rejected() {
+        let (row, commit, seal) = capture_commit_actions();
+        let rows = std::slice::from_ref(&row);
+        // This is the production dedicated entry's gate, not a replacement
+        // material observer. The old generic gate rejects this exact valid pair.
+        check_capture_commit_action(rows, "test", &commit, &seal).unwrap();
+        assert_eq!(
+            check_occupied_action(rows, &commit)
+                .unwrap_err()
+                .to_string(),
+            "unsupported bounded host command"
+        );
+        assert!(check_capture_commit_action(&[], "test", &commit, &seal).is_err());
+        for phase in [HostSlotPhase::Releasing, HostSlotPhase::Free] {
+            let mut changed = row.clone();
+            changed.phase = phase;
+            assert!(check_capture_commit_action(&[changed], "test", &commit, &seal).is_err());
+        }
+        let mut successor = row;
+        successor.context.binding.vm = core::VmId(11);
+        assert!(check_capture_commit_action(&[successor], "test", &commit, &seal).is_err());
+    }
+
+    #[test]
+    fn full_commit_entry_rejects_changed_identity_even_with_the_original_seal() {
+        let (row, original, seal) = capture_commit_actions();
+        for field in [
+            "owner",
+            "sandbox",
+            "operation",
+            "epoch",
+            "generation",
+            "attempt",
+            "protocol",
+            "resource",
+        ] {
+            let mut changed = original.clone();
+            match field {
+                "owner" => changed.identity.owner = TenantId::try_from("tenant-8").unwrap(),
+                "sandbox" => {
+                    changed.identity.sandbox =
+                        sandproof_protocol::SandboxId::try_from("sb-test-2").unwrap();
+                }
+                "operation" => {
+                    changed.identity.operation = OperationId::try_from("op-test-other").unwrap();
+                }
+                "epoch" => changed.identity.epoch += 1,
+                "generation" => changed.identity.generation += 1,
+                "attempt" => changed.identity.attempt += 1,
+                "protocol" => changed.identity.protocol_version += 1,
+                "resource" => {
+                    changed.identity.resource.id =
+                        ResourceId::try_from("snapshot-test-99").unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                check_capture_commit_action(std::slice::from_ref(&row), "test", &changed, &seal)
+                    .is_err(),
+                "accepted {field}"
+            );
+        }
+        let mut changed_seal = seal;
+        let mut changed_commit = original;
+        changed_seal.identity.owner = TenantId::try_from("tenant-8").unwrap();
+        changed_commit.identity.owner = changed_seal.identity.owner.clone();
+        assert!(
+            check_capture_commit_action(&[row], "test", &changed_commit, &changed_seal).is_err()
+        );
+    }
+
+    #[test]
+    fn full_commit_entry_requires_exact_saved_seal_command_and_source_vm() {
+        let (row, original, seal) = capture_commit_actions();
+        for field in ["snapshot", "manifest"] {
+            let mut changed = original.clone();
+            let mut command = changed.command.command().clone();
+            if let core::Command::CommitSnapshot {
+                snapshot, manifest, ..
+            } = &mut command
+            {
+                if field == "snapshot" {
+                    *snapshot = core::SnapshotId(99);
+                } else {
+                    manifest.digest = core::ManifestDigest(99);
+                }
+            }
+            changed.command = core::EffectId::initial(command);
+            changed.identity.resource =
+                super::super::decisions::command_resource(changed.command.command(), "test")
+                    .unwrap();
+            assert!(
+                check_capture_commit_action(std::slice::from_ref(&row), "test", &changed, &seal)
+                    .is_err(),
+                "accepted {field}"
+            );
+        }
+        let mut changed = seal.clone();
+        let mut command = changed.command.command().clone();
+        if let core::Command::SealSnapshot { vm, .. } = &mut command {
+            *vm = core::VmId(99);
+        }
+        changed.command = core::EffectId::initial(command);
+        assert!(
+            check_capture_commit_action(std::slice::from_ref(&row), "test", &original, &changed)
+                .is_err()
+        );
+        // A Commit or another action cannot stand in for the persisted Seal.
+        assert!(check_capture_commit_action(&[row], "test", &original, &original).is_err());
     }
 
     #[test]
@@ -1588,6 +1925,44 @@ mod tests {
     }
 
     #[test]
+    fn released_unload_terminal_cannot_reopen_or_touch_a_reused_node_position() {
+        let original = context(10, None);
+        let mut row = HostPosition::bind(None, &original, true).unwrap();
+        for input in [
+            SlotInput::BeginRelease {
+                position: original.position,
+                binding: original.binding,
+            },
+            SlotInput::ConfirmRelease {
+                position: original.position,
+                binding: original.binding,
+            },
+        ] {
+            row.phase = reduce_slot(Some(row.record()), input).unwrap().phase;
+        }
+        let mut terminal = action(core::Command::InstallFence {
+            sandbox: original.binding.sandbox,
+            epoch: 2,
+            terminal: true,
+        });
+        terminal.identity.sandbox = format!("sb-test-{}", original.binding.sandbox.0)
+            .try_into()
+            .unwrap();
+        terminal.identity.epoch = 2;
+        terminal.identity.resource =
+            super::super::decisions::command_resource(terminal.command.command(), "test").unwrap();
+        assert_eq!(row.phase, HostSlotPhase::Free);
+        assert!(check_occupied_action(std::slice::from_ref(&row), &terminal).is_err());
+        let successor = HostPosition::bind(Some(&row), &context(11, Some(10)), true).unwrap();
+        let unchanged = successor.clone();
+        assert!(check_occupied_action(std::slice::from_ref(&successor), &terminal).is_err());
+        assert_eq!(successor, unchanged);
+        successor
+            .require_occupied(successor.context.binding)
+            .unwrap();
+    }
+
+    #[test]
     fn stale_prepare_cleanup_and_reclaim_commands_fail_the_shared_gate() {
         let context = context(10, None);
         let row = HostPosition::bind(None, &context, true).unwrap();
@@ -1709,7 +2084,7 @@ mod tests {
         for path in [
             "/node/startup/.tmp-random",
             "/node/startup/vm-ns-0.request",
-            "/node/secrets/sb-ns-1",
+            "/node/secrets/sb-ns-1-1",
         ] {
             assert!(require_known_node_entry(&expected, Path::new(path)).is_err());
         }

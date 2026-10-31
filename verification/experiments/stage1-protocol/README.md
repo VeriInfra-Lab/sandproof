@@ -6,6 +6,11 @@
 分别生成 request、manifest、carriers 三个视图；不手改生成算法，不增加翻译器规则。
 入口代码和候选冻结存在不等于完成验收，实际通过范围由同一候选的原始记录确认。
 
+当前统一源已经采用收件查找、寿命扫描和窄编码接口的必要重构，生产只维护这一条实现。
+各子包说明中的旧提交和 `*-candidate.patch` 是原 PR 的来源记录，不是另一条生产路径，
+也不是当前正确视图仍须应用的补丁。当前入口直接读取本仓库函数；实际验收状态以覆盖记录
+和精确候选的原始结果为准，不能用历史候选的成功替代当前验收。
+
 ## 接口、保证和限制
 
 | 入口/证明 | 可以复用的结论 | 仍需调用者提供 |
@@ -30,8 +35,10 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 
 ## 正确版与真实错误版
 
-`formal.py` 显式登记并检查 Protocol 目录的每份保留证明，漏文件或出现未登记文件即拒绝；
-每个物理视图解析完整本地导入闭包，逐文件内核检查，再经原严格服务核对完整、非陈旧的诊断和准确审计。
+`retained-protocol.json` 登记 Protocol 目录的完整文件集合，漏文件或出现未登记文件即拒绝。
+文件在清单里不等于已经验证：原 `formal.py` 检查三 profile 的目标，`registered.py`
+接入其余独立入口。每个物理视图解析完整本地导入闭包，逐文件内核检查，再经原严格服务
+核对完整、非陈旧的诊断和准确审计。
 三个生成库有同名 discriminant 辅助声明，保持独立物理视图，不把实现全部导入同一个公共根。
 公共消费者只组合独立 Model；公共根未导入不能成为省略实际文件的理由。
 
@@ -53,7 +60,9 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 不删选源码、配置、Cargo、fixtures 或规则。归档前后再次核对整个输入。B 批草稿不能被工作树打包带入。
 
 `component.py` 在普通测试机运行原 native/negative CLI，再通过原 `native_case` 回执机制登记；
-证明机必须先取得当前完整共享 native seal，不能拿裸 `success` 替代。仅此新 case 额外保存一个
+证明机必须先取得覆盖本批全部义务的原生验收记录，不能拿裸 `success` 替代。
+记录明确区分 `all` 与 `stage1-protocol`；后者只能提供本 V3 切片的前提，不能交给全局入口
+冒充全部模块通过。仅此新 case 额外保存一个
 明确的原始 `source.tar`，沿原 `receipt.files` 复制和逐字 SHA 校验，缺失、链接或损坏均拒绝；
 不传 Cargo target 或二进制，也不扩大成复制任意归档/目录。
 
@@ -68,23 +77,42 @@ OOM/abort、资源 Drop/unwind、完整 async shell、TLS/bytes/Serde、handler/
 
 ## 验收入口
 
-先在 普通测试机 的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中运行完整原生入口：
+主控在普通测试机的干净已提交隔离候选、原固定普通环境和已分配 `CARGO_TARGET_DIR` 中运行本批入口：
 
 ```sh
-bash scripts/python-entry.sh tools/proof_native_suite.py run --output /private/native-evidence
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-`stage1-protocol` 是其中一个原生 case；原两包全部测试、显式七组 integration 发现、Clippy、格式、
-文档及四种真实错误版/恢复检查均保留。不要另跑裸七组来代替此入口，不能在证明机跑普通测试。
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 53 个已登记 V3 case。
+任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
+原两包全部测试、显式 integration 发现、Clippy、格式、
+文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
+不要另跑裸 integration 组来代替此入口，不能在证明机跑普通测试。
+原生入口另运行本组件 `test_replay_formal.py`，检查私有抽取目录准备及准确审计清单，
+并确认漏项、额外或重复审计会被原检查器拒绝。这些驱动回归不运行 Lean，不提供业务证明。
+
+`registered.py` 统一登记结果/观察/确认、完整清单、字段与字节、Writer、固定派生来源和
+同步收件切片的原入口。普通检查仍调用各包原命令和同性质错误版；证明入口消费对应的
+完整范围回执。裸开发 `result.json` 不能充当范围回执，未运行的源码/LLBC 来源检查也不能
+由其它包一次构建补齐。没有原生断言的透明抽取 crate 只记编译/静态检查，不计为测试覆盖。
+
+仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
+准入后，登记这一次包含关系，省去该父入口的重复执行；原 append 原生错误版照常保留。
+借用部分模板或抽取某个父根不构成其它独立入口通过。私有生成库的同名声明保持独立视图，
+其模板审计仍纳入公共总清单，不替换原 V0 的生成库或移除旧目标。
 
 将原完整封口与所有 JSON/log 证据交到 证明机，按工作流准备同一 Git 候选、固定工具、独立 `.lake/build`：
 
 ```sh
-export SANDPROOF_NATIVE_EVIDENCE=/private/native-evidence
+export SANDPROOF_NATIVE_EVIDENCE=/private/v3-native-evidence
 bash scripts/verify-stage1-protocol.sh
-# 整套入口继续保留，组件通过不能替代整套通过：
-bash scripts/verify-controller.sh
 ```
+
+不指定 `--scope` 的原生入口继续运行原全项目义务，包含旧首链；
+`verify-controller.sh` 只接受全项目原生记录，并保留全部原冻结、模块和总审计门槛。
+旧模块失败不会因 V3 范围通过而消失，不能把范围记录改名或改标签当作全项目成功。
+全局验收结果与本批结果分别报告；历史首链或冻结的迁移不隐含在本 V3 交付中。
 
 新模块清单与 `frozen.json` 绑定实际源、生成物、模型、检查器、全部审计和导入闭包。
 request 四根变化时，三个 profile 的完整原始 IR 和生成字节都必须重新比较；只规范化原检查器允许的
@@ -92,5 +120,62 @@ request 四根变化时，三个 profile 的完整原始 IR 和生成字节都�
 宣称通过，也不能把旧失败记录改写为成功。
 
 `formal.py` 原 `--source-archive/--native-mutants/--native-source-archive/--case` 与
-`replay_formal.py --property replay|validation` 的局部诊断入口继续保留；它们不伪造完整 native seal，
-结果属于局部形式检查，不能代替上述完整入口。精确候选、未完成和环境阻断由 PR/原始记录报告。
+`replay_formal.py --property replay|validation|envelope` 的局部诊断入口继续保留。
+envelope 模式从当前 Rust 重新抽取正确版和原 session-only-envelope 错误版，检查 Accepted、Recorded
+及其实际依赖；两版保持同一 ValidationModel 和 EnvelopeValues，分别记录合同与见证摘要。
+三个模式均复用原完整导入闭包、逐文件内核/同服务诊断和显式审计清单，各有独立构建目录。
+它们不伪造完整 native seal，结果属于局部形式检查，不能代替上述完整入口。
+精确候选、未完成和环境阻断由 PR/原始记录报告。
+
+### 固定 Create 交付
+
+同一公共入口增加显式 `create-delivery`，固定包含 selection、owner-successor、
+adopted-create、install、owner-check、load-capacity、high-water、deadline、
+attachment-flow、fixed-identity、lifetime-sql、standard-adapter 十二包。
+这是固定发布范围，不能传任意子集或只保留正确版。普通侧共 66 个实际/错误/恢复视图，
+其中 42 个错误版须触发同一原断言；证明侧检查全部 42 个独立物理视图、导入闭包和审计。
+两个 adopted 视图是正例，其 13 个实际 Rust 变异仍在普通侧逐项检查。
+已观察到的错误版 Clippy 诊断逐变体单独登记，核对代码、消息、源文件、行号和
+完整重复次数；编译库与测试目标各报告一次时，两条都必须保留。诊断到达顺序不影响
+比对，缺失或额外诊断仍拒绝。adopted 的 successor 溢出错误版从相同派生 Rust 文件
+的 owner-successor 提供方继承同一规则，仍须独立触发自己的原业务断言。
+正确版、恢复版和未登记诊断的错误版仍须严格 Clippy 通过；静态诊断不能代替业务断言失败。
+Flow 的原生步骤还须包含原有的夹具格式化准备，记录并核对其日志和成功退出，随后才检查
+格式、原断言和 Clippy；其余包仍保留原三步。
+
+```sh
+# 普通机，同一干净候选；完整 functional 依原键只执行一次。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-create-delivery --output /private/create-native-evidence
+# 证明机，复制原 commands/runtime/complete 全部证据；不传 Cargo target。
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/create-native-evidence
+# 同一原归档的本机路径；六份实际工具源文件仍须匹配。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
+# 操作者已持原协调锁；本进程继承仍打开的同一 FD，不能只传数字而关闭 FD。
+export SANDPROOF_LOCK_FILE=/private/held-component.lock
+export SANDPROOF_LOCK_FD=9
+bash scripts/verify-stage1-protocol.sh --profile create-delivery
+```
+
+Create 和 full/all 的整份封口相互拒绝。此 profile 不运行历史 retained 或其它旧包，
+默认无参数的 full 则保留原 126 项及新 12 项、旧 retained 与全部原生义务。
+全局旧冻结和旧包源失配另记为阻断，不改摘要冒称已完成迁移。
+`verification/create-delivery-inputs.sha256` 是候选准入；实际通过须有同源完整原生记录、
+每份实际 Lean 文件的内核和服务检查，以及全部视图完成记录，不能只看索引或旧开发结果。
+这批覆盖同步 Create 的真实函数和有限接口条件，不包括认证来源、JSON/TLS、物理事务
+同一性、持久提交、崩溃恢复或整个标准库；详见[依赖合同](../../../docs/formal/dependencies.md#v3-create-同步流程的接口条件)。
+准确适用提交和完成情况以[覆盖记录](../../../docs/proof-coverage.md)及 #635 为准。
+
+上述第五档只含 `native-source-inputs.json` 固定的六份 Lean 文本，用于原检查器核对
+来源哈希。普通入口先验证整个原 tar 及完整成员，再把缺失源文件只读放到本次
+`.tools` 相应目录，拒绝覆盖不同内容；不安装或运行任何证明工具。
+证明入口使用原真实工具目录核对同样六文件，不以这份源档代替工具运行检查。
+原四档不变；本批三个旧有限范围也保守携带同一第五档的来源键，以复用同一完整
+`functional`，不能省略、替换或改写旧回执。
+
+Create 可显式设 `SANDPROOF_STAGE1_JOBS=12`，前提是外层已获准 48 CPU；8 路需
+32 CPU，4 路需 16 CPU。原调度器给每个新任务一个不重叠四核组，子进程设置并
+实际读回后才执行原驱动，原锁 FD 保留。每任务原独立目录、缓存、完整文件与审计、
+首失败停止新派发均不变。默认一路，`full` 原 1/2/4 路不受此选项扩展。

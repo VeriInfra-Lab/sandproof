@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxLookup.Witness
+
+def singleton (value : T) : alloc.vec.Vec T :=
+  alloc.vec.Vec.from [value] (by simp only [List.length_cons, List.length_nil]; scalar_tac)
+def empty (T : Type) : alloc.vec.Vec T := alloc.vec.Vec.from [] (by simp)
+def entry (capture : U64) : Entry := ⟨EnvelopeValues.intent capture, none, none, none, none⟩
+def session (capture : U64) : Session := {
+  id := "session", retention := ⟨1#u16,1#u64⟩, owner := "owner",
+  current_version := 1#u64, terminal := false, refusal := none,
+  incarnation := some 1#u64, «local» := none, entries := singleton (entry capture),
+  confirmed_terminal := none, confirmed_renewal := none, compacted_sdk_through := none,
+  native_retirement := none }
+def inbox (capture : U64) : Inbox := {
+  config := ⟨EnvelopeValues.center, EnvelopeValues.node, none, 2#u16, 8#u16, 1024#u32, 1024#u32, 1024#u32⟩,
+  host_epoch_observation := none, owner_high_water := 0#u64, owners := empty _,
+  sessions := singleton (session capture), lanes := empty _ }
+
+theorem normal_shape :
+    Validation.ValidEnvelope (entry 1#u64).intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope (entry 2#u64).intent EnvelopeValues.context :=
+  EnvelopeValues.both_inputs_have_valid_shape
+
+theorem normal_spec : inboxSpec (EnvelopeValues.intent 1#u64) (inbox 1#u64).sessions.val 0 = .found 0 0 := by
+  classical
+  simp [inbox, session, singleton, entry, inboxSpec, entrySpec]
+
+theorem conflicting_spec : inboxSpec (EnvelopeValues.intent 1#u64) (inbox 2#u64).sessions.val 0 = .conflict := by
+  classical
+  simp [inbox, session, singleton, entry, inboxSpec, entrySpec, EnvelopeValues.intent]
+
+end SandboxModel.Stage1Protocol.InboxLookup.Witness
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Witness.normal_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.Witness.conflicting_spec

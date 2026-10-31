@@ -33,9 +33,10 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         vm: core::VmId,
     ) -> NodeResult<RuntimeConfig> {
-        let secret = self.secret(sandbox)?;
-        let observed = self.observation_config(vm, secret.template.as_ref())?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
+        let observed = self.observation_config(sandbox, vm, secret.template.as_ref())?;
         Ok(RuntimeConfig {
+            guest_instance_id: observed.guest_instance_id,
             console_policy: observed.console_policy,
             jailer: observed.jailer,
             firecracker: observed.firecracker,
@@ -55,6 +56,7 @@ impl LinuxWorker {
 
     pub(super) fn observation_config(
         &self,
+        sandbox: core::SandboxId,
         vm: core::VmId,
         template: Option<&TemplateBinding>,
     ) -> NodeResult<RuntimeObservationConfig> {
@@ -62,6 +64,7 @@ impl LinuxWorker {
         let vm_name = self.vm_name(vm);
         launch_observation::bind_template(
             RuntimeObservationConfig {
+                guest_instance_id: format!("sb-{}-{}", self.config.namespace, sandbox.0),
                 console_policy: self.config.bounded_host.console_policy.map(
                     |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {
@@ -154,12 +157,7 @@ impl LinuxWorker {
         self.require_occupied_action(action)?;
         let command = action.command.command();
         let generation = decisions::command_generation(command);
-        if !decisions::action_fields_match(action, &self.config.namespace)
-            || action.identity.resource
-                != decisions::command_resource(command, &self.config.namespace)?
-        {
-            return Err("host action identity mismatch".into());
-        }
+        decisions::validate_action_identity(action, &self.config.namespace)?;
         if let Some(generation) = generation {
             // PrepareVm creates the first slot binding. All later actions,
             // including old cleanup and read-only observations, must carry

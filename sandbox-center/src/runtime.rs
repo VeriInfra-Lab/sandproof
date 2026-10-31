@@ -219,24 +219,14 @@ async fn coordinate(
         let app = Arc::clone(&application);
         let observation = observation.clone();
         let keep_running = observation_round(&admission, interval, shutdown, move || {
-            if observation::refresh(
-                &observation.authority,
-                &observation.hosts,
-                observation.policy,
-                &observation.handle,
-            )
-            .is_err()
-            {
-                let _ = app.recover_authority();
-                return;
-            }
-            if app.reconcile_once().is_err() {
-                // Only the original durable authority is recovered. An absent
-                // or corrupt block is never reinitialized or cached away.
-                let _ = app.recover_authority();
-                return;
-            }
-            let _ = app.retire_terminal_history_once();
+            app.lifecycle_background_round(|| {
+                observation::refresh(
+                    &observation.authority,
+                    &observation.hosts,
+                    observation.policy,
+                    &observation.handle,
+                )
+            });
         })
         .await?;
         if !keep_running {
@@ -282,6 +272,10 @@ async fn coordinate_material(
         let templates = templates.clone();
         let candidates = candidates.clone();
         blocking_round(&admission, RequestClass::Material, move || {
+            let _scope = sandproof_center_store::DiagnosticScope::enter(
+                sandproof_center_store::DiagnosticFlow::Background,
+                sandproof_center_store::DiagnosticStep::Material,
+            );
             let _ = candidates.prepare_static(deadline);
             let _ = templates.reconcile_once(app.as_ref());
         })

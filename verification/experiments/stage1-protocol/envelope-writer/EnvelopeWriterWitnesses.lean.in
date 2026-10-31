@@ -1,0 +1,58 @@
+import SandboxModel.Lifecycle.Protocol.EnvelopeWriterContract
+import SandboxModel.Boundaries.BoundedWriter.Examples
+import SandboxModel.ProofAuditCommand
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std
+open SandproofBoundedWriterRust
+open sandproof_controller_service.template_registry.evidence
+open SandboxModel.Boundaries.BoundedWriter
+open SandboxModel.Boundaries.BoundedWriter.Refinement
+open SandboxModel.Boundaries.BoundedWriter.Refinement.Examples
+namespace SandboxModel.Stage1Protocol.EnvelopeWriter
+
+/-- A library-call witness only: original full write, original returned Writer,
+then a JSON success/error with a fixed error identity. No business algorithm. -/
+def oneChunkSerializer (refuse : Bool) : Serializer Unit Buffer Unit (Slice U8) := {
+  serialize := fun writer chunk => do
+    let (outcome, final) ← write_bounded (ordinaryOps refuse) writer chunk
+    match outcome with
+    | .Ok _ => .ok (.Ok (), final)
+    | .Err _ => .ok (.Err ⟨7⟩, final)
+}
+
+theorem one_chunk_library_satisfies_standard_calls (refuse : Bool) :
+    StandardCalls (ordinaryOps refuse) (oneChunkSerializer refuse) Slice.val := by
+  constructor
+  intro initial value result final run
+  unfold oneChunkSerializer at run
+  cases called : write_bounded (ordinaryOps refuse) initial value with
+  | div => simp [called] at run
+  | vis event continuation => simp [called] at run
+  | ret pair =>
+    rcases pair with ⟨outcome, after⟩
+    cases outcome with
+    | Ok count =>
+      simp [called] at run
+      rcases run with ⟨rfl, rfl⟩
+      exact ⟨[value], by simp [chunkBytes], .accepted called (.done after)⟩
+    | Err error =>
+      simp [called] at run
+      rcases run with ⟨rfl, rfl⟩
+      exact ⟨[value], by simp [chunkBytes], .refused called⟩
+
+theorem one_chunk_allocation_failure_call :
+    (oneChunkSerializer true).serialize (initial 1#usize) oneByte =
+      .ok (.Err ⟨7⟩, initial 1#usize) := by
+  simp [oneChunkSerializer, actual_allocation_refusal_is_not_a_size_fault]
+
+theorem one_chunk_normal_call :
+    (oneChunkSerializer false).serialize (initial 1#usize) oneByte =
+      .ok (.Ok (), ⟨withByte, 1#usize, false⟩) := by
+  simp [oneChunkSerializer, nonempty_actual_write_is_accepted]
+
+end SandboxModel.Stage1Protocol.EnvelopeWriter
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.one_chunk_library_satisfies_standard_calls
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.one_chunk_allocation_failure_call
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.one_chunk_normal_call

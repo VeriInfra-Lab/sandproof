@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallModel
+import SandboxModel.Lifecycle.Protocol.CreateInstallIteration
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.CreateInstall
+noncomputable section
+open scoped Classical
+
+theorem owner_eq (left right : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (decide (left = right)) := by
+  simp [sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem present_end (inbox : Inbox) (owner : sandproof_protocol.TenantId) (index : Usize)
+    (outside : inbox.owners.val.length ≤ index.val) :
+    create_owner_present_loop.body inbox owner index = .ok (.done false) := by
+  simp [create_owner_present_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem present_step (inbox : Inbox) (owner : sandproof_protocol.TenantId) (index next : Usize)
+    (inside : index.val < inbox.owners.val.length) (added : next.val = index.val + 1) :
+    create_owner_present_loop.body inbox owner index = .ok
+      (if inbox.owners.val[index.val].external = owner then .done true else .cont next) := by
+  obtain ⟨row, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.owners index inside)
+  have insideVec : index < alloc.vec.Vec.len inbox.owners := inside
+  simp [create_owner_present_loop.body, insideVec, owner_eq, index_add_one index next added,
+    alloc.vec.Vec.index_slice_index, indexed, same]
+  split_ifs <;> rfl
+
+theorem present_loop (inbox : Inbox) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    create_owner_present_loop inbox owner index =
+      .ok ((inbox.owners.val.drop index.val).any (fun row => decide (row.external = owner))) := by
+  unfold create_owner_present_loop
+  apply indexed_any_loop inbox.owners.slice _ _ (present_end inbox owner)
+  intro i next inside added
+  rw [present_step inbox owner i next inside added]
+  simp [alloc.vec.Vec.val]
+
+theorem present_complete (inbox : Inbox) (owner : sandproof_protocol.TenantId) :
+    create_owner_present inbox owner = .ok (decide (HasOwner inbox owner)) := by
+  rw [create_owner_present, present_loop]
+  change Result.ok (inbox.owners.val.any (fun row => decide (row.external = owner))) = _
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp [HasOwner]
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.owner_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.present_end
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.present_step
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.present_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.present_complete

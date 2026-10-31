@@ -1,0 +1,5 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub fn proof_deadline_cast(value: u64) -> Result<i64, std::num::TryFromIntError> {
+    i64::try_from(value)
+}

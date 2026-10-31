@@ -13,15 +13,15 @@ const BUILD: &str = "11111111111111111111111111111111";
 fn host(slots: u64) -> BoundedHostConfig {
     let mut host = capacity::host();
     host.maintenance.max_host_slots = slots;
-    host.maintenance.max_retained_results = 2 * slots;
+    host.maintenance.max_retained_results = capacity::RESERVED_RESULTS * slots;
     host
 }
 fn policy(slots: u64) -> MaintenanceConfig {
     let mut policy = capacity::full_config();
     policy.capacity.as_mut().unwrap().max_live_sandboxes = slots;
-    // Exact scalar/reference reservation edges for the fixed V1 lifecycle.
-    policy.max_records = 1 + slots + 2 + 61 * slots;
-    policy.max_references = 86 * slots;
+    // Exact current Create/Pause/Kill scalar/reference reservation edges.
+    policy.max_records = 1 + slots + 2 + capacity::RESERVED_RECORDS * slots;
+    policy.max_references = capacity::RESERVED_REFERENCES * slots;
     policy
 }
 fn open(path: &std::path::Path, slots: u64, policy: &MaintenanceConfig) -> ControllerJournal {

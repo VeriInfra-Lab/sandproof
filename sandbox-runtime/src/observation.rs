@@ -7,11 +7,12 @@ use super::{
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Original admitted physical configuration, with no token or MMDS fields.
+/// Original admitted physical configuration, with no token or credential hash.
 /// The caller must bind it to the durable sandbox, generation and host position.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeObservationConfig {
+    pub guest_instance_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_policy: Option<ConsolePolicy>,
     #[serde(default)]
@@ -32,6 +33,7 @@ pub struct RuntimeObservationConfig {
 impl From<RuntimeConfig> for RuntimeObservationConfig {
     fn from(config: RuntimeConfig) -> Self {
         Self {
+            guest_instance_id: config.guest_instance_id,
             console_policy: config.console_policy,
             host_slot: config.host_slot,
             jailer: config.jailer,
@@ -54,6 +56,7 @@ impl RuntimeObservationConfig {
     // observer. It cannot be obtained by an executor or used to launch a VM.
     fn into_runtime_config(self) -> RuntimeConfig {
         RuntimeConfig {
+            guest_instance_id: self.guest_instance_id,
             console_policy: self.console_policy,
             host_slot: self.host_slot,
             jailer: self.jailer,
@@ -140,6 +143,7 @@ mod tests {
 
     fn config() -> RuntimeObservationConfig {
         RuntimeObservationConfig {
+            guest_instance_id: "guest-instance".into(),
             console_policy: Some(ConsolePolicy::Discard),
             host_slot: None,
             jailer: "/unused/jailer".into(),

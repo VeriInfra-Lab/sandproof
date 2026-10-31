@@ -1,0 +1,486 @@
+{
+  "schema": 1,
+  "kind": "actual-create-owner-successor-proof-slice",
+  "base_commit": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
+  "production_adopted": true,
+  "original_general_equivalence_proved": false,
+  "original_full_attachment_proved": false,
+  "public_Ord_binding_adopted": false,
+  "formal_acceptance": false,
+  "ning_acceptance": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "providers": {
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
+    "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingValues.lean.in": "f9149b6e39b1e2ff267d4dea762926c59140c4f618e055e647ff78b9741baa81",
+    "verification/experiments/stage1-protocol/inbox-load/formal.py": "ed5b3bc7e4b93d7a0acdbd7e9dca40522c36dce0d088ef82becf42527b162e92",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/inbox-lookup/journal_binding.py": "1754c6dffa5e6f83e9766baec4f0d94daa0a61084ded30f702657d607f5d9a10",
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3"
+  },
+  "candidate_source_sha256": "05f0946b6feec470bf1eec69ad47f9d81667071281b86c26e87a3c0fde43c970",
+  "common_proofs": {
+    "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingModel.lean.in",
+    "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in",
+    "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingValues.lean.in"
+  },
+  "common_templates": [
+    "CreateOwnerSuccessorModel",
+    "CreateOwnerSuccessorCommon",
+    "CreateOwnerSuccessorValues"
+  ],
+  "reuse_source_commit": "2e35b8c8619e05a1e4bb540105bd3e7f20725615",
+  "reuse_original_digests": {
+    "reuse/OwnerMappingValues.lean.in": "f9149b6e39b1e2ff267d4dea762926c59140c4f618e055e647ff78b9741baa81",
+    "reuse/TypesExternal.lean.in": "f6acc05e3805f7e42121089911e16091dd44af3587edd5ea9dc490a4c6dd17ca",
+    "reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
+    "reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
+    "reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f"
+  },
+  "std_cmp_sources": {
+    "production": {
+      "sha256": "b8ae0403b4787172b39eef6a69cb3676846a956fa8b7d16defefb4a9d86ab195",
+      "max_body_sha256": "436570054f1717ef7416ec94582de484734e50ede0d9584d1086395fa27830af"
+    },
+    "extraction": {
+      "sha256": "99d9443dfc103cf0acffb7a9462cd9723364f7bf072651123bd4910934ee7dbe",
+      "max_body_sha256": "436570054f1717ef7416ec94582de484734e50ede0d9584d1086395fa27830af"
+    }
+  },
+  "fixed_library_model_sources": {
+    "Core/Cmp.lean": "86477b7a8b90def126c4e482ecb68bf4415848d7ea625c2c4de1d126af54d970",
+    "Scalar/EqOrd.lean": "8b060ad91a22a8cd4288c0c0a62811e4ec207ad2f79b7ff69c76ecdae594ad3c"
+  },
+  "templates": {
+    "CreateOwnerSuccessorCommon.lean.in": "fe2168e1bc786e2f6b0457f45ad25110a39e28faf12012f6534a61e3237fae00",
+    "CreateOwnerSuccessorCore.lean.in": "169e7d25615485a23dc7e63b45ce0fef125b1bfd7c6eeadecb1474ce158fd96a",
+    "CreateOwnerSuccessorExamples.lean.in": "f7f5b0bf20f0aa70298f736dc70bfc5464ccc8c92bb13f557046d8b8534d7fc3",
+    "CreateOwnerSuccessorModel.lean.in": "801d02858897e7b8a361223ecb84bc4addaa7d6334e86ada5c9c162187a86fb3",
+    "CreateOwnerSuccessorValues.lean.in": "cfe224f9b66c4efe5b31e29a00cb615ec81d38844f53ee015905eedcc3ab93e9",
+    "ExclusionCounter.lean.in": "4109ad0b7fd6b07576c54c40a699557e4b5666a6c91725b8fb6f993f831c8fc8",
+    "FieldCounter.lean.in": "c2d5c7807cf268c19618b20bc9151817de096bf4194940e767112e22fe47f5f2",
+    "HighWaterCounter.lean.in": "0801e001349ce15c169aba488c2acd7a3090eb24223bba401c0b2b10c723bf7c",
+    "OverflowCounter.lean.in": "9ee7068fd77a728fd54d106d65262f40cf240d1fd8fc9d610a8fe31c17c611f8",
+    "TypesExternal.lean.in": "2f7204935558782389719e0bc4d7aa2f9f581edc6738a9b3a0548aa1ff958b7c",
+    "candidate.patch": "2c4d4a2bc2d5ff51731b7eeb80f019cab194c2bd6f4f7949fcd2e35064378543",
+    "native-common.rs.in": "e00f0573a9a00ad5795d6f437d13bd6f66b7ceecf48f0a28e687bbfeef542d65",
+    "reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
+    "reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
+    "reuse/OwnerMappingModel.lean.in": "0c9930a0516734690690b57369d8ebb31309b0d043adb5baf71a49bde4d6db7e",
+    "reuse/OwnerMappingValues.lean.in": "f9149b6e39b1e2ff267d4dea762926c59140c4f618e055e647ff78b9741baa81",
+    "reuse/TypesExternal.lean.in": "f6acc05e3805f7e42121089911e16091dd44af3587edd5ea9dc490a4c6dd17ca",
+    "root.rs.in": "8a5856c03e9947deee3b8c6c22361ca42843ced908f56a3b33efd7927aed952e"
+  },
+  "drivers": {
+    "support.py": "98763f89810d8c072bdd91fa821d85903eaf384a81017e93a1902b5301ac8da2",
+    "formal.py": "9e8f3f199f97d92d9fca6cd98aee655c9ec6e27ecc73a0904d8d13ab51f1b29b",
+    "native.py": "7c7df09a996f243be08ec898f782251f2f313f2191485be302da153ce384acb3"
+  },
+  "variants": {
+    "candidate": {
+      "mutation": null,
+      "templates": [
+        "CreateOwnerSuccessorCore",
+        "CreateOwnerSuccessorExamples"
+      ],
+      "seed": "CreateOwnerSuccessorExamples",
+      "generated_raw_files": {
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "61677df844f88a6dbeb138e47c895d86ba8f4ca643347d29bd7bfae29be29f1f"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCore.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorExamples.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_exists",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.successor_complete",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.empty_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_largest_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.absent_exclusion_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_maximum_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.other_maximum_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_exhausted_actual",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-exclusion": {
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if record.0 == sandbox {"
+      },
+      "templates": [
+        "ExclusionCounter"
+      ],
+      "seed": "CreateOwnerSuccessorCounter",
+      "generated_raw_files": {
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "e0cd1d74c3bfd170eae14b97ae6db17811aae9c0e6f6f3e36b42e5c7aaa135ee"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongExclusion.observed",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongExclusion.violates_full_contract",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-sandbox-field": {
+      "mutation": {
+        "before": "if record.0 != sandbox {",
+        "after": "if core::SandboxId(record.1.owner.0) != sandbox {"
+      },
+      "templates": [
+        "FieldCounter"
+      ],
+      "seed": "CreateOwnerSuccessorCounter",
+      "generated_raw_files": {
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "98977ae953fda862b6f909ad0ba0b24885a474ad2808b76654c281cab54f3802"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongSandboxField.observed",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongSandboxField.violates_full_contract",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ]
+    },
+    "wrong-high-water": {
+      "mutation": {
+        "before": "fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+      },
+      "templates": [
+        "HighWaterCounter"
+      ],
+      "seed": "CreateOwnerSuccessorCounter",
+      "generated_raw_files": {
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "431def4da8870a9d74a6bbf6359437d3cd1b4afe8619385e5fb3e3a5e88374eb"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater.observed",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongHighWater.violates_full_contract",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ],
+      "original_candidate_mutation": {
+        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+      }
+    },
+    "wrong-overflow": {
+      "mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))\n}",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))\n}"
+      },
+      "templates": [
+        "OverflowCounter"
+      ],
+      "seed": "CreateOwnerSuccessorCounter",
+      "generated_raw_files": {
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "bfeeef2a87b247c9828f8fca61bf546c9a49629c46a4f92d2a8b59c2154009e0"
+      },
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCommon.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateOwnerSuccessorValues.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingModel.lean",
+        "SandboxModel/Lifecycle/Protocol/OwnerMappingValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Funs.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/OrdDefaultBinding.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/Types.lean",
+        "verification/aeneas/stage1-protocol/owner-mapping/SandproofStage1OwnerMapping/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.sandbox_ne",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_unfold",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_end",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.wrapped_zero",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.observed",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.WrongOverflow.violates_full_contract",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected",
+        "SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_run",
+        "SandboxModel.Stage1Protocol.OwnerMapping.max_result",
+        "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
+        "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
+        "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
+      ],
+      "original_candidate_mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))\n}\n\npub(super) fn attach_create(",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))\n}\n\npub(super) fn attach_create("
+      }
+    }
+  },
+  "generated_functions": [
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+      "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId> for sandbox_controller_core::ids::SandboxId}::eq",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.store.Store.impl.entries",
+      "rust_name": "sandbox_controller_core::store::{sandbox_controller_core::store::Store<K, V>}::entries",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandbox_controller_core.model.World.sandbox_records",
+      "rust_name": "sandbox_controller_core::model::{sandbox_controller_core::model::World}::sandbox_records",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStage1OwnerMappingRust.sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_owner_successor",
+      "is_opaque": false,
+      "lean_file": "SandproofStage1OwnerMapping/Funs.lean"
+    }
+  ],
+  "native_plan": {
+    "test_count": 9,
+    "native_compilation_or_assertions_run": false,
+    "expected_failures": {
+      "wrong-exclusion": [
+        "proof_successor_excluded_largest",
+        "proof_successor_absent_exclusion",
+        "proof_successor_excluded_maximum",
+        "proof_successor_other_maximum",
+        "proof_successor_all_excluded"
+      ],
+      "wrong-sandbox-field": [
+        "proof_successor_excluded_largest",
+        "proof_successor_excluded_maximum",
+        "proof_successor_all_excluded"
+      ],
+      "wrong-high-water": [
+        "proof_successor_high_water",
+        "proof_successor_excluded_maximum",
+        "proof_successor_high_water_exhausted",
+        "proof_successor_boundary",
+        "proof_successor_all_excluded"
+      ],
+      "wrong-overflow": [
+        "proof_successor_other_maximum",
+        "proof_successor_high_water_exhausted"
+      ]
+    },
+    "test_names": [
+      "proof_successor_empty",
+      "proof_successor_excluded_largest",
+      "proof_successor_absent_exclusion",
+      "proof_successor_high_water",
+      "proof_successor_excluded_maximum",
+      "proof_successor_other_maximum",
+      "proof_successor_high_water_exhausted",
+      "proof_successor_boundary",
+      "proof_successor_all_excluded"
+    ],
+    "expected_clippy_errors": {
+      "wrong-overflow": [
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 455
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 455
+        }
+      ]
+    }
+  },
+  "current_production_function": {
+    "marker": "fn create_owner_successor(",
+    "sha256": "a35b8b731369cd5f22c17c0656a9a026d581f880adf9fbae173f6a6cb51d7404",
+    "comparison": "exact signature and body from fn token equals the original proved candidate"
+  },
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+      "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326"
+    },
+    "providers": {
+      "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7"
+    },
+    "drivers": {
+      "support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
+      "formal.py": "396b66d4f1065d6211ad48798c88817daae457b1d2f13ff81e2ca9e68995ca9d",
+      "native.py": "9be5e59b9d2c9e13c592ae3c7ae806bd52f9c003a17c5685dbe12b5085b6f8b3"
+    },
+    "templates": {
+      "native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303"
+    }
+  },
+  "published_candidate_kind": "unadopted-create-owner-successor-proof-candidate"
+}

@@ -1,0 +1,16 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -140,0 +141,13 @@
++
++
++## V3 Create 完整同步父函数：当前采用与验收边界
++
++此为待主控采用的覆盖候选；当前源码为 4cf9d0c0 加精确工作树输入，默认完整正反入口已完成，原执行基线与精确工作树输入保持原身份；普通／原生尚未在独立测试环境执行。不得据本候选标记共享或整个 V3 完成。
++
++唯一真实 attach_create 通过窄效果接口调用原 load_using、全文选择、已有 owner 守卫、仅缺失时的 owned World／新 owner 守卫、完整安装、deadline、固定 ID、寿命 UPDATE 和原 save_using。初次 load、寿命 receiver 和 save 的三次 Deref 仍在原位置；没有 whole-load/save 可信回调。原寿命 UPDATE 不检查成功行数，save 独立检查恰好一行。
++
++FullCreateFlowContract 陈述完整生成体对同一个完整规格的等式；明确既有 Graphic 和已解码字符串表示条件，load／安装推出保存配置表示条件。正常见证具有完整模板参数、同一组安装前后实际 Inbox 值校验、完整效果轨迹和任意成功寿命行数（含零）。skip-save 和 eager-world 只改真实函数，均对同一完整合同和同一完整具体输入到达反例；编译／导入失败或超时不能算反例。当前公开入口已逐一完成正确 192 文件／788 审计、两错 173／694 与 175／698 的全部原内核、完整非 stale/partial 服务和依赖检查，整批 4489.977 秒；原私有执行与本次采用后执行分别保留，不改签为后续元数据修正后的新入口验收。
++
++完整 Create 三字段、PathBuf 三层及原始字节 Vec 和模板环境变量键值保留。既有数学直接复用，所用 15 个外部函数正文与已发布提供者逐一对应；具体库和表示合同仍为显式依赖。自有审计名的 41 名清单包含路径字段连接；不得与下层、原路径 18 名或旧 loaded_representable 的数目重复相加。
++
++标准实例、真实 JSON 字节与 SHA／SQL、三个 live transaction 连接、固定双输入十进制 ID、实际 admission／模板／资源事实、持久接受、提交未知、重启／竞争、Resume／driver 和完整 V3 仍未由此父函数结论覆盖。原 Manifest 的任意已解码列表校验、冻结 record FullFlow 与此前所有适用版本继续保留。公共根／输入／冻结／覆盖登记由主控单写，新目标必须真实进入 verify-stage1-protocol.sh 及共享验收，不能只运行旧根后声明当前源码通过。
