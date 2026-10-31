@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentity
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValues
+import SandboxModel.Lifecycle.Protocol.StandardIdentityDelegateModel
+
+open Aeneas Aeneas.Std SandproofStage1CreateAttachmentRust
+namespace SandboxModel.Stage1Protocol.StandardIdentityDelegate
+open CreateFixedIdentity
+
+theorem actual_full_arguments_and_context (effects : Effects) (value : Str) (sandbox : U64) :
+    call effects value sandbox = (do
+      let result ← sandproof_controller_service.controller.identity.sandbox_id value sandbox
+      .ok (result, effects)) := by
+  rfl
+
+theorem standard_identity_complete (effects : Effects) (value : Str) (text : String) (sandbox : U64)
+    (represented : value.val = SandproofFoundationsRust.IdentifierLibrary.stringBytes text)
+    (bounded : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable (rendered text sandbox)) :
+    call effects value sandbox = .ok (expected text sandbox, effects) := by
+  rw [actual_full_arguments_and_context,
+    CreateFixedIdentity.identity_complete value text sandbox represented bounded]
+  simp only [bind_tc_ok]
+
+theorem full_standard_identity_contract : FullStandardIdentityContract call := by
+  intro effects value text sandbox represented bounded
+  exact standard_identity_complete effects value text sandbox represented bounded
+
+theorem normal_full_value_and_context (effects : Effects) :
+    call effects Values.normal 2#u64 = .ok (.Ok "sb-normal-2", effects) := by
+  simpa only [Values.normal_expected] using standard_identity_complete effects
+    Values.normal "normal" 2#u64 Values.normal_represented Values.normal_output_representable
+
+end SandboxModel.Stage1Protocol.StandardIdentityDelegate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.actual_full_arguments_and_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.standard_identity_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.full_standard_identity_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.normal_full_value_and_context

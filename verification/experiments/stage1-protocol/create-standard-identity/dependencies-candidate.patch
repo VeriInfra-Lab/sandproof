@@ -1,0 +1,13 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -972,0 +973,10 @@
++
++
++### B4 V3 Create 标准实例的双输入 ID 调用（候选）
++
++`create-standard-identity/inventory.json` 固定唯一真实 Std 方法、薄调用根、完整效果
++载体及原 `create-fixed-identity` 数学。对任意完整效果对象、已解码 namespace 和 u64，
++保留两项实参、原 identity 结果/错误及完整返回上下文。原固定 9 字节、两参数 fmt
++接口及 Identifier 构造使用既有逐符号正常值合同；可表示条件和实际字符串结果均显式。
++此调用不借用 World 或执行 SQL，不扩大为任意格式器、资源 Drop 或整库正确性。
++完整上下文值相等不推出授权、资源存在、物理连接/事务有效或已接受、已持久化。

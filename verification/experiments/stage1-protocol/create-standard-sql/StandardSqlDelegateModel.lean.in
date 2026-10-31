@@ -1,0 +1,19 @@
+import SandproofLifecycleSql.Funs
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate
+open LifetimeSql
+abbrev Effects := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment
+abbrev call := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateLifetimeSqlEffects.execute_lifetime_update
+
+def expected (effects : Effects) (statement : Str) (deadline : I64) (sandbox : Str) :
+    Result (Reply × Effects) := do
+  let reply ← LifetimeSql.expected effects.connection statement deadline sandbox
+  .ok (reply,effects)
+
+def FullStandardSqlContract
+    (run : Effects → Str → I64 → Str → Result (Reply × Effects)) : Prop :=
+  ∀ effects statement deadline sandbox,
+    run effects statement deadline sandbox = expected effects statement deadline sandbox
+end SandboxModel.Stage1Protocol.StandardSqlDelegate

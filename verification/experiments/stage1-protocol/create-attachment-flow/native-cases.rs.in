@@ -120,6 +120,13 @@ impl InboxSaveEffects for CreateTape {
     }
 }
 
+impl parent::CreateLifetimeSqlEffects for CreateTape {
+    fn execute_lifetime_update(&mut self, statement: &str, deadline: i64, sandbox: &str) -> Result<usize, JournalError> {
+        self.calls.push(CreateCall::Lifetime(statement.into(), deadline, sandbox.into()));
+        Ok(self.connection.execute(statement, params![deadline, sandbox])?)
+    }
+}
+
 impl parent::CreateAttachmentEffects for CreateTape {
     fn world(&mut self) -> core::World {
         self.calls.push(CreateCall::World);
@@ -129,10 +136,6 @@ impl parent::CreateAttachmentEffects for CreateTape {
     fn sandbox_id(&mut self, namespace: &str, sandbox: core::SandboxId) -> Result<sandproof_protocol::SandboxId, JournalError> {
         self.calls.push(CreateCall::Identity(namespace.into(), sandbox));
         crate::controller::identity::sandbox_id(namespace, sandbox)
-    }
-    fn execute_lifetime_update(&mut self, statement: &str, deadline: i64, sandbox: &str) -> Result<usize, JournalError> {
-        self.calls.push(CreateCall::Lifetime(statement.into(), deadline, sandbox.into()));
-        Ok(self.connection.execute(statement, params![deadline, sandbox])?)
     }
     fn begin_inbox_save(&mut self) { self.calls.push(CreateCall::BeginSave); }
 }

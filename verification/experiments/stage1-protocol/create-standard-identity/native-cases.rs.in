@@ -1,0 +1,73 @@
+// The actual Std delegate, both wiring mutants and restored source share
+// these assertions. Execution and ordinary acceptance belong to ning.
+use super::*;
+
+fn with_standard_effects(action: impl FnOnce(&mut StandardCreateAttachment<'_, '_>)) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &tx,
+    };
+    action(&mut effects);
+}
+
+#[test]
+fn normal_namespace_is_preserved() {
+    with_standard_effects(|effects| {
+        assert_eq!(
+            CreateAttachmentEffects::sandbox_id(effects, "normal", core::SandboxId(0)).unwrap(),
+            sandproof_protocol::SandboxId::try_from("sb-normal-0".to_owned()).unwrap()
+        );
+    });
+}
+
+#[test]
+fn all_numeric_bits_are_preserved() {
+    with_standard_effects(|effects| {
+        assert_eq!(
+            CreateAttachmentEffects::sandbox_id(effects, "", core::SandboxId(u64::MAX)).unwrap(),
+            sandproof_protocol::SandboxId::try_from("sb--18446744073709551615".to_owned()).unwrap()
+        );
+    });
+}
+
+#[test]
+fn empty_zero_is_accepted() {
+    with_standard_effects(|effects| {
+        assert_eq!(
+            CreateAttachmentEffects::sandbox_id(effects, "", core::SandboxId(0)).unwrap(),
+            sandproof_protocol::SandboxId::try_from("sb--0".to_owned()).unwrap()
+        );
+    });
+}
+
+#[test]
+fn invalid_namespace_preserves_error() {
+    with_standard_effects(|effects| {
+        assert!(matches!(
+            CreateAttachmentEffects::sandbox_id(effects, "bad space", core::SandboxId(2)),
+            Err(JournalError::Contract(
+                sandproof_protocol::ContractError::InvalidIdentifier
+            ))
+        ));
+    });
+}
+
+#[test]
+fn complete_effect_context_is_preserved() {
+    with_standard_effects(|effects| {
+        let expected_world = effects.tx.world();
+        let expected_tx = effects.tx as *const WorldTransaction<'_>;
+        let expected_connection = effects.connection as *const rusqlite::Connection;
+        let _ = CreateAttachmentEffects::sandbox_id(effects, "normal", core::SandboxId(2));
+        assert_eq!(effects.tx as *const WorldTransaction<'_>, expected_tx);
+        assert_eq!(
+            effects.connection as *const rusqlite::Connection,
+            expected_connection
+        );
+        assert_eq!(effects.tx.world(), expected_world);
+    });
+}

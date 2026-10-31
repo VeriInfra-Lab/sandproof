@@ -182,10 +182,21 @@ Inbox/World/local binding 陈述检查成功到整个 Inbox 写入的合同。�
 [完整同步流程](../../verification/experiments/stage1-protocol/create-attachment-flow/README.md)。
 
 原寿命 UPDATE 不检查成功行数，不能据此宣称它检查了恰好一行；最后的收件 save 仍有
-独立的一行检查。固定 ID 的双输入十进制格式、普通共享借用、原 SQL 两参数及标准
-JSON／SHA 实例仍须逐符号连接。外层同事务插入、提交未知与重启以及真实资源／认证
-来源继续分别连接。采用、实际生成体对应与完整组合分开验收；当前适用版本、候选结果
-和缺口仍由覆盖记录及 #635 维护，不从合成效果下的正常见证推出真实持久接受。
+独立的一行检查。内部寿命 SQL 方法采用单方法 supertrait；原完整效果字典与分组字典
+以双向总表示连接，方法实参、正文和唯一泛型 Create 函数正文保持原语义。
+[标准实例 ID](../../verification/experiments/stage1-protocol/create-standard-identity/README.md)
+从已解码 namespace／u64 和完整效果对象开始，复用原固定双参数格式／标识符合同，
+保留完整参数、结果／原错误和完整上下文，不增 candidate 或 transaction 前提。
+[标准实例 SQL](../../verification/experiments/stage1-protocol/create-standard-sql/README.md)
+连接原同一 Connection、statement、deadline、sandbox、全部 Result／ITree 行为、
+prepare／run 首错和全部成功行数；返回上下文是本次引用和值观察，不推数据库堆不变。
+
+普通 World 读取与连接重绑定的有限值对应、双输入 ID 和两参数 SQL 值对应均不能
+推出活对象、实际物理连接同一或跨调用事务历史。A4 提供连贯 SQL／事务历史，V5
+提供实际 candidate、writer lease、活对象和提交／恢复事实。标准 JSON／SHA 的原字节
+选择及完整调用、外层同事务插入、提交未知／重启和真实资源／认证来源继续分别连接。
+采用、实际生成体对应与完整组合分开验收；当前适用版本、候选结果和缺口仍由覆盖
+记录及 #635 维护，不从合成效果下的正常见证推出真实持久接受。
 
 [两参数寿命 UPDATE](../../verification/experiments/stage1-protocol/create-lifetime-sql/README.md)
 只连接实际 API 的完整 deadline／sandbox、槽位顺序、首错及 Sqlite 转换；原成功行数

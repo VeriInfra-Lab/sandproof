@@ -1,7 +1,7 @@
 {
   "kind": "actual-create-standard-read-and-rebind-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
     "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3"

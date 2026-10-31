@@ -1,3 +1,4 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentEffectsGrouping
 import SandboxModel.Lifecycle.Protocol.InboxLoadModel
 import SandboxModel.Lifecycle.Protocol.InboxSaveModel
 import SandboxModel.Lifecycle.Protocol.CreateInstallModel
@@ -34,7 +35,7 @@ def persistView {R T E : Type} (saved : RetirementEncoding R) (terminal : Termin
     | .Err error => .ok (.Err error, afterIdentity)
     | .Ok sandbox =>
       let key ← sandproof_protocol.SandboxId.as_str sandbox
-      let (updated, afterUpdate) ← io.execute_lifetime_update afterIdentity lifetimeStatement signed key
+      let (updated, afterUpdate) ← io.CreateLifetimeSqlEffectsInst.execute_lifetime_update afterIdentity lifetimeStatement signed key
       match updated with
       | .Err error => .ok (.Err error, afterUpdate)
       | .Ok _ =>

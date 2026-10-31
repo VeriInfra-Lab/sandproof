@@ -1,0 +1,75 @@
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegate
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegateFixture
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlFixture
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses
+open Fixture LifetimeSqlFixture
+
+def withConnection (connection : LifetimeSql.Connection) : Effects :=
+  normalEffects selectedWorld connection
+
+theorem normal_complete_context :
+    call (withConnection (observing normalDeadline normalSandbox 17#usize))
+      statement normalDeadline normalSandbox =
+      .ok (.Ok 17#usize,withConnection (observing normalDeadline normalSandbox 17#usize)) := by
+  rw [standard_sql_complete]
+  change (do
+    let result ←
+      LifetimeSql.expected (observing normalDeadline normalSandbox 17#usize)
+        statement normalDeadline normalSandbox
+    .ok (result,withConnection (observing normalDeadline normalSandbox 17#usize))) = _
+  rw [normal_expected]
+  simp only [bind_tc_ok]
+
+theorem zero_success_keeps_complete_context :
+    call (withConnection (observing normalDeadline normalSandbox 0#usize))
+      statement normalDeadline normalSandbox =
+      .ok (.Ok 0#usize,withConnection (observing normalDeadline normalSandbox 0#usize)) := by
+  rw [standard_sql_complete]
+  change (do
+    let result ←
+      LifetimeSql.expected (observing normalDeadline normalSandbox 0#usize)
+        statement normalDeadline normalSandbox
+    .ok (result,withConnection (observing normalDeadline normalSandbox 0#usize))) = _
+  rw [normal_expected]
+  simp only [bind_tc_ok]
+
+theorem arbitrary_success_count (rows : Usize) :
+    call (withConnection (observing normalDeadline normalSandbox rows))
+      statement normalDeadline normalSandbox =
+      .ok (.Ok rows,withConnection (observing normalDeadline normalSandbox rows)) := by
+  rw [standard_sql_complete]
+  change (do
+    let result ←
+      LifetimeSql.expected (observing normalDeadline normalSandbox rows)
+        statement normalDeadline normalSandbox
+    .ok (result,withConnection (observing normalDeadline normalSandbox rows))) = _
+  rw [normal_expected]
+  simp only [bind_tc_ok]
+
+theorem prepare_error_keeps_complete_context :
+    call (withConnection prepareRejected) statement normalDeadline normalSandbox =
+      .ok (.Err (.Sqlite sqliteError),withConnection prepareRejected) := by
+  rw [standard_sql_complete]
+  change (do
+    let result ← LifetimeSql.expected prepareRejected statement normalDeadline normalSandbox
+    .ok (result,withConnection prepareRejected)) = _
+  rw [prepare_error_expected]
+  simp only [bind_tc_ok]
+
+theorem run_error_keeps_complete_context :
+    call (withConnection runRejected) statement normalDeadline normalSandbox =
+      .ok (.Err (.Sqlite sqliteError),withConnection runRejected) := by
+  rw [standard_sql_complete]
+  change (do
+    let result ← LifetimeSql.expected runRejected statement normalDeadline normalSandbox
+    .ok (result,withConnection runRejected)) = _
+  rw [run_error_expected]
+  simp only [bind_tc_ok]
+
+end SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.normal_complete_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.zero_success_keeps_complete_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.arbitrary_success_count
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.prepare_error_keeps_complete_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.run_error_keeps_complete_context

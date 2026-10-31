@@ -1,0 +1,9 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_create_identity(
+    effects: &mut StandardCreateAttachment<'_, '_>,
+    namespace: &str,
+    sandbox: core::SandboxId,
+) -> Result<sandproof_protocol::SandboxId, JournalError> {
+    CreateAttachmentEffects::sandbox_id(effects, namespace, sandbox)
+}

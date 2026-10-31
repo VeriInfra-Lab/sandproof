@@ -1,0 +1,18 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2174,0 +2175,15 @@
++
++
++### V3 Create 标准实例的两参数 SQL 条件值对应（候选登记）
++
++唯一真实 execute_lifetime_update 正文保持原调用；仅将单方法效果移到独立窄
++supertrait，完整效果字典由双向总表示保留。FullStandardSqlContract 对全部完整输入
++连接实际 Std 生成体与原 lower helper。正确 23 文件/28 审计，两错 22/24、22/25；
++共 37 个唯一名，其中原 lower 数学 20 项复用，新 Std 调用/见证/反例 17 项。
++正常、任意成功行数与零行、prepare/run 错误均保留完整上下文。UPDATE 零行成功
++仍是成功，不能由此推出行效果；最后 inbox save 的恰好一行要求另属原完整流程。
++两错分别丢 deadline、丢 sandbox，保持原 helper、同一完整模型与固定实例合同；
++须编译/抽取并到达反例，错误视图不导入正确 Std 定理。当前公开入口执行状态由
++实际精确输入结果确定，不改签原私有执行。ning 原生 6 项同断言覆盖四视图，尚未
++执行；临时 API 域参数表不等于部署 schema/持久收件。A4 连贯事务、V5 活对象/lease、
++提交/重启、共享验收、原始接收和完整 V3 继续显式开放。

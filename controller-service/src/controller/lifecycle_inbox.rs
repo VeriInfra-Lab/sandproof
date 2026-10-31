@@ -537,7 +537,18 @@ pub(super) fn create_attachment_deadline(value: u64) -> Result<i64, JournalError
     i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)
 }
 
-trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects {
+trait CreateLifetimeSqlEffects {
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError>;
+}
+
+trait CreateAttachmentEffects:
+    codec::InboxLoadEffects + codec::InboxSaveEffects + CreateLifetimeSqlEffects
+{
     fn world(&mut self) -> core::World;
     fn begin_lifetime_update(&mut self);
     fn sandbox_id(
@@ -545,12 +556,6 @@ trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects
         namespace: &str,
         sandbox: core::SandboxId,
     ) -> Result<sandproof_protocol::SandboxId, JournalError>;
-    fn execute_lifetime_update(
-        &mut self,
-        statement: &str,
-        deadline: i64,
-        sandbox: &str,
-    ) -> Result<usize, JournalError>;
     fn begin_inbox_save(&mut self);
 }
 
@@ -671,6 +676,17 @@ impl codec::InboxSaveEffects for StandardCreateAttachment<'_, '_> {
     }
 }
 
+impl CreateLifetimeSqlEffects for StandardCreateAttachment<'_, '_> {
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError> {
+        lifetime_sql::execute(self.connection, statement, deadline, sandbox)
+    }
+}
+
 impl CreateAttachmentEffects for StandardCreateAttachment<'_, '_> {
     fn world(&mut self) -> core::World {
         self.tx.world()
@@ -684,14 +700,6 @@ impl CreateAttachmentEffects for StandardCreateAttachment<'_, '_> {
         sandbox: core::SandboxId,
     ) -> Result<sandproof_protocol::SandboxId, JournalError> {
         identity::sandbox_id(namespace, sandbox)
-    }
-    fn execute_lifetime_update(
-        &mut self,
-        statement: &str,
-        deadline: i64,
-        sandbox: &str,
-    ) -> Result<usize, JournalError> {
-        lifetime_sql::execute(self.connection, statement, deadline, sandbox)
     }
     fn begin_inbox_save(&mut self) {
         self.connection = self.tx;

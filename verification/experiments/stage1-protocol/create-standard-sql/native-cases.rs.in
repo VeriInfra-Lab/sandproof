@@ -1,0 +1,117 @@
+// Finite API-domain witnesses on an actual journal WorldTransaction.
+// This temporary table is not a deployment-schema or durable-row proof.
+use super::*;
+
+const STATEMENT: &str = "UPDATE proof_standard_lifetimes SET deadline=?1 WHERE id=?2";
+
+fn with_standard_effects(action: impl FnOnce(&mut StandardCreateAttachment<'_, '_>)) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &tx,
+    };
+    effects
+        .connection
+        .execute_batch(concat!(
+            "CREATE TEMP TABLE proof_standard_lifetimes (",
+            "id TEXT PRIMARY KEY, deadline INTEGER NOT NULL CHECK(deadline>=0));",
+            "INSERT INTO proof_standard_lifetimes VALUES ('wanted',1),('other',5);"
+        ))
+        .unwrap();
+    action(&mut effects);
+}
+
+#[test]
+fn normal_full_values() {
+    with_standard_effects(|effects| {
+        let rows =
+            CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, 17, "wanted")
+                .unwrap();
+        assert_eq!(rows, 1);
+        let rows: Vec<(String, i64)> = effects
+            .connection
+            .prepare("SELECT id,deadline FROM proof_standard_lifetimes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![("other".to_owned(), 5), ("wanted".to_owned(), 17)]
+        );
+    });
+}
+
+#[test]
+fn zero_deadline_is_not_omitted() {
+    with_standard_effects(|effects| {
+        let rows =
+            CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, 0, "wanted")
+                .unwrap();
+        assert_eq!(rows, 1);
+        let deadline: i64 = effects
+            .connection
+            .query_row(
+                "SELECT deadline FROM proof_standard_lifetimes WHERE id='wanted'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(deadline, 0);
+    });
+}
+
+#[test]
+fn zero_rows_stays_successful() {
+    with_standard_effects(|effects| {
+        let rows =
+            CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, 17, "missing")
+                .unwrap();
+        assert_eq!(rows, 0);
+    });
+}
+
+#[test]
+fn prepare_error_preserved() {
+    with_standard_effects(|effects| {
+        assert!(matches!(
+            CreateLifetimeSqlEffects::execute_lifetime_update(
+                effects,
+                "this is not valid SQL",
+                17,
+                "wanted"
+            ),
+            Err(JournalError::Sqlite(_))
+        ));
+    });
+}
+
+#[test]
+fn run_error_preserved() {
+    with_standard_effects(|effects| {
+        assert!(matches!(
+            CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, -1, "wanted"),
+            Err(JournalError::Sqlite(_))
+        ));
+    });
+}
+
+#[test]
+fn complete_reference_and_world_context_preserved() {
+    with_standard_effects(|effects| {
+        let expected_world = effects.tx.world();
+        let expected_tx = effects.tx as *const WorldTransaction<'_>;
+        let expected_connection = effects.connection as *const rusqlite::Connection;
+        let _ = CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, 17, "wanted");
+        assert_eq!(effects.tx as *const WorldTransaction<'_>, expected_tx);
+        assert_eq!(
+            effects.connection as *const rusqlite::Connection,
+            expected_connection
+        );
+        assert_eq!(effects.tx.world(), expected_world);
+    });
+}

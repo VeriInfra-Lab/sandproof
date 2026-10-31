@@ -2,7 +2,7 @@
   "kind": "actual-create-full-flow-reviewed-inputs",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
+    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
@@ -207,11 +207,11 @@
     "CreateLoadedConfig.lean.in": "57c77970f8741c8b8aa3a55bd0f3d2e384f03026fa94c82b447a8287258a8ddd",
     "CreateAttachmentConfig.lean.in": "dfb659d221cfeea7aa04d8445140af990ccde67e0e34b0fec4a0d8a5645982e3",
     "CreateAttachmentCounterValues.lean.in": "cdc57e4559ae1cc3affb59979dd2297d54dfadc11d93885ed44b06914687f20d",
-    "CreateAttachmentFlowModel.lean.in": "10e79340139392f0aa6006bc30cdd1490a05c2f72a9a7ccaca490fce09be108a",
+    "CreateAttachmentFlowModel.lean.in": "6cccd1bfcb43e4eddb0ce28928d0cd696e667306039e2fa8de65c6ff779dc5ac",
     "CreateAttachmentFlow.lean.in": "ca263e10a83c81f37916f6f64f9c0d50059343839bd8a286cef6fbd7e072b728",
-    "native-cases.rs.in": "62ee9494d59aa4c3c66afccec347a71d7afbb350335a1be157aa86401fb3357f",
+    "native-cases.rs.in": "a1330b11866d585120eb1a1ddc8234dd572479544af2ff67d8460bf29489f5fe",
     "root.rs.in": "cd60801e537129578e4ef4862c894fe77ba0e319130eb8a336c1f85577573652",
-    "CreateAttachmentFlowValues.lean.in": "d1019331887d9ba8cde9c52aaa22c2a36a631ddec7a436429eb78d0369ad724f",
+    "CreateAttachmentFlowValues.lean.in": "6960f6d4fa06dd8c204acbc9459d37162dad53cd5efddea3297f6ae2c3adbd86",
     "CreateAttachmentPath.lean.in": "1dd6acb163b5bfa5bf4d6f412b5453c8d63e4690606cc700c8e12a69c488b10e",
     "README.md": "80ecf0e34c02e3151f676dd2d6f7ecd5aec176025cebf5dc94df82478e5d5361",
     "CreateAttachmentEagerWorldCounter.lean.in": "46c03922c6961584bf706a0bcbe484468a99d617b969d4c00c2ed3cec0a42566",
@@ -223,12 +223,13 @@
     "reuse/UnixPathValues.lean.in": "2f0f2ec7c50d465e9824a1e06b7209e93c4c56865ad44533d0cb80026c48f51a",
     "reuse/path/roots.rs.in": "8c942ad9c1a3bf1d9638f96fa881291c12d965b3e44bf96f648ec619b1d3a0f7",
     "reuse/path/Cargo.lock": "c799fca0ea7077fa2bc601e1cf53b4aa5647f95ddc820371b2b71136f447e54b",
-    "reuse/path/Cargo.toml": "67a2603a4b3f1cf576dbd73c903986acd9d5c68dee7271cecd1fe4eca47ffdc1"
+    "reuse/path/Cargo.toml": "67a2603a4b3f1cf576dbd73c903986acd9d5c68dee7271cecd1fe4eca47ffdc1",
+    "CreateAttachmentEffectsGrouping.lean.in": "9a29be5b8c23c1e919ce09d55c9f25021b66da094b00fd9f566822d22e237ac3"
   },
   "drivers": {
     "path_binding.py": "f99f7dd675708b6cc66f94ed9dbd47fe28847ca3e1ed5738700f9d0303daf63b",
     "native.py": "137353696f7b15df579fc74db55762cbdb87fd99509a630eaa9e97c0e0df3486",
-    "formal.py": "51e8c2231ef93b32d57ace4a9e1546bce66dd086d680c36080813b98a9769bec",
+    "formal.py": "9ef906763c9833cb7da68741eace28e0097bf4a63a18159829b9ab016fb4c825",
     "support.py": "fa6883445d1ec239345db1ded2768c53c212c02265307c71f5217c7485a35f62",
     "binding.py": "7b44e3760ea72f2d3e9c253cd9527689840601e5e092c80406a9d18ee1508ab0"
   },
@@ -312,7 +313,7 @@
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowModel.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowModel.lean.in",
-      "sha256": "10e79340139392f0aa6006bc30cdd1490a05c2f72a9a7ccaca490fce09be108a"
+      "sha256": "6cccd1bfcb43e4eddb0ce28928d0cd696e667306039e2fa8de65c6ff779dc5ac"
     },
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentPath.lean": {
       "kind": "new-template",
@@ -1445,7 +1446,7 @@
     },
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": {
       "kind": "raw-tool-generated",
-      "sha256": "6952ec2709f2a566169d3ec09547b17e1a32d5295d0fbaa17907d768c6e59cbb"
+      "sha256": "a6c930c84014bbdcbbafffd691f23e6fac122e24b71308be5897f019064e56a9"
     },
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": {
       "kind": "existing-scoped-external-glue",
@@ -1470,7 +1471,7 @@
     },
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": {
       "kind": "raw-tool-generated",
-      "sha256": "f5f71d820e7fd57fff010508ddc2efcb80ebbf0f2ddc7f1af3b9a3d0ac8bedc5"
+      "sha256": "df9bee794ac834a7fe9cd6953737febe0f6f895f30329d7bf5b8aab87e2a2181"
     },
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean": {
       "kind": "existing-scoped-external-glue",
@@ -1495,12 +1496,17 @@
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowValues.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowValues.lean.in",
-      "sha256": "d1019331887d9ba8cde9c52aaa22c2a36a631ddec7a436429eb78d0369ad724f"
+      "sha256": "6960f6d4fa06dd8c204acbc9459d37162dad53cd5efddea3297f6ae2c3adbd86"
     },
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowWitnesses.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowWitnesses.lean.in",
       "sha256": "18dcd849c98a7d75699b5dad8d532eac19cdfa84c559502f152ab2e2408fc360"
+    },
+    "SandboxModel/Lifecycle/Protocol/CreateAttachmentEffectsGrouping.lean": {
+      "kind": "new-template",
+      "path": "CreateAttachmentEffectsGrouping.lean.in",
+      "sha256": "9a29be5b8c23c1e919ce09d55c9f25021b66da094b00fd9f566822d22e237ac3"
     }
   },
   "path_provider": {
@@ -2667,7 +2673,10 @@
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.normal",
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.zero_rows_lifetime_update_succeeds",
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.full_input_inhabited",
-        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification"
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     },
     "skip-save": {
@@ -3547,7 +3556,10 @@
         "SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted",
         "SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node",
         "SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected",
-        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation"
+        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     },
     "eager-world": {
@@ -4433,7 +4445,10 @@
         "SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted",
         "SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node",
         "SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected",
-        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation"
+        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     }
   },
@@ -4507,6 +4522,9 @@
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_eager_world",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_save",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.not_full_contract",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.actual_without_save",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.actual_inbox_accepted",
@@ -4543,5 +4561,15 @@
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.omitted_byte_changes_current_full_value",
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.rootfs_field_roundtrip",
     "SandboxModel.Stage1Protocol.CreateAttachmentPath.standard_roundtrip"
-  ]
+  ],
+  "effect_interface_scope": {
+    "flat_grouped_representation": "CreateAttachmentEffectsGrouping",
+    "complete_callback_domain_preserved": true,
+    "original_generic_body_verbatim": true,
+    "actual_std_sql_body_verbatim": true,
+    "production_base": "083580e59f66d185bb1d7a8a7c4a222a19cca17f",
+    "whole_call_sql_heap_or_history_proved": false,
+    "current_public_entry_revalidation_complete": false,
+    "generic_ir_ast_admission_byte_limit": 16777216
+  }
 }
