@@ -412,16 +412,21 @@ fn owner_for(
     world: &core::World,
     owner: &sandproof_protocol::TenantId,
 ) -> Result<core::TenantId, JournalError> {
-    if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
-        return Ok(row.local);
+    let mut owner_index = 0;
+    while owner_index < inbox.owners.len() {
+        let row = &inbox.owners[owner_index];
+        if &row.external == owner {
+            return Ok(row.local);
+        }
+        owner_index += 1;
     }
-    let highest = world
-        .sandbox_records()
-        .iter()
-        .map(|(_, s)| s.owner.0)
-        .max()
-        .unwrap_or(0)
-        .max(inbox.owner_high_water);
+    let records = world.sandbox_records();
+    let mut highest = inbox.owner_high_water;
+    let mut record_index = 0;
+    while record_index < records.len() {
+        highest = highest.max(records[record_index].1.owner.0);
+        record_index += 1;
+    }
     Ok(core::TenantId(
         highest
             .checked_add(1)
@@ -429,67 +434,318 @@ fn owner_for(
     ))
 }
 
+fn create_attachment_selection(
+    inbox: &Inbox,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<(usize, usize, u64), JournalError> {
+    let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
+    if inbox.sessions[s].terminal
+        || inbox.sessions[s].refusal.is_some()
+        || inbox.sessions[s].current_version != intent.accepted_version
+        || inbox.sessions[s].local.is_some()
+    {
+        return Err(JournalError::Conflict);
+    }
+    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
+        return Err(JournalError::Conflict);
+    };
+    Ok((s, e, create.startup_deadline_ms))
+}
+
+fn create_owner_successor(
+    inbox: &Inbox,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<core::TenantId, JournalError> {
+    let records = world.sandbox_records();
+    let mut highest = inbox.owner_high_water;
+    let mut record_index = 0;
+    while record_index < records.len() {
+        let record = &records[record_index];
+        if record.0 != sandbox {
+            highest = highest.max(record.1.owner.0);
+        }
+        record_index += 1;
+    }
+    Ok(core::TenantId(
+        highest
+            .checked_add(1)
+            .ok_or(JournalError::IdentifierExhausted)?,
+    ))
+}
+
+fn create_owner_present(inbox: &Inbox, owner: &sandproof_protocol::TenantId) -> bool {
+    let mut index = 0;
+    while index < inbox.owners.len() {
+        if &inbox.owners[index].external == owner {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn create_attachment_install(
+    inbox: &mut Inbox,
+    s: usize,
+    e: usize,
+    local: InternalLocalBinding,
+) {
+    if !create_owner_present(inbox, &inbox.sessions[s].owner) {
+        inbox.owner_high_water = local.owner.0;
+        inbox.owners.push(Owner {
+            external: inbox.sessions[s].owner.clone(),
+            local: local.owner,
+        });
+    }
+    inbox.sessions[s].local = Some(local);
+    inbox.sessions[s].entries[e].local_operation = Some(local.operation);
+}
+
+fn check_existing_create_owner(
+    inbox: &Inbox,
+    owner: &sandproof_protocol::TenantId,
+    local_owner: core::TenantId,
+) -> Result<bool, JournalError> {
+    let mut index = 0;
+    while index < inbox.owners.len() {
+        let row = &inbox.owners[index];
+        if &row.external == owner {
+            if row.local != local_owner {
+                return Err(JournalError::Conflict);
+            }
+            return Ok(true);
+        }
+        index += 1;
+    }
+    Ok(false)
+}
+
+fn check_new_create_owner(
+    inbox: &Inbox,
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
+    let expected = create_owner_successor(inbox, world, local.sandbox)?;
+    if expected != local.owner {
+        return Err(JournalError::Conflict);
+    }
+    Ok(())
+}
+
+pub(super) fn create_attachment_deadline(value: u64) -> Result<i64, JournalError> {
+    i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)
+}
+
+trait CreateAttachmentEffects: codec::InboxLoadEffects + codec::InboxSaveEffects {
+    fn world(&mut self) -> core::World;
+    fn begin_lifetime_update(&mut self);
+    fn sandbox_id(
+        &mut self,
+        namespace: &str,
+        sandbox: core::SandboxId,
+    ) -> Result<sandproof_protocol::SandboxId, JournalError>;
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError>;
+    fn begin_inbox_save(&mut self);
+}
+
+struct StandardCreateAttachment<'tx, 'connection> {
+    tx: &'tx WorldTransaction<'connection>,
+    connection: &'tx rusqlite::Connection,
+}
+
+impl super::checkpoint::ReadConfigEffects for StandardCreateAttachment<'_, '_> {
+    fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
+        super::checkpoint::ReadConfigEffects::query_i64(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError> {
+        super::checkpoint::ReadConfigEffects::query_bytes(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<crate::MaintenanceConfig, JournalError> {
+        super::checkpoint::ReadConfigEffects::decode_maintenance(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+}
+
+impl codec::InboxLoadEffects for StandardCreateAttachment<'_, '_> {
+    fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
+        codec::InboxLoadEffects::query_bool(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError> {
+        codec::InboxLoadEffects::query_i64_pair(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+        codec::InboxLoadEffects::query_bytes_pair(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+        )
+    }
+    fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
+        codec::InboxLoadEffects::decode_inbox(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+    fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        codec::InboxLoadEffects::encode_inbox(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            inbox,
+        )
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        codec::InboxLoadEffects::digest(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+}
+
+impl codec::InboxSaveEffects for StandardCreateAttachment<'_, '_> {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        codec::InboxSaveEffects::encode(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            inbox,
+        )
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        codec::InboxSaveEffects::digest(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            bytes,
+        )
+    }
+    fn update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        codec::InboxSaveEffects::update(
+            &mut super::checkpoint::StandardConfigRead {
+                connection: self.connection,
+            },
+            statement,
+            bytes,
+            digest,
+        )
+    }
+}
+
+impl CreateAttachmentEffects for StandardCreateAttachment<'_, '_> {
+    fn world(&mut self) -> core::World {
+        self.tx.world()
+    }
+    fn begin_lifetime_update(&mut self) {
+        self.connection = self.tx;
+    }
+    fn sandbox_id(
+        &mut self,
+        namespace: &str,
+        sandbox: core::SandboxId,
+    ) -> Result<sandproof_protocol::SandboxId, JournalError> {
+        identity::sandbox_id(namespace, sandbox)
+    }
+    fn execute_lifetime_update(
+        &mut self,
+        statement: &str,
+        deadline: i64,
+        sandbox: &str,
+    ) -> Result<usize, JournalError> {
+        lifetime_sql::execute(self.connection, statement, deadline, sandbox)
+    }
+    fn begin_inbox_save(&mut self) {
+        self.connection = self.tx;
+    }
+}
+
 pub(super) fn attach_create(
     tx: &WorldTransaction<'_>,
     namespace: &str,
     a: &CreateAttachment,
 ) -> Result<(), JournalError> {
-    let mut inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
-    let (s, e) = inbox.find(&a.intent)?.ok_or(JournalError::Conflict)?;
-    if inbox.sessions[s].terminal
-        || inbox.sessions[s].refusal.is_some()
-        || inbox.sessions[s].current_version != a.intent.accepted_version
-        || inbox.sessions[s].local.is_some()
-    {
-        return Err(JournalError::Conflict);
-    }
-    let LifecycleOperation::Create { create, .. } = &a.intent.request.operation else {
-        return Err(JournalError::Conflict);
-    };
+    let connection: &rusqlite::Connection = tx;
+    attach_create_using::<
+        native_retirement::StandardRetirementEncoding,
+        model::StandardTerminalEncoding,
+        renewal_confirmation::StandardRenewalEncoding,
+        unload_resolution::StandardUnloadEncoding,
+        crate::capture::StandardGraphicBytes,
+        _,
+    >(&mut StandardCreateAttachment { tx, connection }, namespace, a)
+}
+
+fn attach_create_using<
+    R: native_retirement::RetirementEncoding,
+    T: model::TerminalEncoding,
+    N: renewal_confirmation::RenewalEncoding,
+    U: unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: CreateAttachmentEffects,
+>(
+    effects: &mut E,
+    namespace: &str,
+    a: &CreateAttachment,
+) -> Result<(), JournalError> {
+    let mut inbox = codec::load_using::<R, T, N, U, B, E>(effects)?
+        .ok_or(JournalError::UnsupportedStore)?;
+    let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
     let owner = &inbox.sessions[s].owner;
-    let expected = if let Some(row) = inbox.owners.iter().find(|r| &r.external == owner) {
-        row.local
-    } else {
-        let maximum = tx
-            .world()
-            .sandbox_records()
-            .iter()
-            .filter(|(id, _)| *id != a.local.sandbox)
-            .map(|(_, r)| r.owner.0)
-            .max()
-            .unwrap_or(0)
-            .max(inbox.owner_high_water);
-        core::TenantId(
-            maximum
-                .checked_add(1)
-                .ok_or(JournalError::IdentifierExhausted)?,
-        )
-    };
-    if expected != a.local.owner {
-        return Err(JournalError::Conflict);
+    if !check_existing_create_owner(&inbox, owner, a.local.owner)? {
+        check_new_create_owner(&inbox, &effects.world(), a.local)?;
     }
-    if !inbox
-        .owners
-        .iter()
-        .any(|r| r.external == inbox.sessions[s].owner)
+    create_attachment_install(&mut inbox, s, e, a.local);
+    effects.begin_lifetime_update();
     {
-        inbox.owner_high_water = a.local.owner.0;
-        inbox.owners.push(Owner {
-            external: inbox.sessions[s].owner.clone(),
-            local: a.local.owner,
-        });
+        let deadline = create_attachment_deadline(startup_deadline_ms)?;
+        let sandbox = effects.sandbox_id(namespace, a.local.sandbox)?;
+        effects.execute_lifetime_update(
+            "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
+            deadline,
+            sandbox.as_str(),
+        )?;
     }
-    inbox.sessions[s].local = Some(a.local);
-    inbox.sessions[s].entries[e].local_operation = Some(a.local.operation);
-    tx.execute(
-        "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2",
-        params![
-            i64::try_from(create.startup_deadline_ms)
-                .map_err(|_| JournalError::UnsupportedInput)?,
-            identity::sandbox_id(namespace, a.local.sandbox)?.as_str()
-        ],
-    )?;
-    codec::save(tx, &inbox)
+    effects.begin_inbox_save();
+    codec::save_using::<R, T, N, U, B, E>(&inbox, effects)
 }
 
 pub(super) fn check_admission(
@@ -537,3 +793,5 @@ pub(super) fn dispatch_epoch_allows(
     };
     Ok(active.is_some() && active == inbox.host_epoch_observation.as_ref())
 }
+
+mod lifetime_sql;

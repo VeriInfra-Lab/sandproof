@@ -1,0 +1,316 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentFlowModel
+import SandboxModel.Lifecycle.Protocol.CreateLoadExamples
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterLoadedExamples
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxLoad.Values (saved terminal renewal unload Trace Event bytes digest)
+
+abbrev intent := CreateLoadCapacity.Examples.intent
+def binding : InternalLocalBinding := ⟨2#u64, 2#u64, 30#u64⟩
+def config : LifecycleInboxConfig := { ConfigValidation.Values.fixture with
+  host_epoch := some ConfigValidation.Values.host }
+def row : Owner := ⟨intent.request.binding.key.owner, binding.owner⟩
+def entry (applied : Bool) : Entry := { SessionShape.Values.entry intent with
+  local_operation := if applied then some binding.operation else none }
+def session (applied : Bool) : Session := { InboxValidation.Values.recordedSession with
+  «local» := if applied then some binding else none,
+  entries := vector [entry applied] (by simp) }
+def inbox (applied : Bool) : Inbox := { InboxValidation.Values.recorded with
+  config := config, host_epoch_observation := some ⟨config.node, ConfigValidation.Values.host⟩,
+  owner_high_water := binding.owner, owners := vector [row] (by simp),
+  sessions := vector [session applied] (by simp) }
+def attachment (template : templates.TemplateBinding) : CreateAttachment :=
+  ⟨intent,binding,template⟩
+
+theorem config_valid : ConfigValidation.Valid config := by decide
+
+theorem config_representable : ConfigValidation.Representable config := by
+  simp [ConfigValidation.Representable, config, ConfigValidation.Values.host,
+    SandproofFoundationsRust.IdentifierLibrary.StringRepresentable,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes]
+  change 2 ≤ Usize.max
+  scalar_tac
+
+theorem before_shape (applied : Bool) :
+    SessionShape.BeforePrior (inbox applied) (session applied) := by
+  cases applied <;>
+    simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, inbox, session, entry,
+      config, vector, InboxValidation.Values.recorded, InboxValidation.Values.recordedSession,
+      SessionShape.Values.normal, SavedRetirement.Values.normal, InboxValidation.Values.normal,
+      ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small,
+      intent, CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem shape_accepted (applied : Bool) :
+    SessionShape.validateView saved terminal (inbox applied) 0#usize (session applied) = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView saved (session applied) = .ok (.Ok ()) := rfl
+  rw [SessionShape.validateView, receipt]
+  simp only [bind_tc_ok,before_shape,↓reduceIte]
+  simp [inbox, session, vector, InboxValidation.Values.recordedSession,
+    SessionShape.Values.normal, SavedRetirement.Values.normal, SessionShape.checkConfirmed]
+
+theorem entry_accepted (applied : Bool) :
+    InboxEntry.entryView unload (inbox applied) (session applied) (entry applied)
+      EnvelopeValues.context = .ok (.Ok 0#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr
+    SavedRetirement.Values.normal_envelopes.1
+  simp only [SavedRetirement.Values.createIntent,EnvelopeValues.intent,Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  cases applied <;>
+    simp [InboxEntry.entryView, UnloadResolution.validateView, InboxEntry.prefixInvalid,
+      entry, SessionShape.Values.entry, accepted, RenewalResultTag.IsError,
+      InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+      InboxEntry.isRenew, inbox, session, InboxValidation.Values.recordedSession,
+      SessionShape.Values.normal, SavedRetirement.Values.normal, intent,
+      CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent, config,
+      ConfigValidation.Values.fixture, ConfigBudget.Values.fixture,
+      ConfigBudget.Values.small, vector, Validation.Examples.createPayload]
+
+theorem session_accepted (applied : Bool) :
+    InboxValidation.sessionView saved terminal renewal unload (inbox applied) 0#usize
+      (session applied) (InboxValidation.decodedContext config) = .ok (.Ok ()) := by
+  have renewed : InboxRenewal.validateView renewal (session applied) = .ok (.Ok ()) := rfl
+  have lineage : InboxLineage.expectedResult (session applied) = .Ok () := by
+    cases applied <;>
+      simp [InboxLineage.expectedResult, InboxLineage.scan, InboxLineage.step, InboxLineage.initial,
+        InboxLineage.observed, session, entry, InboxValidation.Values.recordedSession,
+        SessionShape.Values.normal, vector, SessionShape.Values.entry, intent,
+        CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+        SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have ordered : InboxValidation.entryScan unload (inbox applied) (session applied)
+      (InboxValidation.decodedContext config) (session applied).entries.val
+      InboxValidation.initialSummary = .ok (.Ok InboxValidation.Values.createSummary) := by
+    change InboxValidation.entryScan unload (inbox applied) (session applied)
+      EnvelopeValues.context [entry applied] InboxValidation.initialSummary = _
+    rw [InboxValidation.entryScan]
+    have increasing : ¬intent.accepted_version ≤ InboxValidation.initialSummary.maximum := by decide
+    have retained : InboxRetained.expected (session applied) InboxValidation.initialSummary.maximum
+        intent = true := by cases applied <;> decide
+    simp only [entry, SessionShape.Values.entry, increasing, retained, Bool.true_eq_false, and_false, ↓reduceIte]
+    have checked := entry_accepted applied
+    simp only [entry, SessionShape.Values.entry] at checked
+    rw [checked]
+    have room : 1 ≤ U16.max := by scalar_tac
+    simp [InboxValidation.incrementKind, InboxValidation.initialSummary,
+      InboxValidation.Values.createSummary, InboxValidation.entryScan, room, intent,
+      CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have summary : InboxValidation.SummaryFields (inbox applied) (session applied)
+      InboxValidation.Values.createSummary := by
+    cases applied <;>
+      simp [InboxValidation.SummaryFields, inbox, session, entry,
+        InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+        InboxValidation.Values.createSummary, row, vector, intent,
+        CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+        SavedRetirement.Values.normal]
+  simp only [InboxValidation.sessionView, shape_accepted, renewed, ordered, lineage, summary,
+    bind_tc_ok, ↓reduceIte]
+
+theorem inbox_accepted (applied : Bool) :
+    InboxValidation.inboxView saved terminal renewal unload (inbox applied) = .ok (.Ok ()) := by
+  have configValid : ConfigValidation.Valid (inbox applied).config := config_valid
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  simp only [InboxValidation.inboxView, configValid, not_true_eq_false, ↓reduceIte]
+  have ownerFields : InboxValidation.OwnersValid (inbox applied) := by
+    simp [InboxValidation.OwnersValid,inbox,row,vector]
+  have lanes : InboxValidation.laneScan terminal.encode (InboxValidation.decodedContext config)
+      (inbox applied).lanes.val 0 = .ok true := by
+    simp [inbox, InboxValidation.Values.recorded, InboxValidation.Values.normal, vector,
+      InboxValidation.laneScan, RetentionLane.validateView, checked]
+  have noRetired : RetiredIdentity.validationResult
+      (RetiredIdentity.remainingConflict (inbox applied) 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict,
+      RetiredIdentity.conflictAt,inbox,InboxValidation.Values.recorded,
+      InboxValidation.Values.normal,vector]
+  have host : InboxValidation.HostMatches (inbox applied) := by
+    simp [InboxValidation.HostMatches,inbox,config]
+  simp only [show (inbox applied).config = config from rfl, ↓reduceIte,lanes,bind_tc_ok,
+    Bool.true_eq_false,noRetired,host,ownerFields,not_true_eq_false]
+  change InboxValidation.sessionsView saved terminal renewal unload (inbox applied)
+    (InboxValidation.decodedContext config) [session applied] 0#usize = _
+  have next : 0#usize + 1#usize = Result.ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp only [InboxValidation.sessionsView,next,bind_tc_ok,session_accepted]
+
+theorem actual_inbox_accepted (applied : Bool) :
+    Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (inbox applied) = .ok (.Ok ()) := by
+  rw [InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract (inbox applied)
+    config_representable]
+  exact inbox_accepted applied
+
+theorem charged (applied : Bool) :
+    LifecycleInboxConfig.required_bytes (inbox applied).config = .ok 286720#u64 := by
+  rw [InboxLoad.budget_refines]
+  exact congrArg Result.ok InboxLoad.Values.normal_budget
+
+theorem represented : InboxLoad.DecodedStringsRepresentable (CreateLoadCapacity.Fixture.ioFor (inbox false)) := by
+  intro state input decoded after equation
+  simp only [CreateLoadCapacity.Fixture.ioFor, InboxLoad.Values.effects,
+    Result.ok.injEq, Prod.mk.injEq, core.result.Result.Ok.injEq] at equation
+  rcases equation with ⟨same,_⟩
+  rw [← same]
+  exact config_representable
+
+theorem loaded (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (CreateLoadCapacity.Fixture.ioFor (inbox false)) trace =
+      .ok (.Ok (some (inbox false)),trace ++ InboxLoad.Values.completeTrace (inbox false)) := by
+  exact CreateLoadCapacity.Fixture.actual_loaded saved terminal (N := Unit) ⟨renewal⟩
+    (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic (inbox false)
+    (actual_inbox_accepted false) (charged false) (by decide) trace
+
+theorem lookup_shape : InboxLookup.inboxSpec intent (inbox false).sessions.val 0 = .found 0 0 := by
+  exact CreateLoadCapacity.Examples.lookup_shape
+
+theorem selected : CreateSelection.run (inbox false) intent = .ok (.Ok (0#usize,0#usize,2#u64)) := by
+  have outcome := InboxLookup.find_outcome (inbox false) intent
+  rw [lookup_shape] at outcome
+  obtain ⟨s,e,sz,ez,found⟩ := outcome
+  have szero : s = 0#usize := by scalar_tac
+  have ezero : e = 0#usize := by scalar_tac
+  subst s
+  subst e
+  rw [CreateSelection.found (inbox false) intent 0#usize 0#usize found (by decide)]
+  simp [CreateSelection.forSession, inbox, session, vector,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal,
+    intent, CreateLoadCapacity.Examples.intent, SessionShape.Values.createIntent,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent, Validation.Examples.createPayload]
+
+theorem existing : check_existing_create_owner (inbox false) (session false).owner binding.owner =
+    .ok (.Ok true) := by
+  change CreateOwnerCheck.existingRun (inbox false) (session false).owner binding.owner = _
+  rw [CreateOwnerCheck.existing_complete]
+  rfl
+
+theorem installed : CreateInstall.run (inbox false) 0#usize 0#usize binding = .ok (inbox true) := by
+  have bound : (0#usize).val < (inbox false).sessions.val.length := by decide
+  have ebound : (0#usize).val < (inbox false).sessions.val[0].entries.val.length := by change (0 : Nat) < 1; decide
+  have present : CreateInstall.HasOwner (inbox false) (inbox false).sessions.val[0].owner := by
+    simp [CreateInstall.HasOwner,inbox,session,row,vector,
+      InboxValidation.Values.recordedSession,SessionShape.Values.normal,SavedRetirement.Values.normal,
+      intent,CreateLoadCapacity.Examples.intent,SessionShape.Values.createIntent]
+  obtain ⟨result,returned,owners,contents,frame⟩ :=
+    CreateInstall.install_outcome (inbox false) 0#usize 0#usize binding bound ebound
+      (by intro absent; exact False.elim (absent present))
+  erw [if_pos present] at contents frame
+  have same : owners = (inbox false).owners := by
+    apply alloc.vec.Vec.ext
+    exact contents
+  rw [frame,same] at returned
+  convert returned using 1
+  simp [CreateInstall.sessionAfter,inbox,session,entry,vector,alloc.vec.Vec.eq_iff,
+    alloc.vec.Vec.set_val_eq]
+
+def namespaceValue : Str := SandproofStage1RequestRust.toStr "normal"
+def publicSandbox : sandproof_protocol.SandboxId := "sb-normal-2"
+theorem public_representable : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable publicSandbox := by
+  change 11 ≤ Usize.max
+  scalar_tac
+
+def publicKey : Str := .from (SandproofFoundationsRust.IdentifierLibrary.stringBytes publicSandbox)
+  public_representable
+
+def worldMark : Str := SandproofStage1RequestRust.toStr "read World"
+def updateMark : Str := SandproofStage1RequestRust.toStr "begin lifetime UPDATE"
+def saveMark : Str := SandproofStage1RequestRust.toStr "begin inbox save"
+
+-- Satisfiable explicit effects for the same complete load/save specifications.
+-- Every used input is checked or retained in the trace. These are consistency
+-- witnesses, not implementations of JSON, SHA, SQL, or real World transactions.
+def saveEffects : InboxSaveEffects Trace := {
+  encode := fun trace value => .ok (.Ok bytes,trace ++ [.encodedInbox value])
+  digest := fun trace input => .ok (digest,trace ++ [.digested input.val])
+  update := fun trace sql input hash => .ok
+    ((if sql = InboxSave.statement ∧ input.val = bytes.val ∧ hash.val = digest.val
+      then .Ok 1#usize else .Err .Conflict), trace ++ [.bodyQuery sql]) }
+
+def effects (lifetimeCount : Usize) : CreateAttachmentEffects Trace := {
+  codecInboxLoadEffectsInst := CreateLoadCapacity.Fixture.ioFor (inbox false)
+  codecInboxSaveEffectsInst := saveEffects
+  world := fun trace => .ok (CreateHighWater.Values.emptyWorld,trace ++ [.integerQuery worldMark])
+  begin_lifetime_update := fun trace => .ok (trace ++ [.boolQuery updateMark])
+  sandbox_id := fun trace ns sandbox => .ok
+    ((if ns = namespaceValue ∧ sandbox = binding.sandbox
+      then .Ok publicSandbox else .Err .Conflict),trace ++ [.bytesQuery ns])
+  execute_lifetime_update := fun trace sql deadline sandbox => .ok
+    ((if sql = lifetimeStatement ∧ deadline = 2#i64 ∧ sandbox = publicKey
+      then .Ok lifetimeCount else .Err .Conflict),trace ++ [.lengthQuery sql])
+  begin_inbox_save := fun trace => .ok (trace ++ [.boolQuery saveMark]) }
+
+def savedTrace : Trace := [.encodedInbox (inbox true),.digested bytes.val,.bodyQuery InboxSave.statement]
+def argumentTrace : Trace := [.boolQuery updateMark,.bytesQuery namespaceValue,.lengthQuery lifetimeStatement,.boolQuery saveMark]
+def normalTrace : Trace := InboxLoad.Values.completeTrace (inbox false) ++ argumentTrace ++ savedTrace
+
+theorem public_as_str : sandproof_protocol.SandboxId.as_str publicSandbox = .ok publicKey := by
+  simp [sandproof_protocol.SandboxId.as_str,alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    public_representable,publicKey]
+
+theorem deadline_two : CreateDeadline.run 2#u64 = .ok (.Ok 2#i64) := by
+  obtain ⟨output,returned⟩ := (CreateDeadline.accepts_iff 2#u64).2
+    (by unfold CreateDeadlineModel.InRange; scalar_tac)
+  have same : output = 2#i64 := IScalar.eq_of_val_eq (by
+    have := CreateDeadline.returned_value 2#u64 output returned
+    scalar_tac)
+  simpa only [same] using returned
+
+theorem model_saved (trace : Trace) :
+    InboxSave.saveView saved terminal renewal unload saveEffects (inbox true) trace =
+      .ok (.Ok (),trace ++ savedTrace) := by
+  have under : ¬bytes.val.length > ConfigBudget.bytes (inbox true).config := by change ¬2 > 286720; decide
+  simp [InboxSave.saveView,inbox_accepted,InboxSave.encodeAndSave,saveEffects,under,savedTrace,
+    alloc.vec.Vec.deref,Array.to_slice,List.append_assoc]
+
+theorem model_normal (count : Usize) (template : templates.TemplateBinding) (trace : Trace) :
+    flowView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (effects count)
+      trace namespaceValue (attachment template) = .ok (.Ok (),trace ++ normalTrace) := by
+  unfold flowView
+  change Bind.bind (m := Result)
+    (InboxLoad.fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      (CreateLoadCapacity.Fixture.ioFor (inbox false)) trace) _ = _
+  rw [← InboxLoad.full_load_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    (CreateLoadCapacity.Fixture.ioFor (inbox false)) represented trace, loaded]
+  have selection : create_attachment_selection (inbox false) intent =
+      .ok (.Ok (0#usize,0#usize,2#u64)) := selected
+  have indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      (inbox false).sessions 0#usize = .ok (session false) :=
+    CreateSelection.Values.singleton_index (session false)
+  simp only [bind_tc_ok,uncurry_apply_pair,loadedView,attachment,selection,selectedView,indexed,
+    existing,installedView,installed,persistView]
+  simp only [effects,bind_tc_ok,uncurry_apply_pair,deadline_two]
+  simp [model_saved,public_as_str,normalTrace,argumentTrace,List.append_assoc]
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.config_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.config_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.before_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.shape_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.entry_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.session_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.inbox_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.actual_inbox_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.charged
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.loaded
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.lookup_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.selected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.existing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.installed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.public_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.public_as_str
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.deadline_two
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.model_saved
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.model_normal

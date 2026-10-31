@@ -1,0 +1,114 @@
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineModel
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineCast
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateDeadline
+open CreateDeadlineModel
+
+abbrev run : U64 → Result RustResult :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+
+theorem full_contract : FullDeadlineContract run := by
+  intro value
+  obtain ⟨result, returned, correct⟩ := WP.spec_imp_exists (CreateDeadlineCast.full_contract value)
+  unfold run SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+  change SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from value = _ at returned
+  rw [returned]
+  simp only [bind_tc_ok]
+  cases result with
+  | Ok output =>
+    simpa [core.result.Result.map_err, Correct,
+      CreateDeadlineCast.Correct] using correct
+  | Err error =>
+    simpa [core.result.Result.map_err,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once,
+      Correct, unsupported, CreateDeadlineCast.Correct] using correct.2
+
+theorem normal_result (value : U64) : ∃ result, run value = .ok result := by
+  obtain ⟨result, returned, _⟩ := WP.spec_imp_exists (full_contract value)
+  exact ⟨result, returned⟩
+
+theorem returned_value (value : U64) (output : I64)
+    (returned : run value = .ok (.Ok output)) : output.val = (value.val : Int) := by
+  have correct := full_contract value
+  rw [returned] at correct
+  simpa only [WP.spec_ok, Correct] using correct
+
+theorem accepts_iff (value : U64) :
+    (∃ output, run value = .ok (.Ok output)) ↔ InRange value := by
+  constructor
+  · intro ⟨output, returned⟩
+    have same := returned_value value output returned
+    have bounded : output.val ≤ I64.max := by scalar_tac
+    unfold InRange
+    omega
+  · intro inside
+    obtain ⟨result, returned, correct⟩ := WP.spec_imp_exists (full_contract value)
+    cases result with
+    | Ok output => exact ⟨output, returned⟩
+    | Err error =>
+      simp only [Correct] at correct
+      unfold InRange at inside
+      omega
+
+theorem rejects_exactly (value : U64) (error : JournalError)
+    (returned : run value = .ok (.Err error)) :
+    error = unsupported ∧ I64.max < (value.val : Int) := by
+  have correct := full_contract value
+  rw [returned] at correct
+  simpa only [WP.spec_ok, Correct] using correct
+
+theorem overflow_exact (value : U64) (outside : I64.max < (value.val : Int)) :
+    run value = .ok (.Err unsupported) := by
+  obtain ⟨result, returned, correct⟩ := WP.spec_imp_exists (full_contract value)
+  cases result with
+  | Ok output =>
+    simp only [Correct] at correct
+    have bounded : output.val ≤ I64.max := by scalar_tac
+    omega
+  | Err error =>
+    simp only [Correct] at correct
+    rw [correct.1] at returned
+    exact returned
+
+theorem rejects_iff (value : U64) :
+    run value = .ok (.Err unsupported) ↔ I64.max < (value.val : Int) := by
+  constructor
+  · intro returned
+    exact (rejects_exactly value unsupported returned).2
+  · exact overflow_exact value
+
+theorem zero_accepted : run 0#u64 = .ok (.Ok 0#i64) := by
+  obtain ⟨output, returned⟩ := (accepts_iff 0#u64).2 (by unfold InRange; scalar_tac)
+  have same : output = 0#i64 := IScalar.eq_of_val_eq (by
+    have := returned_value 0#u64 output returned
+    scalar_tac)
+  simpa only [same] using returned
+
+theorem largest_accepted : run 9223372036854775807#u64 = .ok (.Ok 9223372036854775807#i64) := by
+  obtain ⟨output, returned⟩ := (accepts_iff 9223372036854775807#u64).2 (by unfold InRange; scalar_tac)
+  have same : output = 9223372036854775807#i64 := IScalar.eq_of_val_eq (by
+    have := returned_value 9223372036854775807#u64 output returned
+    scalar_tac)
+  simpa only [same] using returned
+
+theorem first_overflow_rejected : run 9223372036854775808#u64 = .ok (.Err unsupported) := by
+  apply overflow_exact
+  scalar_tac
+
+theorem unsigned_max_rejected : run 18446744073709551615#u64 = .ok (.Err unsupported) := by
+  apply overflow_exact
+  scalar_tac
+
+end SandboxModel.Stage1Protocol.CreateDeadline
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.normal_result
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.returned_value
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.rejects_exactly
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.overflow_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.zero_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.largest_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.first_overflow_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadline.unsigned_max_rejected

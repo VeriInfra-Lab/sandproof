@@ -1,0 +1,5 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_create_attachment_deadline(value: u64) -> Result<i64, JournalError> {
+    create_attachment_deadline(value)
+}

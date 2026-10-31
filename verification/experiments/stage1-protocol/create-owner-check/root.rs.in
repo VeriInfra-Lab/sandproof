@@ -1,0 +1,36 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_check_existing_create_owner(
+    inbox: &Inbox,
+    owner: &sandproof_protocol::TenantId,
+    local_owner: core::TenantId,
+) -> Result<bool, JournalError> {
+    check_existing_create_owner(inbox, owner, local_owner)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_check_new_create_owner(
+    inbox: &Inbox,
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
+    check_new_create_owner(inbox, world, local)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_owner_for(
+    inbox: &Inbox,
+    world: &core::World,
+    owner: &sandproof_protocol::TenantId,
+) -> Result<core::TenantId, JournalError> {
+    owner_for(inbox, world, owner)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_create_owner_successor(
+    inbox: &Inbox,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<core::TenantId, JournalError> {
+    create_owner_successor(inbox, world, sandbox)
+}

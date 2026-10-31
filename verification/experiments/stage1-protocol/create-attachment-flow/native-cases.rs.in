@@ -1,0 +1,269 @@
+// Same assertions for actual Rust, both real mutations, and restored actual Rust.
+// Real original SQLite/Serde/SHA adapters are used. This is not a WorldTransaction
+// or commit/restart proof; ning owns execution and all ordinary checks.
+use crate::controller::checkpoint::{ReadConfigEffects, StandardConfigRead};
+use crate::controller::lifecycle_inbox as parent;
+use parent::codec::{InboxLoadEffects, InboxSaveEffects};
+
+const LIFETIME_SQL: &str =
+    "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2";
+
+#[derive(Clone, Debug, PartialEq)]
+enum CreateCall {
+    Read(&'static str, String),
+    Decode(&'static str, Vec<u8>),
+    LoadEncode(Inbox),
+    LoadDigest(Vec<u8>),
+    World,
+    BeginLifetime,
+    Identity(String, core::SandboxId),
+    Lifetime(String, i64, String),
+    BeginSave,
+    SaveEncode(Inbox),
+    SaveDigest(Vec<u8>),
+    SaveUpdate(String, Vec<u8>, Vec<u8>),
+}
+
+struct CreateTape {
+    connection: Connection,
+    calls: Vec<CreateCall>,
+    world: core::World,
+}
+
+impl CreateTape {
+    fn new(inbox: &Inbox, lifetime_row: bool) -> Self {
+        let connection = database(inbox);
+        connection.execute_batch(
+            "CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY,startup_deadline_ms INTEGER NOT NULL);",
+        ).unwrap();
+        if lifetime_row {
+            connection.execute("INSERT INTO sandbox_lifetimes VALUES(?1,?2)",
+                params![format!("sb-{NS}-2"), 7_i64]).unwrap();
+        }
+        Self { connection, calls: vec![], world: core::initial_world() }
+    }
+    fn run(&mut self, input: &parent::CreateAttachment) -> Result<(), JournalError> {
+        parent::attach_create_using::<
+            parent::native_retirement::StandardRetirementEncoding,
+            parent::model::StandardTerminalEncoding,
+            parent::renewal_confirmation::StandardRenewalEncoding,
+            parent::unload_resolution::StandardUnloadEncoding,
+            crate::capture::StandardGraphicBytes,
+            _,
+        >(self, NS, input)
+    }
+    fn world_reads(&self) -> usize {
+        self.calls.iter().filter(|call| matches!(call, CreateCall::World)).count()
+    }
+    fn lifetime_deadline(&self) -> Option<i64> {
+        use rusqlite::OptionalExtension;
+        self.connection.query_row("SELECT startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            [format!("sb-{NS}-2")], |row| row.get(0)).optional().unwrap()
+    }
+}
+
+
+impl ReadConfigEffects for CreateTape {
+    fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
+        self.calls.push(CreateCall::Read("integer", statement.into()));
+        ReadConfigEffects::query_i64(&mut StandardConfigRead { connection: &self.connection }, statement)
+    }
+    fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError> {
+        self.calls.push(CreateCall::Read("bytes", statement.into()));
+        ReadConfigEffects::query_bytes(&mut StandardConfigRead { connection: &self.connection }, statement)
+    }
+    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<crate::MaintenanceConfig, JournalError> {
+        self.calls.push(CreateCall::Decode("maintenance", bytes.to_vec()));
+        ReadConfigEffects::decode_maintenance(&mut StandardConfigRead { connection: &self.connection }, bytes)
+    }
+}
+
+impl InboxLoadEffects for CreateTape {
+    fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
+        self.calls.push(CreateCall::Read("bool", statement.into()));
+        InboxLoadEffects::query_bool(&mut StandardConfigRead { connection: &self.connection }, statement)
+    }
+    fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError> {
+        self.calls.push(CreateCall::Read("integer pair", statement.into()));
+        InboxLoadEffects::query_i64_pair(&mut StandardConfigRead { connection: &self.connection }, statement)
+    }
+    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+        self.calls.push(CreateCall::Read("body pair", statement.into()));
+        InboxLoadEffects::query_bytes_pair(&mut StandardConfigRead { connection: &self.connection }, statement)
+    }
+    fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
+        self.calls.push(CreateCall::Decode("inbox", bytes.to_vec()));
+        InboxLoadEffects::decode_inbox(&mut StandardConfigRead { connection: &self.connection }, bytes)
+    }
+    fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        self.calls.push(CreateCall::LoadEncode(inbox.clone()));
+        InboxLoadEffects::encode_inbox(&mut StandardConfigRead { connection: &self.connection }, inbox)
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        self.calls.push(CreateCall::LoadDigest(bytes.to_vec()));
+        InboxLoadEffects::digest(&mut StandardConfigRead { connection: &self.connection }, bytes)
+    }
+}
+
+impl InboxSaveEffects for CreateTape {
+    fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
+        self.calls.push(CreateCall::SaveEncode(inbox.clone()));
+        InboxSaveEffects::encode(&mut StandardConfigRead { connection: &self.connection }, inbox)
+    }
+    fn update(&mut self, statement: &str, bytes: &[u8], digest: &[u8]) -> Result<usize, JournalError> {
+        self.calls.push(CreateCall::SaveUpdate(statement.into(), bytes.to_vec(), digest.to_vec()));
+        InboxSaveEffects::update(&mut StandardConfigRead { connection: &self.connection }, statement, bytes, digest)
+    }
+    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+        self.calls.push(CreateCall::SaveDigest(bytes.to_vec()));
+        InboxSaveEffects::digest(&mut StandardConfigRead { connection: &self.connection }, bytes)
+    }
+}
+
+impl parent::CreateAttachmentEffects for CreateTape {
+    fn world(&mut self) -> core::World {
+        self.calls.push(CreateCall::World);
+        self.world.clone()
+    }
+    fn begin_lifetime_update(&mut self) { self.calls.push(CreateCall::BeginLifetime); }
+    fn sandbox_id(&mut self, namespace: &str, sandbox: core::SandboxId) -> Result<sandproof_protocol::SandboxId, JournalError> {
+        self.calls.push(CreateCall::Identity(namespace.into(), sandbox));
+        crate::controller::identity::sandbox_id(namespace, sandbox)
+    }
+    fn execute_lifetime_update(&mut self, statement: &str, deadline: i64, sandbox: &str) -> Result<usize, JournalError> {
+        self.calls.push(CreateCall::Lifetime(statement.into(), deadline, sandbox.into()));
+        Ok(self.connection.execute(statement, params![deadline, sandbox])?)
+    }
+    fn begin_inbox_save(&mut self) { self.calls.push(CreateCall::BeginSave); }
+}
+
+fn create_input(inbox: &Inbox) -> parent::CreateAttachment {
+    parent::CreateAttachment {
+        intent: inbox.sessions[0].entries[0].intent.clone(),
+        local: crate::InternalLocalBinding { sandbox: core::SandboxId(2), owner: core::TenantId(20), operation: core::OperationId(30) },
+        registered_template: admission().template.registered,
+    }
+}
+
+fn create_inbox(existing: bool) -> Inbox {
+    let mut inbox = recorded();
+    inbox.host_epoch_observation = Some(crate::capture::HostEpochObservation {
+        node: inbox.config.node.clone(), registration: inbox.config.host_epoch.clone().unwrap(),
+    });
+    if existing {
+        inbox.owner_high_water = 99;
+        inbox.owners = vec![parent::model::Owner { external: inbox.sessions[0].owner.clone(), local: core::TenantId(20) }];
+    } else {
+        inbox.owner_high_water = 19;
+    }
+    inbox.validate().unwrap();
+    inbox
+}
+
+fn expected_installed(before: &Inbox, input: &parent::CreateAttachment) -> Inbox {
+    let mut expected = before.clone();
+    if expected.owners.is_empty() {
+        expected.owner_high_water = input.local.owner.0;
+        expected.owners.push(parent::model::Owner { external: expected.sessions[0].owner.clone(), local: input.local.owner });
+    }
+    expected.sessions[0].local = Some(input.local);
+    expected.sessions[0].entries[0].local_operation = Some(input.local.operation);
+    expected
+}
+
+fn assert_saved(tape: &CreateTape, before: &Inbox, input: &parent::CreateAttachment) {
+    let expected = expected_installed(before, input);
+    expected.validate().unwrap();
+    assert_eq!(codec::load(&tape.connection).unwrap(), Some(expected.clone()));
+    let index = tape.calls.iter().position(|c| matches!(c, CreateCall::BeginLifetime)).unwrap();
+    let sql_index = tape.calls.iter().position(|c| matches!(c, CreateCall::Lifetime(..))).unwrap();
+    let save_index = tape.calls.iter().position(|c| matches!(c, CreateCall::BeginSave)).unwrap();
+    assert!(index < sql_index && sql_index < save_index);
+    assert_eq!(&tape.calls[index..index + 4], &[
+        CreateCall::BeginLifetime,
+        CreateCall::Identity(NS.into(), input.local.sandbox),
+        CreateCall::Lifetime(LIFETIME_SQL.into(), 1000, format!("sb-{NS}-2")),
+        CreateCall::BeginSave,
+    ]);
+    assert_eq!(tape.calls[save_index + 1], CreateCall::SaveEncode(expected.clone()));
+    let data = serde_json::to_vec(&expected).unwrap();
+    assert_eq!(tape.calls[save_index + 2], CreateCall::SaveDigest(data.clone()));
+    assert_eq!(tape.calls[save_index + 3], CreateCall::SaveUpdate(
+        "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1".into(),
+        data.clone(), Sha256::digest(&data).to_vec()));
+    assert_eq!(tape.calls.len(), save_index + 4);
+}
+
+#[test]
+fn existing_mapping_saves_entire_inbox_without_world() {
+    let before = create_inbox(true);
+    let input = create_input(&before);
+    let mut tape = CreateTape::new(&before, true);
+    tape.run(&input).unwrap();
+    assert_eq!(tape.world_reads(), 0);
+    assert_saved(&tape, &before, &input);
+    assert_eq!(tape.lifetime_deadline(), Some(1000));
+}
+
+#[test]
+fn missing_mapping_reads_owned_world_once_then_saves_every_field() {
+    let before = create_inbox(false);
+    let input = create_input(&before);
+    let mut tape = CreateTape::new(&before, true);
+    tape.run(&input).unwrap();
+    assert_eq!(tape.world_reads(), 1);
+    assert_saved(&tape, &before, &input);
+}
+
+#[test]
+fn owner_conflict_stops_before_world_and_update() {
+    let before = create_inbox(true);
+    let mut input = create_input(&before);
+    input.local.owner = core::TenantId(21);
+    let mut tape = CreateTape::new(&before, true);
+    assert!(matches!(tape.run(&input), Err(JournalError::Conflict)));
+    assert_eq!(tape.world_reads(), 0);
+    assert!(!tape.calls.iter().any(|c| matches!(c, CreateCall::BeginLifetime | CreateCall::Identity(..) | CreateCall::Lifetime(..) | CreateCall::BeginSave | CreateCall::SaveEncode(..))));
+    assert_eq!(codec::load(&tape.connection).unwrap(), Some(before));
+    assert_eq!(tape.lifetime_deadline(), Some(7));
+}
+
+#[test]
+fn zero_lifetime_rows_still_saves_inbox() {
+    let before = create_inbox(true);
+    let input = create_input(&before);
+    let mut tape = CreateTape::new(&before, false);
+    tape.run(&input).unwrap();
+    assert_eq!(tape.world_reads(), 0);
+    assert_saved(&tape, &before, &input);
+    assert_eq!(tape.lifetime_deadline(), None);
+}
+
+#[test]
+fn save_failure_keeps_prior_lifetime_update_and_prefix() {
+    let before = create_inbox(true);
+    let input = create_input(&before);
+    let mut tape = CreateTape::new(&before, true);
+    tape.connection.execute_batch("CREATE TRIGGER reject_save BEFORE UPDATE ON controller_lifecycle_inbox BEGIN SELECT RAISE(FAIL,'reject save'); END;").unwrap();
+    assert!(matches!(tape.run(&input), Err(JournalError::Sqlite(_))));
+    assert_eq!(tape.world_reads(), 0);
+    assert_eq!(tape.lifetime_deadline(), Some(1000));
+    assert_eq!(codec::load(&tape.connection).unwrap(), Some(before));
+    assert!(matches!(tape.calls.last(), Some(CreateCall::SaveUpdate(..))));
+}
+
+#[test]
+fn deadline_overflow_stops_after_receiver_before_identity() {
+    let mut before = create_inbox(true);
+    let sandproof_protocol::lifecycle::LifecycleOperation::Create { create, .. } = &mut before.sessions[0].entries[0].intent.request.operation else { panic!("Create fixture") };
+    create.startup_deadline_ms = u64::try_from(i64::MAX).unwrap() + 1;
+    before.validate().unwrap();
+    let input = create_input(&before);
+    let mut tape = CreateTape::new(&before, true);
+    assert!(matches!(tape.run(&input), Err(JournalError::UnsupportedInput)));
+    assert_eq!(tape.world_reads(), 0);
+    assert_eq!(tape.calls.last(), Some(&CreateCall::BeginLifetime));
+    assert!(!tape.calls.iter().any(|c| matches!(c, CreateCall::Identity(..) | CreateCall::Lifetime(..) | CreateCall::BeginSave | CreateCall::SaveEncode(..))));
+    assert_eq!(codec::load(&tape.connection).unwrap(), Some(before));
+    assert_eq!(tape.lifetime_deadline(), Some(7));
+}

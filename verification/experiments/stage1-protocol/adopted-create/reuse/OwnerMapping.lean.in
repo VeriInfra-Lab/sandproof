@@ -1,0 +1,142 @@
+import SandproofStage1OwnerMapping.Funs
+import SandboxModel.Lifecycle.Protocol.OwnerMappingModel
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping
+abbrev maxLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+abbrev maxBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body
+abbrev ownerLoop := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+abbrev ownerBody := sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body
+
+
+
+
+theorem max_unfold (records : Slice Record) (highest : U64) (index : Usize) :
+    maxLoop records highest index = (do
+      let step ← maxBody records highest index
+      match step with
+      | .done value => .ok value
+      | .cont (next, nextIndex) => maxLoop records next nextIndex) := by
+  unfold maxLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (maxBody records highest index))
+  funext step
+  cases step with
+  | done value => rfl
+  | cont pair => cases pair; rfl
+
+theorem max_exists (records : Slice Record) (highest : U64) (index : Usize) :
+    ∃ result, maxLoop records highest index = .ok result ∧
+      result.val = maximum highest.val (records.val.drop index.val) := by
+  by_cases within : index.val < records.val.length
+  · obtain ⟨next, addition, nextVal⟩ := next_counter index (by scalar_tac)
+    have item : Slice.index_usize records index = .ok records.val[index.val] := by
+      simp [Slice.index_usize, within]
+    cases selected : records.val[index.val] with
+    | mk id row =>
+      obtain ⟨middle, computed, middleVal⟩ := max_result highest row.owner
+      obtain ⟨result, rest, resultVal⟩ := max_exists records middle next
+      refine ⟨result, ?_, ?_⟩
+      · rw [max_unfold]
+        have inside : index < Slice.len records := by scalar_tac
+        simp only [maxBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body,
+          inside, if_pos, item, selected, bind_tc_ok]
+        simpa only [uncurry_apply_pair, computed, addition, bind_tc_ok] using rest
+      · rw [List.drop_eq_getElem_cons within]
+        simpa only [maximum, List.foldl_cons, selected, nextVal, middleVal] using resultVal
+  · refine ⟨highest, ?_, ?_⟩
+    · rw [max_unfold]
+      have outside : ¬ index < Slice.len records := by scalar_tac
+      simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0_loop0.body,
+        outside]
+    · simp [maximum, List.drop_eq_nil_of_le (by omega : records.val.length ≤ index.val)]
+termination_by records.val.length - index.val
+
+
+
+theorem owner_unfold (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    ownerLoop inbox world owner index = (do
+      let step ← ownerBody inbox world owner index
+      match step with
+      | .done value => .ok value
+      | .cont next => ownerLoop inbox world owner next) := by
+  unfold ownerLoop sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (ownerBody inbox world owner index))
+  funext step
+  cases step <;> rfl
+
+theorem owner_end (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize)
+    (outside : inbox.owners.val.length ≤ index.val) :
+    ownerBody inbox world owner index = .ok (.done
+      (allocation (maximum inbox.owner_high_water.val world.sandboxes.entries.val))) := by
+  obtain ⟨highest, computed, highestVal⟩ := max_exists
+    (alloc.vec.Vec.deref world.sandboxes.entries) inbox.owner_high_water 0#usize
+  have val : highest.val = maximum inbox.owner_high_water.val world.sandboxes.entries.val := by
+    simpa [alloc.vec.Vec.deref] using highestVal
+  have missing : ¬ index < alloc.vec.Vec.len inbox.owners := by scalar_tac
+  simp only [ownerBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body,
+    missing, ite_false, sandbox_controller_core.model.World.sandbox_records,
+    sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+  unfold maxLoop at computed
+  rw [computed]
+  simp only [bind_tc_ok, lift]
+  rw [allocation_checked, ← val]
+  cases allocation highest.val <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+
+theorem tenant_eq (left right : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (decide (left = right)) := by
+  simp [sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    SandproofStage1OwnerMappingRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem expected_cons (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId)
+    (row : Owner) (rest : List Owner) :
+    expectedFrom inbox world owner (row :: rest) =
+      (if row.external = owner then .Ok row.local else expectedFrom inbox world owner rest) := by
+  by_cases same : row.external = owner <;> simp [expectedFrom, same]
+
+theorem owner_refines (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (index : Usize) :
+    ownerLoop inbox world owner index =
+      .ok (expectedFrom inbox world owner (inbox.owners.val.drop index.val)) := by
+  by_cases within : index.val < inbox.owners.val.length
+  · obtain ⟨next, addition, nextVal⟩ := next_counter index (by scalar_tac)
+    have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Owner)
+        inbox.owners index = .ok inbox.owners.val[index.val] := by
+      rw [alloc.vec.Vec.index_slice_index]
+      obtain ⟨value, returned, same⟩ := WP.spec_imp_exists (alloc.vec.Vec.index_usize_spec inbox.owners index within)
+      simpa only [same] using returned
+    have inside : index < alloc.vec.Vec.len inbox.owners := by scalar_tac
+    rw [owner_unfold]
+    simp only [ownerBody, sandproof_controller_service.controller.lifecycle_inbox.owner_for_loop0.body,
+      inside, if_pos, item, bind_tc_ok, tenant_eq, decide_eq_true_eq]
+    rw [List.drop_eq_getElem_cons within, expected_cons]
+    split_ifs with matched
+    · simp only [bind_tc_ok]
+    · have rest := owner_refines inbox world owner next
+      simpa only [addition, bind_tc_ok, nextVal] using rest
+  · rw [owner_unfold, owner_end inbox world owner index (by omega)]
+    simp [expectedFrom, List.drop_eq_nil_of_le (by omega : inbox.owners.val.length ≤ index.val)]
+termination_by inbox.owners.val.length - index.val
+
+theorem owner_complete : FullOwnerContract
+    sandproof_controller_service.controller.lifecycle_inbox.owner_for := by
+  intro inbox world owner
+  unfold sandproof_controller_service.controller.lifecycle_inbox.owner_for
+  simpa [expected] using owner_refines inbox world owner 0#usize
+
+end SandboxModel.Stage1Protocol.OwnerMapping
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.max_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.max_exists
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.owner_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.owner_end
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.tenant_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.expected_cons
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.owner_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.owner_complete

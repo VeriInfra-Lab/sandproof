@@ -1,0 +1,9 @@
+import SandproofStage1OwnerMapping.OrdDefaultBinding
+import SandproofStage1OwnerMapping.SharedValueBindings
+import SandproofStage1OwnerMapping.Types
+open Aeneas Aeneas.Std
+namespace SandproofStage1OwnerMappingRust
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+end SandproofStage1OwnerMappingRust
