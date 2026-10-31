@@ -84,7 +84,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 41 个已登记 V3 case。
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 53 个已登记 V3 case。
 任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
 原两包全部测试、显式 integration 发现、Clippy、格式、
 文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
@@ -126,3 +126,35 @@ envelope 模式从当前 Rust 重新抽取正确版和原 session-only-envelope 
 三个模式均复用原完整导入闭包、逐文件内核/同服务诊断和显式审计清单，各有独立构建目录。
 它们不伪造完整 native seal，结果属于局部形式检查，不能代替上述完整入口。
 精确候选、未完成和环境阻断由 PR/原始记录报告。
+
+### 固定 Create 交付
+
+同一公共入口增加显式 `create-delivery`，固定包含 selection、owner-successor、
+adopted-create、install、owner-check、load-capacity、high-water、deadline、
+attachment-flow、fixed-identity、lifetime-sql、standard-adapter 十二包。
+这是固定发布范围，不能传任意子集或只保留正确版。普通侧共 66 个实际/错误/恢复视图，
+其中 42 个错误版须触发同一原断言；证明侧检查全部 42 个独立物理视图、导入闭包和审计。
+两个 adopted 视图是正例，其 13 个实际 Rust 变异仍在普通侧逐项检查。
+`wrong-seed` 已登记的 Clippy 诊断单独核对，不能代替它自己的业务断言失败。
+
+```sh
+# 普通机，同一干净候选；完整 functional 依原键只执行一次。
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-create-delivery --output /private/create-native-evidence
+# 证明机，复制原 commands/runtime/complete 全部证据；不传 Cargo target。
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/create-native-evidence
+# 操作者已持原协调锁；本进程继承仍打开的同一 FD，不能只传数字而关闭 FD。
+export SANDPROOF_LOCK_FILE=/private/held-component.lock
+export SANDPROOF_LOCK_FD=9
+bash scripts/verify-stage1-protocol.sh --profile create-delivery
+```
+
+Create 和 full/all 的整份封口相互拒绝。此 profile 不运行历史 retained 或其它旧包，
+默认无参数的 full 则保留原 126 项及新 12 项、旧 retained 与全部原生义务。
+全局旧冻结和旧包源失配另记为阻断，不改摘要冒称已完成迁移。
+`verification/create-delivery-inputs.sha256` 是候选准入；实际通过须有同源完整原生记录、
+每份实际 Lean 文件的内核和服务检查，以及全部视图完成记录，不能只看索引或旧开发结果。
+这批覆盖同步 Create 的真实函数和有限接口条件，不包括认证来源、JSON/TLS、物理事务
+同一性、持久提交、崩溃恢复或整个标准库；详见[依赖合同](../../../docs/formal/dependencies.md#v3-create-同步流程的接口条件)。
+准确适用提交和完成情况以[覆盖记录](../../../docs/proof-coverage.md)及 #635 为准。

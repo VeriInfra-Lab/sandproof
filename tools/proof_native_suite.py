@@ -154,7 +154,7 @@ def run_locked_suite(output, *, scope='all'):
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
-    if scope == 'stage1-protocol':
+    if scope in ('stage1-protocol', 'stage1-create-delivery'):
         run_stage1_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     if scope == 'capture-caller':
@@ -278,10 +278,12 @@ def run_stage1_native(work, *, scope='all'):
         subprocess.run([sys.executable,
             'verification/experiments/stage1-protocol/component.py',
             '--native-only', '--output', str(target)], cwd=ROOT, check=True)
-    native_case('stage1-protocol', ROOT, target, retained, scope=scope)
+    if scope != 'stage1-create-delivery':
+        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    registered.run_native(ROOT, work / 'stage1-v3')
+    registered.run_native(ROOT, work / 'stage1-v3',
+        profile='create-delivery' if scope == 'stage1-create-delivery' else 'full', scope=scope)
 
 
 def publish_suite(output, work, initial, started, *, scope='all', builds=None):
@@ -309,6 +311,10 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
                   rust=initial['rust'], runtime=initial['runtime'], commands=commands,uses=uses,
                   contracts=initial['contracts'],source_archives=initial['source_archives'],
                   repository_sha256=digest(initial['repository']))
+    if scope == 'stage1-create-delivery':
+        registered = load('stage1_create_native_definition',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        result.update(profile='create-delivery', create_definition=registered.create_profile(ROOT))
     # Keep the original completion plus a precise target inventory. Publication
     # never moves/deletes build bytes or guesses resource cleanup from exit 0.
     original = work / 'native-complete.json'

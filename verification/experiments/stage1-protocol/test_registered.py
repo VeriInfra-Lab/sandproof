@@ -1,11 +1,13 @@
 """Admission and scheduling regressions; no compiler, VM or proof is launched."""
 import ast
 import copy
+import fcntl
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import threading
 from types import SimpleNamespace
@@ -18,10 +20,158 @@ registered = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registered)
 
 
+class CreateDelivery(unittest.TestCase):
+    def plan(self):
+        return registered.formal_plan(Path('/unused'), profile='create-delivery')
+
+    def result(self, job):
+        rows = {}
+        for case, recipe in job['views'].items():
+            files = {n:'a'*64 for n in (recipe['files'] or recipe['seeds'])}
+            actual = dict(files=files, audits=list(recipe['audits']), service_log_sha256='b'*64)
+            rows[case] = dict(complete=True, property_rejected=recipe['property_rejected'],
+                             files=files, audits=list(recipe['audits']), actual=actual)
+        return dict(kind=job['expected_kind'], complete=True, prepare_only=False,
+            all_three_variants_complete=True, all_variants_complete=True,
+            **{'views' if job['name'] == 'adopted-create' else 'variants':rows})
+
+    def test_fixed_profile_preserves_default_full_and_every_view(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
+                        SANDPROOF_STAGE1_ONLY='create-selection'):
+            full = registered.formal_plan(Path('/unused'))
+            self.assertEqual(len(full), 138)
+            self.assertEqual(len(registered.native_labels()), 53)
+        jobs = self.plan()
+        definition = registered.create_profile()
+        self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
+        self.assertEqual(len(jobs), 12)
+        self.assertEqual(sum(len(j['cases']) for j in jobs), 42)
+        self.assertEqual(sum(len(p['native_views']) for p in definition['packages']), 66)
+        self.assertTrue(all(j['actual_files'] for j in jobs))
+        for job in jobs:
+            self.assertIn(job, [dict(j, profile='create-delivery') for j in full])
+            self.assertNotIn('--prepare-only', job['args'])
+        self.assertEqual(len(registered.native_labels('create-delivery')), 12)
+        with self.assertRaises(ValueError):
+            registered.formal_plan(Path('/unused'), profile='selection-only')
+
+    def test_each_formal_view_requires_files_audits_and_its_own_property_outcome(self):
+        for job in self.plan():
+            good = self.result(job)
+            registered._check_actual(good, job)
+            field = 'views' if job['name'] == 'adopted-create' else 'variants'
+            for case in job['cases']:
+                for defect in ('omit', 'audit', 'duplicate-audit', 'file', 'property', 'incomplete'):
+                    bad = copy.deepcopy(good)
+                    row = bad[field][case]
+                    if defect == 'omit':
+                        del bad[field][case]
+                    elif defect == 'audit':
+                        row['actual']['audits'].pop()
+                    elif defect == 'duplicate-audit':
+                        row['actual']['audits'].append(row['actual']['audits'][0])
+                    elif defect == 'file':
+                        row['actual']['files'].pop(next(iter(row['actual']['files'])))
+                    elif defect == 'property':
+                        row['property_rejected'] = not row['property_rejected']
+                    else:
+                        row['complete'] = False
+                    with self.subTest(package=job['name'], case=case, defect=defect), self.assertRaises(ValueError):
+                        registered._check_actual(bad, job)
+            for defect in ('prepare_only', 'selected_variant', 'kind'):
+                bad = copy.deepcopy(good)
+                bad[defect] = True if defect == 'prepare_only' else 'actual' if defect == 'selected_variant' else 'old-candidate-kind'
+                with self.subTest(package=job['name'], defect=defect), self.assertRaises(ValueError):
+                    registered._check_actual(bad, job)
+
+    def test_native_property_rejection_is_not_a_mutant_clippy_exit(self):
+        definition = registered.create_profile()
+        for package in definition['packages']:
+            expected = registered._create_native_plan(package['name'], registered._read(
+                registered.ROOT/registered.HERE/package['name']/'inventory.json'))
+            self.assertEqual(tuple(package['native_views']), tuple(expected))
+            self.assertTrue(all(bool(v['expected_failures']) for k,v in expected.items()
+                if k not in (next(iter(expected)), registered.CREATE_RESTORED[package['name']])))
+        high = next(p for p in definition['packages'] if p['name'] == 'create-high-water')
+        self.assertTrue(high['native_views']['wrong-seed']['expected_clippy_errors'])
+        self.assertTrue(high['native_views']['wrong-seed']['expected_failures'])
+
+    def test_native_original_logs_and_assertions_are_required_even_with_complete_true(self):
+        name = 'create-deadline'
+        plan = registered._create_native_plan(name, registered._read(
+            registered.ROOT/registered.HERE/name/'inventory.json'))
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            result = dict(kind=name+'-native-development', complete=True,
+                inputs={'Source.rs':'a'*64, 'unrelated-report.md':'original-report'}, variants={}, commands=[])
+            for variant, recipe in plan.items():
+                (folder/variant).mkdir()
+                result['variants'][variant] = dict(complete=True, inputs={'Source.rs':'derived-source'})
+                for label in ('format', 'test', 'clippy'):
+                    failures = recipe['expected_failures'] if label == 'test' else []
+                    count = recipe['test_count']
+                    text = 'synthetic admission fixture; no compiler was run\n'
+                    if label == 'test':
+                        text += '\nfailures:\n'+''.join('    controller::fixture::'+n+'\n' for n in failures)
+                        text += f'\ntest result: {count-len(failures)} passed; {len(failures)} failed; 0 ignored;\n'
+                    log = folder/variant/(label+'.log')
+                    log.write_text(text)
+                    result['commands'].append(dict(variant=variant, label=label,
+                        exit_code=101 if failures else 0, property_rejected=bool(failures),
+                        log_sha256=registered._sha(log)))
+            shared = SimpleNamespace(rust_inputs=lambda root:{'Source.rs':'a'*64},
+                rules=lambda root:{}, contract_inputs=lambda root:{})
+            with patch.object(registered, '_shared', return_value=shared):
+                registered._check_create_native_result(registered.ROOT, name, folder, result)
+                for defect in ('source', 'missing-view', 'clippy-instead-of-property', 'missing-command'):
+                    bad = copy.deepcopy(result)
+                    if defect == 'source':
+                        bad['inputs']['Source.rs'] = 'changed'
+                    elif defect == 'missing-view':
+                        del bad['variants']['unchecked-cast']
+                    elif defect == 'clippy-instead-of-property':
+                        row = next(r for r in bad['commands'] if r['variant']=='unchecked-cast' and r['label']=='test')
+                        row['property_rejected'] = False
+                    else:
+                        bad['commands'].pop()
+                    with self.subTest(defect=defect), self.assertRaises(ValueError):
+                        registered._check_create_native_result(registered.ROOT, name, folder, bad)
+                (folder/'actual/test.log').write_text('corrupted original log')
+                with self.assertRaisesRegex(ValueError, 'original Create native log'):
+                    registered._check_create_native_result(registered.ROOT, name, folder, result)
+
+    def test_inherited_lock_survives_exec_and_child_does_not_unlock_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lock = root/'coordination.lock'
+            lock.write_text('')
+            driver = root/'child.py'
+            driver.write_text('import fcntl, os, sys\n'
+                'fd=int(sys.argv[1])\nfcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
+                'with open(sys.argv[2],"r+") as other:\n'
+                ' try: fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
+                ' except BlockingIOError: pass\n'
+                ' else: raise RuntimeError("parent lock was lost")\n')
+            with lock.open('r+') as parent, patch.dict(os.environ,
+                    SANDPROOF_LOCK_FILE=str(lock), SANDPROOF_LOCK_FD=str(parent.fileno())):
+                fcntl.flock(parent, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                fd, identity = registered.inherited_lock()
+                self.assertEqual(identity['inode'], lock.stat().st_ino)
+                registered._invoke(root, driver, [fd, lock], pass_fds=(fd,))
+                with lock.open('r+') as other, self.assertRaises(BlockingIOError):
+                    fcntl.flock(other, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                wrong = root/'wrong-lock'
+                wrong.write_text('')
+                with patch.dict(os.environ, SANDPROOF_LOCK_FILE=str(wrong)), self.assertRaises(ValueError):
+                    registered.inherited_lock()
+                with patch.dict(os.environ, SANDPROOF_LOCK_FD='not-an-fd'), self.assertRaises(ValueError):
+                    registered.inherited_lock()
+
+
 class Registration(unittest.TestCase):
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 41)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 41)
+        self.assertEqual(len(registered.NATIVE_CASES), 53)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 53)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -40,14 +190,14 @@ class Registration(unittest.TestCase):
         modules = next(ast.literal_eval(node.value) for node in names.body
                        if isinstance(node, ast.Assign) and any(
                            isinstance(t, ast.Name) and t.id == 'MODULES' for t in node.targets))
-        self.assertEqual(len(modules), 30)
+        self.assertEqual(len(modules), 33)
         self.assertIn('stage1-protocol', modules)
         self.assertNotIn('component.py', {Path(j['driver']).name for j in registered.formal_plan(Path('/unused'))})
 
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 126)
+        self.assertEqual(len(jobs), 138)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -108,10 +258,11 @@ class Registration(unittest.TestCase):
                             set(registered.NATIVE_CASES))
 
     def test_lost_native_or_variant_registration_is_refused(self):
-        registered.validate_registration()
+        with patch.object(registered, 'validate_metadata_inputs'):
+            registered.validate_registration()
         with patch.object(registered, 'NATIVE_CASES', tuple(
                 name for name in registered.NATIVE_CASES if name != 'stage1-inbox-state')):
-            with self.assertRaisesRegex(ValueError, 'missing native registration'):
+            with self.assertRaisesRegex(ValueError, 'duplicate native registration|missing native registration'):
                 registered.validate_registration()
         for name, dropped in (('inbox-state', 'drop-operation'),
                               ('inbox-save', 'wrong-budget'),
@@ -159,7 +310,12 @@ class Registration(unittest.TestCase):
                 self.assertEqual(scope, 'stage1-protocol')
                 raise ValueError('missing native case')
             shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
-            with patch.object(registered, '_shared', return_value=shared), patch.object(registered, '_invoke') as invoke:
+            # This fixture tests seal admission after structural registration.
+            # Historical full-package input migration has its own real guard;
+            # it must not intercept this synthetic missing-seal/case boundary.
+            with patch.object(registered, '_shared', return_value=shared), \
+                    patch.object(registered, 'validate_metadata_inputs'), \
+                    patch.object(registered, '_invoke') as invoke:
                 with patch.dict(os.environ, SANDPROOF_ACCEPTANCE_ROLE='formal', SANDPROOF_NATIVE_EVIDENCE='/unused'):
                     with self.assertRaisesRegex(ValueError, 'seal|native case'):
                         registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
@@ -181,7 +337,7 @@ class Registration(unittest.TestCase):
                         registered._original_file(receipt, 'source.tar')
 
     def test_original_archive_driver_cannot_use_complete_instead_of_success(self):
-        def native_case(label, root, output, action):
+        def native_case(label, root, output, action, *, scope):
             if label != 'stage1-protocol':
                 action()
             return {}
@@ -655,6 +811,8 @@ class CheckpointExecution(unittest.TestCase):
             return b'100644 0000000000000000000000000000000000000000 0\tdocs/proof-coverage.md\0'
         with patch.object(registered.subprocess,'check_output',side_effect=git), \
                 patch.object(registered,'_evidence',return_value=evidence), \
+                patch.object(registered,'inherited_lock',return_value=(9,{'path':'/fixture-lock','device':1,'inode':2})), \
+                patch.object(registered,'create_profile',return_value={'profile':'create-delivery'}), \
                 patch.dict(os.environ,SANDPROOF_NATIVE_EVIDENCE=str(cache)):
             context = registered._execution_context(root,shared,helper,receipts)
             self.assertEqual(context['schema'],2)
@@ -969,7 +1127,8 @@ class CheckpointExecution(unittest.TestCase):
             with patch.object(registered,'validate_registration'), \
                     patch.object(registered,'_shared',return_value=shared), \
                     patch.object(registered,'_evidence',return_value=evidence), \
-                    patch.object(registered,'_original_file'), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_original_file',return_value=retained), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_check_create_native_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=context), \
                     patch.object(registered,'_source_modes',return_value={'Fixture.rs':'100755' if change_modes else '100644'}), \

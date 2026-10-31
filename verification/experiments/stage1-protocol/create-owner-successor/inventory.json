@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "kind": "unadopted-create-owner-successor-proof-candidate",
+  "kind": "actual-create-owner-successor-proof-slice",
   "base_commit": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
-  "production_adopted": false,
+  "production_adopted": true,
   "original_general_equivalence_proved": false,
   "original_full_attachment_proved": false,
   "public_Ord_binding_adopted": false,
@@ -11,7 +11,7 @@
   "shared_acceptance": false,
   "full_v3": false,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
@@ -23,7 +23,7 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
-    "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+    "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
     "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
@@ -37,7 +37,7 @@
     "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
     "verification/experiments/stage1-protocol/inbox-lookup/journal_binding.py": "1754c6dffa5e6f83e9766baec4f0d94daa0a61084ded30f702657d607f5d9a10",
-    "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7",
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
     "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3"
   },
@@ -95,9 +95,9 @@
     "root.rs.in": "8a5856c03e9947deee3b8c6c22361ca42843ced908f56a3b33efd7927aed952e"
   },
   "drivers": {
-    "support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
-    "formal.py": "396b66d4f1065d6211ad48798c88817daae457b1d2f13ff81e2ca9e68995ca9d",
-    "native.py": "9be5e59b9d2c9e13c592ae3c7ae806bd52f9c003a17c5685dbe12b5085b6f8b3"
+    "support.py": "98763f89810d8c072bdd91fa821d85903eaf384a81017e93a1902b5301ac8da2",
+    "formal.py": "9e8f3f199f97d92d9fca6cd98aee655c9ec6e27ecc73a0904d8d13ab51f1b29b",
+    "native.py": "fe7aeef7c0c35344b2dbaec1d45418a3b6e179d62b03acced95e8fbd152a8c45"
   },
   "variants": {
     "candidate": {
@@ -258,8 +258,8 @@
     },
     "wrong-high-water": {
       "mutation": {
-        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
-        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+        "before": "fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
       },
       "templates": [
         "HighWaterCounter"
@@ -304,12 +304,16 @@
         "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
         "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
         "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
-      ]
+      ],
+      "original_candidate_mutation": {
+        "before": "pub(super) fn create_owner_successor(\n    inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = inbox.owner_high_water;",
+        "after": "pub(super) fn create_owner_successor(\n    _inbox: &Inbox,\n    world: &core::World,\n    sandbox: core::SandboxId,\n) -> Result<core::TenantId, JournalError> {\n    let records = world.sandbox_records();\n    let mut highest = 0;"
+      }
     },
     "wrong-overflow": {
       "mutation": {
-        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))\n}\n\npub(super) fn attach_create(",
-        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))\n}\n\npub(super) fn attach_create("
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))\n}",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))\n}"
       },
       "templates": [
         "OverflowCounter"
@@ -355,7 +359,11 @@
         "SandboxModel.Stage1Protocol.OwnerMapping.next_counter",
         "SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked",
         "SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known"
-      ]
+      ],
+      "original_candidate_mutation": {
+        "before": "    Ok(core::TenantId(\n        highest\n            .checked_add(1)\n            .ok_or(JournalError::IdentifierExhausted)?,\n    ))\n}\n\npub(super) fn attach_create(",
+        "after": "    Ok(core::TenantId(highest.wrapping_add(1)))\n}\n\npub(super) fn attach_create("
+      }
     }
   },
   "generated_functions": [
@@ -435,5 +443,25 @@
       "proof_successor_boundary",
       "proof_successor_all_excluded"
     ]
-  }
+  },
+  "current_production_function": {
+    "marker": "fn create_owner_successor(",
+    "sha256": "a35b8b731369cd5f22c17c0656a9a026d581f880adf9fbae173f6a6cb51d7404",
+    "comparison": "exact signature and body from fn token equals the original proved candidate"
+  },
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+      "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326"
+    },
+    "providers": {
+      "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7"
+    },
+    "drivers": {
+      "support.py": "b1789a71ad23ad0bb797445d724d5cb68ea2bd0e0a38b6998dd383c225c4fe0c",
+      "formal.py": "396b66d4f1065d6211ad48798c88817daae457b1d2f13ff81e2ca9e68995ca9d",
+      "native.py": "9be5e59b9d2c9e13c592ae3c7ae806bd52f9c003a17c5685dbe12b5085b6f8b3"
+    }
+  },
+  "published_candidate_kind": "unadopted-create-owner-successor-proof-candidate"
 }

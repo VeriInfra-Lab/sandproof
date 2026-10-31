@@ -47,8 +47,10 @@ def run(output, variant, data, inputs, modes, prepare_only):
         if done.returncode:
             raise ValueError('compiler/kernel/service failure; not property rejection: '+label)
     try:
-        assert os.sched_getaffinity(0) <= {0,1,2,3}
-        rec['cpu_affinity'] = sorted(os.sched_getaffinity(0))
+        affinity = os.sched_getaffinity(0)
+        if not affinity or len(affinity) > 4:
+            raise ValueError('formal view requires at most four assigned CPUs')
+        rec['cpu_affinity'] = sorted(affinity)
         assert support.inventory() == data
         rec['library_review'] = support.library_review(data)
         disk = os.statvfs(ROOT)

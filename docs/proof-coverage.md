@@ -197,6 +197,30 @@ CaptureHandoff 既有值方法及历史定理只保留原输入和 Step 闭包�
 业务不能整体列为外部可信假设。普通/组件/定向真实系统的实际结果只按 #745 交付 PR
 的精确候选记录；本节的合同和入口说明不表示已实测、局部机器证明或整套验收通过。
 
+## V3 Create 的固定交付范围
+
+固定同事交付点 `083580e59f66d185bb1d7a8a7c4a222a19cca17f` 的 12 个 Create 包，
+经 `create-delivery` 公共 profile 登记为独立有限批次；不包含未发布的 identity/SQL
+后继候选或 Resume。生产只使用当前一条 Create 实现，selection/successor 的旧
+`candidate.patch` 保留来源，不再套用到当前正确版。各独立生成库保留各自命名和导入环境。
+
+登记范围为真实调用的选择/全文重放、owner 检查及排除自身后的后继计算、完整字段安装、
+容量与高水位、deadline 受检转换、泛型调用次序、固定 ID、两个 SQL 参数及标准适配的
+完整值读取和两个阶段 receiver 绑定。正错版共用同一性质；adopted 两个正例另与普通侧
+13 个真实变异对应。42 个形式视图和 66 个普通视图是验收义务数，不能当作独立定理数。
+
+公共接线、冻结清单和开发记录不自动构成证明通过。精确稳定候选的 RUN/REUSE、
+原始文件/内核/服务检查及普通机封口由 [#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)
+与本批交付 PR 记录；只有这些原始证据全部通过的提交才能采用本范围结论。
+本批还须保持既有 capture-caller、pause-publication、pause-stop 三个有限公共入口
+在同源候选可用；它们各自保留原范围，不与 Create 拼成 full/all。
+
+结论以[Create 接口条件](formal/dependencies.md#v3-create-同步流程的接口条件)为前提。
+RefCell 的有效只读区间、固定格式与 SQL Params 使用条件仍属 A6，物理数据库执行属 A4，
+当前 candidate/事务/连接的实际来源与连贯历史归 V5。泛型流程与标准适配分开检查，
+值相等不证明物理事务同一性；不认领持久提交、恢复、JSON/TLS 或部署系统完整正确。
+默认 full 保留全部原目标及新登记；旧全局冻结、旧包来源失配与 #337 不因本范围通过而消失。
+
 ## V3 同步收件链采用：已合入与待验收范围
 
 基于 integration `9be262ea99f59726df1572ec5e76345da0ec0f3c`，

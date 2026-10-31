@@ -31,9 +31,9 @@ sha = support.sha
 def run(output,variant,data,inputs,modes):
     output.mkdir(mode=0o700)
     started = time.monotonic()
-    rec = dict(kind='unadopted-create-selection-development',variant=variant,complete=False,
+    rec = dict(kind='actual-create-selection-development',variant=variant,complete=False,
         capture_complete=False,translation_complete=False,proof_complete=False,property_rejected=False,
-        production_modified=False,production_adopted=False,original_general_equivalence_proved=False,
+        production_modified=False,production_adopted=True,original_general_equivalence_proved=False,
         original_full_attachment_proved=False,generated_bodies_modified=False,new_axioms=False,
         native_checks_run=False,formal_acceptance=False,ning_acceptance=False,shared_acceptance=False,
         full_v3=False,commands=[])
@@ -159,17 +159,23 @@ if __name__=='__main__':
         'wrong-version','wrong-local','wrong-deadline'),default='all')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--lock',type=Path,required=True,help='existing shared heavy-proof lock')
+    parser.add_argument('--lock-fd', type=int, help='Inherited open descriptor of the already-held component lock')
     args = parser.parse_args()
     os.umask(0o077)
     output = args.output.absolute()
     output.mkdir(parents=True,mode=0o700)
-    batch = dict(kind='unadopted-create-selection-development-batch',complete=False,variants={},
-        production_adopted=False,original_full_attachment_proved=False,original_general_equivalence_proved=False,
+    batch = dict(kind='actual-create-selection-development-batch',complete=False,variants={},
+        production_adopted=True,original_full_attachment_proved=False,original_general_equivalence_proved=False,
         native_checks_run=False,formal_acceptance=False,ning_acceptance=False,shared_acceptance=False,full_v3=False)
     waiting = time.monotonic()
     try:
-        with args.lock.open('r+') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX)
+        with (args.lock.open('r+') if args.lock_fd is None else os.fdopen(os.dup(args.lock_fd),'r+')) as lock:
+            actual_lock = os.fstat(lock.fileno())
+            expected_lock = args.lock.stat()
+            if (actual_lock.st_dev, actual_lock.st_ino) != (expected_lock.st_dev, expected_lock.st_ino):
+                raise ValueError('inherited component lock does not identify the original lock')
+            batch['coordination_lock'] = dict(inherited=args.lock_fd is not None, device=actual_lock.st_dev, inode=actual_lock.st_ino, path=str(args.lock))
+            fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if args.lock_fd is not None else 0))
             batch['lock_wait_seconds'] = time.monotonic()-waiting
             started = time.monotonic()
             data = support.inventory()
@@ -182,8 +188,7 @@ if __name__=='__main__':
             variants = list(data['variants']) if args.variant=='all' else [args.variant]
             for variant in variants:
                 result = run(output/variant,variant,data,inputs,modes)
-                batch['variants'][variant] = dict(proof_complete=result['proof_complete'],
-                    property_rejected=result['property_rejected'],result_sha256=sha(output/variant/'result.json'))
+                batch['variants'][variant] = dict(result, result_sha256=sha(output/variant/'result.json'), result_path=str(output/variant/'result.json'), relative_path=variant+'/result.json')
                 if not result['proof_complete']: raise ValueError('development view failed: '+variant)
             if resolver.runtime()!=profile or support.parent.native.registry_module.registry()!=libraries:
                 raise ValueError('fixed runtime/Cargo sources changed')

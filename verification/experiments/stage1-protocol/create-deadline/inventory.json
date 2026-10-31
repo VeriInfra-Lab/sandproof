@@ -3,7 +3,7 @@
   "scope": "Actual adopted pure Create deadline helper and original Std operation; no whole-parent/native/shared/V3 claim.",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "b1ec64d91c747e7cdaad57e5a1fd2bfc1e2a8e61769de5eba3f8697a6487faf8"
+    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
   },
   "providers": {
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
@@ -27,7 +27,7 @@
   },
   "drivers": {
     "binding.py": "c47a502df172eeb65fd3110402a9ba6fef9b41826864fc8c064fd224d0292023",
-    "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b",
+    "formal.py": "3bd00a130a390f61cf207073f28be3e76e7d35224f304f1d3d1ba0a93c59bb13",
     "native.py": "93561a7d38a93018ab9e19e77835037ad962b89d176b6729611fb4307b1e82f9",
     "support.py": "b868c3bae9cbdb76502fee2e1a92f55d383e330904d7e193116daabd48091c87"
   },
@@ -1158,5 +1158,13 @@
   },
   "shared_registration_complete": false,
   "native_checks_run": false,
-  "full_v3": false
+  "full_v3": false,
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "b1ec64d91c747e7cdaad57e5a1fd2bfc1e2a8e61769de5eba3f8697a6487faf8"
+    },
+    "drivers": {
+      "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b"
+    }
+  }
 }

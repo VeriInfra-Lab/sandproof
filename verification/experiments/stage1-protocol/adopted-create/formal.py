@@ -135,13 +135,18 @@ def run(folder,name,data,inputs,modes):
  return rec
 
 if __name__=='__main__':
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--lock',type=Path,required=True);args=parser.parse_args();os.umask(0o077);out=args.output.absolute();out.mkdir(mode=0o700,parents=True)
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--lock',type=Path,required=True);parser.add_argument('--lock-fd',type=int,help='Inherited open descriptor of the already-held component lock');args=parser.parse_args();os.umask(0o077);out=args.output.absolute();out.mkdir(mode=0o700,parents=True)
  record=dict(kind='adopted-v3-create-positive-correspondence-batch',complete=False,views={},production_adopted=True,original_full_attachment_proved=False,native_checks_run=False,formal_acceptance=False,ning_acceptance=False,shared_acceptance=False,full_v3=False);waiting=time.monotonic()
  try:
-  with args.lock.open('r+') as lock:
-   fcntl.flock(lock,fcntl.LOCK_EX);record['lock_wait_seconds']=time.monotonic()-waiting;start=time.monotonic();data=inventory();resolver.ROOT,resolver.MODULES=ROOT,('stage1-protocol',);os.environ.setdefault('SANDPROOF_FORMAL_CACHE',str(out/'runtime-cache'));runtime=resolver.runtime();registry=request.parent.native.registry_module.registry();inputs=request.parent.base.snapshot(ROOT);modes={n:('100755' if (ROOT/n).stat().st_mode&0o111 else '100644') for n in inputs}
+  with (args.lock.open('r+') if args.lock_fd is None else os.fdopen(os.dup(args.lock_fd),'r+')) as lock:
+   actual_lock = os.fstat(lock.fileno())
+   expected_lock = args.lock.stat()
+   if (actual_lock.st_dev, actual_lock.st_ino) != (expected_lock.st_dev, expected_lock.st_ino):
+       raise ValueError('inherited component lock does not identify the original lock')
+   record['coordination_lock'] = dict(inherited=args.lock_fd is not None, device=actual_lock.st_dev, inode=actual_lock.st_ino, path=str(args.lock))
+   fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if args.lock_fd is not None else 0));record['lock_wait_seconds']=time.monotonic()-waiting;start=time.monotonic();data=inventory();resolver.ROOT,resolver.MODULES=ROOT,('stage1-protocol',);os.environ.setdefault('SANDPROOF_FORMAL_CACHE',str(out/'runtime-cache'));runtime=resolver.runtime();registry=request.parent.native.registry_module.registry();inputs=request.parent.base.snapshot(ROOT);modes={n:('100755' if (ROOT/n).stat().st_mode&0o111 else '100644') for n in inputs}
    for name in data['views']:
-    r=run(out/name,name,data,inputs,modes);record['views'][name]=dict(complete=r['complete'],result_sha256=sha(out/name/'result.json'))
+    r=run(out/name,name,data,inputs,modes);record['views'][name]=dict(r,property_rejected=False,result_sha256=sha(out/name/'result.json'),result_path=str(out/name/'result.json'),relative_path=name+'/result.json')
     if not r['complete']:raise ValueError('adopted view failed '+name)
    if resolver.runtime()!=runtime or request.parent.native.registry_module.registry()!=registry:raise ValueError('fixed runtime or registry changed')
    record.update(complete=True,runtime=runtime,registry=registry,execution_seconds=time.monotonic()-start)

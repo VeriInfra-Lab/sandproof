@@ -269,8 +269,17 @@ def step(name, command, root=ROOT):
         log = entry/'command.log'
         # Remove an old success before execution so a killed rerun stays failed.
         (entry/'receipt.json').unlink(missing_ok=True)
+        inherited_fds = ()
+        if name == 'stage1-protocol' and os.environ.get('SANDPROOF_LOCK_FD'):
+            spec = importlib.util.spec_from_file_location('stage1_lock_transport',
+                root/'verification/experiments/stage1-protocol/registered.py')
+            registration = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(registration)
+            fd, _ = registration.inherited_lock()
+            inherited_fds = (fd,)
         with log.open('wb') as stream:
-            code = subprocess.run(command,cwd=root,stdout=stream,stderr=subprocess.STDOUT).returncode
+            code = subprocess.run(command,cwd=root,stdout=stream,stderr=subprocess.STDOUT,
+                                  pass_fds=inherited_fds).returncode
         sys.stdout.write(log.read_text())
         if code:
             raise subprocess.CalledProcessError(code,command)

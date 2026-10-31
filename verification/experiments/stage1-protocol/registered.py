@@ -6,6 +6,7 @@ This module neither implements a proof nor issues a shared native seal.
 import argparse
 import ast
 import copy
+import fcntl
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import hashlib
 import importlib.util
@@ -14,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -21,6 +23,112 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path('verification/experiments/stage1-protocol')
 sys.path.insert(0, str(ROOT))
+
+PROFILES = ('full', 'create-delivery')
+CREATE_SCOPE = 'stage1-create-delivery'
+# Fixed published package order. This is a complete delivery profile, not an
+# operator-supplied subset of the full V3 obligations.
+CREATE_CASES = {
+    'create-selection': ('candidate', 'wrong-terminal', 'wrong-refusal',
+                         'wrong-version', 'wrong-local', 'wrong-deadline'),
+    'create-owner-successor': ('candidate', 'wrong-exclusion', 'wrong-sandbox-field',
+                               'wrong-high-water', 'wrong-overflow'),
+    'adopted-create': ('owners', 'selection'),
+    'create-install': ('actual', 'wrong-sandbox', 'wrong-operation', 'wrong-high-water', 'wrong-frame'),
+    'create-owner-check': ('actual', 'omit-local', 'skip-first-conflict', 'exclude-owner', 'retag-exhaustion'),
+    'create-load-capacity': ('actual', 'wrong-owner-limit'),
+    'create-high-water': ('actual', 'wrong-seed', 'wrong-write'),
+    'create-deadline': ('actual', 'unchecked-cast', 'wrong-error'),
+    'create-attachment-flow': ('actual', 'skip-save', 'eager-world'),
+    'create-fixed-identity': ('actual', 'empty-namespace', 'truncate-number'),
+    'create-lifetime-sql': ('actual', 'zero-deadline', 'empty-sandbox'),
+    'create-standard-adapter': ('actual', 'default-world'),
+}
+CREATE_KINDS = {
+    name: 'actual-'+name+'-development-batch' for name in CREATE_CASES
+}
+CREATE_KINDS.update({
+    'adopted-create': 'adopted-v3-create-positive-correspondence-batch',
+    'create-attachment-flow': 'actual-create-complete-flow-development',
+    'create-fixed-identity': 'actual-fixed-identity-development-batch',
+    'create-lifetime-sql': 'actual-lifetime-sql-development-batch',
+    'create-standard-adapter': 'actual-standard-adapter-development-batch',
+})
+CREATE_NATIVE_COUNTS = dict(zip(CREATE_CASES, (9, 9, 28, 4, 12, 3, 3, 3, 6, 5, 6, 3)))
+CREATE_RESTORED = {
+    name: ('restored-candidate' if name in ('create-selection', 'create-owner-successor')
+           else 'restored-actual' if name in ('adopted-create', 'create-install', 'create-owner-check',
+                                             'create-fixed-identity', 'create-lifetime-sql') else 'restored')
+    for name in CREATE_CASES
+}
+CREATE_ADOPTED_MUTANTS = (
+    'owner-wrong-owner-guard', 'owner-wrong-world-maximum', 'owner-wrong-high-water', 'owner-wrong-overflow',
+    'selection-wrong-terminal', 'selection-wrong-refusal', 'selection-wrong-version',
+    'selection-wrong-local', 'selection-wrong-deadline',
+    'successor-wrong-exclusion', 'successor-wrong-sandbox-field',
+    'successor-wrong-high-water', 'successor-wrong-overflow',
+)
+CREATE_NATIVE_DRIVERS = tuple(('stage1-'+name, str(HERE/name/'native.py'), False)
+                              for name in CREATE_CASES)
+
+
+def check_profile(profile):
+    if profile not in PROFILES:
+        raise ValueError('unknown fixed Stage1 profile: '+str(profile))
+    return profile
+
+
+def native_scope(profile):
+    return CREATE_SCOPE if check_profile(profile) == 'create-delivery' else 'stage1-protocol'
+
+
+def _create_native_plan(name, data):
+    cases = (('actual', *CREATE_ADOPTED_MUTANTS) if name == 'adopted-create' else CREATE_CASES[name])
+    expected = (*cases, CREATE_RESTORED[name])
+    if name in ('create-selection', 'create-owner-successor'):
+        original = data['native_plan']
+        if set(original['expected_failures']) != set(cases[1:]):
+            raise ValueError('missing/extra Create native rejection case: '+name)
+        result = {case: dict(test_count=original['test_count'],
+                            expected_failures=original['expected_failures'].get(case, [])) for case in expected}
+    else:
+        result = data['native_variants']
+    if tuple(result) != expected:
+        raise ValueError('missing, extra or reordered Create native variant: '+name)
+    for case, row in result.items():
+        count = (10 if case.startswith('owner-') else 9) if name == 'adopted-create' and case in CREATE_ADOPTED_MUTANTS else CREATE_NATIVE_COUNTS[name]
+        failures = row.get('expected_failures')
+        correct = case in (cases[0], CREATE_RESTORED[name])
+        if (type(row.get('test_count')) is not int or row['test_count'] != count
+                or not isinstance(failures, list) or any(not isinstance(n, str) for n in failures)
+                or len(failures) != len(set(failures)) or len(failures) > count
+                or bool(failures) != (not correct)):
+            raise ValueError('Create native assertion inventory changed: '+name+':'+case)
+    return result
+
+
+def create_profile(root=ROOT):
+    """Bind the fixed 12 packages and every declared correct/mutant view."""
+    if len(CREATE_CASES) != 12 or sum(map(len, CREATE_CASES.values())) != 42:
+        raise ValueError('Create delivery must retain all 12 packages and 42 formal views')
+    packages = []
+    for name, cases in CREATE_CASES.items():
+        path = root/HERE/name/'inventory.json'
+        data = _read(path)
+        views = data['views'] if name == 'adopted-create' else data['variants']
+        if tuple(views) != cases:
+            raise ValueError('Create formal view inventory changed: '+name)
+        native = _create_native_plan(name, data)
+        packages.append(dict(name=name, native_label='stage1-'+name,
+            inventory_sha256=_sha(path), formal_cases=list(cases),
+            native_views={case: dict(test_count=row['test_count'],
+                expected_failures=row['expected_failures'],
+                expected_clippy_errors=row.get('expected_clippy_errors', [])) for case, row in native.items()}))
+    if sum(len(row['native_views']) for row in packages) != 66:
+        raise ValueError('Create delivery must retain all 66 native views')
+    return dict(profile='create-delivery', scope=CREATE_SCOPE, packages=packages,
+                formal_view_count=42, native_view_count=66, whole_v3=False)
+
 
 # The inbox labels are the exact labels consumed by the existing formal.py.
 TYPE_CASES = ('result-confirmation', 'observation-bindings', 'resume-observation',
@@ -60,16 +168,18 @@ NATIVE_DRIVERS = (
       ('envelope-budget', 'envelope-writer', 'serde-binding', 'parser-binding', 'decode-assembly')),
     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
       if name != 'inbox-record-total'),
+    *CREATE_NATIVE_DRIVERS,
 )
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 329
-AUDIT_DECLARATION_COUNT = 1338
+AUDIT_TEMPLATE_COUNT = 419
+AUDIT_DECLARATION_COUNT = 1723
 
 
-def native_labels():
-    return NATIVE_CASES
+def native_labels(profile='full'):
+    return (tuple(label for label, _, _ in CREATE_NATIVE_DRIVERS)
+            if check_profile(profile) == 'create-delivery' else NATIVE_CASES)
 
 
 def _shared():
@@ -90,15 +200,15 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _invoke(root, driver, args, env=None, *, log=None):
+def _invoke(root, driver, args, env=None, *, log=None, pass_fds=()):
     # Inherit stdout: only the original actual_files checker emits Checked lines.
     argv = [sys.executable, str(root/driver), *map(str, args)]
     if log is None:
-        subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, check=True)
+        subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL, check=True, pass_fds=pass_fds)
     else:
         with Path(log).open('xb') as stream:
             subprocess.run(argv, cwd=root, env=env, stdin=subprocess.DEVNULL,
-                           stdout=stream, stderr=subprocess.STDOUT, check=True)
+                           stdout=stream, stderr=subprocess.STDOUT, check=True, pass_fds=pass_fds)
     return argv
 
 
@@ -264,12 +374,15 @@ def _variant_choices(path):
     return tuple(result)
 
 
-def validate_metadata_inputs(root=ROOT):
+def validate_metadata_inputs(root=ROOT, *, profile='full'):
     """Check explicit current input digests, not historical patches or globals."""
-    directories = {HERE, Path('verification/experiments/stage1-manifest')}
-    directories.update(Path(path).parent for path in audit_template_paths(root))
-    directories.update(Path(driver).parent for _, driver, _ in NATIVE_DRIVERS)
-    directories.update(Path(job['driver']).parent for job in formal_plan(Path('/unused'), root=root))
+    check_profile(profile)
+    directories = {HERE/name for name in CREATE_CASES}
+    if profile == 'full':
+        directories.update((HERE, Path('verification/experiments/stage1-manifest')))
+        directories.update(Path(path).parent for path in audit_template_paths(root))
+        directories.update(Path(driver).parent for _, driver, _ in NATIVE_DRIVERS)
+        directories.update(Path(job['driver']).parent for job in formal_plan(Path('/unused'), root=root))
     names = subprocess.check_output(['git', 'ls-files', '-z', '--',
         str(HERE), 'verification/experiments/stage1-manifest'], cwd=root).decode().split('\0')
     checked = {}
@@ -279,6 +392,8 @@ def validate_metadata_inputs(root=ROOT):
             continue
         data = _read(root/path)
         fields = ('inputs', 'base_sources', 'production_inputs')
+        if path.parent in {HERE/name for name in CREATE_CASES}:
+            fields += ('source_inputs',)
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:
@@ -298,16 +413,19 @@ def validate_metadata_inputs(root=ROOT):
     return checked
 
 
-def validate_registration(root=ROOT):
+def validate_registration(root=ROOT, *, profile='full'):
     """Fail before execution if a required native case or Rust mutant was lost."""
-    if len(set(NATIVE_CASES)) != len(NATIVE_CASES):
+    check_profile(profile)
+    create_profile(root)
+    if len(NATIVE_CASES) != 53 or len(set(NATIVE_CASES)) != 53:
         raise ValueError('duplicate native registration')
-    for name, variants in INBOX_CASES.items():
-        if variants != _variant_choices(root/HERE/name/'formal.py'):
-            raise ValueError('missing/extra original variant: ' + name)
-    if INBOX_CASES['inbox-append'] != INBOX_CASES['inbox-record-total']:
-        raise ValueError('total must cover exactly the original append variants')
-    for job in formal_plan(Path('/unused'), root=root):
+    if profile == 'full':
+        for name, variants in INBOX_CASES.items():
+            if variants != _variant_choices(root/HERE/name/'formal.py'):
+                raise ValueError('missing/extra original variant: ' + name)
+        if INBOX_CASES['inbox-append'] != INBOX_CASES['inbox-record-total']:
+            raise ValueError('total must cover exactly the original append variants')
+    for job in formal_plan(Path('/unused'), root=root, profile=profile):
         if not set(job['native']) <= set(NATIVE_CASES):
             raise ValueError('missing native registration: ' + job['name'])
         if not (root/job['driver']).is_file():
@@ -319,26 +437,33 @@ def validate_registration(root=ROOT):
                         isinstance(t, ast.Name) and t.id == 'CASES' for t in statement.targets):
                     if set(job['cases']) != set(ast.literal_eval(statement.value)):
                         raise ValueError('missing/extra original CASES: ' + job['name'])
-    audit_template_paths(root)
-    validate_metadata_inputs(root)
+    if profile == 'full':
+        audit_template_paths(root)
+    validate_metadata_inputs(root, profile=profile)
 
 
-def run_native(root, work):
+def run_native(root, work, *, profile='full', scope=None):
     """Call after the retained stage1 case, inside the original ning suite."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
         raise ValueError('native registration must execute on the native host')
-    validate_registration(root)
+    validate_registration(root, profile=profile)
+    scope = native_scope(profile) if scope is None else scope
+    if scope not in ('all', native_scope(profile)):
+        raise ValueError('native scope differs from the explicit Stage1 profile')
     shared = _shared()
     work = Path(work)/'stage1-registered'
     work.mkdir(parents=True, mode=0o700)
     # A second request for the *same* complete case uses the original cache.
     # Unlike formal consumption, native_case requires an action in native role.
-    retained = shared.native_case('stage1-protocol', root, work/'retained', lambda:
-        _invoke(root, HERE/'component.py', ['--native-only', '--output', work/'retained']))
-    archive = _original_file(retained, 'source.tar')
+    archive = None
+    if profile == 'full':
+        retained = shared.native_case('stage1-protocol', root, work/'retained', lambda:
+            _invoke(root, HERE/'component.py', ['--native-only', '--output', work/'retained']), scope=scope)
+        archive = _original_file(retained, 'source.tar')
     target = Path(os.environ['CARGO_TARGET_DIR'])/'stage1-protocol'
     receipts = {}
-    for label, driver, needs_archive in NATIVE_DRIVERS:
+    drivers = CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else NATIVE_DRIVERS
+    for label, driver, needs_archive in drivers:
         output = work/label
         args = ['--output', output]
         if needs_archive:
@@ -350,30 +475,109 @@ def run_native(root, work):
             result = _read(output/'result.json')
             if result.get(success_field) is not True:
                 raise ValueError('original native driver did not complete: ' + str(driver))
+            if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+                _check_create_native_result(root, Path(driver).parent.name, output, result)
 
-        receipt = shared.native_case(label, root, output, action)
-        _original_file(receipt, 'result.json')
+        receipt = shared.native_case(label, root, output, action, scope=scope)
+        original = _original_file(receipt, 'result.json')
+        if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+            _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
         receipts[label] = receipt
-    for name in CRATE_CASES:
+    for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
         output = work/label
         receipt = shared.native_case(label, root, output,
-            lambda name=name, output=output: _crate_native(root, output, name))
+            lambda name=name, output=output: _crate_native(root, output, name), scope=scope)
         _original_file(receipt, 'result.json')
         receipts[label] = receipt
     return receipts
 
 
-def formal_plan(output, *, root=ROOT):
+def _check_create_native_result(root, name, folder, result):
+    """Read every original log; an exit code alone is not a mutant witness."""
+    plans = _create_native_plan(name, _read(root/HERE/name/'inventory.json'))
+    shared = _shared()
+    # Component reuse follows the existing complete native key. A changed
+    # unrelated report needs a new functional receipt, not a relabelled source
+    # snapshot or an unnecessary rebuild of unchanged Rust assertions.
+    native_inputs = dict(shared.rust_inputs(root), **shared.rules(root), **shared.contract_inputs(root))
+    source = result.get('inputs', {})
+    if (result.get('kind') != name+'-native-development' or result.get('complete') is not True
+            or result.get('prepare_only') or tuple(result.get('variants', {})) != tuple(plans)
+            or not isinstance(source, dict) or not source
+            or any(source.get(n) != digest for n, digest in native_inputs.items()
+                   if not n.startswith('@configuration:'))):
+        raise ValueError('incomplete or changed Create native source/views: '+name)
+    commands = result.get('commands', [])
+    if [(r.get('variant'), r.get('label')) for r in commands] != [
+            (variant, label) for variant in plans for label in ('format', 'test', 'clippy')]:
+        raise ValueError('missing/extra Create native command: '+name)
+    for variant, plan in plans.items():
+        checked = result['variants'][variant]
+        if checked.get('complete') is not True or not checked.get('inputs'):
+            raise ValueError('incomplete Create native view: '+name+':'+variant)
+        failures = plan['expected_failures']
+        for row in [r for r in commands if r['variant'] == variant]:
+            label = row['label']
+            log = folder/variant/(label+'.log')
+            if log.is_symlink() or not log.is_file() or _sha(log) != row.get('log_sha256'):
+                raise ValueError('changed original Create native log: '+str(log))
+            code = 101 if ((label == 'test' and failures)
+                           or (label == 'clippy' and plan.get('expected_clippy_errors'))) else 0
+            if type(row.get('exit_code')) is not int or row['exit_code'] != code:
+                raise ValueError('wrong original Create native exit: '+name+':'+variant+':'+label)
+            if label == 'test':
+                text = log.read_text()
+                tally = f"{plan['test_count']-len(failures)} passed; {len(failures)} failed; 0 ignored;"
+                block = text.rsplit('\nfailures:\n', 1)[-1].split('\ntest result:', 1)[0]
+                observed = [line.strip().rsplit('::', 1)[-1] for line in block.splitlines()
+                            if line.startswith('    controller::')]
+                if (tally not in text or sorted(observed) != sorted(failures)
+                        or bool(row.get('property_rejected')) != bool(failures)):
+                    raise ValueError('Create native mutant did not reach the same assertions: '+name+':'+variant)
+            if label == 'clippy' and plan.get('expected_clippy_errors'):
+                if (row.get('clippy_errors') != plan['expected_clippy_errors']
+                        or row.get('expected_mutant_lint_rejection') is not True):
+                    raise ValueError('Create mutant lint is not the declared separate diagnostic')
+
+
+def _append_create_jobs(jobs, output, root, profile):
+    definition = create_profile(root)
+    for package in definition['packages']:
+        name = package['name']
+        data = _read(root/HERE/name/'inventory.json')
+        recipes = data['views'] if name == 'adopted-create' else data['variants']
+        views = {}
+        for case, recipe in recipes.items():
+            audits = recipe.get('expected_audits', recipe.get('audits'))
+            files = recipe.get('expected_files', recipe.get('files'))
+            if (not isinstance(audits, list) or not audits or len(audits) != len(set(audits))
+                    or any(not isinstance(a, str) for a in audits)):
+                raise ValueError('missing/duplicate fixed Create view audits: '+name+':'+case)
+            views[case] = dict(audits=audits, files=files,
+                               seeds=recipe.get('seed_files', []),
+                               property_rejected=name != 'adopted-create' and case != CREATE_CASES[name][0])
+        args = [] if name in ('adopted-create', 'create-attachment-flow') else ['--variant', 'all']
+        jobs.append(dict(name=name, driver=str(HERE/name/'formal.py'), args=args,
+            output=str(output/name), native=[package['native_label']], cases=list(CREATE_CASES[name]),
+            actual_files=True, create_package=name, profile=profile,
+            expected_kind=CREATE_KINDS[name], inventory_sha256=package['inventory_sha256'], views=views))
+    return jobs
+
+
+def formal_plan(output, *, root=ROOT, profile='full'):
     """Concrete CLI entries; native evidence paths are supplied by admission."""
     output = Path(output)
     jobs = []
+    check_profile(profile)
 
     def add(name, driver, args=(), *, native=(), cases=(), actual=True):
         jobs.append(dict(name=name, driver=str(driver), args=list(map(str, args)),
                          output=str(output/name), native=list(native), cases=list(cases),
                          actual_files=actual))
 
+    if profile == 'create-delivery':
+        return _append_create_jobs(jobs, output, root, profile)
     for prop, wrong in [('replay', 'key-only-replay'), ('validation', 'same-incarnation'),
                         ('envelope', 'session-only-envelope')]:
         add('replay-'+prop, HERE/'replay_formal.py', ['--property', prop], cases=('correct', wrong))
@@ -418,10 +622,12 @@ def formal_plan(output, *, root=ROOT):
         for variant in variants:
             add(name+'-'+variant, HERE/name/'formal.py', ['--require-native', '--variant', variant],
                 native=labels, cases=(variant,))
-    return jobs
+    return _append_create_jobs(jobs, output, root, profile)
 
 
 def _actuals(result):
+    if result.get('kind') in CREATE_KINDS.values():
+        return [row.get('actual', {}) for row in result.get('views', result.get('variants', {})).values()]
     if 'cases' in result:
         return list(result['cases'].values())
     return [result.get('actual', {})]
@@ -430,6 +636,31 @@ def _actuals(result):
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
+    if 'create_package' in job:
+        if (result.get('kind') != job['expected_kind'] or result.get('prepare_only')
+                or result.get('selected_variant') is not None):
+            raise ValueError('wrong or preparation-only Create result: '+job['name'])
+        rows = result.get('views' if job['name'] == 'adopted-create' else 'variants', {})
+        if tuple(rows) != tuple(job['cases']):
+            raise ValueError('missing/extra fixed Create formal view: '+job['name'])
+        all_flag = ('all_three_variants_complete' if job['name'] in (
+            'create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql')
+            else 'all_variants_complete' if job['name'] == 'create-standard-adapter' else None)
+        if all_flag is not None and result.get(all_flag) is not True:
+            raise ValueError('Create batch does not certify every fixed view: '+job['name'])
+        for case, recipe in job['views'].items():
+            row = rows[case]
+            actual = row.get('actual', {})
+            if (row.get('complete') is not True
+                    or row.get('property_rejected') is not recipe['property_rejected']
+                    or not actual.get('files') or not actual.get('service_log_sha256')
+                    or actual.get('files') != row.get('files')
+                    or sorted(actual.get('audits', [])) != sorted(recipe['audits'])
+                    or sorted(row.get('audits', [])) != sorted(recipe['audits'])
+                    or (recipe['files'] is not None and set(actual['files']) != set(recipe['files']))
+                    or not set(recipe['seeds']) <= actual['files'].keys()):
+                raise ValueError('incomplete Create source/file/audit/rejection view: '+job['name']+':'+case)
+        return
     if 'cases' in result:
         if set(result['cases']) != set(job['cases']):
             raise ValueError('missing/extra original formal case: ' + job['name'])
@@ -636,7 +867,24 @@ def _execution_helper(root):
 
 
 def _job_description(job):
-    return {name: job[name] for name in ('name', 'driver', 'args', 'native', 'cases', 'actual_files')}
+    names = ('name', 'driver', 'args', 'native', 'cases', 'actual_files',
+             'create_package', 'profile', 'expected_kind', 'inventory_sha256', 'views')
+    return {name: job[name] for name in names if name in job}
+
+
+def inherited_lock():
+    """Keep the operator's already-open lock across exec; never reopen/unlock it."""
+    value = os.environ.get('SANDPROOF_LOCK_FD', '')
+    path = Path(os.environ.get('SANDPROOF_LOCK_FILE', ''))
+    if not re.fullmatch(r'[0-9]+', value) or not path.is_absolute() or path.is_symlink():
+        raise ValueError('Create requires the original SANDPROOF_LOCK_FILE and inherited SANDPROOF_LOCK_FD')
+    fd = int(value)
+    actual, expected = os.fstat(fd), path.stat()
+    if (not stat.S_ISREG(actual.st_mode) or not stat.S_ISREG(expected.st_mode)
+            or (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino)):
+        raise ValueError('inherited coordination descriptor identifies a different lock')
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd, dict(path=str(path), device=actual.st_dev, inode=actual.st_ino)
 
 
 def _source_modes(root):
@@ -655,7 +903,7 @@ def _source_modes(root):
     return modes
 
 
-def _execution_context(root, shared, helper, receipts):
+def _execution_context(root, shared, helper, receipts, *, profile='full'):
     """Keep full admission inputs, including the report and Git file modes."""
     tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=root, text=True).strip()
     if subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=root):
@@ -664,7 +912,9 @@ def _execution_context(root, shared, helper, receipts):
     modes = _source_modes(root)
     if set(modes) != set(repository) or receipts['functional']['key'].get('repository') != repository:
         raise ValueError('current complete functional admission must match every tracked input')
+    inherited_lock()
     return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
+        profile=check_profile(profile), create_definition=create_profile(root),
         repository=dict(files=repository, modes=modes),
         rust=shared.rust_inputs(root), rules=shared.rules(root),
         contracts=shared.contract_inputs(root), source_archives=shared.source_archive_inputs(),
@@ -838,6 +1088,19 @@ def _saved_physical_view(actual, project, physical, commands):
 def _checkpoint_evidence(helper, job, result, result_path, log):
     """Require the original output tree, not merely files a receipt self-reports."""
     folder = result_path.parent.resolve()
+    if 'create_package' in job and job['name'] != 'create-attachment-flow':
+        rows = result['views' if job['name'] == 'adopted-create' else 'variants']
+        for case, row in rows.items():
+            atomic_path = folder/case/'result.json'
+            atomic = _read(atomic_path)
+            # The adopted positive view adds only its explicit non-rejection
+            # flag in the aggregate; retain its original atomic JSON unchanged.
+            keys = {'result_sha256', 'result_path', 'relative_path'}
+            if job['name'] == 'adopted-create':
+                keys.add('property_rejected')
+            if (_sha(atomic_path) != row.get('result_sha256')
+                    or {k:v for k,v in row.items() if k not in keys} != atomic):
+                raise ValueError('Create aggregate differs from its original atomic result: '+case)
     evidence = helper.evidence_files(folder, include_sources=True)
     for parent, dirs, names in os.walk(folder):
         dirs[:] = [name for name in dirs if not ('target' in name or name in ('.git', '.lake', '.tools', 'node_modules'))]
@@ -941,19 +1204,25 @@ def _launch_job(root, job, directory, paths, runtime_seed=None):
             stream.write(content)
         seed_sha256 = hashlib.sha256(content).hexdigest()
     args = list(job['args'])
+    pass_fds = ()
+    if 'create_package' in job:
+        fd, lock = inherited_lock()
+        pass_fds = (fd,)
+        args += ['--lock', lock['path'], '--lock-fd', str(fd)]
     if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
         args += ['--native-evidence', str(paths[job['native'][0]])]
     args += ['--output', job['output']]
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
-    argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log')
+    transport = dict(pass_fds=pass_fds) if pass_fds else {}
+    argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log', **transport)
     return dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
 
 
 def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=None, recompute=False,
-                        source_guard=None, progress=None, runtime_seed=None):
+                        source_guard=None, progress=None, runtime_seed=None, profile='full'):
     """Fixed-plan jobs only. Threads launch independent Python processes.
 
     The parent alone validates and publishes checkpoints. Failures stop new
@@ -963,7 +1232,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
         raise ValueError('registered worker count must be 1, 2 or 4')
     if len({job['name'] for job in plan}) != len(plan):
         raise ValueError('duplicate registered execution job')
-    expected = {job['name']:_job_description(job) for job in formal_plan(output, root=root)}
+    expected = {job['name']:_job_description(job) for job in formal_plan(output, root=root, profile=profile)}
     for job in plan:
         if (re.fullmatch('[a-z][a-z0-9-]*', job['name']) is None
                 or expected.get(job['name']) != _job_description(job)
@@ -1057,32 +1326,39 @@ def _execution_options(jobs=None, resume_from=None, recompute=False):
                 recompute=recompute or os.environ.get('SANDPROOF_PROOF_RECOMPUTE') == '1', sources=sources)
 
 
-def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=None, recompute=False):
+def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_from=None,
+               recompute=False, profile='full'):
     """Call after the unchanged retained component, on the proof host only."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('formal registration consumes shared native receipts only')
     options = _execution_options(jobs, resume_from, recompute)
     jobs, resume_from = options['workers'], options['resume_from']
-    validate_registration(root)
+    validate_registration(root, profile=profile)
+    if (profile == 'full') != (retained_result is not None):
+        raise ValueError('only the full profile requires its original retained component result')
     shared = _shared()
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
-    shared.validate_native(cache, scope='stage1-protocol')
+    scope = native_scope(profile)
+    shared.validate_native(cache, scope=scope)
     # Validate the exact current source/rules/runtime of every prerequisite.
-    labels = ('functional', 'stage1-protocol', *NATIVE_CASES)
-    receipts = {name: shared.native_case(name, root, None, scope='stage1-protocol') for name in labels}
+    labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
+    receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
     paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
-    for name in NATIVE_CASES:
+    for name in native_labels(profile):
         _original_file(receipts[name], 'result.json')
+    for label, driver, _ in CREATE_NATIVE_DRIVERS:
+        original = _original_file(receipts[label], 'result.json')
+        _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
     source_before = shared.repository_inputs(root)
     output = Path(output)
     output.mkdir(mode=0o700, parents=True)
     record = dict(kind='registered-stage1-formal-drivers', complete=False, results=[], covered=[],
+                  profile=profile, create_definition=create_profile(root), whole_V3_acceptance=False,
                   shared_seal_sha256=_sha(cache/'complete.json'),
                   source_snapshot_sha256=shared.digest(source_before),
                   native_receipts={name: dict(path=str(paths[name].parent/'receipt.json'),
                       sha256=_sha(paths[name].parent/'receipt.json')) for name in receipts},
                   stdout_evidence='original stdout retained by the public module command.log',
-                  retained_result=dict(path=str(retained_result), sha256=_sha(retained_result)),
                   retained_component_replaced=False, whole_V0_acceptance=False,
                   execution_schema=1, execution=dict(**options, reuse_scope='same-tree-or-reviewed-state-report',
                     affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
@@ -1096,13 +1372,15 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
         record.update(results=rows, execution_failures=failures, reuse_misses=misses)
         shared.write_json(output/'registered-result.json', record)
     try:
-        _retained_result(record)
+        if profile == 'full':
+            record['retained_result'] = dict(path=str(retained_result), sha256=_sha(retained_result))
+            _retained_result(record)
         helper = _execution_helper(root)
-        context = _execution_context(root, shared, helper, receipts)
-        plan = formal_plan(output, root=root)
+        context = _execution_context(root, shared, helper, receipts, profile=profile)
+        plan = formal_plan(output, root=root, profile=profile)
         rows, failures = execute_formal_jobs(root, output, plan, context, paths, jobs=jobs,
             resume=resume_from, recompute=options['recompute'],
-            source_guard=source_guard, progress=progress,
+            source_guard=source_guard, progress=progress, profile=profile,
             runtime_seed=Path(os.environ['SANDPROOF_FORMAL_CACHE'])/'runtime-file-hashes.json')
         record['results'] = rows
         # Only original admitted child output is forwarded, in original plan order.
@@ -1118,8 +1396,8 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
         # These are the original LLBC/receipt admission regressions, not Rust
         # unit tests. Their required original captures are never optional.
         record['source_admission_regressions'] = []
-        for name, suffix in [('serde-binding', 'encode'), ('parser-binding', 'decode'),
-                             ('decode-assembly', 'decode')]:
+        for name, suffix in ([('serde-binding', 'encode'), ('parser-binding', 'decode'),
+                             ('decode-assembly', 'decode')] if profile == 'full' else []):
             producer, = [row for row in rows if row['name'] == name]
             capture = Path(producer['result_path']).parent/'source/artifacts'/('bytes-recorded_'+suffix+'.llbc')
             if capture.is_symlink() or not capture.is_file():
@@ -1130,21 +1408,26 @@ def run_formal(output, retained_result, *, root=ROOT, jobs=None, resume_from=Non
             argv = _invoke(root, HERE/name/'test_binding.py', [], env)
             record['source_admission_regressions'].append(dict(name=name, argv=argv,
                                                                llbc_sha256=_sha(capture)))
-        expected_audits = {audit for audits in audit_templates(root).values() for audit in audits}
-        observed_audits = retained_audits(record)
+        expected_audits = ({audit for audits in audit_templates(root).values() for audit in audits}
+            if profile == 'full' else {a for job in plan for view in job['views'].values() for a in view['audits']})
+        observed_audits = retained_audits(record) if profile == 'full' else set()
         for checked in record['results']:
             result = _read(Path(checked['result_path']))
             for actual in _actuals(result):
                 observed_audits.update(actual.get('audits', ()))
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
-            scope='all template declarations; retained component audits also enter the public total gate')
+            scope=('all template declarations; retained component audits also enter the public total gate'
+                   if profile == 'full' else 'all 42 fixed Create views; each physical view checked separately'))
         if record['template_audits']['missing']:
             raise ValueError('registered template audit declarations missing: '
                              + repr(record['template_audits']['missing']))
-        record['retained_source_files'] = compute_retained_coverage(root, record)
-        record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
-        shared.validate_native(cache, scope='stage1-protocol')
+        if profile == 'full':
+            record['retained_source_files'] = compute_retained_coverage(root, record)
+            record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
+        elif expected_audits != observed_audits:
+            raise ValueError('unexpected Create audit declarations')
+        shared.validate_native(cache, scope=scope)
         source_guard()
         if helper.runtime() != context['runtime']:
             raise ValueError('actual formal tools/libraries/options changed during execution')
@@ -1162,19 +1445,22 @@ def main():
     parser.add_argument('--jobs', type=int, choices=(1, 2, 4))
     parser.add_argument('--resume-from', type=Path)
     parser.add_argument('--recompute', action='store_true')
+    parser.add_argument('--profile', choices=PROFILES, default='full')
     args = parser.parse_args()
     os.umask(0o077)
     if args.mode == 'native':
-        run_native(ROOT, args.output.absolute())
+        run_native(ROOT, args.output.absolute(), profile=args.profile)
     elif args.mode == 'formal':
-        if args.retained_result is None:
+        if args.profile == 'full' and args.retained_result is None:
             parser.error('formal requires --retained-result from the same original component run')
-        run_formal(args.output.absolute(), args.retained_result.absolute(), jobs=args.jobs,
+        run_formal(args.output.absolute(), args.retained_result.absolute() if args.retained_result is not None else None, jobs=args.jobs,
                    resume_from=args.resume_from.absolute() if args.resume_from is not None else None,
-                   recompute=args.recompute)
+                   recompute=args.recompute, profile=args.profile)
     else:
-        print(json.dumps(dict(native_cases=NATIVE_CASES, native_drivers=NATIVE_DRIVERS,
-                              formal_jobs=formal_plan(args.output), audit_templates=audit_templates()), indent=2))
+        print(json.dumps(dict(profile=args.profile, create_definition=create_profile(),
+                              native_cases=native_labels(args.profile),
+                              formal_jobs=formal_plan(args.output, profile=args.profile),
+                              audit_templates=audit_templates() if args.profile == 'full' else None), indent=2))
 
 
 if __name__ == '__main__':

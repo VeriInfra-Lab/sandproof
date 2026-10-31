@@ -181,6 +181,7 @@ if __name__ == '__main__':
     parser.add_argument('--variant', choices=('all', 'actual', 'wrong-owner-limit'), default='all')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--lock', type=Path, required=True, help='existing shared proof lock')
+    parser.add_argument('--lock-fd', type=int, help='Inherited open descriptor of the already-held component lock')
     args = parser.parse_args()
     os.umask(0o077)
     output = args.output.absolute()
@@ -190,8 +191,13 @@ if __name__ == '__main__':
                  shared_acceptance=False, original_full_attachment_proved=False, full_v3=False)
     waiting = time.monotonic()
     try:
-        with args.lock.open('r+') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with (args.lock.open('r+') if args.lock_fd is None else os.fdopen(os.dup(args.lock_fd),'r+')) as lock:
+            actual_lock = os.fstat(lock.fileno())
+            expected_lock = args.lock.stat()
+            if (actual_lock.st_dev, actual_lock.st_ino) != (expected_lock.st_dev, expected_lock.st_ino):
+                raise ValueError('inherited component lock does not identify the original lock')
+            batch['coordination_lock'] = dict(inherited=args.lock_fd is not None, device=actual_lock.st_dev, inode=actual_lock.st_ino, path=str(args.lock))
+            fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if args.lock_fd is not None else 0))
             batch['lock_wait_seconds'] = time.monotonic()-waiting
             started = time.monotonic()
             data = support.inventory()
@@ -203,8 +209,7 @@ if __name__ == '__main__':
             modes = {n: ('100755' if (ROOT/n).stat().st_mode & 0o111 else '100644') for n in inputs}
             for variant in data['variants'] if args.variant == 'all' else [args.variant]:
                 result = run(output/variant, variant, data, inputs, modes)
-                batch['variants'][variant] = dict(proof_complete=result['proof_complete'], property_rejected=result['property_rejected'],
-                                                 result_sha256=sha(output/variant/'result.json'))
+                batch['variants'][variant] = dict(result, result_sha256=sha(output/variant/'result.json'), result_path=str(output/variant/'result.json'), relative_path=variant+'/result.json')
                 if not result['proof_complete']:
                     raise ValueError('development view failed: '+variant)
             if resolver.runtime() != profile or support.load.native.registry_module.registry() != registry:

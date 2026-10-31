@@ -185,6 +185,22 @@ V3 的独立交付使用显式 `--scope stage1-protocol`，仍执行完整 Linux
 不能把 V3 限定记录当作全项目完成。全局旧首链或冻结失败如实保留；独立交付不删除它们、
 不修改其断言，也不自动完成其迁移。具体范围和命令见 [V3 组件入口](../verification/experiments/stage1-protocol/README.md#验收入口)。
 
+Create 的固定交付另用原生 `--scope stage1-create-delivery`，以及同一个证明脚本的
+显式参数 `--profile create-delivery`。它包含完整 Linux `functional`、固定发布的
+12 个 Create 包及其全部正确、错误和恢复测试，证明侧检查 42 个实际文件视图。
+这两类记录不能互相代替：Create 记录不满足 `stage1-protocol` 或 `all`，完整范围的
+记录也不能直接作为 Create 的交付记录；相同组件只能按原始键和完整证据严格复用。
+默认不带参数时仍保留原 126 项并加入新 12 项，不因环境变量缩小义务。
+旧全局输入失配仍拒绝，Create 通过不解决它，也不代表完整 V3、事务恢复或部署系统已证。
+
+执行 Create 时，外层操作者须保留已持有的协调锁，设置绝对路径
+`SANDPROOF_LOCK_FILE` 和仍打开的十进制 `SANDPROOF_LOCK_FD`。公共入口、登记器及
+子进程必须保留同一文件描述符；各层核对设备/inode 并非阻塞确认同一打开描述，
+不重新打开并等待父锁、不解开父锁。当前源码、工具、依赖、完整视图清单和原始
+内核/服务日志均进入记录；prepare-only、缺视图、缺审计或原始文件损坏一律不能通过。
+接口条件见[逐符号依赖](formal/dependencies.md#v3-create-同步流程的接口条件)，
+精确候选的验收结果在 #635 和覆盖记录中登记，入口和候选摘要本身不等于通过。
+
 当前捕获调用方的独立入口使用固定 `--scope capture-caller`，只包含完整 Linux 基础检查
 `functional` 和原 `capture-caller` 组件。组件仍运行其最终清单中的正确/错误版、实际编译
 与原断言；案例数量不由外层写死。缺组件、错范围、重复组件或原源码归档缺失均拒绝。

@@ -36,7 +36,7 @@
     "root.rs.in": "c24b9f36290308e31d49eeb9e3a973a071b640e3dc216ccea1c0aad2a09120b5"
   },
   "drivers": {
-    "formal.py": "fee3b98fc874cc88377d4c9e8014c2434cb8a9f3f6529e346a3869fd8bfe4ee7",
+    "formal.py": "26e66651c8a033d355998246ec37e0ee48dbb474f7d17a3ec5de68d37e328763",
     "llbc_metadata.py": "c64f99af21a42cd61dc60ad61bb4f55dd1bd37cadce91909b6499b54180bebf9",
     "native.py": "ec38dfd9385cc8ade99b88980e8430d16e50d43baa98e56188619a585b44a302",
     "support.py": "6b3bcf670b61348a02860bb5136a40e2604ac40f47d55fff7d354140fc440ba7"
@@ -947,5 +947,10 @@
     "existing normal full-value cloning/library contracts",
     "actual V5 candidate/live transaction/lease history",
     "A4 actual Connection identity and coherent SQL history"
-  ]
+  ],
+  "published_input_fingerprints": {
+    "drivers": {
+      "formal.py": "fee3b98fc874cc88377d4c9e8014c2434cb8a9f3f6529e346a3869fd8bfe4ee7"
+    }
+  }
 }

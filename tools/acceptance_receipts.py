@@ -21,7 +21,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
-NATIVE_SCOPES = ('all', 'stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop')
+NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery', 'capture-caller', 'pause-publication', 'pause-stop')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
@@ -163,29 +163,40 @@ def check_native_scope(scope):
         raise ValueError('unknown native acceptance scope: ' + str(scope))
 
 
-def stage1_native_labels():
-    """The retained component and every registered original V3 case."""
+def stage1_registration():
     spec = importlib.util.spec_from_file_location('native_scope_registration',
         ROOT/'verification/experiments/stage1-protocol/registered.py')
     registered = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(registered)
-    labels = tuple(registered.native_labels())
-    if len(labels) != 41 or len(set(labels)) != 41:
-        raise ValueError('stage1 native scope requires the exact 41 registered cases')
-    result = ('functional', 'stage1-protocol', *labels)
-    if len(set(result)) != 43:
+    return registered
+
+
+def stage1_native_labels(profile='full'):
+    """Fixed full or Create scope; no caller-supplied case selection."""
+    registered = stage1_registration()
+    labels = tuple(registered.native_labels(profile))
+    count = 12 if profile == 'create-delivery' else 53
+    if len(labels) != count or len(set(labels)) != count:
+        raise ValueError(f'stage1 native scope requires the exact {count} registered cases')
+    result = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *labels)
+    if len(set(result)) != count+(2 if profile == 'full' else 1):
         raise ValueError('stage1 native scope has duplicate component labels')
     return result
+
+
+def scoped_native_labels(scope):
+    check_native_scope(scope)
+    if scope in ('stage1-protocol', 'stage1-create-delivery'):
+        return stage1_native_labels('create-delivery' if scope == 'stage1-create-delivery' else 'full')
+    return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
+            else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
 
 
 def check_native_components(keys, *, scope='all', allow_additional=False):
     check_native_scope(scope)
     if scope == 'all':
         return
-    expected = set(stage1_native_labels() if scope == 'stage1-protocol'
-                   else PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
-              else PAUSE_STOP_LABELS if scope == 'pause-stop'
-                   else CAPTURE_CALLER_LABELS)
+    expected = set(scoped_native_labels(scope))
     labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
     counts = Counter(labels)
     if (not expected <= counts.keys() or any(counts[label] != 1 for label in expected)
@@ -196,6 +207,16 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
 def current_native_seal(seal, runtime, *, scope='all'):
     check_native_scope(scope)
     actual_scope = seal.get('scope')
+    # Whole packet admission is deliberately stricter than component reuse.
+    # A complete full/all seal cannot stand in for the explicit Create profile,
+    # and Create can never stand in for full/all or another finite scope.
+    create = scope == 'stage1-create-delivery'
+    if create:
+        if (actual_scope != scope or seal.get('profile') != 'create-delivery'
+                or seal.get('create_definition') != stage1_registration().create_profile(ROOT)):
+            return False
+    elif actual_scope == 'stage1-create-delivery':
+        return False
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
             and actual_scope in ('all', scope)
@@ -363,10 +384,7 @@ def native_run(label, command, source, log, environment=None, expected=0):
 def native_case(label, source, output, action=None, *, scope='all'):
     """Keep a component's existing fresh-binary and assertion checks together."""
     check_native_scope(scope)
-    labels = (stage1_native_labels() if scope == 'stage1-protocol'
-              else PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
-              else PAUSE_STOP_LABELS if scope == 'pause-stop'
-              else CAPTURE_CALLER_LABELS)
+    labels = scoped_native_labels(scope)
     if scope != 'all' and label not in labels:
         raise ValueError('component is outside requested native scope: ' + label)
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()

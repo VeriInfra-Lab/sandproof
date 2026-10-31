@@ -40,7 +40,7 @@ def run(output):
     start = time.monotonic()
     record = dict(kind='create-selection-native-development', complete=False, commands=[],
                   ning_acceptance=False, shared_acceptance=False, full_v3=False, host=platform.node(),
-                  production_adopted=False,original_general_equivalence_proved=False)
+                  production_adopted=True,original_general_equivalence_proved=False)
     try:
         inventory = support.inventory()
         extra = {str(ROOT/HERE/name):sha(ROOT/HERE/name) for name in

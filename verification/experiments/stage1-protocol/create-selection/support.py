@@ -1,5 +1,6 @@
 """Shared source derivation and exact-root admission for the private candidate."""
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -45,25 +46,44 @@ def inventory():
     return data
 
 
+def function_text(text, marker):
+    if text.count(marker) != 1:
+        raise ValueError('current production function is not unique')
+    start = text.index(marker)
+    opening = text.index('{', start)
+    depth = 0
+    for index in range(opening, len(text)):
+        depth += (text[index] == '{') - (text[index] == '}')
+        if depth == 0:
+            return text[start:index + 1]
+    raise ValueError('unclosed current production function')
+
+
 def prepare(project,variant,data,command,folder,append_root=True):
     if sha(project/SOURCE)!=data['source_inputs'][SOURCE]:
         raise ValueError('original production source differs')
-    command(project,folder,'candidate-patch',['patch','-p1','--batch','--forward','--fuzz=0',
-        '--input',str(ROOT/HERE/'candidate.patch')])
-    if sha(project/SOURCE)!=data['candidate_source_sha256']:
-        raise ValueError('factored source differs from reviewed candidate')
+    # The reviewed candidate is now the unique production implementation.
+    # Keep its original comparison fingerprint; never re-apply the old patch.
+    source = (project/SOURCE).read_text()
+    contract = data['current_production_function']
+    body = function_text(source, contract['marker'])
+    if hashlib.sha256(body.encode()).hexdigest() != contract['sha256']:
+        raise ValueError('current production function differs from the proved adopted body')
     mutation = data['variants'][variant]['mutation']
     if mutation is not None:
         text = (project/SOURCE).read_text()
-        if text.count(mutation['before'])!=1:
-            raise ValueError('real Rust mutation is not unique')
-        (project/SOURCE).write_text(text.replace(mutation['before'],mutation['after'],1))
+        body = function_text(text, contract['marker'])
+        if body.count(mutation['before']) != 1:
+            raise ValueError('real Rust mutation is not unique within the admitted function')
+        start = text.index(contract['marker'])
+        wrong_body = body.replace(mutation['before'], mutation['after'], 1)
+        (project/SOURCE).write_text(text[:start] + wrong_body + text[start + len(body):])
     before_root = sha(project/SOURCE)
     if append_root:
         with (project/SOURCE).open('ab') as stream: stream.write((ROOT/HERE/'root.rs.in').read_bytes())
     return dict(path=SOURCE,original_sha256=data['source_inputs'][SOURCE],
-        candidate_sha256=data['candidate_source_sha256'],variant_sha256=before_root,
-        derived_sha256=sha(project/SOURCE),mutation=mutation,production_modified=False,
+        historical_candidate_sha256=data['candidate_source_sha256'],current_function_sha256=contract['sha256'],variant_sha256=before_root,
+        derived_sha256=sha(project/SOURCE),mutation=mutation,production_modified=False,current_production_base=True,private_business_replacement=False,
         original_general_equivalence_proved=False)
 
 

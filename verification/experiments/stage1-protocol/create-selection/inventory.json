@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "kind": "unadopted-create-selection-proof-candidate",
+  "kind": "actual-create-selection-proof-slice",
   "base_commit": "ae8e5a564ab3d81652a23acb2b99e242193fa3a2",
-  "production_adopted": false,
+  "production_adopted": true,
   "original_general_equivalence_proved": false,
   "original_full_attachment_proved": false,
   "formal_acceptance": false,
@@ -10,7 +10,7 @@
   "shared_acceptance": false,
   "full_v3": false,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+    "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
@@ -22,7 +22,7 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
-    "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+    "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
     "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
@@ -41,7 +41,7 @@
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
     "verification/experiments/stage1-protocol/envelope-writer/binding.py": "8a9af347602835db91d317bd1e5d3db30923d2afbedae45b53d0a86d03df3307",
     "verification/experiments/stage1-protocol/inbox-lookup/journal_binding.py": "1754c6dffa5e6f83e9766baec4f0d94daa0a61084ded30f702657d607f5d9a10",
-    "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7"
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869"
   },
   "candidate_source_sha256": "556a12c10b772585987ff2ef2cdcbf01bc643625c81e72f64e222b9ee662df9e",
   "original_body_sha256": "708dddf1e811d096b0492e85283d146b93a28c60e73ab4cc1b057a32d9ad2268",
@@ -71,9 +71,9 @@
     "root.rs.in": "e5531a1ec37fdde2823f1bd9e6e4c74059c01332884811b5f9c3db02978c33d6"
   },
   "drivers": {
-    "support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77",
-    "formal.py": "582c9ecbf43b77cd1a123d42ec506b4476fb86aac62177408922f6bc1ee31f42",
-    "native.py": "1e77f3b3c076f43c5ee455d7fa7d2f79aee903393d9d2c4f517d9b9d4ad4cc62"
+    "support.py": "1e3dc10a5a6bca2440459de11704e1ebffe3101754250ae57377a2862992e110",
+    "formal.py": "6ce56976da86224b645d85ca41b2f4ca538084af2275387b2dd82f9bc76f8d77",
+    "native.py": "78c8167db387262f3b314b16c8d5689e5462a5a1e5b3ad501235ffee9532b110"
   },
   "variants": {
     "candidate": {
@@ -1269,5 +1269,25 @@
       "proof_selection_absent",
       "proof_selection_non_create"
     ]
-  }
+  },
+  "current_production_function": {
+    "marker": "fn create_attachment_selection(",
+    "sha256": "bb9338b5f92427613adb4b3fbc3e0fc68a9e4cdf7f41f552fd05f3e77ea02522",
+    "comparison": "exact signature and body from fn token equals the original proved candidate"
+  },
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "0732ebb844f51252fc78ef175357b5b4e6da4d151c7aaa07fea6b61800690677",
+      "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326"
+    },
+    "providers": {
+      "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7"
+    },
+    "drivers": {
+      "support.py": "8fcade3701a24419255696ec27e66bdafabdc425ced4e1309365422b9df47f77",
+      "formal.py": "582c9ecbf43b77cd1a123d42ec506b4476fb86aac62177408922f6bc1ee31f42",
+      "native.py": "1e77f3b3c076f43c5ee455d7fa7d2f79aee903393d9d2c4f517d9b9d4ad4cc62"
+    }
+  },
+  "published_candidate_kind": "unadopted-create-selection-proof-candidate"
 }

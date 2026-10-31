@@ -31,7 +31,7 @@ def run(output,variant,data,inputs,modes):
     def command(project,destination,label,argv):
         now=time.monotonic();log=destination/(label+'.log')
         with log.open('xb') as stream:done=subprocess.run(argv,cwd=project,env=env,stdin=subprocess.DEVNULL,stdout=stream,stderr=subprocess.STDOUT,timeout=1800)
-        rec['commands'].append(dict(label=label,argv=argv,exit_code=done.returncode,seconds=time.monotonic()-now,log_sha256=sha(log)));(output/'progress.json').write_text(json.dumps(rec,indent=2)+'\n')
+        rec['commands'].append(dict(label=label,argv=argv,cwd=str(project),exit_code=done.returncode,seconds=time.monotonic()-now,log_sha256=sha(log)));(output/'progress.json').write_text(json.dumps(rec,indent=2)+'\n')
         if done.returncode:raise ValueError('compiler/kernel/service failure, not property rejection: '+label)
     try:
         if support.inventory()!=data:raise ValueError('reviewed input changed')
@@ -93,13 +93,18 @@ def run(output,variant,data,inputs,modes):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--lock',type=Path,required=True);parser.add_argument('--variant',choices=('all','actual','unchecked-cast','wrong-error'),default='all');args=parser.parse_args();os.umask(0o077)
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--lock',type=Path,required=True);parser.add_argument('--variant',choices=('all','actual','unchecked-cast','wrong-error'),default='all');parser.add_argument('--lock-fd',type=int,help='Inherited open descriptor of the already-held component lock');args=parser.parse_args();os.umask(0o077)
     output=args.output.absolute();output.mkdir(parents=True,mode=0o700);batch=dict(kind='actual-create-deadline-development-batch',complete=False,variants={},native_checks_run=False,formal_acceptance=False,shared_acceptance=False,full_parent_proved=False,full_v3=False);waiting=time.monotonic()
     try:
-        with args.lock.open('r+') as lock:
-            fcntl.flock(lock,fcntl.LOCK_EX);batch['lock_wait_seconds']=time.monotonic()-waiting;started=time.monotonic();data=support.inventory();resolver.ROOT,resolver.MODULES=ROOT,('stage1-protocol',);os.environ.setdefault('SANDPROOF_FORMAL_CACHE',str(output/'runtime-cache'));runtime=resolver.runtime();registry=support.load.native.registry_module.registry();inputs=support.load.base.snapshot(ROOT);modes={n:('100755' if (ROOT/n).stat().st_mode&0o111 else '100644') for n in inputs};contracts=set()
+        with (args.lock.open('r+') if args.lock_fd is None else os.fdopen(os.dup(args.lock_fd),'r+')) as lock:
+            actual_lock = os.fstat(lock.fileno())
+            expected_lock = args.lock.stat()
+            if (actual_lock.st_dev, actual_lock.st_ino) != (expected_lock.st_dev, expected_lock.st_ino):
+                raise ValueError('inherited component lock does not identify the original lock')
+            batch['coordination_lock'] = dict(inherited=args.lock_fd is not None, device=actual_lock.st_dev, inode=actual_lock.st_ino, path=str(args.lock))
+            fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if args.lock_fd is not None else 0));batch['lock_wait_seconds']=time.monotonic()-waiting;started=time.monotonic();data=support.inventory();resolver.ROOT,resolver.MODULES=ROOT,('stage1-protocol',);os.environ.setdefault('SANDPROOF_FORMAL_CACHE',str(output/'runtime-cache'));runtime=resolver.runtime();registry=support.load.native.registry_module.registry();inputs=support.load.base.snapshot(ROOT);modes={n:('100755' if (ROOT/n).stat().st_mode&0o111 else '100644') for n in inputs};contracts=set()
             for variant in data['variants'] if args.variant=='all' else [args.variant]:
-                result=run(output/variant,variant,data,inputs,modes);batch['variants'][variant]=dict(proof_complete=result['proof_complete'],property_rejected=result['property_rejected'],result_sha256=sha(output/variant/'result.json'))
+                result=run(output/variant,variant,data,inputs,modes);batch['variants'][variant]=dict(result, result_sha256=sha(output/variant/'result.json'), result_path=str(output/variant/'result.json'), relative_path=variant+'/result.json')
                 if not result['proof_complete']:raise ValueError('actual development view failed: '+variant)
                 contracts.add(result['common_contract_sha256'])
             assert len(contracts)==1
