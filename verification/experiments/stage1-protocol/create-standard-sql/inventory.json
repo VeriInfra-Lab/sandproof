@@ -1,7 +1,7 @@
 {
   "kind": "current-standard-sql-delegate-input-candidate",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+    "controller-service/src/controller/lifecycle_inbox.rs": "84fc0130dbadc820a3346822c8bad9187153035386fd2bae43cb70b6f9c54be2",
     "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82"
@@ -23,7 +23,7 @@
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json": "7d4332dc5a8db80f1f2e9bb38c36d74ab7735c23af934bb816a7859b97bf6a6e",
+    "verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json": "90b5db68e6313482fe53f89c8e01243deb0c1ba94908ddbf809488fe364727fd",
     "verification/experiments/stage1-protocol/create-lifetime-sql/support.py": "e50ad4afbd11bcf892d9150245b4f540f346f99353a9a1173bf0f1653aa5d1db",
     "verification/experiments/stage1-protocol/create-lifetime-sql/materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04",
     "verification/experiments/stage1-protocol/create-lifetime-sql/root.rs.in": "8441206b14cec49fa52c2b4c0229c4ad5ab6a4265263222e5eb1255449a0de0e",
@@ -34,7 +34,7 @@
   "helper_inventory": {
     "kind": "actual-lifetime-two-values-review",
     "source_inputs": {
-      "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+      "controller-service/src/controller/lifecycle_inbox.rs": "84fc0130dbadc820a3346822c8bad9187153035386fd2bae43cb70b6f9c54be2",
       "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
       "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
     },

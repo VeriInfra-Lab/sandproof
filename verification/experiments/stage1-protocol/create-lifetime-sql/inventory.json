@@ -1,7 +1,7 @@
 {
   "kind": "actual-lifetime-two-values-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+    "controller-service/src/controller/lifecycle_inbox.rs": "84fc0130dbadc820a3346822c8bad9187153035386fd2bae43cb70b6f9c54be2",
     "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
   },

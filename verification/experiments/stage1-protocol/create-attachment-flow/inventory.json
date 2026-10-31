@@ -2,8 +2,8 @@
   "kind": "actual-create-full-flow-reviewed-inputs",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+    "controller-service/src/controller/lifecycle_inbox.rs": "84fc0130dbadc820a3346822c8bad9187153035386fd2bae43cb70b6f9c54be2",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "add417322b165963096057f5d7debc9afd684df496c8f68a5a106df60a537f92",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
@@ -15,7 +15,7 @@
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "docs/formal/03-protocol-inbox.md": "56a1950aef47fe655607caea88c40709d5b51eb5f91e16824738639e1324e81c"
+    "docs/formal/03-protocol-inbox.md": "85c13b297e93188bbea6e46cb7291feecfcc601cf2166e2dbef5c44fdea08608"
   },
   "providers": {
     "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
