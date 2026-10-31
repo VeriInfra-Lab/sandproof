@@ -53,7 +53,7 @@
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorExamples.lean.in": "f7f5b0bf20f0aa70298f736dc70bfc5464ccc8c92bb13f557046d8b8534d7fc3",
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorModel.lean.in": "801d02858897e7b8a361223ecb84bc4addaa7d6334e86ada5c9c162187a86fb3",
     "verification/experiments/stage1-protocol/create-owner-successor/CreateOwnerSuccessorValues.lean.in": "cfe224f9b66c4efe5b31e29a00cb615ec81d38844f53ee015905eedcc3ab93e9",
-    "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "32ad467cbfaddefd6f43d5b8377fd87e510f2273f5c797ba59589782f1f2eeda",
+    "verification/experiments/stage1-protocol/create-owner-successor/inventory.json": "8614ffebeea6cec0181385c93cf3ac8dc652e1e85d200fbdbd225761dbed7b0d",
     "verification/experiments/stage1-protocol/create-owner-successor/native-common.rs.in": "e00f0573a9a00ad5795d6f437d13bd6f66b7ceecf48f0a28e687bbfeef542d65",
     "verification/experiments/stage1-protocol/create-owner-successor/reuse/OrdDefaultBinding.lean.in": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
     "verification/experiments/stage1-protocol/create-owner-successor/reuse/OwnerMappingLibrary.lean.in": "cb45924f848783a20cd7b52f64c9ecb4094b1fe2a5657efa536e1ff8313f545f",
@@ -164,8 +164,8 @@
         "CreateOwnerCheckExamples"
       ],
       "generated_raw_files": {
-        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
-        "Funs.lean": "f66202c7ec676461840a8512b0bc06ed34fc9d307cd136dac77f11dfd44f3531"
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "89ee259762dde8bbc896bb4e92d3ccb6f5b41592f13b9617706b6946e7030e5c"
       },
       "expected_files": [
         "SandboxModel/Lifecycle/Protocol/CreateOwnerCheckCommon.lean",
@@ -288,8 +288,8 @@
         "CreateOwnerCheckCounter"
       ],
       "generated_raw_files": {
-        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
-        "Funs.lean": "d510b8ab82fd70a823154f28fdc25f50eddbbddb740b436996ab71fe43464c08"
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "6c60c1f80dee6c45886b5ead96a85483c99299f63c8415fff5cccdc68674417d"
       },
       "expected_files": [
         "SandboxModel/Lifecycle/Protocol/CreateOwnerCheckCounter.lean",
@@ -394,8 +394,8 @@
         "CreateOwnerCheckCounter"
       ],
       "generated_raw_files": {
-        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
-        "Funs.lean": "ceb29cf2f2ca0dcaae7766c0f4c17d771b121e8f0327fc0a7aa4be0440121a33"
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "57dd88efaad3296536ce12083bb7712ff5486d2d75119577174a8617d58d4564"
       },
       "expected_files": [
         "SandboxModel/Lifecycle/Protocol/CreateOwnerCheckCounter.lean",
@@ -500,8 +500,8 @@
         "CreateOwnerCheckCounter"
       ],
       "generated_raw_files": {
-        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
-        "Funs.lean": "caa4092a00a8facd46832774d7b08219cc582bc7faed719d9adf59015cd2ccc7"
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "620683d656545f4b67316a5b9fb88749a9bc2843f2fb5f5929fbe98b041de000"
       },
       "expected_files": [
         "SandboxModel/Lifecycle/Protocol/CreateOwnerCheckCounter.lean",
@@ -605,8 +605,8 @@
         "CreateOwnerCheckCounter"
       ],
       "generated_raw_files": {
-        "Types.lean": "09b6263677439ca49f9516dcc1492d59eb582e63ad0471f7b115d99d661f7b09",
-        "Funs.lean": "cbcd9235482560ed8fe249d8eecf275ed7a96b7172d89a60255d03f83e08234a"
+        "Types.lean": "17f9e0c597e96234a44a13ed14c26d628f1f301edf9a460c1c21419968970f4e",
+        "Funs.lean": "f1205bedd8c92bcb08dbbea029ed7ea969534a5469d1a1382a26f2a2a4ed62e1"
       },
       "expected_files": [
         "SandboxModel/Lifecycle/Protocol/CreateOwnerCheckCounter.lean",
