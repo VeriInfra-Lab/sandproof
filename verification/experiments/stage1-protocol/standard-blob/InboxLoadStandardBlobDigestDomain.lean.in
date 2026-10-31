@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadBlobDigestDomain
+import SandboxModel.Lifecycle.Protocol.StandardBlobReplyBridge
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoadStandardBlobDigestDomain
+noncomputable section
+open StandardBlobNormalContext InboxLoadBlobDigestDomain
+
+/-- Only fills the existing byte-pair field using the actual standard method
+and the explicit normal-input representation. All other original IO fields
+remain their original explicit providers. No new load or protocol model. -/
+def withStandardRead (io : InboxLoadEffects NormalContext) : InboxLoadEffects NormalContext :=
+  { io with query_bytes_pair := StandardBlobReplyBridge.read }
+
+theorem actual_read_field (io : InboxLoadEffects NormalContext) (state : NormalContext) (statement : Str) :
+    StandardBlobReplyBridge.forgetOriginal ((withStandardRead io).query_bytes_pair state statement) =
+      StandardBlobReplyBridge.transport (StandardBlob.actual state.val statement) :=
+  StandardBlobReplyBridge.projected_actual_read state statement
+
+theorem original_load_row_bound (io : InboxLoadEffects NormalContext) :
+    RowBlobBound (withStandardRead io) := by
+  intro state bytes sha after returned
+  exact StandardBlobReplyBridge.successful_read_bound state after InboxLoad.bodyStatement bytes sha returned
+
+theorem actual_load_normal_digest_congr {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects NormalContext)
+    (represented : InboxLoad.DecodedStringsRepresentable (withStandardRead io))
+    (digest : Digest NormalContext) (state : NormalContext)
+    (agrees : ∀ (state : NormalContext) (bytes : Slice U8), bytes.val.length < 2^61 →
+      (withStandardRead io).digest state bytes = digest state bytes) :
+    load_using saved terminal renewal unload graphic (withStandardRead io) state =
+      load_using saved terminal renewal unload graphic
+        (withDigest (withStandardRead io) digest) state := by
+  exact InboxLoadBlobDigestDomain.actual_load_normal_digest_congr saved terminal renewal unload
+    graphic graphicLaw (withStandardRead io) represented digest state (original_load_row_bound io) agrees
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadStandardBlobDigestDomain
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadStandardBlobDigestDomain.actual_read_field
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadStandardBlobDigestDomain.original_load_row_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadStandardBlobDigestDomain.actual_load_normal_digest_congr
