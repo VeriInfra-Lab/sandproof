@@ -1,0 +1,9 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_owner_for(
+    inbox: &Inbox,
+    world: &core::World,
+    owner: &sandproof_protocol::TenantId,
+) -> Result<core::TenantId, JournalError> {
+    owner_for(inbox, world, owner)
+}

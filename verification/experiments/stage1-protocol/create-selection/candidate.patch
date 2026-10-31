@@ -1,0 +1,37 @@
+--- a/controller-service/src/controller/lifecycle_inbox.rs
++++ b/controller-service/src/controller/lifecycle_inbox.rs
+@@ -431,0 +432,18 @@
++pub(super) fn create_attachment_selection(
++    inbox: &Inbox,
++    intent: &AcceptedLifecycleIntent,
++) -> Result<(usize, usize, u64), JournalError> {
++    let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
++    if inbox.sessions[s].terminal
++        || inbox.sessions[s].refusal.is_some()
++        || inbox.sessions[s].current_version != intent.accepted_version
++        || inbox.sessions[s].local.is_some()
++    {
++        return Err(JournalError::Conflict);
++    }
++    let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
++        return Err(JournalError::Conflict);
++    };
++    Ok((s, e, create.startup_deadline_ms))
++}
++
+@@ -438,11 +456 @@
+-    let (s, e) = inbox.find(&a.intent)?.ok_or(JournalError::Conflict)?;
+-    if inbox.sessions[s].terminal
+-        || inbox.sessions[s].refusal.is_some()
+-        || inbox.sessions[s].current_version != a.intent.accepted_version
+-        || inbox.sessions[s].local.is_some()
+-    {
+-        return Err(JournalError::Conflict);
+-    }
+-    let LifecycleOperation::Create { create, .. } = &a.intent.request.operation else {
+-        return Err(JournalError::Conflict);
+-    };
++    let (s, e, startup_deadline_ms) = create_attachment_selection(&inbox, &a.intent)?;
+@@ -487 +495 @@
+-            i64::try_from(create.startup_deadline_ms)
++            i64::try_from(startup_deadline_ms)

@@ -1,0 +1,54 @@
+-- High-water consequences over the original models and actual shared-value representation.
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.CreateHighWater
+open OwnerMapping CreateOwnerSuccessor CreateOwnerCheck
+
+theorem maximum_above_seed (seed : Nat) (records : List Record) :
+    seed ≤ maximum seed records := by
+  induction records generalizing seed with
+  | nil => exact Nat.le_refl seed
+  | cons row rest ih =>
+      change seed ≤ maximum (max seed row.2.owner.val) rest
+      exact Nat.le_trans (Nat.le_max_left _ _) (ih _)
+
+theorem maximum_without_above_seed (sandbox : sandbox_controller_core.ids.SandboxId)
+    (seed : Nat) (records : List Record) : seed ≤ maximumWithout sandbox seed records := by
+  exact maximum_above_seed seed _
+
+theorem allocation_success_exact (highest : Nat) (owner : U64)
+    (accepted : allocation highest = .Ok owner) :
+    owner.val = highest+1 ∧ highest < U64.max := by
+  unfold allocation at accepted
+  split at accepted
+  · rename_i within
+    have same := core.result.Result.Ok.inj accepted
+    rw [← same]
+    exact ⟨by apply U64.ofNatCore_val_eq, within⟩
+  · cases accepted
+
+theorem successor_success_above_high_water (inbox : Inbox) (world : World)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (owner : U64)
+    (accepted : CreateOwnerSuccessor.expected inbox world sandbox = .Ok owner) :
+    inbox.owner_high_water.val < owner.val := by
+  obtain ⟨exactValue, _⟩ := allocation_success_exact _ owner accepted
+  have seed := maximum_without_above_seed sandbox inbox.owner_high_water.val world.sandboxes.entries.val
+  omega
+
+theorem new_success_above_high_water (inbox : Inbox) (world : World)
+    (binding : sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding)
+    (accepted : newExpected inbox world binding = .Ok ()) :
+    inbox.owner_high_water.val < binding.owner.val := by
+  cases outcome : CreateOwnerSuccessor.expected inbox world binding.sandbox with
+  | Err error => simp [newExpected, guardExpected, outcome] at accepted
+  | Ok owner =>
+      by_cases same : owner = binding.owner
+      · exact same ▸ successor_success_above_high_water inbox world binding.sandbox owner outcome
+      · simp [newExpected, guardExpected, outcome, same] at accepted
+
+end SandboxModel.Stage1Protocol.CreateHighWater
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.maximum_above_seed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.maximum_without_above_seed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.allocation_success_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.successor_success_above_high_water
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.new_success_above_high_water

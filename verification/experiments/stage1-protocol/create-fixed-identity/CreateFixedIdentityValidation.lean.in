@@ -1,0 +1,36 @@
+import SandproofStage1CreateAttachment.Funs
+import SandboxModel.Foundations.Identifiers
+import SandboxModel.Foundations.ErrorMessages
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateFixedIdentity
+open SandproofStage1CreateAttachmentRust
+
+-- Existing general identifier mathematics is reused through actual body equality.
+theorem validator_agrees (value : Str) :
+    sandproof_protocol.valid_identifier value =
+      SandproofFoundationsRust.sandproof_protocol.valid_identifier value := by
+  rfl
+
+theorem validator_complete (value : Str) :
+    sandproof_protocol.valid_identifier value =
+      .ok (decide (SandboxModel.Foundations.opaqueBytesValid value.val)) := by
+  rw [validator_agrees]
+  exact SandboxModel.Foundations.identifier_validator_refines value
+
+theorem sandbox_constructor_complete (text : String)
+    (bounded : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable text) :
+    sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from text =
+      .ok (if SandboxModel.Foundations.opaqueValid text then .Ok text else
+        .Err sandproof_protocol.ContractError.InvalidIdentifier) := by
+  simp [sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from,
+    alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    bounded, validator_complete, SandboxModel.Foundations.opaqueValid]
+  split <;> simp_all
+
+end SandboxModel.Stage1Protocol.CreateFixedIdentity
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete

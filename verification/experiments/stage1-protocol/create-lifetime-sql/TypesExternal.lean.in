@@ -1,0 +1,11 @@
+import SandproofSqliteStatements.TypesExternal
+import SandproofFoundations.TypesExternal
+
+namespace SandproofLifecycleSqlRust
+abbrev core.io.error.Error := SandproofSqliteStatementsRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteStatementsRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteStatementsRust.serde_json.error.Error
+abbrev rusqlite.Connection := SandproofSqliteStatementsRust.rusqlite.Connection
+abbrev rusqlite.statement.Statement := SandproofSqliteStatementsRust.rusqlite.statement.Statement
+abbrev F64 := SandproofFoundationsRust.F64
+end SandproofLifecycleSqlRust

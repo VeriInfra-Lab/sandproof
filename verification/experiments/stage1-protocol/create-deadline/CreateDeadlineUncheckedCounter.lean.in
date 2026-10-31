@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineModel
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineCast
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter
+open CreateDeadlineModel
+abbrev run : U64 → Result RustResult :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+
+theorem actual_zero_accepted : run 0#u64 = .ok (.Ok 0#i64) := by
+  unfold run SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+  simp only [lift, bind_tc_ok]
+  congr 2
+
+theorem actual_overflow_accepted : run 9223372036854775808#u64 =
+    .ok (.Ok (-9223372036854775808)#i64) := by
+  unfold run SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+  simp only [lift, bind_tc_ok]
+  congr 2
+
+theorem returned_value_violates_complete_relation :
+    ¬ Correct 9223372036854775808#u64 (.Ok (-9223372036854775808)#i64) := by
+  unfold Correct
+  scalar_tac
+
+theorem same_full_contract_rejected : ¬ FullDeadlineContract run := by
+  intro contract
+  have correct := contract 9223372036854775808#u64
+  rw [actual_overflow_accepted] at correct
+  simp only [WP.spec_ok] at correct
+  exact returned_value_violates_complete_relation correct
+
+end SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.actual_zero_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.actual_overflow_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.returned_value_violates_complete_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.same_full_contract_rejected

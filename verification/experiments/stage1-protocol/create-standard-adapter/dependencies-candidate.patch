@@ -1,0 +1,24 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -951,0 +952,21 @@
++
++
++### A6/B4 V3 普通 World 读取与实际连接重绑定（候选）
++
++`verification/experiments/stage1-protocol/create-standard-adapter/inventory.json`
++固定实际三方法、完整 World/事务载体、生成根和两个 Std/rusqlite 源码版本。
++WorldTransaction、CommittedWorld、标准效果对象及自有 clone 都保持透明生成体，
++不把整个业务事务或收件设为可信函数。原完整 World 克隆数学按实际当前字段复用，
++只增加完整 CaptureHandoff 的真实 clone 引理。
++
++| 精确接口 | 有限条件与结果 |
++|---|---|
++| RefCell<Option<完整 World>>::borrow | 本次普通只读区间的实际单元、全值和有效 signed-isize64 计数；非负且小于 MAX 才正常发出同一对象的 guard，冲突/溢出为 panic |
++| issued Ref<Option<完整 World>>::deref 与正常临时 guard 释放 | 仅发出的有效 guard 读取同一完整值；具体 World 克隆不回写单元，正常结束后释放该借用。观察不是共享堆或跨调用不变快照，不扩自定义 Drop/重入/崩溃 |
++| String/Option/Vec 正常值克隆及 kernel-bound 字面量 | 复用原逐符号合同；自有逐字段 clone 仍是原生成算法，不新增整批库假设 |
++| 原 WorldTransaction/Transaction Deref 与两处 Connection 赋值 | 实际槽和字段的值接线透明抽取/证明；V5 仍须由实际 writer lease/API 历史建立活对象，A4 仍须给出原物理连接及连贯事务历史 |
++
++两个 Std 版本的 borrow/try_borrow/BorrowRef::new/drop/Ref::deref 正文核对一致，
++不等于整个 RefCell 内部实现已机器证明。正常逻辑值模型不保证 OOM/abort、
++panic unwind 或任意资源析构。完整字段相等不推出授权、物理对象同一、行效果、
++提交/未知提交或重启；begin/recovery 建立和保持不变量仍归实际 V5 连接。

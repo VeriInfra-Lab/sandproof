@@ -1,0 +1,55 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlLibrary
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSqlFixture
+open SandproofLifecycleSqlRust
+open LifetimeSql
+
+def statement : Str := SandproofLifecycleSqlRust.toStr "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2"
+def normalDeadline : I64 := 2#i64
+def normalSandbox : Str := SandproofLifecycleSqlRust.toStr "sb-normal-2"
+def sqliteError : rusqlite.error.Error := ⟨5⟩
+
+-- Complete value-sensitive observation shared by the correct and Rust-wrong
+-- views. The fixture is a library call observation, not a real database.
+def observing (deadline : I64) (sandbox : Str) (rows : Usize) : Connection := {
+  identity := 7
+  prepare := fun _ => .ok (.Ok 2)
+  countError := fun _ _ => ⟨11⟩
+  run := fun sql parameters =>
+    if sql = statement ∧ parameters = completeInputs deadline sandbox then
+      .ok (.Ok rows)
+    else .ok (.Ok 0#usize)
+}
+
+theorem normal_expected (deadline : I64) (sandbox : Str) (rows : Usize) :
+    expected (observing deadline sandbox rows) statement deadline sandbox = .ok (.Ok rows) := by
+  simp [expected, observing]
+
+def prepareRejected : Connection := {
+  identity := 7
+  prepare := fun _ => .ok (.Err sqliteError)
+  countError := fun _ _ => ⟨11⟩
+  run := fun _ _ => .ok (.Ok 17#usize)
+}
+
+theorem prepare_error_expected (deadline : I64) (sandbox : Str) :
+    expected prepareRejected statement deadline sandbox = .ok (.Err (.Sqlite sqliteError)) := by
+  simp [expected, prepareRejected]
+
+def runRejected : Connection := {
+  identity := 7
+  prepare := fun _ => .ok (.Ok 2)
+  countError := fun _ _ => ⟨11⟩
+  run := fun _ _ => .ok (.Err sqliteError)
+}
+
+theorem run_error_expected (deadline : I64) (sandbox : Str) :
+    expected runRejected statement deadline sandbox = .ok (.Err (.Sqlite sqliteError)) := by
+  simp [expected, runRejected]
+
+end SandboxModel.Stage1Protocol.LifetimeSqlFixture
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected

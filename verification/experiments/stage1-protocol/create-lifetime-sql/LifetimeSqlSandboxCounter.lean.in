@@ -1,0 +1,95 @@
+import SandproofLifecycleSql.LiteralBytesBinding
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlCallValues
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlFixture
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter
+open SandproofLifecycleSqlRust LifetimeSql LifetimeSqlLibrary LifetimeSqlFixture
+
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+
+theorem original_normal_specification :
+    expected (LifetimeSqlFixture.observing normalDeadline normalSandbox 17#usize)
+      statement normalDeadline normalSandbox = .ok (.Ok 17#usize) := normal_expected _ _ _
+
+theorem actual_sandbox_is_lost :
+    run (LifetimeSqlFixture.observing normalDeadline normalSandbox 17#usize)
+      statement normalDeadline normalSandbox = .ok (.Ok 0#usize) := by
+  have emptyRead : SandproofLifecycleSqlRust.core.str.Str.is_empty normalSandbox = .ok false := by
+    unfold SandproofLifecycleSqlRust.core.str.Str.is_empty
+      SandproofFoundationsRust.core.str.Str.is_empty
+    have represented : normalSandbox.val =
+        SandproofFoundationsRust.IdentifierLibrary.stringBytes "sb-normal-2" :=
+      SandboxModel.Foundations.literal_string_bytes_refines _ _
+    rw [represented]
+    rfl
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+  simp only [emptyRead, bind_tc_ok, Bool.false_eq_true, reduceIte, core.str.Str.as_bytes]
+  change (do
+    let reply ← rusqlite.Connection.execute
+      (ArrayT2.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      (LifetimeSqlFixture.observing normalDeadline normalSandbox 17#usize) statement (inputs normalDeadline (SandproofLifecycleSqlRust.toStr ""))
+    let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+    match control with
+    | .Continue rows => .ok (core.result.Result.Ok rows)
+    | .Break error =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Usize sandproof_controller_service.JournalError.Insts.CoreConvertFromError error) = _
+  simp only [connection_complete_inputs]
+  have different : (SandproofLifecycleSqlRust.toStr "") ≠ normalSandbox := by
+    intro same
+    have bytes := congrArg Slice.val same
+    change (SandproofFoundationsRust.toStr "").val =
+      (SandproofFoundationsRust.toStr "sb-normal-2").val at bytes
+    rw [SandboxModel.Foundations.literal_string_bytes_refines,
+      SandboxModel.Foundations.literal_string_bytes_refines] at bytes
+    have unequal : SandproofFoundationsRust.IdentifierLibrary.stringBytes "" ≠
+        SandproofFoundationsRust.IdentifierLibrary.stringBytes "sb-normal-2" := by decide
+    exact unequal bytes
+  simp [LifetimeSqlFixture.observing, completeInputs, different,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem still_preserves_empty_sandbox :
+    run (LifetimeSqlFixture.observing normalDeadline (SandproofLifecycleSqlRust.toStr "") 17#usize)
+      statement normalDeadline (SandproofLifecycleSqlRust.toStr "") = .ok (.Ok 17#usize) := by
+  have emptyRead : SandproofLifecycleSqlRust.core.str.Str.is_empty (SandproofLifecycleSqlRust.toStr "") = .ok true := by
+    unfold SandproofLifecycleSqlRust.core.str.Str.is_empty
+      SandproofFoundationsRust.core.str.Str.is_empty
+    have represented : (SandproofLifecycleSqlRust.toStr "").val =
+        SandproofFoundationsRust.IdentifierLibrary.stringBytes "" :=
+      SandboxModel.Foundations.literal_string_bytes_refines _ _
+    rw [represented]
+    rfl
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+  simp only [emptyRead, bind_tc_ok, reduceIte, core.str.Str.as_bytes]
+  change (do
+    let reply ← rusqlite.Connection.execute
+      (ArrayT2.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      (LifetimeSqlFixture.observing normalDeadline (SandproofLifecycleSqlRust.toStr "") 17#usize) statement
+      (inputs normalDeadline (SandproofLifecycleSqlRust.toStr ""))
+    let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+    match control with
+    | .Continue rows => .ok (core.result.Result.Ok rows)
+    | .Break error =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Usize sandproof_controller_service.JournalError.Insts.CoreConvertFromError error) = _
+  simp only [connection_complete_inputs]
+  simp [LifetimeSqlFixture.observing, completeInputs, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem same_full_contract_rejected : ¬ FullSqlValuesContract run := by
+  intro law
+  have promised := law (LifetimeSqlFixture.observing normalDeadline normalSandbox 17#usize)
+    statement normalDeadline normalSandbox
+  have result := actual_sandbox_is_lost.symm.trans (promised.trans original_normal_specification)
+  have equal := Result.ok_injective result
+  injection equal with count
+  have different : (0#usize) ≠ 17#usize := by decide
+  exact different count
+
+end SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.original_normal_specification
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.actual_sandbox_is_lost
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.still_preserves_empty_sandbox
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.same_full_contract_rejected

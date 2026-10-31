@@ -1,11 +1,15 @@
 """Admission and scheduling regressions; no compiler, VM or proof is launched."""
 import ast
 import copy
+import fcntl
+import io
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
+import tarfile
 import tempfile
 import threading
 from types import SimpleNamespace
@@ -18,10 +22,356 @@ registered = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registered)
 
 
+class CreateDelivery(unittest.TestCase):
+    def plan(self):
+        return registered.formal_plan(Path('/unused'), profile='create-delivery')
+
+    def result(self, job):
+        rows = {}
+        for case, recipe in job['views'].items():
+            files = {n:'a'*64 for n in (recipe['files'] or recipe['seeds'])}
+            actual = dict(files=files, audits=list(recipe['audits']), service_log_sha256='b'*64)
+            rows[case] = dict(complete=True, property_rejected=recipe['property_rejected'],
+                             files=files, audits=list(recipe['audits']), actual=actual)
+        return dict(kind=job['expected_kind'], complete=True, prepare_only=False,
+            all_three_variants_complete=True, all_variants_complete=True,
+            **{'views' if job['name'] == 'adopted-create' else 'variants':rows})
+
+    def test_fixed_profile_preserves_default_full_and_every_view(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
+                        SANDPROOF_STAGE1_ONLY='create-selection'):
+            full = registered.formal_plan(Path('/unused'))
+            self.assertEqual(len(full), 138)
+            self.assertEqual(len(registered.native_labels()), 53)
+        jobs = self.plan()
+        definition = registered.create_profile()
+        self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
+        self.assertEqual(len(jobs), 12)
+        self.assertEqual(sum(len(j['cases']) for j in jobs), 42)
+        self.assertEqual(sum(len(p['native_views']) for p in definition['packages']), 66)
+        self.assertTrue(all(j['actual_files'] for j in jobs))
+        for job in jobs:
+            self.assertIn(job, [dict(j, profile='create-delivery') for j in full])
+            self.assertNotIn('--prepare-only', job['args'])
+        self.assertEqual(len(registered.native_labels('create-delivery')), 12)
+        with self.assertRaises(ValueError):
+            registered.formal_plan(Path('/unused'), profile='selection-only')
+
+    def test_each_formal_view_requires_files_audits_and_its_own_property_outcome(self):
+        for job in self.plan():
+            good = self.result(job)
+            registered._check_actual(good, job)
+            field = 'views' if job['name'] == 'adopted-create' else 'variants'
+            for case in job['cases']:
+                for defect in ('omit', 'audit', 'duplicate-audit', 'file', 'property', 'incomplete'):
+                    bad = copy.deepcopy(good)
+                    row = bad[field][case]
+                    if defect == 'omit':
+                        del bad[field][case]
+                    elif defect == 'audit':
+                        row['actual']['audits'].pop()
+                    elif defect == 'duplicate-audit':
+                        row['actual']['audits'].append(row['actual']['audits'][0])
+                    elif defect == 'file':
+                        row['actual']['files'].pop(next(iter(row['actual']['files'])))
+                    elif defect == 'property':
+                        row['property_rejected'] = not row['property_rejected']
+                    else:
+                        row['complete'] = False
+                    with self.subTest(package=job['name'], case=case, defect=defect), self.assertRaises(ValueError):
+                        registered._check_actual(bad, job)
+            for defect in ('prepare_only', 'selected_variant', 'kind'):
+                bad = copy.deepcopy(good)
+                bad[defect] = True if defect == 'prepare_only' else 'actual' if defect == 'selected_variant' else 'old-candidate-kind'
+                with self.subTest(package=job['name'], defect=defect), self.assertRaises(ValueError):
+                    registered._check_actual(bad, job)
+
+    def test_native_property_rejection_is_not_a_mutant_clippy_exit(self):
+        definition = registered.create_profile()
+        for package in definition['packages']:
+            expected = registered._create_native_plan(package['name'], registered._read(
+                registered.ROOT/registered.HERE/package['name']/'inventory.json'))
+            self.assertEqual(tuple(package['native_views']), tuple(expected))
+            self.assertTrue(all(bool(v['expected_failures']) for k,v in expected.items()
+                if k not in (next(iter(expected)), registered.CREATE_RESTORED[package['name']])))
+        high = next(p for p in definition['packages'] if p['name'] == 'create-high-water')
+        self.assertTrue(high['native_views']['wrong-seed']['expected_clippy_errors'])
+        self.assertTrue(high['native_views']['wrong-seed']['expected_failures'])
+        successor = next(p for p in definition['packages'] if p['name']=='create-owner-successor')
+        adopted = next(p for p in definition['packages'] if p['name']=='adopted-create')
+        self.assertEqual(len(successor['native_views']['wrong-overflow']['expected_clippy_errors']),2)
+        self.assertEqual(successor['native_views']['wrong-overflow']['expected_clippy_errors'],
+            adopted['native_views']['successor-wrong-overflow']['expected_clippy_errors'])
+        for package in definition['packages']:
+            for case in (next(iter(package['native_views'])),registered.CREATE_RESTORED[package['name']]):
+                self.assertFalse(package['native_views'][case]['expected_clippy_errors'])
+
+    def test_exact_mutant_clippy_keeps_duplicates_and_is_never_a_property_witness(self):
+        first=dict(code='clippy::unnecessary_wraps',message='synthetic result diagnostic',source='Source.rs',line=5)
+        second=dict(code='clippy::cast_possible_wrap',message='synthetic cast diagnostic',source='Source.rs',line=6)
+        expected=[first,first,second,second]
+        def document(error):
+            return dict(reason='compiler-message',message=dict(level='error',code=dict(code=error['code']),
+                message=error['message'],spans=[dict(is_primary=True,file_name=error['source'],line_start=error['line'])]))
+        messages=[document(e) for e in (second,first,second,first)]
+        def text(rows):
+            return '\n'.join(json.dumps(r) for r in rows)
+        row=dict(exit_code=101)
+        registered.check_native_clippy(row,text(messages),Path('/project'),expected)
+        self.assertEqual(len(row['clippy_errors']),4)
+        self.assertNotIn('property_rejected',row)
+        self.assertTrue(row['expected_mutant_lint_rejection'])
+        for defect in ('missing','extra','code','message','source','line','primary'):
+            bad=copy.deepcopy(messages)
+            if defect=='missing':bad.pop()
+            elif defect=='extra':bad.append(copy.deepcopy(bad[0]))
+            elif defect=='code':bad[0]['message']['code']['code']='unreviewed-lint'
+            elif defect=='message':bad[0]['message']['message']='different diagnostic'
+            elif defect=='source':bad[0]['message']['spans'][0]['file_name']='Other.rs'
+            elif defect=='line':bad[0]['message']['spans'][0]['line_start']=99
+            else:bad[0]['message']['spans'].append(copy.deepcopy(bad[0]['message']['spans'][0]))
+            with self.subTest(defect=defect),self.assertRaises(ValueError):
+                registered.check_native_clippy(dict(exit_code=101),text(bad),Path('/project'),expected)
+        for code,observed,wanted in ((0,messages,expected),(101,[],[]),(101,messages,[])):
+            with self.assertRaises(ValueError):
+                registered.check_native_clippy(dict(exit_code=code),text(observed),Path('/project'),wanted)
+        clean=dict(exit_code=0)
+        registered.check_native_clippy(clean,'ordinary compiler progress',Path('/project'),[])
+        self.assertFalse(clean['expected_mutant_lint_rejection'])
+
+    def test_native_original_logs_and_assertions_are_required_even_with_complete_true(self):
+        for name in ('create-deadline','create-attachment-flow'):
+            with self.subTest(package=name):
+                self.native_log_fixture(name)
+
+    def native_log_fixture(self, name):
+        plan = registered._create_native_plan(name, registered._read(
+            registered.ROOT/registered.HERE/name/'inventory.json'))
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            result = dict(kind=name+'-native-development', complete=True,
+                inputs={'Source.rs':'a'*64, 'unrelated-report.md':'original-report'}, variants={}, commands=[])
+            for variant, recipe in plan.items():
+                (folder/variant).mkdir()
+                result['variants'][variant] = dict(complete=True, inputs={'Source.rs':'derived-source'})
+                labels = ('format-instrumentation','format','test','clippy') if name=='create-attachment-flow' else ('format','test','clippy')
+                for label in labels:
+                    failures = recipe['expected_failures'] if label == 'test' else []
+                    errors = recipe.get('expected_clippy_errors',[]) if label=='clippy' else []
+                    count = recipe['test_count']
+                    text = 'synthetic admission fixture; no compiler was run\n'
+                    if label == 'test':
+                        text += '\nfailures:\n'+''.join('    controller::fixture::'+n+'\n' for n in failures)
+                        text += f'\ntest result: {count-len(failures)} passed; {len(failures)} failed; 0 ignored;\n'
+                    log = folder/variant/(label+'.log')
+                    log.write_text(text)
+                    result['commands'].append(dict(variant=variant, label=label,
+                        exit_code=101 if failures or errors else 0, property_rejected=bool(failures),
+                        clippy_errors=copy.deepcopy(errors),expected_mutant_lint_rejection=bool(errors),
+                        log_sha256=registered._sha(log)))
+            shared = SimpleNamespace(rust_inputs=lambda root:{'Source.rs':'a'*64},
+                rules=lambda root:{}, contract_inputs=lambda root:{})
+            with patch.object(registered, '_shared', return_value=shared):
+                registered._check_create_native_result(registered.ROOT, name, folder, result)
+                wrong = next(v for v,r in plan.items() if r['expected_failures'])
+                defects = ['source','missing-view','clippy-instead-of-property','missing-command']
+                if name=='create-attachment-flow':
+                    defects += ['missing-preparation','bad-preparation-exit','preparation-is-not-property']
+                if any(r.get('expected_clippy_errors') for r in plan.values()):
+                    defects += ['missing-lint-diagnostic']
+                for defect in defects:
+                    bad = copy.deepcopy(result)
+                    if defect == 'source':
+                        bad['inputs']['Source.rs'] = 'changed'
+                    elif defect == 'missing-view':
+                        del bad['variants'][wrong]
+                    elif defect == 'clippy-instead-of-property':
+                        row = next(r for r in bad['commands'] if r['variant']==wrong and r['label']=='test')
+                        row['property_rejected'] = False
+                    elif defect=='missing-preparation':
+                        bad['commands'].pop(0)
+                    elif defect=='bad-preparation-exit':
+                        bad['commands'][0]['exit_code']=101
+                    elif defect=='preparation-is-not-property':
+                        bad['commands'][0]['property_rejected']=True
+                    elif defect=='missing-lint-diagnostic':
+                        next(r for r in bad['commands'] if r['clippy_errors'])['clippy_errors'].pop()
+                    else:
+                        bad['commands'].pop()
+                    with self.subTest(defect=defect), self.assertRaises(ValueError):
+                        registered._check_create_native_result(registered.ROOT, name, folder, bad)
+                (folder/'actual/test.log').write_text('corrupted original log')
+                with self.assertRaisesRegex(ValueError, 'original Create native log'):
+                    registered._check_create_native_result(registered.ROOT, name, folder, result)
+
+    def test_create_worker_counts_and_four_cpu_slots_are_explicit(self):
+        self.assertEqual(registered._execution_options(profile='create-delivery')['workers'], 1)
+        self.assertEqual(registered._execution_options()['workers'], 1)
+        for count in (8, 12):
+            self.assertEqual(registered._execution_options(count, profile='create-delivery')['workers'], count)
+            with self.assertRaises(ValueError):
+                registered._execution_options(count)
+            with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS=str(count)):
+                with self.assertRaises(ValueError):
+                    registered._execution_options()
+        for jobs in (1, 2, 4, 8, 12):
+            slots = registered._cpu_slots('create-delivery', jobs, range(8, 8+4*jobs))
+            self.assertEqual(len(slots), jobs)
+            self.assertTrue(all(len(slot) == 4 for slot in slots))
+            self.assertEqual(len({n for slot in slots for n in slot}), 4*jobs)
+            with self.assertRaisesRegex(ValueError, 'admitted CPUs'):
+                registered._cpu_slots('create-delivery', jobs, range(4*jobs-1))
+
+    def test_child_bootstrap_checks_actual_affinity_before_exec(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            admission = Path(temporary)/'cpu.json'
+            state = {'cpus':set(range(48))}
+            executed = []
+            def set_affinity(pid, cpus):
+                self.assertEqual(pid, 0)
+                state['cpus'] = set(cpus)
+            def execute(path, args):
+                executed.append((path, args))
+            fake_os = SimpleNamespace(sched_getaffinity=lambda pid:set(state['cpus']),
+                sched_setaffinity=set_affinity, getpid=lambda:123, execv=execute)
+            argv = ['bootstrap','8,9,10,11',str(admission),'/fixed/python','/original/driver.py','--lock-fd','9']
+            with patch.dict(sys.modules, os=fake_os), patch.object(sys, 'argv', argv):
+                exec(registered.CPU_BOOTSTRAP, {})
+            self.assertEqual(state['cpus'], {8,9,10,11})
+            self.assertEqual(executed, [('/fixed/python',argv[3:])])
+            self.assertEqual(registered._check_cpu_admission(admission,[8,9,10,11])['actual'],[8,9,10,11])
+            bad = registered._read(admission);bad['actual']=[8,9,10,12]
+            admission.write_text(json.dumps(bad))
+            with self.assertRaises(ValueError):
+                registered._check_cpu_admission(admission)
+            # The parent's subprocess call preserves the same already-open FD
+            # through the fresh child/exec boundary, without preexec_fn.
+            with patch.object(registered.subprocess,'run') as run, \
+                    patch.object(registered.os,'sched_setaffinity',create=True) as parent_set:
+                registered._invoke(Path(temporary),Path('driver.py'),['--lock-fd','9'],
+                    pass_fds=(9,),cpu_affinity=(8,9,10,11),cpu_admission=admission)
+            self.assertEqual(run.call_args.kwargs['pass_fds'],(9,))
+            self.assertNotIn('preexec_fn',run.call_args.kwargs)
+            parent_set.assert_not_called()
+            self.assertEqual(run.call_args.args[0][1:4],['-c',registered.CPU_BOOTSTRAP,'8,9,10,11'])
+
+    def test_create_pool_uses_distinct_slots_and_stops_dispatch_after_first_failure(self):
+        for workers, fail in ((12,False),(4,True)):
+            with self.subTest(workers=workers,fail=fail), tempfile.TemporaryDirectory() as temporary:
+                output=Path(temporary);plan=registered.formal_plan(output,profile='create-delivery')
+                barrier=threading.Barrier(workers);release=threading.Event();started={};mutex=threading.Lock()
+                def launch(root,job,directory,paths,runtime_seed=None,cpu_affinity=None):
+                    with mutex:started[job['name']]=cpu_affinity
+                    directory.mkdir(parents=True);barrier.wait(timeout=10)
+                    if fail and job['name']==plan[0]['name']:
+                        raise ValueError('controlled first Create failure')
+                    if fail and not release.wait(timeout=10):
+                        raise ValueError('parent did not publish first failure')
+                    folder=Path(job['output']);folder.mkdir()
+                    result=folder/'result.json';result.write_text('{"synthetic_scheduler_only":true}')
+                    log=directory/'command.log';log.write_text('synthetic scheduling; no compiler or proof\n')
+                    return dict(name=job['name'],argv=['synthetic'],result_path=str(result),
+                                seconds=0,command_log=str(log))
+                def progress(rows,failures,misses):
+                    if failures:release.set()
+                with patch.object(registered.os,'sched_getaffinity',return_value=set(range(48)),create=True), \
+                        patch.object(registered,'_launch_job',side_effect=launch), \
+                        patch.object(registered,'_check_actual'), \
+                        patch.object(registered,'_checkpoint_evidence',return_value={}), \
+                        patch.object(registered,'_execution_helper',return_value=SimpleNamespace()):
+                    rows,failures=registered.execute_formal_jobs(registered.ROOT,output,plan,
+                        {},{},jobs=workers,profile='create-delivery',progress=progress)
+                self.assertEqual(len(started), workers)
+                self.assertEqual(len({n for slot in started.values() for n in slot}),workers*4)
+                self.assertTrue(all(len(slot)==4 for slot in started.values()))
+                self.assertEqual(bool(failures),fail)
+                self.assertEqual(len(rows), workers-1 if fail else workers)
+
+    def test_source_capsule_and_physical_leaf_bytes_are_both_required(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)/'source'
+            root.mkdir()
+            archive = Path(temporary)/'sources.tar'
+            files = {}
+            with tarfile.open(archive,'w') as tar:
+                for name in registered.CREATE_SOURCE_MEMBERS:
+                    data = ('-- synthetic readonly source '+name+'\n').encode()
+                    info=tarfile.TarInfo(name);info.size=len(data);tar.addfile(info,io.BytesIO(data))
+                    path=root/'.tools'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+                    files[name]=dict(sha256=registered._sha(path),bytes=len(data))
+            definition=root/registered.HERE/'native-source-inputs.json';definition.parent.mkdir(parents=True)
+            model=dict(schema=1,kind='stage1-create-fixed-readonly-sources',environment=registered.CREATE_SOURCE_ENV,
+                archive_sha256=registered._sha(archive),archive_bytes=archive.stat().st_size,files=files,contains_tool_binaries=False)
+            definition.write_text(json.dumps(model))
+            with patch.dict(os.environ,{registered.CREATE_SOURCE_ENV:str(archive)}):
+                registered.check_create_sources(root)
+                with patch.dict(os.environ,{registered.CREATE_SOURCE_ENV:''}), self.assertRaises(ValueError):
+                    registered.check_create_sources(root)
+                leaf=root/'.tools'/registered.CREATE_SOURCE_MEMBERS[0];original=leaf.read_bytes()
+                leaf.write_bytes(original+b'changed')
+                with self.assertRaisesRegex(ValueError,'source bytes differ'):
+                    registered.check_create_sources(root)
+                leaf.write_bytes(original)
+                with patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal'), self.assertRaises(ValueError):
+                    registered.prepare_create_sources(root)
+                with patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='native'):
+                    leaf.unlink();registered.prepare_create_sources(root)
+                    self.assertEqual(leaf.stat().st_mode&0o777,0o444)
+                    leaf.chmod(0o644);leaf.write_bytes(b'existing different tool/source')
+                    with self.assertRaisesRegex(ValueError,'never overwrite'):
+                        registered.prepare_create_sources(root)
+                    leaf.write_bytes(original)
+                # Existing formal tool-root directory aliases remain legal;
+                # only actual leaf bytes/type and declared archive are checked.
+                seed=Path(temporary)/'fixed-seed';(root/'.tools/aeneas').rename(seed)
+                (root/'.tools/aeneas').symlink_to(seed,target_is_directory=True)
+                registered.check_create_sources(root)
+                with archive.open('ab') as stream:stream.write(b'changed')
+                with self.assertRaisesRegex(ValueError,'archive changed'):
+                    registered.check_create_sources(root)
+
+    def test_inherited_lock_survives_exec_and_child_does_not_unlock_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lock = root/'coordination.lock'
+            lock.write_text('')
+            driver = root/'child.py'
+            driver.write_text('import fcntl, os, sys\n'
+                'fd=int(sys.argv[1])\nfcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
+                'if len(sys.argv)>3:\n'
+                ' assert sorted(os.sched_getaffinity(0))==[int(n) for n in sys.argv[3].split(",")]\n'
+                'with open(sys.argv[2],"r+") as other:\n'
+                ' try: fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)\n'
+                ' except BlockingIOError: pass\n'
+                ' else: raise RuntimeError("parent lock was lost")\n')
+            with lock.open('r+') as parent, patch.dict(os.environ,
+                    SANDPROOF_LOCK_FILE=str(lock), SANDPROOF_LOCK_FD=str(parent.fileno())):
+                fcntl.flock(parent, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                fd, identity = registered.inherited_lock()
+                self.assertEqual(identity['inode'], lock.stat().st_ino)
+                args = [fd, lock]
+                options = {}
+                if hasattr(os,'sched_getaffinity') and len(os.sched_getaffinity(0)) >= 4:
+                    cpus = tuple(sorted(os.sched_getaffinity(0))[:4])
+                    args += [','.join(map(str,cpus))]
+                    options = dict(cpu_affinity=cpus,cpu_admission=root/'cpu-admission.json')
+                registered._invoke(root, driver, args, pass_fds=(fd,), **options)
+                if options:
+                    self.assertEqual(registered._check_cpu_admission(root/'cpu-admission.json',cpus)['actual'],list(cpus))
+                with lock.open('r+') as other, self.assertRaises(BlockingIOError):
+                    fcntl.flock(other, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                wrong = root/'wrong-lock'
+                wrong.write_text('')
+                with patch.dict(os.environ, SANDPROOF_LOCK_FILE=str(wrong)), self.assertRaises(ValueError):
+                    registered.inherited_lock()
+                with patch.dict(os.environ, SANDPROOF_LOCK_FD='not-an-fd'), self.assertRaises(ValueError):
+                    registered.inherited_lock()
+
+
 class Registration(unittest.TestCase):
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 41)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 41)
+        self.assertEqual(len(registered.NATIVE_CASES), 53)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 53)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -40,14 +390,14 @@ class Registration(unittest.TestCase):
         modules = next(ast.literal_eval(node.value) for node in names.body
                        if isinstance(node, ast.Assign) and any(
                            isinstance(t, ast.Name) and t.id == 'MODULES' for t in node.targets))
-        self.assertEqual(len(modules), 30)
+        self.assertEqual(len(modules), 33)
         self.assertIn('stage1-protocol', modules)
         self.assertNotIn('component.py', {Path(j['driver']).name for j in registered.formal_plan(Path('/unused'))})
 
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 126)
+        self.assertEqual(len(jobs), 138)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -108,10 +458,11 @@ class Registration(unittest.TestCase):
                             set(registered.NATIVE_CASES))
 
     def test_lost_native_or_variant_registration_is_refused(self):
-        registered.validate_registration()
+        with patch.object(registered, 'validate_metadata_inputs'):
+            registered.validate_registration()
         with patch.object(registered, 'NATIVE_CASES', tuple(
                 name for name in registered.NATIVE_CASES if name != 'stage1-inbox-state')):
-            with self.assertRaisesRegex(ValueError, 'missing native registration'):
+            with self.assertRaisesRegex(ValueError, 'duplicate native registration|missing native registration'):
                 registered.validate_registration()
         for name, dropped in (('inbox-state', 'drop-operation'),
                               ('inbox-save', 'wrong-budget'),
@@ -159,7 +510,12 @@ class Registration(unittest.TestCase):
                 self.assertEqual(scope, 'stage1-protocol')
                 raise ValueError('missing native case')
             shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
-            with patch.object(registered, '_shared', return_value=shared), patch.object(registered, '_invoke') as invoke:
+            # This fixture tests seal admission after structural registration.
+            # Historical full-package input migration has its own real guard;
+            # it must not intercept this synthetic missing-seal/case boundary.
+            with patch.object(registered, '_shared', return_value=shared), \
+                    patch.object(registered, 'validate_metadata_inputs'), \
+                    patch.object(registered, '_invoke') as invoke:
                 with patch.dict(os.environ, SANDPROOF_ACCEPTANCE_ROLE='formal', SANDPROOF_NATIVE_EVIDENCE='/unused'):
                     with self.assertRaisesRegex(ValueError, 'seal|native case'):
                         registered.run_formal(Path('/unused'), Path('/unused/retained/result.json'))
@@ -181,13 +537,14 @@ class Registration(unittest.TestCase):
                         registered._original_file(receipt, 'source.tar')
 
     def test_original_archive_driver_cannot_use_complete_instead_of_success(self):
-        def native_case(label, root, output, action):
+        def native_case(label, root, output, action, *, scope):
             if label != 'stage1-protocol':
                 action()
             return {}
         shared = SimpleNamespace(native_case=native_case)
         with tempfile.TemporaryDirectory() as temporary, \
                 patch.object(registered, 'validate_registration'), \
+                patch.object(registered, 'check_create_sources'), \
                 patch.object(registered, '_shared', return_value=shared), \
                 patch.object(registered, '_original_file', return_value=Path('/unused/source.tar')), \
                 patch.object(registered, '_invoke'), \
@@ -655,6 +1012,8 @@ class CheckpointExecution(unittest.TestCase):
             return b'100644 0000000000000000000000000000000000000000 0\tdocs/proof-coverage.md\0'
         with patch.object(registered.subprocess,'check_output',side_effect=git), \
                 patch.object(registered,'_evidence',return_value=evidence), \
+                patch.object(registered,'inherited_lock',return_value=(9,{'path':'/fixture-lock','device':1,'inode':2})), \
+                patch.object(registered,'create_profile',return_value={'profile':'create-delivery'}), \
                 patch.dict(os.environ,SANDPROOF_NATIVE_EVIDENCE=str(cache)):
             context = registered._execution_context(root,shared,helper,receipts)
             self.assertEqual(context['schema'],2)
@@ -967,9 +1326,11 @@ class CheckpointExecution(unittest.TestCase):
         before_umask = os.umask(0o077)
         try:
             with patch.object(registered,'validate_registration'), \
+                    patch.object(registered,'check_create_sources'), \
                     patch.object(registered,'_shared',return_value=shared), \
                     patch.object(registered,'_evidence',return_value=evidence), \
-                    patch.object(registered,'_original_file'), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_original_file',return_value=retained), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_check_create_native_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=context), \
                     patch.object(registered,'_source_modes',return_value={'Fixture.rs':'100755' if change_modes else '100644'}), \

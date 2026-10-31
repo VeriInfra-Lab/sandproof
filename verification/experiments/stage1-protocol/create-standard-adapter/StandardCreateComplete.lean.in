@@ -1,0 +1,65 @@
+import SandboxModel.Lifecycle.Protocol.StandardCreateLibrary
+
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+namespace SandboxModel.Stage1Protocol.StandardCreate
+
+theorem standard_world_complete (effects : Effects) (world : World)
+    (present : CandidateAt effects.tx world) : readWorld effects = .ok (world, effects) := by
+  simp [readWorld,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world,
+    transaction_world_complete effects.tx world present]
+
+theorem begin_lifetime_complete (effects : Effects) (db : DbTx)
+    (live : effects.tx.transaction = some db) :
+    beginLifetime effects = .ok { effects with connection := db.conn } := by
+  simp [beginLifetime,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update,
+    live_transaction_deref effects.tx db live, database_connection_deref]
+
+theorem begin_save_complete (effects : Effects) (db : DbTx)
+    (live : effects.tx.transaction = some db) :
+    beginSave effects = .ok { effects with connection := db.conn } := by
+  simp [beginSave,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save,
+    live_transaction_deref effects.tx db live, database_connection_deref]
+
+theorem both_stages_select_same_complete_value (effects : Effects) (db : DbTx)
+    (live : effects.tx.transaction = some db) : beginLifetime effects = beginSave effects := by
+  rw [begin_lifetime_complete effects db live, begin_save_complete effects db live]
+
+theorem standard_world_expected (effects : Effects) : readWorld effects = expectedRead effects := by
+  simp only [readWorld,
+    sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world,
+    expectedRead, transaction_world_expected]
+
+theorem begin_lifetime_expected (effects : Effects) : beginLifetime effects = expectedRebind effects := by
+  cases live : effects.tx.transaction with
+  | none =>
+    simp [beginLifetime,
+      sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update,
+      unavailable_transaction_panics effects.tx live, expectedRebind, live]
+  | some db =>
+    simpa [expectedRebind, live] using begin_lifetime_complete effects db live
+
+theorem begin_save_expected (effects : Effects) : beginSave effects = expectedRebind effects := by
+  cases live : effects.tx.transaction with
+  | none =>
+    simp [beginSave,
+      sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save,
+      unavailable_transaction_panics effects.tx live, expectedRebind, live]
+  | some db =>
+    simpa [expectedRebind, live] using begin_save_complete effects db live
+
+theorem full_read_and_rebind_contract : FullReadAndRebindContract readWorld beginLifetime beginSave := by
+  exact ⟨standard_world_expected, begin_lifetime_expected, begin_save_expected⟩
+
+end SandboxModel.Stage1Protocol.StandardCreate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.standard_world_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.begin_save_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.both_stages_select_same_complete_value
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.standard_world_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.begin_save_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.full_read_and_rebind_contract

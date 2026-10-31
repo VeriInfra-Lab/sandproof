@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "kind": "stage1-create-fixed-readonly-sources",
+  "environment": "SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE",
+  "archive_sha256": "eecb60f6e9788189e0be71ad7c6907cd73e912f1b8f4d2274c4b54ae207d8fe4",
+  "archive_bytes": 122880,
+  "files": {
+    "aeneas/backends/lean/Aeneas/Std/Scalar/CoreConvertNum.lean": {
+      "sha256": "c67346b6a2d471d04a1bdcdf71af4efcfaa0206c1c4540de34016283c7733624",
+      "bytes": 33914
+    },
+    "aeneas/backends/lean/Aeneas/Std/Scalar/Ops/Mul.lean": {
+      "sha256": "d09e7213b012ab01c18a15567a3305fee1240ef937ee1630e378b44a12ad3ab4",
+      "bytes": 6115
+    },
+    "aeneas/backends/lean/Aeneas/Std/Scalar/Ops/Add.lean": {
+      "sha256": "51a4086ecb796b3e9be9ac6fbcb8b30552ee6bfdfbde5fd12cdc52cc130492b4",
+      "bytes": 6264
+    },
+    "aeneas/backends/lean/Aeneas/Std/Scalar/Core.lean": {
+      "sha256": "155963a14d6d554aeb5c4b515e42f27a50390337f0fb4a189cda1fb8f3881e99",
+      "bytes": 62545
+    },
+    "aeneas/backends/lean/Aeneas/Std/Core/Result.lean": {
+      "sha256": "88eaf71b64b3ff1100b55032f2e13a8e1c6e338b4a36cff0fae9eaec73067fc9",
+      "bytes": 231
+    },
+    "aeneas/backends/lean/Aeneas/Data/Discriminant.lean": {
+      "sha256": "98dca07cb483eda5c4fe4322806650d3288fd0c2504c3153e0cebc195e649d03",
+      "bytes": 7679
+    }
+  },
+  "source": "fixed Aeneas backend declared by verification/foundations-environment.json",
+  "contains_tool_binaries": false
+}

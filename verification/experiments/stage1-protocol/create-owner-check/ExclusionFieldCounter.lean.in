@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckEquality
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckValues
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCore
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+open OwnerMapping OwnerMapping.Values CreateOwnerSuccessor.Values Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+
+theorem observed : run (noOwners 5#u64) worldTriple (binding 2#u64 18#u64) = .ok (.Err .Conflict) := by
+  have value : CreateOwnerSuccessor.expected (noOwners 5#u64) worldTriple 18#u64 = .Ok 41#u64 := by
+    change allocation 40 = _
+    exact allocation_known 40 41#u64 (by scalar_tac) (by scalar_tac)
+  have calculated := (CreateOwnerSuccessor.successor_complete (noOwners 5#u64) worldTriple 18#u64).trans
+    (congrArg Result.ok value)
+  simp only [CreateOwnerSuccessor.run] at calculated
+  simp [run, sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner,
+    binding, calculated, internal_ne, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem violates_full_contract : ¬ FullNewContract run := by
+  intro contract
+  have required := contract (noOwners 5#u64) worldTriple (binding 2#u64 18#u64)
+  rw [observed] at required
+  simp [Values.new_excluded_largest] at required
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.violates_full_contract

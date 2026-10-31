@@ -216,6 +216,73 @@ B1 和 B3 的 `until_revoked` 已有下面的逐符号范围和条件模型；B2
 输入或输出回滚。收件事务、身份真实性、网络最终交付、持久提交、真实 VM/材料和系统唯一
 执行均有各自提供方，不纳入这些编码/容器条件。
 
+### V3 Create 同步流程的接口条件
+
+本条用于 [Create 完整流程](../../verification/experiments/stage1-protocol/create-attachment-flow/README.md)
+及其固定身份、寿命 SQL、标准适配切片。精确源码、标准库正文、生成根和支持域分别由各包
+`inventory.json` 绑定；公共入口的实际结果见[覆盖记录](../proof-coverage.md)和
+[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635) 的精确候选证据。
+
+真实 `attach_create_using` 保留完整效果状态、六类类型/编码字典和三个运行时输入。
+顺序为 load、完整查找与选择、首次 owner 检查、必要时读取完整 World 并计算后继、
+完整安装、重新选择寿命连接、deadline 转换、固定身份构造、寿命 UPDATE、重新选择
+收件连接、save。每个早期错误和中间效果都保留。一般流程结论仍显式使用原
+`FullGraphicContract` 和本次成功 load 的字符串表示条件；save 的配置表示条件由同次
+load 和完整安装框架推出。自有 load/save/校验、错误传播及效果顺序由实际生成体对应，
+没有把整个 codec、事务或业务回调列为可信函数。
+
+### A6 V3 固定双输入身份格式
+
+[固定身份切片](../../verification/experiments/stage1-protocol/create-fixed-identity/README.md)
+复用已登记的 Formatter、Display、Arguments、String writer、无符号十进制及完整
+标识符数学。本条只补实际默认 str 格式和固定九字节程序的正常返回条件。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| `Shared0T.Insts.CoreFmtDisplay.fmt`、`DisplayU64.fmt` | 原字典转发与完整 u64 十进制表示保留；最高位也不截断 | 实际 namespace、sandbox 编号及全部错误载荷仍由调用者绑定 |
+| `Argument.new_display`、`Arguments.new`、默认 str Display | 保留两个惰性输入和原索引；在有效 UTF-8、普通有限值与正常分配域内，str 向原 String writer 写入完整内容 | 无额外宽度、精度或格式标志；不覆盖任意自定义 Display/Formatter |
+| 固定 `alloc.fmt.format` 调用 | 精确程序为 `[3,115,98,45,192,1,45,192,0]`；按原程序生成 `sb-`、完整 namespace、`-`、原 u64 十进制，两个正常回调各调用一次 | 实际身份校验、构造及 InvalidIdentifier 到 JournalError 的完整转换保留透明生成体 |
+
+同版 `core::hint::must_use` 已按透明生成体连接恒等返回。现有单 u16 错误文本的格式条件
+保持原范围。固定接口与 Std 正常返回的一致性属于 A6；源码核对和这些值定理不提供
+OOM/abort、任意格式器错误恢复、授权、全局唯一性、资源存在或持久接受的保证。
+
+### A4/A6 V3 寿命 UPDATE 的两个参数
+
+[寿命 SQL 切片](../../verification/experiments/stage1-protocol/create-lifetime-sql/README.md)
+限定 rusqlite 0.40.2 的当前纯两值调用。共享 Connection/Statement/SqlValue、绑定和
+execute 定义继续保持单份；实际自有参数与错误转换保留透明生成体。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| i64、str、共享引用的 ToSql 及 Value/ValueRef 转换 | 旧整数的 `Owned(Integer)` 与当前数组的 `Borrowed(Integer)` 原始枚举不同，经过实际转换得到相同完整有效整数；文本保留全部原字节 | 这是有效 ValueRef 的连接，不是旧动态 `params!` 宏整体的一般机器等价证明 |
+| `[ToSqlOutput; 2]` 的 Params 绑定和原数组迭代 | 保留 deadline、sandbox 两槽的完整值及次序，限本次纯整数/全文参数 | 逻辑参数正确不表示物理 raw-bind 成功；自定义迭代或有状态 ToSql 不在范围内 |
+| 原 Connection 的 prepare/run 结果 | 来自同一次一致库调用；保留先准备失败、绑定首错、实际后置参数计数检查以及 step/reset 错误，成功返回原完整 usize 行数 | A4 提供实际连接和事务历史；自有代码负责原 SQL、参数、调用位置和结果处理 |
+
+这里的数组规则按实际调用顺序处理：参数计数为 0 时拒绝 `(1,0)`；计数为 1 时先处理
+首项，成功后才拒绝 `(2,1)`；计数大于 2 时先处理两项及其首错，再拒绝 `(2,count)`。
+不能将现有五参数接口的提前计数规则套用到此处。寿命 UPDATE 对任意成功行数继续执行，
+包括 0；最后的收件 save 独立要求恰好 1 行。数值关系不证明物理行效果、同一事务、
+提交、未知提交或重启正确；这些条件继续由实际 A4/V5 提供方落实。
+
+### A6/V5 V3 完整 World 读取与连接重绑定
+
+[标准适配切片](../../verification/experiments/stage1-protocol/create-standard-adapter/README.md)
+检查当前 `StandardCreateAttachment` 的 world 和两个 begin 方法、实际
+`WorldTransaction::world` 及两层 Deref。World、事务载体和自有逐字段 clone 保持真实生成体。
+
+| 使用点 | 依赖提供的有限保证 | 自有责任与限制 |
+|---|---|---|
+| `RefCell<Option<完整 World>>::borrow` | 限 x86_64 的本次只读区间；实际 signed-isize64 借用计数非负且小于 MAX 时正常发出同一对象的 guard，冲突或溢出走原 panic 分支 | V5 提供本次真实 candidate 对象、活事务、writer lease 和连贯 API 历史 |
+| 已发出 `Ref<Option<完整 World>>::deref` 及临时 guard 正常释放 | 有效 guard 读取同一完整值；本次普通 World 克隆不回写单元，正常结束时释放这份借用 | 单次观察不是跨调用不变的共享堆快照；自定义 Drop、重入、unwind、OOM/abort、崩溃不在本条内 |
+| String/Option/Vec 的正常值克隆与原字面量 | 复用原逐符号合同；完整 World/记录/计划和 CaptureHandoff 的 clone 仍由实际自有函数连接 | 普通值克隆条件不保证物理分配或任意资源析构 |
+| 原 WorldTransaction/Transaction Deref 和两处 Connection 赋值 | 槽、字段和完整连接值的转交由实际生成体对应，缺 candidate/transaction 的原 panic 分支保留 | 连接字段值相等不推出物理对象或 SQL 事务相同；V5 的活对象/lease 历史和 A4 的物理连接/事务条件保留 |
+
+两份固定 Std 正文的 borrow/try_borrow/BorrowRef::new/drop/Ref::deref 核对只支持上述
+A6 使用条件，不表示整个 RefCell 内部实现已机器证明。begin/recovery 建立与保持不变量、
+实际 JSON/SHA/SQL 来源、持久收件、producer/driver、Resume 和真实资源仍由各自提供方
+闭合；不能由这几份值定理推出完整标准实例或整个 V3 系统正确。
+
 ## Redis 与 SQLite 的落地合同
 
 | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |

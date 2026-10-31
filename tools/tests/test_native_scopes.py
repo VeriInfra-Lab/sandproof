@@ -17,6 +17,28 @@ from tools.tests import test_acceptance_receipts as fixtures
 class NativeScopeTests(unittest.TestCase):
     def setUp(self):
         fixtures.ReceiptTests.setUp(self)
+        source_admission = mock.patch.object(suite, 'stage1_source_admission')
+        source_admission.start(); self.addCleanup(source_admission.stop)
+        # A synthetic packet needs a synthetic fixed source identity too. The
+        # actual six-member archive/physical-source gate is tested separately.
+        source_only = self.base/'synthetic-create-source.tar'
+        source_only.write_bytes(b'synthetic source identity; not a real source capsule\n')
+        expected_source = receipts.sha(source_only)
+        source_environment = mock.patch.dict(os.environ,
+            SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=str(source_only))
+        source_environment.start(); self.addCleanup(source_environment.stop)
+        original_registration = receipts.stage1_registration
+        def registration():
+            registered = original_registration()
+            original_profile = registered.create_profile
+            def profile(root=receipts.ROOT):
+                result = original_profile(root)
+                result['source_only']['archive_sha256'] = expected_source
+                return result
+            registered.create_profile = profile
+            return registered
+        registration_patch = mock.patch.object(receipts, 'stage1_registration', side_effect=registration)
+        registration_patch.start(); self.addCleanup(registration_patch.stop)
         self.labels = receipts.stage1_native_labels()
         temporary = mock.patch.dict(os.environ, {'TMPDIR': str(self.base)})
         temporary.start(); self.addCleanup(temporary.stop)
@@ -67,13 +89,73 @@ class NativeScopeTests(unittest.TestCase):
             contracts=receipts.contract_inputs(receipts.ROOT),
             runtime=json.loads((self.cache/'runtime.json').read_text()),
             source_archives=receipts.source_archive_inputs(), commands=commands)
+        if scope == 'stage1-create-delivery':
+            seal.update(profile='create-delivery',
+                create_definition=receipts.stage1_registration().create_profile())
         receipts.write_json(self.cache/'complete.json', seal)
         return seal
 
+    def test_create_and_full_packets_cannot_substitute_for_each_other(self):
+        self.labels = receipts.stage1_native_labels('create-delivery')
+        self.assertEqual(len(self.labels), 13)
+        self.assertNotIn('stage1-protocol', self.labels)
+        seal = self.packet(scope='stage1-create-delivery')
+        receipts.validate_native(self.cache, scope='stage1-create-delivery')
+        for scope in ('all', 'stage1-protocol', 'capture-caller', 'pause-stop', 'pause-publication'):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                receipts.validate_native(self.cache, scope=scope)
+        for defect in ('missing-command', 'missing-package', 'wrong-profile', 'changed-inventory', 'missing-source'):
+            bad = copy.deepcopy(seal)
+            if defect == 'missing-command':
+                bad['commands'].pop(next(iter(bad['commands'])))
+            elif defect == 'missing-package':
+                bad['create_definition']['packages'].pop()
+            elif defect == 'wrong-profile':
+                bad['profile'] = 'full'
+            elif defect == 'missing-source':
+                del bad['source_archives']['SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE']
+            else:
+                bad['create_definition']['packages'][0]['inventory_sha256'] = '0'*64
+            receipts.write_json(self.cache/'complete.json', bad)
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                receipts.validate_native(self.cache, scope='stage1-create-delivery')
+        self.labels = receipts.stage1_native_labels()
+        self.packet(scope='all')
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache, scope='stage1-create-delivery')
+
+    def test_public_native_entry_sets_role_before_source_preparation(self):
+        private = self.base/'controlled-native-temporary'
+        private.mkdir()
+        def admit(scope, *, prepare=False):
+            self.assertTrue(prepare)
+            self.assertEqual(os.environ.get('SANDPROOF_ACCEPTANCE_ROLE'),'native')
+            raise RuntimeError('controlled stop after source admission')
+        for scope in ('all','stage1-protocol','stage1-create-delivery'):
+            os.environ.pop('SANDPROOF_ACCEPTANCE_ROLE',None)
+            with self.subTest(scope=scope), \
+                    mock.patch.object(suite,'trusted_checkout'), \
+                    mock.patch.object(suite,'private_temporary_root',return_value=private), \
+                    mock.patch.object(suite,'stage1_source_admission',side_effect=admit), \
+                    self.assertRaisesRegex(RuntimeError,'controlled stop after source admission'):
+                suite.run_locked_suite(self.base/('entry-'+scope),scope=scope)
+
+    def test_create_delegates_all_twelve_without_running_retained_or_old_drivers(self):
+        registered = mock.Mock()
+        work = self.base/'create-work'
+        with mock.patch.object(suite, 'native_case') as retained, \
+                mock.patch.object(suite, 'load', return_value=registered), \
+                mock.patch.object(suite.subprocess, 'run') as run:
+            suite.run_stage1_native(work, scope='stage1-create-delivery')
+        retained.assert_not_called()
+        run.assert_not_called()
+        registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3',
+            profile='create-delivery', scope='stage1-create-delivery')
+
     def test_limited_packet_admits_only_explicit_scope_and_never_executes_in_formal_role(self):
         seal = self.packet()
-        self.assertEqual(len(seal['commands']), 43)
-        self.assertEqual(len(set(self.labels)), 43)
+        self.assertEqual(len(seal['commands']), 55)
+        self.assertEqual(len(set(self.labels)), 55)
         self.assertLessEqual({'stage1-'+name for name in (
             'inbox-entry-validation', 'inbox-retired-identities', 'inbox-origin-selection',
             'inbox-config', 'inbox-config-validation', 'terminal-binding', 'retention-lane',
@@ -112,12 +194,12 @@ class NativeScopeTests(unittest.TestCase):
         missing['case_names'] = list(self.labels)
         missing['commands'].pop(next(iter(missing['commands'])))
         receipts.write_json(self.cache/'complete.json', missing)
-        with self.assertRaisesRegex(ValueError, '43 complete components'):
+        with self.assertRaisesRegex(ValueError, '55 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_additional_component_in_limited_packet_is_rejected(self):
         self.packet(extra=True)
-        with self.assertRaisesRegex(ValueError, '43 complete components'):
+        with self.assertRaisesRegex(ValueError, '55 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_two_different_receipts_for_one_component_are_not_two_required_components(self):
@@ -129,7 +211,7 @@ class NativeScopeTests(unittest.TestCase):
         entry = self.cache/'commands'/receipts.digest(receipt['key'])
         seal['commands'][entry.name] = receipts.sha(entry/'receipt.json')
         receipts.write_json(self.cache/'complete.json', seal)
-        with self.assertRaisesRegex(ValueError, '43 complete components'):
+        with self.assertRaisesRegex(ValueError, '55 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_corrupt_or_missing_raw_evidence_prevents_any_scoped_admission(self):
@@ -232,8 +314,8 @@ class NativeScopeTests(unittest.TestCase):
                 mock.patch.object(suite, 'command', side_effect=AssertionError('global command in limited run')):
             suite.run_suite(self.cache, scope='stage1-protocol')
         seal = receipts.validate_native(self.cache, scope='stage1-protocol')
-        self.assertEqual(len(seal['commands']), 43)
-        self.assertEqual(len(seal['uses']), 44)
+        self.assertEqual(len(seal['commands']), 55)
+        self.assertEqual(len(seal['uses']), 56)
         self.assertEqual(sum(row['reused'] for row in seal['uses']), 1)
         self.assertTrue(seal['scope_complete'])
         self.assertFalse(seal['full_native_suite_complete'])
@@ -272,7 +354,7 @@ class NativeScopeTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][1:], [
             'verification/experiments/stage1-protocol/component.py',
             '--native-only', '--output', str(work/'stage1-protocol')])
-        registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3')
+        registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3', profile='full', scope='stage1-protocol')
 
     def test_cli_default_stays_all_and_limited_require_is_explicit(self):
         with mock.patch.object(suite, 'run_suite') as run:

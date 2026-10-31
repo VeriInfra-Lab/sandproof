@@ -84,7 +84,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 41 个已登记 V3 case。
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 53 个已登记 V3 case。
 任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
 原两包全部测试、显式 integration 发现、Clippy、格式、
 文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
@@ -126,3 +126,56 @@ envelope 模式从当前 Rust 重新抽取正确版和原 session-only-envelope 
 三个模式均复用原完整导入闭包、逐文件内核/同服务诊断和显式审计清单，各有独立构建目录。
 它们不伪造完整 native seal，结果属于局部形式检查，不能代替上述完整入口。
 精确候选、未完成和环境阻断由 PR/原始记录报告。
+
+### 固定 Create 交付
+
+同一公共入口增加显式 `create-delivery`，固定包含 selection、owner-successor、
+adopted-create、install、owner-check、load-capacity、high-water、deadline、
+attachment-flow、fixed-identity、lifetime-sql、standard-adapter 十二包。
+这是固定发布范围，不能传任意子集或只保留正确版。普通侧共 66 个实际/错误/恢复视图，
+其中 42 个错误版须触发同一原断言；证明侧检查全部 42 个独立物理视图、导入闭包和审计。
+两个 adopted 视图是正例，其 13 个实际 Rust 变异仍在普通侧逐项检查。
+已观察到的错误版 Clippy 诊断逐变体单独登记，核对代码、消息、源文件、行号和
+完整重复次数；编译库与测试目标各报告一次时，两条都必须保留。诊断到达顺序不影响
+比对，缺失或额外诊断仍拒绝。adopted 的 successor 溢出错误版从相同派生 Rust 文件
+的 owner-successor 提供方继承同一规则，仍须独立触发自己的原业务断言。
+正确版、恢复版和未登记诊断的错误版仍须严格 Clippy 通过；静态诊断不能代替业务断言失败。
+Flow 的原生步骤还须包含原有的夹具格式化准备，记录并核对其日志和成功退出，随后才检查
+格式、原断言和 Clippy；其余包仍保留原三步。
+
+```sh
+# 普通机，同一干净候选；完整 functional 依原键只执行一次。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-create-delivery --output /private/create-native-evidence
+# 证明机，复制原 commands/runtime/complete 全部证据；不传 Cargo target。
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/create-native-evidence
+# 同一原归档的本机路径；六份实际工具源文件仍须匹配。
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/aeneas-native-readonly-sources.tar
+# 操作者已持原协调锁；本进程继承仍打开的同一 FD，不能只传数字而关闭 FD。
+export SANDPROOF_LOCK_FILE=/private/held-component.lock
+export SANDPROOF_LOCK_FD=9
+bash scripts/verify-stage1-protocol.sh --profile create-delivery
+```
+
+Create 和 full/all 的整份封口相互拒绝。此 profile 不运行历史 retained 或其它旧包，
+默认无参数的 full 则保留原 126 项及新 12 项、旧 retained 与全部原生义务。
+全局旧冻结和旧包源失配另记为阻断，不改摘要冒称已完成迁移。
+`verification/create-delivery-inputs.sha256` 是候选准入；实际通过须有同源完整原生记录、
+每份实际 Lean 文件的内核和服务检查，以及全部视图完成记录，不能只看索引或旧开发结果。
+这批覆盖同步 Create 的真实函数和有限接口条件，不包括认证来源、JSON/TLS、物理事务
+同一性、持久提交、崩溃恢复或整个标准库；详见[依赖合同](../../../docs/formal/dependencies.md#v3-create-同步流程的接口条件)。
+准确适用提交和完成情况以[覆盖记录](../../../docs/proof-coverage.md)及 #635 为准。
+
+上述第五档只含 `native-source-inputs.json` 固定的六份 Lean 文本，用于原检查器核对
+来源哈希。普通入口先验证整个原 tar 及完整成员，再把缺失源文件只读放到本次
+`.tools` 相应目录，拒绝覆盖不同内容；不安装或运行任何证明工具。
+证明入口使用原真实工具目录核对同样六文件，不以这份源档代替工具运行检查。
+原四档不变；本批三个旧有限范围也保守携带同一第五档的来源键，以复用同一完整
+`functional`，不能省略、替换或改写旧回执。
+
+Create 可显式设 `SANDPROOF_STAGE1_JOBS=12`，前提是外层已获准 48 CPU；8 路需
+32 CPU，4 路需 16 CPU。原调度器给每个新任务一个不重叠四核组，子进程设置并
+实际读回后才执行原驱动，原锁 FD 保留。每任务原独立目录、缓存、完整文件与审计、
+首失败停止新派发均不变。默认一路，`full` 原 1/2/4 路不受此选项扩展。

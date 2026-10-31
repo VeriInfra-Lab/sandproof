@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCore
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorValues
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples
+open OwnerMapping OwnerMapping.Values
+
+theorem empty_actual : run (noOwners 0#u64) emptyWorld 1#u64 = .ok (.Ok 1#u64) := by
+  exact (successor_complete (noOwners 0#u64) emptyWorld 1#u64).trans (congrArg Result.ok Values.empty_expected)
+
+theorem excluded_largest_actual : run (noOwners 5#u64) worldTriple 2#u64 = .ok (.Ok 18#u64) := by
+  exact (successor_complete (noOwners 5#u64) worldTriple 2#u64).trans (congrArg Result.ok Values.excluded_largest_expected)
+
+theorem absent_exclusion_actual : run (noOwners 5#u64) worldTriple 9#u64 = .ok (.Ok 41#u64) := by
+  exact (successor_complete (noOwners 5#u64) worldTriple 9#u64).trans (congrArg Result.ok Values.absent_exclusion_expected)
+
+theorem high_water_actual : run (noOwners 64#u64) worldTriple 2#u64 = .ok (.Ok 65#u64) := by
+  exact (successor_complete (noOwners 64#u64) worldTriple 2#u64).trans (congrArg Result.ok Values.high_water_expected)
+
+theorem excluded_maximum_actual : run (noOwners 5#u64) worldMaximum 1#u64 = .ok (.Ok 6#u64) := by
+  exact (successor_complete (noOwners 5#u64) worldMaximum 1#u64).trans (congrArg Result.ok Values.excluded_maximum_expected)
+
+theorem other_maximum_actual : run (noOwners 5#u64) worldMaximum 2#u64 = .ok (.Err .IdentifierExhausted) := by
+  exact (successor_complete (noOwners 5#u64) worldMaximum 2#u64).trans (congrArg Result.ok Values.other_maximum_expected)
+
+theorem high_water_exhausted_actual : run (noOwners Values.limit) emptyWorld 1#u64 = .ok (.Err .IdentifierExhausted) := by
+  exact (successor_complete (noOwners Values.limit) emptyWorld 1#u64).trans (congrArg Result.ok Values.high_water_exhausted_expected)
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.empty_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_largest_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.absent_exclusion_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.excluded_maximum_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.other_maximum_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Examples.high_water_exhausted_actual

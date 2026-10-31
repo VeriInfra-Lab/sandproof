@@ -1,0 +1,150 @@
+use super::execute;
+use crate::JournalError;
+use rusqlite::{
+    Connection, ToSql, params,
+    types::{ToSqlOutput, ValueRef},
+};
+
+const UPDATE: &str = "UPDATE sandbox_lifetimes SET startup_deadline_ms=?1 WHERE sandbox_id=?2";
+
+fn database() -> Connection {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE sandbox_lifetimes (
+                sandbox_id TEXT PRIMARY KEY,
+                startup_deadline_ms INTEGER NOT NULL
+            )",
+        )
+        .unwrap();
+    connection
+}
+
+fn insert(connection: &Connection, sandbox: &str, deadline: i64) {
+    connection
+        .execute(
+            "INSERT INTO sandbox_lifetimes VALUES (?1, ?2)",
+            params![sandbox, deadline],
+        )
+        .unwrap();
+}
+
+fn read(connection: &Connection, sandbox: &str) -> i64 {
+    connection
+        .query_row(
+            "SELECT startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?1",
+            [sandbox],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn normal_values_reach_the_selected_row() {
+    let connection = database();
+    insert(&connection, "sb-normal-2", 1);
+    insert(&connection, "sb-other-2", 31);
+    assert_eq!(execute(&connection, UPDATE, 2, "sb-normal-2").unwrap(), 1);
+    assert_eq!(read(&connection, "sb-normal-2"), 2);
+    assert_eq!(read(&connection, "sb-other-2"), 31);
+}
+
+#[test]
+fn text_keeps_all_bytes() {
+    let connection = database();
+    let sandbox = "前\0后";
+    insert(&connection, sandbox, 9);
+    insert(&connection, "", 7);
+    assert_eq!(execute(&connection, UPDATE, 0, sandbox).unwrap(), 1);
+    assert_eq!(read(&connection, sandbox), 0);
+    assert_eq!(read(&connection, ""), 7);
+}
+
+#[test]
+fn zero_changed_rows_is_success() {
+    let connection = database();
+    assert_eq!(execute(&connection, UPDATE, 2, "sb-missing-2").unwrap(), 0);
+}
+
+#[test]
+fn sqlite_errors_keep_the_original_kind() {
+    let connection = database();
+    let original = connection
+        .execute("!", params![2, "sb-normal-2"])
+        .unwrap_err();
+    assert!(matches!(
+        execute(&connection, "!", 2, "sb-normal-2"),
+        Err(JournalError::Sqlite(error)) if error == original
+    ));
+}
+
+#[test]
+fn array_count_errors_keep_order() {
+    let connection = database();
+    for (statement, observed, expected) in [
+        ("SELECT 1", 1, 0),
+        ("SELECT ?1", 2, 1),
+        ("SELECT ?1,?2,?3", 2, 3),
+    ] {
+        let original = connection
+            .execute(statement, params![2, "sb-normal-2"])
+            .unwrap_err();
+        assert_eq!(
+            original,
+            rusqlite::Error::InvalidParameterCount(observed, expected)
+        );
+        assert!(matches!(
+            execute(&connection, statement, 2, "sb-normal-2"),
+            Err(JournalError::Sqlite(error)) if error == original
+        ));
+    }
+}
+
+#[test]
+fn effective_values_match_original_profile() {
+    for deadline in [i64::MIN, -1, 0, 2, i64::MAX] {
+        let original = deadline.to_sql().unwrap();
+        let value = match &original {
+            ToSqlOutput::Borrowed(value) => *value,
+            ToSqlOutput::Owned(value) => ValueRef::from(value),
+            _ => panic!("unexpected fixed i64 conversion"),
+        };
+        assert_eq!(value, ValueRef::Integer(deadline));
+    }
+    for sandbox in ["", "sb-normal-2", "前\0后"] {
+        assert_eq!(
+            sandbox.to_sql().unwrap(),
+            ToSqlOutput::Borrowed(ValueRef::Text(sandbox.as_bytes()))
+        );
+    }
+    let connection = database();
+    insert(&connection, "", 5);
+    assert_eq!(execute(&connection, UPDATE, 0, "").unwrap(), 1);
+    assert_eq!(read(&connection, ""), 0);
+
+    // Realize the same single-call observation used by both formal counters.
+    // This API-domain fixture has its own schema; it is not the deployed store.
+    let observation = Connection::open_in_memory().unwrap();
+    observation
+        .execute_batch(
+            "CREATE TABLE sandbox_lifetimes (
+                sandbox_id TEXT,
+                startup_deadline_ms INTEGER NOT NULL
+            );
+            CREATE TRIGGER keep_complete_deadline
+            BEFORE UPDATE ON sandbox_lifetimes
+            WHEN NEW.startup_deadline_ms <> 2
+            BEGIN SELECT RAISE(IGNORE); END;",
+        )
+        .unwrap();
+    for _ in 0..17 {
+        insert(&observation, "sb-normal-2", 1);
+    }
+    assert_eq!(
+        observation
+            .execute(UPDATE, params![2, "sb-normal-2"])
+            .unwrap(),
+        17
+    );
+    assert_eq!(execute(&observation, UPDATE, 2, "sb-normal-2").unwrap(), 17);
+}

@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.CreateSelectionValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateSelection.WrongDeadline
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection
+
+theorem observed : run normal intent = .ok (.Ok (0#usize, 0#usize, 1#u64)) := by
+  have got : normal.find intent = .ok (.Ok (some (0#usize, 0#usize))) :=
+    lookup_returns selected rfl
+  have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      normal.sessions 0#usize = .ok selected := by
+    simpa only [normal, withSession] using singleton_index selected
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection
+  rw [got]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+    bind_tc_ok, uncurry_apply_pair]
+  rw [item]
+  simp [core.option.Option.is_some, selected, InboxLookup.Witness.session,
+    intent, EnvelopeValues.intent, Validation.Examples.createPayload]
+
+theorem violates_full_contract : ¬ FullSelectionContract run := by
+  intro contract
+  have post := contract normal intent
+  rw [observed] at post
+  simp [WP.spec_ok, observe, normal_expected] at post
+
+end SandboxModel.Stage1Protocol.CreateSelection.WrongDeadline
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.WrongDeadline.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.WrongDeadline.violates_full_contract

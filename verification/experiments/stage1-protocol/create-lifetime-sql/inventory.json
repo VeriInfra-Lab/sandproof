@@ -1,0 +1,618 @@
+{
+  "kind": "actual-lifetime-two-values-review",
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+    "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
+  },
+  "providers": {
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/FunsExternal.lean": "91fef823537829d344dfbaeb9eea916cfd4dd681cf8d93fd2b06b7ae2f30d7ac",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "SandboxModel/Foundations/ErrorMessages.lean": "94543f82835b52cc5bf89cf54e7cea38638268363590704f6c18a1ab4a0c7023",
+    "SandboxModel/Foundations/ByteArray.lean": "32c29657733cb72eb74e1657e816b00dc1e74f27f2926b94a1b1a788cda78bc9",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+  },
+  "templates": {
+    "TypesExternal.lean.in": "f5a3833e38da6e1143a20bc21ffa454a407344973637cac2df8abb8373df40ab",
+    "native-cases.rs.in": "6ca8e2dac2d81a4d8da756594cd470ed094793f78c4da4efc4df53e03da282cb",
+    "root.rs.in": "8441206b14cec49fa52c2b4c0229c4ad5ab6a4265263222e5eb1255449a0de0e",
+    "LifetimeSqlWitnesses.lean.in": "89ca847c0cc6dfdd9cd4dc5240fd202f330f6068adfe7c2fd00624c02a96b64a",
+    "LifetimeSqlComplete.lean.in": "0ef60749886ec2b9dd51ad0fe8baa375f4a668c9bf11ca9dc2bacf29e1724f58",
+    "LifetimeSqlFixture.lean.in": "d0b6b3a7a5690cba9afc30af843c7e3e9a61f04be20cb1befdb3bcdfaa7a2c94",
+    "LifetimeSqlLibrary.lean.in": "856694517ab01644f10ac738251bfa13fc562f7c1332b07bb3fa84e281ab1990",
+    "LifetimeSqlSandboxCounter.lean.in": "4ea08eb14e38cec17a62c5d49cc0cbff04916d8022b6d3e3ccec148a7df00aa8",
+    "FunsExternal.lean.in": "47ddecaa42036b4ce7f923eaad1afe257878f8728275f1be66adb2621543159f",
+    "LifetimeSqlDeadlineCounter.lean.in": "d5cb2c53aa4e366cfe8895be76409cf88f0dd7325200456d1c260b280c4306aa",
+    "LifetimeSqlCallValues.lean.in": "d2cd195746d38a6207df25077f6ef1628529aba037daa0c6ce752cd2538d34e0",
+    "LifetimeSqlModel.lean.in": "ffdd284155cf5c501ebdffaca09dd35ad1c69519929868f2fc0c8e7c625ab0b8"
+  },
+  "drivers": {
+    "native.py": "57ff7ee4e1f76ef22e7cde9e1d9558c5f278cce3ddff09c193bfcd4242d2c47e",
+    "formal.py": "87e3b16251d5f4f62cf78d138768272194dbbb5b7330bad6dddcb2a3bb4580fa",
+    "support.py": "e50ad4afbd11bcf892d9150245b4f540f346f99353a9a1173bf0f1653aa5d1db",
+    "materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04",
+    "binding.py": "d4705b8d37c64a71eed8548457f73f5cc046256859c81eec3e65a1ca2c44ef24"
+  },
+  "exact_common_fragments": {
+    "sql_to_str": "7db3dc9879b62113d2450e3b2fd40ffd738e3458b237b6ce876272e5617dccf0",
+    "sql_string_deref": "9965e70eea4d4170cca8df5d5c734230c108d019ee008da5191ff4cba54843d6",
+    "sql_bind_values": "645d7adc027c741c7d7e1a0affa33c4d55275796072ba4ae5a18cc67ee31e7bf",
+    "sql_execute": "f5ad04423e778cd770b85d1464f9e34bd348428492ac6df084a3b33a4b9adaaf",
+    "string_empty": "419f83116d2fa205470327c9777584b5b08ceb7733d77be4d06f5df8927864a2",
+    "standard_to_str": "7db3dc9879b62113d2450e3b2fd40ffd738e3458b237b6ce876272e5617dccf0",
+    "literal_bytes_math": "f5d10e57842fe1f1059bd6ea5dcd00439e58da117ed1a66bc76bb154f7072c54"
+  },
+  "rusqlite_sources": {
+    "src/lib.rs": "434fea1c571148b29288a50f8064e125a023ed30fdb7ae9e997b033e3ee73119",
+    "src/params.rs": "5cac2041f4fa8cb479997cbe9d0f716b577dde145e346ec3597d97de0cee6629",
+    "src/statement.rs": "cc53dcc82755d97a48f2fa3b33d4d65c0f06fa45af0896441100e2467bfcc478",
+    "src/types/to_sql.rs": "0cc8452d1ae0f531918b672bc20384beeba4941c66b6a0619466b78be0b7cddd",
+    "src/types/value_ref.rs": "7ccb0e379a067ded70ae6754209e3e824bc465cc260bca2f3e57245a65082562",
+    "src/types/value.rs": "a567e66156a4895332ed481ad362128ea770219b1886c7cccb520993fd0cf92d"
+  },
+  "common_templates": [
+    "LifetimeSqlModel",
+    "LifetimeSqlLibrary",
+    "LifetimeSqlFixture"
+  ],
+  "variants": {
+    "actual": {
+      "mutation": null,
+      "templates": [
+        "LifetimeSqlComplete",
+        "LifetimeSqlWitnesses"
+      ],
+      "seeds": [
+        "LifetimeSqlWitnesses"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "core.str.Str.as_bytes",
+          "rust_name": "core::str::{str}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.as_bytes",
+          "rust_name": "alloc::string::{alloc::string::String}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.Connection.execute",
+          "rust_name": "rusqlite::{rusqlite::Connection}::execute",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.statement.Statement.bind_parameters",
+          "rust_name": "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::bind_parameters",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for &'_0 T}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.ArrayT2.Insts.RusqliteParamsParams.__bind_in",
+          "rust_name": "rusqlite::params::{impl rusqlite::params::Params for [T; 2usize]}::__bind_in",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<&'a T> for rusqlite::types::to_sql::ToSqlOutput<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value.Value.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::value::{impl core::convert::From<i64> for rusqlite::types::value::Value}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<i64> for rusqlite::types::to_sql::ToSqlOutput<'_0>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAValue.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a rusqlite::types::value::Value> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for rusqlite::types::to_sql::ToSqlOutput<'_0>}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.I64.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for i64}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAStr.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a str> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Str.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for str}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::lifetime_sql::execute",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        }
+      ],
+      "external_functions": [
+        "alloc.string.String.as_bytes",
+        "core.str.Str.as_bytes",
+        "rusqlite.Connection.execute",
+        "rusqlite.statement.Statement.bind_parameters"
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlComplete.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlFixture.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlModel.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlWitnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FiniteStringBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/LiteralBytesBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/SqliteCommonBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Types.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.LifetimeSql.complete_inputs_equal_iff",
+        "SandboxModel.Stage1Protocol.LifetimeSql.execute_complete",
+        "SandboxModel.Stage1Protocol.LifetimeSql.full_sql_values_contract",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs",
+        "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.normal_full_values",
+        "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.zero_success_is_preserved",
+        "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.negative_integer_and_full_text",
+        "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.prepare_error_short_circuits",
+        "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.run_error_is_preserved"
+      ]
+    },
+    "zero-deadline": {
+      "mutation": {
+        "before": "ValueRef::Integer(deadline)",
+        "after": "ValueRef::Integer(deadline & 0)"
+      },
+      "templates": [
+        "LifetimeSqlCallValues",
+        "LifetimeSqlDeadlineCounter"
+      ],
+      "seeds": [
+        "LifetimeSqlDeadlineCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "core.str.Str.as_bytes",
+          "rust_name": "core::str::{str}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.as_bytes",
+          "rust_name": "alloc::string::{alloc::string::String}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.Connection.execute",
+          "rust_name": "rusqlite::{rusqlite::Connection}::execute",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.statement.Statement.bind_parameters",
+          "rust_name": "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::bind_parameters",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for &'_0 T}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.ArrayT2.Insts.RusqliteParamsParams.__bind_in",
+          "rust_name": "rusqlite::params::{impl rusqlite::params::Params for [T; 2usize]}::__bind_in",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<&'a T> for rusqlite::types::to_sql::ToSqlOutput<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value.Value.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::value::{impl core::convert::From<i64> for rusqlite::types::value::Value}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<i64> for rusqlite::types::to_sql::ToSqlOutput<'_0>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAValue.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a rusqlite::types::value::Value> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for rusqlite::types::to_sql::ToSqlOutput<'_0>}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.I64.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for i64}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAStr.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a str> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Str.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for str}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::lifetime_sql::execute",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        }
+      ],
+      "external_functions": [
+        "alloc.string.String.as_bytes",
+        "core.str.Str.as_bytes",
+        "rusqlite.Connection.execute",
+        "rusqlite.statement.Statement.bind_parameters"
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlCallValues.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlDeadlineCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlFixture.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlModel.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FiniteStringBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/LiteralBytesBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/SqliteCommonBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Types.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.connection_complete_inputs",
+        "SandboxModel.Stage1Protocol.LifetimeSqlDeadlineCounter.original_normal_specification",
+        "SandboxModel.Stage1Protocol.LifetimeSqlDeadlineCounter.actual_deadline_is_lost",
+        "SandboxModel.Stage1Protocol.LifetimeSqlDeadlineCounter.still_preserves_zero_deadline",
+        "SandboxModel.Stage1Protocol.LifetimeSqlDeadlineCounter.same_full_contract_rejected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs"
+      ]
+    },
+    "empty-sandbox": {
+      "mutation": {
+        "before": "            ToSqlOutput::Borrowed(ValueRef::Text(sandbox.as_bytes())),",
+        "after": "            ToSqlOutput::Borrowed(ValueRef::Text(\n                (if sandbox.is_empty() { sandbox } else { \"\" }).as_bytes(),\n            )),"
+      },
+      "templates": [
+        "LifetimeSqlCallValues",
+        "LifetimeSqlSandboxCounter"
+      ],
+      "seeds": [
+        "LifetimeSqlSandboxCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "core.str.Str.is_empty",
+          "rust_name": "core::str::{str}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.as_bytes",
+          "rust_name": "core::str::{str}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.as_bytes",
+          "rust_name": "alloc::string::{alloc::string::String}::as_bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.Connection.execute",
+          "rust_name": "rusqlite::{rusqlite::Connection}::execute",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "rusqlite.statement.Statement.bind_parameters",
+          "rust_name": "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::bind_parameters",
+          "is_opaque": true,
+          "lean_file": "SandproofLifecycleSql/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for &'_0 T}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.ArrayT2.Insts.RusqliteParamsParams.__bind_in",
+          "rust_name": "rusqlite::params::{impl rusqlite::params::Params for [T; 2usize]}::__bind_in",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<&'a T> for rusqlite::types::to_sql::ToSqlOutput<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value.Value.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::value::{impl core::convert::From<i64> for rusqlite::types::value::Value}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromI64.from",
+          "rust_name": "rusqlite::types::to_sql::{impl core::convert::From<i64> for rusqlite::types::to_sql::ToSqlOutput<'_0>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAValue.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a rusqlite::types::value::Value> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for rusqlite::types::to_sql::ToSqlOutput<'_0>}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.I64.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for i64}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAStr.from",
+          "rust_name": "rusqlite::types::value_ref::{impl core::convert::From<&'a str> for rusqlite::types::value_ref::ValueRef<'a>}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.Str.Insts.RusqliteTypesTo_sqlToSql.to_sql",
+          "rust_name": "rusqlite::types::to_sql::{impl rusqlite::types::to_sql::ToSql for str}::to_sql",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofLifecycleSqlRust.sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::lifetime_sql::execute",
+          "is_opaque": false,
+          "lean_file": "SandproofLifecycleSql/Funs.lean"
+        }
+      ],
+      "external_functions": [
+        "alloc.string.String.as_bytes",
+        "core.str.Str.as_bytes",
+        "core.str.Str.is_empty",
+        "rusqlite.Connection.execute",
+        "rusqlite.statement.Statement.bind_parameters"
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlCallValues.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlFixture.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlLibrary.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlModel.lean",
+        "SandboxModel/Lifecycle/Protocol/LifetimeSqlSandboxCounter.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+        "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FiniteStringBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/LiteralBytesBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/SqliteCommonBinding.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/Types.lean",
+        "verification/aeneas/stage1-protocol/create-lifetime-sql/SandproofLifecycleSql/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.connection_complete_inputs",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective",
+        "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs",
+        "SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.original_normal_specification",
+        "SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.actual_sandbox_is_lost",
+        "SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.still_preserves_empty_sandbox",
+        "SandboxModel.Stage1Protocol.LifetimeSqlSandboxCounter.same_full_contract_rejected"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "test_count": 6,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    },
+    "zero-deadline": {
+      "mutation": {
+        "before": "ValueRef::Integer(deadline)",
+        "after": "ValueRef::Integer(deadline & 0)"
+      },
+      "test_count": 6,
+      "expected_failures": [
+        "normal_values_reach_the_selected_row",
+        "effective_values_match_original_profile"
+      ],
+      "expected_clippy_codes": [
+        "clippy::erasing_op"
+      ],
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+          "line": 18
+        },
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+          "line": 18
+        }
+      ]
+    },
+    "empty-sandbox": {
+      "mutation": {
+        "before": "            ToSqlOutput::Borrowed(ValueRef::Text(sandbox.as_bytes())),",
+        "after": "            ToSqlOutput::Borrowed(ValueRef::Text(\n                (if sandbox.is_empty() { sandbox } else { \"\" }).as_bytes(),\n            )),"
+      },
+      "test_count": 6,
+      "expected_failures": [
+        "normal_values_reach_the_selected_row",
+        "text_keeps_all_bytes",
+        "effective_values_match_original_profile"
+      ],
+      "expected_clippy_codes": []
+    },
+    "restored-actual": {
+      "mutation": null,
+      "test_count": 6,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    }
+  },
+  "private_predecessor_readback_sha256": "fcc6519a252fd79de99f8a22e1eb9c6b4f68a7040a75adf4ee423868694cb759",
+  "expected_unique_new_audits": 29,
+  "ordinary_native_owner": "ning",
+  "shared_acceptance": false,
+  "full_v3": false,
+  "published_input_fingerprints": {
+    "drivers": {
+      "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a",
+      "native.py": "8c0e5444380e141238f3d84b81db12651ae6d604efd5a5f2cc320398a47004f0"
+    },
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+    },
+    "templates": {
+      "native-cases.rs.in": "ee36a71e82e9f99ca07d709da2ecb20dcebb4d7b5733187a97cf894c36926061"
+    }
+  }
+}

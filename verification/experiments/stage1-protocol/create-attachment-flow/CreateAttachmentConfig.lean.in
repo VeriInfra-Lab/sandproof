@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.CreateLoadedConfig
+import SandboxModel.Lifecycle.Protocol.CreateLoadOwnerBound
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow
+noncomputable section
+
+theorem installed_config (inbox post : Inbox) (s e : Usize) (session : Session)
+    (entry : Entry) (binding : InternalLocalBinding)
+    (installed : CreateInstall.Installed inbox s e session entry binding post) :
+    post.config = inbox.config := by
+  obtain ⟨owners, _, rfl⟩ := installed
+  rfl
+
+theorem loaded_selected_install_config {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : InboxLoad.DecodedStringsRepresentable io)
+    (state after : E) (inbox : Inbox)
+    (loaded : load_using saved terminal renewal unload graphic io state = .ok (.Ok (some inbox), after))
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (deadline : U64)
+    (binding : InternalLocalBinding)
+    (selected : CreateSelection.run inbox intent = .ok (.Ok (s,e,deadline))) :
+    ∃ post, CreateInstall.run inbox s e binding = .ok post ∧
+      post.config = inbox.config ∧ ConfigValidation.Representable post.config := by
+  obtain ⟨session,entry,_,_,_,checked⟩ := CreateLoadCapacity.actual_loaded_selected_install
+    saved terminal renewal unload graphic graphicLaw io represented state after inbox loaded
+    intent s e deadline binding selected
+  obtain ⟨post,returned,installed⟩ := WP.spec_imp_exists checked
+  have frame := installed_config inbox post s e session entry binding installed
+  refine ⟨post,returned,frame,?_⟩
+  rw [frame]
+  exact InboxSynchronous.loaded_representable saved terminal renewal unload graphic graphicLaw
+    io represented inbox state after loaded
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.installed_config
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.loaded_selected_install_config

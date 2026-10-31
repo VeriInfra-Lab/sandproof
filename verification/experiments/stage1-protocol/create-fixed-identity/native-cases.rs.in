@@ -1,0 +1,48 @@
+use super::sandbox_id;
+use crate::JournalError;
+use sandbox_controller_core::SandboxId;
+use sandproof_protocol::ContractError;
+
+#[test]
+fn identity_keeps_complete_namespace() {
+    for namespace in ["normal", "other"] {
+        let actual = sandbox_id(namespace, SandboxId(2)).unwrap();
+        assert_eq!(actual.as_str(), format!("sb-{namespace}-2"));
+    }
+}
+
+#[test]
+fn identity_keeps_complete_decimal_number() {
+    for number in [0, 1, 9, 10, 99, u64::MAX] {
+        let actual = sandbox_id("", SandboxId(number)).unwrap();
+        assert_eq!(actual.as_str(), format!("sb--{number}"));
+    }
+}
+
+#[test]
+fn identity_allows_empty_namespace() {
+    assert_eq!(sandbox_id("", SandboxId(2)).unwrap().as_str(), "sb--2");
+}
+
+#[test]
+fn identity_keeps_original_identifier_rejection() {
+    for namespace in ["has space", "中文", "/root"] {
+        assert!(matches!(
+            sandbox_id(namespace, SandboxId(2)),
+            Err(JournalError::Contract(ContractError::InvalidIdentifier))
+        ));
+    }
+}
+
+#[test]
+fn identity_checks_full_rendered_byte_length() {
+    let accepted = "a".repeat(123);
+    assert_eq!(
+        sandbox_id(&accepted, SandboxId(0)).unwrap().as_str(),
+        format!("sb-{accepted}-0")
+    );
+    assert!(matches!(
+        sandbox_id(&"a".repeat(124), SandboxId(0)),
+        Err(JournalError::Contract(ContractError::InvalidIdentifier))
+    ));
+}

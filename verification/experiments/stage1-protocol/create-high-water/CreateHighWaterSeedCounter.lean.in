@@ -1,0 +1,79 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterModel
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterValues
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterSeedObserved
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckExisting
+import SandboxModel.Lifecycle.Protocol.CreateInstallCore
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter
+noncomputable section
+open Values
+abbrev fresh := sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+
+theorem missing : CreateOwnerCheck.existingRun (inbox 64#u64) session.owner (binding 18#u64).owner =
+    .ok (.Ok false) := by
+  rw [CreateOwnerCheck.existing_complete]
+  rfl
+
+theorem allocated : CreateOwnerSuccessor.run (inbox 64#u64) world 2#u64 = .ok (.Ok 18#u64) := by
+  simpa only [CreateOwnerSuccessor.run,
+    sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor] using
+    CreateOwnerSuccessor.WrongHighWater.observed
+
+theorem actual_accepts : fresh (inbox 64#u64) world (binding 18#u64) = .ok (.Ok ()) := by
+  have returned : sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor
+      (inbox 64#u64) world (binding 18#u64).sandbox = .ok (.Ok 18#u64) := allocated
+  unfold fresh sandproof_controller_service.controller.lifecycle_inbox.check_new_create_owner
+  rw [returned]
+  simp [binding, CreateOwnerCheck.internal_ne, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem model_refuses : CreateOwnerCheck.newExpected (inbox 64#u64) world (binding 18#u64) = .Err .Conflict := by
+  have required := CreateOwnerSuccessor.Values.high_water_expected
+  change CreateOwnerSuccessor.expected (inbox 64#u64) world (binding 18#u64).sandbox = .Ok 65#u64 at required
+  unfold CreateOwnerCheck.newExpected
+  rw [required]
+  simp [CreateOwnerCheck.guardExpected, binding]
+
+theorem violates_full_new_contract : ¬ CreateOwnerCheck.FullNewContract fresh := by
+  intro contract
+  have required := contract (inbox 64#u64) world (binding 18#u64)
+  rw [actual_accepts, model_refuses] at required
+  cases Result.ok_injective required
+
+theorem installed_decreases : ∃ result,
+    CreateInstall.run (inbox 64#u64) 0#usize 0#usize (binding 18#u64) = .ok result ∧
+    result.owner_high_water.val < (inbox 64#u64).owner_high_water.val := by
+  have b := bounds 64#u64
+  obtain ⟨result, returned, owners, _, frame⟩ := CreateInstall.install_outcome
+    (inbox 64#u64) 0#usize 0#usize (binding 18#u64) b.1 b.2
+    (by intro _; simpa only [inbox] using CreateInstall.Values.base_room)
+  obtain ⟨readBound, readSame⟩ := List.getElem?_eq_some_iff.mp (session_read 64#u64)
+  have absent : ¬ CreateInstall.HasOwner (inbox 64#u64)
+      ((inbox 64#u64).sessions.val[(0#usize).val]'readBound).owner := by
+    rw [readSame]
+    exact missing_owner 64#u64
+  have high := congrArg (fun value : Inbox => value.owner_high_water) frame
+  simp only [if_neg absent] at high
+  refine ⟨result, returned, ?_⟩
+  rw [high]
+  decide
+
+theorem violates_checked_install_contract : ¬ FullCheckedInstallContract
+    CreateOwnerCheck.existingRun fresh CreateInstall.run := by
+  intro contract
+  obtain ⟨result, returned, lower⟩ := installed_decreases
+  have required := contract (inbox 64#u64) world (binding 18#u64) 0#usize 0#usize session entry
+    (session_read 64#u64) entry_read (owner_limit 64#u64) (Or.inr ⟨missing, actual_accepts⟩)
+  rw [returned] at required
+  simp only [WP.spec_ok] at required
+  exact Nat.not_lt_of_ge required.2 lower
+
+end
+end SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.missing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.allocated
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.actual_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.model_refuses
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.violates_full_new_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.installed_decreases
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.SeedCounter.violates_checked_install_contract

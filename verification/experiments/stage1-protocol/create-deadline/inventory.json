@@ -1,0 +1,1196 @@
+{
+  "schema": 1,
+  "scope": "Actual adopted pure Create deadline helper and original Std operation; no whole-parent/native/shared/V3 claim.",
+  "production_adopted": true,
+  "source_inputs": {
+    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa"
+  },
+  "providers": {
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
+    "verification/experiments/stage1-protocol/inbox-record/TypesExternal.lean.in": "0e745e75bc62eb4cd195f97ed6081768a74b38d90ad0b49822cc9cb0422119e1",
+    "verification/experiments/stage1-protocol/inbox-validation/SharedValueBindings.lean.in": "5d4a5fb3b7aedac5dacd24bbd2baa4a0c173c7fead72eafefd52e9ff154df65f",
+    "verification/experiments/stage1-protocol/inbox-validation/library_binding.py": "b0d074e4be4577a5a6f83beb11dbe297faa9831fffd66cbc6a615fef00f8622c",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+    "verification/aeneas/llbc/sandproof_foundations.llbc": "47c88a04b10e54870520620eb2b2f94ad1ef7b7b69f0df717ce3fb403cb0ea22"
+  },
+  "templates": {
+    "CreateDeadline.lean.in": "c665a574fc0b95f68490c49b98bca88d581f13c716abb90e3d7459c1d8821088",
+    "CreateDeadlineCast.lean.in": "d3e27bbbaa1a9f581899416889e0b979dcca4076a631523ad3f0789b1e0792aa",
+    "CreateDeadlineModel.lean.in": "7adcfa3bbba1ae972bb112ec75cf27c622d943ddb49612218f3991edac4e1418",
+    "CreateDeadlineUncheckedCounter.lean.in": "d887fa62abcc9010a22867b04694c214c5380e5c481523ca82bc2f7d25c2cb7e",
+    "CreateDeadlineWrongErrorCounter.lean.in": "280796f55c942dbd1df2b00a5247885bcae8c2e2152414b4858ea6f2734b00a5",
+    "ErrorCarrier.lean.in": "db3524243160f826bdb16d03a9e7bd6f6720783b395bd24b3aec4b7f2ecb85ab",
+    "native-cases.rs.in": "07f51a5a4ea35e3ca7b71733a7d2116327fbc0536488487b2a76b1e8c3183889",
+    "root.rs.in": "43bdbf666ceb33f79e98f3e27a21d02ab197bc390ad4900785b6d48a97be3221",
+    "stdlib-root.rs.in": "978a4fb4e8c1241d03aa26405c1ed00ce7e0de5e151a7cd392684c680efa0880"
+  },
+  "drivers": {
+    "binding.py": "c47a502df172eeb65fd3110402a9ba6fef9b41826864fc8c064fd224d0292023",
+    "formal.py": "3bd00a130a390f61cf207073f28be3e76e7d35224f304f1d3d1ba0a93c59bb13",
+    "native.py": "49403869bfcce06254cfd6ff4bf14037c72af3aa979e2bda9c3dd169255c87b3",
+    "support.py": "b868c3bae9cbdb76502fee2e1a92f55d383e330904d7e193116daabd48091c87"
+  },
+  "common_templates": [
+    "CreateDeadlineCast",
+    "CreateDeadlineModel"
+  ],
+  "variants": {
+    "actual": {
+      "mutation": null,
+      "templates": [
+        "CreateDeadline"
+      ],
+      "seeds": [
+        "CreateDeadline"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
+          "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+          "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.vec.Vec.is_empty",
+          "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from",
+          "rust_name": "core::convert::num::{impl core::convert::TryFrom<u64, core::num::error::TryFromIntError> for i64}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline::{impl core::ops::function::FnOnce<(core::num::error::TryFromIntError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline::{closure}}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::Resources> for sandproof_protocol::internal::lifecycle::Resources}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.positive",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCmpPartialEqCreateBinding.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::CreateBinding> for sandproof_protocol::internal::lifecycle::CreateBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.is_valid",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.get",
+          "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId> for sandproof_protocol::lifecycle::authority::CenterId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCmpPartialEqLifecycleOperation.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleOperation> for sandproof_protocol::lifecycle::request::LifecycleOperation}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId> for sandproof_protocol::lifecycle::identity::RetentionWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding> for sandproof_protocol::lifecycle::identity::RetentionBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent> for sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.get",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.validate",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.request_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::request_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.replay_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.accepted_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::accepted_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.recorded_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::recorded_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.proof_deadline_cast",
+          "rust_name": "sandproof_stage1_inbox_record_extract::proof_deadline_cast",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateDeadline.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineCast.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineModel.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateDeadline.full_contract",
+        "SandboxModel.Stage1Protocol.CreateDeadline.normal_result",
+        "SandboxModel.Stage1Protocol.CreateDeadline.returned_value",
+        "SandboxModel.Stage1Protocol.CreateDeadline.accepts_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadline.rejects_exactly",
+        "SandboxModel.Stage1Protocol.CreateDeadline.overflow_exact",
+        "SandboxModel.Stage1Protocol.CreateDeadline.rejects_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadline.zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadline.largest_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadline.first_overflow_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadline.unsigned_max_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.full_contract",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.normal_result",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.returned_value",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.accepts_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.overflow_exact",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.rejects_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.forwarding_root_complete",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.largest_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.first_overflow_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.unsigned_max_rejected"
+      ]
+    },
+    "unchecked-cast": {
+      "mutation": {
+        "before": "i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)",
+        "after": "Ok(value as i64)"
+      },
+      "templates": [
+        "CreateDeadlineUncheckedCounter"
+      ],
+      "seeds": [
+        "CreateDeadlineUncheckedCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
+          "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+          "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.vec.Vec.is_empty",
+          "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from",
+          "rust_name": "core::convert::num::{impl core::convert::TryFrom<u64, core::num::error::TryFromIntError> for i64}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::Resources> for sandproof_protocol::internal::lifecycle::Resources}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.positive",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCmpPartialEqCreateBinding.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::CreateBinding> for sandproof_protocol::internal::lifecycle::CreateBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.is_valid",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.get",
+          "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId> for sandproof_protocol::lifecycle::authority::CenterId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCmpPartialEqLifecycleOperation.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleOperation> for sandproof_protocol::lifecycle::request::LifecycleOperation}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId> for sandproof_protocol::lifecycle::identity::RetentionWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding> for sandproof_protocol::lifecycle::identity::RetentionBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent> for sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.get",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.validate",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.request_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::request_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.replay_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.accepted_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::accepted_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.recorded_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::recorded_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.proof_deadline_cast",
+          "rust_name": "sandproof_stage1_inbox_record_extract::proof_deadline_cast",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineCast.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineUncheckedCounter.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.full_contract",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.normal_result",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.returned_value",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.accepts_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.overflow_exact",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.rejects_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.forwarding_root_complete",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.largest_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.first_overflow_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.unsigned_max_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.actual_zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.actual_overflow_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.returned_value_violates_complete_relation",
+        "SandboxModel.Stage1Protocol.CreateDeadlineUncheckedCounter.same_full_contract_rejected"
+      ]
+    },
+    "wrong-error": {
+      "mutation": {
+        "before": "i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)",
+        "after": "i64::try_from(value).map_err(|_| JournalError::UnsupportedStore)"
+      },
+      "templates": [
+        "CreateDeadlineWrongErrorCounter"
+      ],
+      "seeds": [
+        "CreateDeadlineWrongErrorCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Bool.Insts.CoreCmpPartialEqBool.ne",
+          "rust_name": "core::cmp::impls::{impl core::cmp::PartialEq<bool> for bool}::ne",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.option.Option.Insts.CoreCmpPartialEqOption.eq",
+          "rust_name": "core::option::{impl core::cmp::PartialEq<core::option::Option<T>> for core::option::Option<T>}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+          "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.vec.Vec.is_empty",
+          "rust_name": "alloc::vec::{alloc::vec::Vec<T>}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1Request/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from",
+          "rust_name": "core::convert::num::{impl core::convert::TryFrom<u64, core::num::error::TryFromIntError> for i64}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline::{impl core::ops::function::FnOnce<(core::num::error::TryFromIntError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline::{closure}}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline",
+          "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::create_attachment_deadline",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::Resources> for sandproof_protocol::internal::lifecycle::Resources}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.Resources.positive",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::Resources}::positive",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::ResourceId> for sandproof_protocol::ResourceId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCmpPartialEqCreateBinding.eq",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{impl core::cmp::PartialEq<sandproof_protocol::internal::lifecycle::CreateBinding> for sandproof_protocol::internal::lifecycle::CreateBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding.is_valid",
+          "rust_name": "sandproof_protocol::internal::lifecycle::{sandproof_protocol::internal::lifecycle::CreateBinding}::is_valid",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::PositiveCounter> for sandproof_protocol::internal::PositiveCounter}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.PositiveCounter.get",
+          "rust_name": "sandproof_protocol::internal::{sandproof_protocol::internal::PositiveCounter}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::NodeId> for sandproof_protocol::NodeId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::DeploymentId> for sandproof_protocol::DeploymentId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq",
+          "rust_name": "sandproof_protocol::internal::{impl core::cmp::PartialEq<sandproof_protocol::internal::NodeIdentity> for sandproof_protocol::internal::NodeIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::SandboxId> for sandproof_protocol::SandboxId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq",
+          "rust_name": "sandproof_protocol::{impl core::cmp::PartialEq<sandproof_protocol::TenantId> for sandproof_protocol::TenantId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterId> for sandproof_protocol::lifecycle::authority::CenterId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::CenterIdentity> for sandproof_protocol::lifecycle::authority::CenterIdentity}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.center",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::center",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext.impl.expected_node",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AuthenticatedCenterContext}::expected_node",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::CaptureId> for sandproof_protocol::lifecycle::identity::CaptureId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::IncarnationId> for sandproof_protocol::lifecycle::identity::IncarnationId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::digest::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::digest::ContentDigest> for sandproof_protocol::lifecycle::digest::ContentDigest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCmpPartialEqLifecycleOperation.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleOperation> for sandproof_protocol::lifecycle::request::LifecycleOperation}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::ExpectedSession> for sandproof_protocol::lifecycle::identity::ExpectedSession}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestSequence> for sandproof_protocol::lifecycle::identity::RequestSequence}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RequestWindowId> for sandproof_protocol::lifecycle::identity::RequestWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationKey> for sandproof_protocol::lifecycle::identity::OperationKey}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::SessionId> for sandproof_protocol::lifecycle::identity::SessionId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::OperationBinding> for sandproof_protocol::lifecycle::identity::OperationBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq",
+          "rust_name": "sandproof_protocol::lifecycle::request::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::request::LifecycleRequest> for sandproof_protocol::lifecycle::request::LifecycleRequest}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionWindowId> for sandproof_protocol::lifecycle::identity::RetentionWindowId}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::identity::RetentionBinding> for sandproof_protocol::lifecycle::identity::RetentionBinding}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{impl core::cmp::PartialEq<sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent> for sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::eq",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent.matches",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::RecordedLifecycleIntent}::matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedIntentError.Request.constructor",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.P.Insts.CoreOpsFunctionFnOnceTupleValidationErrorAcceptedIntentError.call_once",
+          "rust_name": "sandproof_protocol::lifecycle::authority::AcceptedIntentError::{impl core::ops::function::FnOnce<(sandproof_protocol::lifecycle::request::ValidationError,), sandproof_protocol::lifecycle::authority::AcceptedIntentError> for sandproof_protocol::lifecycle::authority::AcceptedIntentError::Request}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId.get",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::IncarnationId}::get",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.validate",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding.valid_for",
+          "rust_name": "sandproof_protocol::lifecycle::identity::{sandproof_protocol::lifecycle::identity::RetentionBinding}::valid_for",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.accepted_version_for_request",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::accepted_version_for_request",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.validate",
+          "rust_name": "sandproof_protocol::lifecycle::authority::{sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent}::validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest.replay_matches",
+          "rust_name": "sandproof_protocol::lifecycle::request::{sandproof_protocol::lifecycle::request::LifecycleRequest}::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.request_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::request_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.replay_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::replay_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.accepted_validate",
+          "rust_name": "sandproof_stage1_inbox_record_extract::accepted_validate",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.recorded_matches",
+          "rust_name": "sandproof_stage1_inbox_record_extract::recorded_matches",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1RequestRust.proof_deadline_cast",
+          "rust_name": "sandproof_stage1_inbox_record_extract::proof_deadline_cast",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1Request/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineCast.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateDeadlineWrongErrorCounter.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/SharedValueBindings.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.full_contract",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.normal_result",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.returned_value",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.accepts_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.overflow_exact",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.rejects_iff",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.forwarding_root_complete",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.largest_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.first_overflow_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineCast.unsigned_max_rejected",
+        "SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.actual_zero_accepted",
+        "SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.actual_overflow_wrong_error",
+        "SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.wrong_error_violates_complete_relation",
+        "SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.same_full_contract_rejected"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "test_count": 3,
+      "expected_failures": [],
+      "expected_clippy_errors": []
+    },
+    "unchecked-cast": {
+      "mutation": {
+        "before": "i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)",
+        "after": "Ok(value as i64)"
+      },
+      "test_count": 3,
+      "expected_failures": [
+        "deadline_rejects_first_overflow_as_input_error",
+        "deadline_rejects_unsigned_max_as_input_error"
+      ],
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::cast_possible_wrap",
+          "message": "casting `u64` to `i64` may wrap around the value",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 532
+        },
+        {
+          "code": "clippy::cast_possible_wrap",
+          "message": "casting `u64` to `i64` may wrap around the value",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 532
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 531
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 531
+        }
+      ]
+    },
+    "wrong-error": {
+      "mutation": {
+        "before": "i64::try_from(value).map_err(|_| JournalError::UnsupportedInput)",
+        "after": "i64::try_from(value).map_err(|_| JournalError::UnsupportedStore)"
+      },
+      "test_count": 3,
+      "expected_failures": [
+        "deadline_rejects_first_overflow_as_input_error",
+        "deadline_rejects_unsigned_max_as_input_error"
+      ],
+      "expected_clippy_errors": []
+    },
+    "restored": {
+      "mutation": null,
+      "test_count": 3,
+      "expected_failures": [],
+      "expected_clippy_errors": []
+    }
+  },
+  "standard_library_sources": {
+    "production": {
+      "convert/num.rs": "dfb01dca46ba5fc8defaad61c26e3a03eb29e4ac090693f5c853020b5b3b6b13",
+      "num/error.rs": "90c897311885ce115e057eedd67876219f9c2d6da0476e340eeeb5d370ce9725",
+      "result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d"
+    },
+    "extraction": {
+      "convert/num.rs": "cef1248e8e76d58077b34f622c51d07f25d78a1293783a6bd7ae371f639b84db",
+      "num/error.rs": "f66e9b263eb9f9aab957801d08a4a8185d7d15e5945a9f491023986d19ca2636",
+      "result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196"
+    }
+  },
+  "selected_std_fragments": {
+    "convert/num.rs": "fn try_from(u: $source) -> Result<Self, Self::Error> {\n                if u > (Self::MAX as $source) {\n                    Err(TryFromIntError(IntErrorKind::PosOverflow))\n                } else {\n                    Ok(u as Self)\n                }\n            }",
+    "result.rs": "{\n        match self {\n            Ok(t) => Ok(t),\n            Err(e) => Err(op(e)),\n        }\n    }"
+  },
+  "fixed_model_sources": {
+    "Std/Core/CoreResult.lean": "a920c6f71e14e03bd93717c9891be26f01a216973c2e41e36c6d949557f67e40",
+    "Std/Scalar/CoreConvertNum.lean": "c67346b6a2d471d04a1bdcdf71af4efcfaa0206c1c4540de34016283c7733624"
+  },
+  "parent_call_review": {
+    "old_source_commit": "c4828982f0fa1ebbeed41b7b00c8605f008a22fb",
+    "old_source_sha256": "f7cf939c7e75f75986b2101e59b1e4492b17a8ae5f6b882df3e37c7b4f6ae870",
+    "only_original_expression_moved_once": true,
+    "tx_receiver_and_identity_argument_positions_preserved": true,
+    "larger_generic_effects_candidate_adopted": false
+  },
+  "shared_registration_complete": false,
+  "native_checks_run": false,
+  "full_v3": false,
+  "published_input_fingerprints": {
+    "source_inputs": {
+      "controller-service/src/controller/lifecycle_inbox.rs": "b1ec64d91c747e7cdaad57e5a1fd2bfc1e2a8e61769de5eba3f8697a6487faf8"
+    },
+    "drivers": {
+      "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b",
+      "native.py": "93561a7d38a93018ab9e19e77835037ad962b89d176b6729611fb4307b1e82f9"
+    }
+  }
+}

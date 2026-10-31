@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity
+noncomputable section
+open InboxLoad
+
+abbrev OwnerLimit (inbox : Inbox) : Prop :=
+  inbox.owners.val.length ≤ inbox.config.max_sessions.val
+
+theorem validation_owner_limit {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (accepted : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ())) :
+    OwnerLimit inbox := by
+  by_contra missing
+  have over : inbox.owners.val.length > inbox.config.max_sessions.val := Nat.lt_of_not_ge missing
+  have rejected : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Err .CorruptStore) := by
+    simp [InboxValidation.inboxView, over, InboxValidation.rejected]
+  rw [rejected] at accepted
+  cases Result.ok_injective accepted
+
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.validation_owner_limit

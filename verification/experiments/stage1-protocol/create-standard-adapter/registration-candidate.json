@@ -1,0 +1,87 @@
+{
+  "kind": "candidate-only-current-standard-create-public-registration",
+  "source_baseline": "97071be44f57d6280dbc074d9a2150b2d8051480",
+  "requires_prior_packages": [
+    "create-attachment-flow",
+    "create-fixed-identity",
+    "create-lifetime-sql"
+  ],
+  "zero_context_patch": true,
+  "shared_input_hashes": {
+    "verification/experiments/stage1-protocol/registered.py": {
+      "root": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+      "after_prior": "b1b31dded8644fc0e832e07cd71c974bf990d60e3104bfaf65a043b09d94301c",
+      "after_this": "176e15d109175d7eba12d31d4bda17a2585d25b25bf1bd7a2099a029ed6f2402"
+    },
+    "docs/formal/dependencies.md": {
+      "root": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+      "after_prior": "be1c22bc9e40af80c7ed449d44e685228ff86ffbf214f933b681b7392d6375f6",
+      "after_this": "3aa37077655f4e7ff8cd1c6813fded4eda9d702f9c6d593573ec9e5fbd434ad8"
+    },
+    "docs/proof-coverage.md": {
+      "root": "f8da14f2bf47cddd414734500ae3d1eea89843f30994adb858f293118f739698",
+      "after_prior": "e8c32ed32263296929b96eb59d9a68d41f12533eca1675c5c4c086ca37b58e14",
+      "after_this": "ade8e1bfa361b8f25c74ffbd8327d770532038d47248cdea66b6d482c81981ae"
+    }
+  },
+  "native_label": "stage1-create-standard-adapter",
+  "formal_cases": [
+    "actual",
+    "default-world"
+  ],
+  "native_views": [
+    "actual",
+    "default-world",
+    "restored"
+  ],
+  "native_assertions_per_view": 3,
+  "new_unique_audit_names": [
+    "SandboxModel.Access.capture_CaptureHandoff_clone_exact",
+    "SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_complete",
+    "SandboxModel.Stage1Protocol.StandardCreate.begin_lifetime_expected",
+    "SandboxModel.Stage1Protocol.StandardCreate.begin_save_complete",
+    "SandboxModel.Stage1Protocol.StandardCreate.begin_save_expected",
+    "SandboxModel.Stage1Protocol.StandardCreate.both_stages_select_same_complete_value",
+    "SandboxModel.Stage1Protocol.StandardCreate.conflicting_or_overflowed_borrow_panics",
+    "SandboxModel.Stage1Protocol.StandardCreate.database_connection_deref",
+    "SandboxModel.Stage1Protocol.StandardCreate.default_world_observed",
+    "SandboxModel.Stage1Protocol.StandardCreate.full_read_and_rebind_contract",
+    "SandboxModel.Stage1Protocol.StandardCreate.live_transaction_deref",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_candidate_at",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_complete_selected_world",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_expected_read",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_lifetime_rebind",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_save_rebind",
+    "SandboxModel.Stage1Protocol.StandardCreate.normal_world_read",
+    "SandboxModel.Stage1Protocol.StandardCreate.same_complete_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardCreate.standard_world_complete",
+    "SandboxModel.Stage1Protocol.StandardCreate.standard_world_expected",
+    "SandboxModel.Stage1Protocol.StandardCreate.still_preserves_empty_world",
+    "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_complete",
+    "SandboxModel.Stage1Protocol.StandardCreate.transaction_world_expected",
+    "SandboxModel.Stage1Protocol.StandardCreate.unavailable_candidate_panics",
+    "SandboxModel.Stage1Protocol.StandardCreate.unavailable_transaction_panics"
+  ],
+  "expected_views": {
+    "actual": {
+      "files": 15,
+      "audits": 22
+    },
+    "default-world": {
+      "files": 14,
+      "audits": 13
+    }
+  },
+  "patches": {
+    "registration-candidate.patch": "c1ae3a9b8ca8c7f391106784524dd82919e25a45b8b170f947c06e503852b839",
+    "dependencies-candidate.patch": "d5b411625f02e598982944b0b493f6f606515f5abba7a8cad9961d9cc2a63888",
+    "coverage-candidate.patch": "68639bbe6014bad42b27faeab5efda102f4f4c293eff72e541b6b417a18c959c"
+  },
+  "patch_application_only_checked": true,
+  "ordinary_or_native_tests_run": false,
+  "global_counts_must_be_recomputed": true,
+  "shared_files_modified": false,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}

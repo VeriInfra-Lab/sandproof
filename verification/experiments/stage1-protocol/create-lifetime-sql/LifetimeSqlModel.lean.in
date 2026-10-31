@@ -1,0 +1,30 @@
+import SandproofLifecycleSql.Types
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSql
+open SandproofLifecycleSqlRust
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+abbrev Connection := SandproofSqliteStatementsRust.rusqlite.Connection
+abbrev Reply := core.result.Result Usize sandproof_controller_service.JournalError
+
+def completeInputs (deadline : I64) (sandbox : Str) : List SqlValue :=
+  [.integer deadline, .text sandbox]
+
+-- Independent call observation, not an assumption about a durable transaction.
+-- Remaining whole-call errors include raw-bind and parameter-count failures.
+def expected (connection : Connection) (statement : Str) (deadline : I64) (sandbox : Str) :
+    Result Reply := do
+  let prepared ← connection.prepare statement
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite error))
+  | .Ok _ =>
+      let completed ← connection.run statement (completeInputs deadline sandbox)
+      match completed with
+      | .Err error => .ok (.Err (.Sqlite error))
+      | .Ok count => .ok (.Ok count)
+
+def FullSqlValuesContract (actual : Connection → Str → I64 → Str → Result Reply) : Prop :=
+  ∀ connection statement deadline sandbox,
+    actual connection statement deadline sandbox = expected connection statement deadline sandbox
+
+end SandboxModel.Stage1Protocol.LifetimeSql

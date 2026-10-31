@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterComplete
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterValues
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.CreateHighWater.Examples
+noncomputable section
+open Values
+
+theorem missing_64 : CreateOwnerCheck.existingRun (inbox 64#u64) session.owner (binding 65#u64).owner =
+    .ok (.Ok false) := by
+  rw [CreateOwnerCheck.existing_complete]
+  rfl
+
+theorem fresh_64 : CreateOwnerCheck.newRun (inbox 64#u64) world (binding 65#u64) = .ok (.Ok ()) := by
+  rw [CreateOwnerCheck.new_complete]
+  apply congrArg Result.ok
+  have required := CreateOwnerSuccessor.Values.high_water_expected
+  change CreateOwnerSuccessor.expected (inbox 64#u64) world (binding 65#u64).sandbox = .Ok 65#u64 at required
+  unfold CreateOwnerCheck.newExpected
+  rw [required]
+  simp [CreateOwnerCheck.guardExpected, binding]
+
+theorem accepted_checked_install : CreateInstall.run (inbox 64#u64) 0#usize 0#usize (binding 65#u64) ⦃ result =>
+    CreateInstall.Installed (inbox 64#u64) 0#usize 0#usize session entry (binding 65#u64) result ∧
+    (inbox 64#u64).owner_high_water.val ≤ result.owner_high_water.val ⦄ := by
+  exact full_checked_install_contract (inbox 64#u64) world (binding 65#u64) 0#usize 0#usize session entry
+    (session_read 64#u64) entry_read (owner_limit 64#u64) (Or.inr ⟨missing_64, fresh_64⟩)
+
+theorem normal_returns_greater : ∃ result,
+    CreateInstall.run (inbox 64#u64) 0#usize 0#usize (binding 65#u64) = .ok result ∧
+    result.owner_high_water = 65#u64 := by
+  obtain ⟨result, returned, frame, _⟩ := WP.spec_imp_exists accepted_checked_install
+  obtain ⟨owners, _, same⟩ := frame
+  have high := congrArg (fun value : sandproof_controller_service.controller.lifecycle_inbox.model.Inbox =>
+    value.owner_high_water) same
+  refine ⟨result, returned, ?_⟩
+  simpa only [if_neg (missing_owner 64#u64), binding] using high
+
+end
+end SandboxModel.Stage1Protocol.CreateHighWater.Examples
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Examples.missing_64
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Examples.fresh_64
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Examples.accepted_checked_install
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Examples.normal_returns_greater
