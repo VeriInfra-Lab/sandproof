@@ -33,6 +33,7 @@ registry_module = module('create-lifetime-sql_native_registry', ROOT / HERE.pare
 registry_module.HERE = HERE.parent / 'inbox-record'
 support = module('create_lifetime_sql_inputs', ROOT / HERE / 'support.py')
 sha = base.sha
+native_checks = module('create_lifetime_sql_native_checks', ROOT/HERE.parent/'registered.py')
 
 
 def run(output):
@@ -43,6 +44,7 @@ def run(output):
                   original_general_equivalence_proved=False,production_adopted=True)
     try:
         inventory = support.inventory()
+        native_plan = native_checks._create_native_plan(HERE.name, inventory, ROOT)
         extra = {}
         for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
             extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})
@@ -140,36 +142,17 @@ def run(output):
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('Create lifetime_sql actual/restored assertions failed')
                 elif label == 'clippy':
-                    errors = []
-                    for line in text.splitlines():
-                        try:
-                            message = json.loads(line)
-                        except ValueError:
-                            continue
-                        if message.get('reason') != 'compiler-message' or message['message']['level'] != 'error':
-                            continue
-                        diagnostic = message['message']
-                        primary = [span for span in diagnostic['spans'] if span['is_primary']]
-                        if len(primary) != 1:
-                            raise ValueError('unexpected Clippy primary diagnostic')
-                        span = primary[0]
-                        source = Path(span['file_name'])
-                        if not source.is_absolute():
-                            source = project/source
-                        errors.append(dict(code=(diagnostic.get('code') or {}).get('code'),
-                            source=str(source.relative_to(project)), line=span['line_start']))
-                    expected_errors = []
+                    # Keep the original reviewed SQL mutation-site check too.
                     if plan['expected_clippy_codes']:
                         lines = (project/MODEL).read_text().splitlines()
                         where = [i+1 for i,line in enumerate(lines) if 'ValueRef::Integer(deadline & 0)' in line]
-                        if len(where) != 1 or plan['expected_clippy_codes'] != ['clippy::erasing_op']:
+                        wanted = native_plan[variant]['expected_clippy_errors']
+                        if (len(where) != 1 or plan['expected_clippy_codes'] != ['clippy::erasing_op']
+                                or not wanted or any(e['code'] != 'clippy::erasing_op'
+                                    or e['source'] != MODEL or e['line'] != where[0] for e in wanted)):
                             raise ValueError('reviewed mutant lint site changed')
-                        expected_errors = [dict(code='clippy::erasing_op', source=MODEL, line=where[0])]
-                    if errors != expected_errors or done.returncode != (101 if expected_errors else 0):
-                        raise ValueError('strict Clippy differs from the exact mutant-lint inventory')
-                    row['expected_mutant_lint_rejection'] = bool(expected_errors)
-                    row['clippy_errors'] = errors
-                    # A lint rejection is never a business-contract counterexample.
+                    native_checks.check_native_clippy(row, text, project,
+                        native_plan[variant]['expected_clippy_errors'])
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

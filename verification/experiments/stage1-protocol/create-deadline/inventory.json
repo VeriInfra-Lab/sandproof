@@ -28,7 +28,7 @@
   "drivers": {
     "binding.py": "c47a502df172eeb65fd3110402a9ba6fef9b41826864fc8c064fd224d0292023",
     "formal.py": "3bd00a130a390f61cf207073f28be3e76e7d35224f304f1d3d1ba0a93c59bb13",
-    "native.py": "93561a7d38a93018ab9e19e77835037ad962b89d176b6729611fb4307b1e82f9",
+    "native.py": "49403869bfcce06254cfd6ff4bf14037c72af3aa979e2bda9c3dd169255c87b3",
     "support.py": "b868c3bae9cbdb76502fee2e1a92f55d383e330904d7e193116daabd48091c87"
   },
   "common_templates": [
@@ -1108,7 +1108,32 @@
         "deadline_rejects_first_overflow_as_input_error",
         "deadline_rejects_unsigned_max_as_input_error"
       ],
-      "expected_clippy_errors": []
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::cast_possible_wrap",
+          "message": "casting `u64` to `i64` may wrap around the value",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 532
+        },
+        {
+          "code": "clippy::cast_possible_wrap",
+          "message": "casting `u64` to `i64` may wrap around the value",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 532
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 531
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 531
+        }
+      ]
     },
     "wrong-error": {
       "mutation": {
@@ -1164,7 +1189,8 @@
       "controller-service/src/controller/lifecycle_inbox.rs": "b1ec64d91c747e7cdaad57e5a1fd2bfc1e2a8e61769de5eba3f8697a6487faf8"
     },
     "drivers": {
-      "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b"
+      "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b",
+      "native.py": "93561a7d38a93018ab9e19e77835037ad962b89d176b6729611fb4307b1e82f9"
     }
   }
 }

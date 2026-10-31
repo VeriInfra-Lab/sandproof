@@ -38,7 +38,7 @@
     "LifetimeSqlModel.lean.in": "ffdd284155cf5c501ebdffaca09dd35ad1c69519929868f2fc0c8e7c625ab0b8"
   },
   "drivers": {
-    "native.py": "8c0e5444380e141238f3d84b81db12651ae6d604efd5a5f2cc320398a47004f0",
+    "native.py": "57ff7ee4e1f76ef22e7cde9e1d9558c5f278cce3ddff09c193bfcd4242d2c47e",
     "formal.py": "87e3b16251d5f4f62cf78d138768272194dbbb5b7330bad6dddcb2a3bb4580fa",
     "support.py": "e50ad4afbd11bcf892d9150245b4f540f346f99353a9a1173bf0f1653aa5d1db",
     "materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04",
@@ -562,6 +562,20 @@
       ],
       "expected_clippy_codes": [
         "clippy::erasing_op"
+      ],
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+          "line": 18
+        },
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+          "line": 18
+        }
       ]
     },
     "empty-sandbox": {
@@ -591,7 +605,8 @@
   "full_v3": false,
   "published_input_fingerprints": {
     "drivers": {
-      "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a"
+      "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a",
+      "native.py": "8c0e5444380e141238f3d84b81db12651ae6d604efd5a5f2cc320398a47004f0"
     },
     "source_inputs": {
       "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"

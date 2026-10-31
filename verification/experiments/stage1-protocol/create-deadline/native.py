@@ -33,6 +33,7 @@ registry_module = module('create-deadline_native_registry', ROOT / HERE.parent /
 registry_module.HERE = HERE.parent / 'inbox-record'
 support = module('create_deadline_inputs', ROOT / HERE / 'support.py')
 sha = base.sha
+native_checks = module('create_deadline_native_checks', ROOT/HERE.parent/'registered.py')
 
 
 def run(output):
@@ -43,6 +44,7 @@ def run(output):
                   original_general_equivalence_proved=False,production_adopted=True)
     try:
         inventory = support.inventory()
+        native_plan = native_checks._create_native_plan(HERE.name, inventory, ROOT)
         extra = {}
         for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
             extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})
@@ -140,31 +142,8 @@ def run(output):
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('Create deadline actual/restored assertions failed')
                 elif label == 'clippy':
-                    errors = []
-                    for line in text.splitlines():
-                        try:
-                            message = json.loads(line)
-                        except ValueError:
-                            continue
-                        if message.get('reason') != 'compiler-message' or message['message']['level'] != 'error':
-                            continue
-                        diagnostic = message['message']
-                        primary = [span for span in diagnostic['spans'] if span['is_primary']]
-                        if len(primary) != 1:
-                            raise ValueError('unexpected Clippy primary diagnostic')
-                        span = primary[0]
-                        source = Path(span['file_name'])
-                        if not source.is_absolute():
-                            source = project/source
-                        errors.append(dict(code=(diagnostic.get('code') or {}).get('code'),
-                            message=diagnostic['message'], source=str(source.relative_to(project)),
-                            line=span['line_start']))
-                    expected_errors = plan['expected_clippy_errors']
-                    if errors != expected_errors or done.returncode != (101 if expected_errors else 0):
-                        raise ValueError('strict Clippy differs from the exact mutant-lint inventory')
-                    row['expected_mutant_lint_rejection'] = bool(expected_errors)
-                    row['clippy_errors'] = errors
-                    # A lint rejection is never a business-contract counterexample.
+                    native_checks.check_native_clippy(row, text, project,
+                        native_plan[variant]['expected_clippy_errors'])
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

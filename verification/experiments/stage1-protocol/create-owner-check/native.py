@@ -33,6 +33,7 @@ registry_module = module('create-owner-check_native_registry', ROOT / HERE.paren
 registry_module.HERE = HERE.parent / 'inbox-record'
 support = module('create_owner_check_inputs', ROOT / HERE / 'support.py')
 sha = base.sha
+native_checks = module('create_owner_check_native_checks', ROOT/HERE.parent/'registered.py')
 
 
 def run(output):
@@ -43,6 +44,7 @@ def run(output):
                   original_general_equivalence_proved=False,production_adopted=True)
     try:
         inventory = support.inventory()
+        native_plan = native_checks._create_native_plan(HERE.name, inventory, ROOT)
         extra = {}
         for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
             extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})
@@ -94,7 +96,7 @@ def run(output):
             env = dict(os.environ, CARGO_TARGET_DIR=str(folder / 'target'),
                        CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='4')
             checks = [('format', []), ('test', ['--lib', '--message-format=json', test_filter, '--', '--nocapture', '--test-threads=1']),
-                                ('clippy', ['--lib', '--tests', '--', '-D', 'warnings'])]
+                                ('clippy', ['--lib', '--tests', '--message-format=json', '--', '-D', 'warnings'])]
             for label, args in checks:
                 argv = ['cargo', label, '-p', 'sandproof-controller-service', '--locked', '--offline', *args]
                 if label == 'format':
@@ -148,6 +150,9 @@ def run(output):
                         row['property_rejected'] = True
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('Create owner guard actual/restored assertions failed')
+                elif label == 'clippy':
+                    native_checks.check_native_clippy(row, text, project,
+                        native_plan[variant]['expected_clippy_errors'])
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

@@ -106,29 +106,80 @@ def native_scope(profile):
     return CREATE_SCOPE if check_profile(profile) == 'create-delivery' else 'stage1-protocol'
 
 
-def _create_native_plan(name, data):
+def _create_native_plan(name, data, root=ROOT):
     cases = (('actual', *CREATE_ADOPTED_MUTANTS) if name == 'adopted-create' else CREATE_CASES[name])
     expected = (*cases, CREATE_RESTORED[name])
     if name in ('create-selection', 'create-owner-successor'):
         original = data['native_plan']
         if set(original['expected_failures']) != set(cases[1:]):
             raise ValueError('missing/extra Create native rejection case: '+name)
+        if (not isinstance(original.get('expected_clippy_errors', {}), dict)
+                or set(original.get('expected_clippy_errors', {}))-set(cases[1:])):
+            raise ValueError('unknown or positive Create mutant-lint case: '+name)
         result = {case: dict(test_count=original['test_count'],
-                            expected_failures=original['expected_failures'].get(case, [])) for case in expected}
+                            expected_failures=original['expected_failures'].get(case, []),
+                            expected_clippy_errors=original.get('expected_clippy_errors', {}).get(case, [])) for case in expected}
     else:
-        result = data['native_variants']
+        result = copy.deepcopy(data['native_variants'])
+    if name == 'adopted-create':
+        # The same derived successor Rust file uses one provider's lint rule.
+        # It still has its own native tests and must reach their exact failures.
+        provider = _read(root/HERE/'create-owner-successor/inventory.json')
+        canonical = _create_native_plan('create-owner-successor', provider, root)
+        for case in CREATE_ADOPTED_MUTANTS:
+            if case.startswith('successor-'):
+                result[case]['expected_clippy_errors'] = copy.deepcopy(
+                    canonical[case.removeprefix('successor-')]['expected_clippy_errors'])
     if tuple(result) != expected:
         raise ValueError('missing, extra or reordered Create native variant: '+name)
     for case, row in result.items():
         count = (10 if case.startswith('owner-') else 9) if name == 'adopted-create' and case in CREATE_ADOPTED_MUTANTS else CREATE_NATIVE_COUNTS[name]
         failures = row.get('expected_failures')
+        errors = row.get('expected_clippy_errors', [])
         correct = case in (cases[0], CREATE_RESTORED[name])
         if (type(row.get('test_count')) is not int or row['test_count'] != count
                 or not isinstance(failures, list) or any(not isinstance(n, str) for n in failures)
                 or len(failures) != len(set(failures)) or len(failures) > count
                 or bool(failures) != (not correct)):
             raise ValueError('Create native assertion inventory changed: '+name+':'+case)
+        if (not isinstance(errors, list) or (correct and errors)
+                or any(not isinstance(e, dict) or set(e) != {'code','message','source','line'}
+                    or any(not isinstance(e[k], str) or not e[k] for k in ('code','message','source'))
+                    or type(e['line']) is not int or e['line'] <= 0 for e in errors)):
+            raise ValueError('invalid per-mutant Clippy inventory: '+name+':'+case)
+        row['expected_clippy_errors'] = sorted(errors, key=lambda e:json.dumps(e, sort_keys=True))
     return result
+
+
+def check_native_clippy(row, text, project, expected_errors):
+    """Existing strict mutant diagnostics, preserving every duplicate error."""
+    errors = []
+    for line in text.splitlines():
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        if message.get('reason') != 'compiler-message' or message['message']['level'] != 'error':
+            continue
+        diagnostic = message['message']
+        primary = [span for span in diagnostic['spans'] if span['is_primary']]
+        if len(primary) != 1:
+            raise ValueError('unexpected Clippy primary diagnostic')
+        span = primary[0]
+        source = Path(span['file_name'])
+        if not source.is_absolute():
+            source = project/source
+        errors.append(dict(code=(diagnostic.get('code') or {}).get('code'),
+            message=diagnostic['message'], source=str(source.relative_to(project)), line=span['line_start']))
+    # Lib/test diagnostics may arrive in different orders; counts and every
+    # field remain exact. A set would incorrectly lose duplicate diagnostics.
+    errors.sort(key=lambda e:json.dumps(e, sort_keys=True))
+    wanted = sorted(expected_errors, key=lambda e:json.dumps(e, sort_keys=True))
+    if errors != wanted or row['exit_code'] != (101 if wanted else 0):
+        raise ValueError('strict Clippy differs from the exact mutant-lint inventory')
+    row['expected_mutant_lint_rejection'] = bool(wanted)
+    row['clippy_errors'] = errors
+    # This never records property_rejected: only the original Rust assertions do.
 
 
 def create_profile(root=ROOT):
@@ -142,7 +193,7 @@ def create_profile(root=ROOT):
         views = data['views'] if name == 'adopted-create' else data['variants']
         if tuple(views) != cases:
             raise ValueError('Create formal view inventory changed: '+name)
-        native = _create_native_plan(name, data)
+        native = _create_native_plan(name, data, root)
         packages.append(dict(name=name, native_label='stage1-'+name,
             inventory_sha256=_sha(path), formal_cases=list(cases),
             native_views={case: dict(test_count=row['test_count'],
@@ -609,7 +660,7 @@ def run_native(root, work, *, profile='full', scope=None):
 
 def _check_create_native_result(root, name, folder, result):
     """Read every original log; an exit code alone is not a mutant witness."""
-    plans = _create_native_plan(name, _read(root/HERE/name/'inventory.json'))
+    plans = _create_native_plan(name, _read(root/HERE/name/'inventory.json'), root)
     shared = _shared()
     # Component reuse follows the existing complete native key. A changed
     # unrelated report needs a new functional receipt, not a relabelled source
@@ -623,8 +674,10 @@ def _check_create_native_result(root, name, folder, result):
                    if not n.startswith('@configuration:'))):
         raise ValueError('incomplete or changed Create native source/views: '+name)
     commands = result.get('commands', [])
+    labels = (('format-instrumentation', 'format', 'test', 'clippy')
+              if name == 'create-attachment-flow' else ('format', 'test', 'clippy'))
     if [(r.get('variant'), r.get('label')) for r in commands] != [
-            (variant, label) for variant in plans for label in ('format', 'test', 'clippy')]:
+            (variant, label) for variant in plans for label in labels]:
         raise ValueError('missing/extra Create native command: '+name)
     for variant, plan in plans.items():
         checked = result['variants'][variant]
@@ -640,6 +693,8 @@ def _check_create_native_result(root, name, folder, result):
                            or (label == 'clippy' and plan.get('expected_clippy_errors'))) else 0
             if type(row.get('exit_code')) is not int or row['exit_code'] != code:
                 raise ValueError('wrong original Create native exit: '+name+':'+variant+':'+label)
+            if label != 'test' and row.get('property_rejected'):
+                raise ValueError('only original Rust assertions can reject the business property')
             if label == 'test':
                 text = log.read_text()
                 tally = f"{plan['test_count']-len(failures)} passed; {len(failures)} failed; 0 ignored;"

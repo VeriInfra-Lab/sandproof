@@ -97,7 +97,7 @@
   "drivers": {
     "support.py": "98763f89810d8c072bdd91fa821d85903eaf384a81017e93a1902b5301ac8da2",
     "formal.py": "9e8f3f199f97d92d9fca6cd98aee655c9ec6e27ecc73a0904d8d13ab51f1b29b",
-    "native.py": "fe7aeef7c0c35344b2dbaec1d45418a3b6e179d62b03acced95e8fbd152a8c45"
+    "native.py": "7c7df09a996f243be08ec898f782251f2f313f2191485be302da153ce384acb3"
   },
   "variants": {
     "candidate": {
@@ -442,7 +442,23 @@
       "proof_successor_high_water_exhausted",
       "proof_successor_boundary",
       "proof_successor_all_excluded"
-    ]
+    ],
+    "expected_clippy_errors": {
+      "wrong-overflow": [
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 455
+        },
+        {
+          "code": "clippy::unnecessary_wraps",
+          "message": "this function's return value is unnecessarily wrapped by `Result`",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 455
+        }
+      ]
+    }
   },
   "current_production_function": {
     "marker": "fn create_owner_successor(",

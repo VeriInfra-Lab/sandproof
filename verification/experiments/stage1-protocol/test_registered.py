@@ -97,9 +97,54 @@ class CreateDelivery(unittest.TestCase):
         high = next(p for p in definition['packages'] if p['name'] == 'create-high-water')
         self.assertTrue(high['native_views']['wrong-seed']['expected_clippy_errors'])
         self.assertTrue(high['native_views']['wrong-seed']['expected_failures'])
+        successor = next(p for p in definition['packages'] if p['name']=='create-owner-successor')
+        adopted = next(p for p in definition['packages'] if p['name']=='adopted-create')
+        self.assertEqual(len(successor['native_views']['wrong-overflow']['expected_clippy_errors']),2)
+        self.assertEqual(successor['native_views']['wrong-overflow']['expected_clippy_errors'],
+            adopted['native_views']['successor-wrong-overflow']['expected_clippy_errors'])
+        for package in definition['packages']:
+            for case in (next(iter(package['native_views'])),registered.CREATE_RESTORED[package['name']]):
+                self.assertFalse(package['native_views'][case]['expected_clippy_errors'])
+
+    def test_exact_mutant_clippy_keeps_duplicates_and_is_never_a_property_witness(self):
+        first=dict(code='clippy::unnecessary_wraps',message='synthetic result diagnostic',source='Source.rs',line=5)
+        second=dict(code='clippy::cast_possible_wrap',message='synthetic cast diagnostic',source='Source.rs',line=6)
+        expected=[first,first,second,second]
+        def document(error):
+            return dict(reason='compiler-message',message=dict(level='error',code=dict(code=error['code']),
+                message=error['message'],spans=[dict(is_primary=True,file_name=error['source'],line_start=error['line'])]))
+        messages=[document(e) for e in (second,first,second,first)]
+        def text(rows):
+            return '\n'.join(json.dumps(r) for r in rows)
+        row=dict(exit_code=101)
+        registered.check_native_clippy(row,text(messages),Path('/project'),expected)
+        self.assertEqual(len(row['clippy_errors']),4)
+        self.assertNotIn('property_rejected',row)
+        self.assertTrue(row['expected_mutant_lint_rejection'])
+        for defect in ('missing','extra','code','message','source','line','primary'):
+            bad=copy.deepcopy(messages)
+            if defect=='missing':bad.pop()
+            elif defect=='extra':bad.append(copy.deepcopy(bad[0]))
+            elif defect=='code':bad[0]['message']['code']['code']='unreviewed-lint'
+            elif defect=='message':bad[0]['message']['message']='different diagnostic'
+            elif defect=='source':bad[0]['message']['spans'][0]['file_name']='Other.rs'
+            elif defect=='line':bad[0]['message']['spans'][0]['line_start']=99
+            else:bad[0]['message']['spans'].append(copy.deepcopy(bad[0]['message']['spans'][0]))
+            with self.subTest(defect=defect),self.assertRaises(ValueError):
+                registered.check_native_clippy(dict(exit_code=101),text(bad),Path('/project'),expected)
+        for code,observed,wanted in ((0,messages,expected),(101,[],[]),(101,messages,[])):
+            with self.assertRaises(ValueError):
+                registered.check_native_clippy(dict(exit_code=code),text(observed),Path('/project'),wanted)
+        clean=dict(exit_code=0)
+        registered.check_native_clippy(clean,'ordinary compiler progress',Path('/project'),[])
+        self.assertFalse(clean['expected_mutant_lint_rejection'])
 
     def test_native_original_logs_and_assertions_are_required_even_with_complete_true(self):
-        name = 'create-deadline'
+        for name in ('create-deadline','create-attachment-flow'):
+            with self.subTest(package=name):
+                self.native_log_fixture(name)
+
+    def native_log_fixture(self, name):
         plan = registered._create_native_plan(name, registered._read(
             registered.ROOT/registered.HERE/name/'inventory.json'))
         with tempfile.TemporaryDirectory() as temporary:
@@ -109,8 +154,10 @@ class CreateDelivery(unittest.TestCase):
             for variant, recipe in plan.items():
                 (folder/variant).mkdir()
                 result['variants'][variant] = dict(complete=True, inputs={'Source.rs':'derived-source'})
-                for label in ('format', 'test', 'clippy'):
+                labels = ('format-instrumentation','format','test','clippy') if name=='create-attachment-flow' else ('format','test','clippy')
+                for label in labels:
                     failures = recipe['expected_failures'] if label == 'test' else []
+                    errors = recipe.get('expected_clippy_errors',[]) if label=='clippy' else []
                     count = recipe['test_count']
                     text = 'synthetic admission fixture; no compiler was run\n'
                     if label == 'test':
@@ -119,21 +166,36 @@ class CreateDelivery(unittest.TestCase):
                     log = folder/variant/(label+'.log')
                     log.write_text(text)
                     result['commands'].append(dict(variant=variant, label=label,
-                        exit_code=101 if failures else 0, property_rejected=bool(failures),
+                        exit_code=101 if failures or errors else 0, property_rejected=bool(failures),
+                        clippy_errors=copy.deepcopy(errors),expected_mutant_lint_rejection=bool(errors),
                         log_sha256=registered._sha(log)))
             shared = SimpleNamespace(rust_inputs=lambda root:{'Source.rs':'a'*64},
                 rules=lambda root:{}, contract_inputs=lambda root:{})
             with patch.object(registered, '_shared', return_value=shared):
                 registered._check_create_native_result(registered.ROOT, name, folder, result)
-                for defect in ('source', 'missing-view', 'clippy-instead-of-property', 'missing-command'):
+                wrong = next(v for v,r in plan.items() if r['expected_failures'])
+                defects = ['source','missing-view','clippy-instead-of-property','missing-command']
+                if name=='create-attachment-flow':
+                    defects += ['missing-preparation','bad-preparation-exit','preparation-is-not-property']
+                if any(r.get('expected_clippy_errors') for r in plan.values()):
+                    defects += ['missing-lint-diagnostic']
+                for defect in defects:
                     bad = copy.deepcopy(result)
                     if defect == 'source':
                         bad['inputs']['Source.rs'] = 'changed'
                     elif defect == 'missing-view':
-                        del bad['variants']['unchecked-cast']
+                        del bad['variants'][wrong]
                     elif defect == 'clippy-instead-of-property':
-                        row = next(r for r in bad['commands'] if r['variant']=='unchecked-cast' and r['label']=='test')
+                        row = next(r for r in bad['commands'] if r['variant']==wrong and r['label']=='test')
                         row['property_rejected'] = False
+                    elif defect=='missing-preparation':
+                        bad['commands'].pop(0)
+                    elif defect=='bad-preparation-exit':
+                        bad['commands'][0]['exit_code']=101
+                    elif defect=='preparation-is-not-property':
+                        bad['commands'][0]['property_rejected']=True
+                    elif defect=='missing-lint-diagnostic':
+                        next(r for r in bad['commands'] if r['clippy_errors'])['clippy_errors'].pop()
                     else:
                         bad['commands'].pop()
                     with self.subTest(defect=defect), self.assertRaises(ValueError):
