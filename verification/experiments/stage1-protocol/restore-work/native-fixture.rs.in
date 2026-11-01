@@ -1,0 +1,25 @@
+// Reuse the existing real SQLite/source/capture/Resume test setup. Host ports
+// remain the original controlled providers; this is not a physical VM claim.
+pub(super) fn proof_restore_work_fixture() -> SourceWorkRecord {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let (mut journal, _) = unloaded_resume_source(&path);
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    let record = codec::load(&journal.journal.connection)
+        .unwrap()
+        .unwrap()
+        .records
+        .into_iter()
+        .find(|record| {
+            record
+                .restore
+                .as_ref()
+                .is_some_and(|claim| claim.intent == request)
+        })
+        .unwrap();
+    let claim = record.restore.as_ref().unwrap();
+    assert!(claim.material_use);
+    assert!(claim.generation > 0 && claim.generation <= 255);
+    record
+}

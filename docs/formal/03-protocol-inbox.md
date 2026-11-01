@@ -121,6 +121,15 @@ V1/V2 的实际值／耐久定理连接。当前 producer 的相邻目标策略�
 两个数值相等。同一完整 restore claim 的重放先于新 operation 分配，不能从重放成功推出
 分配器仍有容量或一个新的 claim 已被接受。
 
+[恢复工作组装](../../verification/experiments/stage1-protocol/restore-work/README.md)限定原
+`source_work::restore::work`：从已解码的原 SourceWorkRecord 读取 restore、capture、
+材料使用标记、completed 和 action，保持真实首拒绝顺序。正常返回保存原完整 intent、
+source requirement、full capture、manifest digest、seal action、本地 operation 和完整
+native generation；普通值 Clone 的有限正常返回条件仍依原 A6。
+`CommittedCaptureExpectation::after_commit` 和 `RestoreWorkRequest::from_claim` 在此只是
+保留这些值的构造函数，名称和字段相等不提供耐久提交、活跃材料租约、认证或实际资源事实。
+这些业务条件仍由原事务／调用方和各资源提供者连接，不从本同步合同推出恢复已发生。
+
 save 对完整同一 Inbox 先校验、再编码、检查输出容量、摘要、原 SQL UPDATE，最后检查
 更新恰好一行。当前使用 to_vec 后检查长度，有界输出不等于编码分配上界已证明。
 预算拒绝保留编码效果；SQL/行数错误保留已发生的更新效果。外层失败、重放时未调用

@@ -1,0 +1,19 @@
+import Aeneas
+import SandproofRestoreWork.Types
+open Aeneas Aeneas.Std
+namespace SandproofRestoreWorkRust
+/- Existing fixed A6 normal-value models; no SQL or business body replaced. -/
+@[simp, rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+@[rust_fun "core::option::{core::clone::Clone<core::option::Option<@T>>}::clone"]
+def core.option.Option.Insts.CoreCloneClone.clone {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some item => do
+      let copied ← dictionary.clone item
+      .ok (some copied)
+end SandproofRestoreWorkRust

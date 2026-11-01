@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Witnesses
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork
+open controller.lifecycle_inbox.source_work Witnesses
+
+namespace NegativeMaterialUse
+
+theorem specified_refusal : expected (record false 37#u64) = .Err .UnresolvedAction := by rfl
+
+theorem actual_wrong_accepts : restore.work (record false 37#u64) =
+    .ok (.Ok (completeOutput false 37#u64)) := by
+  simp [restore.work, record, claim, captured, completeOutput, assembled,
+    capture.CommittedCaptureExpectation.after_commit,
+    capture.restore.RestoreWorkRequest.from_claim, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem rejects_same_full_contract : ¬ FullWorkContract restore.work := by
+  intro contract
+  have conflict := contract (record false 37#u64)
+  rw [actual_wrong_accepts, specified_refusal] at conflict
+  have impossible := Result.ok_injective conflict
+  cases impossible
+end NegativeMaterialUse
+end SandboxModel.Stage1Protocol.RestoreWork
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeMaterialUse.specified_refusal
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeMaterialUse.actual_wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeMaterialUse.rejects_same_full_contract

@@ -1,0 +1,167 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.ProtocolCloning
+import SandboxModel.Foundations.Cloning
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork.NewCloning
+@[simp] theorem vec_clone_exact {T : Type} (dictionary : core.clone.Clone T)
+    (values : alloc.vec.Vec T) (exactClone : ∀ value, dictionary.clone value = .ok value) :
+    alloc.vec.CloneVec.clone dictionary values = .ok values :=
+  SandboxModel.Foundations.vec_clone_exact dictionary values exactClone
+@[simp] theorem option_clone_exact {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) (exactClone : ∀ item, dictionary.clone item = .ok item) :
+    core.option.Option.Insts.CoreCloneClone.clone dictionary value = .ok value := by
+  cases value <;> simp [core.option.Option.Insts.CoreCloneClone.clone, exactClone]
+
+@[simp] theorem sandbox_controller_core_ids_SandboxId_clone_exact (value : sandbox_controller_core.ids.SandboxId) :
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_ids_VmId_clone_exact (value : sandbox_controller_core.ids.VmId) :
+    sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_ids_NetSlotId_clone_exact (value : sandbox_controller_core.ids.NetSlotId) :
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_ids_FsId_clone_exact (value : sandbox_controller_core.ids.FsId) :
+    sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_ids_SnapshotId_clone_exact (value : sandbox_controller_core.ids.SnapshotId) :
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_FilePolicyRef_clone_exact (value : sandbox_controller_core.model.FilePolicyRef) :
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_SnapshotManifestRef_clone_exact (value : sandbox_controller_core.model.SnapshotManifestRef) :
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_RestoreSource_clone_exact (value : sandbox_controller_core.model.RestoreSource) :
+    sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_Protocol_clone_exact (value : sandbox_controller_core.model.Protocol) :
+    sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_Endpoint_clone_exact (value : sandbox_controller_core.model.Endpoint) :
+    sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem sandbox_controller_core_model_Ipv4Cidr_clone_exact (value : sandbox_controller_core.model.Ipv4Cidr) :
+    sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_NetworkPolicy_clone_exact (value : sandbox_controller_core.model.NetworkPolicy) :
+    sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem sandbox_controller_core_model_Command_clone_exact (value : sandbox_controller_core.model.Command) :
+    sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem sandbox_controller_core_model_LogicalEffectId_clone_exact (value : sandbox_controller_core.model.LogicalEffectId) :
+    sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandbox_controller_core_model_EffectId_clone_exact (value : sandbox_controller_core.model.EffectId) :
+    sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem sandproof_protocol_OperationId_clone_exact (value : sandproof_protocol.OperationId) :
+    sandproof_protocol.OperationId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.OperationId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_LogicalActionId_clone_exact (value : sandproof_protocol.LogicalActionId) :
+    sandproof_protocol.LogicalActionId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.LogicalActionId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_ResourceKind_clone_exact (value : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_ResourceRef_clone_exact (value : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_ActionIdentity_clone_exact (value : sandproof_protocol.ActionIdentity) :
+    sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem sandproof_protocol_WorkAction_clone_exact {T : Type} (dictionary : core.clone.Clone T)
+    (value : sandproof_protocol.WorkAction T) (exactClone : ∀ item, dictionary.clone item = .ok item) :
+    sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone dictionary value = .ok value := by
+  simp [sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone, exactClone]
+
+@[simp] theorem sandproof_protocol_lifecycle_manifest_CaptureBinding_clone_exact (value : sandproof_protocol.lifecycle.manifest.CaptureBinding) :
+    sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_lifecycle_manifest_WritableDrive_clone_exact (value : sandproof_protocol.lifecycle.manifest.WritableDrive) :
+    sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCloneClone.clone]
+
+@[simp] theorem sandproof_protocol_lifecycle_manifest_VmCompatibility_clone_exact (value : sandproof_protocol.lifecycle.manifest.VmCompatibility) :
+    sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem capture_source_SourceObservationConfig_clone_exact (value : capture.source.SourceObservationConfig) :
+    capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem capture_SourceProcessIdentity_clone_exact (value : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.SourceProcessIdentity.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem capture_HostEpochRegistration_clone_exact (value : capture.HostEpochRegistration) :
+    capture.HostEpochRegistration.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.HostEpochRegistration.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem capture_source_SourceObservationRequirement_clone_exact (value : capture.source.SourceObservationRequirement) :
+    capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone]
+
+@[simp] theorem capture_work_PauseWorkRequest_clone_exact (value : capture.work.PauseWorkRequest) :
+    capture.work.PauseWorkRequest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.work.PauseWorkRequest.Insts.CoreCloneClone.clone]
+
+@[simp] theorem capture_work_FullCaptureWorkRequest_clone_exact (value : capture.work.FullCaptureWorkRequest) :
+    capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone, lift]
+
+end SandboxModel.Stage1Protocol.RestoreWork.NewCloning
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.vec_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.option_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_ids_SandboxId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_ids_VmId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_ids_NetSlotId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_ids_FsId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_ids_SnapshotId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_FilePolicyRef_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_SnapshotManifestRef_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_RestoreSource_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_Protocol_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_Endpoint_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_Ipv4Cidr_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_NetworkPolicy_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_Command_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_LogicalEffectId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandbox_controller_core_model_EffectId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_OperationId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_LogicalActionId_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_ResourceKind_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_ResourceRef_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_ActionIdentity_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_WorkAction_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_lifecycle_manifest_CaptureBinding_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_lifecycle_manifest_WritableDrive_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.sandproof_protocol_lifecycle_manifest_VmCompatibility_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_source_SourceObservationConfig_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_SourceProcessIdentity_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_HostEpochRegistration_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_source_SourceObservationRequirement_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_work_PauseWorkRequest_clone_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NewCloning.capture_work_FullCaptureWorkRequest_clone_exact

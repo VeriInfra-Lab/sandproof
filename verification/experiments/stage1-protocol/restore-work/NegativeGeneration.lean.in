@@ -1,0 +1,33 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Witnesses
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork
+open controller.lifecycle_inbox.source_work Witnesses
+
+namespace NegativeGeneration
+
+@[simp] theorem high_generation_bits : lift (293#u64 &&& 255#u64) = .ok (37#u64) := by rfl
+
+theorem specified_full_generation : expected (record true 293#u64) =
+    .Ok (completeOutput true 293#u64) := by rfl
+
+theorem actual_wrong_truncates : restore.work (record true 293#u64) =
+    .ok (.Ok { (completeOutput true 293#u64) with generation := 37#u64 }) := by
+  simp [restore.work, record, claim, captured, completeOutput, assembled,
+    capture.CommittedCaptureExpectation.after_commit,
+    capture.restore.RestoreWorkRequest.from_claim, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem rejects_same_full_contract : ¬ FullWorkContract restore.work := by
+  intro contract
+  have conflict := contract (record true 293#u64)
+  rw [actual_wrong_truncates, specified_full_generation] at conflict
+  have outputs := core.result.Result.Ok.inj (Result.ok_injective conflict)
+  have field := congrArg (fun value : Request => value.generation.val) outputs
+  simp [completeOutput, assembled, claim] at field
+end NegativeGeneration
+end SandboxModel.Stage1Protocol.RestoreWork
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeGeneration.high_generation_bits
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeGeneration.specified_full_generation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeGeneration.actual_wrong_truncates
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.NegativeGeneration.rejects_same_full_contract
