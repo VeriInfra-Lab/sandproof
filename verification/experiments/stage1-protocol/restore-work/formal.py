@@ -49,6 +49,7 @@ def run_view(output, case, data, inputs, modes, env):
             '-abort-on-error', '-warnings-as-errors', '-split-files', '-emit-json',
             '-namespace', 'SandproofRestoreWorkRust', '-subdir', 'SandproofRestoreWork',
             '-dest', str(generated), str(ir)])
+        record['private_public_lake_seed'] = support.seed_public_lake(project)
         installed, files, audits = support.render(project, case, generated, data)
         require(files == data['cases'][case]['files'] and audits == data['cases'][case]['audits'],
                 'missing, extra or changed physical file/audit inventory')

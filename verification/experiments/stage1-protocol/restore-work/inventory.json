@@ -57,9 +57,9 @@
     "verification/experiments/stage1-protocol/restore-work/native-tests.rs.in": "85689afb550b6ae5f9fd8b37812de24035028c8f0d475e9e9d3783d9979826d1"
   },
   "drivers": {
-    "verification/experiments/stage1-protocol/restore-work/formal.py": "2bb426ac4a16a622df6c3b0dac4d59118ac6a90d7c25d1238c8812aa7117041d",
+    "verification/experiments/stage1-protocol/restore-work/formal.py": "73dfd0a1c1950f1a55c8465f28ea04def44f2bfd5b26ac9963eaf386554e3725",
     "verification/experiments/stage1-protocol/restore-work/native.py": "e74dca3acc5704881e42a78c4dbf709c524c82c525944744b307ac6fb904ab68",
-    "verification/experiments/stage1-protocol/restore-work/support.py": "756197fe4bdb257cc270b9f35daa315a202e1a139516acfa604ee8151824fa31"
+    "verification/experiments/stage1-protocol/restore-work/support.py": "58d419362c1f058e7581cb1502b703f5f531400fda99a88ad17e22ca92471622"
   },
   "cases": {
     "correct": {

@@ -145,6 +145,25 @@ def capture(project, output, command):
                     requested_external_type_opacity=admission.OPAQUE, business_opacity_added=False)
 
 
+def lake_stanza(case):
+    return ('[[lean_lib]]\nname = "SandproofRestoreWork"\nsrcDir = "' +
+            str(LIBRARY / case) + '"\n')
+
+
+def seed_public_lake(project):
+    """Exercise the prospective public correct entry in this private copy."""
+    path = project / 'lakefile.toml'
+    before = sha(path)
+    text = path.read_text()
+    if 'name = "SandproofRestoreWork"' not in text:
+        text += '\n' + lake_stanza('correct')
+    require(text.count('name = "SandproofRestoreWork"') == 1 and
+            text.count(lake_stanza('correct')) == 1,
+            'different existing restore work public Lake view')
+    path.write_text(text)
+    return dict(private_only=True, before_sha256=before, seeded_sha256=sha(path))
+
+
 def render(project, case, generated, data):
     installed = {}
     target = LIBRARY / case / 'SandproofRestoreWork'
@@ -179,9 +198,16 @@ def render(project, case, generated, data):
         shutil.copy2(HERE / template, destination)
         installed[str(PROOFS / (name + '.lean'))] = sha(destination)
     lake = project / 'lakefile.toml'
-    require('name = "SandproofRestoreWork"' not in lake.read_text(), 'restore work Lake view already present')
-    lake.write_text(lake.read_text() + '\n[[lean_lib]]\nname = "SandproofRestoreWork"\nsrcDir = "' +
-                    str(LIBRARY / case) + '"\n')
+    correct_stanza = lake_stanza('correct')
+    selected_stanza = lake_stanza(case)
+    text = lake.read_text()
+    if 'name = "SandproofRestoreWork"' in text:
+        require(text.count('name = "SandproofRestoreWork"') == 1 and
+                text.count(correct_stanza) == 1, 'different existing restore work Lake view')
+        text = text.replace(correct_stanza, selected_stanza)
+    else:
+        text += '\n' + selected_stanza
+    lake.write_text(text)
     installed['lakefile.toml'] = sha(lake)
     seeds = [name for name in installed if name.endswith('.lean')]
     files = sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
