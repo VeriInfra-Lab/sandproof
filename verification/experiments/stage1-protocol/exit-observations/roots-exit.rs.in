@@ -1,0 +1,3 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_restore_exit_matches(candidate: &RestoreExitCandidate, observed: &RestoreCandidateExitObservation) -> bool { candidate.matches(observed) }
