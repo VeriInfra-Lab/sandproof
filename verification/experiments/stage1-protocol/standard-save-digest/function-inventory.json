@@ -1,0 +1,34 @@
+{
+  "functions": [
+    {
+      "lean_name": "controller.lifecycle_inbox.codec.sha256_bytes",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::sha256_bytes",
+      "is_opaque": true,
+      "lean_file": "SandproofStandardSaveDigest/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_save_digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_save_digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_read_save_digest",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_read_save_digest",
+      "is_opaque": false,
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+import SandproofStandardSaveDigest.Types
+import SandproofStandardDigest.FunsExternal
+namespace SandproofStandardSaveDigestRust
+/- Exact reuse of the same conditional A9/A6/B4 primitive. No new SHA model. -/
+@[rust_fun "sandproof_controller_service::controller::lifecycle_inbox::codec::sha256_bytes"]
+abbrev controller.lifecycle_inbox.codec.sha256_bytes :=
+  SandproofStandardDigestRust.controller.lifecycle_inbox.codec.sha256_bytes
+end SandproofStandardSaveDigestRust

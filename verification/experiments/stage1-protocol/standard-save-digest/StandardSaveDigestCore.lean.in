@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestRepresentation
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardSaveDigest
+
+theorem save_refines (self : SaveContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    actualSave self bytes = .ok (DigestByteBridge.referenceOutput bytes, self) := by
+  unfold actualSave
+  simp only [SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.sha256_bytes,
+    StandardDigest.library_normal bytes normal, bind_tc_ok]
+
+theorem rebind_refines (self : ReadContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    actualRebind self bytes = .ok (DigestByteBridge.referenceOutput bytes, self) := by
+  unfold actualRebind
+  simp only [SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest,
+    SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.sha256_bytes,
+    StandardDigest.library_normal bytes normal, bind_tc_ok, uncurry_apply_pair]
+
+theorem through_save_refines (self : StandardDigest.Context) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    throughSave self bytes = StandardDigest.expected self bytes := by
+  unfold throughSave StandardDigest.expected
+  rw [save_refines _ bytes normal]
+  simp only [bind_tc_ok, uncurry_apply_pair, common_save_context_roundtrip]
+
+theorem through_rebind_refines (self : StandardDigest.Context) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    throughRebind self bytes = StandardDigest.expected self bytes := by
+  unfold throughRebind StandardDigest.expected
+  rw [rebind_refines _ bytes normal]
+  simp only [bind_tc_ok, uncurry_apply_pair, common_read_context_roundtrip]
+
+theorem full_save_digest_contract : FullSaveDigestContract :=
+  ⟨through_save_refines, through_rebind_refines⟩
+
+theorem save_thin_root (self : SaveContext) (bytes : Slice U8) :
+    SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_save_digest self bytes =
+      actualSave self bytes := rfl
+
+theorem read_save_thin_root (self : ReadContext) (bytes : Slice U8) :
+    SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_read_save_digest self bytes =
+      actualRebind self bytes := rfl
+
+end SandboxModel.Stage1Protocol.StandardSaveDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.save_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.rebind_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.through_save_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.through_rebind_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.full_save_digest_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.save_thin_root
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.read_save_thin_root

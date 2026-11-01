@@ -1,0 +1,45 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestValues
+open Aeneas Aeneas.Std SandproofStandardSaveDigestRust
+namespace SandboxModel.Stage1Protocol.StandardSaveTailCounter
+open StandardSaveDigest
+
+theorem wrong_common_normal :
+    throughSave Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty ∧
+    throughRebind Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty := by
+  constructor <;> simp [throughSave, throughRebind, actualSave, actualRebind, StandardDigest.expected, saveFromCommon, saveToCommon, readFromCommon, readToCommon, controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest, controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest, controller.lifecycle_inbox.codec.sha256_bytes, SandproofStandardDigestRust.controller.lifecycle_inbox.codec.sha256_bytes, Values.empty, StandardDigest.Values.empty, core.slice.Slice.is_empty, Slice.length]
+
+theorem actual_abc_tail_overwritten : throughSave Values.normal Values.abc =
+    .ok ((DigestByteBridge.referenceOutput Values.abc).set 31#usize 0#u8, Values.normal) := by
+  have valid : (31#usize).val < (DigestByteBridge.referenceOutput Values.abc).length := by simp
+  obtain ⟨out, updated, full⟩ := Aeneas.Std.WP.spec_imp_exists
+    (Array.update_spec (DigestByteBridge.referenceOutput Values.abc) 31#usize 0#u8 valid)
+  rw [full] at updated
+  have nonempty : core.slice.Slice.is_empty Values.abc = .ok false := by
+    simp [core.slice.Slice.is_empty, Values.abc, StandardDigest.Values.abc, Slice.length]
+  unfold throughSave actualSave
+    controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+  simp only [controller.lifecycle_inbox.codec.sha256_bytes]
+  rw [StandardDigest.library_normal _ StandardDigest.Values.abc_normal]
+  simp only [bind_tc_ok]
+  rw [nonempty]
+  simp only [bind_tc_ok]
+  rw [updated]
+  simp only [bind_tc_ok]
+  simp
+  exact common_save_context_roundtrip _
+
+theorem same_full_contract_rejected : ¬ FullSaveDigestContract := by
+  intro contract
+  have promised := contract.1 Values.normal Values.abc StandardDigest.Values.abc_normal
+  rw [actual_abc_tail_overwritten] at promised
+  have values := congrArg Prod.fst (Result.ok_injective promised)
+  have payload := congrArg
+    (fun output : Array U8 32#usize =>
+      (SandproofFoundationsRust.IdentifierLibrary.byteArray output.val).toList[31]?) values
+  rw [Values.overwritten_byte_zero, StandardDigest.Values.abc_full_payload] at payload
+  exact (by decide : (some (0 : UInt8)) ≠ some 0xad) payload
+
+end SandboxModel.Stage1Protocol.StandardSaveTailCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveTailCounter.wrong_common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveTailCounter.actual_abc_tail_overwritten
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveTailCounter.same_full_contract_rejected

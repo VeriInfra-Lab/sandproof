@@ -1,0 +1,121 @@
+{
+  "kind": "actual-fixed-original-Save-independent-generated-views",
+  "source_baseline": "f71640945d65ea95daa04d40df6d7777cd86e804",
+  "generated_bodies_modified": false,
+  "source_or_library_adopted": false,
+  "captures": {
+    "actual": {
+      "ir_sha256": "879d48d674fbcd02f6a9154ce8fa4bb9c79a2b7ee24802b017015ebdec4fa705",
+      "ir_value_sha256": "f269a2c97c001a28c95d62d4ea7b33cb9adf3145bd7e185388eb57d2e15c5d4a",
+      "published": {
+        "SandproofStandardSaveDigest/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/SandproofStandardSaveDigest/Funs.lean",
+          "sha256": "7a467d657875c58ff2ad4522f93513d66350ef1f540d29f2eba62d9db7c87498"
+        },
+        "SandproofStandardSaveDigest/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/SandproofStandardSaveDigest/Types.lean",
+          "sha256": "7bb2cf7e508e712ff654076c600dc1d1d56387751a32e0832a37301c0faca45c"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/translation.json",
+          "sha256": "d1893538d59537166bd67b969118ea16ddbd2a65e8e11fc55b88ac26dfa5e9bb"
+        }
+      }
+    },
+    "save-input-empty": {
+      "ir_sha256": "5c4aaba03c4ca7559f3b4d06921dd7d548de45f08594bd66c2aed35f13101309",
+      "ir_value_sha256": "9c8526762fa4fb6cd63c1c4ed0ce5dfa231e8be517c70ea1424accb788cd6fdd",
+      "published": {
+        "SandproofStandardSaveDigest/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-input-empty/SandproofStandardSaveDigest/Funs.lean",
+          "sha256": "e4fc1b0135e8c779116c9b522ce547b79c699d95f586e23a216c31ae70c08f9d"
+        },
+        "SandproofStandardSaveDigest/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-input-empty/SandproofStandardSaveDigest/Types.lean",
+          "sha256": "7bb2cf7e508e712ff654076c600dc1d1d56387751a32e0832a37301c0faca45c"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-input-empty/translation.json",
+          "sha256": "d1893538d59537166bd67b969118ea16ddbd2a65e8e11fc55b88ac26dfa5e9bb"
+        }
+      }
+    },
+    "save-tail-zero": {
+      "ir_sha256": "41276a69fda1697738fe1f6ed15967b2513821e410e2b3b215373617ab8725b4",
+      "ir_value_sha256": "3411e975f7815bedb330fce7ede83f378e21610d533a43cd8033c5f48b920fc7",
+      "published": {
+        "SandproofStandardSaveDigest/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-tail-zero/SandproofStandardSaveDigest/Funs.lean",
+          "sha256": "059cebdb8a3081f198d52e92821ffac50fb05bf80411e4943f0c18463da68670"
+        },
+        "SandproofStandardSaveDigest/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-tail-zero/SandproofStandardSaveDigest/Types.lean",
+          "sha256": "7bb2cf7e508e712ff654076c600dc1d1d56387751a32e0832a37301c0faca45c"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/save-tail-zero/translation.json",
+          "sha256": "2a35ddfcdfad9633e85a950a670168d8af90e41e4dfc19cfc047206a409a2398"
+        }
+      }
+    },
+    "delegate-input-empty": {
+      "ir_sha256": "27991b6f00d2200e1be35e9192d098114368c13efc483a7335ed14d5dba08267",
+      "ir_value_sha256": "46cf6d45a26887198b61673b2ff17acf3693de1ac8e59e417701d8a262342097",
+      "published": {
+        "SandproofStandardSaveDigest/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/delegate-input-empty/SandproofStandardSaveDigest/Funs.lean",
+          "sha256": "b403d6c2c1190db8d4a9421dbdc3981696109d249277330816bea7a594c6cb09"
+        },
+        "SandproofStandardSaveDigest/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/delegate-input-empty/SandproofStandardSaveDigest/Types.lean",
+          "sha256": "7bb2cf7e508e712ff654076c600dc1d1d56387751a32e0832a37301c0faca45c"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/delegate-input-empty/translation.json",
+          "sha256": "d1893538d59537166bd67b969118ea16ddbd2a65e8e11fc55b88ac26dfa5e9bb"
+        }
+      }
+    },
+    "generic-save-original": {
+      "ir_sha256": "70071d9622ef35c920760c589c24095bbb92e3cff89f239bae1f273379b7f2db",
+      "ir_value_sha256": "4da4bef5760422a7a28c7a5f3e1cbd11d03382884d620a635269e7fb47ab4aa2",
+      "published": {}
+    },
+    "generic-save-canonical": {
+      "ir_sha256": "d5b1c5d82a92c783deb8c50edad2c2617e0b14164bd46fe09c7ca98278f5752b",
+      "ir_value_sha256": "b034f5a29dd472311f73fc66d78f3fb47ed22c19b51c03abebeca4618b4aa7da",
+      "published": {
+        "SandproofStage1Request/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-canonical/SandproofStage1Request/Funs.lean",
+          "sha256": "49951d8557b324081a96d6a208ecf160a0bbf425d32e565a71ea5119f8552a45"
+        },
+        "SandproofStage1Request/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-canonical/SandproofStage1Request/Types.lean",
+          "sha256": "00ab1081cb2dbf8b8cd2e474b77a70151ce8761d4aa688c5bb47d8e6f5a100d4"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-canonical/translation.json",
+          "sha256": "53f2a9bd4708a4802779010d5a966662a312ad6b93aaf142e8e6f7ed7e1183d9"
+        }
+      }
+    },
+    "generic-save-primitive": {
+      "ir_sha256": "835f4f33ece8fc67af6ddaab8d812b4cb6b7a3ebc6e929761b70246c21a39584",
+      "ir_value_sha256": "304bb66267312e89b8e322c02cbf8feae6f191ef29b528572295a3281fa6c6ed",
+      "published": {
+        "SandproofStage1Graphic/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-primitive/SandproofStage1Graphic/Funs.lean",
+          "sha256": "5c63d7730435a2345f308e3a6ec946c6b1c4317b07aafa287799718a077a9f43"
+        },
+        "SandproofStage1Graphic/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-primitive/SandproofStage1Graphic/Types.lean",
+          "sha256": "ea140f926ac9f0ba9c45f0aa893826d3145dc23898b58265ef54278d495c19b6"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-save-digest/generic-save-primitive/translation.json",
+          "sha256": "7bc2a58df7dbd60f5b85ce6836959a652051ac0b370fe4a71338ab4839ae14df"
+        }
+      }
+    }
+  }
+}

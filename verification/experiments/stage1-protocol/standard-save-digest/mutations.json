@@ -1,0 +1,20 @@
+{
+  "save-input-empty": {
+    "location": "StandardInboxSave::digest",
+    "changed": "sha256_bytes(&bytes[..0])",
+    "same_full_save_digest_contract": true,
+    "compilation_failure_is_property_rejection": false
+  },
+  "save-tail-zero": {
+    "location": "StandardInboxSave::digest",
+    "changed": "nonempty digest[31] = 0",
+    "same_full_save_digest_contract": true,
+    "compilation_failure_is_property_rejection": false
+  },
+  "delegate-input-empty": {
+    "location": "StandardConfigRead InboxSaveEffects::digest",
+    "changed": "delegate &bytes[..0]",
+    "same_full_save_digest_contract": true,
+    "compilation_failure_is_property_rejection": false
+  }
+}

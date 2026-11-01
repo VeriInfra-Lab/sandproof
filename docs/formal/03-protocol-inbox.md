@@ -215,3 +215,17 @@ Load 规格；最小命名/零参数表示候选与五符号读库解释须另�
 接口均待主控/V0协调采用，不扩大到 handler、收件事务或认证。
 接回独立标准 BLOB/Load 视图只消去正常摘要 agrees；其他 IO、完整字符串表示、Graphic、
 物理连接/事务、未知提交/重启、JSON/TLS、实际材料和完整 V3 仍分别保留原义务。
+
+## 10. 标准 Save 摘要与实际保存调用
+
+[Save 摘要切片](../../verification/experiments/stage1-protocol/standard-save-digest/README.md)
+沿用同一个 FullDigestContract、纯字节数学及 A9/A6/B4 有限库接口候选，分别连接
+StandardInboxSave 的摘要字段和 StandardConfigRead 的原委托。完整接收者、全部输入
+和32字节输出进入同一合同，三种错误版共享规格、库解释和正常见证。
+
+调用方连接复用原 FullSave / saveView / save_refines。有效配置的预算上界以及编码后
+实际长度检查提供摘要正常输入域；无效配置或超预算编码仍按原顺序拒绝。只实例化
+实际 digest 字段，编码、SQL update、Graphic、完整表示条件及所有回调状态显式保留。
+这不是整个标准 Save IO、原 JSON 字节、SQL 参数/提交、物理连接/lease/事务历史、
+未知结果/重启或耐久收件的完成结论。原始式与命名候选的库来源准入不等于旧新一般
+内核精化；源候选、公共库合同及共享登记仍由主控/V0 协调采用。

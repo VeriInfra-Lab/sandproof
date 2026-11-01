@@ -1,0 +1,13 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_stage1_save_digest(receiver: &mut StandardInboxSave<'_>, bytes: &[u8]) -> [u8; 32] {
+    InboxSaveEffects::digest(receiver, bytes)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_stage1_read_save_digest(
+    receiver: &mut super::super::checkpoint::StandardConfigRead<'_>,
+    bytes: &[u8],
+) -> [u8; 32] {
+    InboxSaveEffects::digest(receiver, bytes)
+}

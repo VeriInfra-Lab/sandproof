@@ -1,0 +1,55 @@
+{
+  "native_run": false,
+  "production_adopted": false,
+  "actual_source_original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+  "cases_sha256": "2bcced4988d92311152976c0416c0cf7a530016c13345b3ccd9e0f010c9c8e16",
+  "native_variants": {
+    "original": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    },
+    "actual": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    },
+    "save-input-empty": {
+      "test_count": 5,
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "expected_clippy_codes": []
+    },
+    "save-tail-zero": {
+      "test_count": 5,
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "expected_clippy_codes": []
+    },
+    "delegate-input-empty": {
+      "test_count": 5,
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "expected_clippy_codes": []
+    },
+    "restored": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    }
+  },
+  "shared_acceptance": false,
+  "full_v3": false
+}
