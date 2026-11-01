@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Spec
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation.Values
+def digest : sandproof_protocol.lifecycle.digest.ContentDigest :=
+  Array.from (List.replicate 32 (0#u8)) (by decide)
+def otherDigest : sandproof_protocol.lifecycle.digest.ContentDigest :=
+  Array.from (List.replicate 32 (1#u8)) (by decide)
+def limits : capture.source.SourceObservationConfig :=
+  ⟨32768#u32, 4#u32, 1048576#u64, 1048576#u64, 1048576#u64, 68719476736#u64⟩
+def requirement : Requirement :=
+  ⟨digest, ⟨"deployment", "node", 1#u64⟩, ⟨1#u16, "boot", digest⟩,
+    ⟨.Vm, "vm"⟩, ⟨1234#u32, 5678#u64, "boot"⟩, limits⟩
+def value : Observation :=
+  ⟨digest, requirement.resource, requirement.source,
+    alloc.vec.Vec.from [123#u8, 125#u8] (by scalar_tac), digest, digest, 100#u64, 4096#u64⟩
+def badBinding : Observation := { value with work_binding := otherDigest }
+def badStart : Observation :=
+  { value with source := { value.source with start_time_ticks := 5679#u64 } }
+def badBoot : Observation :=
+  { value with source := { value.source with boot_id := "other-boot" } }
+def tooLarge : Observation :=
+  { value with configuration := alloc.vec.Vec.from (List.replicate 5 (0#u8)) (by scalar_tac) }
+def changedDigests : Observation :=
+  { value with executable_sha256 := otherDigest, kernel_sha256 := otherDigest }
+def boundary : Observation :=
+  { value with
+    configuration := alloc.vec.Vec.from (List.replicate 4 (0#u8)) (by scalar_tac)
+    kernel_bytes := limits.max_kernel_bytes
+    disk_bytes := limits.max_disk_bytes }
+theorem different_digest : otherDigest ≠ digest := by decide
+end SandboxModel.Stage1Protocol.SourceObservation.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Values.different_digest

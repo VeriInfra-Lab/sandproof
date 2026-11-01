@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.SourceEquality
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation
+open Equality
+
+theorem matches_exact (value : Observation) (requirement : Requirement) :
+    capture.source.RawSourceObservation.matches value requirement = .ok (Expected value requirement) := by
+  classical
+  simp [capture.source.RawSourceObservation.matches,
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    array_eq, resource_eq, source_eq, alloc.vec.Vec.is_empty,
+    Expected, Accepts, ok_and, ok_not_and, lift,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem full_observation_contract : FullObservationContract proof_source_observation_matches := by
+  intro value requirement
+  exact matches_exact value requirement
+
+theorem accepts_iff (value : Observation) (requirement : Requirement) :
+    proof_source_observation_matches value requirement = .ok true ↔ Accepts value requirement := by
+  rw [show proof_source_observation_matches value requirement = .ok (Expected value requirement) from
+    matches_exact value requirement]
+  simp [Expected]
+
+theorem rejects_iff (value : Observation) (requirement : Requirement) :
+    proof_source_observation_matches value requirement = .ok false ↔ ¬ Accepts value requirement := by
+  rw [show proof_source_observation_matches value requirement = .ok (Expected value requirement) from
+    matches_exact value requirement]
+  simp [Expected]
+
+theorem total (value : Observation) (requirement : Requirement) :
+    ∃ accepted, proof_source_observation_matches value requirement = .ok accepted :=
+  ⟨Expected value requirement, matches_exact value requirement⟩
+
+end SandboxModel.Stage1Protocol.SourceObservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.matches_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.full_observation_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.total
