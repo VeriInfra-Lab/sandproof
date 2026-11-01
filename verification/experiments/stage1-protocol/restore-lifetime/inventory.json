@@ -1,0 +1,171 @@
+{
+  "schema": 1,
+  "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "contract": "FullLifetimeContract",
+  "domain": "all decoded NativeCreateSnapshot, full CurrentReadyFacts and I64 now; ordinary fixed A6/B4 scalar/translation semantics; no authentication, physical or transactional fact",
+  "inputs": {
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "controller-service/src/controller/lifecycle_inbox/source_work/restore/continued_exit.rs": "fc6eeb59b55521d9a0d5a2c0e421367ebf4e45759531c4d8d726941e8d15e850",
+    "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
+    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4"
+  },
+  "providers": {
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+    "SandboxModel/Lifecycle/Protocol/Library.lean": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+    "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+    "verification/experiments/stage1-protocol/inbox-load/admission.py": "e32f33a57a2e8a30312bf7877b61a1fe5a77df23db1b58aecc3833568bc12639",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "templates": {
+    "verification/experiments/stage1-protocol/restore-lifetime/Boundaries.lean.in": "29cdbabe842989e1e50d03725dffbbf22fda58b6abcc79155ae80635877594f5",
+    "verification/experiments/stage1-protocol/restore-lifetime/Core.lean.in": "e7736db3ebfdc4ba9bd8966d1b2b59b014b9a3c05ed8aeb338d22289a7f5785e",
+    "verification/experiments/stage1-protocol/restore-lifetime/NegativeExpiry.lean.in": "638e9bb57b08d4c31631a9fcf03f618ae211988e33d32adf9b83fc40f5f94fa8",
+    "verification/experiments/stage1-protocol/restore-lifetime/NegativeMaximum.lean.in": "cd43b27ecabb9acbfa729158c1fcf1f4d90c1e39e375fcef3092c127b66269ab",
+    "verification/experiments/stage1-protocol/restore-lifetime/Spec.lean.in": "a13cbd06c6849fd0704f599d66861e8525850060cdbdde459aad2818575be59f",
+    "verification/experiments/stage1-protocol/restore-lifetime/Witnesses.lean.in": "49afa1a3e7132191b36f8c0efcecee1a54808797f97ee46bdb13251512545fb7",
+    "verification/experiments/stage1-protocol/restore-lifetime/native-tests.rs.in": "86b4693e202471539adf0a74fcff55403d723a2b46d413f3bb152de963b7ab73"
+  },
+  "drivers": {
+    "verification/experiments/stage1-protocol/restore-lifetime/formal.py": "e62a96b46f76959bc7315a3ae40140f685b51b88ec2cc0dc9d23062d410903ec",
+    "verification/experiments/stage1-protocol/restore-lifetime/native.py": "863ef2ffa561cbaa76222f050f1cc0ee22a5a00a33494e2e243516084c9ef451",
+    "verification/experiments/stage1-protocol/restore-lifetime/support.py": "923f9a95251d5bd3345fc98351b7d411fb457c64594696619760eaebb010fcef"
+  },
+  "cases": {
+    "correct": {
+      "generated": {
+        "Funs.lean": "30e1cd643bee413af184361d5c41c12bc00da33bf4fa0d1e79f6a71d882fea71",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "emitted": {
+        "Funs.lean": "30e1cd643bee413af184361d5c41c12bc00da33bf4fa0d1e79f6a71d882fea71",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "files": [
+        "SandboxModel/Lifecycle/Protocol/Library.lean",
+        "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
+        "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Boundaries.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Core.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Spec.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Witnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/correct/SandproofRestoreValidation/Funs.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/correct/SandproofRestoreValidation/Types.lean"
+      ],
+      "audits": [
+        "SandboxModel.Stage1Protocol.Library.bool_ne_model_exact",
+        "SandboxModel.Stage1Protocol.Library.option_some_calls_original_dictionary",
+        "SandboxModel.Stage1Protocol.Library.option_mismatch_calls_no_dictionary",
+        "SandboxModel.Stage1Protocol.Library.option_u64_eq",
+        "SandboxModel.Stage1Protocol.Replay.bytes_eq",
+        "SandboxModel.Stage1Protocol.Replay.array_eq",
+        "SandboxModel.Stage1Protocol.Replay.vec_eq",
+        "SandboxModel.Stage1Protocol.Replay.ok_and",
+        "SandboxModel.Stage1Protocol.Replay.resources_eq",
+        "SandboxModel.Stage1Protocol.Replay.create_eq",
+        "SandboxModel.Stage1Protocol.Replay.node_eq",
+        "SandboxModel.Stage1Protocol.Replay.key_eq",
+        "SandboxModel.Stage1Protocol.Replay.expected_eq",
+        "SandboxModel.Stage1Protocol.Replay.binding_eq",
+        "SandboxModel.Stage1Protocol.Replay.operation_eq",
+        "SandboxModel.Stage1Protocol.Replay.request_eq",
+        "SandboxModel.Stage1Protocol.Replay.center_eq",
+        "SandboxModel.Stage1Protocol.Replay.retention_eq",
+        "SandboxModel.Stage1Protocol.Replay.accepted_eq",
+        "SandboxModel.Stage1Protocol.Replay.replay_complete",
+        "SandboxModel.Stage1Protocol.Replay.replay_accepts_iff",
+        "SandboxModel.Stage1Protocol.Replay.replay_rejects_iff",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.missing_lifetime",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.missing_started",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.negative_clock",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.changed_maximum",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.future_saved_observation",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.deadline_is_strict",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.earlier_saved_observation_allowed",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.lifetime_refines",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.accepts_iff",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.refuses_iff",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.total",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.cast_literals",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_model",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_actual"
+      ]
+    },
+    "omit-maximum-field": {
+      "generated": {
+        "Funs.lean": "41c21ffda3a2005016d969f14c8607b17d163abf44f137f3f193e9d29fd6afc5",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "emitted": {
+        "Funs.lean": "41c21ffda3a2005016d969f14c8607b17d163abf44f137f3f193e9d29fd6afc5",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "files": [
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Negative.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Spec.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Witnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/omit-maximum-field/SandproofRestoreValidation/Funs.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/omit-maximum-field/SandproofRestoreValidation/Types.lean"
+      ],
+      "audits": [
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeMaximum.specified_refusal",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeMaximum.actual_wrong_accepts",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeMaximum.rejects_same_full_contract",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.cast_literals",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_model",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_actual"
+      ]
+    },
+    "allow-expired-end": {
+      "generated": {
+        "Funs.lean": "1b4e8fb63a21c7bc58b2521e7cbb33f3424f914a26e4deba633507550f721774",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "emitted": {
+        "Funs.lean": "1b4e8fb63a21c7bc58b2521e7cbb33f3424f914a26e4deba633507550f721774",
+        "Types.lean": "2fc27c108617f78353fdd48fdde387cb6fd7248317591a3acb33088f4b75ced5"
+      },
+      "files": [
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Negative.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Spec.lean",
+        "SandboxModel/Lifecycle/Protocol/RestoreLifetime/Witnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/allow-expired-end/SandproofRestoreValidation/Funs.lean",
+        "verification/aeneas/stage1-protocol/restore-lifetime/allow-expired-end/SandproofRestoreValidation/Types.lean"
+      ],
+      "audits": [
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.specified_refusal",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.actual_wrong_accepts",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.rejects_same_full_contract",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.cast_literals",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_model",
+        "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_actual"
+      ]
+    }
+  }
+}

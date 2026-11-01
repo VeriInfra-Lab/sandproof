@@ -195,3 +195,12 @@ ValueRef 转换后有效值一致，不能称原始载体相等。原动态参�
 公共 SQL 定义、完整生成错误／值载体和原字节数学继续复用；数组不得套用五元组提前
 计数条件。该值／错误切片不闭合标准实例的对象／guard、同一事务、物理行效果、提交
 未知、重启或字节／认证链；采用后的当前生成体、普通与正式共享验收仍分别取得。
+
+
+[原恢复继续退出期限值](../../verification/experiments/stage1-protocol/restore-lifetime/README.md)
+仅覆盖当前 continued_exit::lifetime_matches 对已解码 NativeCreateSnapshot、
+CurrentReadyFacts 和 i64 当前时间的布尔校验：缺失/负时间、四字段相等、
+保存观测上界、启动关系及严格 end/max_end 边界。它不提供认证、当前事务、
+进程存在/死亡、材料闭合或耐久接受；没有附加保存观测不早于启动的条件。
+原 restore::validate_record、exit::eligible 和完整 authority/producer/driver
+仍单列，不因期限字段吻合或有限反例而关闭。
