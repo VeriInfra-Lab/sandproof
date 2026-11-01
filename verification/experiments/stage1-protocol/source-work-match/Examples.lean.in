@@ -1,0 +1,15 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Values
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch
+open Values
+noncomputable section
+theorem normal_expected : (by classical exact decide (base = base) : Bool) = true := by simp
+theorem limits_expected : (by classical exact decide (base = changedLimits) : Bool) = false := by simp [limits_differ]
+theorem key_expected : (by classical exact decide (base = changedKey) : Bool) = false := by simp [key_differs]
+theorem credential_expected : (by classical exact decide (base = changedCredential) : Bool) = false := by simp [credential_differs]
+end
+end SandboxModel.Stage1Protocol.SourceWorkMatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.limits_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.key_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.credential_expected

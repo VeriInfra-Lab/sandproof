@@ -1,0 +1,17 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Core
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Examples
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch
+open Values
+theorem normal_actual : proof_source_work_eq base base = .ok true := self_matches base
+theorem limits_actual : proof_source_work_eq base changedLimits = .ok false :=
+  (rejects_iff _ _).mpr limits_differ
+theorem key_actual : proof_source_work_eq base changedKey = .ok false :=
+  (rejects_iff _ _).mpr key_differs
+theorem credential_actual : proof_source_work_eq base changedCredential = .ok false :=
+  (rejects_iff _ _).mpr credential_differs
+end SandboxModel.Stage1Protocol.SourceWorkMatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.limits_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.key_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.credential_actual

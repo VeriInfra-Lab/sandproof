@@ -1,0 +1,8 @@
+import SandproofSourceWorkMatch.Funs
+import SandboxModel.Lifecycle.Protocol.ReplayContract
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch
+abbrev Work := controller.lifecycle_inbox.source_work.SourceWork
+abbrev FullWorkContract := FullReplayContract (T := Work)
+end SandboxModel.Stage1Protocol.SourceWorkMatch
