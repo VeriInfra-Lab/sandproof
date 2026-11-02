@@ -918,6 +918,24 @@ Status 与 TLS 的独立生成根会产生同名的 TransportError 判别辅助�
 
 源码邻域只登记 World、checkpoint 及 runtime 的实际调用，未证明它们的完整业务；V4/V9 继续提供自有比较/表示、恢复、授权、状态选择及释放决定。回调次数/状态和有状态 FnMut 是独立义务，不由这组只读查询定理自动得到。
 
+### A6 共享切片的短路判断
+
+[StandardRecord 两次读取](../../verification/experiments/stage1-protocol/protocol-record/standard-read/README.md)
+另使用固定标准库共享切片迭代器的 `Iterator::any`。其有限模型沿用原
+`Iter { slice, i }`，只用于有效普通共享借用、合法游标和本处捕获普通 SandboxId 的
+闭包；不将任意闭包或整个业务判断列为可信。
+
+库条件保证从原游标按顺序调用原 FnMut，前一次回调产生的状态传给下一次；首次
+返回 true 就停止，没有后续回调。正常返回 false 表示剩余元素都已检查；正常返回时
+保留原切片，游标准确反映已消费的元素。模型传播回调的语言级失败／发散，不由此
+推出 Rust panic/unwind 时的外部状态回滚、资源析构或取消完成。
+
+本处自有的 sandbox 比较和 Releasing 阶段判断由真实生成体定理提供；库只提供
+遍历方式，不能代替该谓词的证明。Option 判断、RefCell 的正常共享借用和普通值
+克隆继续沿用原具名条件；原候选／事务来源、终止后的读取时点、并发无干扰和真实
+资源状态仍归父链及 V4/V5，不由这两个只读结论得到。该登记不是 Std 迭代器内部实现
+的机器证明，也不扩展到资源载荷、自定义 Drop、裸指针或任意共享可变堆。
+
 ## A4/A6/B4 SQLite 条件 UPDATE 的固定五参数接口
 
 [SqliteStatements](../../SandboxModel/Boundaries/SqliteStatements/Model.lean)为原 write_accepted_with_ids 中一条条件 UPDATE 提供有限行片段；[环境](../../verification/sqlite-statements-environment.json)与[候选](../../verification/experiments/sqlite-statements/candidate.json)固定 SQL、五个位置/类型、原连接/事务、checked_add、整数边界、原错误和 changed != 1 的决定。这里只证明隔离副本实际调用的核心，生产未改；分离核心/固定五元组的有限数据库对照不构成一般旧新等价。

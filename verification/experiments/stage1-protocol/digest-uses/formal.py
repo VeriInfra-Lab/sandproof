@@ -42,7 +42,7 @@ def run(output,variant,data,prepare_only):
 
     try:
         assert support.inventory() == data
-        assert os.sched_getaffinity(0) <= {0,1,2,3}
+        assert 1 <= len(os.sched_getaffinity(0)) <= 4
         disk = os.statvfs(ROOT)
         assert disk.f_bavail*disk.f_frsize >= 64*2**30+2*4*2**30
         captured = support.capture.run(output/'capture',variant)

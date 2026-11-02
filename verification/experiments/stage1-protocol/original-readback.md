@@ -28,3 +28,29 @@ export SANDPROOF_V3_ORIGINAL_EVIDENCE=/private/original-proof-bytes
 也不生成冒充旧执行的新检查点。缺少或损坏原证据须补验，不能把读回失败记为证明失败，
 或反过来绕过检查器。边界和最终状态见[证明工作流](../../../docs/proof-workflow.md)
 与[覆盖记录](../../../docs/proof-coverage.md)。
+
+## 本批其它有限原件的搬运
+
+建议在操作者控制的`EVIDENCE_ROOT`下分别保存`bundles/`、原prepare输出的
+`original-proof-bytes/`、`production-json-original/`、`sqlite-native/readback/`、
+`storage-reference/`、`captures/`、最终`native-scope/`与`configs/`。
+各目录不互相充当封口；最终23原生label的scope原件不能由SQLite裸7件替代。
+
+本批已保存的B原件档案如下；SHA验证后保留原JSON/命令/路径和source身份，不重新标注RUN。
+
+| 包名 | SHA-256 | 内容 |
+|---|---|---|
+| b-storage-proof-reference-01.tar.gz | `3f1868eccd93e2903350452d49f14d30e8faf984d1ad816823a90d099e001db4` | SaveBlob6/4和SQLite8/18的44份原记录、日志、实际页/配置及origin-map；不含完整工具或构建缓存 |
+| b-sqlite-convergence-native-aff2c174.tar.gz | `fbb64e03efb7ac4550088e51caecff29a4447ee95b0c608d0edd70c9fa101e75` | 原7件native packet、0.294788秒纯读回及原839装载失败；不代表scope全部通过 |
+| b-api-captures-02.tar.gz | `7855c9770c129c9f27da536fc02a17c15d6dc66f601c0e358efe9a2a7ca21ac1` | 8fc真实两BLOB及SQLite完整IR/gen，capture_only |
+| b-mutants-01.tar.gz | `29b14aed8285c7826669abac901515567223a8b58c76fdc33f81c8a74067ac76` | 8fc七个真实错误版原捕获，不是数学通过 |
+
+十包原四档的SHA以fixed-originals.json为唯一登记。JSON档案必须与production-json/readback.json
+逐项相符，不拿早期单页草稿替代当前10页30审计。最终公共结果、当前查询证明和整批归档的
+统一下载位置与SHA仍待完成后填写，不能据本表宣称已有完整离线复现包。
+
+SQLite的可搬运native_result使用同目录`native-packet/correct`四件和`native-packet/fault`三件，
+保留相对布局即可交严格读回。原正确项目、父失败记录和服务结果还有原路径/同安装身份检查；
+在原已批准命名空间把搬运原件映射到记录中的固定虚拟前缀，再提供配置定位，不改写原收据。
+这是有限运行视图，不依赖历史lzn私有目录，也不是任意路径重写器或任意机器一键重证。
+正常分配、第三方库/数据库、薄接线以及V5自有同事务/恢复条件见依赖合同，复现读回不消除它们。

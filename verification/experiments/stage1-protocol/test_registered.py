@@ -41,8 +41,8 @@ class CreateDelivery(unittest.TestCase):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 138)
-            self.assertEqual(len(registered.native_labels()), 53)
+            self.assertEqual(len(full), 164)
+            self.assertEqual(len(registered.native_labels()), 74)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -369,9 +369,62 @@ class CreateDelivery(unittest.TestCase):
 
 
 class Registration(unittest.TestCase):
+    def test_convergence_has_a_fixed_separate_plan_and_retains_each_original_wrong_view(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_ONLY='restore-work'):
+            jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
+        self.assertEqual(len(jobs), 27)
+        self.assertEqual(len({job['name'] for job in jobs}), 27)
+        self.assertEqual(len(registered.native_labels('protocol-convergence')), 22)
+        self.assertEqual({job['convergence_extra'] for job in jobs if 'convergence_extra' in job},
+                         {'production-json', 'sqlite-commit', 'standard-record-read'})
+        self.assertFalse(any(job['name'].startswith('inbox-record-total-') for job in jobs))
+        for name, expected in registered.CONVERGENCE.CASES.items():
+            selected = [job for job in jobs if job.get('convergence_package', job.get('create_package')) == name]
+            self.assertEqual([case for job in selected for case in job['cases']], list(expected))
+            self.assertTrue(all(job['actual_files'] for job in selected))
+        self.assertTrue(all(job.get('profile') == 'protocol-convergence' for job in jobs))
+
+    def test_convergence_wrong_view_cannot_borrow_the_correct_views_audits(self):
+        jobs = []
+        registered.CONVERGENCE.append_jobs(jobs, Path('/unused'), registered.ROOT,
+                                           profile='protocol-convergence')
+        job = next(job for job in jobs if job['name'] == 'create-standard-identity')
+        rows = {}
+        for case, view in job['views'].items():
+            actual = dict(files={name:'a'*64 for name in view['files']},
+                          audits=list(view['audits']), service_log_sha256='b'*64)
+            rows[case] = dict(complete=True, property_rejected=case != 'actual',
+                             files=actual['files'], audits=actual['audits'], actual=actual)
+        result = dict(kind=registered.CONVERGENCE.VARIANT_BATCHES['create-standard-identity'],
+                      complete=True, prepare_only=False, all_variants_complete=True, variants=rows)
+        registered._check_actual(result, job)
+        for defect in ('audit', 'file', 'property'):
+            wrong = copy.deepcopy(result)
+            row = wrong['variants']['namespace-omitted']
+            if defect == 'audit':
+                row['audits'] = list(rows['actual']['audits'])
+                row['actual']['audits'] = row['audits']
+            elif defect == 'file':
+                row['files'] = dict(rows['actual']['files'])
+                row['actual']['files'] = row['files']
+            else:
+                row['property_rejected'] = False
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                registered._check_actual(wrong, job)
+
+    def test_convergence_workers_use_disjoint_four_cpu_slots_within_the_admitted_budget(self):
+        for workers in (1, 2, 4, 8, 12):
+            self.assertEqual(registered._execution_options(workers,
+                             profile='protocol-convergence')['workers'], workers)
+            slots = registered._cpu_slots('protocol-convergence', workers, range(8, 8+4*workers))
+            self.assertTrue(all(len(slot) == 4 for slot in slots))
+            self.assertEqual(len({cpu for slot in slots for cpu in slot}), 4*workers)
+            with self.assertRaisesRegex(ValueError, 'admitted CPUs'):
+                registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
+
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 53)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 53)
+        self.assertEqual(len(registered.NATIVE_CASES), 74)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 74)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -397,7 +450,7 @@ class Registration(unittest.TestCase):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 138)
+        self.assertEqual(len(jobs), 164)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',

@@ -105,7 +105,7 @@ def batch(output, prepare_only):
         prepared=False, variants={}, prepare_only=prepare_only, production_adopted=True,
         ordinary_checks_run=False, native_checks_run=False, shared_acceptance=False, full_v3=False)
     try:
-        if not os.sched_getaffinity(0) <= {0, 1, 2, 3}:
+        if not (1 <= len(os.sched_getaffinity(0)) <= 4):
             raise ValueError('reply task exceeds its existing CPU admission')
         disk = os.statvfs(ROOT)
         if disk.f_bavail*disk.f_frsize < 64*2**30+2*4*2**30:

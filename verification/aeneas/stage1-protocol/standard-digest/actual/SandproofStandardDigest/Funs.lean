@@ -35,7 +35,7 @@ def
   ok (a, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 378:0-383:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 382:0-387:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_load_digest
   (receiver : controller.checkpoint.config.StandardConfigRead)
   (bytes : Slice Std.U8) :

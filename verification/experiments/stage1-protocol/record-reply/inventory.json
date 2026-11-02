@@ -99,8 +99,8 @@
   },
   "drivers": {
     "capture.py": "22ee6547e657063161021793aab402dfad7c24eba9d8355247391d42afda8372",
-    "formal.py": "f01d3a4c91c6270182e67abe7204cd5579faa08f6c4bc1e14df7741d08b78855",
-    "native.py": "0b1cf4b3a1a4f73e58d8528b0358a0ca0e2a8b53ed27be589521d17a2df169a4",
+    "formal.py": "3eb4dbb3aace2d5553996e6b8150302c71c0ef6d75bd98e06fbce6d3bf33e9f6",
+    "native.py": "00c9347aae24721ac5c4c265332234625ebdfca6f1da24af69ef1484f0462fe8",
     "support.py": "7131136036ae1c958e7d1fb13348e7a6a5cf4000bb1d40b0dc1e6b68d3944108"
   },
   "root_namespace_open": "open SandproofStage1RequestRust.proof_record_reply_roots\n",

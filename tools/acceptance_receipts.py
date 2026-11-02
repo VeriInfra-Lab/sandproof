@@ -21,7 +21,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
-NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery', 'capture-caller', 'pause-publication', 'pause-stop')
+NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery',
+                 'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
@@ -173,12 +174,18 @@ def stage1_registration():
 
 
 def stage1_native_labels(profile='full'):
-    """Fixed full or Create scope; no caller-supplied case selection."""
+    """Fixed full, Create or convergence scope; no caller-selected cases."""
     registered = stage1_registration()
     labels = tuple(registered.native_labels(profile))
-    count = 12 if profile == 'create-delivery' else 53
+    counts = {'full': 74, 'create-delivery': 12, 'protocol-convergence': 22}
+    if profile not in counts:
+        raise ValueError('unknown fixed native profile: ' + str(profile))
+    count = counts[profile]
     if len(labels) != count or len(set(labels)) != count:
         raise ValueError(f'stage1 native scope requires the exact {count} registered cases')
+    if profile == 'protocol-convergence' and not {
+            'stage1-accepted-json-parser', 'stage1-sqlite-commit'} <= set(labels):
+        raise ValueError('convergence is missing its JSON or SQLite component')
     result = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *labels)
     if len(set(result)) != count+(2 if profile == 'full' else 1):
         raise ValueError('stage1 native scope has duplicate component labels')
@@ -187,8 +194,10 @@ def stage1_native_labels(profile='full'):
 
 def scoped_native_labels(scope):
     check_native_scope(scope)
-    if scope in ('stage1-protocol', 'stage1-create-delivery'):
-        return stage1_native_labels('create-delivery' if scope == 'stage1-create-delivery' else 'full')
+    profiles = {'stage1-protocol': 'full', 'stage1-create-delivery': 'create-delivery',
+                'stage1-protocol-convergence': 'protocol-convergence'}
+    if scope in profiles:
+        return stage1_native_labels(profiles[scope])
     return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
             else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
 
@@ -209,8 +218,8 @@ def current_native_seal(seal, runtime, *, scope='all'):
     check_native_scope(scope)
     actual_scope = seal.get('scope')
     # Whole packet admission is deliberately stricter than component reuse.
-    # A complete full/all seal cannot stand in for the explicit Create profile,
-    # and Create can never stand in for full/all or another finite scope.
+    # A complete full/all seal cannot stand in for explicit Create/convergence,
+    # and neither finite seal can stand in for full/all or another scope.
     create = scope == 'stage1-create-delivery'
     if create:
         definition = stage1_registration().create_profile(ROOT)
@@ -219,7 +228,16 @@ def current_native_seal(seal, runtime, *, scope='all'):
                 or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
                     != definition['source_only']['archive_sha256']):
             return False
-    elif actual_scope == 'stage1-create-delivery':
+    elif scope == 'stage1-protocol-convergence':
+        registered = stage1_registration()
+        definition = registered.CONVERGENCE.definition(ROOT)
+        source = registered.source_definition(ROOT)
+        if (actual_scope != scope or seal.get('profile') != 'protocol-convergence'
+                or digest(seal.get('convergence_definition')) != digest(definition)
+                or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
+                    != source['archive_sha256']):
+            return False
+    elif actual_scope in ('stage1-create-delivery', 'stage1-protocol-convergence'):
         return False
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0

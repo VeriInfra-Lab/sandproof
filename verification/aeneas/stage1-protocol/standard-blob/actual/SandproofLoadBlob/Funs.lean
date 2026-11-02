@@ -96,7 +96,7 @@ def JournalError.Insts.CoreConvertFromError : core.convert.From
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::read_blob_pair]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 368:0-374:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 372:0-378:1 -/
 def controller.lifecycle_inbox.codec.read_blob_pair
   (r : rusqlite.row.Row) (first : Std.Usize) (second : Std.Usize) :
   Result (core.result.Result ((alloc.vec.Vec Std.U8) × (alloc.vec.Vec Std.U8))
@@ -174,7 +174,7 @@ def
     ok (r1, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_blob_pair]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 378:0-383:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 382:0-387:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_load_blob_pair
   (receiver : controller.checkpoint.config.StandardConfigRead)
   (statement : Str) :

@@ -123,7 +123,8 @@ def run_suite(output, *, scope='all'):
 
 
 def stage1_source_admission(scope, *, prepare=False):
-    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery'):
+    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery',
+                 'stage1-protocol-convergence'):
         registered = load('stage1_source_only_admission',
             ROOT/'verification/experiments/stage1-protocol/registered.py')
         (registered.prepare_create_sources if prepare else registered.check_create_sources)(ROOT)
@@ -162,7 +163,7 @@ def run_locked_suite(output, *, scope='all'):
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
-    if scope in ('stage1-protocol', 'stage1-create-delivery'):
+    if scope in ('stage1-protocol', 'stage1-create-delivery', 'stage1-protocol-convergence'):
         run_stage1_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     if scope == 'capture-caller':
@@ -286,12 +287,15 @@ def run_stage1_native(work, *, scope='all'):
         subprocess.run([sys.executable,
             'verification/experiments/stage1-protocol/component.py',
             '--native-only', '--output', str(target)], cwd=ROOT, check=True)
-    if scope != 'stage1-create-delivery':
-        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    registered.run_native(ROOT, work / 'stage1-v3',
-        profile='create-delivery' if scope == 'stage1-create-delivery' else 'full', scope=scope)
+    profile = ('create-delivery' if scope == 'stage1-create-delivery' else
+               'protocol-convergence' if scope == 'stage1-protocol-convergence' else 'full')
+    if profile == 'protocol-convergence' and registered.native_scope(profile) != scope:
+        raise ValueError('native profile and scope do not match')
+    if profile == 'full':
+        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
+    registered.run_native(ROOT, work / 'stage1-v3', profile=profile, scope=scope)
 
 
 def publish_suite(output, work, initial, started, *, scope='all', builds=None):
@@ -324,6 +328,11 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
         registered = load('stage1_create_native_definition',
             ROOT/'verification/experiments/stage1-protocol/registered.py')
         result.update(profile='create-delivery', create_definition=registered.create_profile(ROOT))
+    elif scope == 'stage1-protocol-convergence':
+        registered = load('stage1_convergence_native_definition',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        result.update(profile='protocol-convergence',
+                      convergence_definition=registered.CONVERGENCE.definition(ROOT))
     # Keep the original completion plus a precise target inventory. Publication
     # never moves/deletes build bytes or guesses resource cleanup from exit 0.
     original = work / 'native-complete.json'

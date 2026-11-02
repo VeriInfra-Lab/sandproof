@@ -20,14 +20,14 @@
     "controller-service/src/capture/source.rs": "862c749de515fbe35595b6f00043455935d9581e22ae10554f639579c1833fbc",
     "controller-service/src/capture/terminated.rs": "11a566f0224f4cce4669e4ce932b9736396238867aa89f9614c9848c7c069245",
     "controller-service/src/capture/work.rs": "fa09c2f565602f0ace3351652aa4d5fc0ed8aafe361b9b864d8f981f78248dcc",
-    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
     "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
     "controller-service/src/controller/internal_inbox.rs": "8d5cd81b597add57f37cf129cca27c0c6ce2bbc29d2a9a1e9f405278d1a84a8e",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
-    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
-    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/drain.rs": "58cdbef3069b780198864e56789181bdc2a1333a29fd7bedc4eb70a8c14209a9",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/end.rs": "b61304ae2a3fa645b5b0cf47043892f59e34ef4e14efea76b59dc3823b75c51e",
     "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
@@ -291,5 +291,29 @@
       "SandboxModel.Stage1Protocol.SourceObservation.normal_expected",
       "SandboxModel.Stage1Protocol.SourceObservation.start_expected"
     ]
+  },
+  "reviewed_source_rebinding": {
+    "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
+    "production_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_retagged": false,
+    "unchanged_consumed_behavior": "actual source-observation guard and compared requirement/observation layouts unchanged. It does not establish JSON parsing, Config.valid, SHA computation, physical truth or current authority.",
+    "source_changes": {
+      "inputs:controller-service/src/controller/admission.rs": {
+        "original": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+        "current": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox.rs": {
+        "original": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work.rs": {
+        "original": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+        "current": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work/full.rs": {
+        "original": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+        "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
+      }
+    }
   }
 }

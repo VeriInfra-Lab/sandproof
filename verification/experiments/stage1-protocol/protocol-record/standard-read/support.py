@@ -23,6 +23,11 @@ METHODS = ['releasing', 'current_operation']
 INCLUDE = [
     'sandbox_controller_core',
     *ROOTS,
+    # Retain the three original value carriers, including private fields.
+    # This does not include their impl methods or additional SQL operations.
+    PREFIX + 'StandardRecord',
+    'sandproof_controller_service::controller::transaction::WorldTransaction',
+    'sandproof_controller_service::controller::transaction::CommittedWorld',
     PREFIX + '*::releasing',
     PREFIX + '*::current_operation',
     'sandproof_controller_service::controller::transaction::*::world',

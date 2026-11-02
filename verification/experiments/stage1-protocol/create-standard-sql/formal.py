@@ -47,7 +47,7 @@ def run(output, variant, data, inputs, modes, prepare_only):
         if done.returncode:
             raise ValueError('compiler/kernel/service failure; not property rejection: '+label)
     try:
-        assert os.sched_getaffinity(0) <= {0,1,2,3}
+        assert 1 <= len(os.sched_getaffinity(0)) <= 4
         rec['cpu_affinity'] = sorted(os.sched_getaffinity(0))
         assert support.inventory() == data
         rec['library_review'] = support.library_review(data)

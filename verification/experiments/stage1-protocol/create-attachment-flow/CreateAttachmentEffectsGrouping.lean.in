@@ -1,0 +1,64 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface
+
+/-- The previous complete effect dictionary, used only as a representation
+relation. Its fields are copied verbatim from the accepted generated type.
+No protocol value or business algorithm is replaced. -/
+structure Flat (Self : Type) where
+  codecInboxLoadEffectsInst :
+    sandproof_controller_service.controller.lifecycle_inbox.codec.InboxLoadEffects
+    Self
+  codecInboxSaveEffectsInst :
+    sandproof_controller_service.controller.lifecycle_inbox.codec.InboxSaveEffects
+    Self
+  world : Self → Result (sandbox_controller_core.model.World × Self)
+  begin_lifetime_update : Self → Result Self
+  sandbox_id : Self → Str → sandbox_controller_core.ids.SandboxId →
+    Result ((core.result.Result sandproof_protocol.SandboxId
+    sandproof_controller_service.JournalError) × Self)
+  execute_lifetime_update : Self → Str → Std.I64 → Str → Result
+    ((core.result.Result Std.Usize sandproof_controller_service.JournalError)
+    × Self)
+  begin_inbox_save : Self → Result Self
+
+abbrev Grouped := CreateAttachmentEffects
+
+def group {E : Type} (io : Flat E) : Grouped E := {
+  codecInboxLoadEffectsInst := io.codecInboxLoadEffectsInst
+  codecInboxSaveEffectsInst := io.codecInboxSaveEffectsInst
+  CreateLifetimeSqlEffectsInst := { execute_lifetime_update := io.execute_lifetime_update }
+  world := io.world
+  begin_lifetime_update := io.begin_lifetime_update
+  sandbox_id := io.sandbox_id
+  begin_inbox_save := io.begin_inbox_save }
+
+def flatten {E : Type} (io : Grouped E) : Flat E := {
+  codecInboxLoadEffectsInst := io.codecInboxLoadEffectsInst
+  codecInboxSaveEffectsInst := io.codecInboxSaveEffectsInst
+  world := io.world
+  begin_lifetime_update := io.begin_lifetime_update
+  sandbox_id := io.sandbox_id
+  execute_lifetime_update := io.CreateLifetimeSqlEffectsInst.execute_lifetime_update
+  begin_inbox_save := io.begin_inbox_save }
+
+theorem flatten_group {E : Type} (io : Flat E) : flatten (group io) = io := by rfl
+
+theorem group_flatten {E : Type} (io : Grouped E) : group (flatten io) = io := by rfl
+
+/-- Quantifying over the new grouped dictionary covers exactly the old full
+callback domain, with no added conditions or field omissions. -/
+theorem full_domain_correspondence {E : Type} (predicate : Grouped E → Prop) :
+    (∀ io, predicate io) ↔ (∀ io : Flat E, predicate (group io)) := by
+  constructor
+  · intro law io
+    exact law (group io)
+  · intro law io
+    simpa only [group_flatten] using law (flatten io)
+
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence

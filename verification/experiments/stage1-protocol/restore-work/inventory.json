@@ -10,8 +10,8 @@
     "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
     "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
-    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
-    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/capture/restore.rs": "6e7eed471ace98ed114057794cd956a2fc31917e9e787a1a0cc47523689b8c79",
     "controller-service/src/capture/work.rs": "fa09c2f565602f0ace3351652aa4d5fc0ed8aafe361b9b864d8f981f78248dcc",
@@ -382,6 +382,22 @@
         "SandboxModel/Lifecycle/Protocol/RestoreWork/Witnesses.lean",
         "SandboxModel/Lifecycle/Protocol/RestoreWork/Negative.lean"
       ]
+    }
+  },
+  "reviewed_source_rebinding": {
+    "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
+    "production_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_retagged": false,
+    "unchanged_consumed_behavior": "restore.rs selected methods/types unchanged. source_work.rs changes only digest delegate, which these projections do not call; full.rs changes only pause_request local capture binding name, outside these projections.",
+    "source_changes": {
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work.rs": {
+        "original": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+        "current": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work/full.rs": {
+        "original": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+        "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
+      }
     }
   }
 }

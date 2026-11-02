@@ -7133,7 +7133,7 @@ def
       sandproof_controller_service.JournalError.CorruptStore)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{impl core::ops::function::FnOnce<(sandproof_controller_service::JournalError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{closure}<R, T, N, U, B, E>}::call_once]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 101:17-101:20
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 100:17-100:20
     Name pattern: [sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{core::ops::function::FnOnce<sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::closure<@R, @T, @N, @U, @B, @E>, (sandproof_controller_service::JournalError), sandproof_controller_service::JournalError>}::call_once] -/
 @[rust_fun
   "sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{core::ops::function::FnOnce<sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::closure<@R, @T, @N, @U, @B, @E>, (sandproof_controller_service::JournalError), sandproof_controller_service::JournalError>}::call_once"]
@@ -7160,7 +7160,7 @@ def
   ok sandproof_controller_service.JournalError.CorruptStore
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{impl core::ops::function::FnOnce<(sandproof_controller_service::JournalError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::{closure}<R, T, N, U, B, E>}]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 101:17-101:20
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 100:17-100:20
     Name pattern: [core::ops::function::FnOnce<sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::closure<@R, @T, @N, @U, @B, @E>, (sandproof_controller_service::JournalError), sandproof_controller_service::JournalError>] -/
 @[reducible, rust_trait_impl
   "core::ops::function::FnOnce<sandproof_controller_service::controller::lifecycle_inbox::codec::load_using::closure<@R, @T, @N, @U, @B, @E>, (sandproof_controller_service::JournalError), sandproof_controller_service::JournalError>"]
@@ -7190,7 +7190,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::load_using]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 51:0-60:40
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 50:0-59:40
     Name pattern: [sandproof_controller_service::controller::lifecycle_inbox::codec::load_using] -/
 @[rust_fun
   "sandproof_controller_service::controller::lifecycle_inbox::codec::load_using"]

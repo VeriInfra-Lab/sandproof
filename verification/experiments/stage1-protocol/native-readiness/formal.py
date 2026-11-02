@@ -58,7 +58,7 @@ def wrapper(project):
         '--unsetenv', 'RUSTFLAGS', '--unsetenv', 'CARGO_ENCODED_RUSTFLAGS', '--']
 
 
-def run(output, variant, require_native=False, prepare_only=False):
+def run(output, variant, require_native=False, prepare_only=False, native_scope='stage1-protocol'):
     output.mkdir(parents=True, mode=0o700)
     started = time.monotonic()
     record = dict(kind='native-readiness-formal-development', variant=variant, complete=False,
@@ -88,9 +88,9 @@ def run(output, variant, require_native=False, prepare_only=False):
         if require_native:
             sys.path.insert(0, str(ROOT))
             from tools.acceptance_receipts import validate_native, native_case, digest
-            validate_native(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']), scope='stage1-protocol')
-            native_case('functional', ROOT, None, scope='stage1-protocol')
-            receipt = native_case('stage1-protocol-native-readiness', ROOT, None, scope='stage1-protocol')
+            validate_native(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']), scope=native_scope)
+            native_case('functional', ROOT, None, scope=native_scope)
+            receipt = native_case('stage1-protocol-native-readiness', ROOT, None, scope=native_scope)
             evidence = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'commands'/digest(receipt['key'])/'evidence'
             native_result = json.loads((evidence/'result.json').read_text())
             if (native_result.get('kind') != 'native-readiness-native-development'
@@ -228,8 +228,10 @@ if __name__ == '__main__':
     parser.add_argument('--variant', choices=('correct','ignore-status'), default='correct')
     parser.add_argument('--prepare-only', action='store_true')
     parser.add_argument('--require-native', action='store_true')
+    parser.add_argument('--native-scope', choices=('stage1-protocol', 'stage1-protocol-convergence'),
+                        default='stage1-protocol')
     args = parser.parse_args()
     os.umask(0o077)
-    result = run(args.output.absolute(), args.variant, args.require_native, args.prepare_only)
+    result = run(args.output.absolute(), args.variant, args.require_native, args.prepare_only, args.native_scope)
     print(json.dumps({k:result.get(k) for k in ('kind','variant','prepared','complete','seconds','error')}))
     raise SystemExit(not (result['complete'] or (args.prepare_only and result['prepared'] and 'error' not in result)))

@@ -6524,7 +6524,7 @@ def
       sandproof_controller_service.JournalError.CorruptStore)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::save_using]:
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 197:0-207:29
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 200:0-210:29
     Name pattern: [sandproof_controller_service::controller::lifecycle_inbox::codec::save_using] -/
 @[rust_fun
   "sandproof_controller_service::controller::lifecycle_inbox::codec::save_using"]

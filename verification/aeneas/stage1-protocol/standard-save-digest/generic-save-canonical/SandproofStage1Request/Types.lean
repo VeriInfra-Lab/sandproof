@@ -1253,7 +1253,7 @@ structure sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
     sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleRetentionLane
 
 /-- Trait declaration: [sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 116:0-116:33
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/controller/lifecycle_inbox/codec.rs', lines 115:0-115:33
     Name pattern: [sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects] -/
 @[rust_trait
   "sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects"]

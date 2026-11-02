@@ -3,8 +3,8 @@
   "source_adopted": true,
   "captures": {
     "actual": {
-      "ir_sha256": "e61e3f537c79e504de13b31d5aeeb0a3834645a952579d2e79fb5f6dc4cc3405",
-      "ir_value_sha256": "da150cd01cc0f819433e61db6e6ace0291ab7fb2b6879dd736e23462eab8ea8d",
+      "ir_sha256": "280ff76c7b6b921da2d7dc57a2086fc0067586cb4318f7e7e2e3525cad7790ee",
+      "ir_value_sha256": "ee5e394ea9d4fffd2106595b5879c4bde2fdd30ade34ef42031d385a93209468",
       "published": {
         "SandproofStandardDigest/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/SandproofStandardDigest/Types.lean",
@@ -12,16 +12,18 @@
         },
         "SandproofStandardDigest/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/SandproofStandardDigest/Funs.lean",
-          "sha256": "f52ed955574c6ceaa287b493105156f2929dbabafa4732089b1bb274db9449c1"
+          "sha256": "6ce18386c61ead0cfe88ccb70333995d851274845c189728be4b972bf445692e"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/translation.json",
-          "sha256": "1ce49a51cd8e13f584f41c3217c7c8966fe9307b1c0d029379a0d1838199c16f"
+          "sha256": "9e7e21804375d405fce8c541ad5f0e895acf285a3618db824226db6c766e390b"
         }
       },
-      "captured_source_commit": "6bf5fb715b06013fc287f3c645ab44242c84f61e",
-      "original_capture_result_sha256": "561222f99ae45613a5fae738a1a1d92c19251aac4173b170367e98de1610d5a8",
-      "formal_acceptance": false
+      "captured_source_commit": "aff2c174498e57b06c213fade1d71dd98eea71f5",
+      "original_capture_result_sha256": "42aaa08b2e03e5c90349f43ae42513441b66f79847657ae5ebdda842b62c7820",
+      "formal_acceptance": false,
+      "production_rust_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_pointer": "/views/digest-actual/capture"
     },
     "input-empty": {
       "ir_sha256": "690ed5d8799dbb41304fb4f69876455a29fa7913b8b4d07d96ac7d6ac4a15186",

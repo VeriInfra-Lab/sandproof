@@ -12,7 +12,7 @@
     "controller-service/src/controller/lifecycle_inbox/readiness/tests.rs": "7e0c498544d87b263c8d4b9dccccf9d99a2830f738ca8be9e1a2e84fcbd4ab32",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
-    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
@@ -95,5 +95,17 @@
     "verification/experiments/stage1-protocol/native-readiness/roots.rs.in": "da7fbc0a91c8acea026e0069e0b21fdae1c87bd760d992ca472dc3754503bacc",
     "verification/experiments/stage1-protocol/native-readiness/FunsExternal.lean.in": "3394744da0766e15d9190221ef6e66c68fa992d2540316156255d73db6b6ec7f",
     "verification/experiments/stage1-protocol/native-readiness/native_common.rs.in": "cc02b78b18b053264904f6229d57e23b17a1a4d655dd6dfbb7881fa8740670bc"
+  },
+  "reviewed_source_rebinding": {
+    "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
+    "production_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_retagged": false,
+    "unchanged_consumed_behavior": "readiness/snapshot.rs actual completion checker unchanged. Only admission.rs changed among production_inputs: read_lifetime implementation extracted; Lifetime type remains unchanged. Correct and ignore-status raw outputs are received separately without altering generated bodies.",
+    "source_changes": {
+      "production_inputs:controller-service/src/controller/admission.rs": {
+        "original": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+        "current": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1"
+      }
+    }
   }
 }

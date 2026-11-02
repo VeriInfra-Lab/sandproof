@@ -30,6 +30,12 @@ class NativeScopeTests(unittest.TestCase):
         original_registration = receipts.stage1_registration
         def registration():
             registered = original_registration()
+            original_source = registered.source_definition
+            def source(root=receipts.ROOT):
+                result = original_source(root)
+                result['archive_sha256'] = expected_source
+                return result
+            registered.source_definition = source
             original_profile = registered.create_profile
             def profile(root=receipts.ROOT):
                 result = original_profile(root)
@@ -92,6 +98,9 @@ class NativeScopeTests(unittest.TestCase):
         if scope == 'stage1-create-delivery':
             seal.update(profile='create-delivery',
                 create_definition=receipts.stage1_registration().create_profile())
+        if scope == 'stage1-protocol-convergence':
+            seal.update(profile='protocol-convergence',
+                convergence_definition=receipts.stage1_registration().CONVERGENCE.definition(receipts.ROOT))
         receipts.write_json(self.cache/'complete.json', seal)
         return seal
 
@@ -131,7 +140,7 @@ class NativeScopeTests(unittest.TestCase):
             self.assertTrue(prepare)
             self.assertEqual(os.environ.get('SANDPROOF_ACCEPTANCE_ROLE'),'native')
             raise RuntimeError('controlled stop after source admission')
-        for scope in ('all','stage1-protocol','stage1-create-delivery'):
+        for scope in ('all','stage1-protocol','stage1-create-delivery','stage1-protocol-convergence'):
             os.environ.pop('SANDPROOF_ACCEPTANCE_ROLE',None)
             with self.subTest(scope=scope), \
                     mock.patch.object(suite,'trusted_checkout'), \
@@ -152,10 +161,48 @@ class NativeScopeTests(unittest.TestCase):
         registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3',
             profile='create-delivery', scope='stage1-create-delivery')
 
+    def test_convergence_requires_its_whole_fixed_scope_and_cannot_supply_full(self):
+        self.labels = receipts.stage1_native_labels('protocol-convergence')
+        self.assertEqual(len(self.labels), 23)
+        self.assertLessEqual({'functional', 'stage1-accepted-json-parser',
+                             'stage1-sqlite-commit'}, set(self.labels))
+        seal = self.packet(scope='stage1-protocol-convergence')
+        receipts.validate_native(self.cache, scope='stage1-protocol-convergence')
+        for scope in ('all', 'stage1-protocol', 'stage1-create-delivery'):
+            with self.subTest(scope=scope), self.assertRaises(ValueError):
+                receipts.validate_native(self.cache, scope=scope)
+        for defect in ('missing-case', 'wrong-profile', 'lost-wrong-variant'):
+            bad = copy.deepcopy(seal)
+            if defect == 'missing-case':
+                bad['commands'].pop(next(iter(bad['commands'])))
+            elif defect == 'wrong-profile':
+                bad['profile'] = 'full'
+            else:
+                bad['convergence_definition']['packages'][0]['cases'].pop()
+            receipts.write_json(self.cache/'complete.json', bad)
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                receipts.validate_native(self.cache, scope='stage1-protocol-convergence')
+        self.labels = receipts.stage1_native_labels()
+        self.packet(scope='all')
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache, scope='stage1-protocol-convergence')
+
+    def test_convergence_delegates_without_running_retained_or_old_drivers(self):
+        registered = mock.Mock()
+        work = self.base/'convergence-work'
+        with mock.patch.object(suite, 'native_case') as retained, \
+                mock.patch.object(suite, 'load', return_value=registered), \
+                mock.patch.object(suite.subprocess, 'run') as run:
+            suite.run_stage1_native(work, scope='stage1-protocol-convergence')
+        retained.assert_not_called()
+        run.assert_not_called()
+        registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3',
+            profile='protocol-convergence', scope='stage1-protocol-convergence')
+
     def test_limited_packet_admits_only_explicit_scope_and_never_executes_in_formal_role(self):
         seal = self.packet()
-        self.assertEqual(len(seal['commands']), 55)
-        self.assertEqual(len(set(self.labels)), 55)
+        self.assertEqual(len(seal['commands']), 76)
+        self.assertEqual(len(set(self.labels)), 76)
         self.assertLessEqual({'stage1-'+name for name in (
             'inbox-entry-validation', 'inbox-retired-identities', 'inbox-origin-selection',
             'inbox-config', 'inbox-config-validation', 'terminal-binding', 'retention-lane',
@@ -194,12 +241,12 @@ class NativeScopeTests(unittest.TestCase):
         missing['case_names'] = list(self.labels)
         missing['commands'].pop(next(iter(missing['commands'])))
         receipts.write_json(self.cache/'complete.json', missing)
-        with self.assertRaisesRegex(ValueError, '55 complete components'):
+        with self.assertRaisesRegex(ValueError, '76 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_additional_component_in_limited_packet_is_rejected(self):
         self.packet(extra=True)
-        with self.assertRaisesRegex(ValueError, '55 complete components'):
+        with self.assertRaisesRegex(ValueError, '76 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_two_different_receipts_for_one_component_are_not_two_required_components(self):
@@ -211,7 +258,7 @@ class NativeScopeTests(unittest.TestCase):
         entry = self.cache/'commands'/receipts.digest(receipt['key'])
         seal['commands'][entry.name] = receipts.sha(entry/'receipt.json')
         receipts.write_json(self.cache/'complete.json', seal)
-        with self.assertRaisesRegex(ValueError, '55 complete components'):
+        with self.assertRaisesRegex(ValueError, '76 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_corrupt_or_missing_raw_evidence_prevents_any_scoped_admission(self):
@@ -314,8 +361,8 @@ class NativeScopeTests(unittest.TestCase):
                 mock.patch.object(suite, 'command', side_effect=AssertionError('global command in limited run')):
             suite.run_suite(self.cache, scope='stage1-protocol')
         seal = receipts.validate_native(self.cache, scope='stage1-protocol')
-        self.assertEqual(len(seal['commands']), 55)
-        self.assertEqual(len(seal['uses']), 56)
+        self.assertEqual(len(seal['commands']), 76)
+        self.assertEqual(len(seal['uses']), 77)
         self.assertEqual(sum(row['reused'] for row in seal['uses']), 1)
         self.assertTrue(seal['scope_complete'])
         self.assertFalse(seal['full_native_suite_complete'])

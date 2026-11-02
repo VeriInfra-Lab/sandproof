@@ -11,7 +11,7 @@
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
     "controller-service/src/controller/lifecycle_inbox/source_work/restore/continued_exit.rs": "fc6eeb59b55521d9a0d5a2c0e421367ebf4e45759531c4d8d726941e8d15e850",
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
-    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
@@ -166,6 +166,18 @@
         "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_model",
         "SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_actual"
       ]
+    }
+  },
+  "reviewed_source_rebinding": {
+    "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
+    "production_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_retagged": false,
+    "unchanged_consumed_behavior": "continued_exit.rs/readiness selected checks unchanged. admission.rs only extracts read_lifetime row validation; Lifetime definition unchanged, selected pure lifetime checker does not read SQL.",
+    "source_changes": {
+      "inputs:controller-service/src/controller/admission.rs": {
+        "original": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+        "current": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1"
+      }
     }
   }
 }
