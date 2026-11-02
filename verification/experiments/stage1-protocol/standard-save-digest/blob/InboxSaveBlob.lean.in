@@ -95,10 +95,6 @@ theorem actual_complete (self : Context) (statement : Str) (bytes digest : Slice
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
     JournalError.Insts.CoreConvertFromError.from]
-  congr 1
-  funext finished
-  cases finished <;> simp only [bind_tc_ok]
-  rfl
 
 theorem thin_root (self : Context) (statement : Str) (bytes digest : Slice U8) :
     controller.lifecycle_inbox.codec.proof_stage1_save_blob_update self statement bytes digest =
