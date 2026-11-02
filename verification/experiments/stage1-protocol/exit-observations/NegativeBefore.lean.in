@@ -1,0 +1,49 @@
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Spec
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Equality
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Inhabited
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore
+open controller.lifecycle_inbox.source_work.restore
+
+def changedTicks (ticks : U64) : U64 := if ticks = 0#u64 then 1#u64 else 0#u64
+
+theorem changedTicks_ne (ticks : U64) : changedTicks ticks ≠ ticks := by
+  by_cases zero : ticks = 0#u64
+  · simp [changedTicks,zero]
+  · simpa [changedTicks,zero] using Ne.symm zero
+
+def wrongProcess (c : Before) : DirectObservation :=
+  ⟨c.action,c.work_binding,{ c.process with start_time_ticks := changedTicks c.process.start_time_ticks }⟩
+
+theorem actual_changed_process_accepted (c : Before) :
+    continued_exit.BeforeAdmissionExitCandidate.matches c (wrongProcess c) = .ok true := by
+  classical
+  simp [continued_exit.BeforeAdmissionExitCandidate.matches,wrongProcess,action_eq,digest_eq]
+
+theorem original_changed_process_refused (c : Before) : ¬ BeforeMatches c (wrongProcess c) := by
+  intro accepted
+  have ticks := congrArg capture.SourceProcessIdentity.start_time_ticks accepted.2.2
+  exact changedTicks_ne c.process.start_time_ticks ticks
+
+theorem wrong_process_rejected : ¬ FullExitMatchContract exit.RestoreExitCandidate.matches
+    continued_exit.BeforeAdmissionExitCandidate.matches continued_exit.ContinuedExitCandidate.matches := by
+  intro all
+  let candidate : Before := default
+  have yes := actual_changed_process_accepted candidate
+  have no : continued_exit.BeforeAdmissionExitCandidate.matches candidate (wrongProcess candidate) = .ok false := by
+    simpa [original_changed_process_refused candidate] using all.2.1 candidate (wrongProcess candidate)
+  have impossible := yes.symm.trans no
+  simp at impossible
+
+theorem normal_remains (c : Before) :
+    continued_exit.BeforeAdmissionExitCandidate.matches c ⟨c.action,c.work_binding,c.process⟩ = .ok true := by
+  classical
+  simp [continued_exit.BeforeAdmissionExitCandidate.matches,action_eq,digest_eq]
+
+end SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore.changedTicks_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore.actual_changed_process_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore.original_changed_process_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore.wrong_process_rejected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeBefore.normal_remains

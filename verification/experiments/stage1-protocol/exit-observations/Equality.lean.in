@@ -1,0 +1,206 @@
+import SandproofExitObservations.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations
+universe u
+noncomputable section
+local instance (priority := low) (α : Type u) : DecidableEq α := Classical.decEq α
+theorem string_eq (a b : String) :
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq a b = .ok (decide (a = b)) := by
+  rfl
+
+theorem bytes_eq (xs ys : List U8) (h : xs.length = ys.length) :
+    List.allM (fun (p : U8 × U8) => (.ok (decide (p.1 = p.2)) : Result Bool))
+      (List.zip xs ys) = .ok (decide (xs = ys)) := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all [pure]
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at h
+    | cons y ys =>
+      have hlen : xs.length = ys.length := by simpa using h
+      by_cases heq : x = y <;> simp [pure, ih ys hlen, heq]
+
+theorem array_eq (a b : Array U8 32#usize) :
+    core.array.equality.PartialEqArray.eq core.cmp.PartialEqU8 a b =
+      .ok (decide (a = b)) := by
+  have heq : ∀ x y : U8, (x.val = y.val) ↔ x = y := by intro x y; scalar_tac
+  simp [core.array.equality.PartialEqArray.eq, heq, bytes_eq a.val b.val (by simp),
+    ← Array.eq_iff]
+
+theorem ok_and (p : Prop) [Decidable p] (q : Bool) :
+    (if p then (Result.ok q : Result Bool) else .ok false) =
+      .ok (decide p && q) := by
+  by_cases hp : p <;> simp [hp]
+
+theorem list_allM_view_eq [DecidableEq M] (eq : core.cmp.PartialEq T T)
+    (view : T → M) (lawful : ∀ left right,
+      eq.eq left right = .ok (decide (view left = view right))) :
+    ∀ left right : List T, left.length = right.length →
+      List.allM (fun pair => eq.eq pair.1 pair.2) (left.zip right) =
+        .ok (decide (left.map view = right.map view)) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right equalLength
+      cases right with
+      | nil => rfl
+      | cons _ _ => simp at equalLength
+  | cons head tail ih =>
+      intro right equalLength
+      cases right with
+      | nil => simp at equalLength
+      | cons other rest =>
+          have tailLength : tail.length = rest.length := by simpa using equalLength
+          simp only [List.zip_cons_cons, List.allM_cons]
+          rw [lawful head other]
+          by_cases same : view head = view other
+          · simpa [same, Aeneas.Std.instMonadResult] using ih rest tailLength
+          · simp [same]
+            rfl
+
+theorem vector_eq_view [DecidableEq M] (eq : core.cmp.PartialEq T T)
+    (view : T → M) (lawful : ∀ left right,
+      eq.eq left right = .ok (decide (view left = view right)))
+    (left right : alloc.vec.Vec T) :
+    alloc.vec.partial_eq.PartialEqVec.eq eq left right =
+      .ok (decide (left.val.map view = right.val.map view)) := by
+  unfold alloc.vec.partial_eq.PartialEqVec.eq
+  by_cases equalLength : left.length = right.length
+  · simp only [equalLength, if_pos]
+    exact list_allM_view_eq eq view lawful left.val right.val (by simpa using equalLength)
+  · have different : left.val.map view ≠ right.val.map view := by
+      intro same
+      apply equalLength
+      simpa using congrArg List.length same
+    simp [equalLength, different]
+
+
+theorem vector_eq {T : Type} (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b)))
+    (a b : alloc.vec.Vec T) :
+    alloc.vec.partial_eq.PartialEqVec.eq dictionary a b = .ok (decide (a = b)) := by
+  simpa [← alloc.vec.Vec.eq_iff] using vector_eq_view dictionary id lawful a b
+
+theorem option_eq {T : Type} (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b))) (a b : Option T) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq dictionary a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq, lawful]
+
+open sandbox_controller_core
+
+theorem file_policy_eq (a b : model.FilePolicyRef) :
+    model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq, ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq]
+
+theorem manifest_eq (a b : model.SnapshotManifestRef) :
+    model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq, ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq]
+
+theorem restore_source_eq (a b : model.RestoreSource) :
+    model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq, ok_and, ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq, manifest_eq]
+
+theorem protocol_eq (a b : model.Protocol) :
+    model.Protocol.Insts.CoreCmpPartialEqProtocol.eq a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;> simp [model.Protocol.Insts.CoreCmpPartialEqProtocol.eq, model.Protocol.read_discriminant]
+
+theorem endpoint_eq (a b : model.Endpoint) :
+    model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq, ok_and, string_eq, protocol_eq, Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+
+theorem cidr_eq (a b : model.Ipv4Cidr) :
+    model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq, ok_and]
+
+theorem policy_eq (a b : model.NetworkPolicy) :
+    model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;> simp [model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq, ok_and, model.NetworkPolicy.read_discriminant, core.cmp.impls.PartialEqBool.eq, vector_eq model.Endpoint.Insts.CoreCmpPartialEqEndpoint endpoint_eq, vector_eq model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr cidr_eq]
+
+theorem command_eq (a b : model.Command) :
+    model.Command.Insts.CoreCmpPartialEqCommand.eq a b = .ok (decide (a = b)) := by
+  cases a <;> cases b
+  all_goals simp [lift, model.Command.Insts.CoreCmpPartialEqCommand.eq, model.Command.read_discriminant, ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, ids.VmId.Insts.CoreCmpPartialEqVmId.eq, ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq, ids.FsId.Insts.CoreCmpPartialEqFsId.eq, ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq, core.cmp.impls.PartialEqBool.eq, file_policy_eq, policy_eq, manifest_eq, option_eq model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource restore_source_eq]
+  all_goals split_ifs <;> simp_all
+
+theorem logical_eq (a b : model.LogicalEffectId) :
+    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq,command_eq]
+
+theorem effect_eq (a b : model.EffectId) :
+    model.EffectId.Insts.CoreCmpPartialEqEffectId.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.EffectId.Insts.CoreCmpPartialEqEffectId.eq,logical_eq,ok_and]
+
+
+open sandproof_protocol
+
+theorem resource_kind_eq (a b : ResourceKind) :
+    ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,ResourceKind.read_discriminant]
+
+theorem resource_ref_eq (a b : ResourceRef) :
+    ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,resource_kind_eq,
+    ResourceId.Insts.CoreCmpPartialEqResourceId.eq,string_eq,ok_and]
+
+theorem identity_eq (a b : ActionIdentity) :
+    ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq,
+    TenantId.Insts.CoreCmpPartialEqTenantId.eq,SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    OperationId.Insts.CoreCmpPartialEqOperationId.eq,LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq,
+    string_eq,resource_ref_eq,ok_and,Bool.and_assoc,Bool.and_comm,Bool.and_left_comm]
+
+theorem action_eq (a b : WorkAction model.EffectId) :
+    WorkAction.Insts.CoreCmpPartialEqWorkAction.eq model.EffectId.Insts.CoreCmpPartialEqEffectId a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [WorkAction.Insts.CoreCmpPartialEqWorkAction.eq,identity_eq,
+    effect_eq,ok_and]
+
+theorem digest_eq (a b : lifecycle.digest.ContentDigest) :
+    lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq a b = .ok (decide (a = b)) := by
+  simp [lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,array_eq]
+
+theorem process_eq (a b : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq,string_eq,ok_and]
+
+
+end
+end SandboxModel.Stage1Protocol.ExitObservations
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.string_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.bytes_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.array_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.ok_and
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.list_allM_view_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.vector_eq_view
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.vector_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.option_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.file_policy_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.manifest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.restore_source_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.protocol_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.endpoint_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.cidr_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.policy_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.command_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.logical_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.effect_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.resource_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.resource_ref_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.identity_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.process_eq

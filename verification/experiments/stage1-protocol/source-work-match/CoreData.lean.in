@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.ScalarEquality
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData
+open sandbox_controller_core Scalars
+
+theorem operation_key_eq (left right : model.OperationKey) :
+    model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    core_sandbox_id_eq, core_operation_id_eq, RequestEquality.ok_and, model.OperationKey.mk.injEq]
+
+theorem original_continue_eq (left right : capture.continuation.OriginalContinueIdentity) :
+    capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity.eq,
+    operation_key_eq, core_vm_id_eq, RequestEquality.ok_and,
+    capture.continuation.OriginalContinueIdentity.mk.injEq]
+
+theorem restore_source_eq (left right : model.RestoreSource) :
+    model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq,
+    core_snapshot_id_eq, core_snapshot_manifest_ref_eq, RequestEquality.ok_and,
+    model.RestoreSource.mk.injEq]
+
+theorem endpoint_eq (left right : model.Endpoint) :
+    model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq, core_protocol_eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    model.Endpoint.mk.injEq, RequestEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem cidr_eq (left right : model.Ipv4Cidr) :
+    model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq, model.Ipv4Cidr.mk.injEq, RequestEquality.ok_and]
+
+theorem endpoints_eq (left right : alloc.vec.Vec model.Endpoint) :
+    alloc.vec.partial_eq.PartialEqVec.eq model.Endpoint.Insts.CoreCmpPartialEqEndpoint left right =
+      .ok (by classical exact decide (left = right)) :=
+  Containers.vec_eq_of model.Endpoint.Insts.CoreCmpPartialEqEndpoint endpoint_eq left right
+
+theorem cidrs_eq (left right : alloc.vec.Vec model.Ipv4Cidr) :
+    alloc.vec.partial_eq.PartialEqVec.eq model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr left right =
+      .ok (by classical exact decide (left = right)) :=
+  Containers.vec_eq_of model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr cidr_eq left right
+
+theorem network_policy_eq (left right : model.NetworkPolicy) :
+    model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right <;>
+    simp [model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq,
+      model.NetworkPolicy.read_discriminant, endpoints_eq, cidrs_eq,
+      core.cmp.impls.PartialEqBool.eq,
+      RequestEquality.ok_and]
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.operation_key_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.original_continue_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.restore_source_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.endpoint_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.cidr_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.endpoints_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.cidrs_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreData.network_policy_eq

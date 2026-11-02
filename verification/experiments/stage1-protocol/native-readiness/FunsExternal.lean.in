@@ -1,0 +1,11 @@
+import SandproofFoundations.FunsExternal
+import SandproofNativeReadiness.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofNativeReadinessRust
+
+/-- Reuse the registered ordinary Vec emptiness operation. -/
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+end SandproofNativeReadinessRust

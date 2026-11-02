@@ -1,0 +1,19 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Cloning
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Examples
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeResource
+open Values Cloning
+theorem bad_actual : run anchor limits digest = .ok (Build anchor limits digest workspaceAction.resource) := by
+  simp [run, controller.lifecycle_inbox.source_work.snapshot.question_from_binding,
+    alloc.vec.Vec.index_usize, Build, anchor]
+theorem rejects_same_contract : ¬ FullQuestionContract run := by
+  intro claimed
+  have failed := claimed anchor limits digest
+  rw [bad_actual, normal_expected] at failed
+  have same : Build anchor limits digest workspaceAction.resource = Build anchor limits digest vmAction.resource := by
+    simpa using failed
+  have wrong := congrArg (fun work : Work => work.requirement.resource.kind) same
+  simp [Build, workspaceAction, vmAction] at wrong
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeResource
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeResource.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeResource.rejects_same_contract

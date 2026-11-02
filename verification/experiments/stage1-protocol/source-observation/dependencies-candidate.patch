@@ -1,0 +1,20 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,17 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 原始源码观察的已解码守卫
++
++source-observation 在固定9c50da7c捕获原 RawSourceObservation::matches；薄根只原样
++传入两个借用值。仅复用A6普通 String::eq、Vec::is_empty；Vec长度/转换、数组
++比较及实际 ResourceRef/SourceProcessIdentity 派生比较保留原生成体。没有新增
++库公理，未导入生成的 axiom 模板。完整32字节绑定、kind/id、pid/start/boot 和
++三项非空/正数及三项上限由同一九条件合同连接任意已解码值。
++
++该守卫不读取 node/bootstrap、可执行/内核摘要，也不证明 Config::valid、SHA
++计算、配置解析/兼容、实际进程或材料存在。V3仍须连接真实观察提供者、当前意图、
++调用/保存/错误与字节；V6提供物理资源事实、V7独立认证、V5/A4事务和未知结果。
++原保存入口的受控原生断言不是完整保存事务的机器证明；不扩大原依赖合同。

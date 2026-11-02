@@ -1,0 +1,135 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.CoreEffects
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData
+open Scalars CoreData CoreEffects
+
+theorem resource_eq (left right : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    wire_resource_kind_eq, wire_resource_id_eq, RequestEquality.ok_and,
+    sandproof_protocol.ResourceRef.mk.injEq]
+
+theorem action_eq (left right : sandproof_protocol.ActionIdentity) :
+    sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq,
+    wire_tenant_id_eq, wire_sandbox_id_eq, wire_operation_id_eq, wire_logical_action_id_eq,
+    resource_eq, RequestEquality.ok_and, sandproof_protocol.ActionIdentity.mk.injEq,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem actions_eq (left right : alloc.vec.Vec sandproof_protocol.ActionIdentity) :
+    alloc.vec.partial_eq.PartialEqVec.eq
+      sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.vec_eq sandproof_protocol.ActionIdentity.Insts.CoreCmpPartialEqActionIdentity action_eq left right
+
+theorem receipts_eq (left right : alloc.vec.Vec sandproof_protocol.lifecycle.digest.ContentDigest) :
+    alloc.vec.partial_eq.PartialEqVec.eq
+      sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.vec_eq sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest
+    wire_content_digest_eq left right
+
+theorem process_eq (left right : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    capture.SourceProcessIdentity.mk.injEq, RequestEquality.ok_and]
+
+theorem bootstrap_eq (left right : capture.HostEpochRegistration) :
+    capture.HostEpochRegistration.Insts.CoreCmpPartialEqHostEpochRegistration.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.HostEpochRegistration.Insts.CoreCmpPartialEqHostEpochRegistration.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, wire_content_digest_eq,
+    capture.HostEpochRegistration.mk.injEq, RequestEquality.ok_and]
+
+theorem optional_i64_eq (left right : Option I64) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq core.cmp.PartialEqI64 left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  apply ContainerInstances.option_eq
+  intro a b
+  simp [core.cmp.impls.PartialEqI64.eq]
+
+theorem lifetime_eq (left right : controller.admission.Lifetime) :
+    controller.admission.Lifetime.Insts.CoreCmpPartialEqLifetime.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [controller.admission.Lifetime.Insts.CoreCmpPartialEqLifetime.eq, optional_i64_eq,
+    controller.admission.Lifetime.mk.injEq, RequestEquality.ok_and,
+    Bool.and_left_comm, Bool.and_comm]
+
+theorem optional_lifetime_eq (left right : Option controller.admission.Lifetime) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.admission.Lifetime.Insts.CoreCmpPartialEqLifetime left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.option_eq controller.admission.Lifetime.Insts.CoreCmpPartialEqLifetime lifetime_eq left right
+
+theorem local_eq (left right : controller.internal_inbox.model.InternalLocalBinding) :
+    controller.internal_inbox.model.InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [controller.internal_inbox.model.InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq,
+    core_sandbox_id_eq, core_tenant_id_eq, core_operation_id_eq,
+    controller.internal_inbox.model.InternalLocalBinding.mk.injEq, RequestEquality.ok_and]
+
+theorem native_eq (left right : controller.lifecycle_inbox.readiness.NativeCreateSnapshot) :
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.Insts.CoreCmpPartialEqNativeCreateSnapshot.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [controller.lifecycle_inbox.readiness.NativeCreateSnapshot.Insts.CoreCmpPartialEqNativeCreateSnapshot.eq,
+    core_tenant_id_eq, core_phase_eq,
+    optional_vm_eq, optional_operation_eq, optional_lifetime_eq, effects_eq,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.mk.injEq, RequestEquality.ok_and,
+    Bool.and_left_comm]
+
+theorem optional_continue_eq (left right : Option sandbox_controller_core.capture.continuation.OriginalContinueIdentity) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      sandbox_controller_core.capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.option_eq
+    sandbox_controller_core.capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity
+    original_continue_eq left right
+
+theorem credential_eq (left right : U64 × Array U8 32#usize) :
+    Pair.Insts.CoreCmpPartialEqPair.eq core.cmp.PartialEqU64
+      (SandproofSourceWorkMatchRust.Array.Insts.CoreCmpPartialEqArray 32#usize core.cmp.PartialEqU8) left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  apply ContainerInstances.pair_eq
+  · intro a b
+    simp [core.cmp.impls.PartialEqU64.eq]
+  · intro a b
+    exact RequestEquality.array_eq a b
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.resource_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.actions_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.receipts_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.process_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.bootstrap_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.optional_i64_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.lifetime_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.optional_lifetime_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.local_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.native_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.optional_continue_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.credential_eq

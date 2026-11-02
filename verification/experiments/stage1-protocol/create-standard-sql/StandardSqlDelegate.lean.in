@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegateModel
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlComplete
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate
+
+theorem actual_full_arguments_and_context
+    (effects : Effects) (statement : Str) (deadline : I64) (sandbox : Str) :
+    call effects statement deadline sandbox = (do
+      let reply ← sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+        effects.connection statement deadline sandbox
+      .ok (reply,effects)) := by
+  rfl
+
+theorem standard_sql_complete
+    (effects : Effects) (statement : Str) (deadline : I64) (sandbox : Str) :
+    call effects statement deadline sandbox = expected effects statement deadline sandbox := by
+  rw [actual_full_arguments_and_context,LifetimeSql.execute_complete]
+  rfl
+
+theorem full_standard_sql_contract : FullStandardSqlContract call :=
+  standard_sql_complete
+end SandboxModel.Stage1Protocol.StandardSqlDelegate
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.actual_full_arguments_and_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.standard_sql_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.full_standard_sql_contract

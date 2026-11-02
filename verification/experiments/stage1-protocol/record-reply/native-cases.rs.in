@@ -1,0 +1,136 @@
+// One unchanged program for actual, both wrong, and restored source views.
+use super::*;
+use sandproof_protocol::internal::{NodeId, NodeIdentity, PositiveCounter};
+use sandproof_protocol::lifecycle::{
+    AuthenticatedCenterContext, CaptureId, CenterId, CenterIdentity, ExpectedSession,
+    IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
+    RequestSequence, RequestWindowId, RetentionBinding, RetentionWindowId, SessionId,
+};
+use sandproof_protocol::{DeploymentId, TenantId};
+
+fn intent(capture: u64) -> AcceptedLifecycleIntent {
+    let deployment = DeploymentId::try_from("deployment").unwrap();
+    let node = NodeIdentity {
+        deployment_id: deployment.clone(),
+        node_id: NodeId::try_from("host").unwrap(),
+        node_generation: PositiveCounter::try_from(1_u64).unwrap(),
+    };
+    let center = CenterIdentity {
+        deployment: deployment.clone(),
+        center: CenterId::try_from("center").unwrap(),
+    };
+    let value = AcceptedLifecycleIntent {
+        request: LifecycleRequest {
+            binding: OperationBinding {
+                protocol_version: 4,
+                node: node.clone(),
+                session: SessionId::try_from("session").unwrap(),
+                key: OperationKey {
+                    deployment,
+                    owner: TenantId::try_from("owner").unwrap(),
+                    window: RequestWindowId::try_from(1_u64).unwrap(),
+                    sequence: RequestSequence::try_from(1_u64).unwrap(),
+                },
+                expected: ExpectedSession::Version(0),
+            },
+            operation: LifecycleOperation::Unload {
+                source_incarnation: IncarnationId::try_from(1_u64).unwrap(),
+                capture: CaptureId::try_from(capture).unwrap(),
+            },
+        },
+        accepted_version: 1,
+        center: center.clone(),
+        retention: RetentionBinding {
+            slot: 1,
+            window: RetentionWindowId::try_from(1_u64).unwrap(),
+        },
+    };
+    // A synthetic binding value checks legal shape, not network authentication.
+    let context = AuthenticatedCenterContext::from_verified_peer_registration(center, node);
+    assert_eq!(value.validate(&context), Ok(()));
+    value
+}
+
+fn receipt(intent: AcceptedLifecycleIntent, terminal: bool) -> RecordedLifecycleIntent {
+    RecordedLifecycleIntent {
+        intent,
+        current_session_version: 1,
+        current: true,
+        terminal,
+    }
+}
+
+#[test]
+fn normal_receipt_preserved() {
+    let original = intent(1);
+    let returned = receipt(original.clone(), false);
+    assert!(matches!(
+        record_reply(&original, Ok(returned.clone())),
+        Ok(actual) if actual == returned
+    ));
+}
+
+#[test]
+fn terminal_payload_preserved() {
+    let original = intent(1);
+    let returned = receipt(original.clone(), true);
+    assert!(returned.matches(&original));
+    assert!(matches!(
+        record_reply(&original, Ok(returned.clone())),
+        Ok(actual) if actual == returned
+    ));
+}
+
+#[test]
+fn different_capture_unavailable() {
+    let original = intent(1);
+    let changed = receipt(intent(2), false);
+    assert_eq!(
+        original.request.binding.session,
+        changed.intent.request.binding.session
+    );
+    assert!(matches!(
+        record_reply(&original, Ok(changed)),
+        Err(RecordReplyError::Unavailable)
+    ));
+}
+
+#[test]
+fn different_retention_unavailable() {
+    let original = intent(1);
+    let mut changed = receipt(original.clone(), false);
+    changed.intent.retention.window = RetentionWindowId::try_from(2_u64).unwrap();
+    let context = AuthenticatedCenterContext::from_verified_peer_registration(
+        original.center.clone(),
+        original.request.binding.node.clone(),
+    );
+    assert_eq!(changed.intent.validate(&context), Ok(()));
+    assert!(matches!(
+        record_reply(&original, Ok(changed)),
+        Err(RecordReplyError::Unavailable)
+    ));
+}
+
+#[test]
+fn conflict_stays_distinct() {
+    assert!(matches!(
+        record_reply(&intent(1), Err(ReceiveError::Conflict)),
+        Err(RecordReplyError::Conflict)
+    ));
+}
+
+#[test]
+fn capacity_is_unavailable() {
+    assert!(matches!(
+        record_reply(&intent(1), Err(ReceiveError::Capacity)),
+        Err(RecordReplyError::Unavailable)
+    ));
+}
+
+#[test]
+fn original_unavailable() {
+    assert!(matches!(
+        record_reply(&intent(1), Err(ReceiveError::Unavailable)),
+        Err(RecordReplyError::Unavailable)
+    ));
+}

@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "scope": "original snapshot checker ordinary decoded values; not complete Ready or resource facts",
+  "source_base_commit": "425172a2398fc75759b56b06a3c1cda16e2217be",
+  "candidate_only": true,
+  "full_acceptance": false,
+  "new_protocol_model": false,
+  "new_dependency_contracts": [],
+  "production_inputs": {
+    "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
+    "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": "32885942ca2d52198c03964b1d3291f0258ec30ced44c9a05ab781c0adad4538",
+    "controller-service/src/controller/lifecycle_inbox/readiness/tests.rs": "7e0c498544d87b263c8d4b9dccccf9d99a2830f738ca8be9e1a2e84fcbd4ab32",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
+    "verification/experiments/stage1-protocol/inbox-record/lib.rs": "5979b781630c4ae9a4ecf120d135352309868d97aa117a928d870ef7457136c3"
+  },
+  "dependency_inputs": {
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c"
+  },
+  "providers": {
+    "NativeCompletionModel": {
+      "path": "verification/experiments/stage1-protocol/native-readiness/NativeCompletionModel.lean.in",
+      "sha256": "cb43b26f2c65c2e55e1dea33c3711d9f8a83ce69eea77b685d6f0be132976b50",
+      "audits": []
+    },
+    "NativeCompletionValues": {
+      "path": "verification/experiments/stage1-protocol/native-readiness/NativeCompletionValues.lean.in",
+      "sha256": "395eff3be199fc114a5bd6670907d5de2eab8c67d6f7d983c3cbcfe8e5ef3771",
+      "audits": []
+    },
+    "NativeCompletionProofs": {
+      "path": "verification/experiments/stage1-protocol/native-readiness/NativeCompletionProofs.lean.in",
+      "sha256": "4eaa77ebb0af46115b44823fe32f8ac10bf580d0cd7f9d02c14dc972a07d1823",
+      "audits": [
+        "SandboxModel.Stage1Protocol.NativeReadiness.phase_ne_running",
+        "SandboxModel.Stage1Protocol.NativeReadiness.kind_eq_create",
+        "SandboxModel.Stage1Protocol.NativeReadiness.status_eq_succeeded",
+        "SandboxModel.Stage1Protocol.NativeReadiness.completion_refines",
+        "SandboxModel.Stage1Protocol.NativeReadiness.owner_ne",
+        "SandboxModel.Stage1Protocol.NativeReadiness.option_not_none",
+        "SandboxModel.Stage1Protocol.NativeReadiness.result_if",
+        "SandboxModel.Stage1Protocol.NativeReadiness.full_contract",
+        "SandboxModel.Stage1Protocol.NativeReadiness.accepts_iff",
+        "SandboxModel.Stage1Protocol.NativeReadiness.lifetime_ignored",
+        "SandboxModel.Stage1Protocol.NativeReadiness.sandbox_binding_ignored",
+        "SandboxModel.Stage1Protocol.NativeReadiness.present_vm_identity_ignored",
+        "SandboxModel.Stage1Protocol.NativeReadiness.normal_create_and_resume",
+        "SandboxModel.Stage1Protocol.NativeReadiness.field_omission_rejections",
+        "SandboxModel.Stage1Protocol.NativeReadiness.missing_lifetime_is_not_a_failure"
+      ]
+    },
+    "NativeCompletionWrongStatus": {
+      "path": "verification/experiments/stage1-protocol/native-readiness/NativeCompletionWrongStatus.lean.in",
+      "sha256": "b47bceef080035eed00f1177b06d965598bbf51f073a88b0f33be1363e8837d6",
+      "audits": [
+        "SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_accepts_pending",
+        "SandboxModel.Stage1Protocol.NativeReadiness.pending_rejected_by_unchanged_spec",
+        "SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract"
+      ]
+    }
+  },
+  "same_models": [
+    "NativeCompletionModel",
+    "NativeCompletionValues"
+  ],
+  "native_case": "stage1-protocol-native-readiness",
+  "native_assertions": [
+    "proof_native_completion_checks_original_fields",
+    "proof_native_completion_preserves_its_declared_scope"
+  ],
+  "correct_files": 11,
+  "correct_audits": 15,
+  "wrong_files": 11,
+  "wrong_audits": 3,
+  "registered_external_symbols": [
+    "alloc.vec.Vec.is_empty"
+  ],
+  "auxiliary_inputs": {
+    "verification/experiments/stage1-protocol/native-readiness/roots.rs.in": "da7fbc0a91c8acea026e0069e0b21fdae1c87bd760d992ca472dc3754503bacc",
+    "verification/experiments/stage1-protocol/native-readiness/FunsExternal.lean.in": "3394744da0766e15d9190221ef6e66c68fa992d2540316156255d73db6b6ec7f",
+    "verification/experiments/stage1-protocol/native-readiness/native_common.rs.in": "cc02b78b18b053264904f6229d57e23b17a1a4d655dd6dfbb7881fa8740670bc"
+  }
+}

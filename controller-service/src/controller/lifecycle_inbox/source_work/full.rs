@@ -145,7 +145,7 @@ impl super::SourceWork {
     pub fn pause_request(&self) -> Result<crate::capture::PauseWorkRequest, JournalError> {
         let sandproof_protocol::lifecycle::LifecycleOperation::Unload {
             source_incarnation,
-            capture,
+            capture: capture_id,
         } = self.request().request.operation
         else {
             return Err(JournalError::Conflict);
@@ -154,7 +154,7 @@ impl super::SourceWork {
             binding: sandproof_protocol::lifecycle::CaptureBinding {
                 operation: self.request().request.binding.clone(),
                 source_incarnation,
-                capture,
+                capture: capture_id,
             },
             source_work_binding: self.requirement.work_binding,
             node: self.requirement.node.clone(),

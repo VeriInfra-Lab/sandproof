@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.RestoreLifetime.Witnesses
+open Aeneas Aeneas.Std SandproofRestoreValidationRust
+namespace SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry
+open controller.lifecycle_inbox.source_work.restore.continued_exit Witnesses
+
+def badFacts : Facts := saved
+
+theorem specified_refusal : ¬ Matches native badFacts 100#i64 := by
+  simp [Matches, badFacts, native, saved, life]
+
+theorem actual_wrong_accepts : lifetime_matches native badFacts 100#i64 = .ok true := by
+  simp [lifetime_matches, badFacts, native, saved, life, lift]
+
+theorem rejects_same_full_contract : ¬ FullLifetimeContract lifetime_matches := by
+  classical
+  intro contract
+  have conflict := contract native badFacts 100#i64
+  have expected_false : decide (Matches native badFacts 100#i64) = false := by
+    simp [specified_refusal]
+  rw [actual_wrong_accepts, expected_false] at conflict
+  have impossible := Result.ok_injective conflict
+  cases impossible
+end SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.specified_refusal
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.actual_wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.NegativeExpiry.rejects_same_full_contract

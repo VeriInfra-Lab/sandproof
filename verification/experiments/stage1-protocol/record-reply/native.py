@@ -1,0 +1,210 @@
+"""Actual/wrong/restored record reply checks with identical native assertions.
+
+Development evidence only; ning owns shared native acceptance.
+"""
+import argparse
+import fcntl
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import time
+import tomllib
+import platform
+import traceback
+
+ROOT = Path(__file__).resolve().parents[4]
+HERE = Path('verification/experiments/stage1-protocol/record-reply')
+MODEL = 'sandbox-internal/src/server/lifecycle.rs'
+TEST_ROOT = MODEL
+
+
+def module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
+
+
+base = module('record-reply_native_sources', ROOT / HERE.parent / 'schema-leaves/formal.py')
+registry_module = module('record-reply_native_registry', ROOT / HERE.parent / 'envelope-writer/native.py')
+# Reuse the reviewed archive/source verifier, selecting this actual Cargo lock.
+registry_module.HERE = Path('.')
+support = module('record_reply_inputs', ROOT / HERE / 'support.py')
+sha = base.sha
+
+
+def run(output):
+    output.mkdir(parents=True, mode=0o700)
+    start = time.monotonic()
+    record = dict(kind='record-reply-native-development', complete=False, commands=[],
+                  ning_acceptance=False, shared_acceptance=False, full_v3=False, host=platform.node(),
+                  original_general_equivalence_proved=False,production_modified=False)
+    try:
+        assert os.sched_getaffinity(0) <= {0,1,2,3}
+        disk = os.statvfs(ROOT)
+        assert disk.f_bavail*disk.f_frsize >= 64*2**30+2*4*2**30
+        inventory = support.inventory()
+        extra = {}
+        for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
+            extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})
+        extra[str(ROOT/HERE/'inventory.json')]=sha(ROOT/HERE/'inventory.json')
+        record['extra_inputs'] = extra
+        inputs = base.snapshot(ROOT)
+        input_modes = {n:('100755' if (ROOT/n).stat().st_mode & 0o111 else '100644') for n in inputs}
+        registry = registry_module.registry()
+        packages = tomllib.loads((ROOT/'Cargo.lock').read_text())['package']
+        locked_packages = {p['name']+'@'+p['version'] for p in packages if 'checksum' in p}
+        record.update(inputs=inputs, input_modes=input_modes, registry=registry, variants={}, tools={},
+            source_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
+        for name, args in [('cargo', ['-V']), ('rustc', ['-Vv']), ('clippy-driver', ['--version']), ('rustfmt', ['--version'])]:
+            path = Path(subprocess.check_output(['rustup', 'which', name], text=True).strip())
+            record['tools'][name] = dict(path=str(path), sha256=sha(path),
+                version=subprocess.check_output([str(path), *args], text=True))
+        for variant, plan in inventory['native_variants'].items():
+            folder = output / variant
+            project = folder / 'source'
+            project.mkdir(mode=0o700, parents=True)
+            expected = dict(inputs)
+            for name, digest in inputs.items():
+                target = project / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / name, target)
+                if sha(target) != digest:
+                    raise ValueError('source changed while copying: ' + name)
+            mutation = plan['mutation']
+            derivation,changes = support.native_prepare(project,variant,inventory)
+            expected.update(changes)
+            record.setdefault('preparations',{})[variant]=derivation
+            combined = project/HERE/'native-common.rs'
+            combined.write_bytes((ROOT/HERE/'native-cases.rs.in').read_bytes())
+            expected[str(HERE/combined.name)] = sha(combined)
+            with (project/TEST_ROOT).open('a') as stream:
+                stream.write('\n#[cfg(test)]\n#[path = "../../../verification/experiments/stage1-protocol/record-reply/native-common.rs"]\nmod proof_record_reply_common;\n')
+            expected[TEST_ROOT]=sha(project/TEST_ROOT)
+            test_source = combined.read_bytes()
+            test_filter = 'proof_record_reply_common::'
+            env = dict(os.environ, CARGO_TARGET_DIR=str(folder / 'target'),
+                       CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='4')
+            checks = [('format', []), ('test', ['--lib', '--message-format=json', test_filter, '--', '--nocapture', '--test-threads=1']),
+                                ('clippy', ['--lib', '--tests', '--message-format=json', '--', '-D', 'warnings'])]
+            for label, args in checks:
+                argv = ['cargo', label, '-p', 'sandproof-internal', '--locked', '--offline', *args]
+                if label == 'format':
+                    argv = ['rustfmt','--edition','2024','--check',TEST_ROOT,str(HERE/'native-common.rs')]
+                log = folder / (label + '.log')
+                begin = time.monotonic()
+                with log.open('xb') as stream:
+                    done = subprocess.run(argv, cwd=project, env=env, stdin=subprocess.DEVNULL,
+                        stdout=stream, stderr=subprocess.STDOUT, timeout=1800)
+                row = dict(variant=variant, label=label, argv=argv, exit_code=done.returncode,
+                    seconds=time.monotonic()-begin, cwd=str(project), log_sha256=sha(log))
+                record['commands'].append(row)
+                (output / 'progress.json').write_text(json.dumps(record, indent=2)+'\n')
+                text = log.read_text()
+                if label == 'test':
+                    artifacts = []
+                    for line in text.splitlines():
+                        try:
+                            value = json.loads(line)
+                        except ValueError:
+                            continue
+                        if value.get('reason') == 'compiler-artifact' and value['package_id'].startswith('registry+'):
+                            if value['package_id'].rsplit('#',1)[1] not in locked_packages:
+                                raise ValueError('compiled registry package is outside the verified lock')
+                        if value.get('reason') == 'compiler-artifact' and value['target']['name'] in (
+                                'sandproof_protocol', 'sandproof_internal'):
+                            artifacts.append(value)
+                    if len(artifacts) != 2 or any(a['fresh'] for a in artifacts):
+                        raise ValueError('actual protocol library and service test must be freshly compiled')
+                    for artifact in artifacts:
+                        source = Path(artifact['target']['src_path'])
+                        folder_name = 'sandbox-protocol' if artifact['target']['name'] == 'sandproof_protocol' else 'sandbox-internal'
+                        if (source != project/folder_name/'src/lib.rs'
+                                or artifact['manifest_path'] != str(project/folder_name/'Cargo.toml')
+                                or artifact['profile']['test'] != (folder_name == 'sandbox-internal')):
+                            raise ValueError('native artifact links the wrong source/manifest/test target')
+                    row['artifacts'] = [dict(message=a, files={n: sha(Path(n)) for n in a['filenames']
+                        if Path(n).is_file()}) for a in artifacts]
+                    failures = set(plan['expected_failures'])
+                    count = len(__import__('re').findall(r'^#\[test\]$', test_source.decode(), __import__('re').M))
+                    if count!=plan['test_count']:
+                        raise ValueError('native assertion inventory differs')
+                    block = text.rsplit('\nfailures:\n',1)[-1].split('\ntest result:',1)[0]
+                    actual = {line.strip().rsplit('::',1)[-1] for line in block.splitlines()
+                              if line.startswith('    server::lifecycle::')}
+                    if failures:
+                        if (done.returncode != 101 or actual != failures or
+                                f'{count-len(failures)} passed; {len(failures)} failed; 0 ignored;' not in text):
+                            raise ValueError('wrong Rust did not reach exact record-reply assertions')
+                        row['property_rejected'] = True
+                    elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
+                        raise ValueError('record reply actual/restored assertions failed')
+                elif label == 'clippy':
+                    errors = []
+                    for line in text.splitlines():
+                        try:
+                            message = json.loads(line)
+                        except ValueError:
+                            continue
+                        if message.get('reason') != 'compiler-message' or message['message']['level'] != 'error':
+                            continue
+                        diagnostic = message['message']
+                        primary = [span for span in diagnostic['spans'] if span['is_primary']]
+                        if len(primary) != 1:
+                            raise ValueError('unexpected Clippy primary diagnostic')
+                        span = primary[0]
+                        source = Path(span['file_name'])
+                        if not source.is_absolute():
+                            source = project/source
+                        errors.append(dict(code=(diagnostic.get('code') or {}).get('code'),
+                            source=str(source.relative_to(project)), line=span['line_start']))
+                    expected_errors = []
+                    if plan['expected_clippy_codes']:
+                        raise ValueError('no lint exception is registered for this component')
+                    if errors != expected_errors or done.returncode != (101 if expected_errors else 0):
+                        raise ValueError('strict Clippy differs from the exact mutant-lint inventory')
+                    row['expected_mutant_lint_rejection'] = bool(expected_errors)
+                    row['clippy_errors'] = errors
+                    # A lint rejection is never a business-contract counterexample.
+                elif done.returncode:
+                    raise ValueError(label+' failed: '+variant)
+            if any(sha(project / name) != digest for name, digest in expected.items()):
+                raise ValueError('checked source changed: ' + variant)
+            private_modes = {n:('100755' if (project/n).stat().st_mode & 0o111 else '100644') for n in expected}
+            if any(private_modes[n] != m for n,m in input_modes.items()):
+                raise ValueError('private source execution mode changed')
+            record['variants'][variant] = dict(inputs=expected, input_modes=private_modes, complete=True)
+        if any(sha(Path(n)) != h for n, h in extra.items()):
+            raise ValueError('record reply fixture/driver/source changed during checking')
+        if any(('100755' if (ROOT/n).stat().st_mode & 0o111 else '100644') != m for n,m in input_modes.items()):
+            raise ValueError('original source execution mode changed')
+        if base.snapshot(ROOT) != inputs or registry_module.registry() != registry:
+            raise ValueError('original sources or dependencies changed during native checking')
+        record['complete'] = True
+    except BaseException as error:
+        record.update(error=repr(error), traceback=traceback.format_exc())
+    record['seconds'] = time.monotonic()-start
+    (output / 'result.json').write_text(json.dumps(record, indent=2)+'\n')
+    return record
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--lock',type=Path,required=True)
+    parser.add_argument('--lock-fd',type=int)
+    args = parser.parse_args()
+    os.umask(0o077)
+    inherited = args.lock_fd is not None
+    lock = os.fdopen(os.dup(args.lock_fd),'r+') if inherited else args.lock.open('r+')
+    with lock:
+        observed, expected = os.fstat(lock.fileno()), args.lock.stat()
+        if (observed.st_dev,observed.st_ino) != (expected.st_dev,expected.st_ino):
+            raise ValueError('native inherited lock is a different file')
+        fcntl.flock(lock,fcntl.LOCK_EX | (fcntl.LOCK_NB if inherited else 0))
+        result = run(args.output.absolute())
+    print(json.dumps({k:result.get(k) for k in ('kind','complete','seconds','error')}))
+    raise SystemExit(not result['complete'])

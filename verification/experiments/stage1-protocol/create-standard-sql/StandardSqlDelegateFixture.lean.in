@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegateModel
+
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate.Fixture
+abbrev World := sandbox_controller_core.model.World
+
+/-- A normal value-domain interval for any complete World and Connection.
+This constructor is not a proof of a deployed transaction's reachability. -/
+def normalEffects (world : World) (connection : rusqlite.Connection) : Effects :=
+  { tx :=
+      { transaction := some { conn := connection, drop_behavior := .Rollback }
+        committed := { value := ⟨11, some world, 0⟩, data_version := 0#i64 }
+        candidate := ⟨12, some world, 0⟩
+        input_start := 0#u64 }
+    connection := connection }
+
+
+def emptyWorld : World := {
+  maintenance := none
+  sandboxes := ⟨alloc.vec.Vec.new _⟩
+  vms := ⟨alloc.vec.Vec.new _⟩
+  filesystems := ⟨alloc.vec.Vec.new _⟩
+  snapshots := ⟨alloc.vec.Vec.new _⟩
+  net_slots := ⟨alloc.vec.Vec.new _⟩
+  applied_file_policies := ⟨alloc.vec.Vec.new _⟩
+  worker_fences := ⟨alloc.vec.Vec.new _⟩
+  operations := ⟨alloc.vec.Vec.new _⟩
+  operation_plans := ⟨alloc.vec.Vec.new _⟩
+  resource_indexes := ⟨alloc.vec.Vec.new _⟩
+  logical_effects := ⟨alloc.vec.Vec.new _⟩
+  effect_keys := alloc.vec.Vec.new _
+  effects := ⟨alloc.vec.Vec.new _⟩
+  next_vm_id := 0#u64
+  next_slot_id := 0#u64
+  next_snapshot_id := 0#u64
+  next_manifest_digest := 0#u64
+  inflight := alloc.vec.Vec.new _
+  controller_up := true
+}
+
+def selectedWorld : World := { emptyWorld with next_vm_id := 2#u64 }
+
+/-- A complete observation carrier; none of these SQL callbacks is invoked by
+the three read/rebind methods. This does not create a physical database. -/
+def observingConnection : rusqlite.Connection := {
+  identity := 17
+  prepare := fun _ => .ok (.Ok 0)
+  countError := fun _ _ => ⟨11⟩
+  run := fun _ _ => .ok (.Ok 0#usize)
+}
+
+end SandboxModel.Stage1Protocol.StandardSqlDelegate.Fixture

@@ -1,0 +1,18 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.AnchorData
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch
+open SourceData Scalars
+
+theorem anchor_eq (left right : controller.lifecycle_inbox.source_work.SourceAnchor) :
+    controller.lifecycle_inbox.source_work.SourceAnchor.Insts.CoreCmpPartialEqSourceAnchor.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [controller.lifecycle_inbox.source_work.SourceAnchor.Insts.CoreCmpPartialEqSourceAnchor.eq,
+    RequestEquality.accepted_eq, local_eq, native_eq, optional_continue_eq,
+    RequestEquality.node_eq, bootstrap_eq, process_eq, wire_content_digest_eq,
+    credential_eq, actions_eq, receipts_eq,
+    controller.lifecycle_inbox.source_work.SourceAnchor.mk.injEq, RequestEquality.ok_and]
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.anchor_eq

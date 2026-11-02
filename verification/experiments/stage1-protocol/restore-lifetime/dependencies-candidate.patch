@@ -1,0 +1,22 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,19 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 原恢复继续退出的期限值接口
++
++候选 `restore-lifetime` 直接捕获9c50da7c的原
++`source_work::restore::continued_exit::lifetime_matches`，使用固定生成类型及
++A6/B4的正常值算术/翻译边界；没有新增 Serde、SQL、整个业务函数或 owned Clone
++的可信解释。唯一旧业务库导入中的短路引理为原 Replay.ok_and，正文不重写。
++
++原 I64 比较和 IScalar.hcast .U64 沿固定 Aeneas 位向量语义。五项非负守卫、
++原四个期限字段比较、保存观测上界、启动关系及严格 end/max_end 边界均保留。
++有限 cast 正例不是任意输入的替代证明。期限相等不提供其余 native 字段认证。
++原输入到当前同一连接/事务和历史由V1/V5连接，独立认证由V7提供，实际资源、
++进程和材料事实由V6提供；JSON来源及完整 producer/driver 不从本值引理推出。
++
++公共登记/覆盖采用和ning正式验收仍由主控协调；局部三视图不签发共享封口。

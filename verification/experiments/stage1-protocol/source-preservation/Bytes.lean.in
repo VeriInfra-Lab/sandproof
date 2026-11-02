@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Spec
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+/-- Existing byte-list comparison proof re-instantiated at this actual view. -/
+theorem byte_lists_eq (xs ys : List U8) (h : xs.length = ys.length) :
+    List.allM (fun (p : U8 × U8) => (.ok (decide (p.1 = p.2)) : Result Bool))
+      (List.zip xs ys) = .ok (decide (xs = ys)) := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all [pure]
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at h
+    | cons y ys =>
+      have hlen : xs.length = ys.length := by simpa using h
+      by_cases heq : x = y <;> simp [pure, ih ys hlen, heq]
+
+theorem digest_eq (a b : Digest) :
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq a b =
+      .ok (decide (a = b)) := by
+  have heq : ∀ x y : U8, (x.val = y.val) ↔ x = y := by intro x y; scalar_tac
+  simp [sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    core.array.equality.PartialEqArray.eq, heq, byte_lists_eq a.val b.val (by simp), ← Array.eq_iff]
+
+theorem vec_bytes_eq (a b : alloc.vec.Vec U8) :
+    alloc.vec.partial_eq.PartialEqVec.eq core.cmp.PartialEqU8 a b = .ok (decide (a = b)) := by
+  by_cases sameLength : a.val.length = b.val.length
+  · simp [alloc.vec.partial_eq.PartialEqVec.eq, sameLength,
+      byte_lists_eq a.val b.val sameLength, ← alloc.vec.Vec.eq_iff]
+  · have different : a ≠ b := by intro same; subst b; exact sameLength rfl
+    simp [alloc.vec.partial_eq.PartialEqVec.eq, sameLength, different]
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.byte_lists_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.vec_bytes_eq

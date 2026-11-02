@@ -1,0 +1,6 @@
+
+#[cfg(feature = "durable")]
+#[must_use]
+pub fn proof_source_work_eq(left: &SourceWork, right: &SourceWork) -> bool {
+    left == right
+}

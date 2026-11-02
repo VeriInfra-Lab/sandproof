@@ -1,0 +1,62 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolAttach
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+
+theorem attach_refines_for_session {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (state : E)
+    (sb : s.val < inbox.sessions.val.length)
+    :
+    attach_destroy io state inbox intent s e = attachView io inbox intent s e state := by
+  obtain ⟨session, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.sessions s sb)
+  cases operation : intent.request.operation <;>
+    simp [attach_destroy, attachView, destroy, operation]
+  simp only [indexed, bind_tc_ok, same]
+  cases bindingEq : inbox.sessions.val[s.val].local with
+  | none => simp
+  | some binding =>
+    simp only []
+    apply congrArg (fun continuation => Bind.bind (io.terminate_local state binding) continuation)
+    funext returned
+    rcases returned with ⟨terminated, afterTerminate⟩
+    cases terminated with
+    | Err error => simp [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok accepted =>
+      cases accepted
+      simp only [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+      apply congrArg (fun continuation => Bind.bind
+        (io.current_operation afterTerminate binding.sandbox) continuation)
+      funext returned
+      rcases returned with ⟨operationId, afterCurrent⟩
+      cases operationId with
+      | none => simp [uncurry_apply_pair, core.option.Option.ok_or,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some operationId =>
+        simp only [uncurry_apply_pair, core.option.Option.ok_or, bind_tc_ok]
+        simp only [alloc.vec.Vec.index_mut_usize, indexed, bind_tc_ok,
+          uncurry_apply_pair, same, bind_assoc, InboxAppend.replaceSession, bindingEq]
+
+
+/-- The same caller behavior for all indices, including out-of-bounds failure. -/
+theorem attach_refines_total {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (state : E) :
+    attach_destroy io state inbox intent s e = attachView io inbox intent s e state := by
+  by_cases sb : s.val < inbox.sessions.val.length
+  · exact attach_refines_for_session io inbox intent s e state sb
+  · have outside : inbox.sessions.index_usize s = .fail .arrayOutOfBounds := by
+      simp [alloc.vec.Vec.index_usize, sb]
+    cases operation : intent.request.operation <;>
+      simp [attach_destroy, attachView, destroy, operation, outside]
+
+
+end SandboxModel.Stage1Protocol.ProtocolRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.attach_refines_for_session
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.attach_refines_total

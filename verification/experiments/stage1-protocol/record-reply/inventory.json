@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "production_adopted": true,
+  "source_inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "sandbox-internal/Cargo.toml": "c82e0cceeaa52433d4cf20947f2f5cd4fa1bcf169e9df90a5a683a005c927e1b",
+    "sandbox-internal/src/artifact_client.rs": "3f230a7d9322460c7789356ad5c133112661b934f9bcbabd1f85c3ca2e32940f",
+    "sandbox-internal/src/cache.rs": "436e82e95946d0fe11299aa6e2805c9228f6f1ac687b2caa5d70de887f6f40a0",
+    "sandbox-internal/src/client.rs": "cd61826274efeb355e2db6a6d6286fc25bdd13fe427f70ff91ee0dea740075df",
+    "sandbox-internal/src/client/cache.rs": "13bf98b196e388503200d6011d3d45398e1cbaa28344afddf50f5243012689ae",
+    "sandbox-internal/src/client/data.rs": "91d4c5925e4147f80ffc229a66daf7340e34e42dfd8ef3fe520a0b47ff199a79",
+    "sandbox-internal/src/client/lifecycle.rs": "9b4c874bdd11883c4f9caee500ef73bf94d254dbbd86301593bf12cef5dea556",
+    "sandbox-internal/src/client/status.rs": "e2723a4476eb7ff0502948bae62ea5d0fbaaa7c7a0c12ff0120bed8b7eef5c9a",
+    "sandbox-internal/src/diagnostic.rs": "5db79d51fc4cc3e8e61165ee562b7a1b246c91cecae69ef29163fcc9f3f6bceb",
+    "sandbox-internal/src/lib.rs": "5f7892147b835443ab166b6ab782de3e70ab9c3d271b588ed2fe72775bd5f8f1",
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-internal/src/lifecycle/peer.rs": "7f130f3e951511576ebd0064df379310b4cd791a52323555f9e0c955fe552cc9",
+    "sandbox-internal/src/protected_files.rs": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+    "sandbox-internal/src/protected_server.rs": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225",
+    "sandbox-internal/src/server.rs": "8e46a23776716d7b42e8107d29d454626230e540881ba1a11c59ed275b4dd620",
+    "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669",
+    "sandbox-internal/src/status.rs": "c7d4f41b0bf263da5b08780a24cd2c4f9b8913963998dd9981749fe3bfafaff9",
+    "sandbox-internal/src/template.rs": "a271ecfe20e46ac1b9896e5f56f9bc33584a5d629519a6fbea8c02b4cd67098c",
+    "sandbox-internal/src/template/tests.rs": "2306445ccd049758c3c0ff4a5c675e8e11c11abf1513c90b79b733ce326da79a",
+    "sandbox-internal/src/tls.rs": "6cb5f2f0b6fae160546a649b7e2f95c9e3e09e180e3a60df5460c4af887feec5",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+    "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+    "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+    "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/resume.rs": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad",
+    "sandbox-protocol/src/lifecycle/resume_tests.rs": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7",
+    "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+    "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94"
+  },
+  "providers": {
+    "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+    "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e",
+    "SandboxModel/Lifecycle/Protocol/Library.lean": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+    "SandboxModel/Lifecycle/Protocol/Recorded.lean": "8c8f2da5a9ccb19e53160106848474558bb26852c67d7860ebdf7f1e2f668e84",
+    "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+    "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "tools/lean-mcp-requirements.txt": "2cf52b612090fddedde8a0c6278d572d53217f7651a497320666372658427fec",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
+    "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/registered.py": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "templates": {
+    "NegativeRecordReplySkip.lean.in": "f824ac66027182f358e5424bb6c0e2a0114783965b96100b9fb0823d073729bd",
+    "NegativeRecordReplyTerminal.lean.in": "4e153c3fe7b8658c0a8946ea446387f9dc9cded868a1c9fc3723a16042a34b0e",
+    "README.md": "116d35cdae796a8b29afcb647ae6b2c60815e3f2b10ac7a5af6b7cf53536b56a",
+    "RecordReplyCore.lean.in": "ba0f32d858a2576ffbf06e6ab0597ace2bcaeb4e0883c192ab19c81fa73e6f5e",
+    "RecordReplyModel.lean.in": "0f37378c924166d92668cd9bd7e522fcd652a99751a104c37a84600f8dca2a10",
+    "RecordReplyValues.lean.in": "fa18fc85e5dec1206d27f3798b0de5415e1f5806fc2c8fbb079c7201b2c48568",
+    "RecordReplyWitnesses.lean.in": "4a8cd42e1b81c47184ed4f6376d1f0eaa9d97c814c3753df9db6e1f5116c34ef",
+    "coverage-candidate.patch": "6f65e07007cf4084a2af12e3f2ee4cf18d4bb3d2874bb1a1e46f90fca897142d",
+    "dependencies-candidate.patch": "af99489abb99696339d63849aabe64d207fe0417d5853815e395c8e95bf65555",
+    "generated-index.json": "945edebb2d90a97512de3cf8c3c8b961e184ed11254a13cff17f13728d53c845",
+    "mutations.json": "42608dab0cf0d342a70aacdf739abd7191596a6e5f64fe6429f68b67f54a9fb1",
+    "native-cases.rs.in": "8a5e80bd54c75fc79ba35e217cf7263aad3018305f35ccc21d037df74a2b54de",
+    "production-candidate.patch": "63fb8d66cb0830f97a1452bc1a629b22a49cacfd8e001a30b91f090a227a2d14",
+    "registration-candidate.json": "3fc0aea8876597f9f6b7ba567482b11b5ab11428e73f35201833575c9352b0af",
+    "registration-candidate.patch": "20d67e50d91e9a7df5bf3ffc683ed29be255699878e18bd0f882e1bae226d497",
+    "roots.rs.in": "1a1d1234745cde60fdd16dd3aef01c9ada3e1930796c3a5c54ac13a763470c5e",
+    "scope-candidate.patch": "28b1e16977303daad22a80aa2978e0ff53100a3866b1df002b61eaedc0747ae5"
+  },
+  "drivers": {
+    "capture.py": "22ee6547e657063161021793aab402dfad7c24eba9d8355247391d42afda8372",
+    "formal.py": "f01d3a4c91c6270182e67abe7204cd5579faa08f6c4bc1e14df7741d08b78855",
+    "native.py": "0b1cf4b3a1a4f73e58d8528b0358a0ca0e2a8b53ed27be589521d17a2df169a4",
+    "support.py": "7131136036ae1c958e7d1fb13348e7a6a5cf4000bb1d40b0dc1e6b68d3944108"
+  },
+  "root_namespace_open": "open SandproofStage1RequestRust.proof_record_reply_roots\n",
+  "root_namespace_adapters": {
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": {
+      "original_sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+      "adapted_sha256": "ffe23fd9af8c700c2c5f17eacf92f05fbff2688fbc8c06a1912d3eff039f5bfe"
+    },
+    "SandboxModel/Lifecycle/Protocol/Recorded.lean": {
+      "original_sha256": "8c8f2da5a9ccb19e53160106848474558bb26852c67d7860ebdf7f1e2f668e84",
+      "adapted_sha256": "5f3e11bcd43b40903837ad38b95a2cfaf9e15d3cef4323b177290481184b66c0"
+    }
+  },
+  "roots": [
+    "crate::server::lifecycle::record_reply",
+    "crate::proof_record_reply_roots::request_validate",
+    "crate::proof_record_reply_roots::replay_matches",
+    "crate::proof_record_reply_roots::accepted_validate",
+    "crate::proof_record_reply_roots::recorded_matches"
+  ],
+  "external_value_interfaces": [
+    "Bool.Insts.CoreCmpPartialEqBool.ne",
+    "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
+    "alloc.vec.Vec.is_empty",
+    "core.option.Option.Insts.CoreCmpPartialEqOption.eq"
+  ],
+  "common_proofs": [
+    "RecordReplyModel",
+    "RecordReplyValues"
+  ],
+  "variants": {
+    "actual": {
+      "mutation": null,
+      "proofs": [
+        "RecordReplyCore",
+        "RecordReplyWitnesses"
+      ],
+      "expected_files": 19,
+      "expected_audits": 53
+    },
+    "skip-match": {
+      "mutation": {
+        "source": "sandbox-internal/src/server/lifecycle.rs",
+        "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => Err(RecordReplyError::Unavailable),\n    }\n",
+        "scope": "Only omit the original full matches decision; remove now-unreachable Ok fallback and mark the borrowed input used so this stays a compiling intended wrong implementation.",
+        "common_normal": "RecordReplyValues.original / received",
+        "counterexample": "same session and changed full capture: RecordReplyValues.original / changedCapture"
+      },
+      "proofs": [
+        "NegativeRecordReplySkip"
+      ],
+      "expected_files": 18,
+      "expected_audits": 47
+    },
+    "clear-terminal": {
+      "mutation": {
+        "source": "sandbox-internal/src/server/lifecycle.rs",
+        "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "after": "    match received {\n        Ok(mut recorded) if recorded.matches(intent) => {\n            recorded.terminal = false;\n            Ok(recorded)\n        }\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "scope": "Only clobber the full returned terminal payload after the unchanged successful matches guard.",
+        "common_normal": "RecordReplyValues.original / received (terminal false)",
+        "counterexample": "normal complete matching receipt with terminal true: RecordReplyValues.original / terminalReceived"
+      },
+      "proofs": [
+        "NegativeRecordReplyTerminal"
+      ],
+      "expected_files": 18,
+      "expected_audits": 47
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "expected_failures": [],
+      "expected_clippy_codes": [],
+      "test_count": 7
+    },
+    "skip-match": {
+      "mutation": {
+        "source": "sandbox-internal/src/server/lifecycle.rs",
+        "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => Err(RecordReplyError::Unavailable),\n    }\n",
+        "scope": "Only omit the original full matches decision; remove now-unreachable Ok fallback and mark the borrowed input used so this stays a compiling intended wrong implementation.",
+        "common_normal": "RecordReplyValues.original / received",
+        "counterexample": "same session and changed full capture: RecordReplyValues.original / changedCapture"
+      },
+      "expected_failures": [
+        "different_capture_unavailable",
+        "different_retention_unavailable"
+      ],
+      "expected_clippy_codes": [],
+      "test_count": 7
+    },
+    "clear-terminal": {
+      "mutation": {
+        "source": "sandbox-internal/src/server/lifecycle.rs",
+        "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "after": "    match received {\n        Ok(mut recorded) if recorded.matches(intent) => {\n            recorded.terminal = false;\n            Ok(recorded)\n        }\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+        "scope": "Only clobber the full returned terminal payload after the unchanged successful matches guard.",
+        "common_normal": "RecordReplyValues.original / received (terminal false)",
+        "counterexample": "normal complete matching receipt with terminal true: RecordReplyValues.original / terminalReceived"
+      },
+      "expected_failures": [
+        "terminal_payload_preserved"
+      ],
+      "expected_clippy_codes": [],
+      "test_count": 7
+    },
+    "restored": {
+      "mutation": null,
+      "expected_failures": [],
+      "expected_clippy_codes": [],
+      "test_count": 7
+    }
+  },
+  "new_unique_audits": 22,
+  "prior_support_audits_reused": 37,
+  "union_audits": 59,
+  "full_JSON_TLS_or_persistence_proved": false,
+  "native_test_names": [
+    "normal_receipt_preserved",
+    "terminal_payload_preserved",
+    "different_capture_unavailable",
+    "different_retention_unavailable",
+    "conflict_stays_distinct",
+    "capacity_is_unavailable",
+    "original_unavailable"
+  ]
+}
