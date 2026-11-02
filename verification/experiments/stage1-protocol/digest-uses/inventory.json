@@ -7,7 +7,7 @@
     "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
     "controller-service/src/controller/checkpoint/config.rs": "81a0314c40c07552b58097387044f659288ef6b2bc5ecd0fc835e5ca954c1976",
     "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "b8be81ee9ee274b2b2f5e0f6091377a6e1ab00d31ceb0178de5d04f8f2c90634",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
     "controller-service/src/controller/lifecycle_inbox/sha256.rs": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e",
     "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",

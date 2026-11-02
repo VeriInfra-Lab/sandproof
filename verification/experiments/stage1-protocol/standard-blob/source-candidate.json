@@ -9,6 +9,6 @@
   "original_array_named_after": "    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {\n        Ok(self\n            .connection\n            .query_row(statement, [], |r| read_blob_pair(r, 0, 1))?)\n    }",
   "source_adopted": true,
   "original_array_universal_machine_equivalence_proved": false,
-  "adopted_source_sha256": "b8be81ee9ee274b2b2f5e0f6091377a6e1ab00d31ceb0178de5d04f8f2c90634",
+  "adopted_source_sha256": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
   "adopted_leaf_sha256": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e"
 }

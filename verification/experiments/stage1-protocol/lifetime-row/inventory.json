@@ -54,7 +54,7 @@
     "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
     "controller-service/src/controller/capture.rs": "683f8c332f8e1422b49f958bb96911e2689bceb08d966b604cb78b0bc746b247",
     "controller-service/src/controller/allocator_tests.rs": "1a2cbc82b712711431386564d055dba98c892d86f6ecbf062873184012c7ef2a",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-service/src/controller/allocators.rs": "958a4669568e59c96a70aaa5c72e4ef146b04b3bd6814064eb0be9b1fd31ec7c",
     "controller-service/src/controller/lease_tests.rs": "599faa9d33925e3f138d14efa40ba3954ee28f7800457a500edc3070c17dc307",
     "controller-service/src/controller/storage.rs": "d08831d001d582702defdd328f0178039cec70ee7e49c64c6b9f2b1fdb2dccb3",
@@ -130,11 +130,11 @@
     "controller-service/src/controller/lifecycle_inbox/refusal_tests.rs": "fad8c3240e405ffc1a2991b2345b4a39552b83406af09c8e3b9a22e33bae13d6",
     "controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs": "3fc77a30883941e443391d715bfdf746d75603f79ce0e1daf70f77c10ccaf0ad",
     "controller-service/src/controller/lifecycle_inbox/renewal_tests.rs": "6aaf646a29095607a49815163f69750f10a8133b32153762978ba364cd14e79d",
-    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/lifecycle_inbox/native_retirement.rs": "cd315d89e3a2dbd8d8c24ac6c251cecf2a2f41470802ea5608bd55cd6d08ae56",
     "controller-service/src/controller/lifecycle_inbox/audit.rs": "7240f64945488c3f09081d16870ac6e541e22f6ec4669cf2e7984cb40a6bde45",
     "controller-service/src/controller/lifecycle_inbox/renewal_confirmation_tests.rs": "9bf9ece20298db643ab4efa4215b89816b30e9609d8055bedf868692f5d66ec6",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
     "controller-service/src/controller/lifecycle_inbox/refusal.rs": "0e531d8b750cd9d2a2b94a177654a7d1edccbd8aea3592af930a9b53028be1a6",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-service/src/controller/lifecycle_inbox/pending.rs": "8c74671e4272b6bf3c91082e2849e7caefefb63049f05ac3712338377a32bf3a",
@@ -306,7 +306,8 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
     "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
-    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee"
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
   },
   "providers": {
     "docs/formal/dependencies.md": "7a78a1ff00b1b523a3907d3b796c79623fce7290b8171a515c157d5d2729da91",
@@ -338,7 +339,7 @@
   },
   "drivers": {
     "verification/experiments/stage1-protocol/lifetime-row/formal.py": "b76841f681613129fbab5d8c7769a137641feff2ec8c1cb6fb10c81b2867f3a0",
-    "verification/experiments/stage1-protocol/lifetime-row/support.py": "622fa2ded8f2678cf3259ff5b767a78fcca76de5c87917285be85bc1cc561f8b",
+    "verification/experiments/stage1-protocol/lifetime-row/support.py": "16b6893d6af5b639e18721bd748a57f2503b1ca9de5d801d0e7516fc258481e6",
     "verification/experiments/stage1-protocol/lifetime-row/native.py": "60b51586b151e3998a11cf1b620847adf791ebdc109f3970f37f4a33d3ac7446"
   },
   "generated": {

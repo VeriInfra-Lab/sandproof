@@ -123,8 +123,8 @@ pub(super) trait InboxSaveEffects {
     ) -> Result<usize, JournalError>;
 }
 
-struct StandardInboxSave<'a> {
-    connection: &'a Connection,
+pub(super) struct StandardInboxSave<'a> {
+    pub(super) connection: &'a Connection,
 }
 
 impl InboxSaveEffects for StandardInboxSave<'_> {
