@@ -503,7 +503,10 @@ def main():
     if args.mode == 'formal' and 'completed_result' in selected:
         if set(selected) != {'completed_result'}:
             raise ValueError('completed SQLite consumption accepts one exact result locator only')
-        origin = Path(selected['completed_result']).resolve(strict=True)
+        origin = Path(selected['completed_result'])
+        if not origin.is_absolute() or origin.is_symlink():
+            raise ValueError('completed SQLite result must be an absolute original regular file')
+        origin = origin.resolve(strict=True)
         result = read(origin)
         check(result, ROOT)
         (output/'result.json').write_bytes(origin.read_bytes())
