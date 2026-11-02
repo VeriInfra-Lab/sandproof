@@ -35,6 +35,10 @@ class Original(_PARENT.Original):
 
     def type_name(self, reference):
         value = self.resolve(reference, self.types)
+        if isinstance(value, dict) and 'Slice' in value and isinstance(value['Slice'], list):
+            element, marker = value['Slice']
+            require(marker is None, 'unreviewed current slice type marker')
+            return '[' + self.type_name(element) + ']'
         if value == 'Never':
             return '!'
         if isinstance(value, dict) and set(value) in ({'TraitType'}, {'DynTrait'}, {'FnDef'}):

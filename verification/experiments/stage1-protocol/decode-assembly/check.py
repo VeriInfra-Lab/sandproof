@@ -278,7 +278,7 @@ def mapping(report, fields, exits, all_reports, original):
                 duplicate_before_value=True, success_assemblies=len(exits))
 
 
-def check(raw, schema):
+def check(raw, schema, *, root=None):
     original = Original(raw)
     report = functions(raw)
     structs = schema['structs']
@@ -288,8 +288,31 @@ def check(raw, schema):
              if len(f['item_meta']['name']) == 2 and
              f['item_meta']['name'][0] == {'Ident': ['sandproof_envelope_bytes_check', 0]} and
              f['item_meta']['name'][-1] in ({'Ident': ['accepted_decode', 0]}, {'Ident': ['recorded_decode', 0]})]
-    require(len(roots) == 1, 'missing/ambiguous original decoder root')
-    if roots == ['accepted_decode']:
+    if root is None:
+        require(len(roots) == 1, 'missing/ambiguous original decoder root')
+        accepted_only = roots == ['accepted_decode']
+    else:
+        # The production-feature probe has a context argument and returns the
+        # original accepted-body result. Do not rename an LLBC declaration to
+        # make it look like an old independent wrapper.
+        require(root == 'crate::server::lifecycle::proof_current_accepted_parser' and
+                raw['translated']['options']['start_from'] == [root],
+                'unregistered current decoder root')
+        selected = [function for function in original.functions.values()
+                    if function['item_meta']['name'] == [
+                        {'Ident': ['sandproof_internal', 0]}, {'Ident': ['server', 0]},
+                        {'Ident': ['lifecycle', 0]}, {'Ident': ['proof_current_accepted_parser', 0]}]]
+        require(len(selected) == 1 and selected[0]['item_meta']['opacity'] == 'Transparent' and
+                set(selected[0]['body']) == {'Structured'}, 'current decoder probe is missing or opaque')
+        output = original.resolve(selected[0]['signature']['output'], original.types)
+        require('Adt' in output and original.declaration_name(output['Adt']['id']) == RESULT and
+                original.type_name(output['Adt']['generics']['types'][0]) ==
+                'sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent',
+                'current decoder probe returns a different value')
+        accepted_only = True
+        report['current_capture_root'] = dict(root=root, function_id=selected[0]['def_id'],
+                                              callback_binding_required=True)
+    if accepted_only:
         del expected['RecordedLifecycleIntent', None]
     found = {}
     for fid, data in report['functions'].items():
