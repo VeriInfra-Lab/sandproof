@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "kind": "fixed-ten-package-original-proof-selection",
+  "kind": "fixed-v3-original-proof-selection",
   "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
   "archives": {
     "root-original-records.tar.gz": "298e904ed6de85f8a5f5248d33e0b2990efc406df1308cb888e0518bbe51f420",
@@ -6060,5 +6060,8 @@
         "docs/proof-workflow.md"
       ]
     }
-  }
+  },
+  "log_archives": [
+    "root-original-logs.tar.gz"
+  ]
 }

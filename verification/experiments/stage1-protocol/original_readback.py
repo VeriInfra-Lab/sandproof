@@ -1,4 +1,4 @@
-"""Finite readback of the ten reviewed original V3 proof packages.
+"""Finite readback of the reviewed original V3 proof packages.
 
 This does not execute a proof, create an original checkpoint, or discover a
 cache entry. The selection and current source applicability are fixed. Original
@@ -44,7 +44,7 @@ def safe(name):
 
 def fixed(root):
     value = read(root/HERE/'fixed-originals.json')
-    if value.get('schema') != 1 or value.get('kind') != 'fixed-ten-package-original-proof-selection':
+    if value.get('schema') != 1 or value.get('kind') != 'fixed-v3-original-proof-selection':
         raise ValueError('unknown finite original selection')
     return value
 
@@ -92,13 +92,14 @@ def prepare(bundle, output, root=ROOT):
         results = {}
         for name, row in spec['jobs'].items():
             results[name] = retain('results', member(row['archive'], row['member']), row['sha256'])
-        logs = json.loads(member('root-original-logs.tar.gz', 'index.json'))
-        for row in logs:
-            name = retain('logs', member('root-original-logs.tar.gz', row['member']), row['sha256'])
-            if row['path'] in original_paths:
-                raise ValueError('duplicate original log path')
-            original_paths[row['path']] = dict(file=name, sha256=row['sha256'],
-                original_digest_recorded=row['original_digest_recorded'])
+        for archive in spec['log_archives']:
+            for row in json.loads(member(archive, 'index.json')):
+                name = retain('logs', member(archive, row['member']), row['sha256'])
+                entry = dict(file=name, sha256=row['sha256'],
+                    original_digest_recorded=row['original_digest_recorded'])
+                if row['path'] in original_paths and original_paths[row['path']] != entry:
+                    raise ValueError('conflicting original log path')
+                original_paths[row['path']] = entry
         for expected, recipe in spec['physical_sources'].items():
             if 'archive' in recipe:
                 retain('raw', member(recipe['archive'], recipe['member']), expected)
@@ -176,27 +177,44 @@ def _original(stage, index, expected, job, evidence):
 
 
 def _cases(result, expected):
-    if 'cases' in result:
-        if list(result['cases']) != list(expected['views']):
-            raise ValueError('original cases differ from the fixed complete selection')
-        return result['cases']
+    for key in ('cases', 'views'):
+        if key in result:
+            if list(result[key]) != list(expected['views']):
+                raise ValueError('original cases differ from the fixed complete selection')
+            return result[key]
     variant = result['variant']
     if list(expected['views']) != [variant]:
         raise ValueError('original single variant differs')
     return {variant: result}
 
 
+def _command_log(command):
+    if 'log' in command:
+        return Path(command['log'])
+    return Path(command['folder'])/(command['label']+'.log')
+
+
 def _commands(result, case, row):
     commands = row.get('commands', result.get('commands', []))
-    if 'cases' in result and not row.get('commands'):
-        commands = [c for c in commands if case in Path(c['log']).parts]
+    if ('cases' in result or 'views' in result) and not row.get('commands'):
+        commands = [c for c in commands if case in _command_log(c).parts]
     if not commands or any(c.get('exit_code') != 0 for c in commands):
         raise ValueError('missing or failed original execution commands')
     return commands
 
 
 def _fingerprint(result, row):
-    inputs = dict(row.get('source_inputs', result['inputs']))
+    if 'source_files' in row:
+        inputs = dict(row['source_files'])
+    elif 'independent_sources' in result:
+        sources = [s for s in result['independent_sources']
+                   if s['project'] == row['project'] and
+                   s['purpose'].startswith('checked-independent-SHA-')]
+        if len(sources) != 1:
+            raise ValueError('missing complete original checked-view source inventory')
+        inputs = dict(sources[0]['inputs'])
+    else:
+        inputs = dict(row.get('source_inputs', result['inputs']))
     inputs.update(row.get('installed', {}))
     inputs.update(row['actual']['files'])
     value = hashlib.sha256()
@@ -259,28 +277,28 @@ def _validate(root, job, stage, output, *, install):
                     'SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract'
                     not in actual['audits']):
                 raise ValueError('missing original native-readiness counterexample')
-        elif row.get('property_rejected') is not (case != 'correct'):
+        elif row.get('property_rejected') is not (case not in ('correct', 'actual')):
             raise ValueError('original rejection result differs')
         folder = output/'views'/case
         project, physical = folder/'source', folder/'physical-files'
         for target, h in actual['files'].items():
             placed(project/safe(target), _source(root, stage, spec, h, evidence))
         commands = _commands(result, case, row)
-        kernels = [c for c in commands if Path(c['log']).name.startswith('kernel-')]
+        kernels = [c for c in commands if _command_log(c).name.startswith('kernel-')]
         if len(kernels) != len(actual['files']):
             raise ValueError('missing original kernel commands')
         for command in commands:
-            original_log(command['log'], command['log_sha256'])
+            original_log(_command_log(command), command['log_sha256'])
         projection = []
         for i, (target, command) in enumerate(zip(actual['files'], kernels)):
-            if (Path(command['log']).name != 'kernel-'+str(i)+'.log'
+            if (_command_log(command).name != 'kernel-'+str(i)+'.log'
                     or command['argv'] != ['lake', 'env', 'lean', target]):
                 raise ValueError('original kernel command order differs')
-            placed(folder/('kernel-'+str(i)+'.log'), original_log(command['log'], command['log_sha256']))
+            placed(folder/('kernel-'+str(i)+'.log'), original_log(_command_log(command), command['log_sha256']))
             # This is a path projection for checking identical retained bytes,
             # not a new compilation command or a rewrite of the original JSON.
             projection.append(dict(command, cwd=str(project)))
-        old_physical = Path(kernels[0]['log']).parent/'physical-files'
+        old_physical = _command_log(kernels[0]).parent/'physical-files'
         for file in ('requests.jsonl', 'service.log'):
             placed(physical/file, original_log(old_physical/file,
                 actual['service_log_sha256'] if file == 'service.log' else None))
