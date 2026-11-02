@@ -334,9 +334,11 @@ A9/A6/B4 仅解释锁定的 sha2 0.10.9、digest 0.10.7、generic-array 0.14.7 �
 
 ### SQLite：当前 Inbox 保存两 BLOB 参数（实际接线与验收单列）
 
-实际标准库调用当前仍在 StandardInboxSave::update：self.connection.execute(statement, rusqlite::params![bytes, digest])，返回原 usize 或经原 JournalError 转换的错误；StandardConfigRead 委托构造的 StandardInboxSave 必须用原 self.connection。限定参数合同只覆盖两个原共享切片：slot 1 为 encode 返回的完整 bytes，slot 2 为对此 bytes 计算的全部 32 个 digest 字节；固定 ToSql/临时参数机械接线可按已批 A4/B4 解释，不能信任整段业务 SQL 或 save。
+本批 StandardInboxSave::update 的唯一采用接法是原 self.connection.execute(statement, 两元素参数数组)，每个元素为 ToSqlOutput::Borrowed(ValueRef::Blob(...))；不再保留另一个 params! 生产实现。slot 1 为 encode 返回的完整 bytes，slot 2 为对此 bytes 计算的全部 32 个 digest 字节。返回原 usize 或经原 JournalError 转换的错误；StandardConfigRead 委托构造的 StandardInboxSave 仍用原 self.connection。A4/B4 只解释这两个原共享 BLOB 和固定 Params/ToSql 接线，不信任整段业务 SQL 或 save。
 
-正常联合接口须保持原参数个数/位置、BLOB 类型、完整原值和对象，保留转换、raw_bind、step/reset 的原首错和返回优先级；错误可能有已发生效果，不承诺自动回滚。当前真实宏/字典是否可直接抽取尚未实测，不把这个待接通点写成已证。
+固定 rusqlite 0.40.2 的 params.rs（SHA256 5cac2041f4fa8cb479997cbe9d0f716b577dde145e346ec3597d97de0cee6629）中，原宏采用的 &[&dyn ToSql] 实例（212–217行）调用 stmt.bind_parameters(self)，数组实例（307–312行）调用 stmt.bind_parameters(&self)，两者都不提前检查参数数目。原 statement.rs 的 474–491行从索引 1 逐项绑定：先检查当前项是否越界，再执行 bind_parameter 并保留第一个错误，遍历结束后才检查总数。不能误套 tuple 的提前计数行为。
+
+这项采用只限本链固定两参数语句、完整原字节、普通纯 BLOB 转换和原顺序：保留参数数目/位置、原值、首错、最终计数检查时点和 execute 结果。它不是任意 SQL 或有副作用 ToSql 的一般等价证明，也不承诺绑定总成功；raw_bind/step/reset 失败和已发生效果继续按 A4 保留，不承诺自动回滚。原 params! 已通过 Charon，却在 Aeneas 的动态 trait 转换处失败；此失败是工具诊断，不是性质反例。采用数组后的实际抽取与验收状态另记。
 
 V3 自有 save_using 仍真实执行 validate -> encode -> bytes.len 对 reserve 检查 -> digest -> UPDATE -> 成功行数恰等于 1。固定语句是 UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1。0 行或多行成功均按原逻辑 CorruptStore；与寿命 UPDATE 接受任意成功行数的合同严格区分。影响 1 行不等于提交；SQL 成功也不等于耐久接受或可派发。
 
