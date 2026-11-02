@@ -321,7 +321,7 @@ def check(result, root=ROOT):
     if (sha(neg/'evidence/generated/SandproofSqlite/Types.lean') != sha(root/LIB/'Types.lean')
             or sha(neg/'evidence/generated/SandproofSqlite/Funs.lean') == sha(root/LIB/'Funs.lean')):
         raise ValueError('fault generated types or changed implementation differ')
-    for name in ('tools/lean_session.py', 'scripts/lean-mcp-server.sh'):
+    for name in ('tools/lean_session.py', 'tools/proof_services.py', 'scripts/lean-mcp-server.sh'):
         if sha(neg/'lean'/name) != sha(root/name):
             raise ValueError('counterexample service client differs: '+name)
     wrong = result['actuals'][1]
@@ -337,7 +337,8 @@ def check(result, root=ROOT):
                 neg/'evidence/generated/SandproofSqlite/Types.lean',
                 neg/'evidence/generated/SandproofSqlite/Funs.lean', neg/'source'/MEMO,
                 neg/'lean/Counterexample.lean', neg/'lean/tools/lean_session.py',
-                neg/'lean/scripts/lean-mcp-server.sh', neg/'physical-check/kernel-0.log',
+                neg/'lean/scripts/lean-mcp-server.sh', neg/'lean/tools/proof_services.py',
+                neg/'physical-check/kernel-0.log',
                 neg/'physical-check/physical-files/requests.jsonl', neg/'physical-check/physical-files/service.log']
     evidence.update({str(p.resolve()): sha(p) for p in required})
     if not evidence.items() <= result['reuse_evidence'].items():
@@ -397,6 +398,7 @@ def formal(output, config, root=ROOT):
     (child/'tools').mkdir()
     (child/'scripts').mkdir()
     shutil.copy2(root/'tools/lean_session.py', child/'tools/lean_session.py')
+    shutil.copy2(root/'tools/proof_services.py', child/'tools/proof_services.py')
     shutil.copy2(root/'scripts/lean-mcp-server.sh', child/'scripts/lean-mcp-server.sh')
     (child/'.tools').symlink_to((root/'.tools').resolve(strict=True), target_is_directory=True)
     (child/'artifacts').mkdir()
@@ -412,7 +414,7 @@ def formal(output, config, root=ROOT):
         path = negative/'evidence'/name
         reused[str(path.resolve())] = sha(path)
     for path in [negative/'source/sandproof_sqlite_core.llbc', negative/'source'/MEMO,
-                 child/'Counterexample.lean', child/'tools/lean_session.py', child/'scripts/lean-mcp-server.sh',
+                 child/'Counterexample.lean', child/'tools/lean_session.py', child/'tools/proof_services.py', child/'scripts/lean-mcp-server.sh',
                  physical_output/'kernel-0.log',
                  physical_output/'physical-files/requests.jsonl', physical_output/'physical-files/service.log',
                  output/'original-negative.log']:
