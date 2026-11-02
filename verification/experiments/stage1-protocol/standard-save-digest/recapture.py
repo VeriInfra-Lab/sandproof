@@ -98,7 +98,7 @@ def run(output, views):
                     row = blob_capture.run(project, folder, view, blob, command, 'standard')
                     row['preparation'] = derivation
                 elif view == 'save-update':
-                    row, changed = update_probe(project, folder, command, blob_capture)
+                    row = update_probe(project, folder, command, blob_capture, changed)
                 else:
                     raise ValueError('unregistered narrow capture view: '+view)
                 rec['views'][view] = dict(complete=True, capture=row)
@@ -109,7 +109,7 @@ def run(output, views):
             rec['views'][view]['private_inputs_unchanged'] = all(
                 not (project/n).is_symlink() and sha(project/n) == h for n,h in expected.items())
             if not rec['views'][view]['private_inputs_unchanged']:
-                rec['views'][view].update(complete=False, error='derived source changed')
+                rec['views'][view].update(complete=False, source_guard_error='derived source changed')
             save()
         rec['source_unchanged'] = support.base.snapshot(ROOT) == inputs
         rec['complete'] = rec['source_unchanged'] and all(v['complete'] for v in rec['views'].values())
@@ -120,7 +120,7 @@ def run(output, views):
     return rec
 
 
-def update_probe(project, folder, command, blob_capture):
+def update_probe(project, folder, command, blob_capture, changed):
     relative = Path('controller-service/src/controller/lifecycle_inbox/codec.rs')
     path = project/relative
     marker = 'fn proof_stage1_save_blob_update('
@@ -137,7 +137,7 @@ fn proof_stage1_save_blob_update(
     InboxSaveEffects::update(receiver, statement, bytes, digest)
 }
 ''')
-    changed = {str(relative): sha(path)}
+    changed[str(relative)] = sha(path)
     fixed = json.loads((ROOT/'verification/foundations-environment.json').read_text())
     for name, suffix in [('charon','charon/bin/charon'),('aeneas','bin/aeneas')]:
         if sha(ROOT/'.tools/aeneas'/suffix) != fixed[name]['binary_sha256']:
@@ -178,7 +178,7 @@ fn proof_stage1_save_blob_update(
     return dict(capture_only=True, formal_acceptance=False, ir=str(ir), ir_sha256=sha(ir),
         ir_value_sha256=blob.ir_value_digest(raw),generated_directory=str(generated),
         generated={str(p.relative_to(generated)):sha(p) for p in generated.rglob('*') if p.is_file()},
-        translation=json.loads((generated/'translation.json').read_text())), changed
+        translation=json.loads((generated/'translation.json').read_text()))
 
 
 if __name__ == '__main__':

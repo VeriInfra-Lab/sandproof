@@ -140,9 +140,13 @@ impl InboxSaveEffects for StandardInboxSave<'_> {
         bytes: &[u8],
         digest: &[u8],
     ) -> Result<usize, JournalError> {
-        Ok(self
-            .connection
-            .execute(statement, rusqlite::params![bytes, digest])?)
+        Ok(self.connection.execute(
+            statement,
+            [
+                rusqlite::types::ToSqlOutput::Borrowed(rusqlite::types::ValueRef::Blob(bytes)),
+                rusqlite::types::ToSqlOutput::Borrowed(rusqlite::types::ValueRef::Blob(digest)),
+            ],
+        )?)
     }
 }
 

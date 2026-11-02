@@ -134,7 +134,7 @@
     "controller-service/src/controller/lifecycle_inbox/native_retirement.rs": "cd315d89e3a2dbd8d8c24ac6c251cecf2a2f41470802ea5608bd55cd6d08ae56",
     "controller-service/src/controller/lifecycle_inbox/audit.rs": "7240f64945488c3f09081d16870ac6e541e22f6ec4669cf2e7984cb40a6bde45",
     "controller-service/src/controller/lifecycle_inbox/renewal_confirmation_tests.rs": "9bf9ece20298db643ab4efa4215b89816b30e9609d8055bedf868692f5d66ec6",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
     "controller-service/src/controller/lifecycle_inbox/refusal.rs": "0e531d8b750cd9d2a2b94a177654a7d1edccbd8aea3592af930a9b53028be1a6",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-service/src/controller/lifecycle_inbox/pending.rs": "8c74671e4272b6bf3c91082e2849e7caefefb63049f05ac3712338377a32bf3a",

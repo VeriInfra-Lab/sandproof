@@ -6,13 +6,13 @@
   "candidate_method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        super::sha256::digest(bytes)\n    }",
   "helper": "",
   "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
-  "candidate_without_thin_root_sha256": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
+  "candidate_without_thin_root_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
   "unrelated_bytes_preserved": true,
   "original_library_expression_unchanged": true,
   "source_adopted": true,
   "protocol_modified": false,
   "shared_configuration_modified": false,
   "full_original_machine_equivalence": false,
-  "adopted_source_sha256": "cfd7542f2334f3b4693d7c4af368993edd492a811d5e23661839a7da4ab7a2b7",
+  "adopted_source_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
   "adopted_leaf_sha256": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e"
 }
