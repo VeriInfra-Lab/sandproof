@@ -1,0 +1,93 @@
+#[cfg(test)]
+mod proof_source_question_contract_tests {
+    use super::*;
+
+    fn saved() -> SourceWork {
+        let path = std::env::var("SANDPROOF_SOURCE_QUESTION_FIXTURE").unwrap();
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    fn evaluated() -> (SourceWork, SourceWork) {
+        let saved = saved();
+        let value = question_from_binding(
+            saved.anchor.clone(),
+            &saved.requirement.limits,
+            saved.requirement.work_binding,
+        );
+        (saved, value)
+    }
+
+    #[test]
+    fn proof_source_question_contract_full() {
+        let (saved, value) = evaluated();
+        assert_eq!(value, saved);
+    }
+
+    #[test]
+    fn proof_source_question_contract_binding() {
+        let (saved, value) = evaluated();
+        assert_eq!(
+            value.requirement.work_binding,
+            saved.requirement.work_binding
+        );
+    }
+
+    #[test]
+    fn proof_source_question_contract_resource() {
+        let (saved, value) = evaluated();
+        assert_eq!(
+            value.requirement.resource,
+            saved.anchor.original_actions[1].resource
+        );
+    }
+
+    #[test]
+    fn proof_source_question_contract_limits() {
+        let (saved, value) = evaluated();
+        assert_eq!(value.requirement.limits, saved.requirement.limits);
+    }
+
+    #[test]
+    fn proof_source_question_contract_source() {
+        let (saved, value) = evaluated();
+        assert_eq!(value.requirement.source, saved.anchor.source);
+    }
+
+    #[test]
+    fn proof_source_question_contract_node_bootstrap() {
+        let (saved, value) = evaluated();
+        assert_eq!(value.requirement.node, saved.anchor.node);
+        assert_eq!(
+            value.requirement.host_bootstrap,
+            saved.anchor.host_bootstrap
+        );
+    }
+
+    #[test]
+    fn proof_source_question_contract_empty_panics() {
+        let mut saved = saved();
+        saved.anchor.original_actions.clear();
+        let outcome = std::panic::catch_unwind(|| {
+            question_from_binding(
+                saved.anchor,
+                &saved.requirement.limits,
+                saved.requirement.work_binding,
+            )
+        });
+        assert!(outcome.is_err());
+    }
+
+    #[test]
+    fn proof_source_question_contract_single_panics() {
+        let mut saved = saved();
+        saved.anchor.original_actions.truncate(1);
+        let outcome = std::panic::catch_unwind(|| {
+            question_from_binding(
+                saved.anchor,
+                &saved.requirement.limits,
+                saved.requirement.work_binding,
+            )
+        });
+        assert!(outcome.is_err());
+    }
+}

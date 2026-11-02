@@ -1,0 +1,41 @@
+--- a/docs/formal/03-protocol-inbox.md
++++ b/docs/formal/03-protocol-inbox.md
+@@ -195,3 +195,8 @@
+ 公共 SQL 定义、完整生成错误／值载体和原字节数学继续复用；数组不得套用五元组提前
+ 计数条件。该值／错误切片不闭合标准实例的对象／guard、同一事务、物理行效果、提交
+ 未知、重启或字节／认证链；采用后的当前生成体、普通与正式共享验收仍分别取得。
++
++[来源观察请求构造](../../verification/experiments/stage1-protocol/source-question/README.md)
++从给定完整 anchor、limits 和 binding 开始，保留第二项资源和所有字段，列表不足两项仍越界。
++真实 question 先执行原 JSON 编码与摘要再调用该唯一 helper；值构造的对应不代替
++标准 JSON/SHA 一般对应、来源/当前意图、持久接受、实际资源或事务/恢复证明。
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,11 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++### V3 来源观察请求构造的使用点候选
++
++`source-question` 仅复用已登记普通值 String clone 与 Vec 第二项索引的 A6 合同，
++保留正常 clone 的全字节、完整配置克隆和越界分支。实际 helper 接收完整 ContentDigest 值；
++此值不是哈希计算或材料真实性的证据。原 question 的 `serde_json::to_vec(anchor)`、
++标准 SHA、当前来源、同事务加载/保存和调用者接线仍分别待连接；不信任整个 Serde、
++HTTP handler 或收件事务。公共定义由 V0 唯一维护，此候选不另造公共模型。
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2214,3 +2214,13 @@
+ 此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+
+ 原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
++
++### V3 来源观察请求构造候选
++
++固定 `9c50da7c` 的 snapshot.rs 拆出唯一 `question_from_binding`，原 question 保留
++原 JSON/SHA 及错误顺序。source-question 包复用原九份数学模板，重新捕获真实正确/
++三错四视图，检查完整字段与第二项越界合同及同一规格反例。原版与采用版真实 question
++使用同一冻结 SQLite fixture 回归。执行身份/日志与精确发布版本在 #635 的交付记录，
++不从此候选段落声称已正式验收。ning 普通/正式原生、公共接线/冻结与完整共享结果另列；
++涉及 snapshot.rs 的其它冻结保持旧适用版本，先核对语义/依赖再验收，不直接换摘要。
++原 JSON/SHA 一般对应、实际调用/存储、未知提交/重启、认证/物理来源及完整 V3 尚未完成。

@@ -1,0 +1,11 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Values
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+open Values
+theorem normal_expected : Expected anchor limits digest = .ok (Build anchor limits digest vmAction.resource) := by
+  simp [Expected, anchor]
+theorem other_binding_expected : Expected anchor limits otherDigest = .ok (Build anchor limits otherDigest vmAction.resource) := by
+  simp [Expected, anchor]
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.other_binding_expected

@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Spec
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning
+@[simp] theorem clone_0 (value : sandproof_protocol.internal.PositiveCounter) :
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_1 (value : sandproof_protocol.NodeId) :
+    sandproof_protocol.NodeId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.NodeId.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_2 (value : sandproof_protocol.DeploymentId) :
+    sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_3 (value : sandproof_protocol.internal.NodeIdentity) :
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_4 (value : sandproof_protocol.ResourceId) :
+    sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_5 (value : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_6 (value : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_7 (value : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone]
+@[simp] theorem clone_8 (value : capture.source.SourceObservationConfig) :
+    capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone, lift]
+@[simp] theorem clone_9 (value : capture.HostEpochRegistration) :
+    capture.HostEpochRegistration.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.HostEpochRegistration.Insts.CoreCloneClone.clone, lift]
+@[simp] theorem clone_10 (value : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [capture.SourceProcessIdentity.Insts.CoreCloneClone.clone, lift]
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_0
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_1
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_2
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_3
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_4
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_5
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_6
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_7
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_8
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_9
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Cloning.clone_10
