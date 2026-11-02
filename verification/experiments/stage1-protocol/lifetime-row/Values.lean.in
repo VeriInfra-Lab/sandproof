@@ -1,0 +1,10 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Spec
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow.Values
+def owner : Str := Slice.from (SandproofFoundationsRust.IdentifierLibrary.stringBytes "tenant-7")
+  (by change 8 ≤ Usize.max; scalar_tac)
+def normal : Row := ("tenant-7", 101#i64, 37#i64, some 13#i64, 401#i64, 17#i64)
+def foreign : Row := ("tenant-8", 101#i64, 37#i64, some 13#i64, 401#i64, 17#i64)
+def negativeStartup : Row := ("tenant-7", 101#i64, 37#i64, some 13#i64, 401#i64, (-1)#i64)
+def noStart : Row := ("tenant-7", 0#i64, 1#i64, none, 0#i64, 0#i64)
+end SandboxModel.Stage1Protocol.LifetimeRow.Values
