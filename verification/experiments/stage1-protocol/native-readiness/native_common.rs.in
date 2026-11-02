@@ -1,0 +1,164 @@
+// Append only inside the existing readiness::tests module in a private source.
+// Candidate only: not compiled or run here; ordinary/native acceptance is Ning's.
+fn proof_native_completion_fixture() -> (NativeCreateSnapshot, InternalLocalBinding) {
+    let local = InternalLocalBinding {
+        sandbox: core::SandboxId(1),
+        owner: core::TenantId(2),
+        operation: core::OperationId(3),
+    };
+    let snapshot = NativeCreateSnapshot {
+        owner: local.owner,
+        phase: core::Phase::Running,
+        terminal: false,
+        epoch: 5,
+        generation: 1,
+        current_vm: Some(core::VmId(4)),
+        current_operation: Some(core::Operation {
+            id: local.operation,
+            epoch: 5,
+            kind: core::OperationKind::Create,
+            status: core::OperationStatus::Succeeded,
+        }),
+        lifetime: None,
+        uncertain_actions: vec![],
+    };
+    (snapshot, local)
+}
+
+fn proof_native_completion_bad_metadata(
+    snapshot: &NativeCreateSnapshot,
+    resumed: &NativeCreateSnapshot,
+    local: InternalLocalBinding,
+) -> Vec<NativeCreateSnapshot> {
+    let mut bad = vec![
+        NativeCreateSnapshot {
+            owner: core::TenantId(7),
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            phase: core::Phase::Starting,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            terminal: true,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            generation: 0,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            current_vm: None,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            current_operation: None,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            generation: 2,
+            ..snapshot.clone()
+        },
+        NativeCreateSnapshot {
+            generation: 1,
+            ..resumed.clone()
+        },
+    ];
+    let uncertain = core::EffectId {
+        logical: core::LogicalEffectId {
+            command: core::Command::ActivateVm {
+                sandbox: local.sandbox,
+                epoch: 5,
+                generation: 1,
+                vm: core::VmId(4),
+            },
+        },
+        attempt: 1,
+    };
+    bad.push(NativeCreateSnapshot {
+        uncertain_actions: vec![uncertain],
+        ..snapshot.clone()
+    });
+    bad
+}
+
+fn proof_native_completion_bad_operations(operation: core::Operation) -> [core::Operation; 8] {
+    [
+        core::Operation {
+            id: core::OperationId(7),
+            ..operation
+        },
+        core::Operation {
+            epoch: 7,
+            ..operation
+        },
+        core::Operation {
+            kind: core::OperationKind::Pause,
+            ..operation
+        },
+        core::Operation {
+            kind: core::OperationKind::Kill,
+            ..operation
+        },
+        core::Operation {
+            status: core::OperationStatus::Pending,
+            ..operation
+        },
+        core::Operation {
+            status: core::OperationStatus::OutcomeUnknown,
+            ..operation
+        },
+        core::Operation {
+            status: core::OperationStatus::Compensating(core::FailureKind::InternalFailure),
+            ..operation
+        },
+        core::Operation {
+            status: core::OperationStatus::Failed(core::FailureKind::Cancelled),
+            ..operation
+        },
+    ]
+}
+
+#[test]
+fn proof_native_completion_checks_original_fields() {
+    let (snapshot, local) = proof_native_completion_fixture();
+    let operation = snapshot.current_operation.unwrap();
+    assert!(super::proof_native_create_snapshot_completed(
+        &snapshot, local
+    ));
+    let resumed = NativeCreateSnapshot {
+        generation: 2,
+        current_operation: Some(core::Operation {
+            kind: core::OperationKind::Resume,
+            ..operation
+        }),
+        ..snapshot.clone()
+    };
+    assert!(resumed.has_completed_original_execution(local));
+    let mut bad = proof_native_completion_bad_metadata(&snapshot, &resumed, local);
+    for changed in proof_native_completion_bad_operations(operation) {
+        bad.push(NativeCreateSnapshot {
+            current_operation: Some(changed),
+            ..snapshot.clone()
+        });
+    }
+    assert_eq!(bad.len(), 17);
+    for changed in bad {
+        assert!(!changed.has_completed_original_execution(local));
+    }
+}
+
+#[test]
+fn proof_native_completion_preserves_its_declared_scope() {
+    let (mut snapshot, local) = proof_native_completion_fixture();
+    assert!(snapshot.lifetime.is_none());
+    assert!(snapshot.has_completed_original_execution(local));
+    assert!(
+        snapshot.has_completed_original_execution(InternalLocalBinding {
+            sandbox: core::SandboxId(999),
+            ..local
+        })
+    );
+    snapshot.current_vm = Some(core::VmId(999));
+    assert!(snapshot.has_completed_original_execution(local));
+}
