@@ -79,3 +79,15 @@ Lake 使用现有 `local-view.toml.in`（f38d6b65）。它与先前通过视图�
 字节不同，但六个实际消费库的 module→source 路径逐项相同，比较记录在清单中。
 Carriers／Manifest 是未消费的声明，不因此增加已证明范围；不能从默认 Lake 目标
 代替 ProductionEnvelope 实际文件和九项审计。
+
+`formal.py --output /private/new-readback` 是 `protocol-convergence` 使用的有限
+证据读取入口。环境变量 `SANDPROOF_PRODUCTION_JSON_ORIGINAL_EVIDENCE` 指向原
+`json-current-writer` 证据目录；该目录须包含完整的原结果、十页内核日志、服务请求
+和原服务日志。入口检查 `readback.json` 固定的原字节、十页与30项准确审计，并用
+原服务的完整 Lean 源指纹核对69份当前 Lean 输入；随后从当前仓库安装74份有限
+视图文件，保留六个实际消费库的对应关系。它不重新运行证明或改变原执行身份。
+
+结果显式标明 `REUSE`、原耗时和原 CPU，新增耗时仅是证据核对与安装。缺失、变化、
+未完成的原记录或当前输入不符均拒绝，须由统筹决定实际补验；不能自动换成另一份
+成功结果或只依据 `complete` 字段放行。原生 Accepted 检查与整批普通/形式准入仍由
+公共入口负责，本读取成功本身不等于整套或完整 V3 通过。
