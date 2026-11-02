@@ -133,34 +133,41 @@ pub(super) fn read_lifetime(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
-    stored.map_or(
-        Ok(None),
-        |(
-            stored_owner,
-            deadline_ms,
-            bytes,
-            started_at_ms,
-            max_deadline_ms,
-            startup_deadline_ms,
-        )| {
-            if stored_owner != identity::owner_id(owner)?.as_str()
-                || deadline_ms < 0
-                || startup_deadline_ms < 0
-                || bytes <= 0
-                || deadline_ms > max_deadline_ms
-                || started_at_ms.is_some_and(|time| time < 0 || time > deadline_ms)
-            {
-                return Err(AdmissionError::CorruptLifetime);
-            }
-            Ok(Some(Lifetime {
-                started_at_ms,
-                deadline_ms,
-                max_deadline_ms,
-                startup_deadline_ms,
-                disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
-            }))
-        },
-    )
+    stored.map_or(Ok(None), |stored| {
+        let expected_owner = identity::owner_id(owner)?;
+        Ok(Some(lifetime_from_row(expected_owner.as_str(), stored)?))
+    })
+}
+
+// Validate the six columns after the original optional read and owner mapping.
+// SQL, owner mapping, and the no-row/error decisions stay in read_lifetime.
+pub(super) fn lifetime_from_row(
+    expected_owner: &str,
+    (stored_owner, deadline_ms, bytes, started_at_ms, max_deadline_ms, startup_deadline_ms): (
+        String,
+        i64,
+        i64,
+        Option<i64>,
+        i64,
+        i64,
+    ),
+) -> Result<Lifetime, AdmissionError> {
+    if stored_owner != expected_owner
+        || deadline_ms < 0
+        || startup_deadline_ms < 0
+        || bytes <= 0
+        || deadline_ms > max_deadline_ms
+        || started_at_ms.is_some_and(|time| time < 0 || time > deadline_ms)
+    {
+        return Err(AdmissionError::CorruptLifetime);
+    }
+    Ok(Lifetime {
+        started_at_ms,
+        deadline_ms,
+        max_deadline_ms,
+        startup_deadline_ms,
+        disk_bytes: u64::try_from(bytes).map_err(|_| AdmissionError::CorruptLifetime)?,
+    })
 }
 
 /// The original update preconditions, shared by local API normalization and

@@ -1,7 +1,6 @@
 use super::model::Inbox;
 use crate::JournalError;
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 
 pub(super) trait InboxLoadEffects: super::super::checkpoint::ReadConfigEffects {
     fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError>;
@@ -24,7 +23,7 @@ impl InboxLoadEffects for super::super::checkpoint::StandardConfigRead<'_> {
     fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
         Ok(self
             .connection
-            .query_row(statement, [], |r| Ok((r.get(0)?, r.get(1)?)))?)
+            .query_row(statement, (), |r| read_blob_pair(r, 0, 1))?)
     }
     fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
         Ok(serde_json::from_slice(bytes)?)
@@ -33,7 +32,7 @@ impl InboxLoadEffects for super::super::checkpoint::StandardConfigRead<'_> {
         Ok(serde_json::to_vec(inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
+        super::sha256::digest(bytes)
     }
 }
 
@@ -133,7 +132,7 @@ impl InboxSaveEffects for StandardInboxSave<'_> {
         Ok(serde_json::to_vec(inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
+        super::sha256::digest(bytes)
     }
     fn update(
         &mut self,
@@ -363,4 +362,13 @@ pub(in crate::controller) fn charged_bytes(
         .checked_sub(length)
         .and_then(|n| n.checked_add(future))
         .ok_or(JournalError::MaintenanceCapacity)
+}
+
+// Two original BLOB reads, preserving the requested order and first error.
+fn read_blob_pair(
+    r: &rusqlite::Row<'_>,
+    first: usize,
+    second: usize,
+) -> rusqlite::Result<(Vec<u8>, Vec<u8>)> {
+    Ok((r.get(first)?, r.get(second)?))
 }

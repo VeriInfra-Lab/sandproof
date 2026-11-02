@@ -1,0 +1,16 @@
+import SandproofLifetimeRow.Funs
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Values
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow
+theorem wrong_projection_rejects_full_contract : ¬ FullRowContract controller.admission.lifetime_from_row := by
+  intro contract
+  have chosen := contract Values.owner Values.normal
+  simp [controller.admission.lifetime_from_row,
+    alloc.string.String.Insts.CoreCmpPartialEqShared0Str.ne,
+    core.option.Option.is_some_and, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from,
+    core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+    controller.admission.lifetime_from_row.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    Expected, Valid, Projected, Values.owner, Values.normal,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes] at chosen
+end SandboxModel.Stage1Protocol.LifetimeRow
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.wrong_projection_rejects_full_contract

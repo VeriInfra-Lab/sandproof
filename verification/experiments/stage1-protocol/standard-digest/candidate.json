@@ -1,0 +1,18 @@
+{
+  "kind": "unique-adopted-SHA-delegate-current-source",
+  "base_commit": "ef9aaf820a4e584550fa4b7d928d88f933db3e99",
+  "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+  "original_method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        Sha256::digest(bytes).into()\n    }",
+  "candidate_method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        super::sha256::digest(bytes)\n    }",
+  "helper": "",
+  "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+  "candidate_without_thin_root_sha256": "b8be81ee9ee274b2b2f5e0f6091377a6e1ab00d31ceb0178de5d04f8f2c90634",
+  "unrelated_bytes_preserved": true,
+  "original_library_expression_unchanged": true,
+  "source_adopted": true,
+  "protocol_modified": false,
+  "shared_configuration_modified": false,
+  "full_original_machine_equivalence": false,
+  "adopted_source_sha256": "b8be81ee9ee274b2b2f5e0f6091377a6e1ab00d31ceb0178de5d04f8f2c90634",
+  "adopted_leaf_sha256": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e"
+}

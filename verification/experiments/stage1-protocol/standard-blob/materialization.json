@@ -1,0 +1,678 @@
+{
+  "kind": "existing-current-mathematics-and-canonical-bindings",
+  "providers": {
+    "SandboxModel/Foundations/Model.lean": {
+      "provider": "SandboxModel/Foundations/Model.lean",
+      "provider_sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+      "transformation": "identity",
+      "sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559"
+    },
+    "SandboxModel/Lifecycle/Protocol/Accepted.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/Accepted.lean",
+      "provider_sha256": "a8dcb590fb3fbf54a2fe5d39a801abf35308ec0b96b38cf45a228537271c100b",
+      "transformation": "identity",
+      "sha256": "a8dcb590fb3fbf54a2fe5d39a801abf35308ec0b96b38cf45a228537271c100b"
+    },
+    "SandboxModel/Lifecycle/Protocol/ComposedConfigHost.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigHost.lean.in",
+      "provider_sha256": "7618567baa22841d57312782c5e21f3241f9c9beb93f160d333fa63893cd1a50",
+      "transformation": "identity",
+      "sha256": "7618567baa22841d57312782c5e21f3241f9c9beb93f160d333fa63893cd1a50"
+    },
+    "SandboxModel/Lifecycle/Protocol/ComposedConfigLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigLibrary.lean.in",
+      "provider_sha256": "798cafe9eccc1637b2a14810886e29767d971f5e80aa536c23f26c31375722ed",
+      "transformation": "identity",
+      "sha256": "798cafe9eccc1637b2a14810886e29767d971f5e80aa536c23f26c31375722ed"
+    },
+    "SandboxModel/Lifecycle/Protocol/ComposedConfigProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigProofs.lean.in",
+      "provider_sha256": "478aff811f1389d25a439ad4c89fdc44bb95368d52126ea6f0afc03fe3b15f19",
+      "transformation": "identity",
+      "sha256": "478aff811f1389d25a439ad4c89fdc44bb95368d52126ea6f0afc03fe3b15f19"
+    },
+    "SandboxModel/Lifecycle/Protocol/ConfigBudgetModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetModel.lean.in",
+      "provider_sha256": "3ff225e93c79269c769e63f5eaa1a4eec18a98e11ba5f27200166c151d20cdfb",
+      "transformation": "identity",
+      "sha256": "3ff225e93c79269c769e63f5eaa1a4eec18a98e11ba5f27200166c151d20cdfb"
+    },
+    "SandboxModel/Lifecycle/Protocol/ConfigBudgetProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetProofs.lean.in",
+      "provider_sha256": "e261cbc21354f68a1411f9036dc6674ca5db75eba5dd616852ff786938f74b43",
+      "transformation": "identity",
+      "sha256": "e261cbc21354f68a1411f9036dc6674ca5db75eba5dd616852ff786938f74b43"
+    },
+    "SandboxModel/Lifecycle/Protocol/ConfigValidationModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationModel.lean.in",
+      "provider_sha256": "443c875f93d2946bc636f61f90673822f19c06f8b323b33d03726102096603b7",
+      "transformation": "identity",
+      "sha256": "443c875f93d2946bc636f61f90673822f19c06f8b323b33d03726102096603b7"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
+      "provider_sha256": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e",
+      "transformation": "identity",
+      "sha256": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e"
+    },
+    "SandboxModel/Lifecycle/Protocol/GraphicProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/GraphicProofs.lean.in",
+      "provider_sha256": "a598a86c0f625aa6651ae41ff513842a94727a178f076848559d8c5fa5aa2a5d",
+      "transformation": "identity",
+      "sha256": "a598a86c0f625aa6651ae41ff513842a94727a178f076848559d8c5fa5aa2a5d"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxAppendArithmetic.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxAppendArithmetic.lean.in",
+      "provider_sha256": "31c33fcc1c61e0e9f944f29f9aec51a8e7d7afabc3c3438448d147169887c67a",
+      "transformation": "identity",
+      "sha256": "31c33fcc1c61e0e9f944f29f9aec51a8e7d7afabc3c3438448d147169887c67a"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxCompositionModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionModel.lean.in",
+      "provider_sha256": "63c3fe4b4de4a8e6afa47e2cee7cdc41b7707ca2497a5ff5751f04896e1d26fb",
+      "transformation": "identity",
+      "sha256": "63c3fe4b4de4a8e6afa47e2cee7cdc41b7707ca2497a5ff5751f04896e1d26fb"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxCompositionProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionProofs.lean.in",
+      "provider_sha256": "4bb33dee098e0e8c8b10848f1dec0ab6f30fd0cfa3bc195694a00ad6d7ca63d5",
+      "transformation": "identity",
+      "sha256": "4bb33dee098e0e8c8b10848f1dec0ab6f30fd0cfa3bc195694a00ad6d7ca63d5"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxCounterRepresentation.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterRepresentation.lean.in",
+      "provider_sha256": "7502aa9c11ef741a59e17158c48c1577b833af91954383b42952eb5bc6d93fbd",
+      "transformation": "identity",
+      "sha256": "7502aa9c11ef741a59e17158c48c1577b833af91954383b42952eb5bc6d93fbd"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxCounterStep.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterStep.lean.in",
+      "provider_sha256": "8487922009630d9bf58c9484f6fd651ffb84fb3f04714ce2898f8f042ab4baed",
+      "transformation": "identity",
+      "sha256": "8487922009630d9bf58c9484f6fd651ffb84fb3f04714ce2898f8f042ab4baed"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryArithmetic.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryArithmetic.lean.in",
+      "provider_sha256": "3b3052e43355d0f7a48f25c73b32a18de565836c9002b86d4a06e3d71fdc8ba3",
+      "transformation": "identity",
+      "sha256": "3b3052e43355d0f7a48f25c73b32a18de565836c9002b86d4a06e3d71fdc8ba3"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryCount.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCount.lean.in",
+      "provider_sha256": "e5c6fc2296bff070247dce42df78a6836a7e1af107904a4a200cae8bde77b054",
+      "transformation": "identity",
+      "sha256": "e5c6fc2296bff070247dce42df78a6836a7e1af107904a4a200cae8bde77b054"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryCountModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCountModel.lean.in",
+      "provider_sha256": "b576284071879f631c0f66f21b4ba3a729faa002005f912aa7bbb0ebf6cfcdc1",
+      "transformation": "identity",
+      "sha256": "b576284071879f631c0f66f21b4ba3a729faa002005f912aa7bbb0ebf6cfcdc1"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryLibrary.lean.in",
+      "provider_sha256": "4a007ba99d0bd741d5c1ec55627006476c8e52c681234a7b4801ca22a417e9f7",
+      "transformation": "identity",
+      "sha256": "4a007ba99d0bd741d5c1ec55627006476c8e52c681234a7b4801ca22a417e9f7"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryModel.lean.in",
+      "provider_sha256": "d5fd8e54910d609cbc0f4be76b7e4ab33bb03644801f1206e463f56f02923c45",
+      "transformation": "identity",
+      "sha256": "d5fd8e54910d609cbc0f4be76b7e4ab33bb03644801f1206e463f56f02923c45"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryOrderLoop.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderLoop.lean.in",
+      "provider_sha256": "605f0372de78eeea15cb7f4241275dc523d0b709b8f09de5f54c0da35873a8ee",
+      "transformation": "identity",
+      "sha256": "605f0372de78eeea15cb7f4241275dc523d0b709b8f09de5f54c0da35873a8ee"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryOrderProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderProofs.lean.in",
+      "provider_sha256": "6f1f550d987359180c8753ff5b7dbc7507456edf1655f668bbc16aa2dde117ca",
+      "transformation": "identity",
+      "sha256": "6f1f550d987359180c8753ff5b7dbc7507456edf1655f668bbc16aa2dde117ca"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryOrderStep.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderStep.lean.in",
+      "provider_sha256": "76d7b0727a54c3b1c317ff9621f4c85f083d512a23a93e33aebfdafb5fa4f152",
+      "transformation": "identity",
+      "sha256": "76d7b0727a54c3b1c317ff9621f4c85f083d512a23a93e33aebfdafb5fa4f152"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxEntryProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryProofs.lean.in",
+      "provider_sha256": "033d802e87b476a873065a2802e175338bf4a31dacf30adbdb3ce58733004944",
+      "transformation": "identity",
+      "sha256": "033d802e87b476a873065a2802e175338bf4a31dacf30adbdb3ce58733004944"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxHost.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxHost.lean.in",
+      "provider_sha256": "770c32e5d8a65be74a23c84d9b52e1a3ceb592785ccd0cc5502b9f2418cc8318",
+      "transformation": "identity",
+      "sha256": "770c32e5d8a65be74a23c84d9b52e1a3ceb592785ccd0cc5502b9f2418cc8318"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLanesScan.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxLanesScan.lean.in",
+      "provider_sha256": "db81f157aafa578013dc7fb4936c3519d9dd8baaa5879bf45997af45fce55d7d",
+      "transformation": "identity",
+      "sha256": "db81f157aafa578013dc7fb4936c3519d9dd8baaa5879bf45997af45fce55d7d"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLineage.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineage.lean.in",
+      "provider_sha256": "cc9a8a9579f614f460a51e13600c06f27f4313a75b4e7e28c6829d2465170b8d",
+      "transformation": "identity",
+      "sha256": "cc9a8a9579f614f460a51e13600c06f27f4313a75b4e7e28c6829d2465170b8d"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLineageLoop.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageLoop.lean.in",
+      "provider_sha256": "d864daafa68b30dc2bbbccc6190c4495ec1bfeaba95fa569d77f342e68a4f387",
+      "transformation": "identity",
+      "sha256": "d864daafa68b30dc2bbbccc6190c4495ec1bfeaba95fa569d77f342e68a4f387"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLineageModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageModel.lean.in",
+      "provider_sha256": "1719ab7b6eb5e53d00cec69961ce736dfcd7b729a48bea9f9d9fb7beaffa90cb",
+      "transformation": "identity",
+      "sha256": "1719ab7b6eb5e53d00cec69961ce736dfcd7b729a48bea9f9d9fb7beaffa90cb"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLineageStep.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageStep.lean.in",
+      "provider_sha256": "9206544e55569be6f9d65444f6db573cc6860bc2034e5c59c39190831029a115",
+      "transformation": "identity",
+      "sha256": "9206544e55569be6f9d65444f6db573cc6860bc2034e5c59c39190831029a115"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLineageSupport.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageSupport.lean.in",
+      "provider_sha256": "53bc310cf60d96d9cf51446f01fe94c0c3d05816607d2416ac899cae7f7562f4",
+      "transformation": "identity",
+      "sha256": "53bc310cf60d96d9cf51446f01fe94c0c3d05816607d2416ac899cae7f7562f4"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityBounds.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityBounds.lean.in",
+      "provider_sha256": "a9e601d67f52e9926be1e451025cdec44b7181f03ba58238c416449c94ecae22",
+      "transformation": "identity",
+      "sha256": "a9e601d67f52e9926be1e451025cdec44b7181f03ba58238c416449c94ecae22"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityValidation.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityValidation.lean.in",
+      "provider_sha256": "bcd588310545097bc0d5185d2b4a0372e06e4c9160b0f340a869d0339a7db250",
+      "transformation": "identity",
+      "sha256": "bcd588310545097bc0d5185d2b4a0372e06e4c9160b0f340a869d0339a7db250"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadComposition.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadComposition.lean.in",
+      "provider_sha256": "10a8bf576c5cda3f431a81f591981ea8a3abe4dc6fceeb70a106230db5c71a18",
+      "transformation": "identity",
+      "sha256": "10a8bf576c5cda3f431a81f591981ea8a3abe4dc6fceeb70a106230db5c71a18"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadConfigComposition.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigComposition.lean.in",
+      "provider_sha256": "314e46db3afa3ecd0e603a675c9d36665ee77786db046ab05044f57c6213039b",
+      "transformation": "identity",
+      "sha256": "314e46db3afa3ecd0e603a675c9d36665ee77786db046ab05044f57c6213039b"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadConfigRead.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigRead.lean.in",
+      "provider_sha256": "6269285f8ba7081a08353db5d7673b8b5c95cd0272fc3214ae1c360b8873067d",
+      "transformation": "identity",
+      "sha256": "6269285f8ba7081a08353db5d7673b8b5c95cd0272fc3214ae1c360b8873067d"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadContextual.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadContextual.lean.in",
+      "provider_sha256": "b03b7ca7f97eb787bbddbd05ed15b1e4b372b50b17351efb7100eb53d4c9de41",
+      "transformation": "identity",
+      "sha256": "b03b7ca7f97eb787bbddbd05ed15b1e4b372b50b17351efb7100eb53d4c9de41"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadControlFlow.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadControlFlow.lean.in",
+      "provider_sha256": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3",
+      "transformation": "identity",
+      "sha256": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadDigestLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestLibrary.lean.in",
+      "provider_sha256": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808",
+      "transformation": "identity",
+      "sha256": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadEarlyErrors.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadEarlyErrors.lean.in",
+      "provider_sha256": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43",
+      "transformation": "identity",
+      "sha256": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadHeader.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in",
+      "provider_sha256": "9c5529da229947e5a99dec6b8e5aa5571858f7143da333f2232e27abfc8f4133",
+      "transformation": "reviewed-store23-to24-literals",
+      "literal_occurrences": 12,
+      "sha256": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in",
+      "provider_sha256": "a2a89c1446567cf740bbfa6ffc48d4ff33736042f515265ebaeb21c620aa1aa1",
+      "transformation": "reviewed-store23-to24-literals",
+      "literal_occurrences": 4,
+      "sha256": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadMaintenanceBounds.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadMaintenanceBounds.lean.in",
+      "provider_sha256": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1",
+      "transformation": "identity",
+      "sha256": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in",
+      "provider_sha256": "8d887da51f8af264279d3574c76130e10d4723fac54ffa860cad4089653945c6",
+      "transformation": "reviewed-store23-to24-literals",
+      "literal_occurrences": 2,
+      "sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadRawCorrespondence.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in",
+      "provider_sha256": "c98e3dd9d21756f71eb637fde18e8e50491bf19c52e121865e5e52d00f719bb2",
+      "transformation": "reviewed-store23-to24-literals",
+      "literal_occurrences": 7,
+      "sha256": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxLoadValueLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in",
+      "provider_sha256": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d",
+      "transformation": "identity",
+      "sha256": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxOwnerQueries.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxOwnerQueries.lean.in",
+      "provider_sha256": "dec64df4c241327ec97a6d4753de8319626c4c4b4e5eb04170f456123f43beaf",
+      "transformation": "identity",
+      "sha256": "dec64df4c241327ec97a6d4753de8319626c4c4b4e5eb04170f456123f43beaf"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxOwners.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxOwners.lean.in",
+      "provider_sha256": "c3c97d5d79cce057b537fdc75f098ceb5e94f421676e8dc228510d3ff886b508",
+      "transformation": "identity",
+      "sha256": "c3c97d5d79cce057b537fdc75f098ceb5e94f421676e8dc228510d3ff886b508"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalCheckpoint.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalCheckpoint.lean.in",
+      "provider_sha256": "f092b56116347865905291eefd0a4a41bc36130da30894e3ac07eda7473c9c92",
+      "transformation": "identity",
+      "sha256": "f092b56116347865905291eefd0a4a41bc36130da30894e3ac07eda7473c9c92"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalClassifier.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalClassifier.lean.in",
+      "provider_sha256": "48cd214595d37d07ae8aab0bb099c8327aec2f0c6acb8e059749732fa4f052ea",
+      "transformation": "identity",
+      "sha256": "48cd214595d37d07ae8aab0bb099c8327aec2f0c6acb8e059749732fa4f052ea"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalComposition.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalComposition.lean.in",
+      "provider_sha256": "f2cf27024cc33df320d26b30e129eda2f3cbfe867c6f1f81048181937a435804",
+      "transformation": "identity",
+      "sha256": "f2cf27024cc33df320d26b30e129eda2f3cbfe867c6f1f81048181937a435804"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalContains.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalContains.lean.in",
+      "provider_sha256": "74a93d08394a0ccf67668b1801ef502af70923dae6c3e70ce904f810598960bf",
+      "transformation": "identity",
+      "sha256": "74a93d08394a0ccf67668b1801ef502af70923dae6c3e70ce904f810598960bf"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalModel.lean.in",
+      "provider_sha256": "d9cc165aeae48d5260d7d0786cabd858a3e4ddcfce2aac044e026114f76b5c4c",
+      "transformation": "identity",
+      "sha256": "d9cc165aeae48d5260d7d0786cabd858a3e4ddcfce2aac044e026114f76b5c4c"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalReduction.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalReduction.lean.in",
+      "provider_sha256": "cc28b52d4bfed1268ddacc80d10918fa4473310ddef4351dd5ffb6693aab7d5e",
+      "transformation": "identity",
+      "sha256": "cc28b52d4bfed1268ddacc80d10918fa4473310ddef4351dd5ffb6693aab7d5e"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalUnapplied.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalUnapplied.lean.in",
+      "provider_sha256": "0d2cbe4751b038f7264b03bb1f6724a1288ae62550d753fff627d6d40ebcbce8",
+      "transformation": "identity",
+      "sha256": "0d2cbe4751b038f7264b03bb1f6724a1288ae62550d753fff627d6d40ebcbce8"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetained.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retained/InboxRetained.lean.in",
+      "provider_sha256": "0ce0b45c66195290ef338f039fc735c07b1645353404620d5cd8516de2dc7787",
+      "transformation": "identity",
+      "sha256": "0ce0b45c66195290ef338f039fc735c07b1645353404620d5cd8516de2dc7787"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetainedModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retained/InboxRetainedModel.lean.in",
+      "provider_sha256": "1e25e2161187534313d1d23042163220609d8c76e01065f225f23862970a8f2b",
+      "transformation": "identity",
+      "sha256": "1e25e2161187534313d1d23042163220609d8c76e01065f225f23862970a8f2b"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetiredModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredModel.lean.in",
+      "provider_sha256": "9e4fe9686de63e8a1acae6b93fb06e96216a6bfc9f84b427e39ed95c51d81134",
+      "transformation": "identity",
+      "sha256": "9e4fe9686de63e8a1acae6b93fb06e96216a6bfc9f84b427e39ed95c51d81134"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetiredProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredProofs.lean.in",
+      "provider_sha256": "64aaaca51306856c2947b1a5daf70738e96576d808232a74924135bc8bcb535a",
+      "transformation": "identity",
+      "sha256": "64aaaca51306856c2947b1a5daf70738e96576d808232a74924135bc8bcb535a"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetiredScans.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredScans.lean.in",
+      "provider_sha256": "a515f9d7e3c4ddcdcdf8e70da55afd49908171e7f0ec67af9f5cea47f9bea362",
+      "transformation": "identity",
+      "sha256": "a515f9d7e3c4ddcdcdf8e70da55afd49908171e7f0ec67af9f5cea47f9bea362"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxRetiredSupport.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredSupport.lean.in",
+      "provider_sha256": "eda8295444b08cacacc4652d06349b6b2213b2a6538c28aa80005bfc352da66e",
+      "transformation": "identity",
+      "sha256": "eda8295444b08cacacc4652d06349b6b2213b2a6538c28aa80005bfc352da66e"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxSessionComposition.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionComposition.lean.in",
+      "provider_sha256": "1e8685879f366d10489b379599269407eafc63e3ee8484d611c92b7b1f54ad4e",
+      "transformation": "identity",
+      "sha256": "1e8685879f366d10489b379599269407eafc63e3ee8484d611c92b7b1f54ad4e"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxSessionsScan.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionsScan.lean.in",
+      "provider_sha256": "0aaad1d160b3460f3aa0736bb430f008e1cff5dfa0e169f2270c71531c169e91",
+      "transformation": "identity",
+      "sha256": "0aaad1d160b3460f3aa0736bb430f008e1cff5dfa0e169f2270c71531c169e91"
+    },
+    "SandboxModel/Lifecycle/Protocol/InboxSummaryQueries.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/InboxSummaryQueries.lean.in",
+      "provider_sha256": "b9c5e951949a226447880a66daf7c4a97b37f4fa46432a94a3c7893425db37ed",
+      "transformation": "identity",
+      "sha256": "b9c5e951949a226447880a66daf7c4a97b37f4fa46432a94a3c7893425db37ed"
+    },
+    "SandboxModel/Lifecycle/Protocol/LaneLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/retention-lane/LaneLibrary.lean.in",
+      "provider_sha256": "178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1",
+      "transformation": "identity",
+      "sha256": "178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1"
+    },
+    "SandboxModel/Lifecycle/Protocol/LaneModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/retention-lane/LaneModel.lean.in",
+      "provider_sha256": "b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d",
+      "transformation": "identity",
+      "sha256": "b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d"
+    },
+    "SandboxModel/Lifecycle/Protocol/LaneProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/retention-lane/LaneProofs.lean.in",
+      "provider_sha256": "3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343",
+      "transformation": "identity",
+      "sha256": "3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343"
+    },
+    "SandboxModel/Lifecycle/Protocol/Library.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/Library.lean",
+      "provider_sha256": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+      "transformation": "identity",
+      "sha256": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c"
+    },
+    "SandboxModel/Lifecycle/Protocol/PrimitiveResultProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/PrimitiveResultProofs.lean.in",
+      "provider_sha256": "c720f9702b17a1983503c4c277ec66f3bcc63f8a3398dd2e45d34b64fb7abe32",
+      "transformation": "identity",
+      "sha256": "c720f9702b17a1983503c4c277ec66f3bcc63f8a3398dd2e45d34b64fb7abe32"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalBindings.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/RenewalBindings.lean",
+      "provider_sha256": "e4d6ce511ea9913fb757841da030a97a920f4d6e296c06d56efbef24e8fb2f99",
+      "transformation": "identity",
+      "sha256": "e4d6ce511ea9913fb757841da030a97a920f4d6e296c06d56efbef24e8fb2f99"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalEquality.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/RenewalEquality.lean",
+      "provider_sha256": "eae6e25652eb2d01e49a19ef5e43505868b5e126d6e1e6138a252a309e3b0e6b",
+      "transformation": "identity",
+      "sha256": "eae6e25652eb2d01e49a19ef5e43505868b5e126d6e1e6138a252a309e3b0e6b"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalLibrary.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/RenewalLibrary.lean",
+      "provider_sha256": "930993cf6da23733f7b7d587dfab3dd38cda62047b59a90918f61e25103b9e72",
+      "transformation": "identity",
+      "sha256": "930993cf6da23733f7b7d587dfab3dd38cda62047b59a90918f61e25103b9e72"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalModel.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/RenewalModel.lean",
+      "provider_sha256": "5f09fa5ab06ff13c3d4b658ebac7848e4365b6606127c41e810461ee4fd2a109",
+      "transformation": "identity",
+      "sha256": "5f09fa5ab06ff13c3d4b658ebac7848e4365b6606127c41e810461ee4fd2a109"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalResultBindings.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/RenewalResultBindings.lean.in",
+      "provider_sha256": "2565fc75178c3cf2492b7d0623b078c65ab0e2f980206f6e2f4f44b489562ce3",
+      "transformation": "identity",
+      "sha256": "2565fc75178c3cf2492b7d0623b078c65ab0e2f980206f6e2f4f44b489562ce3"
+    },
+    "SandboxModel/Lifecycle/Protocol/RenewalResultTag.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/RenewalResultTag.lean",
+      "provider_sha256": "8237a9b238eb4fc2ebc9ab358ec343f6238f981b1f62849e424f97131d7c0b15",
+      "transformation": "identity",
+      "sha256": "8237a9b238eb4fc2ebc9ab358ec343f6238f981b1f62849e424f97131d7c0b15"
+    },
+    "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
+      "provider_sha256": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+      "transformation": "identity",
+      "sha256": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f"
+    },
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
+      "provider_sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+      "transformation": "identity",
+      "sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef"
+    },
+    "SandboxModel/Lifecycle/Protocol/SavedLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/native-retirement/SavedLibrary.lean.in",
+      "provider_sha256": "3bb1905eb7ec93c22ae8e8d6a8602ccc7a68326c32bed8eff3833f71c183b247",
+      "transformation": "identity",
+      "sha256": "3bb1905eb7ec93c22ae8e8d6a8602ccc7a68326c32bed8eff3833f71c183b247"
+    },
+    "SandboxModel/Lifecycle/Protocol/SavedModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/native-retirement/SavedModel.lean.in",
+      "provider_sha256": "4ab14c836eddb76e11b01fe8c3aad99c7aff827e7cb216ebccf00a499ae8977c",
+      "transformation": "identity",
+      "sha256": "4ab14c836eddb76e11b01fe8c3aad99c7aff827e7cb216ebccf00a499ae8977c"
+    },
+    "SandboxModel/Lifecycle/Protocol/SavedProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/native-retirement/SavedProofs.lean.in",
+      "provider_sha256": "b67e5157f81c7199331e41f70c4b93b239cf7e3ac079bc72a75a482d33271291",
+      "transformation": "identity",
+      "sha256": "b67e5157f81c7199331e41f70c4b93b239cf7e3ac079bc72a75a482d33271291"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeAssembly.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeAssembly.lean.in",
+      "provider_sha256": "859239e88ba50c2b1f5b7b36584fb9e4dc6b4168b9a5cce9ecae3c433f6e6215",
+      "transformation": "identity",
+      "sha256": "859239e88ba50c2b1f5b7b36584fb9e4dc6b4168b9a5cce9ecae3c433f6e6215"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeIteration.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeIteration.lean.in",
+      "provider_sha256": "ff9ee6056dc8b0fe19d4c8e82ca80c110d9e444f10bc91015e64aea1b913d9e5",
+      "transformation": "identity",
+      "sha256": "ff9ee6056dc8b0fe19d4c8e82ca80c110d9e444f10bc91015e64aea1b913d9e5"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeLane.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeLane.lean.in",
+      "provider_sha256": "1fcad87616daabb44c3b3a3a7d2d70deeab1c1f9aff49f314b07cd3cf6c15f91",
+      "transformation": "identity",
+      "sha256": "1fcad87616daabb44c3b3a3a7d2d70deeab1c1f9aff49f314b07cd3cf6c15f91"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeLibrary.lean.in",
+      "provider_sha256": "00d8decef5bf7a29b59b47166d148efc4ca9b20a330e46ad6cee4cda7c4562f9",
+      "transformation": "identity",
+      "sha256": "00d8decef5bf7a29b59b47166d148efc4ca9b20a330e46ad6cee4cda7c4562f9"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeModel.lean.in",
+      "provider_sha256": "a1b6e1c0c01617f6e5978355f43ff57899fa179dc7fb1fb1757de7620cf10837",
+      "transformation": "identity",
+      "sha256": "a1b6e1c0c01617f6e5978355f43ff57899fa179dc7fb1fb1757de7620cf10837"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapePrior.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapePrior.lean.in",
+      "provider_sha256": "ee8ff7326353f3a41dbb61c18299f5dd6cd1e93556b53e160549363a933c2ba5",
+      "transformation": "identity",
+      "sha256": "ee8ff7326353f3a41dbb61c18299f5dd6cd1e93556b53e160549363a933c2ba5"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeProofs.lean.in",
+      "provider_sha256": "07a1cbc41a4e320316327ce8535c950703a1d0c1fe636c8eaed54d96895cf5a0",
+      "transformation": "identity",
+      "sha256": "07a1cbc41a4e320316327ce8535c950703a1d0c1fe636c8eaed54d96895cf5a0"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeRefusal.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeRefusal.lean.in",
+      "provider_sha256": "83175d4db45ff5b815af39c2f7430863bfaeb8c1a6012ddacdcbca26aa82d990",
+      "transformation": "identity",
+      "sha256": "83175d4db45ff5b815af39c2f7430863bfaeb8c1a6012ddacdcbca26aa82d990"
+    },
+    "SandboxModel/Lifecycle/Protocol/ShapeTerminal.lean": {
+      "provider": "verification/experiments/stage1-protocol/session-shape/ShapeTerminal.lean.in",
+      "provider_sha256": "6f4adb508a6edd140bc158d60dbe6d7538d77bf3d4a5ce401596c44fb25268ae",
+      "transformation": "identity",
+      "sha256": "6f4adb508a6edd140bc158d60dbe6d7538d77bf3d4a5ce401596c44fb25268ae"
+    },
+    "SandboxModel/Lifecycle/Protocol/TerminalModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/terminal-binding/TerminalModel.lean.in",
+      "provider_sha256": "6981041caf19b6337b4f8d698f7c89fdc0a07001fc47d2f8d339d33809769a10",
+      "transformation": "identity",
+      "sha256": "6981041caf19b6337b4f8d698f7c89fdc0a07001fc47d2f8d339d33809769a10"
+    },
+    "SandboxModel/Lifecycle/Protocol/TerminalProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/terminal-binding/TerminalProofs.lean.in",
+      "provider_sha256": "4eab7a6b86efb3a29c0fb238123aa9076d831e6e7687191782f7ba62c38f2678",
+      "transformation": "identity",
+      "sha256": "4eab7a6b86efb3a29c0fb238123aa9076d831e6e7687191782f7ba62c38f2678"
+    },
+    "SandboxModel/Lifecycle/Protocol/UnloadLibrary.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadLibrary.lean.in",
+      "provider_sha256": "6e63e219d7bdb8c60b191ea556fb5fe7057efab9191298b436991fe0adedbc41",
+      "transformation": "identity",
+      "sha256": "6e63e219d7bdb8c60b191ea556fb5fe7057efab9191298b436991fe0adedbc41"
+    },
+    "SandboxModel/Lifecycle/Protocol/UnloadModel.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadModel.lean.in",
+      "provider_sha256": "83efbd21b70020edc3505ce7f18ecf4937b54cd677ceb88f6b735fef36728a5f",
+      "transformation": "identity",
+      "sha256": "83efbd21b70020edc3505ce7f18ecf4937b54cd677ceb88f6b735fef36728a5f"
+    },
+    "SandboxModel/Lifecycle/Protocol/UnloadPhase.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadPhase.lean.in",
+      "provider_sha256": "7ce99e3b1ccade682ee49e8ba06a1f4efed1e4534fb081a412af58ded1e67c1d",
+      "transformation": "identity",
+      "sha256": "7ce99e3b1ccade682ee49e8ba06a1f4efed1e4534fb081a412af58ded1e67c1d"
+    },
+    "SandboxModel/Lifecycle/Protocol/UnloadProofs.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadProofs.lean.in",
+      "provider_sha256": "8eb506814c0976b5995e238965551a5cc59acf69d649a716de02888dfb1477fd",
+      "transformation": "identity",
+      "sha256": "8eb506814c0976b5995e238965551a5cc59acf69d649a716de02888dfb1477fd"
+    },
+    "SandboxModel/Lifecycle/Protocol/Validation.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/Validation.lean",
+      "provider_sha256": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19",
+      "transformation": "identity",
+      "sha256": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19"
+    },
+    "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": {
+      "provider": "SandboxModel/Lifecycle/Protocol/ValidationModel.lean",
+      "provider_sha256": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+      "transformation": "identity",
+      "sha256": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d"
+    },
+    "SandboxModel/ProofAuditCommand.lean": {
+      "provider": "SandboxModel/ProofAuditCommand.lean",
+      "provider_sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+      "transformation": "identity",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188"
+    },
+    "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": {
+      "provider": "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+      "provider_sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
+      "transformation": "identity",
+      "sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": {
+      "provider": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "provider_sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+      "transformation": "identity",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": {
+      "provider": "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+      "provider_sha256": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+      "transformation": "identity",
+      "sha256": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": {
+      "provider": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "provider_sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+      "transformation": "identity",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8"
+    },
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
+      "provider": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+      "provider_sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+      "transformation": "identity",
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab"
+    },
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": {
+      "provider": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "provider_sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+      "transformation": "identity",
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673"
+    },
+    "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/FunsExternal.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/GraphicFunsExternal.lean.in",
+      "provider_sha256": "dc4caa959dae9b78680b1ba9981756601b212b26645d9cb1b4eb8156bc98ae85",
+      "transformation": "identity",
+      "sha256": "dc4caa959dae9b78680b1ba9981756601b212b26645d9cb1b4eb8156bc98ae85"
+    },
+    "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/TypesExternal.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/GraphicTypesExternal.lean.in",
+      "provider_sha256": "110267d603515500f67dd86a0bed1493bb3260fd818355bc21ca0fa96304b666",
+      "transformation": "identity",
+      "sha256": "110267d603515500f67dd86a0bed1493bb3260fd818355bc21ca0fa96304b666"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/OrdDefaultBinding.lean": {
+      "provider": "verification/experiments/stage1-protocol/create-owner-successor/reuse/OrdDefaultBinding.lean.in",
+      "provider_sha256": "c1fb732e0d1b88e03c275ec839853a0773b2bea55336926eae5eca3107258628",
+      "transformation": "only-existing-library-namespace",
+      "sha256": "82b210f1eb938884319e6f475216c81e2504a7f6a623769fd0921855c628f866"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/SharedValueBindings.lean": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/SharedValueBindings.lean.in",
+      "provider_sha256": "5d4a5fb3b7aedac5dacd24bbd2baa4a0c173c7fead72eafefd52e9ff154df65f",
+      "transformation": "identity",
+      "sha256": "5d4a5fb3b7aedac5dacd24bbd2baa4a0c173c7fead72eafefd52e9ff154df65f"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean": {
+      "provider": "verification/experiments/stage1-protocol/create-attachment-flow/external/TypesExternal.lean.in",
+      "provider_sha256": "e273977badc760ebba18af444afcb8aba03c1b4d67cc10f9c67fbdf300a31862",
+      "transformation": "identity",
+      "sha256": "e273977badc760ebba18af444afcb8aba03c1b4d67cc10f9c67fbdf300a31862"
+    },
+    "verification/aeneas/storage/SandproofStorage/TypesExternal.lean": {
+      "provider": "verification/aeneas/storage/SandproofStorage/TypesExternal.lean",
+      "provider_sha256": "af26b263c4a328d32381eb115e79588d29b493610a35d5c95df1a5e59f077296",
+      "transformation": "identity",
+      "sha256": "af26b263c4a328d32381eb115e79588d29b493610a35d5c95df1a5e59f077296"
+    }
+  },
+  "raw_actual_generated_targets": [
+    "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/Funs.lean",
+    "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/Types.lean",
+    "verification/aeneas/stage1-protocol/load-blob/SandproofLoadBlob/Funs.lean",
+    "verification/aeneas/stage1-protocol/load-blob/SandproofLoadBlob/Types.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean"
+  ],
+  "no_protocol_or_load_algorithm_copied": true
+}

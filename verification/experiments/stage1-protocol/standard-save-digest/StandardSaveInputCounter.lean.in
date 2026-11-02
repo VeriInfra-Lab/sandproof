@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestValues
+open Aeneas Aeneas.Std SandproofStandardSaveDigestRust
+namespace SandboxModel.Stage1Protocol.StandardSaveInputCounter
+open StandardSaveDigest
+
+theorem wrong_common_normal :
+    throughSave Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty ∧
+    throughRebind Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty := by
+  constructor <;> simp [throughSave, throughRebind, actualSave, actualRebind, StandardDigest.expected, saveFromCommon, saveToCommon, readFromCommon, readToCommon, controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest, controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest, controller.lifecycle_inbox.sha256.digest, SandproofStandardDigestRust.controller.lifecycle_inbox.sha256.digest, Values.empty, StandardDigest.Values.empty, core.slice.index.Slice.index, core.slice.index.SliceIndexRangeToUsizeSlice.index, Slice.length, List.slice]
+
+theorem wrong_abc_uses_empty :
+    throughSave Values.normal Values.abc = StandardDigest.expected Values.normal Values.empty := by
+  simp [throughSave, actualSave, StandardDigest.expected, saveFromCommon, saveToCommon, controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest, controller.lifecycle_inbox.sha256.digest, SandproofStandardDigestRust.controller.lifecycle_inbox.sha256.digest, Values.empty, StandardDigest.Values.empty, core.slice.index.Slice.index, core.slice.index.SliceIndexRangeToUsizeSlice.index, Slice.length, List.slice, Values.abc, StandardDigest.Values.abc]
+
+theorem same_full_contract_rejected : ¬ FullSaveDigestContract := by
+  intro contract
+  have promised := contract.1 Values.normal Values.abc StandardDigest.Values.abc_normal
+  rw [wrong_abc_uses_empty] at promised
+  have same := congrArg Prod.fst (Result.ok_injective promised)
+  exact Values.complete_hashes_differ same
+
+end SandboxModel.Stage1Protocol.StandardSaveInputCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveInputCounter.wrong_common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveInputCounter.wrong_abc_uses_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveInputCounter.same_full_contract_rejected

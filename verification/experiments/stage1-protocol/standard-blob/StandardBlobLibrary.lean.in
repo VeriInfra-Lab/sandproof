@@ -1,0 +1,19 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobModel
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+
+theorem empty_bind_refines (statement : rusqlite.statement.Statement)
+    (parameters : Unit) :
+    Tuple.Insts.RusqliteParamsParams.__bind_in parameters statement =
+      .ok ((if statement.canonical.expectedParameters = 0 then .Ok ()
+        else .Err (statement.canonical.countError 0)), statement) := by
+  by_cases equal : statement.canonical.expectedParameters = 0 <;>
+    simp [Tuple.Insts.RusqliteParamsParams.__bind_in,
+      rusqlite.statement.Statement.ensure_parameter_count, equal]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.empty_bind_refines

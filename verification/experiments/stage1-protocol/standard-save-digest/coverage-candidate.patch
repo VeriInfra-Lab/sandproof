@@ -1,0 +1,20 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2238,3 +2238,17 @@
+ 精确局部结果与原始日志见 #635/本批 PR，不把预检、单文件构建或未完成记录当验收。
+ ning 普通/原生、公共登记/累计审计/冻结及共享入口各自取得，完整 JSON/标准 IO、
+ 认证/资源、producer/driver、物理事务/未知提交/重启、Resume 与完整 V3 保持开放。
++
++## V3 标准 Save 摘要及调用域候选范围
++
++[Save 摘要组件](../verification/experiments/stage1-protocol/standard-save-digest/README.md)
++固定 #753 的 f7164094，只继续未发布增量；生产原式和公共配置未改。沿用同一有限
++A9/A6/B4 接缝与完整 SHA 规格，直接 Save 和原读取载体的 Save 委托分别保留完整输入、
++全部摘要及整个接收者值。三个实际 Rust 错误版共享合同/库/正常见证；编译或工具失败
++不能算性质拒绝。原 FixedOutput 泛型后端障碍及源/库待采用条件仍保留。
++旧五条 Save 域数学保留原性质和执行身份；当前实际生成视图另行核对，新增泛型 Save
++连接和两个实际字段组合。只消去 digest agrees，原验证顺序、编码/update/完整状态及
++其余表示/Graphic 条件保留。精确局部结果与原始证据见 #635/本批 PR。
++ning 普通/原生、公共登记/累计审计/冻结及共享入口分别取得，不据局部结果报告全套。
++完整标准 IO/JSON/TLS、SQL 参数/提交、lease/事务历史/未知/重启、认证、producer/driver、
++实际资源/Resume 和完整 V3 仍开放；#751 的 Create 交付保持原范围，不重带或重计。

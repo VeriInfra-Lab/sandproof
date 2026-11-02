@@ -1,0 +1,15 @@
+import SandproofDigestUses.Types
+import SandboxModel.Lifecycle.Protocol.DigestByteBridge
+open Aeneas Aeneas.Std
+namespace SandproofDigestUsesRust
+/-! Candidate finite A9/A6 library observation. Its source binding and public
+adoption are separate obligations. The out-of-domain panic is unspecified
+observation behavior, not a claim about the real library. No business function
+is implemented or assumed by this model. -/
+@[rust_fun "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"]
+def sandproof_controller_service.controller.lifecycle_inbox.sha256.digest
+    (bytes : Slice U8) : Result (Array U8 32#usize) :=
+  if bytes.val.length < 2^61 then
+    .ok (SandboxModel.Stage1Protocol.DigestByteBridge.referenceOutput bytes)
+  else .fail .panic
+end SandproofDigestUsesRust

@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsModel
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+open BlobColumns
+
+abbrev Context := controller.checkpoint.config.StandardConfigRead
+abbrev Outcome := core.result.Result (Bytes × Bytes) JournalError
+
+/-- Complete single query value view, with distinct original preparation,
+count, first-row and exact column/error observations. No snapshot/transaction
+coherence or allocation/unwind guarantee is inferred from the value model. -/
+def queryView (connection : rusqlite.Connection) (sql : Str) : Result PairOutcome := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err error)
+  | .Ok count =>
+    if count = 0 then
+      let read ← connection.expectedRow sql (issuedReadStatement connection sql count)
+      match read with
+      | .Err error => .ok (.Err error)
+      | .Ok row => .ok (expected row 0#usize 1#usize)
+    else .ok (.Err (connection.canonical.countError count 0))
+
+def expected (self : Context) (sql : Str) : Result (Outcome × Context) := do
+  let reply ← queryView self.connection sql
+  match reply with
+  | .Err error => .ok (.Err (.Sqlite error), self)
+  | .Ok pair => .ok (.Ok pair, self)
+
+def FullStandardReadContract
+    (run : Context → Str → Result (Outcome × Context)) : Prop :=
+  ∀ self sql, run self sql = expected self sql
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob

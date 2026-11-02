@@ -1,0 +1,102 @@
+// Identical native cases for actual, both wrong, and restored source views.
+use super::*;
+
+fn check_all_six(bytes: &[u8], expected: [u8; 32]) {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let mut config = super::super::checkpoint::StandardConfigRead { connection: &tx };
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &tx,
+    };
+    let original_world = tx.world();
+    let original_tx = effects.tx as *const WorldTransaction<'_>;
+    let original_connection = effects.connection as *const rusqlite::Connection;
+    assert_eq!(
+        codec::InboxLoadEffects::digest(&mut config, bytes),
+        expected
+    );
+    assert_eq!(codec::proof_digest_instance_save(&tx, bytes), expected);
+    assert_eq!(
+        codec::InboxSaveEffects::digest(&mut config, bytes),
+        expected
+    );
+    assert_eq!(
+        codec::InboxLoadEffects::digest(&mut effects, bytes),
+        expected
+    );
+    assert_eq!(
+        codec::InboxSaveEffects::digest(&mut effects, bytes),
+        expected
+    );
+    assert_eq!(source_work::digest(bytes).into_bytes(), expected);
+    assert_eq!(effects.tx as *const WorldTransaction<'_>, original_tx);
+    assert_eq!(
+        effects.connection as *const rusqlite::Connection,
+        original_connection
+    );
+    assert!(std::ptr::eq(config.connection, effects.connection));
+    assert_eq!(tx.world(), original_world);
+}
+
+#[test]
+fn empty_known_digest() {
+    check_all_six(
+        &[],
+        [
+            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f,
+            0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b,
+            0x78, 0x52, 0xb8, 0x55,
+        ],
+    );
+}
+
+#[test]
+fn abc_known_digest() {
+    check_all_six(
+        b"abc",
+        [
+            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
+            0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
+            0xf2, 0x00, 0x15, 0xad,
+        ],
+    );
+}
+
+#[test]
+fn binary_bytes_preserved() {
+    check_all_six(
+        &[0, 255, 128, 0, 97],
+        [
+            0x40, 0x83, 0xb6, 0xf5, 0xf3, 0x0c, 0x75, 0x8c, 0x29, 0xb6, 0xf1, 0x1e, 0x07, 0x97,
+            0x4c, 0x2a, 0x40, 0x54, 0x77, 0x2a, 0x0e, 0x34, 0x33, 0x8f, 0x74, 0x12, 0x40, 0xbb,
+            0x5c, 0x81, 0x25, 0xd8,
+        ],
+    );
+}
+
+#[test]
+fn complete_block() {
+    check_all_six(
+        &[b'a'; 64],
+        [
+            0xff, 0xe0, 0x54, 0xfe, 0x7a, 0xe0, 0xcb, 0x6d, 0xc6, 0x5c, 0x3a, 0xf9, 0xb6, 0x1d,
+            0x52, 0x09, 0xf4, 0x39, 0x85, 0x1d, 0xb4, 0x3d, 0x0b, 0xa5, 0x99, 0x73, 0x37, 0xdf,
+            0x15, 0x46, 0x68, 0xeb,
+        ],
+    );
+}
+
+#[test]
+fn block_and_tail() {
+    check_all_six(
+        &[b'a'; 65],
+        [
+            0x63, 0x53, 0x61, 0xc4, 0x8b, 0xb9, 0xea, 0xb1, 0x41, 0x98, 0xe7, 0x6e, 0xa8, 0xab,
+            0x7f, 0x1a, 0x41, 0x68, 0x5d, 0x6a, 0xd6, 0x2a, 0xa9, 0x14, 0x6d, 0x30, 0x1d, 0x4f,
+            0x17, 0xeb, 0x0a, 0xe0,
+        ],
+    );
+}

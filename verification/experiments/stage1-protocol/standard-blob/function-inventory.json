@@ -1,0 +1,71 @@
+{
+  "kind": "complete-original-standard-read-function-inventory",
+  "functions": [
+    {
+      "lean_name": "rusqlite.Connection.query_row",
+      "rust_name": "rusqlite::{rusqlite::Connection}::query_row",
+      "is_opaque": true,
+      "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "rusqlite.statement.Statement.ensure_parameter_count",
+      "rust_name": "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::ensure_parameter_count",
+      "is_opaque": true,
+      "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "rusqlite.row.Row.get",
+      "rust_name": "rusqlite::row::{rusqlite::row::Row<'_0>}::get",
+      "is_opaque": true,
+      "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "Usize.Insts.RusqliteRowRowIndex.idx",
+      "rust_name": "rusqlite::row::{impl rusqlite::row::RowIndex for usize}::idx",
+      "is_opaque": true,
+      "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result",
+      "rust_name": "rusqlite::types::from_sql::{impl rusqlite::types::from_sql::FromSql for alloc::vec::Vec<u8>}::column_result",
+      "is_opaque": true,
+      "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.Tuple.Insts.RusqliteParamsParams.__bind_in",
+      "rust_name": "rusqlite::params::{impl rusqlite::params::Params for ()}::__bind_in",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.JournalError.Insts.CoreConvertFromError.from",
+      "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.controller.lifecycle_inbox.codec.read_blob_pair",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::read_blob_pair",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{impl core::ops::function::FnOnce<(&'_ rusqlite::row::Row<'_>,), core::result::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>), rusqlite::error::Error>> for sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{closure}<'_0>}::call_once",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    },
+    {
+      "lean_name": "SandproofLoadBlobRust.controller.lifecycle_inbox.codec.proof_stage1_load_blob_pair",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_blob_pair",
+      "is_opaque": false,
+      "lean_file": "SandproofLoadBlob/Funs.lean"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestCore
+import SandboxModel.Lifecycle.Protocol.InboxSaveDigestDomain
+
+open Aeneas Aeneas.Std
+open SandproofStage1RequestRust.sandproof_controller_service
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.StandardSaveDigestBridge
+
+/-- Only the original digest field is instantiated; encode/update retain their
+complete original results, effects and callback states. -/
+def withSave (io : InboxSaveEffects StandardSaveDigest.SaveContext) :
+    InboxSaveEffects StandardSaveDigest.SaveContext :=
+  { io with digest := StandardSaveDigest.actualSave }
+
+def withRebind (io : InboxSaveEffects StandardSaveDigest.ReadContext) :
+    InboxSaveEffects StandardSaveDigest.ReadContext :=
+  { io with digest := StandardSaveDigest.actualRebind }
+
+def reference {E : Type} (state : E) (bytes : Slice U8) : Result (Array U8 32#usize × E) :=
+  .ok (DigestByteBridge.referenceOutput bytes, state)
+
+theorem save_normal (state : StandardSaveDigest.SaveContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    StandardSaveDigest.actualSave state bytes = reference state bytes :=
+  StandardSaveDigest.save_refines state bytes normal
+
+theorem rebind_normal (state : StandardSaveDigest.ReadContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    StandardSaveDigest.actualRebind state bytes = reference state bytes :=
+  StandardSaveDigest.rebind_refines state bytes normal
+
+/-- Actual generic Save with the actual direct digest equals the same actual
+Save with the reference digest. Original validation, encoding, SQL and every
+complete callback state remain in the result, including all failure branches. -/
+theorem actual_save_reference_digest_congr {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : capture.GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxSaveEffects StandardSaveDigest.SaveContext) (inbox : Inbox)
+    (represented : ConfigValidation.Representable inbox.config) (state : StandardSaveDigest.SaveContext) :
+    save_using saved terminal renewal unload graphic (withSave io) inbox state =
+      save_using saved terminal renewal unload graphic
+        { withSave io with digest := reference } inbox state := by
+  apply InboxSaveDigestDomain.actual_save_using_normal_digest_congr saved terminal renewal unload
+    graphic graphicLaw (withSave io) { withSave io with digest := reference } inbox state represented rfl rfl
+  exact save_normal
+
+/-- The original StandardConfigRead-to-StandardInboxSave delegation is connected
+separately, retaining its entire receiver rather than a session/key projection. -/
+theorem actual_rebind_reference_digest_congr {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : capture.GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxSaveEffects StandardSaveDigest.ReadContext) (inbox : Inbox)
+    (represented : ConfigValidation.Representable inbox.config) (state : StandardSaveDigest.ReadContext) :
+    save_using saved terminal renewal unload graphic (withRebind io) inbox state =
+      save_using saved terminal renewal unload graphic
+        { withRebind io with digest := reference } inbox state := by
+  apply InboxSaveDigestDomain.actual_save_using_normal_digest_congr saved terminal renewal unload
+    graphic graphicLaw (withRebind io) { withRebind io with digest := reference } inbox state represented rfl rfl
+  exact rebind_normal
+
+end SandboxModel.Stage1Protocol.StandardSaveDigestBridge
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigestBridge.save_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigestBridge.rebind_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigestBridge.actual_save_reference_digest_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigestBridge.actual_rebind_reference_digest_congr

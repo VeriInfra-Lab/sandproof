@@ -1,0 +1,147 @@
+#[cfg(test)]
+mod proof_lifetime_row_contract {
+    use super::*;
+    type Row<'a> = (&'a str, i64, i64, Option<i64>, i64, i64);
+    fn connection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE sandbox_lifetimes (sandbox_id TEXT PRIMARY KEY, owner_id TEXT, deadline_ms INTEGER, disk_bytes INTEGER, started_at_ms INTEGER, max_deadline_ms INTEGER, startup_deadline_ms INTEGER)").unwrap();
+        connection
+    }
+    fn load(row: Option<Row<'_>>) -> Result<Option<Lifetime>, AdmissionError> {
+        let connection = connection();
+        if let Some((owner, deadline, disk, start, maximum, startup)) = row {
+            connection.execute("INSERT INTO sandbox_lifetimes VALUES ('sb-proof-lifetime-4',?1,?2,?3,?4,?5,?6)",
+                params![owner, deadline, disk, start, maximum, startup]).unwrap();
+        }
+        read_lifetime(
+            &connection,
+            "proof-lifetime",
+            core::SandboxId(4),
+            core::TenantId(7),
+        )
+    }
+    fn assert_corrupt(row: Row<'_>) {
+        assert!(matches!(
+            load(Some(row)),
+            Err(AdmissionError::CorruptLifetime)
+        ));
+    }
+    #[test]
+    fn absent_row_stays_none() {
+        assert_eq!(load(None).unwrap(), None);
+    }
+    #[test]
+    fn full_projection_is_preserved() {
+        assert_eq!(
+            load(Some(("tenant-7", 101, 37, Some(13), 401, 17))).unwrap(),
+            Some(Lifetime {
+                started_at_ms: Some(13),
+                deadline_ms: 101,
+                max_deadline_ms: 401,
+                startup_deadline_ms: 17,
+                disk_bytes: 37,
+            })
+        );
+    }
+    #[test]
+    fn none_start_and_inclusive_bounds_are_legal() {
+        for start in [None, Some(0), Some(101)] {
+            assert_eq!(
+                load(Some(("tenant-7", 101, 1, start, 101, 0)))
+                    .unwrap()
+                    .unwrap()
+                    .started_at_ms,
+                start
+            );
+        }
+    }
+    #[test]
+    fn full_owner_is_compared() {
+        for owner in [
+            "tenant-8",
+            "tenant-7x",
+            "tenant-70",
+            "tenant-7\u{0}",
+            "tenant-７",
+        ] {
+            assert_corrupt((owner, 101, 37, Some(13), 401, 17));
+        }
+    }
+    #[test]
+    fn deadline_must_be_nonnegative() {
+        assert_corrupt(("tenant-7", -1, 37, None, 401, 17));
+    }
+    #[test]
+    fn startup_deadline_must_be_nonnegative() {
+        assert_corrupt(("tenant-7", 101, 37, Some(13), 401, -1));
+    }
+    #[test]
+    fn disk_must_be_positive() {
+        for disk in [i64::MIN, -1, 0] {
+            assert_corrupt(("tenant-7", 101, disk, Some(13), 401, 17));
+        }
+    }
+    #[test]
+    fn maximum_must_cover_deadline() {
+        assert_corrupt(("tenant-7", 101, 37, Some(13), 100, 17));
+    }
+    #[test]
+    fn start_must_be_nonnegative() {
+        assert_corrupt(("tenant-7", 101, 37, Some(-1), 401, 17));
+    }
+    #[test]
+    fn start_must_not_exceed_deadline() {
+        assert_corrupt(("tenant-7", 101, 37, Some(102), 401, 17));
+    }
+    #[test]
+    fn no_extra_startup_order_is_imposed() {
+        for startup in [0, 400, i64::MAX] {
+            assert_eq!(
+                load(Some(("tenant-7", 101, 37, Some(101), 401, startup)))
+                    .unwrap()
+                    .unwrap()
+                    .startup_deadline_ms,
+                startup
+            );
+        }
+    }
+    #[test]
+    fn largest_signed_disk_converts_exactly() {
+        assert_eq!(
+            load(Some(("tenant-7", 0, i64::MAX, None, 0, 0)))
+                .unwrap()
+                .unwrap()
+                .disk_bytes,
+            i64::MAX as u64
+        );
+    }
+    #[test]
+    fn typed_query_error_precedes_business_owner_rejection() {
+        let connection = connection();
+        connection.execute_batch("INSERT INTO sandbox_lifetimes VALUES ('sb-proof-lifetime-4','wrong-owner','invalid-time',37,13,401,17)").unwrap();
+        assert!(matches!(
+            read_lifetime(
+                &connection,
+                "proof-lifetime",
+                core::SandboxId(4),
+                core::TenantId(7)
+            ),
+            Err(AdmissionError::Journal(JournalError::Sqlite(
+                rusqlite::Error::InvalidColumnType(1, _, _)
+            )))
+        ));
+    }
+    #[test]
+    fn no_row_does_not_hide_sql_failure() {
+        let connection = Connection::open_in_memory().unwrap();
+        assert!(matches!(
+            read_lifetime(
+                &connection,
+                "proof-lifetime",
+                core::SandboxId(4),
+                core::TenantId(7)
+            ),
+            Err(AdmissionError::Journal(JournalError::Sqlite(_)))
+        ));
+    }
+}

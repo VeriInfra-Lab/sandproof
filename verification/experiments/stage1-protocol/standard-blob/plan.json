@@ -1,0 +1,83 @@
+{
+  "kind": "current-minimal-standard-blob-native-plan",
+  "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+  "cases_sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+  "test_count": 9,
+  "native_variants": {
+    "array-params": {
+      "expected_failures": [],
+      "mutation": null,
+      "test_count": 9,
+      "expected_clippy_codes": []
+    },
+    "actual": {
+      "expected_failures": [],
+      "mutation": null,
+      "test_count": 9,
+      "expected_clippy_codes": []
+    },
+    "repeat-first": {
+      "expected_failures": [
+        "distinct_complete_columns",
+        "original_second_conversion_error",
+        "first_row_preserved"
+      ],
+      "mutation": {
+        "before": "    Ok((r.get(first)?, r.get(second)?))",
+        "after": "    let _ = second;\n    Ok((r.get(first)?, r.get(first)?))"
+      },
+      "test_count": 9,
+      "expected_clippy_codes": []
+    },
+    "second-error-first": {
+      "expected_failures": [
+        "original_first_conversion_error",
+        "helper_first_index_error"
+      ],
+      "mutation": {
+        "before": "    Ok((r.get(first)?, r.get(second)?))",
+        "after": "    let right = r.get(second)?;\n    let left = r.get(first)?;\n    Ok((left, right))"
+      },
+      "test_count": 9,
+      "expected_clippy_codes": []
+    },
+    "restored": {
+      "expected_failures": [],
+      "mutation": null,
+      "test_count": 9,
+      "expected_clippy_codes": []
+    }
+  },
+  "required_gates": [
+    "Run all five source views on ning; actual Rust mutation and exact byte restoration, same nine assertions.",
+    "Use an independent Cargo target per variant and verify fresh actual protocol/service artifacts, exact manifest/source/link and locked registry identities.",
+    "Check the exact failed assertion set, normal/restored all pass. Compilation, import, lint or timeout failures are not property rejection.",
+    "Rust formatting and strict Clippy have no preapproved lint exceptions. Preserve any existing unrelated warning as a separate gate failure.",
+    "Source/mode/runtime/full input postguards and original logs; shared main suite remains main-owned."
+  ],
+  "models_are_realizable_at_SQLite_API_level_only": true,
+  "native_run": false,
+  "native_entry_complete": false,
+  "production_adopted": true,
+  "provider_adopted": true,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "actual_source_original_sha256": "b8be81ee9ee274b2b2f5e0f6091377a6e1ab00d31ceb0178de5d04f8f2c90634",
+  "native_entry_prepared": true,
+  "source_representation_review": "Original fixed-library empty-array and Unit implementations both call statement.ensure_parameter_count(0); source equality is not a machine general equivalence.",
+  "formal_normal_row_SQL_api_fixture_same": true,
+  "formal_row_SQL": "SELECT a, b FROM proof_rows",
+  "full_original_conversion_error_fields_asserted": [
+    "index",
+    "name",
+    "type"
+  ],
+  "array_predecessor_scope": "same named helper candidate with original [] representation; finite native API comparison, not full old/new machine equivalence",
+  "parameter_count_error_fields_asserted": [
+    "requested",
+    "actual"
+  ],
+  "base_commit": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "source_preparation": "exact adopted Unit/helper source; original-array comparison only in a private view"
+}

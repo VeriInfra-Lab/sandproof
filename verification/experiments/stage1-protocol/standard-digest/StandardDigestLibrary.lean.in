@@ -1,0 +1,11 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestModel
+open Aeneas Aeneas.Std SandproofStandardDigestRust
+namespace SandboxModel.Stage1Protocol.StandardDigest
+/-- Realization in the finite library model only; actual library conformance and the two-call source binding remain separate. -/
+theorem library_normal (bytes : Slice U8) (normal : bytes.val.length < 2^61) :
+    controller.lifecycle_inbox.sha256.digest bytes =
+      .ok (DigestByteBridge.referenceOutput bytes) := by
+  exact if_pos normal
+
+end SandboxModel.Stage1Protocol.StandardDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.library_normal

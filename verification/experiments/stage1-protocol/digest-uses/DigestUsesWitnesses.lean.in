@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.DigestUses
+import SandboxModel.Lifecycle.Protocol.DigestUsesValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.DigestUses
+
+/-- Normal decoded value witnesses keep every receiver field. No actual SQL,
+authorization or material-existence claim follows from these equations. -/
+theorem normal_abc_all_six (config : Config) (save : Save) (effects : Effects) :
+    configLoad config Values.abc = .ok (expected Values.abc, config) ∧
+    inboxSave save Values.abc = .ok (expected Values.abc, save) ∧
+    configSave config Values.abc = .ok (expected Values.abc, config) ∧
+    createLoad effects Values.abc = .ok (expected Values.abc, effects) ∧
+    createSave effects Values.abc = .ok (expected Values.abc, effects) ∧
+    sourceDigest Values.abc = .ok (expected Values.abc) :=
+  ⟨config_load_complete _ _ Values.abc_normal, inbox_save_complete _ _ Values.abc_normal,
+    config_save_complete _ _ Values.abc_normal, create_load_complete _ _ Values.abc_normal,
+    create_save_complete _ _ Values.abc_normal, source_digest_complete _ Values.abc_normal⟩
+
+theorem empty_all_six (config : Config) (save : Save) (effects : Effects) :
+    configLoad config Values.empty = .ok (expected Values.empty, config) ∧
+    inboxSave save Values.empty = .ok (expected Values.empty, save) ∧
+    configSave config Values.empty = .ok (expected Values.empty, config) ∧
+    createLoad effects Values.empty = .ok (expected Values.empty, effects) ∧
+    createSave effects Values.empty = .ok (expected Values.empty, effects) ∧
+    sourceDigest Values.empty = .ok (expected Values.empty) :=
+  ⟨config_load_complete _ _ Values.empty_normal, inbox_save_complete _ _ Values.empty_normal,
+    config_save_complete _ _ Values.empty_normal, create_load_complete _ _ Values.empty_normal,
+    create_save_complete _ _ Values.empty_normal, source_digest_complete _ Values.empty_normal⟩
+
+end SandboxModel.Stage1Protocol.DigestUses
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.normal_abc_all_six
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.empty_all_six

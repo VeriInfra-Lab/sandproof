@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.DigestUsesValues
+open Aeneas Aeneas.Std SandproofDigestUsesRust
+namespace SandboxModel.Stage1Protocol.DigestUses.TailCounter
+
+theorem actual_tail_overwritten (bytes : Slice U8) (normal : Normal bytes) :
+    sourceDigest bytes = .ok ((expected bytes).set 31#usize 0#u8) := by
+  have bound : bytes.val.length < 2^61 := by
+    simpa only [Normal, Sha256Bytes.SupportedInput, DigestByteBridge.input_length] using normal
+  have compute : sandproof_controller_service.controller.lifecycle_inbox.sha256.digest bytes = .ok (expected bytes) := by
+    exact if_pos bound
+  have valid : (31#usize).val < (expected bytes).length := by simp
+  obtain ⟨out, updated, full⟩ := Aeneas.Std.WP.spec_imp_exists (Array.update_spec (expected bytes) 31#usize 0#u8 valid)
+  rw [full] at updated
+  unfold sourceDigest sandproof_controller_service.controller.lifecycle_inbox.source_work.digest
+  rw [compute]
+  simp only [bind_tc_ok]
+  rw [updated]
+  simp only [bind_tc_ok, sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem overwritten_byte_zero (output : Array U8 32#usize) :
+    (SandproofFoundationsRust.IdentifierLibrary.byteArray (output.set 31#usize 0#u8).val).toList[31]? =
+      some 0 := by
+  rw [SandboxModel.Foundations.byteArray_toList_data]
+  simp only [SandproofFoundationsRust.IdentifierLibrary.byteArray, Array.set_val_eq,
+    List.toList_toArray, List.getElem?_map]
+  simp
+
+theorem same_source_contract_rejected : ¬ SourceDigestContract sourceDigest := by
+  intro law
+  have promised := law Values.abc Values.abc_normal
+  rw [actual_tail_overwritten _ Values.abc_normal] at promised
+  have values := Result.ok_injective promised
+  have payload := congrArg
+    (fun output : Array U8 32#usize =>
+      (SandproofFoundationsRust.IdentifierLibrary.byteArray output.val).toList[31]?) values
+  rw [overwritten_byte_zero, Values.abc_full_payload] at payload
+  exact (by decide : (some (0 : UInt8)) ≠ some 0xad) payload
+
+theorem same_full_contract_rejected : ¬ FullDigestUsesContract actualCalls := by
+  intro law
+  exact same_source_contract_rejected law.2.2.2.2.2
+
+end SandboxModel.Stage1Protocol.DigestUses.TailCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.TailCounter.actual_tail_overwritten
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.TailCounter.overwritten_byte_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_source_contract_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.TailCounter.same_full_contract_rejected
