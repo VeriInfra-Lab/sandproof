@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "kind": "concrete-v3-json-conditional-composition",
+  "proof_template": "ProductionEnvelope.lean.in",
+  "installed_file": "SandboxModel/Lifecycle/Protocol/ProductionEnvelope.lean",
+  "imports": [
+    "SandboxModel.Lifecycle.Protocol.EnvelopeBudget",
+    "SandboxModel.Lifecycle.Protocol.EnvelopeWriter",
+    "SandboxModel.Lifecycle.Protocol.AcceptedWire"
+  ],
+  "audits": [
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.actual_call_keeps_parser_and_context",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.actual_accepts_iff",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.parsed_own_fields_are_proved",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.actual_json_error_precedes_guard",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.actual_parser_failure_preserved",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.actual_parser_divergence_preserved",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.accepted_normal_bounded_roundtrip",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.recorded_full_value_and_match",
+    "SandboxModel.Stage1Protocol.ProductionEnvelope.recorded_writer_from_actual_input"
+  ],
+  "trusted_library_and_mechanical_conditions": [
+    "AcceptedCallBinding",
+    "EnvelopeBytes.SliceContract",
+    "EnvelopeBudget.NormalRenderer",
+    "RecordedWriterCallBinding",
+    "BufferLaws",
+    "EnvelopeWriter.StandardCalls"
+  ],
+  "own_caller_obligations": [
+    "original authenticated context source",
+    "record intent equals the original parsed intent",
+    "actual original output limit",
+    "normal completion/rendering witnesses where required"
+  ],
+  "not_claimed": [
+    "Serde implementation proof",
+    "full async handler proof",
+    "V5 transaction/recovery proof",
+    "full acceptance"
+  ],
+  "tried_draft_sha256": "8ac1d378baff70cc49e78fc31582b92e958e3a3288ecf0329b45069464ac2b3e"
+}

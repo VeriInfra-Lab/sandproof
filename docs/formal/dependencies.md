@@ -408,8 +408,8 @@ SQLite可恢复到提交前/后不等于外部效果未发生。同步承诺受�
 | A4：rusqlite 0.40.2 / libsqlite3-sys 0.38.2 的原 Transaction::commit | 对原事务执行提交接口；正常 Ok 采用同一受保护数据库和声明同步合同下的事务提交含义 | 本候选实际链接的 bundled SQLite 为 3.53.2（3053002），与固定 0.38.2 源匹配；要求原 WAL、synchronous FULL、可靠文件/同步环境及原排他控制租约。成功不补造哪些行应当同事务，也不把 VM/I/O 纳入数据库事务 |
 | A4：原 commit 的 Err | 允许提交前或提交后两种耐久结局，原错误值继续可见 | Err 不是未写入或已回滚证明；也不保证连接已回到 autocommit。A4 不负责本项目的缓存失效、恢复身份或是否派发 |
 | A4：原 Transaction::rollback 及其内部结束处理 | 对仍持有的原事务调用原 rollback；正常 Ok 采用数据库的对应事务合同 | 失败不提供回滚完成、连接关闭或物理资源释放证据。公开 API 调用一次不意味着引擎内部只执行一条 SQL；内部结束及部分失败仍按 A4 解释 |
-| B2：隔离 TransactionCells::set_committed(value) | 将给定原 Option<World> 写入原 committed.value；不选择值、不写 candidate 或 data_version | 两个单元与所属事务/外层 CommittedWorld 必须绑定，正常借用有效，操作的临时 RefMut 不跨数据库回调。逻辑模型记录原单元的值，未证明 RefCell 内部实现 |
-| B2：隔离 TransactionCells::take_candidate() | 取走同一原 candidate 单元的值，将该单元改为 None，返回原完整值 | committed 与 candidate 是两个不同单元。调用期间没有冲突借用或并发/重入改写；不能将其推广到任意共享引用或可观察自定义析构。取值后临时借用较早结束的差异不构成任意程序一般等价证明 |
+| B2：TransactionCells::set_committed(value) | 将给定原 Option<World> 写入原 committed.value；不选择值、不写 candidate 或 data_version | 两个单元与所属事务/外层 CommittedWorld 必须绑定，正常借用有效，操作的临时 RefMut 不跨数据库回调。逻辑模型记录原单元的值，未证明 RefCell 内部实现 |
+| B2：TransactionCells::take_candidate() | 取走同一原 candidate 单元的值，将该单元改为 None，返回原完整值 | committed 与 candidate 是两个不同单元。调用期间没有冲突借用或并发/重入改写；不能将其推广到任意共享引用或可观察自定义析构。取值后临时借用较早结束的差异不构成任意程序一般等价证明 |
 | B4：WorldTransaction::commit_with/Drop 的原参数、状态与回调接线 | 原 transaction 槽、上述两单元和完整回调交给同一真实 memo 核心，原 Rust 结果如实返回；Drop 采用原 Transaction::rollback | 正常生产提交回调固定为 Transaction::commit；测试丢回执闭包保持相同缓存修改范围。回调可以改变数据库，但不能改写这两个缓存单元。FnOnce 捕获值的析构也不得改写缓存；任意自有回调捕获共享缓存或额外资源时不得直接套用。T 为原事务句柄时，其结束/析构仍属 A4，不是可任意擦除的资源。需要单独证明或登记修改范围 |
 
 **本项目仍要证明的决定。** 先给原 committed 单元传入 None，再取出原 live transaction 并调用给定提交回调；正常 Err 包装为 CommitUncertain，保持已清空状态；仅正常 Ok 后取出并发布原 candidate。rollback 核心仅在原槽仍有事务时调用回调，失败才给 committed 单元传入 None。None/候选的选择、错误解释、调用次序及原事务槽的变化保留真实生成函数，未移入 B2/B4。通用方程通过显式原语调用条件使用任意状态，具体双单元模型提供可计算实例，不增加自定义公理。
