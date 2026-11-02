@@ -433,6 +433,60 @@ def formal(output, config, root=ROOT):
     return result
 
 
+
+def check_reuse(output, result, root=ROOT):
+    """One explicit completed result, preserving its bytes and execution identity."""
+    output = Path(output)
+    sidecar = output/'reuse.json'
+    if not sidecar.exists() and not sidecar.is_symlink():
+        return 'RUN'
+    reuse = read(sidecar)
+    origin = Path(reuse['original_result'])
+    current = output/'result.json'
+    if (reuse.get('schema') != 1 or reuse.get('kind') != 'single-completed-sqlite-result'
+            or reuse.get('use') != 'REUSE' or reuse.get('new_math_executed') is not False
+            or not origin.is_absolute() or sha(origin) != reuse.get('original_result_sha256')
+            or sha(current) != sha(origin) or current.read_bytes() != origin.read_bytes()
+            or read(origin) != result or read(current) != result):
+        raise ValueError('completed SQLite result or reuse sidecar differs')
+    check(result, root)
+    return 'REUSE'
+
+
+def forward_original_messages(result):
+    """Forward verified original service text, never synthesize audit success."""
+    context = result['readback']
+    physical = [Path(context['correct_readback'])/'physical-files/service.log',
+                Path(context['negative'])/'physical-check/physical-files/service.log']
+    messages, observed = [], []
+    for actual, log in zip(result['actuals'], physical, strict=True):
+        if sha(log) != actual['service_log_sha256']:
+            raise ValueError('completed original service log differs')
+        for line in log.read_text().splitlines():
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get('request', {}).get('tool') != 'lean_diagnostic_messages':
+                continue
+            value = row['result']
+            for _ in range(3):
+                if 'success' in value:
+                    break
+                value = value.get('structuredContent', value.get('result', {}))
+            for item in value.get('items', []):
+                message = str(item.get('message', item.get('data', '')))
+                match = re.fullmatch(r'Checked ([\w.]+): \d+ standard logical dependencies', message)
+                if match:
+                    messages.append(message)
+                    observed.append(match[1])
+    expected = [name for actual in result['actuals'] for name in actual['audits']]
+    if sorted(observed) != sorted(expected):
+        raise ValueError('original complete SQLite service messages differ')
+    for message in messages:
+        print(message, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('native', 'formal'))
@@ -445,8 +499,22 @@ def main():
         raise ValueError('unknown private SQLite location manifest')
     output = args.output.absolute()
     output.mkdir(parents=True, exist_ok=False)
-    result = (native if args.mode == 'native' else formal)(output, config[args.mode])
-    write(output/'result.json', result)
+    selected = config[args.mode]
+    if args.mode == 'formal' and 'completed_result' in selected:
+        if set(selected) != {'completed_result'}:
+            raise ValueError('completed SQLite consumption accepts one exact result locator only')
+        origin = Path(selected['completed_result']).resolve(strict=True)
+        result = read(origin)
+        check(result, ROOT)
+        (output/'result.json').write_bytes(origin.read_bytes())
+        write(output/'reuse.json', dict(schema=1, kind='single-completed-sqlite-result',
+            use='REUSE', original_result=str(origin), original_result_sha256=sha(origin),
+            new_math_executed=False))
+        check_reuse(output, result, ROOT)
+        forward_original_messages(result)
+    else:
+        result = (native if args.mode == 'native' else formal)(output, selected)
+        write(output/'result.json', result)
     print(json.dumps(dict(complete=True, convergence_entry='sqlite-commit', mode=args.mode)))
 
 
