@@ -11,6 +11,8 @@ CASES = ('actual', 'repeat-first', 'second-error-first')
 def check(result, root):
     data = json.loads((root/HERE/'inventory.json').read_text())
     if (result.get('kind') != KIND or result.get('complete') is not True
+            or result.get('source_candidate_adopted') is not True
+            or result.get('finite_library_provider_adopted') is not True
             or result.get('prepared') is not False
             or result.get('all_postguards_complete') is not True
             or result.get('all_published_generated_comparisons_complete') is not True
@@ -46,6 +48,8 @@ def check_native(result, root, folder):
     plans = json.loads((root/HERE/'plan.json').read_text())['native_variants']
     if (result.get('kind') != 'current-standard-blob-candidate-native-development'
             or result.get('complete') is not True
+            or result.get('production_adopted') is not True
+            or result.get('finite_provider_adopted') is not True
             or tuple(result.get('variants', {})) != tuple(plans)
             or not result.get('inputs') or not result.get('registry')):
         raise ValueError('incomplete standard BLOB native source/views')

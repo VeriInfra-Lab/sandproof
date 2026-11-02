@@ -15,8 +15,8 @@ def check(result, root):
             or result.get('all_postguards_complete') is not True
             or result.get('all_published_generated_comparisons_complete') is not True
             or tuple(result.get('views', {})) != CASES
-            or result.get('source_adopted') is not False
-            or result.get('library_provider_adopted') is not False
+            or result.get('source_adopted') is not True
+            or result.get('library_provider_adopted') is not True
             or result.get('original_direct_method_machine_refined') is not False):
         raise ValueError('missing, extra, incomplete or misrepresented standard Save SHA view')
     load = result.get('generic_save', {}).get('captures', {})
@@ -32,7 +32,8 @@ def check(result, root):
                 or binding.get('library_conformance_proved') is not False
                 or binding.get('kernel_implementation_refinement') is not False):
             raise ValueError('complete fixed-library source binding is missing')
-    if (original.get('original_receiver_unused') is not True
+    if (original.get('unique_production_leaf') is not True
+            or leaf.get('unique_production_leaf') is not True
             or original.get('exact_fixed_interfaces') != leaf.get('exact_fixed_interfaces')):
         raise ValueError('original/candidate complete library interface differs')
     audits = set()
@@ -62,6 +63,8 @@ def check_native(result, root, folder):
     plans = json.loads((root/HERE/'plan.json').read_text())['native_variants']
     if (result.get('kind') != 'current-standard-save-digest-candidate-native-development'
             or result.get('complete') is not True
+            or result.get('production_adopted') is not True
+            or result.get('finite_provider_adopted') is not True
             or tuple(result.get('variants', {})) != tuple(plans)
             or not result.get('inputs') or not result.get('registry')):
         raise ValueError('incomplete standard digest native source/views')
