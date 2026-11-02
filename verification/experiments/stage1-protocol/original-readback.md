@@ -60,3 +60,11 @@ SQLite的可搬运native_result使用同目录`native-packet/correct`四件和`n
 原producer另取原提交中的固定字节；两项名称空间变换只重建已登记的原物理页。
 在已批准命名空间按有限映射复原后，`SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE` 指向
 `query/physical` 对应的原记录目录。原收据不改路径或revision，不附带工具安装或构建缓存。
+
+`current-readbacks-10.tar.gz` 保存 `ca2e4338` 根的16项纯准入结果：注册、原件准备、
+11份原结果、JSON、查询07和SQLite，SHA-256为
+`81e78f59c8f7c959421c68228f208497bb5938cfbf5afe948136f8c6c547a220`。
+均退出0，没有运行Rust、翻译器、Lean或新服务；该包不是27任务／23项普通验收封口。
+SQLite局部正式原件另包 `b-sqlite-formal-resume-08.tar.gz`，SHA-256为
+`68f221bc09923d75fd0051016a37b53af280c0bded60f0e1ef09974ad33d0729`，
+保留原失败、4项同性质拒绝、3反例及末段服务实际结果。
