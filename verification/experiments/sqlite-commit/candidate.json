@@ -1,17 +1,18 @@
 {
   "schema": 1,
   "issue": 570,
-  "base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+  "base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
   "source_files": {
-    "controller-service/src/controller/transaction.rs": "3e1d283d410accdb745fb378963f52b98c72c173ed0108471ff9b6b260b7c0e9",
-    "controller-service/src/controller/storage.rs": "d709039037a7b250348bd328ecdcb63b84c32fdacba7c70c20933be2ab1e7727",
-    "controller-service/src/controller/mod.rs": "eb0e7ac2ed93711069932618997ec8ca591c93a9eb43ebf7a18c74f45762cce1",
-    "controller-service/src/controller/cache_tests.rs": "23a8373dc47a0f2c698866acac8c367e1415b0f0512f16c50fddfaba2990fe50",
-    "controller-service/src/journal.rs": "3d1f13327a5dd9c4966357359f95d060214c96f20daf060bd1821ec4582952d6",
-    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99"
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+    "controller-service/src/controller/storage.rs": "d08831d001d582702defdd328f0178039cec70ee7e49c64c6b9f2b1fdb2dccb3",
+    "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
+    "controller-service/src/controller/cache_tests.rs": "d4336427e823558e1615807099bd46e024d9c4c1ac23f98b66b8037d7cedd9ab",
+    "controller-service/src/journal.rs": "acafe478e78973e7be97723cc103bbe1e7dfe4a167167446e1b40a4fb4201b6f",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
   },
   "candidate_files": {
-    "controller-service/src/controller/transaction.rs": "bb0f771647d5a262afe20114f09e287523be8e414e6623b9e102a86b8d77832b",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
   },
   "patch_sha256": "c9a49700b35e985a5c882eac7085c6756f575ae6a1bed1e1c4fe79de62bb5044",
@@ -28,9 +29,8 @@
   ],
   "core_scope": "normal returns on the registered plain World value domain, explicit mutable Cells dictionary and unchanged typed commit error payload",
   "unproved": [
-    "B2/B4 RefCell and transaction mechanical binding",
-    "whole original/candidate equivalence",
-    "concrete SQL/projection/outbox correctness and recovery",
+    "whole original/adopted equivalence",
+    "V5InboxTransactionFrame same-transaction/candidate-origin/actual recovery business obligations",
     "panic/unwind/abort/crash poststates or termination"
   ],
   "adapter_conditions": [
@@ -47,6 +47,8 @@
   "proof_dependency": {
     "pr": 556,
     "head": "398b114d516bf9233875823c18a2f9618cf108b7",
-    "role": "reuse the completed V0 revocation contract and exact integration-8a33 B1 callback binding review; final target integration"
-  }
+    "role": "reuse unchanged original SQLite core mathematics; recapture actual adopted core and wrapper/Drop under current fixed tools"
+  },
+  "production_adopted": true,
+  "historical_candidate_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173"
 }

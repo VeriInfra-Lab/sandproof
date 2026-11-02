@@ -1,16 +1,19 @@
-# SQLite 提交与缓存发布隔离候选
+# SQLite 提交与缓存发布核心
 
 [证明入口](../../README.zh-CN.md) · [V0](../../../docs/formal/00-foundations.md) · [依赖合同](../../../docs/formal/dependencies.md) · [任务 #570](https://github.com/VeriInfra-Lab/sandproof/issues/570)
 
-本目录固定代表性事务控制接口的隔离输入；完成状态与验收证据见任务和证明覆盖，不把试验构建当作整套完成。生产源码、Charon/Aeneas 和工具版本均不由本目录修改。
+本目录将原隔离候选的同步核心用于当前生产 `WorldTransaction`：
+`commit_with` 和 `Drop` 真实委托 `transaction/memo.rs`，核心与原41行候选相同。
+当前 `commit()` 的四项校验（含 lifecycle_inbox::validate）与 begin/advance、SQL 和恢复
+算法保持原行为与顺序。源码采用不等于当前证明/普通验收通过；精确状态与收据见任务和覆盖记录。
 
-## 实际代码与边界
+生产采用模式的 prepare.py 从当前已提交的实际源码创建独立副本，按清单核对全部相关文件，
+不会检出旧基线并替换业务算法。candidate.patch 保留原重构的审查来源，不在已采用模式重放。
+原数学可复用；当前完整 IR、生成体、wrapper/Drop 来源必须重捕获后再登记。
 
-证明批次依赖已交付的 [PR #556](https://github.com/VeriInfra-Lab/sandproof/pull/556) 固定头 398b114d，以复用最新后台调用绑定核对和完整入口冻结预检；最终目标 integration。下列 Rust 候选源码仍固定原 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`。补丁仅把 `controller-service/src/controller/transaction.rs` 的提交/rollback 决定移入同目录下 `transaction/memo.rs`，原 WorldTransaction 实际调用它。自己的清空、错误分类和发布决定保留真实函数体；不是另外写一份验证专用算法。
+`Cells` 只有两项机械操作：把给定值写入原 committed 单元，以及从原 candidate 单元取出原值。RefCell 薄层不决定该写 None 还是候选，不跨 SQL 回调持有借用。原工具直接提取共享 RefCell 时，没有提供可用于缓存后态证明的状态输出；当前采用的核心显式接收并返回更新状态，不扩展翻译器或添加解释器。
 
-`Cells` 只有两项机械操作：把给定值写入原 committed 单元，以及从原 candidate 单元取出原值。RefCell 薄层不决定该写 None 还是候选，不跨 SQL 回调持有借用。原工具直接提取共享 RefCell 时，没有提供可用于缓存后态证明的状态输出；这个候选让核心显式接收并返回更新状态，不扩展翻译器或添加解释器。
-
-实际 committed 与 candidate 是两个不同的原 RefCell；正常入口没有仍存活的冲突借用。回调的修改范围只包含其原数据库事务，不得同时改写这两个缓存单元。生产回调固定为 Transaction::commit/rollback；测试注入的丢回执闭包也须满足这一范围。带任意共享状态捕获的自有回调不能直接套用本模型。候选较早结束 take_candidate 的临时借用，这只在本同步段、不同单元及无可观察自定义析构的 World 值域内采用，不据有限对照声称一般等价。
+实际 committed 与 candidate 是两个不同的原 RefCell；正常入口没有仍存活的冲突借用。回调的修改范围只包含其原数据库事务，不得同时改写这两个缓存单元。生产回调固定为 Transaction::commit/rollback；测试注入的丢回执闭包也须满足这一范围。带任意共享状态捕获的自有回调不能直接套用本模型。本重构较早结束 take_candidate 的临时借用，这只在本同步段、不同单元及无可观察自定义析构的 World 值域内采用，不据有限对照声称一般等价。
 
 生成核心的性质使用实际 Cells 接口及 commit/rollback 回调；通用方程允许不同的状态类型，具体双单元模型给出可计算实例。真实 RefCell 的对象、参数、读写效果和借用符合性仍须按 B2 登记；事务调用的参数/结果传递按 B4，SQLite 按 A4。不能把整个 WorldTransaction、ControllerJournal 或恢复业务放入可信边界。
 
@@ -18,7 +21,7 @@
 
 核心返回的候选字段只描述该同步调用的边界；外层 WorldTransaction 随后可正常丢弃候选内存。只有原外层 committed 单元继续作为缓存观察对象，不从临时候选字段推出持久保存或资源仍被持有。
 
-具体 SQL、完整投影/寿命/outbox、候选正确性、恢复及允许派发的业务条件仍由 V5 提供。候选与原版的有限回归对照不等于任意执行的一般等价证明。本目录不关闭整个 T7/V0，T9 排除。
+具体 SQL、完整投影/寿命/outbox、候选正确性、恢复及允许派发的业务条件仍由 V5 提供。重构前后的有限回归对照不等于任意执行的一般等价证明。V5InboxTransactionFrame 的同一事务、候选来源和真实恢复仍是内部待证义务。本目录不关闭整个 T7/V0，T9 排除。
 
 ## 物化与原工具预检
 
