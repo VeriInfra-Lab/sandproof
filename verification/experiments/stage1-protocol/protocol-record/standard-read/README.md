@@ -52,8 +52,9 @@ World.sandbox_record、Store.get 及其循环、自有 key／phase 比较和实�
 
 额外标准库符合性仅涉及固定共享切片 `Iterator::any`：按顺序调用原 FnMut，传递
 回调状态，第一个 true 即停止，失败／发散原样传播，返回迭代器保留实际消耗位置。
-模型使用原 Aeneas `Iter { slice, i }`。它适用于此处普通共享借用和只捕获 SandboxId
-的闭包，不提供资源 Drop、并发内存、越界裸指针或自定义析构保证。自有闭包中的
+模型使用原 Aeneas `Iter { slice, i }`，只采用有限、有效的共享迭代器。此处闭包仅捕获
+不可变 SandboxId 值，没有可观察的自有资源 Drop 或外部可变捕获。模型不提供任意
+共享堆、资源析构、并发内存、越界裸指针或 panic 后游标完整状态的保证。自有闭包中的
 sandbox 比较和 Releasing 判断由 `actual_slot_callback` 证明，没有放进库假设。
 
 `actual_releasing` 给出整份效果值不变及原槽表上的完整判断；`actual_current_operation`
