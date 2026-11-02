@@ -24,8 +24,8 @@
       "formal_acceptance": false
     },
     "input-empty": {
-      "ir_sha256": "d99a7060e1eca7f51d29ef69e8b1cc7ee0f2fbcb186188ea94fe32a5de97f086",
-      "ir_value_sha256": "a0dd1334988fa89432f448ad83c7c24d8ef8e7b37f1e0cddbc0d78db3e7afdba",
+      "ir_sha256": "690ed5d8799dbb41304fb4f69876455a29fa7913b8b4d07d96ac7d6ac4a15186",
+      "ir_value_sha256": "02fd3e5955e1fe8e1abd467a81828bf32609e954fd0e66ce14f501e8da1aca7b",
       "published": {
         "SandproofStandardDigest/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/input-empty/SandproofStandardDigest/Types.lean",
@@ -33,17 +33,20 @@
         },
         "SandproofStandardDigest/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/input-empty/SandproofStandardDigest/Funs.lean",
-          "sha256": "bc33dea0ed8e96d255d8b413738e500c35684b17d17cad929cfd9adb9c6ebbce"
+          "sha256": "263d1b448768ecf0494ba520665d08853a8bd00ef89300f7486025c971cf5bd9"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/input-empty/translation.json",
-          "sha256": "3913eba587a84e96c1ca68c568ea11bb6d8ba53eb80c6229ac3ea55c6a70ea98"
+          "sha256": "9e7e21804375d405fce8c541ad5f0e895acf285a3618db824226db6c766e390b"
         }
-      }
+      },
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
     },
     "nonempty-tail-zero": {
-      "ir_sha256": "3d72fa3f3ec56697e35614fb113fc0804e10a47a6feecb3bb340298eaec098b3",
-      "ir_value_sha256": "030ab96d3b5908c42e6e534637a716ecfa2984ab48d1bae7c8e1b3f0e971f59d",
+      "ir_sha256": "d19f7ef09dc7ef8f99ce03fa20915d86d560c2dd134e7a321eaa75ecdb7f063a",
+      "ir_value_sha256": "fb1b64cd3428530676d8d86458451b90d889e973d72732e44b95f31aefc66adb",
       "published": {
         "SandproofStandardDigest/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/SandproofStandardDigest/Types.lean",
@@ -51,13 +54,16 @@
         },
         "SandproofStandardDigest/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/SandproofStandardDigest/Funs.lean",
-          "sha256": "679f6ce21bb343630d95d00a89eaa75ed8efff950b2aaba5711a8b5f5b995e9c"
+          "sha256": "332f75888a15c65effa24d3f4747773b443deca30f8d9f0f8b5b3092c87aa2ef"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/translation.json",
-          "sha256": "faba171650118cb64e2d0d325311373350aaaed5234dbac907b7ab1d3c5006dd"
+          "sha256": "fedb11e451076d9e6b18f9b1f73857168a37ee626134937e62b963e5feb099a0"
         }
-      }
+      },
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
     }
   }
 }

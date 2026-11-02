@@ -467,7 +467,7 @@ inductive ReadJournalError where
 | ObsoleteReceipt : ReadJournalError
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 27:38-27:65 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 26:38-26:65 -/
 @[reducible]
 def controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure
   :=

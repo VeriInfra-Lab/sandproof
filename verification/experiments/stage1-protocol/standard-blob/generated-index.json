@@ -66,40 +66,46 @@
       "formal_acceptance": false
     },
     "standard-repeat-first": {
-      "ir_sha256": "bd6beddde7fb08765a93eb0f886c25b5b927a6fedfad0b3a74e2a914603b13f9",
+      "ir_sha256": "194d3d6e0906ae0c7a4b031ae279e454417680e40af7401e82796a28a01da504",
       "published": {
         "SandproofLoadBlob/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/SandproofLoadBlob/Funs.lean",
-          "sha256": "aeee4aad7a1faee0ae528f017fabcc0b7f62e0ee3a7fdc88c0566420876ea5df"
+          "sha256": "72a53e6595a55d8152f8b1ed7af5592ddefe9b27c391cd9fc615e9b4abf571d9"
         },
         "SandproofLoadBlob/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/SandproofLoadBlob/Types.lean",
-          "sha256": "2d024659fd86b98cbeff74fa723d7057f680098e800ef9308d80533c36890b28"
+          "sha256": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/translation.json",
-          "sha256": "b58fada93191274c278a5571152e369f8adc0244cc50b5cc6f7629a4e518337d"
+          "sha256": "f035ce69c342b966ded231118c54e47a1661a4536a358f0509032b151aa92043"
         }
       },
-      "ir_value_sha256": "828e761a2507fea6bd3d0109f9200fde97eb3b6cc87ebbae882d5d5f9affcad8"
+      "ir_value_sha256": "6d3ea243999e9605232558e649a54954afb7a51f39d3944398e874a39974f40d",
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
     },
     "standard-second-error-first": {
-      "ir_sha256": "55e5d64380949e2dfe02b4d905556bdb458cbc34408cdf9401cacf4c47e00411",
+      "ir_sha256": "b643af6f3bca698d5e99fd6b458fea5fe498af12a8048f7b69ced627a6e1411d",
       "published": {
         "SandproofLoadBlob/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Funs.lean",
-          "sha256": "ab538b2fc1ba93d6eb36d93efef41a10c36895cc33e967c6405b7105b58ef49f"
+          "sha256": "3922df15fcbea00bbd60050d51cd34e909679f772c4422b657a9d38f52bcc72b"
         },
         "SandproofLoadBlob/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Types.lean",
-          "sha256": "2d024659fd86b98cbeff74fa723d7057f680098e800ef9308d80533c36890b28"
+          "sha256": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/translation.json",
-          "sha256": "4a85435dafe7551a0f6381ff2fdc80a65fd19a7fe14b20328eb873f51e53ef68"
+          "sha256": "a2f34eba46dc68b29138d9c9a29b4179c9ec9024a654767894774770c22524d6"
         }
       },
-      "ir_value_sha256": "d0ada8c1bbdc6de3c33a56df02746d58bb72a35ef54774b91f9a5ed21543ce8d"
+      "ir_value_sha256": "5e15c1ef8ffd95b060c60b89a79269d98adf5c2835aa4b516da1e1966bfc52ff",
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
     }
   },
   "source_adopted": true

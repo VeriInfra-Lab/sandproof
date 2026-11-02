@@ -24,7 +24,7 @@ structure controller.checkpoint.config.StandardConfigRead where
   connection : rusqlite.Connection
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave]
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 127:0-129:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 126:0-128:1 -/
 structure controller.lifecycle_inbox.codec.StandardInboxSave where
   connection : rusqlite.Connection
 

@@ -23,7 +23,7 @@ noncomputable section
 namespace SandproofStandardSaveDigestRust
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 135:4-137:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 134:4-136:5 -/
 def
   controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
   (self : controller.lifecycle_inbox.codec.StandardInboxSave)
@@ -34,11 +34,11 @@ def
   let s ←
     core.slice.index.Slice.index (core.slice.index.SliceIndexRangeToUsizeSlice
       Std.U8) bytes { «end» := 0#usize }
-  let a ← controller.lifecycle_inbox.codec.sha256_bytes s
+  let a ← controller.lifecycle_inbox.sha256.digest s
   ok (a, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 160:4-167:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 163:4-170:5 -/
 def
   controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
   (self : controller.checkpoint.config.StandardConfigRead)
@@ -52,7 +52,7 @@ def
   ok (a, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_save_digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 373:0-375:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 381:0-383:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_save_digest
   (receiver : controller.lifecycle_inbox.codec.StandardInboxSave)
   (bytes : Slice Std.U8) :
@@ -63,7 +63,7 @@ def controller.lifecycle_inbox.codec.proof_stage1_save_digest
     receiver bytes
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_read_save_digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 378:0-383:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 386:0-391:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_read_save_digest
   (receiver : controller.checkpoint.config.StandardConfigRead)
   (bytes : Slice Std.U8) :

@@ -96,7 +96,7 @@ def JournalError.Insts.CoreConvertFromError : core.convert.From
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::read_blob_pair]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 369:0-376:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 372:0-379:1 -/
 def controller.lifecycle_inbox.codec.read_blob_pair
   (r : rusqlite.row.Row) (first : Std.Usize) (second : Std.Usize) :
   Result (core.result.Result ((alloc.vec.Vec Std.U8) × (alloc.vec.Vec Std.U8))
@@ -122,7 +122,7 @@ def controller.lifecycle_inbox.codec.read_blob_pair
       rusqlite.error.Error) residual
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{impl core::ops::function::FnOnce<(&'_ rusqlite::row::Row<'_>,), core::result::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>), rusqlite::error::Error>> for sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{closure}<'_0>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 27:38-27:65 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 26:38-26:65 -/
 def
   controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once
   (c :
@@ -134,7 +134,7 @@ def
   controller.lifecycle_inbox.codec.read_blob_pair tupled_args 0#usize 1#usize
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{impl core::ops::function::FnOnce<(&'_ rusqlite::row::Row<'_>,), core::result::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>), rusqlite::error::Error>> for sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{closure}<'_0>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 27:38-27:65 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 26:38-26:65 -/
 @[reducible]
 def
   controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error
@@ -147,7 +147,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 24:4-28:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 23:4-27:5 -/
 def
   controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
   (self : controller.checkpoint.config.StandardConfigRead) (statement : Str) :
@@ -171,7 +171,7 @@ def
     ok (r1, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_blob_pair]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 380:0-385:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 383:0-388:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_load_blob_pair
   (receiver : controller.checkpoint.config.StandardConfigRead)
   (statement : Str) :

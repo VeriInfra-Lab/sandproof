@@ -39,7 +39,7 @@
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomainSupport.lean.in": "0c9d7f1463ee8241d2a33d7ac7bdfa523336bdbe008904ffd09295dba502e08e",
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobCore.lean.in": "77e0606bfcd930974f4e19e31b6aec4f2dcc8206ace94ee4b711c77007d98a9f",
     "verification/experiments/stage1-protocol/standard-blob/BlobColumnsModel.lean.in": "4ac62e3bb8b5ffd0065e85588573bceb1dee3ddd794da9eb30958ab52aca49eb",
-    "verification/experiments/stage1-protocol/standard-blob/generated-index.json": "56ffdafdb861e25a53084450772330fde5de73326c08331228cfbb8835ffa152",
+    "verification/experiments/stage1-protocol/standard-blob/generated-index.json": "4a7bb2110e59aa2f592a368b7c18a0d355b759e830de00def69c2e3ea546085b",
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobLibrary.lean.in": "fad992e0866eef5a89cb558b14e3625a2155f45ce61f70ceb7267f31f052045b",
     "verification/experiments/stage1-protocol/standard-blob/view-inventory.json": "48bbac0a6efbf81bd310770246d1eca0ac647b6b191bb8becf80522cde93bf7e",
     "verification/experiments/stage1-protocol/standard-blob/source-candidate.json": "f527df087852714910a0b044569890a265badf0d79783152f1ec07059ab654b1",
@@ -71,7 +71,7 @@
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobReplyBridge.lean.in": "3b3fa4c72c0a6393f9c15ef073c09238aa040ddb6fbf4fa355c23914314f7507",
     "verification/experiments/stage1-protocol/standard-blob/preparation.py": "f3fc193039386ca31a51c2ed5830febbfe62f88588894e9d04b9d64449ca8a0d",
     "verification/experiments/stage1-protocol/standard-blob/coverage-candidate.patch": "4f6b744ee0ec089140bd44e7f146cfcba158c276fee03f0f26b42254e77f8255",
-    "verification/experiments/stage1-protocol/standard-blob/inventory.json": "7511c03b1b6d710a3d49eacd7ef7ff29825944e788678c142ce8574dbfe1875f",
+    "verification/experiments/stage1-protocol/standard-blob/inventory.json": "e12971b4ebc45b0453c88d2c0c8c2ec34839571acc006b062117890563614355",
     "verification/experiments/stage1-protocol/standard-blob/function-inventory.json": "c2944b1aa91d4cf243d9b0cec65c5f50e46d976857bff53e34a44712ea8528e5",
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomain.lean.in": "4ca930a639d322ad826845b21cb6cd52da46f838a8499b705b79a7c007497316",
     "verification/experiments/stage1-protocol/standard-blob/REGISTRATION.md": "74db758fbb7b8db8baca9703400de75c073325b95621dc9edab2a2ac8355cdad",
@@ -98,7 +98,7 @@
   },
   "package_inputs": {
     "StandardDigestInputCounter.lean.in": "f349778dedda9c524c995deb81ed55b5f2a8c2288781eb69df1864ac2f21ef2a",
-    "generated-index.json": "0be19e768e275a6ebcab69c7cee447af88321896cbe330638ee43429002e3ff8",
+    "generated-index.json": "14ce02e7efb9a4d87b23497b657b71f3437e4bb0cf480cff196e62ec30b24e4d",
     "reuse-provenance.json": "4c947ea9284c2c5d54017afc21e8ae6b7278a6eae38bea8ca1969deef3846d8a",
     "candidate.json": "d0f20b895a657f0ed24fffe4e3531dd4d2d7981c12e40c33fff535310e69df9a",
     "public-registration-candidate.patch": "c9e495472f001ee6e09e4805032c69c234bf1fe7e47add9c3dbaae618f32feaf",
@@ -140,11 +140,11 @@
     "verification/aeneas/stage1-protocol/standard-digest/actual/SandproofStandardDigest/Funs.lean": "f52ed955574c6ceaa287b493105156f2929dbabafa4732089b1bb274db9449c1",
     "verification/aeneas/stage1-protocol/standard-digest/actual/translation.json": "1ce49a51cd8e13f584f41c3217c7c8966fe9307b1c0d029379a0d1838199c16f",
     "verification/aeneas/stage1-protocol/standard-digest/input-empty/SandproofStandardDigest/Types.lean": "2634b3cc9ec499d470001f106236eeb5838cc41fb3e5703f858bd006ef2229b2",
-    "verification/aeneas/stage1-protocol/standard-digest/input-empty/SandproofStandardDigest/Funs.lean": "bc33dea0ed8e96d255d8b413738e500c35684b17d17cad929cfd9adb9c6ebbce",
-    "verification/aeneas/stage1-protocol/standard-digest/input-empty/translation.json": "3913eba587a84e96c1ca68c568ea11bb6d8ba53eb80c6229ac3ea55c6a70ea98",
+    "verification/aeneas/stage1-protocol/standard-digest/input-empty/SandproofStandardDigest/Funs.lean": "263d1b448768ecf0494ba520665d08853a8bd00ef89300f7486025c971cf5bd9",
+    "verification/aeneas/stage1-protocol/standard-digest/input-empty/translation.json": "9e7e21804375d405fce8c541ad5f0e895acf285a3618db824226db6c766e390b",
     "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/SandproofStandardDigest/Types.lean": "2634b3cc9ec499d470001f106236eeb5838cc41fb3e5703f858bd006ef2229b2",
-    "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/SandproofStandardDigest/Funs.lean": "679f6ce21bb343630d95d00a89eaa75ed8efff950b2aaba5711a8b5f5b995e9c",
-    "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/translation.json": "faba171650118cb64e2d0d325311373350aaaed5234dbac907b7ab1d3c5006dd"
+    "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/SandproofStandardDigest/Funs.lean": "332f75888a15c65effa24d3f4747773b443deca30f8d9f0f8b5b3092c87aa2ef",
+    "verification/aeneas/stage1-protocol/standard-digest/nonempty-tail-zero/translation.json": "fedb11e451076d9e6b18f9b1f73857168a37ee626134937e62b963e5feb099a0"
   },
   "owned_audits": {
     "StandardDigestInputCounter": [
