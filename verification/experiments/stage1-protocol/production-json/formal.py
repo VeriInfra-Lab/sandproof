@@ -217,6 +217,11 @@ def run(output):
                       original_seconds=raw['seconds'], original_actual_cpus=raw['actual_cpus'],
                       actuals=[raw['actual']], evidence=consumed, complete=True)
         check(result, ROOT)
+        # Forward the already admitted original messages, never synthesize a
+        # fresh kernel/service success for this readback command.
+        for line in file_bytes(Path(directory)/'actual-files/actual-service.stdout').decode().splitlines():
+            if line.startswith('Checked '):
+                print(line, flush=True)
     except BaseException as error:
         result.update(complete=False, error=repr(error))
         raise
