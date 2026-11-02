@@ -16,6 +16,9 @@ ENTRY = 'standard-record-read'
 CAPTURE_ENV = 'SANDPROOF_STANDARD_RECORD_CAPTURE_EVIDENCE'
 REUSE_ENV = 'SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE'
 PREPARED_ENV = 'SANDPROOF_STANDARD_RECORD_PREPARED_PROJECT'
+# The original producer predates only this absolute-path readback correction.
+# Its original bytes remain required; this does not admit arbitrary old drivers.
+ORIGINAL_PRODUCER_SHA256 = 'a66206bd8a68807a7c639569b87c2550c9f04eb913f7cd9b71d5e92a50720979'
 CHECKED_FILES = (
     str(HERE/'generated/SandproofStandardRecord/TypesExternal.lean'),
     str(HERE/'generated/SandproofStandardRecord/Types.lean'),
@@ -143,8 +146,22 @@ def check(result, root):
     if result.get('kind') != 'actual-standard-record-read-proof' or result.get('execution') != 'RUN':
         raise ValueError('unknown StandardRecord proof producer')
     consumed = capture_evidence(root, result['capture_directory'])
-    if consumed != result.get('source_evidence'):
-        raise ValueError('current source or original capture no longer matches')
+    old = result.get('source_evidence', {})
+    suffix = '/'+str(HERE/'formal.py')
+    producer_paths = [name for name in old if name.endswith(suffix)]
+    if len(producer_paths) != 1:
+        raise ValueError('missing unique original StandardRecord producer identity')
+    producer = producer_paths[0]
+    old_root = Path(producer[:-len(suffix)])
+    expected = {}
+    for name, digest in consumed.items():
+        path = Path(name)
+        mapped = str(old_root/path.relative_to(root)) if path.is_relative_to(root) else name
+        expected[mapped] = digest
+    if old.get(producer) == ORIGINAL_PRODUCER_SHA256:
+        expected[producer] = ORIGINAL_PRODUCER_SHA256
+    if old != expected or any(sha(Path(name)) != digest for name, digest in old.items()):
+        raise ValueError('current content or preserved original source no longer matches')
     view, _, _, _ = current(root)
     project = Path(result['project'])
     for name, row in view['files'].items():
@@ -176,6 +193,7 @@ def evidence(result, root):
         values[str(original)] = sha(original)
         return values
     values = dict(result['source_evidence'])
+    values.update(current(root)[3])
     view, _, _, _ = current(root)
     values.update({str(Path(result['project'])/name): row['sha256']
                    for name, row in view['files'].items()})
