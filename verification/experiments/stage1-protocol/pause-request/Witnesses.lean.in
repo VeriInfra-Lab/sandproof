@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Core
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Examples
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest
+open Values
+theorem normal_actual : proof_source_pause_request base = .ok (.Ok (Assembled base 101#u64 1#u64)) := by
+  simpa [normal_expected] using actual base
+theorem domains_actual : proof_source_pause_request distinctNative = .ok (.Ok (Assembled distinctNative 101#u64 1#u64)) := by
+  simpa [domains_expected] using actual distinctNative
+theorem binding_actual : proof_source_pause_request changedBinding = .ok (.Ok (Assembled changedBinding 101#u64 1#u64)) := by
+  simpa [binding_expected] using actual changedBinding
+theorem create_actual : proof_source_pause_request createWork = .ok (.Err .Conflict) := by
+  simpa [create_expected] using actual createWork
+theorem renew_actual : proof_source_pause_request renewWork = .ok (.Err .Conflict) := by
+  simpa [renew_expected] using actual renewWork
+theorem resume_actual : proof_source_pause_request resumeWork = .ok (.Err .Conflict) := by
+  simpa [resume_expected] using actual resumeWork
+theorem destroy_actual : proof_source_pause_request destroyWork = .ok (.Err .Conflict) := by
+  simpa [destroy_expected] using actual destroyWork
+end SandboxModel.Stage1Protocol.PauseRequest
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.domains_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.binding_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.create_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.renew_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.resume_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.destroy_actual

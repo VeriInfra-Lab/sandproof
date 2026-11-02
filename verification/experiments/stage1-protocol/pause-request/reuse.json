@@ -1,0 +1,54 @@
+{
+  "protocol_clones": {
+    "provider": "verification/experiments/stage1-protocol/inbox-record/InboxRecordCloning.lean.in",
+    "sha256": "0026a0ee554a7e7eaba1786de874debb3d03a164832d83f1c56d13809b04f7af",
+    "selected": [
+      "string_clone",
+      "SandboxId_clone",
+      "SessionId_clone",
+      "ResourceId_clone",
+      "ExpectedSession_clone",
+      "RequestSequence_clone",
+      "RequestWindowId_clone",
+      "DeploymentId_clone",
+      "TenantId_clone",
+      "OperationKey_clone",
+      "NodeId_clone",
+      "PositiveCounter_clone",
+      "NodeIdentity_clone",
+      "OperationBinding_clone"
+    ]
+  },
+  "capture_clones": {
+    "provider": "verification/experiments/stage1-protocol/restore-work/RestoreWorkCloning.lean.in",
+    "sha256": "9480131fcc1d2bcc86bcf9482c5a4059a3dd481cc9e44c6799f981de5efd659d",
+    "selected": [
+      "sandproof_protocol_ResourceKind_clone_exact",
+      "sandproof_protocol_ResourceRef_clone_exact",
+      "capture_SourceProcessIdentity_clone_exact"
+    ]
+  },
+  "values": {
+    "provider": "verification/experiments/stage1-protocol/source-work-match/Values.lean.in",
+    "sha256": "b4d86d4431d83bec9183fd2b9e2a6ad9c1cb52e7b4a5537f427d7641c1ddfbdc"
+  },
+  "mathematical_protocol_model_changed": false,
+  "rendered_against_actual_current_generated_types": true,
+  "original_candidate_templates": {
+    "TypesExternal.lean.in": "7d86d094fec1ef8016f4a764244958a90c0cbc5c87545d0a66de1e2c8664bf81",
+    "Examples.lean.in": "4defb1d7bf740aa67b5c391c636b3ebe434c599b24f9691388159d4cb5a3789f",
+    "NegativeOrigin.lean.in": "627f95e99a3453106015ae004e2d868c8f83819b56e1559b250a64b164d5dd88",
+    "Witnesses.lean.in": "3278cf8b3b2f13140feacac79d23a36092c9bcd2c1b307ef06cb8d0e3109005e",
+    "NegativeBinding.lean.in": "dfb906a69266d5bb13d148ba9b6e546fff08e39e612804f439862c29741f26a0",
+    "NegativeNative.lean.in": "d74615b4b561f4ef4ea2f6ff5cce7246053a49cda6f4a47dd7534c40791de95b",
+    "FunsExternal.lean.in": "dd70dad244e15ff22ae387869dba30cf97a05899287f5eb75343b7b108d08112",
+    "Spec.lean.in": "ead473b8eeb166ce7ef674684a36080d2674a6497393038c46a59f89b2fc82c1",
+    "Core.lean.in": "431f91440df81f5e5f138f370e614e4d6a07a82f14e38eb390fdab9441e8981b",
+    "ProtocolCloning.lean.in": "9c3302fbd8df1ebfde784f460435aa3c1d0e750c2f90e28b8903d8010fb43de2",
+    "Cloning.lean.in": "9e734dea0195bc2288fd3a3aaa58db37f0ea244051c5c5c39227072f2267a0cd",
+    "Values.lean.in": "aa7ff5b02f0e018be7f6837f7d42d0e9c3900c649058f55c851f211af6ee9588"
+  },
+  "original_candidate_readback_sha256": "179177b4fa3ec0174e2d88ad82ece0c289c173592825fee1b529068a01183ad9",
+  "mathematical_templates_unchanged": true,
+  "new_mathematical_declarations": 0
+}

@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Spec
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Cloning
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Examples
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest.NegativeOrigin
+open Values ProtocolCloning Cloning
+def wrong : Request :=
+  { Assembled base 101#u64 1#u64 with
+    binding := { (Assembled base 101#u64 1#u64).binding with operation := origin.request.binding } }
+theorem bad_actual : proof_source_pause_request base = .ok (.Ok wrong) := by
+  simp [proof_source_pause_request,
+    controller.lifecycle_inbox.source_work.full.SourceWork.pause_request,
+    controller.lifecycle_inbox.source_work.SourceWork.request,
+    wrong, Assembled, base, request, origin]
+theorem rejects_same_full_contract : ¬ FullPauseContract proof_source_pause_request := by
+  intro claimed
+  have failed := claimed base
+  rw [bad_actual, normal_expected] at failed
+  have same : wrong = Assembled base 101#u64 1#u64 := by simpa using failed
+  have value := congrArg (fun p : Request => p.binding.operation.key.sequence.val) same
+  simp [wrong, Assembled, base, request, origin] at value
+end SandboxModel.Stage1Protocol.PauseRequest.NegativeOrigin
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.NegativeOrigin.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.NegativeOrigin.rejects_same_full_contract
