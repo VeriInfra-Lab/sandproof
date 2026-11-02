@@ -113,6 +113,14 @@ def view_recipes(root, name, cases=None):
             audits = [audit for stem in stems for audit in data['providers'][stem]['audits']]
             files = None
             file_count = data['correct_files' if case == 'correct' else 'wrong_files']
+        elif name == 'protocol-record':
+            row = data['views'][case]
+            files = row['files']
+            by_file = row['audits']
+            if set(by_file) != set(files) or any(not isinstance(by_file[n], list) for n in files):
+                raise ValueError('original caller audit pages differ: '+case)
+            audits = [audit for file in files for audit in by_file[file]]
+            file_count = len(files)
         elif name == 'record-reply':
             row = data['variants'][case]
             index = json.loads((root/HERE/name/'generated-index.json').read_text())['variants'][case]
