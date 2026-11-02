@@ -74,5 +74,7 @@
   "production_adopted": true,
   "historical_candidate_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
   "current_capture_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
-  "current_capture_formal_acceptance": false
+  "current_capture_formal_acceptance": false,
+  "native_reference_driver_commit": "85575215beb85fa773ad4363f227ae6c5862fdb0",
+  "native_reference_driver_sha256": "fb3c7c84ae5c08350c1df1e28b0ecc695203ccd1166c70c2c63f42f6374ca1ab"
 }

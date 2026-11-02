@@ -27,6 +27,77 @@ def diagnostics(path):
     return result
 
 
+def consume_current_replay(root, replay, readback):
+    """Recheck preserved raw outputs under the current registry, not an old flag."""
+    from tools.check_sqlite_extraction import check_pair, read_json
+    evidence = replay / "evidence"
+    baseline = read_json(evidence / "result.json")
+    current = read_json(readback)
+    generated = {name: sha(root / "verification/aeneas/sqlite" / name) for name in
+                 ("SandproofSqlite/Types.lean", "SandproofSqlite/Funs.lean", "translation.json")}
+    if (current.get("complete") is not True
+            or current.get("original_result_sha256") != sha(evidence / "result.json")
+            or current.get("source_commit") != baseline.get("base")
+            or current.get("generated_files") != generated
+            or baseline.get("source_unchanged") is not True
+            or not baseline.get("stages")
+            or any(row["exit_code"] != 0 for row in baseline["stages"])):
+        raise ValueError("explicit current-registry replay readback differs")
+    for name in generated:
+        fresh = evidence / "generated" / name
+        retained = root / "verification/aeneas/sqlite" / name
+        if fresh.is_symlink() or sha(fresh) != generated[name] or fresh.read_bytes() != retained.read_bytes():
+            raise ValueError("current original generated file differs: " + name)
+    for name, key in (("sandproof_sqlite_core.llbc", "core_llbc_sha256"),
+                      ("sandproof_sqlite_wrapper.llbc", "wrapper_llbc_sha256")):
+        raw = evidence/name
+        if raw.is_symlink() or sha(raw) != baseline[key] or current.get(key) != baseline[key]:
+            raise ValueError("original complete IR differs: " + name)
+    check_pair(root, read_json(evidence/"sandproof_sqlite_core.llbc"),
+               read_json(evidence/"sandproof_sqlite_wrapper.llbc"))
+    return baseline
+
+
+def consume_native_fault(root, source, directory, output, profile, command):
+    """Read one exact Ning component receipt; this never runs ordinary tests."""
+    from tools.acceptance_receipts import load_success, rust_inputs
+    from tools.check_sqlite_extraction import read_json
+    directory = directory.resolve(strict=True)
+    for name in ("summary.json", "receipt.json", "command.log"):
+        if (directory/name).is_symlink() or not (directory/name).is_file():
+            raise ValueError("native evidence is not a regular original file: " + name)
+    summary = read_json(directory/"summary.json")
+    receipt = read_json(directory/"receipt.json")
+    key = receipt.get("key", {})
+    used = [json.loads(row) for row in summary.get("used_receipts", "").splitlines()]
+    compiler = read_json(root/"verification/first-chain-linux-environment.json")["production_compiler"]
+    runtime = key.get("runtime", {})
+    if (summary.get("complete") is not True or summary.get("driver_exit_code") != 0
+            or summary.get("actual_cargo_exit") != 101
+            or summary.get("original_assertion_rejected") is not True
+            or summary.get("formal_tools_invoked") is not False
+            or summary.get("production_commit") != profile["current_capture_source_commit"]
+            or summary.get("driver_commit") != profile["native_reference_driver_commit"]
+            or summary.get("mutated_memo_sha256") != sha(source/"controller-service/src/controller/transaction/memo.rs")
+            or summary.get("unchanged_source_files") != len(profile["source_files"])-1
+            or len(used) != 1 or used[0].get("sha256") != sha(directory/"receipt.json")
+            or key.get("label") != "sqlite-commit-native-rejected"
+            or key.get("command") != command or key.get("options") != {}
+            or key.get("rust") != rust_inputs(source)
+            or key.get("rules", {}).get("verification/experiments/sqlite-commit/negative.py") != profile["native_reference_driver_sha256"]
+            or runtime.get("platform") != "linux" or runtime.get("uid") != 1000
+            or runtime.get("rustc", {}).get("version", "").splitlines()[:1] != [compiler]
+            or load_success(directory, key) != receipt
+            or receipt.get("expected") != 101 or receipt.get("actual_exit") != 101
+            or summary.get("log_sha256") != sha(directory/"command.log")):
+        raise ValueError("missing or different exact-source native fault evidence")
+    output.write_bytes((directory/"command.log").read_bytes())
+    return dict(native_executed_here=False, original_production_commit=summary["production_commit"],
+        native_driver_commit=summary["driver_commit"], receipt_sha256=sha(directory/"receipt.json"),
+        summary_sha256=sha(directory/"summary.json"), log_sha256=sha(output),
+        actual_native_exit=101, all_mutant_Rust_inputs_equal=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-base", type=Path, required=True)
@@ -34,12 +105,22 @@ def main():
     parser.add_argument("--correct-replay", type=Path, required=True)
     parser.add_argument("--tool-root", type=Path, required=True)
     parser.add_argument("--charon-target", type=Path)
-    parser.add_argument("--native-only", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--native-only", action="store_true")
+    modes.add_argument("--formal-only", action="store_true", help="consume exact Ning fault evidence; never run cargo tests")
+    parser.add_argument("--native-evidence", type=Path)
+    parser.add_argument("--current-registry-readback", type=Path)
     args = parser.parse_args()
+    if args.formal_only and (args.native_evidence is None or args.current_registry_readback is None):
+        parser.error("--formal-only requires --native-evidence and --current-registry-readback")
+    if not args.formal_only and (args.native_evidence is not None or args.current_registry_readback is not None):
+        parser.error("native/current readback inputs are only admitted by --formal-only")
     root = HERE.parents[2]
     sys.path.insert(0, str(root))
     from tools.check_sqlite_extraction import check_pair, read_json
-    if not args.native_only:
+    if args.formal_only:
+        baseline = consume_current_replay(root, args.correct_replay, args.current_registry_readback)
+    elif not args.native_only:
         baseline = read_json(args.correct_replay / "evidence/result.json")
         if (not baseline.get("source_unchanged")
                 or baseline.get("generated_files_byte_identical") != 3
@@ -87,10 +168,16 @@ def main():
             raise ValueError(stage + " unexpected exit: " + str(code))
         return output
 
-    native = run("native-rejected", [
+    native_command = [
         "cargo", "test", "-p", "sandproof-controller-service", "--locked", "--offline", "--lib",
         "controller::cache_tests::uncertain_commit_reconciles_both_durable_outcomes_for_every_write_family",
-        "--", "--exact", "--test-threads=1", "--nocapture"], expected=101)
+        "--", "--exact", "--test-threads=1", "--nocapture"]
+    if args.formal_only:
+        native = evidence/"native-rejected.log"
+        record["native_readback"] = consume_native_fault(
+            root, source, args.native_evidence, native, profile, native_command)
+    else:
+        native = run("native-rejected", native_command, expected=101)
     text = native.read_text()
     if ("running 1 test" not in text or "0 passed; 1 failed; 0 ignored" not in text
             or "controller/cache_tests.rs:102:" not in text
