@@ -1,8 +1,7 @@
-"""Two actual StandardRecord reads, using the existing standard-Create scope.
+"""Two actual StandardRecord reads, with a fixed query-only translation scope.
 
 Preparation constants only. No capture, proof or acceptance runs on import.
 """
-import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -16,14 +15,21 @@ ROOTS = [PREFIX + name for name in (
 METHODS = ['releasing', 'current_operation']
 
 
-def standard_create_scope():
-    path = ROOT / 'verification/experiments/stage1-protocol/create-standard-adapter/support.py'
-    spec = importlib.util.spec_from_file_location('record_existing_create_scope', path)
-    original = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(original)
-    return original
-
-
-original = standard_create_scope()
-INCLUDE = list(original.INCLUDE)
-OPAQUE = list(original.OPAQUE)
+# The first real capture reused Create's whole controller/protocol includes and
+# pulled non-called SQL/Serde trait methods into this query-only graph. Keep
+# core World/Clone/Store transparent, but select the service methods precisely.
+# In fixed Charon b104e24, * matches one name element (including an impl); the
+# pattern also selects descendants, so each method's own closures stay visible.
+INCLUDE = [
+    'sandbox_controller_core',
+    *ROOTS,
+    PREFIX + '*::releasing',
+    PREFIX + '*::current_operation',
+    'sandproof_controller_service::controller::transaction::*::world',
+    'core::option::*::as_ref',
+    'core::option::*::and_then',
+    'core::option::*::map',
+    # Preserve the original transaction value carrier, not SQL/commit methods.
+    'rusqlite::transaction::Transaction',
+]
+OPAQUE = ['rusqlite::error::Error']

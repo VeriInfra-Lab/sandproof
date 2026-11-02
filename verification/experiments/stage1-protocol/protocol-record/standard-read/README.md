@@ -5,7 +5,8 @@
 目前为准备／草稿，尚未取得本目录的原工具捕获或 Lean 检查结果，不是验收完成。
 
 `root.rs.in` 只在新的私有源码副本追加两个透明委托。`support.py` 复用现有
-create-standard-adapter 的 INCLUDE／OPAQUE，两个根均指向原实际方法；不能将这两个
+create-standard-adapter 的 World／库表示规则，并将 INCLUDE 限定到实际查询闭包，
+OPAQUE 保持原 `rusqlite::error::Error`。两个根均指向原实际方法；不能将这两个
 自有方法、比较、Store 查询或循环整体设为 opaque。独立生成命名空间为
 SandproofStandardRecordRust，子目录为 generated/SandproofStandardRecord。
 
@@ -32,3 +33,14 @@ WorldTransaction.world、NormalWorldBorrow 和 WorldReadCell／Guard 复用原 C
 
 数学与有限提供方先在私有草稿中尝试；原工具实测由统筹协调 msra 四核。
 未变的 World 克隆／Store 数学优先复用，不增加无消费者 helper、堆解释器或错误矩阵。
+
+首次实际捕获沿用 Create 的整 crate include，Charon 在未消费的 journal／迭代器图
+失败退出，Aeneas 未启动；失败 IR 不是可用生成物或性质反例。下一次仅保留两根、
+两个实际方法及闭包、WorldTransaction.world、core World／Clone／Store 和实际 Option
+调用的 include；不主动展开 Iterator.any 或 is_some_and 的标准库泛型。原事务值承载
+保留，但不因此抽取 SQL／commit／terminate_local。没有更改 typecheck 或扩大 opaque。
+
+准入必须在原 IR／translation 中核对两个方法、WorldTransaction.world、World.clone、
+World.sandbox_record、Store.get 及其循环、自有 key／phase 比较和实际回调透明；原方法
+所有实际可达业务调用都要列明，不能靠未登记 opaque 隐藏。未调用的其它 trait 方法
+不属于这两个查询的证明依赖；terminate_local 仍是父链具名业务义务。
