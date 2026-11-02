@@ -22,7 +22,7 @@
     "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean": "db7507109a9511d416ad1c519821b0ef28e73cc567acc323eb3392ff9f7bd488",
     "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
     "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
@@ -83,7 +83,7 @@
     "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
     "verification/experiments/stage1-protocol/inbox-record/Cargo.toml": "b4d62ced27371ac702b9cee4065aeeccdd5648c3d3d8a01ad005989d65248cc5",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
@@ -998,5 +998,26 @@
     "retag-exhaustion": {
       "function_marker": "pub(super) fn check_new_create_owner("
     }
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/model.rs",
+        "original_sha256": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+        "current_sha256": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

@@ -3,7 +3,7 @@
   "scope": "Actual adopted pure Create deadline helper and original Std operation; no whole-parent/native/shared/V3 claim.",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa"
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29"
   },
   "providers": {
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
@@ -1192,5 +1192,19 @@
       "formal.py": "b1b3054b5b36cccf078a4727a765fb97e563d2865c96224ccc0c23883bdeb03b",
       "native.py": "93561a7d38a93018ab9e19e77835037ad962b89d176b6729611fb4307b1e82f9"
     }
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

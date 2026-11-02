@@ -189,7 +189,7 @@ Create 可显式设 `SANDPROOF_STAGE1_JOBS=12`，前提是外层已获准 48 CPU
 
 证据目录和原件SHA见[有限原件读回说明](original-readback.md)。
 普通环境、原四档库源、固定Redis和离线Cargo沿[证明工作流](../../../docs/proof-workflow.md)准备，
-另提供相同的第五档工具源tar。Ning最终干净候选冻结后只执行一次：
+另提供相同的第五档工具源tar。普通测试机的最终干净候选冻结后只执行一次：
 
 ```sh
 export SANDPROOF_ACCEPTANCE_ROLE=native
@@ -210,7 +210,8 @@ export SANDPROOF_NATIVE_EVIDENCE=/private/evidence/native-scope
 export SANDPROOF_V3_ORIGINAL_EVIDENCE=/private/evidence/original-proof-bytes
 export SANDPROOF_PRODUCTION_JSON_ORIGINAL_EVIDENCE=/private/evidence/production-json-original
 export SANDPROOF_SQLITE_CONVERGENCE_INPUTS=/private/evidence/configs/sqlite-formal.json
-# 相同工具源tar、原锁FILE/FD及查询驱动的最终输入还须按实际登记提供。
+export SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE=/private/evidence/standard-record-physical-07
+# 相同工具源tar及原锁FILE/FD仍须按证明工作流提供。
 bash scripts/verify-stage1-protocol.sh --profile protocol-convergence
 ```
 
@@ -218,4 +219,6 @@ bash scripts/verify-stage1-protocol.sh --profile protocol-convergence
 内容索引；JSON必须包含readback.json列出的全部原件。SQLite还须定位correct_project、
 correct_parent_result、correct_service_result、correct_replay和搬运后的native_result；原失败路径及
 项目/工具身份在批准的私有命名空间中保留，不能文本改写原JSON或完整IR取得通过。
-最终候选、scope seal、27任务结果、CI与整批归档SHA：待完整入口实际完成后填写。
+最终候选、每项 RUN／REUSE、23项普通验收封口、27项形式准入、CI与整批归档SHA
+随 [#635](https://github.com/VeriInfra-Lab/sandproof/issues/635) 的交付记录提供。
+本说明及输入摘要本身不宣称这些入口已通过。

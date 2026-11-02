@@ -1342,7 +1342,7 @@ def _saved_physical_view(actual, project, physical, commands):
 def _checkpoint_evidence(helper, job, result, result_path, log):
     """Require the original output tree, not merely files a receipt self-reports."""
     folder = result_path.parent.resolve()
-    if 'convergence_extra' in job:
+    if 'convergence_extra' in job or result.get('kind') == 'fixed-original-proof-readback':
         # These fixed adapters bind physical checks to this batch's exact
         # consumed view. Keep their original project/result identities rather
         # than copying a partial project or inventing a fresh compilation.

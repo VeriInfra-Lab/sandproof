@@ -11,8 +11,8 @@
   "shared_acceptance": false,
   "full_v3": false,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
-    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/controller/lifecycle_inbox/tests.rs": "be6498dca8f2dd76c80b91c36e69e0c6628b882231e6eb62627e539f8080a9ab",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
@@ -482,5 +482,26 @@
       "native-common.rs.in": "0f54e0ddf9d354f727e167b55c11b3756c0c03b62a1d7a1bcff5fa565fe1e303"
     }
   },
-  "published_candidate_kind": "unadopted-create-owner-successor-proof-candidate"
+  "published_candidate_kind": "unadopted-create-owner-successor-proof-candidate",
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/model.rs",
+        "original_sha256": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+        "current_sha256": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      }
+    ],
+    "manifest_is_proof_evidence": false
+  }
 }

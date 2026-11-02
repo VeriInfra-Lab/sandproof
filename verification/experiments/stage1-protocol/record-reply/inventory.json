@@ -59,12 +59,12 @@
     "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
     "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
-    "lakefile.toml": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+    "lakefile.toml": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "tools/lean-mcp-requirements.txt": "2cf52b612090fddedde8a0c6278d572d53217f7651a497320666372658427fec",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
-    "tools/proof_batch.py": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7",
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
     "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
     "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
@@ -74,7 +74,7 @@
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "verification/experiments/stage1-protocol/registered.py": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+    "verification/experiments/stage1-protocol/registered.py": "395af8d5541ec8f3928ff322eb0998431c7a1c275873df5bcbc53167be316189",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
   },
@@ -229,5 +229,33 @@
     "conflict_stays_distinct",
     "capacity_is_unavailable",
     "original_unavailable"
-  ]
+  ],
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "providers",
+        "path": "lakefile.toml",
+        "original_sha256": "341dcea9f0381bb425e1ac813e79839927781d525e7eb3d740345c317c4e8326",
+        "current_sha256": "209a821fee6aba047503404248b5a29be69bdb9fc399019779c3e0ff4bd9a7b4",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      },
+      {
+        "field": "providers",
+        "path": "tools/proof_batch.py",
+        "original_sha256": "27b5237a966fd0b9dda81a57349183b203104373da58c42ff3e38c6d3d23e1f7",
+        "current_sha256": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      },
+      {
+        "field": "providers",
+        "path": "verification/experiments/stage1-protocol/registered.py",
+        "original_sha256": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+        "current_sha256": "63ec64839b52dee49705e9a8934c44ed3a4df6697460a01be8633a3d033a9174",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
+  }
 }

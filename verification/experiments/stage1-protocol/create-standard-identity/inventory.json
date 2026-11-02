@@ -4,8 +4,8 @@
     "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
-    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82"
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b"
   },
   "providers": {
     "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
@@ -21,7 +21,7 @@
     "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
     "verification/aeneas/foundations/SandproofFoundations/Funs.lean": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
     "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
-    "verification/experiments/stage1-protocol/create-fixed-identity/inventory.json": "4b67612f6540e73c00247e96e2b95ee51ab1d8b8b05b197ba0661c7f25d58455",
+    "verification/experiments/stage1-protocol/create-fixed-identity/inventory.json": "f848534f8e968db2639940bec913dd8b97814e78d415de81f4eea0661a3298a7",
     "verification/experiments/stage1-protocol/create-fixed-identity/support.py": "4fce6a59d77a986c925435e9f8175878ba2fcc9d77a79b2ee71072b5730c4201",
     "verification/experiments/stage1-protocol/create-standard-adapter/support.py": "6b3bcf670b61348a02860bb5136a40e2604ac40f47d55fff7d354140fc440ba7",
     "verification/experiments/stage1-protocol/create-standard-adapter/llbc_metadata.py": "c64f99af21a42cd61dc60ad61bb4f55dd1bd37cadce91909b6499b54180bebf9",
@@ -586,7 +586,8 @@
         "test_count": 5,
         "expected_failures": [
           "identity_keeps_complete_decimal_number",
-          "identity_allows_empty_namespace"
+          "identity_allows_empty_namespace",
+          "identity_keeps_complete_namespace"
         ],
         "expected_clippy_errors": []
       },
@@ -1255,5 +1256,33 @@
   "source_execution_note": "Exact current grouped parent; prior 083580e5 prototype execution identities remain unchanged. This manifest defines inputs; a complete current execution requires the actual formal result and all raw evidence.",
   "native_checks_run": false,
   "shared_acceptance": false,
-  "full_v3": false
+  "full_v3": false,
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "providers",
+        "path": "verification/experiments/stage1-protocol/create-fixed-identity/inventory.json",
+        "original_sha256": "4b67612f6540e73c00247e96e2b95ee51ab1d8b8b05b197ba0661c7f25d58455",
+        "current_sha256": "f848534f8e968db2639940bec913dd8b97814e78d415de81f4eea0661a3298a7",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
+  }
 }

@@ -11,7 +11,7 @@
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
     "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
     "controller-core/src/capture/drain.rs": "218dd9c660b7478cbc2f58da2b55edae63ad3f040709cbc34e43826a7c200cc1",
-    "controller-core/src/capture/tests.rs": "a2cc04c4ab770e05307dfe3215219abc70c46078ea1fdc490516226553dc0b11",
+    "controller-core/src/capture/tests.rs": "a6efc4c18c2eb11f4cf0ab2637048edc4a3853c0c97ee2811b214e5a42d72496",
     "controller-core/src/checkpoint.rs": "35039934b8980469d16c9c3dd25e3a8ad57fb06fb4f9961a24024d9a148b4edb",
     "controller-core/src/checkpoint/bounds.rs": "f15d779ea30f07817a7eaeaf4ec96084f8cb867556e0043f675ed4c07912a23a",
     "controller-core/src/checkpoint/strict.rs": "77c674ffb855227378353ba48f41e90ea6013f431a3327355a2cab101d6bfa1b",
@@ -50,8 +50,8 @@
     "controller-core/src/source_observation.rs": "8211e12fe6cda59ec9fa088383534f93affe02cdc6682fc0e935466188b9ec18",
     "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
     "controller-core/src/terminal.rs": "3451ff036d305e891152a776f92ee79abdae1d98ade12273136c1a44d02c7d51",
-    "controller-core/src/transition.rs": "8c91eb5ec87c84a193a2a3fb6a03bdc73ccec49325f90fa88670fa507f6a02c1",
-    "controller-core/src/worker.rs": "ee1aa0782c82eb2f9f77acaf6d1a09869f7753d6cf0c30a71ecae9f8b4a2e6ee",
+    "controller-core/src/transition.rs": "930c414de17e07b6436cc1bedbdb0a8a45bddb97a808d7cb57752bd89114b02a",
+    "controller-core/src/worker.rs": "93d12984975b43b64fc289ef5a14b750516477b6bdaca856757b757794a4447c",
     "controller-core/src/worker/late_capture.rs": "1601ea3bd8d6311d1906024a06e9b158f1fa8f2a61330b038d8fc79eb7dea5b1",
     "controller-core/src/workflow.rs": "2c0378a6cbd3327a40e96422c23cc2935b43093f59ac1c5462df95aaef64af71",
     "controller-core/src/workflow/tests.rs": "c2536d8f6e1709aea4cd344682780d1b8427a8e885ad5066b9fd88461e4b08e3",
@@ -100,7 +100,7 @@
     "controller-service/src/capture/source.rs": "862c749de515fbe35595b6f00043455935d9581e22ae10554f639579c1833fbc",
     "controller-service/src/capture/terminated.rs": "11a566f0224f4cce4669e4ce932b9736396238867aa89f9614c9848c7c069245",
     "controller-service/src/capture/work.rs": "fa09c2f565602f0ace3351652aa4d5fc0ed8aafe361b9b864d8f981f78248dcc",
-    "controller-service/src/controller/admission.rs": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
     "controller-service/src/controller/admission_usage.rs": "457555a4abff484d7588de0a7a7f0bff23d4a609cb635f3e39075fa63182f2ea",
     "controller-service/src/controller/allocator_tests.rs": "1a2cbc82b712711431386564d055dba98c892d86f6ecbf062873184012c7ef2a",
     "controller-service/src/controller/allocators.rs": "958a4669568e59c96a70aaa5c72e4ef146b04b3bd6814064eb0be9b1fd31ec7c",
@@ -142,11 +142,11 @@
     "controller-service/src/controller/internal_inbox/tests/window.rs": "98a06794df5a781cca9481cbbfe93d338a428d904d51f41b7ec457fa7217d1c8",
     "controller-service/src/controller/internal_inbox/window.rs": "b6996651d53ddcc73bc5fd3078f01066b4776822c7aa3ca014955c89ff4ad7db",
     "controller-service/src/controller/lease_tests.rs": "599faa9d33925e3f138d14efa40ba3954ee28f7800457a500edc3070c17dc307",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8cfa6acd7d0e6ea1531ee9daf4a3248583e4922ae59772816eceba40929fa9c4",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
     "controller-service/src/controller/lifecycle_inbox/access.rs": "c9cd15f254d625884e2ac3001eafbbcca4f0f03c797385f3419b2b8840b0acc0",
     "controller-service/src/controller/lifecycle_inbox/audit.rs": "7240f64945488c3f09081d16870ac6e541e22f6ec4669cf2e7984cb40a6bde45",
     "controller-service/src/controller/lifecycle_inbox/audit_tests.rs": "edef57b176a5206cd55b8d48aa594e574a43b385bfaea6cd8ce16cc621a2b4d9",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "1f22d3a6e71a62acd8602d3679c1b79688111f06af735d6765bda2eedf0f5c2d",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/controller/lifecycle_inbox/native_retirement.rs": "cd315d89e3a2dbd8d8c24ac6c251cecf2a2f41470802ea5608bd55cd6d08ae56",
     "controller-service/src/controller/lifecycle_inbox/pending.rs": "8c74671e4272b6bf3c91082e2849e7caefefb63049f05ac3712338377a32bf3a",
@@ -161,9 +161,9 @@
     "controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs": "3fc77a30883941e443391d715bfdf746d75603f79ce0e1daf70f77c10ccaf0ad",
     "controller-service/src/controller/lifecycle_inbox/renewal_confirmation_tests.rs": "9bf9ece20298db643ab4efa4215b89816b30e9609d8055bedf868692f5d66ec6",
     "controller-service/src/controller/lifecycle_inbox/renewal_tests.rs": "6aaf646a29095607a49815163f69750f10a8133b32153762978ba364cd14e79d",
-    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/lifecycle_inbox/source_work/codec.rs": "87561cb050f40186d20be73b7eeaf91a93be2248d017316fcb886864a062a453",
-    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/admit.rs": "c2c046fa3a791bb61f727235942fd8bd6b813a593c77963e2903a0cbd52982ce",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/authorize.rs": "07ad4e4b4b62d6d5899080acdafdccdb3675707ef51d35dc21119b6bc9940339",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/claim.rs": "8a3e893bea626c54d9cf3a9ae05862ff08c7c9b3644d600d3161d45eaa22d799",
@@ -183,7 +183,7 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement/closure.rs": "8583f86c32ed9a5b54ed0e2cab484c5b9b58537b0cf69a8edca2c1ebc72e2403",
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement/release.rs": "3c860993465e71a463ad2880e7267190be2ecd960d853bd3111edff7cd5fcd9a",
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement/tests.rs": "d5f22e21c2add4437f48b68a255cbf53e003c77eee9b539dd7aea317d9616fd3",
-    "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": "b68aa313242b821e070adff614ab967d9bd63312c93019cdefa1cd42603d9a07",
+    "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": "072fd1304317567dd8b50e24665b9110b1c375a4f6ce9a28ba9e716e1e7e2fd2",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests/continue_application.rs": "cd69e0bc58e5c58c528ed3941447862f11fb7402bb4cb121190e72ac3fb91feb",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests/continued_exit.rs": "43b25fd3928822afad29d77ec38e1f64644da443e229fd9b980bfc7e047e991e",
@@ -209,7 +209,7 @@
     "controller-service/src/controller/registry.rs": "9a63fa0d8e29d47dd4d6b0f9b789936bfa3ec2e257a945746b85e71d7d4213bf",
     "controller-service/src/controller/storage.rs": "d08831d001d582702defdd328f0178039cec70ee7e49c64c6b9f2b1fdb2dccb3",
     "controller-service/src/controller/tests_support.rs": "ae471d6137b65d1c361bae984440fb978b601e77f750d0be65cbcc7c7758c9b6",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-service/src/dispatch.rs": "25acfbb006842572ddb0f38db7248ecbb50e75bb1552915627a8031bfef693b8",
     "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
     "controller-service/src/journal.rs": "acafe478e78973e7be97723cc103bbe1e7dfe4a167167446e1b40a4fb4201b6f",
@@ -879,7 +879,7 @@
     "sandbox-internal/src/protected_files.rs": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
     "sandbox-internal/src/protected_server.rs": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225",
     "sandbox-internal/src/server.rs": "8e46a23776716d7b42e8107d29d454626230e540881ba1a11c59ed275b4dd620",
-    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0",
+    "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669",
     "sandbox-internal/src/status.rs": "c7d4f41b0bf263da5b08780a24cd2c4f9b8913963998dd9981749fe3bfafaff9",
     "sandbox-internal/src/template.rs": "a271ecfe20e46ac1b9896e5f56f9bc33584a5d629519a6fbea8c02b4cd67098c",
     "sandbox-internal/src/template/tests.rs": "2306445ccd049758c3c0ff4a5c675e8e11c11abf1513c90b79b733ce326da79a",
@@ -1224,7 +1224,7 @@
     "verification/extract-callback-state/tests/contract.rs": "3b0a73b1b1fa2b28a48d1ca3ec72aab6f0cc999f1458432249096a0d65018154",
     "verification/extract-capture-handoff/Cargo.lock": "27af73abc25e42d10dc41d4463259a461968db39c25f2bb02c0d63e0d273b364",
     "verification/extract-capture-handoff/Cargo.toml": "f4a2d2e19ed230222a1f0448d40ed2444729c3455ae8fbffcb2402e122f2a334",
-    "verification/extract-capture-handoff/src/lib.rs": "14373ba70009b7c51e900add7b7e6c23e56ede2f71c1caa1ea747bc018fff13f",
+    "verification/extract-capture-handoff/src/lib.rs": "1b4814f1a2699dbf4ad6608566774b8ae1bb53ad79a0d14244b9810caffe2988",
     "verification/extract-data-drain/src/lib.rs": "9c534cd4b87e33b932ff17d3398713e81c115ff7f2910a43f424fae1afa7010c",
     "verification/extract-first-chain/Cargo.lock": "5223b70ff40f25677eba37ec6af0c421c56ca713f03797b86d251135c00b5bea",
     "verification/extract-first-chain/Cargo.toml": "f26348c83bd3824564b37995f6028e1345791620dff8bdaa3f286ffb041a2cd0",
@@ -8555,7 +8555,7 @@
   },
   "formal_acceptance": false,
   "dependency_inputs": {
-    "docs/formal/dependencies.md": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
     "verification/experiments/stage1-protocol/envelope-writer/TypesExternal.lean.in": "a34da5ea1b7ded7fcf32193b49b9920d8dcc59dc429009505ba9d3a6d7154463",
     "verification/experiments/stage1-protocol/inbox-config/FunsExternal.lean.in": "37481b59be0b040b2c2ca1a733cacabc5e5f56eb170e844953e01d58560b68aa",
@@ -8598,5 +8598,103 @@
     "service_validation": "tools/proof_services.py",
     "closure_and_runtime": "tools/proof_batch.py",
     "library_binding": "verification/experiments/stage1-protocol/inbox-save/library_binding.py"
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "production_inputs",
+        "path": "controller-core/src/capture/tests.rs",
+        "original_sha256": "a2cc04c4ab770e05307dfe3215219abc70c46078ea1fdc490516226553dc0b11",
+        "current_sha256": "a6efc4c18c2eb11f4cf0ab2637048edc4a3853c0c97ee2811b214e5a42d72496",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-core/src/transition.rs",
+        "original_sha256": "8c91eb5ec87c84a193a2a3fb6a03bdc73ccec49325f90fa88670fa507f6a02c1",
+        "current_sha256": "930c414de17e07b6436cc1bedbdb0a8a45bddb97a808d7cb57752bd89114b02a",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-core/src/worker.rs",
+        "original_sha256": "ee1aa0782c82eb2f9f77acaf6d1a09869f7753d6cf0c30a71ecae9f8b4a2e6ee",
+        "current_sha256": "93d12984975b43b64fc289ef5a14b750516477b6bdaca856757b757794a4447c",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/admission.rs",
+        "original_sha256": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+        "current_sha256": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "8cfa6acd7d0e6ea1531ee9daf4a3248583e4922ae59772816eceba40929fa9c4",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "original_sha256": "1f22d3a6e71a62acd8602d3679c1b79688111f06af735d6765bda2eedf0f5c2d",
+        "current_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "original_sha256": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+        "current_sha256": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/source_work/full.rs",
+        "original_sha256": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+        "current_sha256": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "original_sha256": "b68aa313242b821e070adff614ab967d9bd63312c93019cdefa1cd42603d9a07",
+        "current_sha256": "072fd1304317567dd8b50e24665b9110b1c375a4f6ce9a28ba9e716e1e7e2fd2",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "sandbox-internal/src/server/lifecycle.rs",
+        "original_sha256": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0",
+        "current_sha256": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "production_inputs",
+        "path": "verification/extract-capture-handoff/src/lib.rs",
+        "original_sha256": "14373ba70009b7c51e900add7b7e6c23e56ede2f71c1caa1ea747bc018fff13f",
+        "current_sha256": "1b4814f1a2699dbf4ad6608566774b8ae1bb53ad79a0d14244b9810caffe2988",
+        "basis": "recording.rs is byte-identical to original 1053c1e5. Other complete production files now include separately adopted Create, SHA/BLOB, lifetime-row, memo and pause-stop changes; this manifest does not reuse a whole old system proof. The current recording view still requires extraction and its exact same contract."
+      },
+      {
+        "field": "dependency_inputs",
+        "path": "docs/formal/dependencies.md",
+        "original_sha256": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+        "current_sha256": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

@@ -2,20 +2,20 @@
   "kind": "actual-create-full-flow-reviewed-inputs",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
-    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-service/src/controller/checkpoint/config.rs": "81a0314c40c07552b58097387044f659288ef6b2bc5ecd0fc835e5ca954c1976",
     "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "docs/formal/03-protocol-inbox.md": "56a1950aef47fe655607caea88c40709d5b51eb5f91e16824738639e1324e81c"
+    "docs/formal/03-protocol-inbox.md": "66d880e5992be30f43f2929302ae9ec346271f4f86f18b9693104585d8d45d73"
   },
   "providers": {
     "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
@@ -4579,5 +4579,47 @@
     "grouping_changes_no_callback_field_or_order": true,
     "standard_sql_provider": "lifecycle_inbox::lifetime_sql::execute; separate actual provider contract required",
     "whole_call_sql_heap_or_history_proved": false
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+        "current_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/model.rs",
+        "original_sha256": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+        "current_sha256": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "docs/formal/03-protocol-inbox.md",
+        "original_sha256": "56a1950aef47fe655607caea88c40709d5b51eb5f91e16824738639e1324e81c",
+        "current_sha256": "66d880e5992be30f43f2929302ae9ec346271f4f86f18b9693104585d8d45d73",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

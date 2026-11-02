@@ -1,10 +1,10 @@
 {
   "kind": "current-standard-sql-delegate-input-candidate",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
     "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82"
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b"
   },
   "providers": {
     "verification/aeneas/sqlite-statements/SandproofSqliteStatements/FunsExternal.lean": "91fef823537829d344dfbaeb9eea916cfd4dd681cf8d93fd2b06b7ae2f30d7ac",
@@ -23,7 +23,7 @@
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json": "7d4332dc5a8db80f1f2e9bb38c36d74ab7735c23af934bb816a7859b97bf6a6e",
+    "verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json": "ce6b6913642f55530d5b05b9be575f3a623427e46fce58441b505d2b42ccac50",
     "verification/experiments/stage1-protocol/create-lifetime-sql/support.py": "e50ad4afbd11bcf892d9150245b4f540f346f99353a9a1173bf0f1653aa5d1db",
     "verification/experiments/stage1-protocol/create-lifetime-sql/materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04",
     "verification/experiments/stage1-protocol/create-lifetime-sql/root.rs.in": "8441206b14cec49fa52c2b4c0229c4ad5ab6a4265263222e5eb1255449a0de0e",
@@ -34,7 +34,7 @@
   "helper_inventory": {
     "kind": "actual-lifetime-two-values-review",
     "source_inputs": {
-      "controller-service/src/controller/lifecycle_inbox.rs": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+      "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
       "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
       "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
     },
@@ -58,7 +58,7 @@
     },
     "templates": {
       "TypesExternal.lean.in": "f5a3833e38da6e1143a20bc21ffa454a407344973637cac2df8abb8373df40ab",
-      "native-cases.rs.in": "ee36a71e82e9f99ca07d709da2ecb20dcebb4d7b5733187a97cf894c36926061",
+      "native-cases.rs.in": "6ca8e2dac2d81a4d8da756594cd470ed094793f78c4da4efc4df53e03da282cb",
       "root.rs.in": "8441206b14cec49fa52c2b4c0229c4ad5ab6a4265263222e5eb1255449a0de0e",
       "LifetimeSqlWitnesses.lean.in": "89ca847c0cc6dfdd9cd4dc5240fd202f330f6068adfe7c2fd00624c02a96b64a",
       "LifetimeSqlComplete.lean.in": "0ef60749886ec2b9dd51ad0fe8baa375f4a668c9bf11ca9dc2bacf29e1724f58",
@@ -71,8 +71,8 @@
       "LifetimeSqlModel.lean.in": "ffdd284155cf5c501ebdffaca09dd35ad1c69519929868f2fc0c8e7c625ab0b8"
     },
     "drivers": {
-      "native.py": "8c0e5444380e141238f3d84b81db12651ae6d604efd5a5f2cc320398a47004f0",
-      "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a",
+      "native.py": "57ff7ee4e1f76ef22e7cde9e1d9558c5f278cce3ddff09c193bfcd4242d2c47e",
+      "formal.py": "87e3b16251d5f4f62cf78d138768272194dbbb5b7330bad6dddcb2a3bb4580fa",
       "support.py": "e50ad4afbd11bcf892d9150245b4f540f346f99353a9a1173bf0f1653aa5d1db",
       "materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04",
       "binding.py": "d4705b8d37c64a71eed8548457f73f5cc046256859c81eec3e65a1ca2c44ef24"
@@ -595,6 +595,20 @@
         ],
         "expected_clippy_codes": [
           "clippy::erasing_op"
+        ],
+        "expected_clippy_errors": [
+          {
+            "code": "clippy::erasing_op",
+            "message": "this operation will always return zero. This is likely not the intended outcome",
+            "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+            "line": 18
+          },
+          {
+            "code": "clippy::erasing_op",
+            "message": "this operation will always return zero. This is likely not the intended outcome",
+            "source": "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs",
+            "line": 18
+          }
         ]
       },
       "empty-sandbox": {
@@ -621,7 +635,33 @@
     "expected_unique_new_audits": 29,
     "ordinary_native_owner": "ning",
     "shared_acceptance": false,
-    "full_v3": false
+    "full_v3": false,
+    "published_input_fingerprints": {
+      "drivers": {
+        "formal.py": "c5b45d0d3c07f4429ef4e69a5f2fb52a97145057258df8f95b38b8f400ac212a",
+        "native.py": "8c0e5444380e141238f3d84b81db12651ae6d604efd5a5f2cc320398a47004f0"
+      },
+      "source_inputs": {
+        "controller-service/src/controller/lifecycle_inbox.rs": "9f66f28d2a15ada90216082e65933b3c0b489c2d6145fe8f9d3624900fd2d1a0"
+      },
+      "templates": {
+        "native-cases.rs.in": "ee36a71e82e9f99ca07d709da2ecb20dcebb4d7b5733187a97cf894c36926061"
+      }
+    },
+    "current_source_admission": {
+      "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_execution_identities_preserved": true,
+      "changes": [
+        {
+          "field": "source_inputs",
+          "path": "controller-service/src/controller/lifecycle_inbox.rs",
+          "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+          "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+          "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+        }
+      ],
+      "manifest_is_proof_evidence": false
+    }
   },
   "templates": {
     "TypesExternal.lean.in": "a1b188776d6a4f4e8e2c0c8acfdd423e84532f49e68fc23bb05724619c1b9739",
@@ -1251,5 +1291,33 @@
   "source_note": "Exact current grouped parent and readmitted original lower helper; prior prototype execution identities remain unchanged. This manifest defines inputs; a complete current execution requires the actual formal result and all raw evidence.",
   "native_checks_run": false,
   "shared_acceptance": false,
-  "full_v3": false
+  "full_v3": false,
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "445f5ccba5df1c1f3e1b01f4209deeac00c5dcb119c1c238ad1a10d894c02a42",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "providers",
+        "path": "verification/experiments/stage1-protocol/create-lifetime-sql/inventory.json",
+        "original_sha256": "7d4332dc5a8db80f1f2e9bb38c36d74ab7735c23af934bb816a7859b97bf6a6e",
+        "current_sha256": "435a3fa84a97054f7741e138a0564576ac2a8e07b7e126b9ca041c021b4d44e1",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
+  }
 }
