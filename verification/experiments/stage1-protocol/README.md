@@ -201,6 +201,11 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 
 SQLite配置schema1的native部分必须给原正确目录（含source/evidence）、原fault_source及
 原summary/receipt/command三件目录；普通入口核对完整Rust、原断言和7原件，不据裸packet造scope封口。
+SQLite完整组件已有成功原件时，formal配置只填写
+`{"schema":1,"formal":{"completed_result":"/private/evidence/sqlite-original/result.json"}}`。
+入口仍执行原check/evidence、核原结果和本次副本逐字节相同，并保留独立的`reuse.json`；
+它不搜索另一份成功记录，缺失或损坏原证据就拒绝，不重写原执行身份。
+
 将最终完整commands/runtime/complete和所有登记原件交给证明机；不传Cargo target。
 在原固定工具/包、已批准命名空间和仍打开的原锁FD下执行：
 

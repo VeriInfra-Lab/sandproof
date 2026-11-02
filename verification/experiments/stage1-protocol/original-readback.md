@@ -44,6 +44,7 @@ export SANDPROOF_V3_ORIGINAL_EVIDENCE=/private/original-proof-bytes
 | b-sqlite-convergence-native-aff2c174.tar.gz | `fbb64e03efb7ac4550088e51caecff29a4447ee95b0c608d0edd70c9fa101e75` | 原7件native packet、0.294788秒纯读回及原839装载失败；不代表scope全部通过 |
 | b-api-captures-02.tar.gz | `7855c9770c129c9f27da536fc02a17c15d6dc66f601c0e358efe9a2a7ca21ac1` | 8fc真实两BLOB及SQLite完整IR/gen，capture_only |
 | b-mutants-01.tar.gz | `29b14aed8285c7826669abac901515567223a8b58c76fdc33f81c8a74067ac76` | 8fc七个真实错误版原捕获，不是数学通过 |
+| query-and-json-original-evidence-01.tar.gz | `69e61802bdb0b3204def6d3016cad695779646711de4fd078555318f3092d46a` | JSON精确15份原件、查询07原内核/服务/7页9审计及其固定来源，共166文件和150条原路径映射；不是整批封口 |
 
 十包原四档的SHA以fixed-originals.json为唯一登记。JSON档案必须与production-json/readback.json
 逐项相符，不拿早期单页草稿替代当前10页30审计。最终公共结果、当前查询证明和整批归档的
@@ -54,3 +55,8 @@ SQLite的可搬运native_result使用同目录`native-packet/correct`四件和`n
 在原已批准命名空间把搬运原件映射到记录中的固定虚拟前缀，再提供配置定位，不改写原收据。
 这是有限运行视图，不依赖历史lzn私有目录，也不是任意路径重写器或任意机器一键重证。
 正常分配、第三方库/数据库、薄接线以及V5自有同事务/恢复条件见依赖合同，复现读回不消除它们。
+
+查询原件包的 `index.json` 保留原路径、成员摘要和来源。93份源与当前固定提供方逐字节相同；
+原producer另取原提交中的固定字节；两项名称空间变换只重建已登记的原物理页。
+在已批准命名空间按有限映射复原后，`SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE` 指向
+`query/physical` 对应的原记录目录。原收据不改路径或revision，不附带工具安装或构建缓存。

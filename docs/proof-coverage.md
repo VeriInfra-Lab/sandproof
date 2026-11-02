@@ -1315,9 +1315,13 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 本项只加强已观察源码的清单与可复现定位。动态回调实际实例、结构体字段/合法域、future 取消时的编译器清理、嵌套库析构及外部脚本/配置的完整绑定仍按[依赖登记](formal/dependencies.md#真实使用点的来源清单)和 #333 继续处理。额外 VM 运维入口只作防漏观察，不增加历史工具证明前置；模板范围与 T9 排除不扩大。**T0 全部使用连接、T1–T8 其余义务和整个 V0 均未因此完成。**
 
-## T7 边界：SQLite 提交回执与缓存发布（隔离候选）
+## T7 边界：SQLite 提交回执与缓存发布（历史隔离候选）
 
-[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口隔离候选)。
+本节记录 #570 旧隔离版本的证据。当前生产已采用同一 memo 核心，当前适用范围与
+收敛验收状态见本文开头的“本批 V3 固定收敛”；以下旧提交与耗时保持原身份，
+不表示当前实现仍未采用该核心，也不自动背书当前完整入口。
+
+[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口)。
 
 [Results](../verification/aeneas/sqlite/SandproofSqlite/Results.lean) 的 13 条核心/通用状态性质连接原清空、回调结果分类、事务槽消耗、原候选发布和 rollback 分支；正常返回须取得原 live 事务，正常成功必须由原回调确认。[Examples](../verification/aeneas/sqlite/SandproofSqlite/Examples.lean) 的 5 条允许输入/结果见证分别保留提交未知的写前、写后结局，两者都不能保留旧缓存。18 项声明由原标准依赖命令与真实物理 Audit 文件检查，不增加自定义假设。这些是隔离候选真实核心的条件性质，不是整个生产事务外壳已证。
 

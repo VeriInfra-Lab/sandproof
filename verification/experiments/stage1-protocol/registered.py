@@ -1360,6 +1360,12 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 raise ValueError('original fixed-adapter evidence changed: '+name)
         if log.is_symlink() or not log.is_file():
             raise ValueError('missing fixed-adapter readback command log')
+        if job.get('convergence_extra') == 'sqlite-commit':
+            if adapter.check_reuse(folder, result, ROOT) == 'REUSE':
+                sidecar = folder/'reuse.json'
+                origin = Path(_read(sidecar)['original_result'])
+                evidence[str(sidecar.resolve())] = _sha(sidecar)
+                evidence[str(origin)] = _sha(origin)
         evidence[str(result_path.resolve())] = _sha(result_path)
         evidence[str(log.resolve())] = _sha(log)
         if profile_is_convergence_job(job):
@@ -1640,7 +1646,11 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                         evidence=evidence, seconds=row['seconds'])
                     checkpoint = directory/'checkpoint.json'
                     shared.write_json(checkpoint, receipt)
-                    row.update(use='REUSE' if result.get('execution') == 'REUSE' else 'RUN',
+                    proof_use = 'REUSE' if result.get('execution') == 'REUSE' else 'RUN'
+                    if job.get('convergence_extra') == 'sqlite-commit':
+                        proof_use = CONVERGENCE.extra(root, 'sqlite-commit').check_reuse(
+                            result_path.parent, result, root)
+                    row.update(use=proof_use,
                         current_admission='RUN', result_sha256=receipt['result_sha256'],
                         checkpoint_path=str(checkpoint), checkpoint_sha256=_sha(checkpoint))
                     results[job['name']] = row

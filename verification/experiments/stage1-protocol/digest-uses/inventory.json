@@ -25,7 +25,7 @@
     "verification/experiments/stage1-protocol/create-standard-adapter/TypesExternal.lean.in": "968be1eb530f48569c916d324596e04f7024882d35f27b636a4cc06a5b921ae8",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/inbox-load/formal.py": "ed5b3bc7e4b93d7a0acdbd7e9dca40522c36dce0d088ef82becf42527b162e92",
-    "verification/experiments/stage1-protocol/registered.py": "395af8d5541ec8f3928ff322eb0998431c7a1c275873df5bcbc53167be316189",
+    "verification/experiments/stage1-protocol/registered.py": "534de73db75fabb43bbb1bd32fc7179f6a361b78064d961528d459e1444da638",
     "verification/experiments/stage1-protocol/serde-binding/binding.py": "2b73a06aa372aa09cedc19e13a043a60ed1e5768937093cbb572d6871fdeb013",
     "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
     "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
