@@ -1,10 +1,10 @@
 {
   "kind": "fixed-current-named-SHA-unaltered-original-captures",
-  "source_adopted": false,
+  "source_adopted": true,
   "captures": {
     "actual": {
-      "ir_sha256": "6bb694f7fd9d70638397317d9acd15f3254d6fed1f88011a7297d9ab6409b8be",
-      "ir_value_sha256": "9a986f4f067a747ded1731eadb3bbf0c0b5cae70232f3e39dd5a1512e8fab94f",
+      "ir_sha256": "e61e3f537c79e504de13b31d5aeeb0a3834645a952579d2e79fb5f6dc4cc3405",
+      "ir_value_sha256": "da150cd01cc0f819433e61db6e6ace0291ab7fb2b6879dd736e23462eab8ea8d",
       "published": {
         "SandproofStandardDigest/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/SandproofStandardDigest/Types.lean",
@@ -12,13 +12,16 @@
         },
         "SandproofStandardDigest/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/SandproofStandardDigest/Funs.lean",
-          "sha256": "4cc0f09ad96fcc470791a469f568b544b21be5f3c7da27f4fe81ba6b73473faa"
+          "sha256": "f52ed955574c6ceaa287b493105156f2929dbabafa4732089b1bb274db9449c1"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-digest/actual/translation.json",
-          "sha256": "3913eba587a84e96c1ca68c568ea11bb6d8ba53eb80c6229ac3ea55c6a70ea98"
+          "sha256": "1ce49a51cd8e13f584f41c3217c7c8966fe9307b1c0d029379a0d1838199c16f"
         }
-      }
+      },
+      "captured_source_commit": "6bf5fb715b06013fc287f3c645ab44242c84f61e",
+      "original_capture_result_sha256": "561222f99ae45613a5fae738a1a1d92c19251aac4173b170367e98de1610d5a8",
+      "formal_acceptance": false
     },
     "input-empty": {
       "ir_sha256": "d99a7060e1eca7f51d29ef69e8b1cc7ee0f2fbcb186188ea94fe32a5de97f086",

@@ -23,7 +23,7 @@ noncomputable section
 namespace SandproofStandardDigestRust
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 35:4-37:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 34:4-36:5 -/
 def
   controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
   (self : controller.checkpoint.config.StandardConfigRead)
@@ -31,11 +31,11 @@ def
   Result ((Array Std.U8 32#usize) ×
     controller.checkpoint.config.StandardConfigRead)
   := do
-  let a ← controller.lifecycle_inbox.codec.sha256_bytes bytes
+  let a ← controller.lifecycle_inbox.sha256.digest bytes
   ok (a, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_load_digest]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 374:0-379:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/codec.rs', lines 378:0-383:1 -/
 def controller.lifecycle_inbox.codec.proof_stage1_load_digest
   (receiver : controller.checkpoint.config.StandardConfigRead)
   (bytes : Slice Std.U8) :

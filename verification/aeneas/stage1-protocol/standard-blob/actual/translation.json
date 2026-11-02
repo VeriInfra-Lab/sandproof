@@ -21,7 +21,7 @@
       "reducible": false
     },
     {
-      "def_id": 120,
+      "def_id": 55,
       "lean_name": "rusqlite.statement.Statement.ensure_parameter_count",
       "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean",
       "rust_name": "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::ensure_parameter_count",
@@ -38,7 +38,7 @@
       "reducible": false
     },
     {
-      "def_id": 125,
+      "def_id": 60,
       "lean_name": "rusqlite.row.Row.get",
       "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean",
       "rust_name": "rusqlite::row::{rusqlite::row::Row<'_0>}::get",
@@ -55,7 +55,7 @@
       "reducible": false
     },
     {
-      "def_id": 166,
+      "def_id": 138,
       "lean_name": "Usize.Insts.RusqliteRowRowIndex.idx",
       "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean",
       "rust_name": "rusqlite::row::{impl rusqlite::row::RowIndex for usize}::idx",
@@ -72,7 +72,7 @@
       "reducible": false
     },
     {
-      "def_id": 231,
+      "def_id": 228,
       "lean_name": "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result",
       "lean_file": "SandproofLoadBlob/FunsExternal_Template.lean",
       "rust_name": "rusqlite::types::from_sql::{impl rusqlite::types::from_sql::FromSql for alloc::vec::Vec<u8>}::column_result",
@@ -89,7 +89,7 @@
       "reducible": false
     },
     {
-      "def_id": 38,
+      "def_id": 37,
       "lean_name": "SandproofLoadBlobRust.Tuple.Insts.RusqliteParamsParams.__bind_in",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "rusqlite::params::{impl rusqlite::params::Params for ()}::__bind_in",
@@ -106,7 +106,7 @@
       "reducible": false
     },
     {
-      "def_id": 43,
+      "def_id": 42,
       "lean_name": "SandproofLoadBlobRust.JournalError.Insts.CoreConvertFromError.from",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "sandproof_controller_service::{impl core::convert::From<rusqlite::error::Error> for sandproof_controller_service::JournalError}::from",
@@ -123,15 +123,15 @@
       "reducible": false
     },
     {
-      "def_id": 119,
+      "def_id": 54,
       "lean_name": "SandproofLoadBlobRust.controller.lifecycle_inbox.codec.read_blob_pair",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::read_blob_pair",
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 369,
-        "end_line": 375
+        "begin_line": 368,
+        "end_line": 374
       },
       "is_opaque": false,
       "can_fail": true,
@@ -140,15 +140,15 @@
       "reducible": false
     },
     {
-      "def_id": 37,
+      "def_id": 36,
       "lean_name": "SandproofLoadBlobRust.controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{impl core::ops::function::FnOnce<(&'_ rusqlite::row::Row<'_>,), core::result::Result<(alloc::vec::Vec<u8>, alloc::vec::Vec<u8>), rusqlite::error::Error>> for sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::query_bytes_pair::{closure}<'_0>}::call_once",
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 27,
-        "end_line": 27
+        "begin_line": 26,
+        "end_line": 26
       },
       "is_opaque": false,
       "can_fail": true,
@@ -164,8 +164,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 24,
-        "end_line": 28
+        "begin_line": 23,
+        "end_line": 27
       },
       "is_opaque": false,
       "can_fail": true,
@@ -181,8 +181,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 379,
-        "end_line": 384
+        "begin_line": 378,
+        "end_line": 383
       },
       "is_opaque": false,
       "can_fail": true,
@@ -241,7 +241,7 @@
       }
     },
     {
-      "def_id": 53,
+      "def_id": 40,
       "lean_name": "rusqlite.statement.Statement",
       "lean_file": "SandproofLoadBlob/TypesExternal_Template.lean",
       "rust_name": "rusqlite::statement::Statement",
@@ -253,7 +253,7 @@
       }
     },
     {
-      "def_id": 100,
+      "def_id": 85,
       "lean_name": "rusqlite.types.value_ref.ValueRef",
       "lean_file": "SandproofLoadBlob/TypesExternal_Template.lean",
       "rust_name": "rusqlite::types::value_ref::ValueRef",
@@ -265,7 +265,7 @@
       }
     },
     {
-      "def_id": 127,
+      "def_id": 124,
       "lean_name": "rusqlite.types.from_sql.FromSqlError",
       "lean_file": "SandproofLoadBlob/TypesExternal_Template.lean",
       "rust_name": "rusqlite::types::from_sql::FromSqlError",
@@ -373,7 +373,7 @@
       }
     },
     {
-      "def_id": 57,
+      "def_id": 44,
       "lean_name": "SandproofLoadBlobRust.sandbox_controller_core.maintenance.windows.ReadWindowReject",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::WindowReject",
@@ -385,7 +385,7 @@
       }
     },
     {
-      "def_id": 56,
+      "def_id": 43,
       "lean_name": "SandproofLoadBlobRust.sandbox_controller_core.maintenance.slots.ReadSlotReject",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject",
@@ -397,7 +397,7 @@
       }
     },
     {
-      "def_id": 55,
+      "def_id": 42,
       "lean_name": "SandproofLoadBlobRust.sandbox_controller_core.maintenance.retirement.ReadRetirementReject",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::RetirementReject",
@@ -500,15 +500,15 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 27,
-        "end_line": 27
+        "begin_line": 26,
+        "end_line": 26
       }
     }
   ],
   "globals": [],
   "trait_decls": [
     {
-      "def_id": 35,
+      "def_id": 15,
       "lean_name": "SandproofLoadBlobRust.rusqlite.params.sealed.Sealed",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "rusqlite::params::sealed::Sealed",
@@ -532,7 +532,7 @@
       }
     },
     {
-      "def_id": 52,
+      "def_id": 42,
       "lean_name": "SandproofLoadBlobRust.rusqlite.types.from_sql.FromSql",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "rusqlite::types::from_sql::FromSql",
@@ -544,7 +544,7 @@
       }
     },
     {
-      "def_id": 66,
+      "def_id": 65,
       "lean_name": "SandproofLoadBlobRust.rusqlite.row.sealed.Sealed",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "rusqlite::row::sealed::Sealed",
@@ -556,7 +556,7 @@
       }
     },
     {
-      "def_id": 51,
+      "def_id": 41,
       "lean_name": "SandproofLoadBlobRust.rusqlite.row.RowIndex",
       "lean_file": "SandproofLoadBlob/Types.lean",
       "rust_name": "rusqlite::row::RowIndex",
@@ -570,7 +570,7 @@
   ],
   "trait_impls": [
     {
-      "def_id": 65,
+      "def_id": 24,
       "lean_name": "SandproofLoadBlobRust.Tuple.Insts.RusqliteParamsSealedSealed",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "rusqlite::params::{impl rusqlite::params::sealed::Sealed for ()}",
@@ -580,7 +580,7 @@
         "begin_line": 230,
         "end_line": 230
       },
-      "impl_trait_def_id": 35,
+      "impl_trait_def_id": 15,
       "impl_trait_rust_name": "rusqlite::params::sealed::Sealed",
       "impl_trait_is_builtin": false
     },
@@ -600,7 +600,7 @@
       "impl_trait_is_builtin": false
     },
     {
-      "def_id": 116,
+      "def_id": 110,
       "lean_name": "SandproofLoadBlobRust.Usize.Insts.RusqliteRowSealedSealed",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "rusqlite::row::sealed::{impl rusqlite::row::sealed::Sealed for usize}",
@@ -610,12 +610,12 @@
         "begin_line": 421,
         "end_line": 421
       },
-      "impl_trait_def_id": 66,
+      "impl_trait_def_id": 65,
       "impl_trait_rust_name": "rusqlite::row::sealed::Sealed",
       "impl_trait_is_builtin": false
     },
     {
-      "def_id": 89,
+      "def_id": 73,
       "lean_name": "SandproofLoadBlobRust.Usize.Insts.RusqliteRowRowIndex",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "rusqlite::row::{impl rusqlite::row::RowIndex for usize}",
@@ -625,12 +625,12 @@
         "begin_line": 434,
         "end_line": 434
       },
-      "impl_trait_def_id": 51,
+      "impl_trait_def_id": 41,
       "impl_trait_rust_name": "rusqlite::row::RowIndex",
       "impl_trait_is_builtin": false
     },
     {
-      "def_id": 112,
+      "def_id": 106,
       "lean_name": "SandproofLoadBlobRust.alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql",
       "lean_file": "SandproofLoadBlob/Funs.lean",
       "rust_name": "rusqlite::types::from_sql::{impl rusqlite::types::from_sql::FromSql for alloc::vec::Vec<u8>}",
@@ -640,7 +640,7 @@
         "begin_line": 229,
         "end_line": 229
       },
-      "impl_trait_def_id": 52,
+      "impl_trait_def_id": 42,
       "impl_trait_rust_name": "rusqlite::types::from_sql::FromSql",
       "impl_trait_is_builtin": false
     },
@@ -667,8 +667,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 27,
-        "end_line": 27
+        "begin_line": 26,
+        "end_line": 26
       },
       "impl_trait_def_id": 8,
       "impl_trait_rust_name": "core::ops::function::FnOnce",

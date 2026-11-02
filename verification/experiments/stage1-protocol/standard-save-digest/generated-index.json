@@ -5,22 +5,25 @@
   "source_or_library_adopted": false,
   "captures": {
     "actual": {
-      "ir_sha256": "879d48d674fbcd02f6a9154ce8fa4bb9c79a2b7ee24802b017015ebdec4fa705",
-      "ir_value_sha256": "f269a2c97c001a28c95d62d4ea7b33cb9adf3145bd7e185388eb57d2e15c5d4a",
+      "ir_sha256": "ff101d8b91f064375bbda7a21e48b1cac6bfb7aebc9265c512e310866afa3afc",
+      "ir_value_sha256": "65a7ce2cda08dabdd7edc155589902ef5cc5b2082125af01597c3990bffeadc7",
       "published": {
         "SandproofStandardSaveDigest/Funs.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/SandproofStandardSaveDigest/Funs.lean",
-          "sha256": "7a467d657875c58ff2ad4522f93513d66350ef1f540d29f2eba62d9db7c87498"
+          "sha256": "cebd53fd68ccb44979f1d5ad1293b06fb8996eae7b9944f41e9bba0de22270c1"
         },
         "SandproofStandardSaveDigest/Types.lean": {
           "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/SandproofStandardSaveDigest/Types.lean",
-          "sha256": "7bb2cf7e508e712ff654076c600dc1d1d56387751a32e0832a37301c0faca45c"
+          "sha256": "cfba1364ee9ec0b45d93dc416d63fba31ee4b7e3e7080880d30a03f4213afcd1"
         },
         "translation.json": {
           "path": "verification/aeneas/stage1-protocol/standard-save-digest/actual/translation.json",
-          "sha256": "d1893538d59537166bd67b969118ea16ddbd2a65e8e11fc55b88ac26dfa5e9bb"
+          "sha256": "b1343b97dfaad0ee26f815447fbc1e03f889ae759c0aee845d2ca267a4af36fc"
         }
-      }
+      },
+      "captured_source_commit": "6bf5fb715b06013fc287f3c645ab44242c84f61e",
+      "original_capture_result_sha256": "561222f99ae45613a5fae738a1a1d92c19251aac4173b170367e98de1610d5a8",
+      "formal_acceptance": false
     },
     "save-input-empty": {
       "ir_sha256": "5c4aaba03c4ca7559f3b4d06921dd7d548de45f08594bd66c2aed35f13101309",
@@ -117,5 +120,6 @@
         }
       }
     }
-  }
+  },
+  "source_adopted": true
 }

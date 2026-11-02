@@ -5,14 +5,14 @@
   "functions": [
     {
       "def_id": 26,
-      "lean_name": "controller.lifecycle_inbox.codec.sha256_bytes",
+      "lean_name": "controller.lifecycle_inbox.sha256.digest",
       "lean_file": "SandproofStandardSaveDigest/FunsExternal_Template.lean",
-      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::sha256_bytes",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
       "is_local": true,
       "source": {
-        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 368,
-        "end_line": 370
+        "file": "controller-service/src/controller/lifecycle_inbox/sha256.rs",
+        "begin_line": 4,
+        "end_line": 6
       },
       "is_opaque": true,
       "can_fail": true,
@@ -28,8 +28,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 135,
-        "end_line": 137
+        "begin_line": 134,
+        "end_line": 136
       },
       "is_opaque": false,
       "can_fail": true,
@@ -45,8 +45,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 160,
-        "end_line": 167
+        "begin_line": 159,
+        "end_line": 166
       },
       "is_opaque": false,
       "can_fail": true,
@@ -62,8 +62,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 373,
-        "end_line": 375
+        "begin_line": 377,
+        "end_line": 379
       },
       "is_opaque": false,
       "can_fail": true,
@@ -79,8 +79,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 378,
-        "end_line": 383
+        "begin_line": 382,
+        "end_line": 387
       },
       "is_opaque": false,
       "can_fail": true,
@@ -122,8 +122,8 @@
       "is_local": true,
       "source": {
         "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-        "begin_line": 127,
-        "end_line": 129
+        "begin_line": 126,
+        "end_line": 128
       }
     }
   ],

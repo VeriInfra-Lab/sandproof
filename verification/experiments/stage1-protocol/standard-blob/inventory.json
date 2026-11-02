@@ -192,7 +192,7 @@
     "external/ReadValueData.lean.in": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9",
     "external/TypesExternal.lean.in": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a",
     "function-inventory.json": "c2944b1aa91d4cf243d9b0cec65c5f50e46d976857bff53e34a44712ea8528e5",
-    "generated-index.json": "5f2a66f9648a23ca1e29c4640e5e95ec1f53715fb32bfe6859997f94d25cbb88",
+    "generated-index.json": "56ffdafdb861e25a53084450772330fde5de73326c08331228cfbb8835ffa152",
     "materialization.json": "5964ce4dba5267a0e877a00b19ecca5cf00626b34df570cb2123dd652dfb10a8",
     "mutations.json": "ef77ec44241b804493ca5aa0872eb1c9a9d028131b80c641b17120b845233d8c",
     "native-cases.rs.in": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
@@ -1081,9 +1081,9 @@
     }
   },
   "generated": {
-    "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Funs.lean": "01dddc5e820daddc6072ae95a6ffbbfd8e5393726f9eb047e8ad855ca5c92a7f",
-    "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Types.lean": "2d024659fd86b98cbeff74fa723d7057f680098e800ef9308d80533c36890b28",
-    "verification/aeneas/stage1-protocol/standard-blob/actual/translation.json": "8d9ed6a093eaa7edfbce203ee0e718dc42f7108c8721fb53735382c06f983515",
+    "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Funs.lean": "64560458e367590a8027ec0409e415756c81a22cb5036b7daade9722783690e4",
+    "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Types.lean": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e",
+    "verification/aeneas/stage1-protocol/standard-blob/actual/translation.json": "8bd33c171a07bed4a56ac69dce794865f70dcbc2178a3d6a5cab7e1790e24fe0",
     "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Funs.lean": "5c63d7730435a2345f308e3a6ec946c6b1c4317b07aafa287799718a077a9f43",
     "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Types.lean": "ea140f926ac9f0ba9c45f0aa893826d3145dc23898b58265ef54278d495c19b6",
     "verification/aeneas/stage1-protocol/standard-blob/graphic/translation.json": "7bc2a58df7dbd60f5b85ce6836959a652051ac0b370fe4a71338ab4839ae14df",

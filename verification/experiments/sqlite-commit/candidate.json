@@ -9,7 +9,29 @@
     "controller-service/src/controller/cache_tests.rs": "d4336427e823558e1615807099bd46e024d9c4c1ac23f98b66b8037d7cedd9ab",
     "controller-service/src/journal.rs": "acafe478e78973e7be97723cc103bbe1e7dfe4a167167446e1b40a4fb4201b6f",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
-    "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
+    "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "controller-core/src/controller.rs": "1a08d5360cbffe8a5739e64074e14cac615bccbad726f0a26982e192a1865280",
+    "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
+    "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
+    "controller-core/src/request.rs": "3384865ad6c7b7a91c5859b55cb88ef49d83480bc56821e3b817d1aee64be3fe",
+    "controller-core/src/effect.rs": "a1ac32ff4c4232e274e0ee31f78aadba3bafe0ca167e67ef5b7c364e905f0eb1",
+    "controller-core/src/scheduler.rs": "bd90d4387cc5470e873e3f17a41092721a2e8b2aa7476dfdce8b21a65bc50167",
+    "controller-core/src/worker.rs": "93d12984975b43b64fc289ef5a14b750516477b6bdaca856757b757794a4447c",
+    "controller-core/src/publication.rs": "27b068161f26d3bc27d6c1b70da0b2fd984ff281e0aeba591355401934565ae1",
+    "controller-core/src/auxiliary.rs": "719ad906c6f96476149a916ad5083e9740b5d4aeeb4d6a5873e2267455a04d54",
+    "controller-core/src/recovery_monitor.rs": "de372b099fdf31c818c6d2e4ec7da15fddf74871ee37e5b093067761d80fcb47",
+    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
+    "controller-core/src/maintenance/retirement.rs": "190c4131bb3e43bb0ab5e4396e2f4f9aeb0215ee660b80a81333fff6f82cad9f",
+    "controller-core/src/maintenance/slots.rs": "688d594565e4ebb584795b4f22b84e1eda20f089ebc8e809e8881a388a823114",
+    "controller-core/src/maintenance/windows.rs": "aa335fb3cefeb1f8c118b8a7ca42b41f9ff7413979fc2fee5e0d0a2c46bd6e32",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "controller-core/src/capture/drain.rs": "218dd9c660b7478cbc2f58da2b55edae63ad3f040709cbc34e43826a7c200cc1",
+    "controller-core/src/maintenance/released_execution.rs": "0a31df15b42e2278daa43c62b4bcd2a122462f4fcd5401df01de736997956360"
   },
   "candidate_files": {
     "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
@@ -50,5 +72,7 @@
     "role": "reuse unchanged original SQLite core mathematics; recapture actual adopted core and wrapper/Drop under current fixed tools"
   },
   "production_adopted": true,
-  "historical_candidate_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173"
+  "historical_candidate_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
+  "current_capture_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+  "current_capture_formal_acceptance": false
 }
