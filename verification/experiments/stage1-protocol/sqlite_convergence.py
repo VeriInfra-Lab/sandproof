@@ -17,6 +17,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
 HERE = Path('verification/experiments/sqlite-commit')
 LIB = Path('verification/aeneas/sqlite/SandproofSqlite')
 MEMO = 'controller-service/src/controller/transaction/memo.rs'
