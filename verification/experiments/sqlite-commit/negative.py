@@ -40,7 +40,7 @@ def consume_current_replay(root, replay, readback):
             or current.get("source_commit") != baseline.get("base")
             or current.get("generated_files") != generated
             or baseline.get("source_unchanged") is not True
-            or not baseline.get("stages")
+            or [row.get("stage") for row in baseline.get("stages", [])] != ["charon-core", "aeneas", "charon-wrapper"]
             or any(row["exit_code"] != 0 for row in baseline["stages"])):
         raise ValueError("explicit current-registry replay readback differs")
     for name in generated:
@@ -60,7 +60,7 @@ def consume_current_replay(root, replay, readback):
 
 def consume_native_fault(root, source, directory, output, profile, command):
     """Read one exact Ning component receipt; this never runs ordinary tests."""
-    from tools.acceptance_receipts import load_success, rust_inputs
+    from tools.acceptance_receipts import load_success, rust_inputs, digest
     from tools.check_sqlite_extraction import read_json
     directory = directory.resolve(strict=True)
     for name in ("summary.json", "receipt.json", "command.log"):
@@ -81,6 +81,7 @@ def consume_native_fault(root, source, directory, output, profile, command):
             or summary.get("mutated_memo_sha256") != sha(source/"controller-service/src/controller/transaction/memo.rs")
             or summary.get("unchanged_source_files") != len(profile["source_files"])-1
             or len(used) != 1 or used[0].get("sha256") != sha(directory/"receipt.json")
+            or used[0].get("identity") != digest(key)
             or key.get("label") != "sqlite-commit-native-rejected"
             or key.get("command") != command or key.get("options") != {}
             or key.get("rust") != rust_inputs(source)
