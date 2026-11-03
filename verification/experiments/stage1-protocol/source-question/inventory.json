@@ -350,7 +350,7 @@
     "verification/experiments/stage1-protocol/source-question/formal.py": "623cecc3dc82c192bfcc06b6004463116e303117a7a3740a25a5f8397fba03bf",
     "verification/experiments/stage1-protocol/source-question/support.py": "3bd5f16bca68e604018bac6fdb29007a66355bc326b1c1bc1f6c2846f8ceb88e",
     "verification/experiments/stage1-protocol/source-question/native.py": "fcbed170f1b86c00449c275f525a78bb3886a74b0fef40d09c519b2e88096206",
-    "verification/experiments/stage1-protocol/source-question/mutations.json": "23f5322f91ec81ca4f3fd53b3c11b15c8df9059e5e338d4c641a63345bc2f9dd",
+    "verification/experiments/stage1-protocol/source-question/mutations.json": "894f2f2d51819328915727d0a0f9954d449fb72ecfe7db742f2d19de5d1e1c8b",
     "verification/experiments/stage1-protocol/source-question/reuse.json": "880fd934d34d53d712920c8760992a49ea4104b1e1fc9280fcc0db88c2333a9d"
   },
   "generated": {
@@ -536,6 +536,35 @@
       "inputs:controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": {
         "original": "2e6240692a5ab39b05276cdb171ce13672354de797e2c28e65d1702c39b73130",
         "current": "072fd1304317567dd8b50e24665b9110b1c375a4f6ce9a28ba9e716e1e7e2fd2"
+      }
+    },
+    "mutated_source_files": {
+      "first-resource": {
+        "original_capture_source_commit": "e26fce0f8ee02434411e1b922fcb83093ba41445",
+        "original_mutated_file_sha256": "27eb1c7b9ca6b0079f0e5969dc7e016755eaa252b28999a58593216822edc85f",
+        "reviewed_current_mutated_file_sha256": "f0df4a4fb58a841498428a53d4cdd87dc65dc1e365fe5fac3fcdf30ec29f13b2",
+        "unchanged_mutated_functions_sha256": {
+          "question_from_binding": "52419b6f55b8237f51f26d998be0b32d29f1c877f1e52bf22d9fcef547c81a44"
+        },
+        "edits_unchanged": true
+      },
+      "options-binding": {
+        "original_capture_source_commit": "e26fce0f8ee02434411e1b922fcb83093ba41445",
+        "original_mutated_file_sha256": "9f21931ce5ae8ae78b15244f1778db63cd6a6d4b8e9a639d4075abfca3ed090d",
+        "reviewed_current_mutated_file_sha256": "616f85b6814976b85242aa7360bf964e4eb37141f6b064db4b90e6732d144c74",
+        "unchanged_mutated_functions_sha256": {
+          "question_from_binding": "ff1911c48c179a66ea6f4d3083db3ee7a95b7dfc84363f861928f0eddd9c5da8"
+        },
+        "edits_unchanged": true
+      },
+      "disk-as-material": {
+        "original_capture_source_commit": "e26fce0f8ee02434411e1b922fcb83093ba41445",
+        "original_mutated_file_sha256": "fd885979eccaaf6b044aa60e317c490e489557c0e5d381ba2ea3a05a5e5ee985",
+        "reviewed_current_mutated_file_sha256": "0c50e00f1a3220053cad5b8be2a0f28882a04daa78e2d4ec24f72be6ff95a11a",
+        "unchanged_mutated_functions_sha256": {
+          "question_from_binding": "e6879f99b5fa9bcf9e5d3adeaef5d344954d2599df76567222188217ca923328"
+        },
+        "edits_unchanged": true
       }
     }
   }

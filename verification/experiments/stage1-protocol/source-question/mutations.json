@@ -1,6 +1,6 @@
 {
   "first-resource": {
-    "sha256": "27eb1c7b9ca6b0079f0e5969dc7e016755eaa252b28999a58593216822edc85f",
+    "sha256": "f0df4a4fb58a841498428a53d4cdd87dc65dc1e365fe5fac3fcdf30ec29f13b2",
     "edits": [
       {
         "before": "anchor.original_actions[1].resource.clone()",
@@ -9,7 +9,7 @@
     ]
   },
   "options-binding": {
-    "sha256": "9f21931ce5ae8ae78b15244f1778db63cd6a6d4b8e9a639d4075abfca3ed090d",
+    "sha256": "616f85b6814976b85242aa7360bf964e4eb37141f6b064db4b90e6732d144c74",
     "edits": [
       {
         "before": "    work_binding: sandproof_protocol::lifecycle::ContentDigest,\n) -> SourceWork {",
@@ -22,7 +22,7 @@
     ]
   },
   "disk-as-material": {
-    "sha256": "fd885979eccaaf6b044aa60e317c490e489557c0e5d381ba2ea3a05a5e5ee985",
+    "sha256": "0c50e00f1a3220053cad5b8be2a0f28882a04daa78e2d4ec24f72be6ff95a11a",
     "edits": [
       {
         "before": "        limits: limits.clone(),",
