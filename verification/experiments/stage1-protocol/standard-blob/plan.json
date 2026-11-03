@@ -2,7 +2,7 @@
   "kind": "current-minimal-standard-blob-native-plan",
   "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
   "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
-  "cases_sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+  "cases_sha256": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
   "test_count": 9,
   "native_variants": {
     "array-params": {

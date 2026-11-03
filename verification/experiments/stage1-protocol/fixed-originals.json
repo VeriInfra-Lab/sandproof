@@ -2482,11 +2482,11 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in": {
-      "sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+      "sha256": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/plan.json": {
-      "sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
+      "sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/public-registration-candidate.patch": {
@@ -14619,7 +14619,20 @@
       },
       "source_review": "The real standard BLOB mathematical run used 06835588; all current Rust and mathematical producer inputs still match. Its retained capture REUSE records remain distinct from this original mathematical RUN; metadata-only later changes do not relabel execution.",
       "approved_input_rebindings": {},
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in",
+          "original_sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+          "current_sha256": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/plan.json",
+          "original_sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
+          "current_sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        }
+      ]
     },
     "create-standard-identity": {
       "package": "create-standard-identity",
@@ -29980,7 +29993,20 @@
           "current": "6c49b7866459b128960602c0f43a5596cdc2f056a795bac6d6141528a7b1bfc1"
         }
       },
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in",
+          "original_sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+          "current_sha256": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/plan.json",
+          "original_sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
+          "current_sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        }
+      ]
     },
     "standard-digest": {
       "package": "standard-digest",
@@ -30997,7 +31023,20 @@
           "current": "6c49b7866459b128960602c0f43a5596cdc2f056a795bac6d6141528a7b1bfc1"
         }
       },
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in",
+          "original_sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+          "current_sha256": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-blob/plan.json",
+          "original_sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
+          "current_sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
+          "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        }
+      ]
     }
   },
   "log_archives": [

@@ -13,8 +13,8 @@ fn standard(sql: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
 }
 
 fn table_standard(
-    left: rusqlite::types::Value,
-    right: rusqlite::types::Value,
+    left: &rusqlite::types::Value,
+    right: &rusqlite::types::Value,
 ) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
     let connection = Connection::open_in_memory()?;
     connection.execute_batch("CREATE TABLE proof_rows(a BLOB, b BLOB)")?;
@@ -32,8 +32,8 @@ fn table_standard(
 fn common_normal() {
     assert_eq!(
         table_standard(
-            rusqlite::types::Value::Blob(vec![17; 32]),
-            rusqlite::types::Value::Blob(vec![17; 32])
+            &rusqlite::types::Value::Blob(vec![17; 32]),
+            &rusqlite::types::Value::Blob(vec![17; 32])
         )
         .unwrap(),
         (vec![17; 32], vec![17; 32])
@@ -44,8 +44,8 @@ fn common_normal() {
 fn distinct_complete_columns() {
     assert_eq!(
         table_standard(
-            rusqlite::types::Value::Blob(vec![17; 32]),
-            rusqlite::types::Value::Blob(vec![29; 32])
+            &rusqlite::types::Value::Blob(vec![17; 32]),
+            &rusqlite::types::Value::Blob(vec![29; 32])
         )
         .unwrap(),
         (vec![17; 32], vec![29; 32])
@@ -54,7 +54,8 @@ fn distinct_complete_columns() {
 
 #[test]
 fn original_first_conversion_error() {
-    match table_standard(rusqlite::types::Value::Null, rusqlite::types::Value::Null).unwrap_err() {
+    match table_standard(&rusqlite::types::Value::Null, &rusqlite::types::Value::Null).unwrap_err()
+    {
         JournalError::Sqlite(Error::InvalidColumnType(index, name, kind)) => {
             assert_eq!((index, name, kind), (0, "a".to_owned(), Type::Null));
         }
@@ -65,8 +66,8 @@ fn original_first_conversion_error() {
 #[test]
 fn original_second_conversion_error() {
     match table_standard(
-        rusqlite::types::Value::Blob(vec![17; 32]),
-        rusqlite::types::Value::Null,
+        &rusqlite::types::Value::Blob(vec![17; 32]),
+        &rusqlite::types::Value::Null,
     )
     .unwrap_err()
     {
