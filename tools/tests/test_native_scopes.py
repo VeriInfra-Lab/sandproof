@@ -189,6 +189,7 @@ class NativeScopeTests(unittest.TestCase):
 
     def test_convergence_delegates_without_running_retained_or_old_drivers(self):
         registered = mock.Mock()
+        registered.native_scope.return_value = 'stage1-protocol-convergence'
         work = self.base/'convergence-work'
         with mock.patch.object(suite, 'native_case') as retained, \
                 mock.patch.object(suite, 'load', return_value=registered), \
@@ -196,8 +197,23 @@ class NativeScopeTests(unittest.TestCase):
             suite.run_stage1_native(work, scope='stage1-protocol-convergence')
         retained.assert_not_called()
         run.assert_not_called()
+        registered.native_scope.assert_called_once_with('protocol-convergence')
         registered.run_native.assert_called_once_with(suite.ROOT, work/'stage1-v3',
             profile='protocol-convergence', scope='stage1-protocol-convergence')
+
+    def test_convergence_refuses_a_different_registered_native_scope(self):
+        registered = mock.Mock()
+        registered.native_scope.return_value = 'stage1-protocol'
+        work = self.base/'convergence-work'
+        with mock.patch.object(suite, 'native_case') as retained, \
+                mock.patch.object(suite, 'load', return_value=registered), \
+                mock.patch.object(suite.subprocess, 'run') as run, \
+                self.assertRaisesRegex(ValueError, 'native profile and scope do not match'):
+            suite.run_stage1_native(work, scope='stage1-protocol-convergence')
+        registered.native_scope.assert_called_once_with('protocol-convergence')
+        registered.run_native.assert_not_called()
+        retained.assert_not_called()
+        run.assert_not_called()
 
     def test_limited_packet_admits_only_explicit_scope_and_never_executes_in_formal_role(self):
         seal = self.packet()
