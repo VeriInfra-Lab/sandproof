@@ -1408,7 +1408,10 @@ class CheckpointExecution(unittest.TestCase):
     def test_public_source_guard_rejects_mode_change_even_when_bytes_and_seal_are_unchanged(self):
         self.public_cli_fixture(change_modes=True)
 
-    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False):
+    def test_public_cli_refuses_rejected_sqlite_packet_before_executor(self):
+        self.public_cli_fixture(reject_sqlite=True)
+
+    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False, reject_sqlite=False):
         cache = self.directory/'native'
         evidence = cache/'commands/fixture/evidence'
         evidence.mkdir(parents=True)
@@ -1461,7 +1464,8 @@ class CheckpointExecution(unittest.TestCase):
                     patch.object(registered,'_evidence',return_value=evidence), \
                     patch.object(registered,'_original_file',side_effect=original_file), patch.object(registered,'_retained_result'), \
                     patch.object(registered.CONVERGENCE,'extra',return_value=sqlite_adapter), \
-                    patch.object(sqlite_adapter,'_native_readback',return_value={}) as sqlite_readback, \
+                    patch.object(sqlite_adapter,'_native_readback',return_value={}, side_effect=(
+                        ValueError('controlled SQLite packet rejection') if reject_sqlite else None)) as sqlite_readback, \
                     patch.object(registered,'_check_create_native_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=context), \
@@ -1473,6 +1477,13 @@ class CheckpointExecution(unittest.TestCase):
                     patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal',SANDPROOF_NATIVE_EVIDENCE=str(cache),
                         SANDPROOF_FORMAL_CACHE=str(self.directory/'runtime-cache'), SANDPROOF_STAGE1_JOBS='2',
                         SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+                if reject_sqlite:
+                    with self.assertRaisesRegex(ValueError, 'controlled SQLite packet rejection'):
+                        registered.main()
+                    execute.assert_not_called()
+                    sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                    self.assertFalse(output.exists())
+                    return
                 error = OSError if interrupt_final else ValueError
                 message = 'controlled final replacement failure' if interrupt_final else 'controlled executor boundary'
                 if change_modes:
