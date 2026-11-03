@@ -189,16 +189,18 @@ V5 持久事务/回执、V6 完整 bundle/宿主退出与 V9 历史、身份/索
 
 本片基于 integration `d3004a46449c0a11982fb21a6853f56a43f3f689`，采用
 `edfeb932c808b03e4e2c8505c174646566d41efd` 的唯一 Stop 派发分支和
-`9d8aab44bcf2a6834aa74b66d28645cf000d5827` 的共享 Option 读取及单点原方法判断。
+`e5bbe04f67d979e2f4a54771c547b01937e128ec` 的可选共享借用及单点原方法判断。
 非 Stop 仍先执行原退休检查；Stop 进入共享的原守卫和更新体。释放记录的真实
 `command` 只构造终止 InstallFence，不能由此把完整退休验证算法当作已证明。
 
-固定原 CaptureCaller 在候选 `8ff4c5cdd2c53038e33e8abf7079718a01a8279e` 完成
-19 根的 Charon→Aeneas 重生成，耗时 12.670229 秒；新增三个实际根为
+固定原 CaptureCaller 在候选 `890c721059b676018626651fb174008bea661c6b` 完成
+19 根的 Charon→Aeneas 重生成，耗时 12.797742 秒；新增三个实际根为
 `effect::dispatch_stop`、`ReleasedExecution::command` 和 `effect::acknowledge_effect`。
 派发的唯一更新体、回执写回及 `effect::insert_unique` 的两个原循环保持透明。
 Types、Funs 和 translation 由完整原产物逐字节采用；原 11 个外部符号及其模型不变，
 没有修改生成正文、导入模板公理或增加业务可信条件。
+`Option::as_ref` 使用原标准库函数体的透明抽取，不另加外部模型；正常 None/Some
+共享读取与实际调用体一同保留，不能将参数改写当作新授权或资源所有权结论。
 
 这只确认真实函数能够抽取，**不表示新增 Lean 对应、错误版、普通回归或公共入口
 已经通过**。本片改变了共享生成闭包；上述 #748/#749/#750 的旧结论仍限其原输入，
