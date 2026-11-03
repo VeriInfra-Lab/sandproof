@@ -7,7 +7,7 @@ open CaptureCallerRust.sandbox_controller_core
 open SandboxModel.Lifecycle.CaptureHandoffCaller
 
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance safetyDecidable1 : DecidableEq model.EffectId := Classical.decEq _
 
 def actualAccepts (world : model.World) (input : StopInput) (decision : effect.EffectDecision) : Prop :=
   effect.dispatch_stop world (stopId input.sandbox input.epoch input.generation input.vm input.attempt) =

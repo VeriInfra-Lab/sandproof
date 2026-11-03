@@ -7,8 +7,8 @@ open SandboxModel.Lifecycle.CaptureHandoffCaller
 
 noncomputable section
 open SandboxModel.Lifecycle.PausePublication
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance publicationDecidable1 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance publicationDecidable2 : DecidableEq model.EffectId := Classical.decEq _
 
 /-- Both actual acknowledgements and actual publication are constructed; no future success is assumed. -/
 theorem stop_commit_receipts_publish (world : model.World) (sandbox : ids.SandboxId) (source : model.RestoreSource)

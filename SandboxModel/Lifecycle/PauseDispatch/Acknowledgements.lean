@@ -93,7 +93,7 @@ theorem acknowledge_frame (world next : model.World) (id : model.EffectId)
   rfl
 
 noncomputable section
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance acknowledgementsDecidable1 : DecidableEq model.LogicalEffectId := Classical.decEq _
 
 theorem acknowledge_current_success_result (world next : model.World)
     (command : model.Command) (supported : SandboxModel.Lifecycle.PausePublication.PublicationCommand command)
@@ -135,7 +135,7 @@ theorem acknowledge_current_success_result (world next : model.World)
 end
 
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance acknowledgementsDecidable2 : DecidableEq model.EffectId := Classical.decEq _
 
 theorem acknowledge_effect_entries (world next : model.World)
     (command : model.Command) (supported : SandboxModel.Lifecycle.PausePublication.PublicationCommand command)
@@ -240,8 +240,8 @@ end
   · exact ⟨by simp,by simp⟩
 
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance acknowledgementsDecidable3 : DecidableEq model.EffectId := Classical.decEq _
+local instance acknowledgementsDecidable4 : DecidableEq model.LogicalEffectId := Classical.decEq _
 
 theorem acknowledge_current_accepts (world : model.World)
     (command : model.Command) (supported : SandboxModel.Lifecycle.PausePublication.PublicationCommand command)

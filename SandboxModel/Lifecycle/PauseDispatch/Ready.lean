@@ -8,8 +8,8 @@ open SandboxModel.Lifecycle.CaptureHandoffCaller
 
 noncomputable section
 open SandboxModel.Lifecycle.PausePublication
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance readyDecidable1 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance readyDecidable2 : DecidableEq model.EffectId := Classical.decEq _
 
 /-- Exactly the existing publication inputs, leaving the two receipt checks to actual executions below. -/
 structure ReadyRest (world : model.World) (sandbox : ids.SandboxId) (source : model.RestoreSource) where
@@ -207,8 +207,8 @@ end
 
 noncomputable section
 open SandboxModel.Lifecycle.PausePublication
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance readyDecidable3 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance readyDecidable4 : DecidableEq model.EffectId := Classical.decEq _
 
 def ready_rest_after_receipt (world next : model.World) (sandbox : ids.SandboxId) (source : model.RestoreSource)
     (rest : ReadyRest world sandbox source) (command : model.Command)

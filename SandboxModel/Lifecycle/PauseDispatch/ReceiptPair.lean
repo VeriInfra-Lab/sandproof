@@ -6,8 +6,8 @@ open CaptureCallerRust.sandbox_controller_core
 open SandboxModel.Lifecycle.CaptureHandoffCaller
 
 noncomputable section
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance receiptPairDecidable1 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance receiptPairDecidable2 : DecidableEq model.EffectId := Classical.decEq _
 
 theorem acknowledge_current_logical_entries (world next : model.World)
     (command : model.Command) (supported : SandboxModel.Lifecycle.PausePublication.PublicationCommand command)
@@ -89,8 +89,8 @@ theorem acknowledge_present_index_frame (world next : model.World)
 end
 
 noncomputable section
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance receiptPairDecidable3 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance receiptPairDecidable4 : DecidableEq model.EffectId := Classical.decEq _
 
 theorem two_current_receipts_accept (world : model.World)
     (first second : model.Command)

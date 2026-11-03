@@ -9,8 +9,8 @@ open SandboxModel.Lifecycle.CaptureHandoffCaller
 noncomputable section
 open SandboxModel.Lifecycle.PausePublication
 open SandboxModel.Lifecycle.PausePublication.Fixture
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance witnessDecidable1 : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance witnessDecidable2 : DecidableEq model.EffectId := Classical.decEq _
 
 /-- Both receipts are genuinely missing in this finite post-Stop input domain. -/
 def beforeReceipts : model.World := {Fixture.world false with

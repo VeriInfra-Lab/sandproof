@@ -135,7 +135,7 @@ theorem stop_success_checks (world : model.World)
         simpa only [Result.ok.injEq,core.result.Result.Ok.injEq] using final.symm
 
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance framesDecidable1 : DecidableEq model.EffectId := Classical.decEq _
 
 /-- A successful selector proves the same full id is written and only the effects table changes. -/
 theorem selected_stop_bound (world : model.World)

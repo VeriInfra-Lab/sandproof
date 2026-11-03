@@ -413,8 +413,8 @@ theorem queue_insert_four : transition.insert_unique model.EffectId.Insts.CoreCl
   simp only [transition.insert_unique,scanned,bind_tc_ok,Bool.false_eq_true,if_false,pushed,copied]
 
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance acceptanceDecidable1 : DecidableEq model.EffectId := Classical.decEq _
+local instance acceptanceDecidable2 : DecidableEq model.LogicalEffectId := Classical.decEq _
 
 def priorEffects : store.Store model.EffectId model.EffectStatus :=
   ⟨four (Fixture.id Fixture.fence,Fixture.success) (Fixture.id Fixture.freeze,Fixture.success)
@@ -510,8 +510,8 @@ theorem actual_fresh_commit_effect : transition.commit_effect registeredWorld Sa
 
 end
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance acceptanceDecidable3 : DecidableEq model.EffectId := Classical.decEq _
+local instance acceptanceDecidable4 : DecidableEq model.LogicalEffectId := Classical.decEq _
 
 theorem enqueue_fresh_stop : transition.enqueue registeredWorld SandboxModel.Lifecycle.PauseDispatch.Acceptance.command = .ok queued := by
   have initial : model.EffectId.initial SandboxModel.Lifecycle.PauseDispatch.Acceptance.command = .ok stopId := rfl
@@ -637,7 +637,7 @@ theorem actual_commit_record_accepts : worker.pause_stop.record before commitId 
 
 end
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
+local instance acceptanceDecidable5 : DecidableEq model.EffectId := Classical.decEq _
 
 theorem dispatch_changes_exact_registered_stop : effect.dispatch_effect queued stopId = .ok SandboxModel.Lifecycle.PauseDispatch.Acceptance.world := by
   have write : store.Store.put model.EffectId.Insts.CoreCmpPartialEqEffectId queued.effects stopId .Dispatched =
@@ -679,8 +679,8 @@ theorem actual_registered_stop_dispatches : effect.dispatch_stop queued stopId =
 
 end
 noncomputable section
-local instance : DecidableEq model.EffectId := Classical.decEq _
-local instance : DecidableEq model.LogicalEffectId := Classical.decEq _
+local instance acceptanceDecidable6 : DecidableEq model.EffectId := Classical.decEq _
+local instance acceptanceDecidable7 : DecidableEq model.LogicalEffectId := Classical.decEq _
 
 theorem full_stop_created :
     tableLookup stopId queued.effects.entries.val = some .Committed ∧
