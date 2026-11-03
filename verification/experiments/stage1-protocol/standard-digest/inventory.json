@@ -71,7 +71,7 @@
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobReplyBridge.lean.in": "3b3fa4c72c0a6393f9c15ef073c09238aa040ddb6fbf4fa355c23914314f7507",
     "verification/experiments/stage1-protocol/standard-blob/preparation.py": "f3fc193039386ca31a51c2ed5830febbfe62f88588894e9d04b9d64449ca8a0d",
     "verification/experiments/stage1-protocol/standard-blob/coverage-candidate.patch": "4f6b744ee0ec089140bd44e7f146cfcba158c276fee03f0f26b42254e77f8255",
-    "verification/experiments/stage1-protocol/standard-blob/inventory.json": "c6b1521344ba1f2a00014dda4f1c84f8a9e8fd8137f1207e17ba3ff76f87872e",
+    "verification/experiments/stage1-protocol/standard-blob/inventory.json": "dec4d641095189c00efd89a9eb76dfd3cd202beb5cab247c9c5a586e2319a0d8",
     "verification/experiments/stage1-protocol/standard-blob/function-inventory.json": "c2944b1aa91d4cf243d9b0cec65c5f50e46d976857bff53e34a44712ea8528e5",
     "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomain.lean.in": "4ca930a639d322ad826845b21cb6cd52da46f838a8499b705b79a7c007497316",
     "verification/experiments/stage1-protocol/standard-blob/REGISTRATION.md": "74db758fbb7b8db8baca9703400de75c073325b95621dc9edab2a2ac8355cdad",
