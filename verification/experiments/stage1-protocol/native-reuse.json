@@ -1,0 +1,349 @@
+{
+  "schema": 1,
+  "kind": "fixed-17-original-native-receipts",
+  "scope": "stage1-protocol-convergence",
+  "reviewed_execution_baseline": "1965971081fda59705335cbaa542e378754488fd",
+  "production_rust": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+  "shared_rules_sha256": "ebd4a1b734e4080c35c681bfa9755b6911ef0abecdb3ab935092ea70c5833c79",
+  "admission_rules": {
+    "tools/acceptance_receipts.py": "d4a9a6a2709e269784d98126d11d7d6851b76637397b0bf63f6b93b47d23a70c",
+    "tools/proof_native_suite.py": "2a4c0480f3084983eab0f604dcee5544b8a0385b1bcff9fc9971e6ea7a30b5c0",
+    "verification/experiments/stage1-protocol/convergence.py": "538e8db360f8ebeca549466d0e2a924cbb29cb8470391a5403417aadf1a646da",
+    "tools/tests/test_protocol_convergence_native_reuse.py": "0337daac5dcc4b78a9f0e065ab3eb66f1b72c3a5e3e36d6a7935be96c1c5fec4"
+  },
+  "components": {
+    "stage1-protocol-restore-work": {
+      "identity": "8bf55549a8e9ef0d8573dbad1767ac3c03069978b525fdda4e8645d9599ed24f",
+      "receipt_sha256": "5ffd04350671837561317a6191a81c438d46e9c5c1272c1d8156349ede3f5d06",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/restore-work/"
+      ],
+      "current_component_rules_sha256": "cdf9e3b0b53a2709e6c8854337e622a0c08dd8369c73fe6abc62c31ce17d3b81",
+      "dependency_files": []
+    },
+    "stage1-protocol-restore-lifetime": {
+      "identity": "472a87bfe948ee6fb66c0f8cec50d74b479d8ceb4f20962b609429c77d2bbef0",
+      "receipt_sha256": "0355f3a0e530424ce0a6641a58836d9eac157d726507e41c872cfb6203da70c9",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/restore-lifetime/"
+      ],
+      "current_component_rules_sha256": "a21cc58ee32778c33b5a0dd75a977c77999488f24fbb58956262eaf2808bb50d",
+      "dependency_files": []
+    },
+    "stage1-protocol-exit-observations": {
+      "identity": "3ebc4d4949103173789a5ed196e50c19800abd5929b375669c4ac8ad2120c5fd",
+      "receipt_sha256": "61fbec5e07d8f4c4d85d619f74b43ce48e4a68032f4a3133ccfd015f04976402",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/exit-observations/"
+      ],
+      "current_component_rules_sha256": "e0a707abe11f0e30f88bd6f9b9674c2c1dafd0ecd449a8df9c090cf94a9e1906",
+      "dependency_files": []
+    },
+    "stage1-protocol-source-preservation": {
+      "identity": "267fa897c33ff273f3f85f69d7a1857fbf43dcb5e37527d7efb66359d0c5a674",
+      "receipt_sha256": "88f1c0d2b4fcffaaa320cdc19e78c0e785c1a7412f63b3afe35edc6ab341005e",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/source-preservation/"
+      ],
+      "current_component_rules_sha256": "b59310b219372ed1fd478292bbfce6a261dec5fd35e4368d9c91d3091319e717",
+      "dependency_files": []
+    },
+    "stage1-protocol-source-work-match": {
+      "identity": "1708e19d8d95a5881688bddca3d1c07fa7516714c13ecb1188a02fe8c0db1e7f",
+      "receipt_sha256": "53a70d5ff5b2d771d504e51beff03a4953e21336257fc8566a163a00a659ca61",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/source-work-match/"
+      ],
+      "current_component_rules_sha256": "43ca935e151d5c00b3d9c71f80ec2edc5e35c6e9639623fbe8455ee92681e93a",
+      "dependency_files": []
+    },
+    "stage1-protocol-source-observation": {
+      "identity": "b6d50e945ec518965bbad622b5de97b5e532d4e3a165e58be52653f66ab3722b",
+      "receipt_sha256": "ef92385632c90e9d71731dd3a79451af25b5b265ae90fdfef400b400790e5886",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/source-observation/"
+      ],
+      "current_component_rules_sha256": "d9cac649e7b1127ee8034156a485cea74983ff05e9bc8cfc2c053e4b781487a4",
+      "dependency_files": []
+    },
+    "stage1-protocol-native-readiness": {
+      "identity": "de108e7a4867d3c2a36a099b3dcc876b91b697396bfe4149da161ec0282baaca",
+      "receipt_sha256": "673954575191adf0660ca4ce2670ae99dbfa7c3167604933796d0bff1007f7af",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/native-readiness/"
+      ],
+      "current_component_rules_sha256": "1b7d38bdcc9dac2ae178d6054583f31c784073579996b415759135e10be0aebf",
+      "dependency_files": []
+    },
+    "stage1-protocol-pause-request": {
+      "identity": "8cad6862fcec5b4de3f66258843ddadb84d93abf7bffee29364e01fccfc1a635",
+      "receipt_sha256": "87551efd00735920a9aa4859933b5bc909c53a1a8373390548e34c7ef56172bb",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/pause-request/"
+      ],
+      "current_component_rules_sha256": "777f30f16f7ddaa1ed683014bf432e5d167ab726ff7ccbc993f30664eabe5d01",
+      "dependency_files": []
+    },
+    "stage1-protocol-source-question": {
+      "identity": "dd16656f40a695a41dd057f42dd1dcdd989ddd8eaf3794df4e7f98cff4f100c2",
+      "receipt_sha256": "ac1dda5915dcb561ceb7241a1c6a88b200c348d947e54a2236bdb36142da5067",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/source-question/"
+      ],
+      "current_component_rules_sha256": "8efed110127fb877c595aac58210534e70a8cbf90c70ac4824a1044c324ac915",
+      "dependency_files": []
+    },
+    "stage1-protocol-source-origin": {
+      "identity": "91b7641a8f7c12588604a836fe0a047176c619a187142c9bb898b9f9f35ba5c7",
+      "receipt_sha256": "4b8bf34235352fb2079bfc90f55746fe9305c43c7a6f3c97430e430b14fc0c6b",
+      "execution_commit": "72ab3c8243dca5e5558b9df54c31039214889ea7",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/source-origin/"
+      ],
+      "current_component_rules_sha256": "0d6dd3484ea602247b6e4f12f717f26f661e66c7e84fa5ee86b3c46c3b94ae97",
+      "dependency_files": []
+    },
+    "stage1-standard-blob": {
+      "identity": "b11c86baa2e66ac1cd2b488b665ec4b7b453a87bda2f7a21ca80470223827f97",
+      "receipt_sha256": "f8ac9c8b53b137eb4b6f43e4c693584b58ad8789ff61215bc107a8a96293e43a",
+      "execution_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/standard-blob/"
+      ],
+      "current_component_rules_sha256": "e9a80deec42244648eea3cd8a196e173077717a7915e28d65e2797e8c6047e63",
+      "presence_plan": "verification/experiments/stage1-protocol/standard-blob/plan.json",
+      "required_plan_fields": [
+        "expected_clippy_codes",
+        "expected_failures",
+        "test_count"
+      ],
+      "dependency_files": [
+        "verification/experiments/stage1-protocol/create-attachment-flow/external/TypesExternal.lean.in"
+      ]
+    },
+    "stage1-standard-digest": {
+      "identity": "2f310e4024bb361b7958dda793647c598e55a29fdd098207011da5e19b35e557",
+      "receipt_sha256": "af271b190cc8547c73df9428f87ae8ffaf05a684a78de372a918af0dbb33695a",
+      "execution_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/standard-digest/"
+      ],
+      "current_component_rules_sha256": "6544bea2e7e6622581a219d0ba6d7a9d3d987a46026b7891a383414a158fbcff",
+      "presence_plan": "verification/experiments/stage1-protocol/standard-digest/plan.json",
+      "required_plan_fields": [
+        "expected_clippy_codes",
+        "expected_failures",
+        "test_count"
+      ],
+      "dependency_files": [
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsCore.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsLibrary.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsModel.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsValues.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/InboxLoadBlobDigestDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/InboxLoadStandardBlobDigestDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeBlobOrder.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeBlobRepeat.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeStandardBlobOrder.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeStandardBlobRepeat.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/README.md",
+        "verification/experiments/stage1-protocol/standard-blob/REGISTRATION.md",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobCore.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomainSupport.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobLibrary.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobModel.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobNormalContext.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobObserve.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobReplyBridge.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobResult.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobValues.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobWitnesses.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/capture.py",
+        "verification/experiments/stage1-protocol/standard-blob/coverage-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/dependencies-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/enum-names.json",
+        "verification/experiments/stage1-protocol/standard-blob/external/FunsExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/LoadFunsExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/ReadTypeBindings.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/ReadValueData.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/TypesExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/formal.py",
+        "verification/experiments/stage1-protocol/standard-blob/function-inventory.json",
+        "verification/experiments/stage1-protocol/standard-blob/generated-index.json",
+        "verification/experiments/stage1-protocol/standard-blob/inventory.json",
+        "verification/experiments/stage1-protocol/standard-blob/materialization.json",
+        "verification/experiments/stage1-protocol/standard-blob/mutations.json",
+        "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in",
+        "verification/experiments/stage1-protocol/standard-blob/native.py",
+        "verification/experiments/stage1-protocol/standard-blob/plan.json",
+        "verification/experiments/stage1-protocol/standard-blob/preparation.py",
+        "verification/experiments/stage1-protocol/standard-blob/public-registration-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/registration.py",
+        "verification/experiments/stage1-protocol/standard-blob/source-candidate.json",
+        "verification/experiments/stage1-protocol/standard-blob/support.py",
+        "verification/experiments/stage1-protocol/standard-blob/template-provenance.json",
+        "verification/experiments/stage1-protocol/standard-blob/view-inventory.json"
+      ]
+    },
+    "stage1-standard-save-digest": {
+      "identity": "f3823c2024ea8a51ab6fbceaa8854c3db9c002e958b88fe6fb5c3793cab6e440",
+      "receipt_sha256": "ea6ca9f4c9f6dc774b6162b4a2c9c8d1d79c11eb8f82dd719c8d11eafecffe48",
+      "execution_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/standard-save-digest/"
+      ],
+      "current_component_rules_sha256": "5ee884f5ea3864d10ed1c40cd7e30eeecb9c22057ea0c2b23356fa6ca5d0b03c",
+      "presence_plan": "verification/experiments/stage1-protocol/standard-save-digest/plan.json",
+      "required_plan_fields": [
+        "expected_clippy_codes",
+        "expected_failures",
+        "test_count"
+      ],
+      "dependency_files": [
+        "verification/experiments/stage1-protocol/create-attachment-flow/external/TypesExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsCore.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsLibrary.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsModel.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/BlobColumnsValues.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/InboxLoadBlobDigestDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/InboxLoadStandardBlobDigestDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeBlobOrder.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeBlobRepeat.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeStandardBlobOrder.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/NegativeStandardBlobRepeat.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/README.md",
+        "verification/experiments/stage1-protocol/standard-blob/REGISTRATION.md",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobCore.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomain.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobDomainSupport.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobLibrary.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobModel.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobNormalContext.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobObserve.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobReplyBridge.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobResult.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobValues.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/StandardBlobWitnesses.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/capture.py",
+        "verification/experiments/stage1-protocol/standard-blob/coverage-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/dependencies-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/enum-names.json",
+        "verification/experiments/stage1-protocol/standard-blob/external/FunsExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/LoadFunsExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/ReadTypeBindings.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/ReadValueData.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/external/TypesExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-blob/formal.py",
+        "verification/experiments/stage1-protocol/standard-blob/function-inventory.json",
+        "verification/experiments/stage1-protocol/standard-blob/generated-index.json",
+        "verification/experiments/stage1-protocol/standard-blob/inventory.json",
+        "verification/experiments/stage1-protocol/standard-blob/materialization.json",
+        "verification/experiments/stage1-protocol/standard-blob/mutations.json",
+        "verification/experiments/stage1-protocol/standard-blob/native-cases.rs.in",
+        "verification/experiments/stage1-protocol/standard-blob/native.py",
+        "verification/experiments/stage1-protocol/standard-blob/plan.json",
+        "verification/experiments/stage1-protocol/standard-blob/preparation.py",
+        "verification/experiments/stage1-protocol/standard-blob/public-registration-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-blob/registration.py",
+        "verification/experiments/stage1-protocol/standard-blob/source-candidate.json",
+        "verification/experiments/stage1-protocol/standard-blob/support.py",
+        "verification/experiments/stage1-protocol/standard-blob/template-provenance.json",
+        "verification/experiments/stage1-protocol/standard-blob/view-inventory.json",
+        "verification/experiments/stage1-protocol/standard-digest/README.md",
+        "verification/experiments/stage1-protocol/standard-digest/REGISTRATION.md",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestBridge.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestCore.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestInputCounter.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestLibrary.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestModel.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestTailCounter.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestValues.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/StandardDigestWitnesses.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/binding.py",
+        "verification/experiments/stage1-protocol/standard-digest/candidate.json",
+        "verification/experiments/stage1-protocol/standard-digest/capture.py",
+        "verification/experiments/stage1-protocol/standard-digest/coverage-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-digest/dependencies-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-digest/external/FunsExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/external/TypesExternal.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/fixed-interfaces.json",
+        "verification/experiments/stage1-protocol/standard-digest/formal.py",
+        "verification/experiments/stage1-protocol/standard-digest/function-inventory.json",
+        "verification/experiments/stage1-protocol/standard-digest/generated-index.json",
+        "verification/experiments/stage1-protocol/standard-digest/inventory.json",
+        "verification/experiments/stage1-protocol/standard-digest/mutations.json",
+        "verification/experiments/stage1-protocol/standard-digest/native-cases.rs.in",
+        "verification/experiments/stage1-protocol/standard-digest/native.py",
+        "verification/experiments/stage1-protocol/standard-digest/plan.json",
+        "verification/experiments/stage1-protocol/standard-digest/preparation.py",
+        "verification/experiments/stage1-protocol/standard-digest/public-registration-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-digest/registration.py",
+        "verification/experiments/stage1-protocol/standard-digest/reuse-provenance.json",
+        "verification/experiments/stage1-protocol/standard-digest/reuse/DigestArray32Representation.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/reuse/DigestByteBridge.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/reuse/Sha256Bytes.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/reuse/Sha256BytesChecks.lean.in",
+        "verification/experiments/stage1-protocol/standard-digest/root.rs.in",
+        "verification/experiments/stage1-protocol/standard-digest/source-candidate.patch",
+        "verification/experiments/stage1-protocol/standard-digest/support.py"
+      ]
+    },
+    "stage1-digest-uses": {
+      "identity": "3b20cae6950475cb8411d3fd32286f9b7e28718b359adc22a125e4e0a205cb41",
+      "receipt_sha256": "c75200f119c177308f11462e558a47be2ee05cdf0dfd00792b79a84e87a6e93f",
+      "execution_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/digest-uses/"
+      ],
+      "current_component_rules_sha256": "eece9f11ba569bf7595d9ccc670469583f2aa94ca649c7b2975f9d7c3ad569c6",
+      "presence_plan": "verification/experiments/stage1-protocol/digest-uses/inventory.json",
+      "required_plan_fields": [
+        "expected_clippy_codes",
+        "expected_failures",
+        "test_count",
+        "mutation"
+      ],
+      "dependency_files": []
+    },
+    "stage1-protocol-lifetime-row": {
+      "identity": "4de7922855d6f09ca91e13702e417acf45f344b9cdd2f1aeded99645c2d3bfac",
+      "receipt_sha256": "0593a82ac246c307f78f79f2243117d653934721e82b654cac8574d7715b6eb7",
+      "execution_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/lifetime-row/"
+      ],
+      "current_component_rules_sha256": "8c7f4dc06917db35c4faff304b3f2d380cd49ce0d89d698f4a0898da487f7598",
+      "dependency_files": []
+    },
+    "stage1-create-standard-identity": {
+      "identity": "9d77c2ed8d3c238145ac14ab2c6133986f774bbb9c6d41392c6a4e1403a36f58",
+      "receipt_sha256": "5742cc2a4ec466d636a67e0f30ca94d69abb84f46ba30c049f40fd6bb7d71c5a",
+      "execution_commit": "1965971081fda59705335cbaa542e378754488fd",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/create-standard-identity/"
+      ],
+      "current_component_rules_sha256": "3a9d4392ca992aefd2af3827d3a0618168267e70234d54e0f582ec6d0912f4c4",
+      "dependency_files": []
+    },
+    "stage1-create-standard-sql": {
+      "identity": "ff089fe12727be12964a967f83a13f2d6f14d86a429f973a69bd9ef81b3cd236",
+      "receipt_sha256": "0d6cef6463268f63604f37ca9257ff7c70d54328bfaa1a83d64794f886c6e545",
+      "execution_commit": "1965971081fda59705335cbaa542e378754488fd",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/create-standard-sql/"
+      ],
+      "current_component_rules_sha256": "6c788d656465149c113b908155456eaed41d91431535abdc8b8d0624e8a68d1b",
+      "dependency_files": []
+    }
+  }
+}

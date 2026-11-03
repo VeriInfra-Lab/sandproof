@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
     contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
-    check_native_scope, check_native_components)
+    check_native_scope, check_native_components, convergence_reuse_publication)
 from tools.ci_retention import NativeBuildRun
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
@@ -132,6 +132,9 @@ def stage1_source_admission(scope, *, prepare=False):
 
 def run_locked_suite(output, *, scope='all'):
     check_native_scope(scope)
+    if (os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') == '1'
+            and scope != 'stage1-protocol-convergence'):
+        raise ValueError('fixed convergence reuse requires its exact native scope')
     trusted_checkout(ROOT)
     os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
@@ -333,6 +336,9 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
             ROOT/'verification/experiments/stage1-protocol/registered.py')
         result.update(profile='protocol-convergence',
                       convergence_definition=registered.CONVERGENCE.definition(ROOT))
+    reused = convergence_reuse_publication(output, keys, scope=scope)
+    if reused is not None:
+        result['convergence_reuse'] = reused
     # Keep the original completion plus a precise target inventory. Publication
     # never moves/deletes build bytes or guesses resource cleanup from exit 0.
     original = work / 'native-complete.json'
@@ -348,10 +354,13 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
 def functional(work):
     target = work / 'functional'
     target.mkdir()
+    environment = dict(os.environ, SANDPROOF_CHECK_EVENTS=str(target/'events.jsonl'))
+    # This outer receipt-admission option must not change ordinary test fixtures.
+    environment.pop('SANDPROOF_CONVERGENCE_REUSE_FIXED17', None)
     with (target / 'check-function.log').open('wb') as log:
         subprocess.run(['bash','scripts/check-function.sh'], cwd=ROOT, stdout=log,
                        stderr=subprocess.STDOUT, check=True,
-                       env=dict(os.environ, SANDPROOF_CHECK_EVENTS=str(target/'events.jsonl')))
+                       env=environment)
 
 
 def main(argv=None):

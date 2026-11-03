@@ -57,6 +57,76 @@ EXTRA_DRIVERS = {
                              'stage1-protocol-record'),
 }
 
+# One reviewed batch, not a general cross-version cache. Original receipts stay
+# at their original identities; the caller records a separate current admission.
+NATIVE_REUSE_MANIFEST = HERE/'native-reuse.json'
+NATIVE_REUSE_COMPONENTS = tuple(CASES)[:17]
+NATIVE_REUSE_ADMISSION_FILES = (
+    'tools/acceptance_receipts.py', 'tools/proof_native_suite.py',
+    str(HERE/'convergence.py'), str(NATIVE_REUSE_MANIFEST),
+    'tools/tests/test_protocol_convergence_native_reuse.py',
+)
+
+
+def native_reuse_definition(root):
+    data = json.loads((root/NATIVE_REUSE_MANIFEST).read_text())
+    expected = {SPECIAL_LABELS.get(name, 'stage1-protocol-'+name)
+                for name in NATIVE_REUSE_COMPONENTS}
+    if (data['schema'] != 1 or data['scope'] != SCOPE
+            or data['kind'] != 'fixed-17-original-native-receipts'
+            or set(data['components']) != expected
+            or set(data['admission_rules']) != set(NATIVE_REUSE_ADMISSION_FILES)-{str(NATIVE_REUSE_MANIFEST)}):
+        raise ValueError('unknown fixed convergence native reuse definition')
+    for name in NATIVE_REUSE_COMPONENTS:
+        label = SPECIAL_LABELS.get(name, 'stage1-protocol-'+name)
+        row = data['components'][label]
+        if (row['component_prefixes'] != [str(HERE/name)+'/']
+                or any(not re.fullmatch('[0-9a-f]{64}', row[k])
+                       for k in ('identity', 'receipt_sha256', 'current_component_rules_sha256'))
+                or not re.fullmatch('[0-9a-f]{40}', row['execution_commit'])
+                or row['dependency_files'] != sorted(set(row['dependency_files']))
+                or any(Path(n).is_absolute() or '..' in Path(n).parts
+                       for n in row['dependency_files'])):
+            raise ValueError('invalid fixed original native component: '+label)
+    return data
+
+
+def native_reuse_shared_rules(rules):
+    prefixes = tuple(str(HERE/name)+'/' for name in (*CASES, 'accepted-json-parser'))
+    prefixes += ('verification/experiments/sqlite-commit/',)
+    excluded = {*NATIVE_REUSE_ADMISSION_FILES, str(HERE/'fixed-originals.json'),
+                str(HERE/'sqlite_convergence.py')}
+    return {n:h for n,h in rules.items() if n not in excluded and not n.startswith(prefixes)}
+
+
+def native_reuse_matches(root, label, original, current, shared):
+    """Only the reviewed unchanged execution inputs may use these 17 receipts."""
+    definition = native_reuse_definition(root)
+    if label not in definition['components']:
+        return False
+    for name, expected in definition['admission_rules'].items():
+        if current['rules'].get(name) != expected:
+            raise ValueError('fixed native reuse admission code changed: '+name)
+    if shared.digest(native_reuse_shared_rules(current['rules'])) != definition['shared_rules_sha256']:
+        raise ValueError('fixed native reuse shared execution rules changed')
+    # The bounded batch retains the complete reviewed 8fc Rust/Cargo closure.
+    # No claim of a general package dependency analyser is made here.
+    if any(original[name] != current[name] for name in
+           ('schema', 'label', 'command', 'rust', 'options', 'runtime', 'contracts', 'source_archives')):
+        return False
+    plan = definition['components'][label]
+    selected = {n:h for n,h in current['rules'].items()
+                if n.startswith(tuple(plan['component_prefixes'])) or n in plan['dependency_files']}
+    if shared.digest(selected) != plan['current_component_rules_sha256']:
+        return False
+    if 'presence_plan' in plan:
+        inventory = json.loads((root/plan['presence_plan']).read_text())
+        for variant, row in inventory['native_variants'].items():
+            missing = set(plan['required_plan_fields'])-row.keys()
+            if missing:
+                raise ValueError(f'fixed native reuse variant {variant} missing fields: {sorted(missing)}')
+    return True
+
 
 def read(root, name):
     path = root/HERE/name/'inventory.json'

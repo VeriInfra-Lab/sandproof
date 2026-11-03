@@ -90,7 +90,7 @@
     "dependencies-candidate.patch": "af99489abb99696339d63849aabe64d207fe0417d5853815e395c8e95bf65555",
     "generated-index.json": "945edebb2d90a97512de3cf8c3c8b961e184ed11254a13cff17f13728d53c845",
     "mutations.json": "42608dab0cf0d342a70aacdf739abd7191596a6e5f64fe6429f68b67f54a9fb1",
-    "native-cases.rs.in": "8a5e80bd54c75fc79ba35e217cf7263aad3018305f35ccc21d037df74a2b54de",
+    "native-cases.rs.in": "9ab2da36ee7372d3399f9bf64fb190d79834b6b3d67e8dbb302265e21d1e53ff",
     "production-candidate.patch": "63fb8d66cb0830f97a1452bc1a629b22a49cacfd8e001a30b91f090a227a2d14",
     "registration-candidate.json": "3fc0aea8876597f9f6b7ba567482b11b5ab11428e73f35201833575c9352b0af",
     "registration-candidate.patch": "20d67e50d91e9a7df5bf3ffc683ed29be255699878e18bd0f882e1bae226d497",

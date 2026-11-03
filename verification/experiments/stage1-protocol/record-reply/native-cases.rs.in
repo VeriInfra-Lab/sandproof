@@ -1,12 +1,12 @@
 // One unchanged program for actual, both wrong, and restored source views.
 use super::*;
-use sandproof_protocol::internal::{NodeId, NodeIdentity, PositiveCounter};
+use sandproof_protocol::internal::{NodeIdentity, PositiveCounter};
 use sandproof_protocol::lifecycle::{
     AuthenticatedCenterContext, CaptureId, CenterId, CenterIdentity, ExpectedSession,
     IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
     RequestSequence, RequestWindowId, RetentionBinding, RetentionWindowId, SessionId,
 };
-use sandproof_protocol::{DeploymentId, TenantId};
+use sandproof_protocol::{DeploymentId, NodeId, TenantId};
 
 fn intent(capture: u64) -> AcceptedLifecycleIntent {
     let deployment = DeploymentId::try_from("deployment").unwrap();
