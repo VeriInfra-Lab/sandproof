@@ -30,6 +30,8 @@ DISPATCH_FUNCTIONS = (
     *((f'effect::{name}', f'effect.{name}') for name in
       ('dispatch_stop', 'dispatch_eligible', 'dispatch_effect', 'dispatched_capture',
        'acknowledge_effect')),
+    *(("effect::insert_unique", "effect.insert_unique" + suffix) for suffix in
+      ('', '_loop0', '_loop0.body', '_loop0_loop0', '_loop0_loop0.body')),
     ('maintenance::released_execution::{sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::command',
      'maintenance.released_execution.ReleasedExecution.command'),
 )
