@@ -3,6 +3,9 @@
 [组件](../README.md) · [V3](../../../../docs/formal/03-protocol-inbox.md) · [工作流](../../../../docs/proof-workflow.md)
 
 固定 #686 `39577ca1e61f4daa4ba4bbda7db94bf087bdaef0`，生产只读；本包独立于后续观察值切片。
+当前接入保留原证明结果的提交身份。`internal.rs` 相对该来源仅将宿主存储格式从 23 改为 24；
+本包五个抽取根及其调用的身份、请求和回执校验均不读取此常量，所用生命周期协议版本没有变化。
+输入清单记录了原、新文件摘要及这次对应判断；这不是一次新的形式化验收，也不表示存储格式迁移已经证明。
 薄根直接调用实际 `LifecycleAccessIdentity::validate`，同时保留原四个 Request/Accepted/Recorded 根。
 固定原 Charon/Aeneas 实际生成私有 Request 视图，只复用原四项 String/Vec/Bool/Option 外部模型；不手改生成体或导入 axiom 模板。
 

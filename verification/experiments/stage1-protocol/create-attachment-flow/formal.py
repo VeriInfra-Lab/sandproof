@@ -53,6 +53,7 @@ def run(output,lock_path,selected_variant=None,prepare_only=False,lock_fd=None):
         args+=['--dest-file',str(runtime.VIRTUAL/'artifacts'/(label+'.llbc')),'--','--manifest-path',
             'verification/experiments/stage1-protocol/inbox-record/Cargo.toml','--lib','--locked','--offline','--target',fixed['target']]
         command(project,folder,label+'-charon',support.wrapper(project)+args)
+        if ir.stat().st_size > 16*1024*1024:raise ValueError('generic/path LLBC resource bound refused before AST load')
         raw=json.loads(ir.read_text());admitted=load.admit_ir(raw,opaque=opaque,primitive=primitive)
         bindings={}
         if not primitive:
@@ -94,6 +95,7 @@ def run(output,lock_path,selected_variant=None,prepare_only=False,lock_fd=None):
         for name in recipe['capture']['roots']:args+=['--start-from',name]
         args+=['--dest-file',str(runtime.VIRTUAL/'artifacts/std-path.llbc'),'--','--manifest-path',recipe['capture']['manifest'],'--lib','--locked','--offline','--target',fixed['target']]
         command(project,folder,'std-path-charon',support.wrapper(project)+args)
+        if ir.stat().st_size > 16*1024*1024:raise ValueError('generic/path LLBC resource bound refused before AST load')
         raw=json.loads(ir.read_text());opts=raw['translated']['options']
         if (raw['has_errors'] is not False or opts['start_from']!=recipe['capture']['roots']
                 or opts['include']!=recipe['capture']['include'] or opts['opaque'] or opts['exclude']

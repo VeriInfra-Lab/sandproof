@@ -1,0 +1,4 @@
+import SandproofStandardDigest.TypesExternal
+namespace SandproofStandardSaveDigestRust
+abbrev rusqlite.Connection := SandproofStandardDigestRust.rusqlite.Connection
+end SandproofStandardSaveDigestRust

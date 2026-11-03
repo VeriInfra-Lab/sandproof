@@ -1,0 +1,14 @@
+{
+  "kind": "minimal-existing-expression-name-and-zero-parameter-candidate",
+  "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+  "baseline": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "baseline_source_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+  "before": "    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {\n        Ok(self\n            .connection\n            .query_row(statement, [], |r| Ok((r.get(0)?, r.get(1)?)))?)\n    }",
+  "after": "    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {\n        Ok(self\n            .connection\n            .query_row(statement, (), |r| read_blob_pair(r, 0, 1))?)\n    }",
+  "helper_append": "\n// Two original BLOB reads, preserving the requested order and first error.\nfn read_blob_pair(\n    r: &rusqlite::Row<'_>,\n    first: usize,\n    second: usize,\n) -> rusqlite::Result<(Vec<u8>, Vec<u8>)> {\n    Ok((r.get(first)?, r.get(second)?))\n}\n",
+  "original_array_named_after": "    fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {\n        Ok(self\n            .connection\n            .query_row(statement, [], |r| read_blob_pair(r, 0, 1))?)\n    }",
+  "source_adopted": true,
+  "original_array_universal_machine_equivalence_proved": false,
+  "adopted_source_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+  "adopted_leaf_sha256": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e"
+}

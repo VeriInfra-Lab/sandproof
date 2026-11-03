@@ -1,0 +1,225 @@
+// Same full matching assertions on actual original SQLite candidate fixtures.
+
+#[test]
+fn proof_exit_observations_before_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.action.identity.generation ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_effect_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.action.command.attempt ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    let mut bytes = *observed.work_binding.as_bytes();
+    bytes[31] ^= 1;
+    observed.work_binding = sandproof_protocol::lifecycle::ContentDigest::from_sha256(bytes);
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.pid ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.start_time_ticks ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_before_boot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, false);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .0
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().restore_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.boot_id.push_str("-changed");
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.action.identity.generation ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_effect_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.action.command.attempt ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    let mut bytes = *observed.work_binding.as_bytes();
+    bytes[31] ^= 1;
+    observed.work_binding = sandproof_protocol::lifecycle::ContentDigest::from_sha256(bytes);
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.pid ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.start_time_ticks ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_continued_boot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, resume, _current, state) = prepared(&path, true);
+    let qualified = journal
+        .lifecycle_continued_exit_candidates::<Evidence>(&resume, &v3::context(), 10)
+        .unwrap()
+        .1
+        .expect("original persisted continuation qualifies this exit question");
+    let mut observed = state.lock().unwrap().continued_exit.clone().unwrap();
+    assert!(qualified.matches(&observed));
+    observed.process.boot_id.push_str("-changed");
+    assert!(!qualified.matches(&observed));
+}

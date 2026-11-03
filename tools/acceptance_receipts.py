@@ -15,13 +15,15 @@ import shutil
 import stat
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
-NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery', 'capture-caller', 'pause-publication', 'pause-stop')
+NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery',
+                 'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
@@ -173,12 +175,18 @@ def stage1_registration():
 
 
 def stage1_native_labels(profile='full'):
-    """Fixed full or Create scope; no caller-supplied case selection."""
+    """Fixed full, Create or convergence scope; no caller-selected cases."""
     registered = stage1_registration()
     labels = tuple(registered.native_labels(profile))
-    count = 12 if profile == 'create-delivery' else 53
+    counts = {'full': 74, 'create-delivery': 12, 'protocol-convergence': 22}
+    if profile not in counts:
+        raise ValueError('unknown fixed native profile: ' + str(profile))
+    count = counts[profile]
     if len(labels) != count or len(set(labels)) != count:
         raise ValueError(f'stage1 native scope requires the exact {count} registered cases')
+    if profile == 'protocol-convergence' and not {
+            'stage1-accepted-json-parser', 'stage1-sqlite-commit'} <= set(labels):
+        raise ValueError('convergence is missing its JSON or SQLite component')
     result = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *labels)
     if len(set(result)) != count+(2 if profile == 'full' else 1):
         raise ValueError('stage1 native scope has duplicate component labels')
@@ -187,8 +195,10 @@ def stage1_native_labels(profile='full'):
 
 def scoped_native_labels(scope):
     check_native_scope(scope)
-    if scope in ('stage1-protocol', 'stage1-create-delivery'):
-        return stage1_native_labels('create-delivery' if scope == 'stage1-create-delivery' else 'full')
+    profiles = {'stage1-protocol': 'full', 'stage1-create-delivery': 'create-delivery',
+                'stage1-protocol-convergence': 'protocol-convergence'}
+    if scope in profiles:
+        return stage1_native_labels(profiles[scope])
     return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
             else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
 
@@ -209,8 +219,8 @@ def current_native_seal(seal, runtime, *, scope='all'):
     check_native_scope(scope)
     actual_scope = seal.get('scope')
     # Whole packet admission is deliberately stricter than component reuse.
-    # A complete full/all seal cannot stand in for the explicit Create profile,
-    # and Create can never stand in for full/all or another finite scope.
+    # A complete full/all seal cannot stand in for explicit Create/convergence,
+    # and neither finite seal can stand in for full/all or another scope.
     create = scope == 'stage1-create-delivery'
     if create:
         definition = stage1_registration().create_profile(ROOT)
@@ -219,7 +229,16 @@ def current_native_seal(seal, runtime, *, scope='all'):
                 or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
                     != definition['source_only']['archive_sha256']):
             return False
-    elif actual_scope == 'stage1-create-delivery':
+    elif scope == 'stage1-protocol-convergence':
+        registered = stage1_registration()
+        definition = registered.CONVERGENCE.definition(ROOT)
+        source = registered.source_definition(ROOT)
+        if (actual_scope != scope or seal.get('profile') != 'protocol-convergence'
+                or digest(seal.get('convergence_definition')) != digest(definition)
+                or seal.get('source_archives', {}).get('SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
+                    != source['archive_sha256']):
+            return False
+    elif actual_scope in ('stage1-create-delivery', 'stage1-protocol-convergence'):
         return False
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
@@ -305,8 +324,95 @@ def validate_native(cache, *, scope='all'):
         if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
         keys.append(receipt['key'])
+    current_keys = {}
+    if scope == 'stage1-protocol-convergence':
+        prototype = native_key('current-component', ['component-case'], ROOT)
+        for key in keys:
+            label = key['label']
+            current = dict(prototype, label=label)
+            if label == 'functional':
+                current['repository'] = repository_inputs(ROOT)
+            current_keys[label] = current
+            if key != current and label not in seal.get('convergence_reuse', {}):
+                raise ValueError('foreign native inputs have no current admission: '+label)
+    if 'convergence_reuse' in seal:
+        if scope != 'stage1-protocol-convergence':
+            raise ValueError('fixed convergence reuse cannot satisfy another scope')
+        for label, reference in seal['convergence_reuse'].items():
+            if label not in current_keys:
+                raise ValueError('reuse admission has no original component: '+label)
+            key = current_keys[label]
+            original, entry = convergence_reuse_case(cache, label, key, reference=reference)
+            if (seal['commands'].get(entry.name) != sha(entry/'receipt.json')
+                    or original['key']['label'] != label):
+                raise ValueError('fixed original receipt absent from current native seal')
     check_native_components(keys, scope=scope, allow_additional=seal['scope']=='all')
     return seal
+
+
+def convergence_reuse_case(cache, label, key, *, reference=None):
+    """Read one fixed original receipt; never rewrite its key or execution."""
+    definition = stage1_registration().CONVERGENCE
+    plans = definition.native_reuse_definition(ROOT)
+    if label not in plans['components']:
+        raise ValueError('component has no fixed original receipt: '+label)
+    plan = plans['components'][label]
+    entry = cache/'commands'/plan['identity']
+    receipt_file = entry/'receipt.json'
+    if (entry.is_symlink() or receipt_file.is_symlink() or not receipt_file.is_file()
+            or sha(receipt_file) != plan['receipt_sha256']):
+        raise ValueError('missing or changed fixed original receipt: '+label)
+    original = json.loads(receipt_file.read_text())
+    if (digest(original['key']) != entry.name or original['key']['label'] != label
+            or original['key']['command'] != ['component-case']
+            or load_success(entry, original['key']) is None):
+        raise ValueError('incomplete fixed original component evidence: '+label)
+    if not definition.native_reuse_matches(ROOT, label, original['key'], key,
+                                           sys.modules[__name__]):
+        if reference is not None:
+            raise ValueError('fixed original execution inputs no longer match: '+label)
+        return None, None
+    relative = 'admissions/'+label+'.json'
+    path = cache/relative
+    admission = dict(schema=1, kind='fixed-original-native-current-admission', label=label,
+        original_identity=entry.name, original_receipt_sha256=plan['receipt_sha256'],
+        original_execution_commit=plan['execution_commit'], current_key_sha256=digest(key),
+        definition_sha256=sha(ROOT/definition.NATIVE_REUSE_MANIFEST))
+    if reference is not None:
+        if (reference != dict(identity=entry.name, file=relative, sha256=sha(path))
+                or path.is_symlink() or json.loads(path.read_text()) != admission):
+            raise ValueError('missing or changed current original-receipt admission: '+label)
+    else:
+        if path.is_symlink():
+            raise ValueError('current admission must be a regular file')
+        write_json(path, admission)
+    return original, entry
+
+
+def convergence_reuse_publication(cache, keys, *, scope):
+    """Seal only original receipts actually used in this current batch."""
+    if os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') != '1':
+        return None
+    if scope != 'stage1-protocol-convergence':
+        raise ValueError('fixed convergence reuse requires its exact native scope')
+    plans = stage1_registration().CONVERGENCE.native_reuse_definition(ROOT)
+    result = {}
+    prototype = native_key('current-component', ['component-case'], ROOT)
+    for identity, key in keys.items():
+        label = key['label']
+        if label in plans['components'] and identity == plans['components'][label]['identity']:
+            current = dict(prototype, label=label)
+            path = cache/'admissions'/(label+'.json')
+            reference = dict(identity=identity, file=str(path.relative_to(cache)), sha256=sha(path))
+            convergence_reuse_case(cache, label, current, reference=reference)
+            result[label] = reference
+        else:
+            current = dict(prototype, label=label)
+            if label == 'functional':
+                current['repository'] = repository_inputs(ROOT)
+            if key != current:
+                raise ValueError('foreign native inputs have no current admission: '+label)
+    return result
 
 
 def record_used(entry, reused=False):
@@ -403,6 +509,10 @@ def native_case(label, source, output, action=None, *, scope='all'):
         seal = (validate_native(cache, scope=scope) if scope != 'all'
                 else json.loads((cache / 'complete.json').read_text()))
         receipt = load_success(entry, key)
+        if (receipt is None and scope == 'stage1-protocol-convergence'
+                and label in seal.get('convergence_reuse', {})):
+            receipt, entry = convergence_reuse_case(cache, label, key,
+                reference=seal['convergence_reuse'][label])
         if (label in ARCHIVED_NATIVE_CASES and receipt is not None
                 and 'evidence/source.tar' not in receipt['files']):
             receipt = None
@@ -422,6 +532,15 @@ def native_case(label, source, output, action=None, *, scope='all'):
         if prior:
             record_used(entry,reused=True)
             return prior
+        if os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') == '1':
+            if scope != 'stage1-protocol-convergence':
+                raise ValueError('fixed convergence reuse requires its exact native scope')
+            plans = stage1_registration().CONVERGENCE.native_reuse_definition(ROOT)
+            if label in plans['components']:
+                prior, original_entry = convergence_reuse_case(cache, label, key)
+                if prior is not None:
+                    record_used(original_entry, reused=True)
+                    return prior
         start = time.monotonic()
         if label in ARCHIVED_NATIVE_CASES:
             (entry/'receipt.json').unlink(missing_ok=True)

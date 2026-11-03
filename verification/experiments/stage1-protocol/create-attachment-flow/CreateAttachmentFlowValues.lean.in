@@ -242,9 +242,10 @@ def effects (lifetimeCount : Usize) : CreateAttachmentEffects Trace := {
   sandbox_id := fun trace ns sandbox => .ok
     ((if ns = namespaceValue ∧ sandbox = binding.sandbox
       then .Ok publicSandbox else .Err .Conflict),trace ++ [.bytesQuery ns])
-  execute_lifetime_update := fun trace sql deadline sandbox => .ok
-    ((if sql = lifetimeStatement ∧ deadline = 2#i64 ∧ sandbox = publicKey
-      then .Ok lifetimeCount else .Err .Conflict),trace ++ [.lengthQuery sql])
+  CreateLifetimeSqlEffectsInst := {
+    execute_lifetime_update := fun trace sql deadline sandbox => .ok
+      ((if sql = lifetimeStatement ∧ deadline = 2#i64 ∧ sandbox = publicKey
+        then .Ok lifetimeCount else .Err .Conflict),trace ++ [.lengthQuery sql]) }
   begin_inbox_save := fun trace => .ok (trace ++ [.boolQuery saveMark]) }
 
 def savedTrace : Trace := [.encodedInbox (inbox true),.digested bytes.val,.bodyQuery InboxSave.statement]

@@ -25,12 +25,28 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = Path('verification/experiments/stage1-protocol')
 sys.path.insert(0, str(ROOT))
 
-PROFILES = ('full', 'create-delivery')
+def _convergence(root=ROOT):
+    spec = importlib.util.spec_from_file_location('stage1_finite_convergence', root/HERE/'convergence.py')
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
+
+
+CONVERGENCE = _convergence()
+PROFILES = ('full', 'create-delivery', CONVERGENCE.PROFILE)
 CREATE_SCOPE = 'stage1-create-delivery'
 CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
 FULL_WORKERS = (1, 2, 4)
 CREATE_WORKERS = (1, 2, 4, 8, 12)
 CREATE_CPUS_PER_JOB = 4
+
+
+def _original_reader(root=ROOT):
+    spec = importlib.util.spec_from_file_location('stage1_fixed_original_readback', root/HERE/'original_readback.py')
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
+
 # This runs in a fresh child, before exec of the original driver. The threaded
 # parent never changes its own affinity and never uses preexec_fn.
 CPU_BOOTSTRAP = """import json, os, sys
@@ -103,7 +119,10 @@ def check_profile(profile):
 
 
 def native_scope(profile):
-    return CREATE_SCOPE if check_profile(profile) == 'create-delivery' else 'stage1-protocol'
+    check_profile(profile)
+    if profile == CONVERGENCE.PROFILE:
+        return CONVERGENCE.SCOPE
+    return CREATE_SCOPE if profile == 'create-delivery' else 'stage1-protocol'
 
 
 def _create_native_plan(name, data, root=ROOT):
@@ -324,15 +343,18 @@ NATIVE_DRIVERS = (
     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
       if name != 'inbox-record-total'),
     *CREATE_NATIVE_DRIVERS,
+    *(row for row in CONVERGENCE.NATIVE_DRIVERS if row[0] not in {v[0] for v in CREATE_NATIVE_DRIVERS}),
 )
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 419
-AUDIT_DECLARATION_COUNT = 1723
+AUDIT_TEMPLATE_COUNT = 587
+AUDIT_DECLARATION_COUNT = 2549
 
 
 def native_labels(profile='full'):
+    if check_profile(profile) == CONVERGENCE.PROFILE:
+        return tuple(row[0] for row in CONVERGENCE.NATIVE_DRIVERS)
     return (tuple(label for label, _, _ in CREATE_NATIVE_DRIVERS)
             if check_profile(profile) == 'create-delivery' else NATIVE_CASES)
 
@@ -540,7 +562,8 @@ def _variant_choices(path):
 def validate_metadata_inputs(root=ROOT, *, profile='full'):
     """Check explicit current input digests, not historical patches or globals."""
     check_profile(profile)
-    directories = {HERE/name for name in CREATE_CASES}
+    directories = ({HERE/name for name in CONVERGENCE.CASES}
+                   if profile == CONVERGENCE.PROFILE else {HERE/name for name in CREATE_CASES})
     if profile == 'full':
         directories.update((HERE, Path('verification/experiments/stage1-manifest')))
         directories.update(Path(path).parent for path in audit_template_paths(root))
@@ -555,7 +578,7 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
             continue
         data = _read(root/path)
         fields = ('inputs', 'base_sources', 'production_inputs')
-        if path.parent in {HERE/name for name in CREATE_CASES}:
+        if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
@@ -580,7 +603,7 @@ def validate_registration(root=ROOT, *, profile='full'):
     """Fail before execution if a required native case or Rust mutant was lost."""
     check_profile(profile)
     create_profile(root)
-    if len(NATIVE_CASES) != 53 or len(set(NATIVE_CASES)) != 53:
+    if len(NATIVE_CASES) != 74 or len(set(NATIVE_CASES)) != 74:
         raise ValueError('duplicate native registration')
     if profile == 'full':
         for name, variants in INBOX_CASES.items():
@@ -626,26 +649,59 @@ def run_native(root, work, *, profile='full', scope=None):
         archive = _original_file(retained, 'source.tar')
     target = Path(os.environ['CARGO_TARGET_DIR'])/'stage1-protocol'
     receipts = {}
-    drivers = CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else NATIVE_DRIVERS
+    drivers = (CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else
+               CONVERGENCE.NATIVE_DRIVERS if profile == CONVERGENCE.PROFILE else NATIVE_DRIVERS)
     for label, driver, needs_archive in drivers:
         output = work/label
         args = ['--output', output]
+        if label == 'stage1-sqlite-commit':
+            args.insert(0, 'native')
+        native_pass_fds = ()
+        if Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
+            path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
+            descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
+            if path is None or descriptor is None:
+                raise ValueError('component requires the original native coordination lock')
+            fd = int(descriptor)
+            actual, expected = os.fstat(fd), Path(path).stat()
+            if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+                raise ValueError('native inherited lock identifies another file')
+            args += ['--lock', path, '--lock-fd', str(fd)]
+            native_pass_fds = (fd,)
         if needs_archive:
             args += ['--source-archive', archive, '--target', target]
 
-        def action(driver=Path(driver), args=args, output=output,
-                   success_field='success' if needs_archive else 'complete'):
-            _invoke(root, driver, args)
+        success_field = ('success' if needs_archive else 'development_complete'
+                         if label == 'stage1-accepted-json-parser' else 'complete')
+        def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
+                   success_field=success_field):
+            affinity = None
+            admission = None
+            if profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
+                allowed = sorted(os.sched_getaffinity(0))
+                if len(allowed) < CREATE_CPUS_PER_JOB:
+                    raise ValueError('convergence native child requires four admitted CPUs')
+                affinity = allowed[:CREATE_CPUS_PER_JOB]
+                admission = work/(output.name+'-cpu-admission.json')
+            _invoke(root, driver, args, pass_fds=pass_fds,
+                    cpu_affinity=affinity, cpu_admission=admission)
             result = _read(output/'result.json')
             if result.get(success_field) is not True:
                 raise ValueError('original native driver did not complete: ' + str(driver))
             if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
                 _check_create_native_result(root, Path(driver).parent.name, output, result)
+            if driver == HERE/'sqlite_convergence.py':
+                CONVERGENCE.extra(root, 'sqlite-commit').check_native(result, root, output)
 
         receipt = shared.native_case(label, root, output, action, scope=scope)
         original = _original_file(receipt, 'result.json')
         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
-            _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+            name = Path(driver).parent.name
+            admitted = ({'native_receipt': receipt} if profile == CONVERGENCE.PROFILE
+                        and name == 'create-attachment-flow' else {})
+            _check_create_native_result(root, name, original.parent, _read(original), **admitted)
+        if label == 'stage1-sqlite-commit':
+            CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
         receipts[label] = receipt
     for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
@@ -658,7 +714,7 @@ def run_native(root, work, *, profile='full', scope=None):
     return receipts
 
 
-def _check_create_native_result(root, name, folder, result):
+def _check_create_native_result(root, name, folder, result, *, native_receipt=None):
     """Read every original log; an exit code alone is not a mutant witness."""
     plans = _create_native_plan(name, _read(root/HERE/name/'inventory.json'), root)
     shared = _shared()
@@ -666,6 +722,23 @@ def _check_create_native_result(root, name, folder, result):
     # unrelated report needs a new functional receipt, not a relabelled source
     # snapshot or an unnecessary rebuild of unchanged Rust assertions.
     native_inputs = dict(shared.rust_inputs(root), **shared.rules(root), **shared.contract_inputs(root))
+    if native_receipt is not None:
+        if name != 'create-attachment-flow':
+            raise ValueError('only the fixed convergence Flow admits an original Create receipt')
+        label = 'stage1-create-attachment-flow'
+        current = shared.native_key(label, ['component-case'], root)
+        if native_receipt['key'] != current:
+            cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+            relative = 'admissions/'+label+'.json'
+            reference = dict(identity=shared.digest(native_receipt['key']), file=relative,
+                             sha256=_sha(cache/relative))
+            admitted, _ = shared.convergence_reuse_case(cache, label, current, reference=reference)
+            if admitted != native_receipt:
+                raise ValueError('Flow original receipt differs from its current admission')
+            key = native_receipt['key']
+            # Validate the old full snapshot against its own immutable key;
+            # current applicability was independently admitted, not relabelled.
+            native_inputs = dict(key['rust'], **key['rules'], **key['contracts']['source'])
     source = result.get('inputs', {})
     if (result.get('kind') != name+'-native-development' or result.get('complete') is not True
             or result.get('prepare_only') or tuple(result.get('variants', {})) != tuple(plans)
@@ -710,10 +783,12 @@ def _check_create_native_result(root, name, folder, result):
                     raise ValueError('Create mutant lint is not the declared separate diagnostic')
 
 
-def _append_create_jobs(jobs, output, root, profile):
+def _append_create_jobs(jobs, output, root, profile, *, names=None):
     definition = create_profile(root)
     for package in definition['packages']:
         name = package['name']
+        if names is not None and name not in names:
+            continue
         data = _read(root/HERE/name/'inventory.json')
         recipes = data['views'] if name == 'adopted-create' else data['variants']
         views = {}
@@ -747,6 +822,11 @@ def formal_plan(output, *, root=ROOT, profile='full'):
 
     if profile == 'create-delivery':
         return _append_create_jobs(jobs, output, root, profile)
+    if profile == CONVERGENCE.PROFILE:
+        CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
+        _append_create_jobs(jobs, output, root, profile,
+                            names=('create-attachment-flow',))
+        return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
     for prop, wrong in [('replay', 'key-only-replay'), ('validation', 'same-incarnation'),
                         ('envelope', 'session-only-envelope')]:
         add('replay-'+prop, HERE/'replay_formal.py', ['--property', prop], cases=('correct', wrong))
@@ -791,10 +871,17 @@ def formal_plan(output, *, root=ROOT, profile='full'):
         for variant in variants:
             add(name+'-'+variant, HERE/name/'formal.py', ['--require-native', '--variant', variant],
                 native=labels, cases=(variant,))
-    return _append_create_jobs(jobs, output, root, profile)
+    CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
+    _append_create_jobs(jobs, output, root, profile)
+    return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
 
 
 def _actuals(result):
+    if result.get('kind') == 'fixed-original-proof-readback':
+        return result['actuals']
+    convergence = CONVERGENCE.actuals(result)
+    if convergence is not None:
+        return convergence
     if result.get('kind') in CREATE_KINDS.values():
         return [row.get('actual', {}) for row in result.get('views', result.get('variants', {})).values()]
     if 'cases' in result:
@@ -802,9 +889,80 @@ def _actuals(result):
     return [result.get('actual', {})]
 
 
+def _check_fixed_create_flow(result, originals, job):
+    """Admit three real original views without inventing a completed parent."""
+    cases = ('actual', 'skip-save', 'eager-world')
+    views = result.get('views', [])
+    certificates = (
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.full_flow_contract',
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract',
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.not_full_contract',
+    )
+    if (job['name'] != 'create-attachment-flow' or tuple(job['cases']) != cases
+            or len(originals) != len(cases) or [v.get('case') for v in views] != list(cases)
+            or result.get('actuals') != [v.get('actual') for v in views]):
+        raise ValueError('independent Create flow originals are missing or out of order')
+    for case, certificate, original, view in zip(cases, certificates, originals, views):
+        recipe = job['views'][case]
+        actual = original.get('actual') or {
+            k: original.get(k) for k in ('files', 'audits', 'service_log_sha256')}
+        # Some original diagnostic objects have no aggregate Boolean. Their
+        # exact original full-contract/refutation certificate is still required.
+        if (original.get('complete') is not True or actual != view.get('actual')
+                or ('property_rejected' in original and
+                    original['property_rejected'] is not recipe['property_rejected'])
+                or not actual.get('files') or not actual.get('service_log_sha256')
+                or sorted(actual.get('audits', [])) != sorted(recipe['audits'])
+                or certificate not in actual.get('audits', [])
+                or (recipe['files'] is not None and set(actual['files']) != set(recipe['files']))
+                or not set(recipe['seeds']) <= actual['files'].keys()):
+            raise ValueError('incomplete independent Create flow view: '+case)
+
+
+def _check_fixed_protocol_record(original, job):
+    """Keep the historical caller producer's exact positive/refutation format."""
+    variant, = job['cases']
+    recipe = job['views'][variant]
+    actual = original.get('actual') or {
+        k: original.get(k) for k in ('files', 'audits', 'service_log_sha256')}
+    rejection = variant != 'correct'
+    if (original.get('complete') is not True
+            or set(actual.get('files') or {}) != set(recipe['files'])
+            or sorted(actual.get('audits') or []) != sorted(recipe['audits'])
+            or not actual.get('service_log_sha256')
+            or ('property_rejected' in original and
+                original['property_rejected'] is not rejection)):
+        raise ValueError('incomplete original caller physical evidence: '+variant)
+    if not rejection:
+        if original.get('kind') != 'actual-host24-caller-complete-physical-file-development-check':
+            raise ValueError('different original correct caller producer')
+    elif any(original.get(flag) is not True for flag in (
+            'formal_counterexample_complete', 'same_full_flow_contract', 'same_full_load_contract')):
+        raise ValueError('missing original caller same-property refutation: '+variant)
+
+
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
+    if result.get('kind') == 'fixed-original-proof-readback':
+        reader = _original_reader()
+        reader.check(result, ROOT, job)
+        originals = reader.originals(result)
+        if job.get('create_package') == 'create-attachment-flow' and len(originals) > 1:
+            _check_fixed_create_flow(result, originals, job)
+        elif job.get('convergence_package') == 'protocol-record' and len(originals) == 1:
+            _check_fixed_protocol_record(originals[0], job)
+        elif len(originals) == 1:
+            _check_actual(originals[0], job)
+        else:
+            raise ValueError('unexpected independent original proof objects')
+        return
+    if 'convergence_package' in job:
+        CONVERGENCE.check_actual(result, job, ROOT)
+        return
+    if 'convergence_extra' in job or result.get('kind') == 'fixed-original-proof-readback':
+        CONVERGENCE.extra(ROOT, job['convergence_extra']).check(result, ROOT)
+        return
     if 'create_package' in job:
         if (result.get('kind') != job['expected_kind'] or result.get('prepare_only')
                 or result.get('selected_variant') is not None):
@@ -1035,9 +1193,13 @@ def _execution_helper(root):
     return helper
 
 
+def profile_is_convergence_job(job):
+    return job.get('profile') == CONVERGENCE.PROFILE
+
+
 def _job_description(job):
     names = ('name', 'driver', 'args', 'native', 'cases', 'actual_files',
-             'create_package', 'profile', 'expected_kind', 'inventory_sha256', 'views')
+             'create_package', 'convergence_package', 'convergence_extra', 'profile', 'expected_kind', 'inventory_sha256', 'views')
     return {name: job[name] for name in names if name in job}
 
 
@@ -1082,7 +1244,7 @@ def _execution_context(root, shared, helper, receipts, *, profile='full'):
     if set(modes) != set(repository) or receipts['functional']['key'].get('repository') != repository:
         raise ValueError('current complete functional admission must match every tracked input')
     inherited_lock()
-    return dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
+    context = dict(schema=2, reuse_scope='same-tree-or-reviewed-state-report', source_tree=tree,
         profile=check_profile(profile), create_definition=create_profile(root),
         repository=dict(files=repository, modes=modes),
         rust=shared.rust_inputs(root), rules=shared.rules(root),
@@ -1092,6 +1254,9 @@ def _execution_context(root, shared, helper, receipts, *, profile='full'):
         native=dict(seal_sha256=_sha(Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])/'complete.json'),
             receipts={name: dict(key=receipt['key'], sha256=_sha(
                 _evidence(receipt).parent/'receipt.json')) for name, receipt in receipts.items()}))
+    if profile == CONVERGENCE.PROFILE:
+        context['convergence_definition'] = CONVERGENCE.definition(root)
+    return context
 
 
 def _context_reuse_basis(previous, current, job, result):
@@ -1257,6 +1422,37 @@ def _saved_physical_view(actual, project, physical, commands):
 def _checkpoint_evidence(helper, job, result, result_path, log):
     """Require the original output tree, not merely files a receipt self-reports."""
     folder = result_path.parent.resolve()
+    if 'convergence_extra' in job or result.get('kind') == 'fixed-original-proof-readback':
+        # These fixed adapters bind physical checks to this batch's exact
+        # consumed view. Keep their original project/result identities rather
+        # than copying a partial project or inventing a fresh compilation.
+        adapter = (_original_reader() if result.get('kind') == 'fixed-original-proof-readback'
+                   else CONVERGENCE.extra(ROOT, job['convergence_extra']))
+        adapter.check(result, ROOT)
+        evidence = adapter.evidence(result, ROOT)
+        if not isinstance(evidence, dict) or not evidence:
+            raise ValueError('missing original fixed-adapter evidence readback')
+        evidence = dict(evidence)
+        for name, digest in evidence.items():
+            source = Path(name)
+            if (not source.is_absolute() or source.is_symlink() or not source.is_file()
+                    or _sha(source) != digest):
+                raise ValueError('original fixed-adapter evidence changed: '+name)
+        if log.is_symlink() or not log.is_file():
+            raise ValueError('missing fixed-adapter readback command log')
+        if job.get('convergence_extra') == 'sqlite-commit':
+            if adapter.check_reuse(folder, result, ROOT) == 'REUSE':
+                sidecar = folder/'reuse.json'
+                origin = Path(_read(sidecar)['original_result'])
+                evidence[str(sidecar.resolve())] = _sha(sidecar)
+                evidence[str(origin)] = _sha(origin)
+        evidence[str(result_path.resolve())] = _sha(result_path)
+        evidence[str(log.resolve())] = _sha(log)
+        if profile_is_convergence_job(job):
+            admission = log.parent/'cpu-admission.json'
+            _check_cpu_admission(admission)
+            evidence[str(admission.resolve())] = _sha(admission)
+        return evidence
     if 'create_package' in job and job['name'] != 'create-attachment-flow':
         rows = result['views' if job['name'] == 'adopted-create' else 'variants']
         for case, row in rows.items():
@@ -1303,7 +1499,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if 'create_package' in job:
+    if 'create_package' in job or profile_is_convergence_job(job):
         admission = log.parent/'cpu-admission.json'
         _check_cpu_admission(admission)
         evidence[str(admission.resolve())] = _sha(admission)
@@ -1332,7 +1528,7 @@ def _cpu_slots(profile, jobs, allowed=None):
     if not allowed or any(type(n) is not int or n < 0 for n in allowed) or len(set(allowed)) != len(allowed):
         raise ValueError('invalid actual parent CPU affinity')
     allowed.sort()
-    if profile == 'create-delivery' and len(allowed) < jobs*CREATE_CPUS_PER_JOB:
+    if profile in ('create-delivery', CONVERGENCE.PROFILE) and len(allowed) < jobs*CREATE_CPUS_PER_JOB:
         raise ValueError(f'Create requires {jobs*CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
     if len(allowed) < CREATE_CPUS_PER_JOB:
         raise ValueError('Create jobs require four admitted CPUs')
@@ -1383,7 +1579,7 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if 'create_package' in job:
+        if 'create_package' in job or profile_is_convergence_job(job):
             admission = Path(receipt['command_log']).parent/'cpu-admission.json'
             if (previous.get('cpu_admission') != _check_cpu_admission(admission)
                     or previous.get('cpu_admission_path') != str(admission)
@@ -1395,7 +1591,8 @@ def _reuse_job(helper, job, context, previous):
         return None, repr(error)
 
 
-def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=None):
+def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=None,
+                original_readback=False):
     started = time.monotonic()
     directory.mkdir(mode=0o700, parents=True)
     for name in ('runtime-cache', 'cargo-target'):
@@ -1414,24 +1611,37 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
             stream.write(content)
         seed_sha256 = hashlib.sha256(content).hexdigest()
     args = list(job['args'])
+    driver = Path(job['driver'])
+    retained = (original_readback and ('convergence_package' in job or 'create_package' in job)
+                and _original_reader(root).supported(root, job))
+    if retained:
+        driver = HERE/'original_readback.py'
+        args = ['run', '--job', job['name']]
     pass_fds = ()
-    if 'create_package' in job:
+    if retained:
+        fd, _ = inherited_lock()
+        pass_fds = (fd,)
+    elif ('create_package' in job
+            or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
         fd, lock = inherited_lock()
         pass_fds = (fd,)
         args += ['--lock', lock['path'], '--lock-fd', str(fd)]
+    elif job.get('convergence_extra') in CONVERGENCE.EXTRA_DRIVERS:
+        fd, _ = inherited_lock()
+        pass_fds = (fd,)
     if job['name'] in ('serde-binding-negative', 'parser-binding-negative', 'decode-assembly-negative'):
         args += ['--native-evidence', str(paths[job['native'][0]])]
     args += ['--output', job['output']]
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if 'create_package' in job:
+    if 'create_package' in job or profile_is_convergence_job(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
-    argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log', **transport)
+    argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if 'create_package' in job:
+    if 'create_package' in job or profile_is_convergence_job(job):
         admission = directory/'cpu-admission.json'
         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
@@ -1445,7 +1655,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
     The parent alone validates and publishes checkpoints. Failures stop new
     dispatch; already-started independent jobs finish and retain their evidence.
     """
-    allowed_workers = CREATE_WORKERS if check_profile(profile) == 'create-delivery' else FULL_WORKERS
+    allowed_workers = CREATE_WORKERS if check_profile(profile) in ('create-delivery', CONVERGENCE.PROFILE) else FULL_WORKERS
     if type(jobs) is not int or jobs not in allowed_workers:
         raise ValueError('registered worker count is outside the explicit profile')
     if len({job['name'] for job in plan}) != len(plan):
@@ -1457,7 +1667,8 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                 or Path(job['output']).resolve() != (output/job['name']).resolve()
                 or Path(job['output']).exists()):
             raise ValueError('job must use its original descriptor and new private output')
-    slots = (_cpu_slots(profile, jobs) if any('create_package' in j for j in plan) else [None]*jobs)
+    slots = (_cpu_slots(profile, jobs) if profile == CONVERGENCE.PROFILE
+             or any('create_package' in j for j in plan) else [None]*jobs)
     helper, shared = _execution_helper(root), _shared()
     context_path = output/'execution-inputs.json'
     shared.write_json(context_path, context)
@@ -1485,7 +1696,10 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = dict(cpu_affinity=slots[slot]) if 'create_package' in job else {}
+                options = (dict(cpu_affinity=slots[slot]) if 'create_package' in job
+                           or profile_is_convergence_job(job) else {})
+                if profile_is_convergence_job(job):
+                    options['original_readback'] = not recompute
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
                                          runtime_seed, **options)
                 inflight[future] = (job, slot)
@@ -1512,7 +1726,12 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                         evidence=evidence, seconds=row['seconds'])
                     checkpoint = directory/'checkpoint.json'
                     shared.write_json(checkpoint, receipt)
-                    row.update(use='RUN', result_sha256=receipt['result_sha256'],
+                    proof_use = 'REUSE' if result.get('execution') == 'REUSE' else 'RUN'
+                    if job.get('convergence_extra') == 'sqlite-commit':
+                        proof_use = CONVERGENCE.extra(root, 'sqlite-commit').check_reuse(
+                            result_path.parent, result, root)
+                    row.update(use=proof_use,
+                        current_admission='RUN', result_sha256=receipt['result_sha256'],
                         checkpoint_path=str(checkpoint), checkpoint_sha256=_sha(checkpoint))
                     results[job['name']] = row
                 except Exception as error:
@@ -1526,8 +1745,8 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
 
 
 def _execution_options(jobs=None, resume_from=None, recompute=False, *, profile='full'):
-    allowed = CREATE_WORKERS if check_profile(profile) == 'create-delivery' else FULL_WORKERS
-    choices = '1, 2, 4, 8 or 12' if profile == 'create-delivery' else '1, 2 or 4'
+    allowed = CREATE_WORKERS if check_profile(profile) in ('create-delivery', CONVERGENCE.PROFILE) else FULL_WORKERS
+    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2 or 4'
     sources = dict(workers='argument' if jobs is not None else 'default',
                    resume_from='argument' if resume_from is not None else 'default')
     if jobs is None:
@@ -1572,15 +1791,24 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
     for name in native_labels(profile):
         _original_file(receipts[name], 'result.json')
+    if 'stage1-sqlite-commit' in receipts:
+        original = _original_file(receipts['stage1-sqlite-commit'], 'result.json')
+        CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
     for label, driver, _ in CREATE_NATIVE_DRIVERS:
+        if label not in receipts:
+            continue
         original = _original_file(receipts[label], 'result.json')
-        _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+        name = Path(driver).parent.name
+        admitted = ({'native_receipt': receipts[label]} if profile == CONVERGENCE.PROFILE
+                    and name == 'create-attachment-flow' else {})
+        _check_create_native_result(root, name, original.parent, _read(original), **admitted)
     check_create_sources(root)
     source_before = shared.repository_inputs(root)
     output = Path(output)
     output.mkdir(mode=0o700, parents=True)
     record = dict(kind='registered-stage1-formal-drivers', complete=False, results=[], covered=[],
-                  profile=profile, create_definition=create_profile(root), whole_V3_acceptance=False,
+                  profile=profile, create_definition=create_profile(root),
+                  whole_V3_acceptance=False,
                   shared_seal_sha256=_sha(cache/'complete.json'),
                   source_snapshot_sha256=shared.digest(source_before),
                   native_receipts={name: dict(path=str(paths[name].parent/'receipt.json'),
@@ -1590,6 +1818,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
                   execution_schema=1, execution=dict(**options, reuse_scope='same-tree-or-reviewed-state-report',
                     affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else None,
                     private_worker_caches=True, outer_coordination_lock='retained by the calling operator'))
+    if profile == CONVERGENCE.PROFILE:
+        record['convergence_definition'] = CONVERGENCE.definition(root)
     def source_guard():
         if (_sha(cache/'complete.json') != record['shared_seal_sha256']
                 or shared.repository_inputs(root) != source_before
@@ -1646,7 +1876,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
             scope=('all template declarations; retained component audits also enter the public total gate'
-                   if profile == 'full' else 'all 42 fixed Create views; each physical view checked separately'))
+                   if profile == 'full' else 'all fixed convergence views; original correct and wrong cases retained'
+                   if profile == CONVERGENCE.PROFILE else 'all 42 fixed Create views; each physical view checked separately'))
         if record['template_audits']['missing']:
             raise ValueError('registered template audit declarations missing: '
                              + repr(record['template_audits']['missing']))
@@ -1654,7 +1885,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             record['retained_source_files'] = compute_retained_coverage(root, record)
             record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         elif expected_audits != observed_audits:
-            raise ValueError('unexpected Create audit declarations')
+            raise ValueError('unexpected fixed-profile audit declarations')
         shared.validate_native(cache, scope=scope)
         check_create_sources(root)
         source_guard()

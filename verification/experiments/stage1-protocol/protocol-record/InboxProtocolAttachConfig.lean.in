@@ -1,0 +1,45 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolAttachTotal
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+
+theorem attach_view_config {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (state after : E)
+    (result : core.result.Result Unit JournalError) (output : Inbox)
+    (returned : attachView io inbox intent s e state = .ok (result, after, output)) :
+    output.config = inbox.config := by
+  unfold attachView at returned
+  split at returned
+  · obtain ⟨session, _, continued⟩ := InboxLoad.bind_success_value _ _ _ returned
+    cases bindingEq : session.local with
+    | none =>
+      simp only [bindingEq] at continued
+      exact (congrArg (fun value => value.2.2.config) (Result.ok_injective continued)).symm
+    | some binding =>
+      simp only [bindingEq] at continued
+      obtain ⟨⟨terminated, afterTerminate⟩, _, continued⟩ :=
+        InboxLoad.bind_success_value _ _ _ continued
+      simp only [uncurry_apply_pair] at continued
+      cases terminated with
+      | Err error =>
+        exact (congrArg (fun value => value.2.2.config) (Result.ok_injective continued)).symm
+      | Ok accepted =>
+        cases accepted
+        obtain ⟨⟨operation, afterCurrent⟩, _, continued⟩ :=
+          InboxLoad.bind_success_value _ _ _ continued
+        simp only [uncurry_apply_pair] at continued
+        cases operation with
+        | none =>
+          exact (congrArg (fun value => value.2.2.config) (Result.ok_injective continued)).symm
+        | some operation =>
+          obtain ⟨entry, _, continued⟩ := InboxLoad.bind_success_value _ _ _ continued
+          exact (congrArg (fun value => value.2.2.config) (Result.ok_injective continued)).symm
+  · exact (congrArg (fun value => value.2.2.config) (Result.ok_injective returned)).symm
+
+end SandboxModel.Stage1Protocol.ProtocolRecord
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.attach_view_config

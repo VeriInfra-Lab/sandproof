@@ -5,7 +5,7 @@
     "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
     "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
     "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
-    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
@@ -89,5 +89,22 @@
       "SandboxModel.Stage1Protocol.NegativeAccessOrder.actual_mutant_result",
       "SandboxModel.Stage1Protocol.NegativeAccessOrder.violates_same_full_contract"
     ]
+  },
+  "reviewed_source_rebinding": {
+    "scope": "Only HOST_STORE_FORMAT_VERSION changes from23 to24; not consumed by any selected access/request/accepted/recorded root",
+    "source": "sandbox-protocol/src/internal.rs",
+    "original_source_commit": "39577ca1e61f4daa4ba4bbda7db94bf087bdaef0",
+    "original_sha256": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "current_sha256": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
+    "original_evidence_identity_preserved": true,
+    "new_formal_execution_claimed": false,
+    "unchanged_consumed_methods": [
+      "LifecycleAccessIdentity::validate",
+      "LifecycleRequest::validate",
+      "LifecycleRequest::replay_matches",
+      "AcceptedLifecycleIntent::validate",
+      "RecordedLifecycleIntent::matches"
+    ],
+    "guard_protocol_version": "lifecycle::PROTOCOL_VERSION unchanged; distinct from host store format"
   }
 }

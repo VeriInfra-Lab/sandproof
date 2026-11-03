@@ -1,0 +1,18 @@
+import SandproofLifetimeRow.Funs
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Values
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow
+theorem wrong_owner_rejects_full_contract : ¬ FullRowContract controller.admission.lifetime_from_row := by
+  intro contract
+  have chosen := contract Values.owner Values.foreign
+  simp [controller.admission.lifetime_from_row,
+    core.option.Option.is_some_and, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from,
+    core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+    controller.admission.lifetime_from_row.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    Expected, Valid, Projected, Values.owner, Values.foreign,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes] at chosen
+  have different : SandproofFoundationsRust.IdentifierLibrary.stringBytes "tenant-8" ≠
+      SandproofFoundationsRust.IdentifierLibrary.stringBytes "tenant-7" := by decide
+  exact different chosen
+end SandboxModel.Stage1Protocol.LifetimeRow
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.wrong_owner_rejects_full_contract

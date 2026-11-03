@@ -1,0 +1,80 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Spec
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin.Values
+open sandbox_controller_core
+
+def singleton (value : T) : alloc.vec.Vec T :=
+  alloc.vec.Vec.from [value] (by simp; scalar_tac)
+def empty (T : Type) : alloc.vec.Vec T := alloc.vec.Vec.new T
+def emptyStore (K V : Type) : store.Store K V := ⟨empty (K × V)⟩
+def digest : Array U8 32#usize := Array.from (List.replicate 32 (0#u8)) (by decide)
+def node : sandproof_protocol.internal.NodeIdentity := ⟨"deployment", "node", 1#u64⟩
+def bootstrap : capture.HostEpochRegistration := ⟨1#u16, "boot", digest⟩
+def source : capture.SourceProcessIdentity := ⟨1234#u32, 5678#u64, "boot"⟩
+def create : sandproof_protocol.internal.lifecycle.CreateBinding :=
+  ⟨"template", digest, ⟨1#u64, 1#u64, 4096#u64, 4096#u64⟩,
+    alloc.vec.Vec.from [123#u8, 125#u8] (by scalar_tac), 1000#u64, 2000#u64, 3000#u64⟩
+def origin : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  ⟨⟨⟨4#u16, node, "session", ⟨"deployment", "owner", 1#u64, 1#u64⟩, .Absent⟩,
+    .Create create 101#u64⟩, 1#u64, ⟨"deployment", "center"⟩, ⟨1#u16, 1#u64⟩⟩
+def request : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  { origin with request := ⟨{ origin.request.binding with
+      key := ⟨"deployment", "owner", 1#u64, 2#u64⟩, expected := .Version 1#u64 },
+    .Unload 101#u64 1#u64⟩, accepted_version := 2#u64 }
+def anchor : Anchor :=
+  ⟨request, origin, ⟨1#u64, 2#u64, 3#u64⟩,
+    ⟨2#u64, .Running, false, 1#u64, 101#u64, some 5#u64, none,
+      some ⟨some 10#i64, 2010#i64, 3010#i64, 1010#i64, 4096#u64⟩,
+      empty _⟩,
+    none, node, bootstrap, source, digest, (1#u64, digest), empty _, empty _⟩
+def key : model.OperationKey := ⟨1#u64, 3#u64⟩
+def plan : Plan :=
+  ⟨key, 1#u64, 101#u64, some 5#u64, none, none, none, none,
+    empty _, empty _, 3#u64, true⟩
+def row : Ledger :=
+  ⟨1#u64, ⟨3#u64, 1#u64, .Create, .Succeeded⟩,
+    .Create 1#u64 .DenyAll ⟨7#u64⟩, none⟩
+def world : World := {
+  maintenance := none
+  sandboxes := emptyStore _ _
+  vms := emptyStore _ _
+  filesystems := emptyStore _ _
+  snapshots := emptyStore _ _
+  net_slots := emptyStore _ _
+  applied_file_policies := emptyStore _ _
+  worker_fences := emptyStore _ _
+  operations := ⟨singleton (key, row)⟩
+  operation_plans := ⟨singleton (key, plan)⟩
+  resource_indexes := emptyStore _ _
+  logical_effects := emptyStore _ _
+  effect_keys := empty _
+  effects := emptyStore _ _
+  next_vm_id := 6#u64
+  next_slot_id := 1#u64
+  next_snapshot_id := 1#u64
+  next_manifest_digest := 1#u64
+  inflight := empty _
+  controller_up := true }
+def entry : controller.lifecycle_inbox.model.Entry :=
+  ⟨origin, some 3#u64, none, none, none⟩
+def session : controller.lifecycle_inbox.model.Session := {
+  id := "session", retention := ⟨1#u16, 1#u64⟩, owner := "owner",
+  current_version := 2#u64, terminal := false, refusal := none,
+  incarnation := some 101#u64, «local» := some anchor.local,
+  entries := singleton entry, confirmed_terminal := none, confirmed_renewal := none,
+  compacted_sdk_through := none, native_retirement := none }
+def inbox : Inbox := {
+  config := ⟨⟨"deployment", "center"⟩, node, some bootstrap,
+    2#u16, 8#u16, 1024#u32, 4096#u32, 16384#u32⟩
+  host_epoch_observation := none
+  owner_high_water := 2#u64
+  owners := singleton ⟨"owner", 2#u64⟩
+  sessions := singleton session
+  lanes := empty _ }
+def duplicated : Inbox :=
+  { inbox with sessions := alloc.vec.Vec.from [session, session] (by simp; scalar_tac) }
+def otherGeneration : Anchor :=
+  { anchor with native := { anchor.native with generation := 102#u64 } }
+def otherVm : Anchor :=
+  { anchor with native := { anchor.native with current_vm := some 6#u64 } }
+end SandboxModel.Stage1Protocol.SourceOrigin.Values

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
     contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
-    check_native_scope, check_native_components)
+    check_native_scope, check_native_components, convergence_reuse_publication)
 from tools.ci_retention import NativeBuildRun
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
@@ -123,7 +123,8 @@ def run_suite(output, *, scope='all'):
 
 
 def stage1_source_admission(scope, *, prepare=False):
-    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery'):
+    if scope in ('all', 'stage1-protocol', 'stage1-create-delivery',
+                 'stage1-protocol-convergence'):
         registered = load('stage1_source_only_admission',
             ROOT/'verification/experiments/stage1-protocol/registered.py')
         (registered.prepare_create_sources if prepare else registered.check_create_sources)(ROOT)
@@ -131,6 +132,9 @@ def stage1_source_admission(scope, *, prepare=False):
 
 def run_locked_suite(output, *, scope='all'):
     check_native_scope(scope)
+    if (os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') == '1'
+            and scope != 'stage1-protocol-convergence'):
+        raise ValueError('fixed convergence reuse requires its exact native scope')
     trusted_checkout(ROOT)
     os.umask(0o077)
     output.mkdir(parents=True, exist_ok=True)
@@ -159,10 +163,16 @@ def run_locked_suite(output, *, scope='all'):
     os.environ['SANDPROOF_NATIVE_USED']=str(work/'commands-used.jsonl')
     def call(args):
         subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
+    if scope == 'stage1-protocol-convergence' and os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') == '1':
+        # Admit unchanged originals and finish the missing components first.
+        # Each of the fixed 22 appears once; a failure cannot start functional.
+        run_stage1_native(work, scope=scope)
+        native_case('functional', ROOT, work/'functional', lambda: functional(work), scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)
-    if scope in ('stage1-protocol', 'stage1-create-delivery'):
+    if scope in ('stage1-protocol', 'stage1-create-delivery', 'stage1-protocol-convergence'):
         run_stage1_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     if scope == 'capture-caller':
@@ -286,12 +296,15 @@ def run_stage1_native(work, *, scope='all'):
         subprocess.run([sys.executable,
             'verification/experiments/stage1-protocol/component.py',
             '--native-only', '--output', str(target)], cwd=ROOT, check=True)
-    if scope != 'stage1-create-delivery':
-        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    registered.run_native(ROOT, work / 'stage1-v3',
-        profile='create-delivery' if scope == 'stage1-create-delivery' else 'full', scope=scope)
+    profile = ('create-delivery' if scope == 'stage1-create-delivery' else
+               'protocol-convergence' if scope == 'stage1-protocol-convergence' else 'full')
+    if profile == 'protocol-convergence' and registered.native_scope(profile) != scope:
+        raise ValueError('native profile and scope do not match')
+    if profile == 'full':
+        native_case('stage1-protocol', ROOT, target, retained, scope=scope)
+    registered.run_native(ROOT, work / 'stage1-v3', profile=profile, scope=scope)
 
 
 def publish_suite(output, work, initial, started, *, scope='all', builds=None):
@@ -324,6 +337,14 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
         registered = load('stage1_create_native_definition',
             ROOT/'verification/experiments/stage1-protocol/registered.py')
         result.update(profile='create-delivery', create_definition=registered.create_profile(ROOT))
+    elif scope == 'stage1-protocol-convergence':
+        registered = load('stage1_convergence_native_definition',
+            ROOT/'verification/experiments/stage1-protocol/registered.py')
+        result.update(profile='protocol-convergence',
+                      convergence_definition=registered.CONVERGENCE.definition(ROOT))
+    reused = convergence_reuse_publication(output, keys, scope=scope)
+    if reused is not None:
+        result['convergence_reuse'] = reused
     # Keep the original completion plus a precise target inventory. Publication
     # never moves/deletes build bytes or guesses resource cleanup from exit 0.
     original = work / 'native-complete.json'
@@ -339,10 +360,13 @@ def publish_suite(output, work, initial, started, *, scope='all', builds=None):
 def functional(work):
     target = work / 'functional'
     target.mkdir()
+    environment = dict(os.environ, SANDPROOF_CHECK_EVENTS=str(target/'events.jsonl'))
+    # This outer receipt-admission option must not change ordinary test fixtures.
+    environment.pop('SANDPROOF_CONVERGENCE_REUSE_FIXED17', None)
     with (target / 'check-function.log').open('wb') as log:
         subprocess.run(['bash','scripts/check-function.sh'], cwd=ROOT, stdout=log,
                        stderr=subprocess.STDOUT, check=True,
-                       env=dict(os.environ, SANDPROOF_CHECK_EVENTS=str(target/'events.jsonl')))
+                       env=environment)
 
 
 def main(argv=None):

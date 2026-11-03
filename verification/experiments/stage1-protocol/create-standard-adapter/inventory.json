@@ -1,8 +1,8 @@
 {
   "kind": "actual-create-standard-read-and-rebind-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3"
   },
@@ -958,5 +958,26 @@
     "templates": {
       "native-cases.rs.in": "7fe3b0b946ee6e7b4803ef9efe8fd4aba79d0a65ca4a45eef643fbc3a6bc1893"
     }
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

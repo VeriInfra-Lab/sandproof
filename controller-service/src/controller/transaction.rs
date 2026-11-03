@@ -6,6 +6,8 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use sandbox_controller_core::World;
 use std::{cell::RefCell, ops::Deref};
 
+mod memo;
+
 pub(super) struct CommittedWorld {
     value: RefCell<Option<World>>,
     // SQLite changes this connection-local value on another connection's
@@ -70,6 +72,24 @@ pub(super) struct WorldTransaction<'a> {
     pub(super) input_start: u64,
 }
 
+// Only value transfer lives here. The memo core selects None versus the
+// original candidate and decides when each operation occurs. No RefCell guard
+// survives a database callback; the original reentrant read behavior is kept.
+struct TransactionCells<'a> {
+    committed: &'a RefCell<Option<World>>,
+    candidate: &'a RefCell<Option<World>>,
+}
+
+impl memo::Cells<World> for TransactionCells<'_> {
+    fn set_committed(&mut self, value: Option<World>) {
+        *self.committed.borrow_mut() = value;
+    }
+
+    fn take_candidate(&mut self) -> Option<World> {
+        self.candidate.borrow_mut().take()
+    }
+}
+
 impl<'a> WorldTransaction<'a> {
     pub(super) fn begin(
         connection: &'a mut Connection,
@@ -127,13 +147,11 @@ impl<'a> WorldTransaction<'a> {
         mut self,
         commit: impl FnOnce(Transaction<'a>) -> rusqlite::Result<()>,
     ) -> Result<(), JournalError> {
-        // Invalidate before the call: even a failed commit/rollback may have
-        // committed. No candidate is visible until success is confirmed.
-        self.committed.invalidate();
-        commit(self.transaction.take().expect("live transaction"))
-            .map_err(JournalError::CommitUncertain)?;
-        *self.committed.value.borrow_mut() = self.candidate.borrow_mut().take();
-        Ok(())
+        let mut cells = TransactionCells {
+            committed: &self.committed.value,
+            candidate: &self.candidate,
+        };
+        memo::commit_with(&mut self.transaction, &mut cells, commit)
     }
 }
 
@@ -147,13 +165,11 @@ impl<'a> Deref for WorldTransaction<'a> {
 
 impl Drop for WorldTransaction<'_> {
     fn drop(&mut self) {
-        if let Some(transaction) = self.transaction.take()
-            && transaction.rollback().is_err()
-        {
-            // The Drop path cannot report rollback failure to the caller.
-            // Invalidation prevents any later use of a possibly stale memo.
-            self.committed.invalidate();
-        }
+        let mut cells = TransactionCells {
+            committed: &self.committed.value,
+            candidate: &self.candidate,
+        };
+        memo::rollback_if_live(&mut self.transaction, &mut cells, Transaction::rollback);
     }
 }
 

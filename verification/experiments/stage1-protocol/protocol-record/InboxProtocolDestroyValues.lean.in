@@ -1,0 +1,239 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolReadFixture
+import SandboxModel.Lifecycle.Protocol.InboxRecordValidationProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxSave.Values (saved terminal renewal unload)
+
+abbrev create := SavedRetirement.Values.createIntent
+abbrev destroyIntent := SavedRetirement.Values.destroyIntent
+abbrev binding := SavedRetirement.Values.binding
+
+def created : Entry := { InboxRecord.pendingEntry create with local_operation := some 30#u64 }
+def destroyed (operation : U64) : Entry :=
+  { InboxRecord.pendingEntry destroyIntent with local_operation := some operation }
+def beforeSession : Session := {
+  InboxValidation.Values.recordedSession with
+  «local» := some binding,
+  entries := vector [created] (by simp) }
+def afterSession (operation : U64) : Session := {
+  beforeSession with
+  current_version := 2#u64, terminal := true,
+  entries := vector [created, destroyed operation] (by simp) }
+def container (session : Session) : Inbox := {
+  InboxRecordValidation.inbox none with sessions := vector [session] (by simp) }
+def before : Inbox := container beforeSession
+def after (operation : U64) : Inbox := container (afterSession operation)
+
+theorem before_represented : ConfigValidation.Representable before.config :=
+  InboxRecordValidation.config_representable
+
+theorem before_budget : InboxLoad.budgetValue before.config = 286720#u64 := by
+  apply UScalar.eq_of_val_eq
+  rw [InboxLoad.budget_value_exact]
+  decide
+
+theorem envelopes : Validation.ValidEnvelope create EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroyIntent EnvelopeValues.context := SavedRetirement.Values.normal_envelopes
+
+theorem before_shape : SessionShape.validateView saved terminal before 0#usize beforeSession = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView saved beforeSession = .ok (.Ok ()) := rfl
+  rw [SessionShape.validateView, receipt]
+  simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, SessionShape.PriorConflict,
+    SessionShape.checkConfirmed, before, container, beforeSession, created, InboxRecord.pendingEntry,
+    InboxRecordValidation.inbox, InboxRecordValidation.config, vector,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, InboxValidation.Values.normal,
+    ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small,
+    create, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem after_shape (operation : U64) :
+    SessionShape.validateView saved terminal (after operation) 0#usize (afterSession operation) = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView saved (afterSession operation) = .ok (.Ok ()) := rfl
+  rw [SessionShape.validateView, receipt]
+  simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, SessionShape.PriorConflict,
+    SessionShape.checkConfirmed, after, container, afterSession, beforeSession, created, destroyed,
+    InboxRecord.pendingEntry, InboxRecordValidation.inbox, InboxRecordValidation.config, vector,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, InboxValidation.Values.normal,
+    ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small,
+    create, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+def sessionFor (later : Option U64) : Session := later.elim beforeSession afterSession
+def inboxFor (later : Option U64) : Inbox := container (sessionFor later)
+def summaryFor (later : Option U64) : InboxValidation.EntrySummary :=
+  later.elim InboxValidation.Values.createSummary
+    (fun _ => ⟨2#u64, fun index => if index.val = 2 then 1 else InboxValidation.Values.createSummary.counts index⟩)
+
+theorem created_kind (later : Option U64) :
+    InboxEntry.entryView unload (inboxFor later) (sessionFor later) created EnvelopeValues.context = .ok (.Ok 0#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr envelopes.1
+  simp only [create, SavedRetirement.Values.createIntent, EnvelopeValues.intent, Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  cases later <;>
+    simp [InboxEntry.entryView, UnloadResolution.validateView, InboxEntry.prefixInvalid,
+      created, destroyed, InboxRecord.pendingEntry, accepted, RenewalResultTag.IsError,
+      InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+      InboxEntry.isRenew, inboxFor, sessionFor, container, beforeSession, afterSession,
+      InboxRecordValidation.inbox, InboxRecordValidation.config,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal,
+      create, destroyIntent, SavedRetirement.Values.createIntent, SavedRetirement.Values.destroyIntent,
+      EnvelopeValues.intent, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture,
+      ConfigBudget.Values.small, vector, Validation.Examples.createPayload]
+
+theorem destroyed_kind (operation : U64) :
+    InboxEntry.entryView unload (after operation) (afterSession operation) (destroyed operation)
+      EnvelopeValues.context = .ok (.Ok 2#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr envelopes.2
+  simp only [destroyIntent, SavedRetirement.Values.destroyIntent,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent, Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp [InboxEntry.entryView, UnloadResolution.validateView, InboxEntry.prefixInvalid,
+    created, destroyed, InboxRecord.pendingEntry, accepted, RenewalResultTag.IsError,
+    InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+    InboxEntry.isRenew, after, container, beforeSession, afterSession,
+    InboxRecordValidation.inbox, InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, create, destroyIntent, SavedRetirement.Values.createIntent,
+    SavedRetirement.Values.destroyIntent, EnvelopeValues.intent, vector]
+
+theorem ordered (later : Option U64) :
+    InboxValidation.entryScan unload (inboxFor later) (sessionFor later) EnvelopeValues.context
+      (sessionFor later).entries.val InboxValidation.initialSummary = .ok (.Ok (summaryFor later)) := by
+  have cversion : created.intent.accepted_version = 1#u64 := rfl
+  have dversion (operation : U64) : (destroyed operation).intent.accepted_version = 2#u64 := rfl
+  have dop (operation : U64) : (destroyed operation).intent.request.operation = .Destroy := rfl
+  have retained : InboxRetained.expected (sessionFor later) 0#u64 created.intent = true := by
+    simp [InboxRetained.expected, created, InboxRecord.pendingEntry, create,
+      SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have dkind (operation : U64) :
+      InboxEntry.entryView unload (inboxFor (some operation)) (sessionFor (some operation))
+        (destroyed operation) EnvelopeValues.context = .ok (.Ok 2#usize) := destroyed_kind operation
+  have one : 1 ≤ U16.max := by scalar_tac
+  have zero_lt : 0 < U16.max := by scalar_tac
+  cases later with
+  | none =>
+    change InboxValidation.entryScan unload (inboxFor none) (sessionFor none) EnvelopeValues.context
+      [created] InboxValidation.initialSummary = _
+    simp [InboxValidation.entryScan, cversion, InboxValidation.initialSummary, retained,
+      created_kind, InboxValidation.incrementKind, one,
+      summaryFor, InboxValidation.Values.createSummary]
+  | some operation =>
+    change InboxValidation.entryScan unload (inboxFor (some operation)) (sessionFor (some operation))
+      EnvelopeValues.context [created, destroyed operation] InboxValidation.initialSummary = _
+    simp [InboxValidation.entryScan, cversion, dversion, dop, InboxValidation.initialSummary,
+      retained, created_kind, dkind, InboxValidation.incrementKind, one, zero_lt,
+      summaryFor, InboxValidation.Values.createSummary]
+
+
+theorem lineage (later : Option U64) : InboxLineage.expectedResult (sessionFor later) = .Ok () := by
+  cases later <;>
+    simp [InboxLineage.expectedResult, InboxLineage.observed, InboxLineage.scan, InboxLineage.step,
+      InboxLineage.initial, sessionFor, beforeSession, afterSession, vector, created, destroyed,
+      InboxRecord.pendingEntry, create, destroyIntent, SavedRetirement.Values.createIntent,
+      SavedRetirement.Values.destroyIntent, EnvelopeValues.intent, InboxValidation.Values.recordedSession]
+
+theorem summary_fields (later : Option U64) :
+    InboxValidation.SummaryFields (inboxFor later) (sessionFor later) (summaryFor later) := by
+  cases later <;>
+    simp [InboxValidation.SummaryFields, inboxFor, sessionFor, summaryFor, container,
+      beforeSession, afterSession, created, destroyed, InboxRecord.pendingEntry,
+      InboxRecordValidation.inbox, InboxRecordValidation.owner, vector,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal,
+      InboxValidation.Values.createSummary, create, destroyIntent,
+      SavedRetirement.Values.createIntent, SavedRetirement.Values.destroyIntent, EnvelopeValues.intent, binding,
+      SavedRetirement.Values.binding]
+
+theorem session_accepted (later : Option U64) :
+    InboxValidation.sessionView saved terminal renewal unload (inboxFor later) 0#usize
+      (sessionFor later) EnvelopeValues.context = .ok (.Ok ()) := by
+  have shape : SessionShape.validateView saved terminal (inboxFor later) 0#usize (sessionFor later) = .ok (.Ok ()) := by
+    cases later
+    · exact before_shape
+    · exact after_shape _
+  have renewed : InboxRenewal.validateView renewal (sessionFor later) = .ok (.Ok ()) := by
+    cases later <;> rfl
+  simp [InboxValidation.sessionView, shape, renewed, ordered, lineage, summary_fields]
+
+
+theorem container_accepted (session : Session)
+    (accepted : InboxValidation.sessionView saved terminal renewal unload (container session)
+      0#usize session EnvelopeValues.context = .ok (.Ok ())) :
+    InboxValidation.inboxView saved terminal renewal unload (container session) = .ok (.Ok ()) := by
+  have valid : ConfigValidation.Valid (container session).config := InboxRecordValidation.config_valid
+  have successor : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  have ownerFields : InboxValidation.OwnersValid (container session) := by
+    simp [InboxValidation.OwnersValid, container, InboxRecordValidation.inbox,
+      InboxRecordValidation.owner, vector]
+  have lanes : InboxValidation.laneScan terminal.encode (InboxValidation.decodedContext (container session).config)
+      (container session).lanes.val 0 = .ok true := by
+    simp [container, InboxRecordValidation.inbox, InboxValidation.Values.normal, vector,
+      InboxValidation.laneScan, RetentionLane.validateView, successor]
+  have noRetired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict (container session) 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict,
+      RetiredIdentity.conflictAt, container, InboxRecordValidation.inbox, InboxValidation.Values.normal, vector]
+  have host : InboxValidation.HostMatches (container session) := by
+    simp [InboxValidation.HostMatches, container, InboxRecordValidation.inbox, InboxRecordValidation.config]
+  have sessionsBound : ¬ (container session).sessions.val.length > (container session).config.max_sessions.val := by
+    simp [container, InboxRecordValidation.inbox, vector, InboxRecordValidation.config,
+      ConfigValidation.Values.fixture, ConfigBudget.Values.fixture]
+  have ownersBound : ¬ (container session).owners.val.length > (container session).config.max_sessions.val := by
+    simp [container, InboxRecordValidation.inbox, vector, InboxRecordValidation.config,
+      ConfigValidation.Values.fixture, ConfigBudget.Values.fixture]
+  have laneCount : ¬ (container session).lanes.val.length ≠ (container session).config.max_sessions.val := by
+    simp [container, InboxRecordValidation.inbox, vector, InboxRecordValidation.config,
+      InboxValidation.Values.normal, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture]
+  simp only [InboxValidation.inboxView, valid, not_true_eq_false, sessionsBound, ownersBound,
+    laneCount, ↓reduceIte, lanes, bind_tc_ok, Bool.true_eq_false, noRetired, host, ownerFields]
+  change InboxValidation.sessionsView saved terminal renewal unload (container session)
+    EnvelopeValues.context [session] 0#usize = _
+  have advance : 0#usize + 1#usize = Result.ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp [InboxValidation.sessionsView, advance, accepted]
+
+theorem before_accepted : InboxValidation.inboxView saved terminal renewal unload before = .ok (.Ok ()) :=
+  container_accepted beforeSession (session_accepted none)
+
+theorem after_accepted (operation : U64) :
+    InboxValidation.inboxView saved terminal renewal unload (after operation) = .ok (.Ok ()) :=
+  container_accepted (afterSession operation) (session_accepted (some operation))
+
+theorem before_loaded (trace : InboxLoad.Values.Trace) :
+    sandproof_controller_service.controller.lifecycle_inbox.codec.load_using saved terminal
+      (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic
+      (Fixture.readEffects before) trace =
+      .ok (.Ok (some before), trace ++ InboxLoad.Values.completeTrace before) := by
+  exact Fixture.loaded_actual before before_represented before_accepted before_budget (by decide) trace
+
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.before_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.before_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.before_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.after_shape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.created_kind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.destroyed_kind
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.ordered
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.lineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.summary_fields
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.session_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.container_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.before_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.after_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyValues.before_loaded

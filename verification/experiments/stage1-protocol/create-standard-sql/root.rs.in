@@ -1,0 +1,10 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_create_sql(
+    effects: &mut StandardCreateAttachment<'_, '_>,
+    statement: &str,
+    deadline: i64,
+    sandbox: &str,
+) -> Result<usize, JournalError> {
+    CreateLifetimeSqlEffects::execute_lifetime_update(effects, statement, deadline, sandbox)
+}

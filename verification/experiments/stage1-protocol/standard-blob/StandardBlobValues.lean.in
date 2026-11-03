@@ -1,0 +1,94 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobModel
+import SandboxModel.Lifecycle.Protocol.BlobColumnsValues
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob.Values
+noncomputable section
+open BlobColumns
+
+-- A logical one-call observation on an API-realizable two-column table. This
+-- is not a persisted Inbox/JSON, protected DB or coherent multi-call fixture.
+def sql : Str := Aeneas.Std.toStr "SELECT a, b FROM proof_rows" (by rw [U32.max_eq]; decide)
+
+def observing (row : rusqlite.row.Row) : Context := {
+  connection := {
+    canonical := {
+      identity := 7
+      prepare := fun _ => .ok (.Ok 0)
+      countError := fun _ _ => ⟨31⟩
+      run := fun _ _ => .ok (.Ok 0#usize)
+    }
+    statementObject := fun _ => 7
+    columns := fun _ => 2#usize
+    invalidIndex := fun _ _ => ⟨41⟩
+    expectedRow := fun _ _ => .ok (.Ok row)
+  }
+}
+
+def normal : Context := observing BlobColumns.Values.normal
+def distinct : Context := observing BlobColumns.Values.distinct
+def bothErrors : Context := observing BlobColumns.Values.bothErrors
+
+def prepareRejected : Context := {
+  normal with connection := {
+    normal.connection with canonical := {
+      normal.connection.canonical with prepare := fun _ => .ok (.Err ⟨61⟩)
+    }
+  }
+}
+
+def countRejected : Context := {
+  normal with connection := {
+    normal.connection with canonical := {
+      normal.connection.canonical with prepare := fun _ => .ok (.Ok 1)
+    }
+  }
+}
+
+def rowRejected : Context := {
+  normal with connection := {
+    normal.connection with expectedRow := fun _ _ => .ok (.Err ⟨71⟩)
+  }
+}
+
+theorem same_original_statement (statement : Str) :
+    BlobColumns.Values.normal.statement = issuedReadStatement normal.connection statement 0 := by rfl
+
+theorem expected_observing (row : rusqlite.row.Row) (statement : Str) :
+    expected (observing row) statement = .ok ((match BlobColumns.expected row 0#usize 1#usize with
+      | .Err error => .Err (.Sqlite error)
+      | .Ok pair => .Ok pair), observing row) := by
+  cases outcome : BlobColumns.expected row 0#usize 1#usize <;>
+    simp [expected, queryView, StandardBlob.Values.observing, outcome]
+
+theorem expected_normal :
+    expected normal sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  rw [normal, expected_observing, BlobColumns.Values.normal_expected]
+
+theorem expected_distinct :
+    expected distinct sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.rightBytes), distinct) := by
+  rw [distinct, expected_observing, BlobColumns.Values.distinct_expected]
+
+theorem expected_first_error : expected bothErrors sql = .ok (.Err (.Sqlite ⟨11⟩), bothErrors) := by
+  rw [bothErrors, expected_observing, BlobColumns.Values.first_error_expected]
+
+theorem expected_prepare_error : expected prepareRejected sql = .ok (.Err (.Sqlite ⟨61⟩), prepareRejected) := by
+  simp [expected, queryView, prepareRejected, normal, StandardBlob.Values.observing]
+
+theorem expected_count_error : expected countRejected sql = .ok (.Err (.Sqlite ⟨31⟩), countRejected) := by
+  simp [expected, queryView, countRejected, normal, StandardBlob.Values.observing]
+
+theorem expected_row_error : expected rowRejected sql = .ok (.Err (.Sqlite ⟨71⟩), rowRejected) := by
+  simp [expected, queryView, rowRejected, normal, StandardBlob.Values.observing]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.same_original_statement
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_observing
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_distinct
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_prepare_error
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_count_error
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.Values.expected_row_error

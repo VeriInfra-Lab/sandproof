@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.RestoreLifetime.Spec
+open Aeneas Aeneas.Std SandproofRestoreValidationRust
+namespace SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses
+open controller.lifecycle_inbox.source_work.restore.continued_exit
+
+@[simp] theorem cast_literals :
+    IScalar.hcast .U64 (10#i64) = 10#u64 ∧
+    IScalar.hcast .U64 (25#i64) = 25#u64 ∧
+    IScalar.hcast .U64 (50#i64) = 50#u64 ∧
+    IScalar.hcast .U64 (100#i64) = 100#u64 ∧
+    IScalar.hcast .U64 (200#i64) = 200#u64 := by decide
+
+def life : Lifetime := ⟨some 10#i64, 100#i64, 200#i64, 25#i64, 999#u64⟩
+def native : Native := {
+ owner := 11#u64, phase := .Running, terminal := false, epoch := 3#u64, generation := 37#u64,
+ current_vm := some 19#u64, current_operation := none, lifetime := some life,
+ uncertain_actions := alloc.vec.Vec.from [] (by simp) }
+def saved : Facts := ⟨10#u64, 100#u64, 200#u64, 25#u64, 40#u64⟩
+
+theorem normal_model : Matches native saved 50#i64 := by simp [Matches, native, saved, life]
+theorem normal_actual : lifetime_matches native saved 50#i64 = .ok true := by simp [lifetime_matches, native, saved, life, lift]
+
+end SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.cast_literals
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_model
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.normal_actual

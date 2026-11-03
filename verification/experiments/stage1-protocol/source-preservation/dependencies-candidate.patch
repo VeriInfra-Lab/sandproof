@@ -1,0 +1,22 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,19 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 源材料已存事实保留守卫
++
++`source-preservation` 直接捕获9c50da7c的原 preserves_saved_facts，无生产改写。
++只复用已有逐符号 A6 的普通 Option、Vec、数组和标量比较；两个 Option 模型按
++原回调、完整值与原结果定义，自有 witness/context/plan/state 比较保持透明。
++没有把整个 Serde、Codec、退休过程或事务列为可信，也没有添加业务 opaque、公理。
++
++FullPreservationContract 给出全部已解码值的精化、接受/拒绝与总性：旧 producer/
++consumer 的完整 witness 保留；Retiring 保留全部 plan；Settled 保留完整同一状态。
++原来缺少事实时允许新增，Retiring→Settled 的新 settlement 有效性由别处检查，
++不能擅加强规格。有限合格值历史保持最初事实的结论以每条真实守卫接受边为条件。
++V3 仍需连接原 Codec 的完整 work 查找、键与逐行参数、JSON/摘要和错误传播；
++V5 提供物理来源行、事务/未知提交/重启连接，V6 提供实际材料/进程事实，V7 提供
++独立认证；V1/V2 的意图与耐久发送条件不由值相等推出。

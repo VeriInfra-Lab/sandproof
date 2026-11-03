@@ -179,3 +179,51 @@ Create 可显式设 `SANDPROOF_STAGE1_JOBS=12`，前提是外层已获准 48 CPU
 32 CPU，4 路需 16 CPU。原调度器给每个新任务一个不重叠四核组，子进程设置并
 实际读回后才执行原驱动，原锁 FD 保留。每任务原独立目录、缓存、完整文件与审计、
 首失败停止新派发均不变。默认一路，`full` 原 1/2/4 路不受此选项扩展。
+
+### 固定 protocol-convergence 收敛（最终验收待完成）
+
+本profile固定20包及production-json、sqlite-commit、standard-record-read三个额外入口，
+共27形式任务；普通侧为22组件加完整functional，共23个必需label。它不接受任意子集，
+不替代默认full/all、已交付Create或V4范围。原10包按固定原件读回，其余受影响证明实际运行；
+正确/错误版使用同一合同，构建失败或缺少日志不能计为反例。
+
+证据目录和原件SHA见[有限原件读回说明](original-readback.md)。
+普通环境、原四档库源、固定Redis和离线Cargo沿[证明工作流](../../../docs/proof-workflow.md)准备，
+另提供相同的第五档工具源tar。普通测试机的最终干净候选冻结后只执行一次：
+
+```sh
+export SANDPROOF_ACCEPTANCE_ROLE=native
+export SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE=/private/evidence/aeneas-native-readonly-sources.tar
+export SANDPROOF_SQLITE_CONVERGENCE_INPUTS=/private/evidence/configs/sqlite-native.json
+bash scripts/python-entry.sh tools/proof_native_suite.py run \
+  --scope stage1-protocol-convergence --output /private/evidence/native-scope
+```
+
+SQLite配置schema1的native部分必须给原正确目录（含source/evidence）、原fault_source及
+原summary/receipt/command三件目录；普通入口核对完整Rust、原断言和7原件，不据裸packet造scope封口。
+SQLite完整组件已有成功原件时，formal配置只填写
+`{"schema":1,"formal":{"completed_result":"/private/evidence/sqlite-original/result.json"}}`。
+入口仍执行原check/evidence、核原结果和本次副本逐字节相同，并保留独立的`reuse.json`；
+它不搜索另一份成功记录，缺失或损坏原证据就拒绝，不重写原执行身份。
+
+将最终完整commands/runtime/complete和所有登记原件交给证明机；不传Cargo target。
+在原固定工具/包、已批准命名空间和仍打开的原锁FD下执行：
+
+```sh
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/evidence/native-scope
+export SANDPROOF_V3_ORIGINAL_EVIDENCE=/private/evidence/original-proof-bytes
+export SANDPROOF_PRODUCTION_JSON_ORIGINAL_EVIDENCE=/private/evidence/production-json-original
+export SANDPROOF_SQLITE_CONVERGENCE_INPUTS=/private/evidence/configs/sqlite-formal.json
+export SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE=/private/evidence/standard-record-physical-07
+# 相同工具源tar及原锁FILE/FD仍须按证明工作流提供。
+bash scripts/verify-stage1-protocol.sh --profile protocol-convergence
+```
+
+上述路径是操作者准备的证据位置，不要求存在历史lzn账号。原十包先按原readback prepare建立
+内容索引；JSON必须包含readback.json列出的全部原件。SQLite还须定位correct_project、
+correct_parent_result、correct_service_result、correct_replay和搬运后的native_result；原失败路径及
+项目/工具身份在批准的私有命名空间中保留，不能文本改写原JSON或完整IR取得通过。
+最终候选、每项 RUN／REUSE、23项普通验收封口、27项形式准入、CI与整批归档SHA
+随 [#635](https://github.com/VeriInfra-Lab/sandproof/issues/635) 的交付记录提供。
+本说明及输入摘要本身不宣称这些入口已通过。

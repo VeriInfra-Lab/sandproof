@@ -2,20 +2,20 @@
   "kind": "actual-create-full-flow-reviewed-inputs",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
-    "controller-service/src/controller/lifecycle_inbox/codec.rs": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
-    "controller-service/src/controller/lifecycle_inbox/model.rs": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+    "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
-    "controller-service/src/controller/transaction.rs": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
     "controller-service/src/controller/checkpoint/config.rs": "81a0314c40c07552b58097387044f659288ef6b2bc5ecd0fc835e5ca954c1976",
     "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "docs/formal/03-protocol-inbox.md": "56a1950aef47fe655607caea88c40709d5b51eb5f91e16824738639e1324e81c"
+    "docs/formal/03-protocol-inbox.md": "66d880e5992be30f43f2929302ae9ec346271f4f86f18b9693104585d8d45d73"
   },
   "providers": {
     "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
@@ -102,14 +102,14 @@
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadControlFlow.lean.in": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestLibrary.lean.in": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadEarlyErrors.lean.in": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in": "9c5529da229947e5a99dec6b8e5aa5571858f7143da333f2232e27abfc8f4133",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in": "a2a89c1446567cf740bbfa6ffc48d4ff33736042f515265ebaeb21c620aa1aa1",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadLifecycleConfigValues.lean.in": "54e82e929f3e6a611432ec809de4ec1d2cf63fbb8f8b831f7b61b326961c225a",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadMaintenanceBounds.lean.in": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in": "8d887da51f8af264279d3574c76130e10d4723fac54ffa860cad4089653945c6",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveBodyValues.lean.in": "a12d616031051e18d902780dc52c6c346a58737b9fa3d43c332ffb21118b6853",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in": "41ae2cabfa0a0064bfe0a442418555ad4792b7337c32a810a4221029962d4c00",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in": "c98e3dd9d21756f71eb637fde18e8e50491bf19c52e121865e5e52d00f719bb2",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnessValues.lean.in": "1f56c9ac588e61e65729de5dede4b75da04cdc527ea43f964bdf9d43b4167aac",
@@ -207,13 +207,13 @@
     "CreateLoadedConfig.lean.in": "57c77970f8741c8b8aa3a55bd0f3d2e384f03026fa94c82b447a8287258a8ddd",
     "CreateAttachmentConfig.lean.in": "dfb659d221cfeea7aa04d8445140af990ccde67e0e34b0fec4a0d8a5645982e3",
     "CreateAttachmentCounterValues.lean.in": "cdc57e4559ae1cc3affb59979dd2297d54dfadc11d93885ed44b06914687f20d",
-    "CreateAttachmentFlowModel.lean.in": "10e79340139392f0aa6006bc30cdd1490a05c2f72a9a7ccaca490fce09be108a",
+    "CreateAttachmentFlowModel.lean.in": "6cccd1bfcb43e4eddb0ce28928d0cd696e667306039e2fa8de65c6ff779dc5ac",
     "CreateAttachmentFlow.lean.in": "ca263e10a83c81f37916f6f64f9c0d50059343839bd8a286cef6fbd7e072b728",
-    "native-cases.rs.in": "00e8116421bd719dcae82ca700ee3e0c2a30e67188bd68a9ae8048db7dbed8cb",
+    "native-cases.rs.in": "635b897329dd8315a7c9d929b356253be346d1ba86cc9760e5140f4f4141247b",
     "root.rs.in": "cd60801e537129578e4ef4862c894fe77ba0e319130eb8a336c1f85577573652",
-    "CreateAttachmentFlowValues.lean.in": "d1019331887d9ba8cde9c52aaa22c2a36a631ddec7a436429eb78d0369ad724f",
+    "CreateAttachmentFlowValues.lean.in": "6960f6d4fa06dd8c204acbc9459d37162dad53cd5efddea3297f6ae2c3adbd86",
     "CreateAttachmentPath.lean.in": "1dd6acb163b5bfa5bf4d6f412b5453c8d63e4690606cc700c8e12a69c488b10e",
-    "README.md": "80ecf0e34c02e3151f676dd2d6f7ecd5aec176025cebf5dc94df82478e5d5361",
+    "README.md": "72a577006dd83c1666bbb6f2066ab23b166478e52046b6329737a2c5483ac286",
     "CreateAttachmentEagerWorldCounter.lean.in": "46c03922c6961584bf706a0bcbe484468a99d617b969d4c00c2ed3cec0a42566",
     "CreateAttachmentSkipSaveCounter.lean.in": "b34eb6794fee9a04bcac589d3ba0841636fe7277d73a65aad05dd4dc1e04a098",
     "CreateAttachmentFlowWitnesses.lean.in": "18dcd849c98a7d75699b5dad8d532eac19cdfa84c559502f152ab2e2408fc360",
@@ -223,12 +223,13 @@
     "reuse/UnixPathValues.lean.in": "2f0f2ec7c50d465e9824a1e06b7209e93c4c56865ad44533d0cb80026c48f51a",
     "reuse/path/roots.rs.in": "8c942ad9c1a3bf1d9638f96fa881291c12d965b3e44bf96f648ec619b1d3a0f7",
     "reuse/path/Cargo.lock": "c799fca0ea7077fa2bc601e1cf53b4aa5647f95ddc820371b2b71136f447e54b",
-    "reuse/path/Cargo.toml": "67a2603a4b3f1cf576dbd73c903986acd9d5c68dee7271cecd1fe4eca47ffdc1"
+    "reuse/path/Cargo.toml": "67a2603a4b3f1cf576dbd73c903986acd9d5c68dee7271cecd1fe4eca47ffdc1",
+    "CreateAttachmentEffectsGrouping.lean.in": "9a29be5b8c23c1e919ce09d55c9f25021b66da094b00fd9f566822d22e237ac3"
   },
   "drivers": {
     "path_binding.py": "f99f7dd675708b6cc66f94ed9dbd47fe28847ca3e1ed5738700f9d0303daf63b",
-    "native.py": "137353696f7b15df579fc74db55762cbdb87fd99509a630eaa9e97c0e0df3486",
-    "formal.py": "51e8c2231ef93b32d57ace4a9e1546bce66dd086d680c36080813b98a9769bec",
+    "native.py": "d378f3c827485462b6df4f6e6adcebfcba1c4d9b70e7cded40f128c9b0350bad",
+    "formal.py": "9ef906763c9833cb7da68741eace28e0097bf4a63a18159829b9ab016fb4c825",
     "support.py": "fa6883445d1ec239345db1ded2768c53c212c02265307c71f5217c7485a35f62",
     "binding.py": "7b44e3760ea72f2d3e9c253cd9527689840601e5e092c80406a9d18ee1508ab0"
   },
@@ -312,7 +313,7 @@
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowModel.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowModel.lean.in",
-      "sha256": "10e79340139392f0aa6006bc30cdd1490a05c2f72a9a7ccaca490fce09be108a"
+      "sha256": "6cccd1bfcb43e4eddb0ce28928d0cd696e667306039e2fa8de65c6ff779dc5ac"
     },
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentPath.lean": {
       "kind": "new-template",
@@ -1495,12 +1496,17 @@
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowValues.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowValues.lean.in",
-      "sha256": "d1019331887d9ba8cde9c52aaa22c2a36a631ddec7a436429eb78d0369ad724f"
+      "sha256": "6960f6d4fa06dd8c204acbc9459d37162dad53cd5efddea3297f6ae2c3adbd86"
     },
     "SandboxModel/Lifecycle/Protocol/CreateAttachmentFlowWitnesses.lean": {
       "kind": "new-template",
       "path": "CreateAttachmentFlowWitnesses.lean.in",
       "sha256": "18dcd849c98a7d75699b5dad8d532eac19cdfa84c559502f152ab2e2408fc360"
+    },
+    "SandboxModel/Lifecycle/Protocol/CreateAttachmentEffectsGrouping.lean": {
+      "kind": "new-template",
+      "path": "CreateAttachmentEffectsGrouping.lean.in",
+      "sha256": "9a29be5b8c23c1e919ce09d55c9f25021b66da094b00fd9f566822d22e237ac3"
     }
   },
   "path_provider": {
@@ -2667,7 +2673,10 @@
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.normal",
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.zero_rows_lifetime_update_succeeds",
         "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.full_input_inhabited",
-        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification"
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     },
     "skip-save": {
@@ -3547,7 +3556,10 @@
         "SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted",
         "SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node",
         "SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected",
-        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation"
+        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     },
     "eager-world": {
@@ -4433,7 +4445,10 @@
         "SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted",
         "SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node",
         "SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected",
-        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation"
+        "SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
+        "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence"
       ]
     }
   },
@@ -4507,6 +4522,9 @@
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_eager_world",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_save",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.not_full_contract",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.flatten_group",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.full_domain_correspondence",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Interface.group_flatten",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.actual_without_save",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract",
     "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.actual_inbox_accepted",
@@ -4551,5 +4569,57 @@
     "templates": {
       "native-cases.rs.in": "62ee9494d59aa4c3c66afccec347a71d7afbb350335a1be157aa86401fb3357f"
     }
+  },
+  "effect_interface_scope": {
+    "flat_grouped_representation": "CreateAttachmentEffectsGrouping",
+    "complete_callback_domain_preserved": true,
+    "original_generic_body_verbatim": true,
+    "current_public_entry_revalidation_complete": false,
+    "generic_ir_ast_admission_byte_limit": 16777216,
+    "grouping_changes_no_callback_field_or_order": true,
+    "standard_sql_provider": "lifecycle_inbox::lifetime_sql::execute; separate actual provider contract required",
+    "whole_call_sql_heap_or_history_proved": false
+  },
+  "current_source_admission": {
+    "production_rust_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_identities_preserved": true,
+    "changes": [
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox.rs",
+        "original_sha256": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+        "current_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/lifecycle_inbox/model.rs",
+        "original_sha256": "f566713a61363dd4a7011f3302acb5e286ededfcac4478cbf4e7c434c222a126",
+        "current_sha256": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "controller-service/src/controller/transaction.rs",
+        "original_sha256": "19e6473ba509061e612e095e2077c956101fcd88c3ddc1198f55a1731232eb82",
+        "current_sha256": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+        "basis": "Current attach_create_using keeps the original decision/effect order. execute_lifetime_update is grouped in the single-method supertrait; the grouping bridge covers the full callback record. Current generated carriers and all original correct/wrong views must be admitted independently."
+      },
+      {
+        "field": "source_inputs",
+        "path": "docs/formal/03-protocol-inbox.md",
+        "original_sha256": "56a1950aef47fe655607caea88c40709d5b51eb5f91e16824738639e1324e81c",
+        "current_sha256": "66d880e5992be30f43f2929302ae9ec346271f4f86f18b9693104585d8d45d73",
+        "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      }
+    ],
+    "manifest_is_proof_evidence": false
   }
 }

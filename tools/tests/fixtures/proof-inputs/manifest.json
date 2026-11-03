@@ -7509,6 +7509,8 @@
     "verification/aeneas/protected-directory/correct/translation.json",
     "verification/aeneas/schema-domains/translation.json",
     "verification/aeneas/sqlite-statements/translation.json",
+    "verification/aeneas/sqlite/SandproofSqlite/Funs.lean",
+    "verification/aeneas/sqlite/SandproofSqlite/Types.lean",
     "verification/aeneas/sqlite/translation.json",
     "verification/aeneas/std-mutex/translation.json",
     "verification/aeneas/storage/translation.json",
@@ -7775,7 +7777,7 @@
     "verification/use-inventory/config.json",
     "verification/use-inventory/responsibilities.json"
   ],
-  "archive_sha256": "7858b845f60d8e7d9531b1303a572c9d10a01d8c2c7fec6684910b5dfae0c5dc",
+  "archive_sha256": "bfb6c3dd66b81d2600938dda0c93a6fcb7bfab3cca0009e57ca0c0dbf5d5fe31",
   "source_repository": "https://github.com/VeriInfra-Lab/sandproof",
   "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing. SandboxModel.lean is archived at the same historical source version so adding current root imports does not change this fixture."
 }

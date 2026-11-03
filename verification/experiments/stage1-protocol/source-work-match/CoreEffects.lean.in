@@ -1,0 +1,89 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.CoreData
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.ContainerInstances
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects
+open sandbox_controller_core Scalars CoreData
+
+theorem operation_status_eq (left right : model.OperationStatus) :
+    model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right <;>
+    simp [model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq,
+      model.OperationStatus.read_discriminant, core_failure_kind_eq]
+
+theorem operation_eq (left right : model.Operation) :
+    model.Operation.Insts.CoreCmpPartialEqOperation.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.Operation.Insts.CoreCmpPartialEqOperation.eq,
+    core_operation_id_eq, core_operation_kind_eq, operation_status_eq,
+    RequestEquality.ok_and, model.Operation.mk.injEq,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem optional_restore_eq (left right : Option model.RestoreSource) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.option_eq model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource restore_source_eq left right
+
+theorem command_eq (left right : model.Command) :
+    model.Command.Insts.CoreCmpPartialEqCommand.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right <;>
+    simp [model.Command.Insts.CoreCmpPartialEqCommand.eq,
+      model.Command.read_discriminant, lift, core_sandbox_id_eq, core_vm_id_eq,
+      core_net_slot_id_eq, core_fs_id_eq, core_snapshot_id_eq,
+      core_file_policy_ref_eq, core_snapshot_manifest_ref_eq,
+      network_policy_eq, optional_restore_eq, RequestEquality.ok_and,
+      core.cmp.impls.PartialEqBool.eq, Bool.and_left_comm, Bool.and_comm]
+
+theorem logical_effect_eq (left right : model.LogicalEffectId) :
+    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq,
+    command_eq, model.LogicalEffectId.mk.injEq]
+
+theorem effect_eq (left right : model.EffectId) :
+    model.EffectId.Insts.CoreCmpPartialEqEffectId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [model.EffectId.Insts.CoreCmpPartialEqEffectId.eq,
+    logical_effect_eq, model.EffectId.mk.injEq, RequestEquality.ok_and]
+
+theorem effects_eq (left right : alloc.vec.Vec model.EffectId) :
+    alloc.vec.partial_eq.PartialEqVec.eq model.EffectId.Insts.CoreCmpPartialEqEffectId left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.vec_eq model.EffectId.Insts.CoreCmpPartialEqEffectId effect_eq left right
+
+theorem optional_operation_eq (left right : Option model.Operation) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      model.Operation.Insts.CoreCmpPartialEqOperation left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.option_eq model.Operation.Insts.CoreCmpPartialEqOperation operation_eq left right
+
+theorem optional_vm_eq (left right : Option ids.VmId) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      ids.VmId.Insts.CoreCmpPartialEqVmId left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  exact ContainerInstances.option_eq ids.VmId.Insts.CoreCmpPartialEqVmId core_vm_id_eq left right
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.operation_status_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.operation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.optional_restore_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.command_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.logical_effect_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.effect_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.effects_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.optional_operation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.CoreEffects.optional_vm_eq

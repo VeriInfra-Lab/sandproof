@@ -10,6 +10,12 @@
 
 一般性前提仅为已有的 `FullGraphicContract` 和 `DecodedStringsRepresentable`。save 所需的配置表示条件由同一次成功 load 和完整安装框架推出；不假设安装后整个 Inbox 必定合法或 save 必定成功。
 
+实际效果接口将寿命 SQL 的唯一回调放入 `CreateLifetimeSqlEffects` 父接口。
+`CreateAttachmentEffectsGrouping` 给出原平面字典与该表示之间的相互转换和全域对应；
+完整规格仍量化全部原回调，未减少正常／失败输入或中间效果。普通测试的原 SQL
+回调只移到对应父接口的实现中，方法体和断言保持原样。表示对应不能代替标准 SQL
+实例、同事务来源或本包当前生成体的验收。
+
 Create 的三个原字段和完整模板保留。PathBuf 的三个 inner 和完整原始字节 Vec 透明生成；路径桥接复用原 Std 值证明，不解释 UTF-8、规范化或实际文件。环境变量字段连接已有获批 Storage 完整键值载体，不新增没有使用的 BTreeMap 操作保证。完整六个类型／字典参数和三个运行时参数按原顺序检查。
 
 正常见证使用显式合成效果，实际值校验器接受安装前、后同一组 Inbox；完整 load、选择、owner、安装和 save 都连接到真实生成的父函数。成功寿命 UPDATE 的任意行数被忽略，包括零；最后的收件 save 仍独立要求更新一行。完整模板值保留不表示真实注册、授权、材料、资源或 admission 已被证明。

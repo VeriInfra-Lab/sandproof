@@ -163,18 +163,27 @@ fn question(
     anchor: SourceAnchor,
     limits: &SourceObservationConfig,
 ) -> Result<SourceWork, JournalError> {
+    let work_binding = digest(&serde_json::to_vec(&anchor)?);
+    Ok(question_from_binding(anchor, limits, work_binding))
+}
+
+fn question_from_binding(
+    anchor: SourceAnchor,
+    limits: &SourceObservationConfig,
+    work_binding: sandproof_protocol::lifecycle::ContentDigest,
+) -> SourceWork {
     let requirement = SourceObservationRequirement {
-        work_binding: digest(&serde_json::to_vec(&anchor)?),
+        work_binding,
         node: anchor.node.clone(),
         host_bootstrap: anchor.host_bootstrap.clone(),
         resource: anchor.original_actions[1].resource.clone(),
         source: anchor.source.clone(),
         limits: limits.clone(),
     };
-    Ok(SourceWork {
+    SourceWork {
         anchor,
         requirement,
-    })
+    }
 }
 
 pub(super) fn validate_record(
@@ -300,6 +309,19 @@ fn validate_original_actions(
     Ok(())
 }
 
+fn source_origin_epoch_matches(
+    world: &core::World,
+    anchor: &SourceAnchor,
+    origin_plan: &core::OperationPlan,
+) -> bool {
+    match anchor.continued_from {
+        Some(identity) => {
+            super::full::continued_identity(world, anchor.local, &anchor.native) == Some(identity)
+        }
+        None => origin_plan.epoch == anchor.native.epoch,
+    }
+}
+
 fn validate_execution_origin(
     world: &core::World,
     inbox: &Inbox,
@@ -331,12 +353,7 @@ fn validate_execution_origin(
         LifecycleOperation::Resume { .. } => core::OperationKind::Resume,
         _ => return Err(JournalError::CorruptStore),
     };
-    let epoch_matches = match anchor.continued_from {
-        Some(identity) => {
-            super::full::continued_identity(world, anchor.local, &anchor.native) == Some(identity)
-        }
-        None => origin_plan.epoch == anchor.native.epoch,
-    };
+    let epoch_matches = source_origin_epoch_matches(world, anchor, origin_plan);
     if origin_row.operation.kind != origin_kind
         || origin_plan.generation != anchor.native.generation
         || !epoch_matches

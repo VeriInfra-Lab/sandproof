@@ -41,8 +41,8 @@ class CreateDelivery(unittest.TestCase):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 138)
-            self.assertEqual(len(registered.native_labels()), 53)
+            self.assertEqual(len(full), 164)
+            self.assertEqual(len(registered.native_labels()), 74)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -85,6 +85,71 @@ class CreateDelivery(unittest.TestCase):
                 bad[defect] = True if defect == 'prepare_only' else 'actual' if defect == 'selected_variant' else 'old-candidate-kind'
                 with self.subTest(package=job['name'], defect=defect), self.assertRaises(ValueError):
                     registered._check_actual(bad, job)
+
+    def test_independent_flow_requires_all_three_original_certificates(self):
+        job = next(j for j in self.plan() if j['name'] == 'create-attachment-flow')
+        originals = list(self.result(job)['variants'].values())
+        good = dict(views=[dict(case=case, actual=row['actual'])
+                          for case, row in zip(job['cases'], originals)],
+                    actuals=[row['actual'] for row in originals])
+        registered._check_fixed_create_flow(good, originals, job)
+        for defect in ('missing-view', 'order', 'certificate', 'seed', 'outcome', 'incomplete'):
+            rows, result = copy.deepcopy((originals, good))
+            if defect == 'missing-view':
+                result['views'].pop()
+            elif defect == 'order':
+                result['views'].reverse()
+            elif defect == 'certificate':
+                rows[1]['actual']['audits'].remove(
+                    'SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract')
+            elif defect == 'seed':
+                del rows[0]['actual']['files'][job['views']['actual']['seeds'][0]]
+            elif defect == 'outcome':
+                rows[1]['property_rejected'] = False
+            else:
+                rows[2]['complete'] = False
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                registered._check_fixed_create_flow(result, rows, job)
+
+    def test_original_caller_requires_every_same_property_flag_and_physical_audit(self):
+        jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
+        for job in (j for j in jobs if j.get('convergence_package') == 'protocol-record'):
+            variant, = job['cases']
+            recipe = job['views'][variant]
+            good = dict(complete=True,
+                kind='actual-host24-caller-complete-physical-file-development-check',
+                formal_counterexample_complete=True, same_full_flow_contract=True,
+                same_full_load_contract=True, actual=dict(
+                    files={n: 'a'*64 for n in recipe['files']},
+                    audits=list(recipe['audits']), service_log_sha256='b'*64))
+            registered._check_fixed_protocol_record(good, job)
+            flat = dict(good, **good['actual'])
+            del flat['actual']
+            registered._check_fixed_protocol_record(flat, job)
+            del flat['files']
+            with self.assertRaises(ValueError):
+                registered._check_fixed_protocol_record(flat, job)
+            defects = ['file', 'audit', 'service', 'outcome', 'incomplete']
+            defects += (['kind'] if variant == 'correct' else [
+                'formal_counterexample_complete', 'same_full_flow_contract', 'same_full_load_contract'])
+            for defect in defects:
+                bad = copy.deepcopy(good)
+                if defect == 'file':
+                    bad['actual']['files'].pop(next(iter(bad['actual']['files'])))
+                elif defect == 'audit':
+                    bad['actual']['audits'].pop()
+                elif defect == 'service':
+                    del bad['actual']['service_log_sha256']
+                elif defect == 'outcome':
+                    bad['property_rejected'] = variant == 'correct'
+                elif defect == 'incomplete':
+                    bad['complete'] = False
+                elif defect == 'kind':
+                    bad['kind'] = 'different-producer'
+                else:
+                    del bad[defect]
+                with self.subTest(variant=variant, defect=defect), self.assertRaises(ValueError):
+                    registered._check_fixed_protocol_record(bad, job)
 
     def test_native_property_rejection_is_not_a_mutant_clippy_exit(self):
         definition = registered.create_profile()
@@ -369,9 +434,62 @@ class CreateDelivery(unittest.TestCase):
 
 
 class Registration(unittest.TestCase):
+    def test_convergence_has_a_fixed_separate_plan_and_retains_each_original_wrong_view(self):
+        with patch.dict(os.environ, SANDPROOF_STAGE1_ONLY='restore-work'):
+            jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
+        self.assertEqual(len(jobs), 27)
+        self.assertEqual(len({job['name'] for job in jobs}), 27)
+        self.assertEqual(len(registered.native_labels('protocol-convergence')), 22)
+        self.assertEqual({job['convergence_extra'] for job in jobs if 'convergence_extra' in job},
+                         {'production-json', 'sqlite-commit', 'standard-record-read'})
+        self.assertFalse(any(job['name'].startswith('inbox-record-total-') for job in jobs))
+        for name, expected in registered.CONVERGENCE.CASES.items():
+            selected = [job for job in jobs if job.get('convergence_package', job.get('create_package')) == name]
+            self.assertEqual([case for job in selected for case in job['cases']], list(expected))
+            self.assertTrue(all(job['actual_files'] for job in selected))
+        self.assertTrue(all(job.get('profile') == 'protocol-convergence' for job in jobs))
+
+    def test_convergence_wrong_view_cannot_borrow_the_correct_views_audits(self):
+        jobs = []
+        registered.CONVERGENCE.append_jobs(jobs, Path('/unused'), registered.ROOT,
+                                           profile='protocol-convergence')
+        job = next(job for job in jobs if job['name'] == 'create-standard-identity')
+        rows = {}
+        for case, view in job['views'].items():
+            actual = dict(files={name:'a'*64 for name in view['files']},
+                          audits=list(view['audits']), service_log_sha256='b'*64)
+            rows[case] = dict(complete=True, property_rejected=case != 'actual',
+                             files=actual['files'], audits=actual['audits'], actual=actual)
+        result = dict(kind=registered.CONVERGENCE.VARIANT_BATCHES['create-standard-identity'],
+                      complete=True, prepare_only=False, all_variants_complete=True, variants=rows)
+        registered._check_actual(result, job)
+        for defect in ('audit', 'file', 'property'):
+            wrong = copy.deepcopy(result)
+            row = wrong['variants']['namespace-omitted']
+            if defect == 'audit':
+                row['audits'] = list(rows['actual']['audits'])
+                row['actual']['audits'] = row['audits']
+            elif defect == 'file':
+                row['files'] = dict(rows['actual']['files'])
+                row['actual']['files'] = row['files']
+            else:
+                row['property_rejected'] = False
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                registered._check_actual(wrong, job)
+
+    def test_convergence_workers_use_disjoint_four_cpu_slots_within_the_admitted_budget(self):
+        for workers in (1, 2, 4, 8, 12):
+            self.assertEqual(registered._execution_options(workers,
+                             profile='protocol-convergence')['workers'], workers)
+            slots = registered._cpu_slots('protocol-convergence', workers, range(8, 8+4*workers))
+            self.assertTrue(all(len(slot) == 4 for slot in slots))
+            self.assertEqual(len({cpu for slot in slots for cpu in slot}), 4*workers)
+            with self.assertRaisesRegex(ValueError, 'admitted CPUs'):
+                registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
+
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 53)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 53)
+        self.assertEqual(len(registered.NATIVE_CASES), 74)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 74)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -397,7 +515,7 @@ class Registration(unittest.TestCase):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 138)
+        self.assertEqual(len(jobs), 164)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -656,7 +774,8 @@ class Registration(unittest.TestCase):
         templates = registered.audit_templates()
         names = {Path(path).name for path in templates}
         self.assertLessEqual({'NegativeFullCapture.lean.in', 'NegativeGuard.lean.in',
-                             'InboxStateWrongCurrent.lean.in', 'EnvelopeWriterWrong.lean.in'}, names)
+                             'InboxStateWrongCurrent.lean.in', 'EnvelopeWriterWrong.lean.in',
+                             'InboxLoadHostFormatValues.lean.in'}, names)
         self.assertTrue(all(audits for audits in templates.values()))
 
     def test_missing_or_empty_audit_source_is_rejected(self):
@@ -1289,7 +1408,10 @@ class CheckpointExecution(unittest.TestCase):
     def test_public_source_guard_rejects_mode_change_even_when_bytes_and_seal_are_unchanged(self):
         self.public_cli_fixture(change_modes=True)
 
-    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False):
+    def test_public_cli_refuses_rejected_sqlite_packet_before_executor(self):
+        self.public_cli_fixture(reject_sqlite=True)
+
+    def public_cli_fixture(self, *, interrupt_final=False, change_modes=False, reject_sqlite=False):
         cache = self.directory/'native'
         evidence = cache/'commands/fixture/evidence'
         evidence.mkdir(parents=True)
@@ -1297,6 +1419,17 @@ class CheckpointExecution(unittest.TestCase):
         (evidence.parent/'receipt.json').write_text('{"controlled_fixture":true}')
         retained = self.directory/'retained.json'
         retained.write_text('{"controlled_fixture":true}')
+        # Keep the real result-shape gate. This executor-fault fixture controls
+        # only the separate seven-file packet I/O, not SQLite's field checks.
+        sqlite_adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        sqlite_result = self.directory/'sqlite-fixture/result.json'
+        sqlite_result.parent.mkdir()
+        sqlite_result.write_text(json.dumps(dict(convergence_entry='sqlite-commit', mode='native',
+            complete=True, actuals=[], source_commit=sqlite_adapter.SOURCE_COMMIT,
+            native_executed_here=False, packet=sqlite_adapter.PACKET)))
+        def original_file(receipt, name):
+            self.assertEqual(name, 'result.json')
+            return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
         output = self.directory/'public'
         shared = SimpleNamespace(validate_native=lambda *a,**k: None,
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
@@ -1329,7 +1462,10 @@ class CheckpointExecution(unittest.TestCase):
                     patch.object(registered,'check_create_sources'), \
                     patch.object(registered,'_shared',return_value=shared), \
                     patch.object(registered,'_evidence',return_value=evidence), \
-                    patch.object(registered,'_original_file',return_value=retained), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_original_file',side_effect=original_file), patch.object(registered,'_retained_result'), \
+                    patch.object(registered.CONVERGENCE,'extra',return_value=sqlite_adapter), \
+                    patch.object(sqlite_adapter,'_native_readback',return_value={}, side_effect=(
+                        ValueError('controlled SQLite packet rejection') if reject_sqlite else None)) as sqlite_readback, \
                     patch.object(registered,'_check_create_native_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=context), \
@@ -1341,6 +1477,13 @@ class CheckpointExecution(unittest.TestCase):
                     patch.dict(os.environ,SANDPROOF_ACCEPTANCE_ROLE='formal',SANDPROOF_NATIVE_EVIDENCE=str(cache),
                         SANDPROOF_FORMAL_CACHE=str(self.directory/'runtime-cache'), SANDPROOF_STAGE1_JOBS='2',
                         SANDPROOF_STAGE1_RESUME_FROM='/original/registered-result.json'):
+                if reject_sqlite:
+                    with self.assertRaisesRegex(ValueError, 'controlled SQLite packet rejection'):
+                        registered.main()
+                    execute.assert_not_called()
+                    sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                    self.assertFalse(output.exists())
+                    return
                 error = OSError if interrupt_final else ValueError
                 message = 'controlled final replacement failure' if interrupt_final else 'controlled executor boundary'
                 if change_modes:
@@ -1349,6 +1492,7 @@ class CheckpointExecution(unittest.TestCase):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)
                 self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
+                sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
         finally:
             os.umask(before_umask)
         saved = registered._read(output/'registered-result.json')

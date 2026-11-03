@@ -121,10 +121,10 @@ def loadView {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
       attempt (io.query_bool afterVersion sourceStatement) fun source afterSource =>
         if source != (version = LIFECYCLE_STORE_FORMAT_VERSION) then corrupt afterSource
         else if hasInbox then do
-          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          let current ← match version with | 24#iscalar => Result.ok true | _ => .ok false
           if current then currentView io validate budget afterSource else corrupt afterSource
         else do
-          let current ← match version with | 23#iscalar => Result.ok true | _ => .ok false
+          let current ← match version with | 24#iscalar => Result.ok true | _ => .ok false
           if current then corrupt afterSource else .ok (.Ok none, afterSource)
 
 theorem branch_bind {α β : Type} (result : core.result.Result α JournalError)
@@ -142,9 +142,9 @@ theorem optional_bind {α β : Type} (value : Option α)
   cases value <;> simp [core.option.Option.ok_or]
 
 theorem version_match (version : I64) :
-    (match version with | 23#iscalar => (Result.ok true) | _ => .ok false) =
-      .ok (decide (version = 23#i64)) := by
-  have literalValue : (23#iscalar : I64).val = 23 := by decide
+    (match version with | 24#iscalar => (Result.ok true) | _ => .ok false) =
+      .ok (decide (version = 24#i64)) := by
+  have literalValue : (24#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv]
 
 theorem decode_map_bind {R T N U B E α : Type}
@@ -223,7 +223,7 @@ theorem load_control_flow_refines {R T N U B E : Type}
           | false => rfl
           | true =>
             simp only [↓reduceIte]
-            apply continue_congr (match version with | 23#iscalar => Result.ok true | _ => .ok false)
+            apply continue_congr (match version with | 24#iscalar => Result.ok true | _ => .ok false)
             intro current
             cases current with
             | false => rfl

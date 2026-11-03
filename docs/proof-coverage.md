@@ -21,7 +21,7 @@
 |---|---|---|
 | V0 公共底座 | 类型/算术、容器、JSON/Writer、并发/任务、存储与 OS 已有指定版本公共合同及局部证明 | 按实际调用补最小公共能力与实例连接；T0–T8 及 V0 未全部闭合，不先建设完整标准库或异步翻译器 |
 | V1/V2 中心决定与 Redis | 正式生命周期、继续/确定丢失、续期后再次卸载已接通；#683/#693/#700/#712 有对应工程证据。#729 已优化 Unloaded 查询，七个生命周期确认方法的无变化路径也已采用 | 新选择规则、原 Lua/CAS 参数与 Redis 调用、确认/未知提交、重启及纯决定到存储调用的对应仍须证明；工程结果不证明任意存储故障下可用 |
-| V3 协议与收件 | #739/#741 已采用当前唯一同步 load→完整查找/record→validate→save 链；指定候选有值层对应及真实错误版结果 | 开发证据保留原版本；当前 43 个原生组件的正式封口、126 项登记任务的完整交付和总审计尚未完成，由 V3 负责人继续提供，详见下一节 |
+| V3 协议与收件 | 唯一同步 load→完整查找/record→validate→save 链已采用；本批固定收敛沿用实际 Rust 和原证明提供方，SQL/摘要/memo 的局部结果见下表 | `protocol-convergence` 固定20包+3额外入口、27形式任务；完整封口还须同一候选的22 native组件、完整functional和公共形式入口，实际结果按 #635 的精确提交与原记录核对。该有限范围不替代原full/all，也不表示全部V3完成 |
 | V4 本地决定 | Pause/Resume、多代检查点、失败继续、未知恢复中的终止及已释放执行的 Destroy 均有生产路径；#748/#749 的有限证明已交付，普通 Commit/Stop 的真实函数局部证明及具体接受见证已具备 | 按 #636 精确候选核对本片及两个受影响范围的公共验收；派发连接、完整 reducer/World、全部转换与 V4 系统范围未闭合 |
 | V5 SQLite 与编排 | 原事务已接 capture 授权/完成、唯一恢复、材料责任和精确终止；#712 的有限丢回执/重启代表已验收 | 实际 SQL、同事务快照、回调、提交未知、恢复/引用/退休以及原生动作的连接仍须证明；数据库行不自证物理效果 |
 | V6 真实宿主 | Full、旧 VMM 退出、LoadPaused、原候选激活、确定退出、精确回收均已接通；#693/#700/#712 提供有限真实 KVM 证据 | 文件/进程/围栏算法及实际调用的形式对应、未覆盖准备断点与其它 I/O 故障组合仍开放；不重复列为主体功能未开发 |
@@ -37,6 +37,45 @@
 owner 已关闭 [#676](https://github.com/VeriInfra-Lab/sandproof/issues/676)，按 Redis 超时及
 保护性拒绝结论结束旧现场跟踪；#729 的查询优化已合入。历史证据和首次错误关联不足
 仍保留，不作为当前开放阻断，也不声称历史物理起因已经唯一还原。
+
+### 本批 V3 固定收敛：范围与局部证据
+
+本批共同生产 Rust 为 `8fc694185a4ccbe2ea181564ba860b14bea9f6e1`；后续
+证明/接线提交保留各自身份。下表只记录相应叶子的结果，不能相加作为公共验收通过。
+完整范围须核对 [#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)
+及其交付 PR 中同一候选的普通封口、公共27项结果、CI和原始归档摘要；缺项不算通过。
+范围和复现入口见[第一阶段说明](../verification/experiments/stage1-protocol/README.md)
+及[原证明读回](../verification/experiments/stage1-protocol/original-readback.md)。
+
+| 视图及动作 | 已有的实际结果 | 尚未完成或不涵盖 |
+|---|---|---|
+| 原10包、11份原结果：REUSE | 36物理视图、462物理页；465项当前绑定相符，`ca2e4338` 根的11份原结果严格读回通过，原提交/CPU/revision/日志不变 | 不计为462个唯一文件或本轮新编译；直接读回不代替27任务及23项普通验收的总封口 |
+| 标准BLOB：捕获REUSE、数学RUN | `06835588` 原执行1612.203628秒；正确版及两错误版共177次物理文件检查、554次审计，完整内核/服务/结束检查通过，两错被同一性质拒绝 | 原3视图的执行身份保留；不是177个唯一文件，不覆盖异步外壳或任意BLOB调用 |
+| 标准Digest：捕获REUSE、数学RUN | `bc22dc2c` 原执行1887.184891秒；正确版及两错误版共217次物理文件检查、635次审计，完整内核/服务/结束检查通过，两错被同一性质拒绝 | 原3视图不包含SHA库实现证明或哈希单射；完整字节域与库条件仍保留 |
+| 标准Save：捕获REUSE、数学RUN | `bc22dc2c` 原执行2162.322943秒；正确版及三个错误版共257次物理文件检查、590次审计，完整内核/服务/结束检查通过，三错被同一性质拒绝 | 原4视图包含save-input-empty、save-tail-zero和delegate-input-empty；不由此推出SQL耐久提交或事务恢复 |
+| 双BLOB保存桥：REUSE | 当前真实数组调用6物理页、4审计原内核及严格同服务通过；服务补跑02为28.870443秒 | 这是上述10视图之外的桥；有限联合A4/B4只描述当前两个完整有序BLOB的整次SQL调用，不保证独立raw bind成功、恰一行或耐久提交 |
+| 当前Writer/JSON：REUSE | 原10页30审计的实际检查为91.6117766秒；`ca2e4338` 根的0.121338秒为原结果的严格读回 | 不是重新运行91秒；任意schema/库实现和async外壳不因此已证 |
+| SQLite缓存核心：正确结果REUSE、正式负例RUN | 正确8页18审计保持原35.816067秒服务身份；真实错误版被同一4项性质拒绝，3反例内核通过，末段服务补跑11.787844秒完整通过；`ca2e4338` 根逐字节消费原结果为REUSE。Ning原16测试及严格Clippy通过 | 原缺服务helper失败保留；局部组件不代替27/23总封口，也不覆盖同事务来源、完整提交/恢复和派发 |
+| 两个真实World读取：RUN | 原Charon→Aeneas通过21.415779秒；正式7物理页的内核检查及9审计完整服务通过62.534471秒，其中8项为本次读取目标 | 正常借用／候选为some的条件保留；不覆盖候选来源、终止作用、跨调用同一快照或完整端点。最终公共范围仍须准入 |
+
+生产已采用唯一 `lifecycle_inbox::sha256::digest`，Load/Save和所选旧调用交给同一原语；
+不是形式化证明了sha2实现或哈希单射。固定正常字节域、完整32字节、库及机械接线条件见
+[依赖合同](formal/dependencies.md)。`source_work`清材料时另一个空摘要调用不纳入所选六方法。
+
+生产 `WorldTransaction::commit_with/Drop` 已实际委托原41行memo核心，四个提交前验证器、
+begin/advance、SQL和恢复未被换成可信桩。已证核心负责清空先于提交、CommitUncertain不发布、
+确认成功才移交原candidate、rollback失败失效；原RefCell/句柄/回调的有限接线仍按B2/B4使用。
+候选来源、同一实际连接/事务快照、完整SQL/outbox/额度/寿命、data_version/autocommit及恢复、
+真实动作、panic/unwind/崩溃和async外壳仍为V5及调用方的开放义务，不转为外部假设。
+
+三标准包共10个视图、651次物理文件检查、1779次审计；这些是含重复的检查次数，
+不是独立业务定理或唯一文件数量。最早因72 GiB守卫而未启动数学的记录保留；
+环境恢复后使用原守卫完成上述执行。Digest两次数学前的接线失败也保留：一次为
+Blob提供方摘要陈旧，一次为私有捕获读回键未对应原目录；修正后在新输出完成，
+没有重跑已成功的Blob或Save，也不把失败父结果改写为成功。
+
+原服务启动失败、原旧生成比较false和839读回装载失败均保留；补跑/修正分别记录真实新结果。
+同一项的工具已安装、实际抽取、局部数学通过、原生范围通过、CI和全项目验收分别报告。
 
 ### 捕获调用方：原版本公共交付已完成
 
@@ -1286,9 +1325,13 @@ SDK 修复的可执行代码冻结于 0a80a9468cf6f3c35a42446e51e9844f3a094020�
 
 本项只加强已观察源码的清单与可复现定位。动态回调实际实例、结构体字段/合法域、future 取消时的编译器清理、嵌套库析构及外部脚本/配置的完整绑定仍按[依赖登记](formal/dependencies.md#真实使用点的来源清单)和 #333 继续处理。额外 VM 运维入口只作防漏观察，不增加历史工具证明前置；模板范围与 T9 排除不扩大。**T0 全部使用连接、T1–T8 其余义务和整个 V0 均未因此完成。**
 
-## T7 边界：SQLite 提交回执与缓存发布（隔离候选）
+## T7 边界：SQLite 提交回执与缓存发布（历史隔离候选）
 
-[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口隔离候选)。
+本节记录 #570 旧隔离版本的证据。当前生产已采用同一 memo 核心，当前适用范围与
+收敛验收状态见本文开头的“本批 V3 固定收敛”；以下旧提交与耗时保持原身份，
+不表示当前实现仍未采用该核心，也不自动背书当前完整入口。
+
+[#570](https://github.com/VeriInfra-Lab/sandproof/issues/570) 的 Rust 输入固定为 integration `8a33bc230dbbaefd7bc6855e715c1dd5e63c1173`；本批验证代码冻结于 `c47c42329560cd226ae1ca48674d206f5d509fc3`，依赖固定 PR #556（398b114d）的最新 B1 接线复核。候选仅在私有副本应用[固定补丁](../verification/experiments/sqlite-commit/candidate.patch)，原 WorldTransaction::commit_with/Drop 实际调用新增同步核心。生产 Rust、锁文件和 Charon/Aeneas 没有因此改动。正式源、生成物和条件分别见[候选清单](../verification/experiments/sqlite-commit/candidate.json)、[环境与完整析构登记](../verification/experiments/sqlite-commit/environment.json)及[接口保证](formal/dependencies.md#a4b2b4-sqlite-提交回执与缓存发布接口)。
 
 [Results](../verification/aeneas/sqlite/SandproofSqlite/Results.lean) 的 13 条核心/通用状态性质连接原清空、回调结果分类、事务槽消耗、原候选发布和 rollback 分支；正常返回须取得原 live 事务，正常成功必须由原回调确认。[Examples](../verification/aeneas/sqlite/SandproofSqlite/Examples.lean) 的 5 条允许输入/结果见证分别保留提交未知的写前、写后结局，两者都不能保留旧缓存。18 项声明由原标准依赖命令与真实物理 Audit 文件检查，不增加自定义假设。这些是隔离候选真实核心的条件性质，不是整个生产事务外壳已证。
 

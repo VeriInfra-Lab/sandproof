@@ -1,0 +1,452 @@
+{
+  "schema": 1,
+  "kind": "finite-production-json-view-not-proof-result",
+  "files": {
+    "lakefile.toml": {
+      "source": "verification/experiments/stage1-protocol/local-view.toml.in",
+      "sha256": "f38d6b65feaaaa8d64bcfffb4bf962790045f0ee162663b4dddf2deddebc67f2",
+      "mode": "100644"
+    },
+    "lean-toolchain": {
+      "source": "lean-toolchain",
+      "sha256": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+      "mode": "100644"
+    },
+    "lake-manifest.json": {
+      "source": "lake-manifest.json",
+      "sha256": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+      "mode": "100644"
+    },
+    "tools/lean_session.py": {
+      "source": "tools/lean_session.py",
+      "sha256": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+      "mode": "100644"
+    },
+    "scripts/lean-mcp-server.sh": {
+      "source": "scripts/lean-mcp-server.sh",
+      "sha256": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/ProductionEnvelope.lean": {
+      "source": "verification/experiments/stage1-protocol/production-json/ProductionEnvelope.lean.in",
+      "sha256": "03387795aa0d21e538dcca3cc444ad855c58392bdc3a3148ffa727d18afca107",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/AcceptedWire.lean": {
+      "source": "verification/experiments/stage1-protocol/json-wire/accepted/AcceptedWire.lean.in",
+      "sha256": "1bc496030779bfab916432b08d122f166c356a7d862348934aeef361073e2d00",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/Accepted.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/Accepted.lean",
+      "sha256": "a8dcb590fb3fbf54a2fe5d39a801abf35308ec0b96b38cf45a228537271c100b",
+      "mode": "100644"
+    },
+    "SandboxModel/ProofAuditCommand.lean": {
+      "source": "SandboxModel/ProofAuditCommand.lean",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
+      "sha256": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/ValidationModel.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/ValidationModel.lean",
+      "sha256": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Model.lean": {
+      "source": "SandboxModel/Foundations/Model.lean",
+      "sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": {
+      "source": "verification/experiments/stage1-protocol/production-json/raw/accepted/SandproofStage1Request/Types.lean",
+      "sha256": "35e474c3aed22ef2cf0fa6b0de0d9443fb7aabc22e1270555380fa8fe56ada69",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/Validation.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/Validation.lean",
+      "sha256": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
+      "sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
+      "sha256": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/Library.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/Library.lean",
+      "sha256": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean": {
+      "source": "verification/experiments/stage1-protocol/production-json/raw/accepted/SandproofStage1Request/Funs.lean",
+      "sha256": "4763261d187e59718c6204331d27fa38acbe311d717466bc09b4c0d9e2569118",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": {
+      "source": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+      "sha256": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/FunsExternal.lean": {
+      "source": "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/FunsExternal.lean",
+      "sha256": "a9c52346fd263930488e651cbca696af8b0351757c0d0392dc9ef0b165cd711d",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/IdentifierLibrary.lean": {
+      "source": "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/TypesExternal.lean": {
+      "source": "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/TypesExternal.lean",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/Types.lean": {
+      "source": "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/Types.lean",
+      "sha256": "5b7d7b95f5d3619208f16b861125d69cd0b234ec7458d2f0a2c79f6386b8be8b",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean": {
+      "source": "verification/experiments/stage1-protocol/production-json/raw/schema-result/SandproofProtocolResult/Funs.lean",
+      "sha256": "f43c27c35f833ecd8c013cd48ca2c111eff70c1522a315232ea5cdc2c7a194b3",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean": {
+      "source": "verification/experiments/stage1-protocol/production-json/raw/schema-result/SandproofProtocolResult/Types.lean",
+      "sha256": "d03187059baf5fe9d84dff9b71e8c64c136d8168f27d954bc726b9f9f6ca552e",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/AcceptedWireModel.lean": {
+      "source": "verification/experiments/stage1-protocol/json-wire/accepted/AcceptedWireModel.lean.in",
+      "sha256": "c9ea78dd1ed3d9897607284d56903a59ba3e6826109d571399d9adcff138d156",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriter.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriter.lean.in",
+      "sha256": "f4523d5340c4fc7037bb1acfc0a35fe8b0f096fed6ba6592df3e86874ee2cc85",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeBudget.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-budget/EnvelopeBudget.lean.in",
+      "sha256": "db488bba4334faceb41c75ca58e7ab89646b419836e6e8c6155952f2b291531d",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/envelope-budget/SandproofEnvelopeBudget/Funs.lean": {
+      "source": "verification/aeneas/stage1-protocol/envelope-budget/SandproofEnvelopeBudget/Funs.lean",
+      "sha256": "77cd1043cd6eb09edc6c8ff5c7fddd4fb7151cdf5896cd59655e0452864c7df3",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/envelope-budget/SandproofEnvelopeBudget/Types.lean": {
+      "source": "verification/aeneas/stage1-protocol/envelope-budget/SandproofEnvelopeBudget/Types.lean",
+      "sha256": "9c26a3de565030bee840ed1d22e66aa935d1359a85859885225cace29549978d",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeBytes.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in",
+      "sha256": "388c2fbfa292c4305da646b0cb1e18a6dd8328b55b0743dbc0e78bbf50cad2a8",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeSchema.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in",
+      "sha256": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean",
+      "sha256": "db7507109a9511d416ad1c519821b0ef28e73cc567acc323eb3392ff9f7bd488",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/RequestValues.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/RequestValues.lean",
+      "sha256": "b92c5131933fe2e626157f9a7485f73544f13820a3cbec7b09457b0ea38b317a",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/Model.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/Model.lean",
+      "sha256": "dfada1e9591aa7aea3d9298ecd34fb8ae2701a5f1b46c18267ab845ca4a16083",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/Recorded.lean": {
+      "source": "SandboxModel/Lifecycle/Protocol/Recorded.lean",
+      "sha256": "8c8f2da5a9ccb19e53160106848474558bb26852c67d7860ebdf7f1e2f668e84",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Encoding.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Encoding.lean",
+      "sha256": "122261da7c498c78bc8f9b8cb950c47a7775c3fea8ea57a76cc7583dfc8e936f",
+      "transform": "local_view.install:envelope-writer",
+      "installed_sha256": "14f1ed466d1ee650dcaf81c6d97360dbff81609e9fb01e2c6da6ebc15fb2093d",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Codec.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Codec.lean",
+      "sha256": "1a641111fbb74136428de52971a9fd9c493169cbc048b4cd2c0a0578d4e73764",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Representation.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Representation.lean",
+      "sha256": "796ee5e0a5fe76a64bbb65021f0cd916d0fbf908bb334d1324af5f3d808276c7",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Model.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Model.lean",
+      "sha256": "d5a23491e9895c9c30b4f5d22ca2e679a36d66155495816e9914bf3ad70295ac",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Identity.lean": {
+      "source": "SandboxModel/Foundations/Identity.lean",
+      "sha256": "fa0059439a65135eccf7a5a24580e8796746b5488808866031c015271d806b1b",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Representation.lean": {
+      "source": "SandboxModel/Foundations/Representation.lean",
+      "sha256": "8a5744b9381143656e5deb41a08a3ebb3fae0853dc57c0fb1a3d957a543078dd",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/Funs.lean": {
+      "source": "verification/aeneas/stage1-protocol/json-foundations/SandproofFoundations/Funs.lean",
+      "sha256": "3682b89e1f99cf35b83bb9a2871f6c5796e5b1bf8c41434d3562e845e8af3cc2",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/CreatePlan.lean": {
+      "source": "SandboxModel/Foundations/CreatePlan.lean",
+      "sha256": "64c1b9f1937fa5b0e522c32a2aea754bf7c27dc54b6609d80f89567e80b3c3fd",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Resources.lean": {
+      "source": "SandboxModel/Foundations/Resources.lean",
+      "sha256": "bccaa2fb9f4b416c49b2c57a4ffef7efd7d33952597f2546eee28aef84829557",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Callbacks.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Callbacks.lean",
+      "sha256": "eac0b139c53980703bd51d40a6dcacd2df4d77f300ba9e5435df6cddd98779af",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonCounter/Refinement.lean": {
+      "source": "SandboxModel/Boundaries/JsonCounter/Refinement.lean",
+      "sha256": "fab803df3b67102c7f47338d7828c8f35d6342c9b79f954538ce842653fa8abe",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonCounter/Model.lean": {
+      "source": "SandboxModel/Boundaries/JsonCounter/Model.lean",
+      "sha256": "0887b426a5304d7e9b5a4144faaaeaa72ef8ae9411737559b5068be776756ce8",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonIdentifiers/Examples.lean": {
+      "source": "SandboxModel/Boundaries/JsonIdentifiers/Examples.lean",
+      "sha256": "0792766db02ff230acb0dd2b540a74845dfbf5b264ce1eee4526a7f50a57b2b9",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonIdentifiers/ValueReader.lean": {
+      "source": "SandboxModel/Boundaries/JsonIdentifiers/ValueReader.lean",
+      "sha256": "6fd657765b0e7728c4e2697e67f1e7b15aca1923eb379b00cb9c314eef49bbfb",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonIdentifiers/Calls.lean": {
+      "source": "SandboxModel/Boundaries/JsonIdentifiers/Calls.lean",
+      "sha256": "f4b69ecc632a7388edca4cd2f0c723bc55d5e5d131f612c37b6cef7102fd206e",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/IdentifierModel.lean": {
+      "source": "SandboxModel/Foundations/IdentifierModel.lean",
+      "sha256": "1e40b772c61a27026285f68bd54eff1243f995634a091e13e743202357e89bef",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonIdentifiers/Refinement.lean": {
+      "source": "SandboxModel/Boundaries/JsonIdentifiers/Refinement.lean",
+      "sha256": "50b4378feb92f61cfa6586862c6d7f60c89783e340074fd6ddc5fa3d237e1822",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Identifiers.lean": {
+      "source": "SandboxModel/Foundations/Identifiers.lean",
+      "sha256": "f0880da1f78aa6ae0dd8aaf5eed7ca6c77d22c580442c296cffb3f3973cd1786",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonIdentifiers/Model.lean": {
+      "source": "SandboxModel/Boundaries/JsonIdentifiers/Model.lean",
+      "sha256": "15fd293cf84007278f1751ec18b99757fbf82ba13962c579d7bd9e271d9ebb4d",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/Guard.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/Guard.lean",
+      "sha256": "2968c4022387a4f758b1fb5b2f0925263fa2fcc3cd0b50bbeef430ae589361f6",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/IdentityDomain.lean": {
+      "source": "SandboxModel/Foundations/IdentityDomain.lean",
+      "sha256": "e813f809cb6c8052c51c81c437fd3823126f844074040968f52dae34683b9c8c",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/Counter.lean": {
+      "source": "SandboxModel/Foundations/Counter.lean",
+      "sha256": "9e5760255b8ef4cfeeada48cddc170f5363108d656a71b744a55b2455cfd817b",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/RoleLeaves.lean": {
+      "source": "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in",
+      "sha256": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/SliceBinding.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/SliceBinding.lean",
+      "sha256": "4ed819805e5c007669725ec818143ee46545b8e091040ef17744e26bb311f8e0",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/ErrorMessages.lean": {
+      "source": "SandboxModel/Foundations/ErrorMessages.lean",
+      "sha256": "94543f82835b52cc5bf89cf54e7cea38638268363590704f6c18a1ab4a0c7023",
+      "mode": "100644"
+    },
+    "SandboxModel/Foundations/ByteArray.lean": {
+      "source": "SandboxModel/Foundations/ByteArray.lean",
+      "sha256": "32c29657733cb72eb74e1657e816b00dc1e74f27f2926b94a1b1a788cda78bc9",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/ContainerEnd.lean",
+      "sha256": "298ba2cf1b4e0ee6776c044b4a6d85fdf7fde4c97afee33f48dc47713351cf61",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean": {
+      "source": "SandboxModel/Boundaries/JsonRequest/DocumentEnd.lean",
+      "sha256": "74745662f8b6c55b9bc16870c3a7e50b4bb66087acc2ba1ccfd231755ee109b4",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriterWitnesses.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriterWitnesses.lean.in",
+      "sha256": "4e71afa0fa7d2a6b2f3ae70c1ca0887dc20666c7c8673a1fdb8a62abd150dd13",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/BoundedWriter/Examples.lean": {
+      "source": "SandboxModel/Boundaries/BoundedWriter/Examples.lean",
+      "sha256": "c6177796428a0ec22a3e09b1df62536830fdc33fcf97ef0598fadd3bf991f8a4",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/BoundedWriter/Library.lean": {
+      "source": "SandboxModel/Boundaries/BoundedWriter/Library.lean",
+      "sha256": "428bb089480a57bd03cdc4940ad67aac0b1a5627cc9c1f9b54ea16a25c0d2fb4",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/BoundedWriter/Contract.lean": {
+      "source": "SandboxModel/Boundaries/BoundedWriter/Contract.lean",
+      "sha256": "599066cad6fd90b7b79b4993eca763830bf3212a67842cdd42faf6da268afa81",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean": {
+      "source": "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean",
+      "sha256": "c58fbdbf453c9dbaaa1967d9ad49d6ba4aa23268ce71f9731a3b1bd1594d22a4",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/TypesExternal.lean": {
+      "source": "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/TypesExternal.lean",
+      "sha256": "a34da5ea1b7ded7fcf32193b49b9920d8dcc59dc429009505ba9d3a6d7154463",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/BoundedWriter/Model.lean": {
+      "source": "SandboxModel/Boundaries/BoundedWriter/Model.lean",
+      "sha256": "dfdf1c5e6ac24fd07e16a8da3a8b91415387077f619727fe7371ed5c3cf4b25e",
+      "mode": "100644"
+    },
+    "SandboxModel/Boundaries/BoundedWriter/Refinement.lean": {
+      "source": "SandboxModel/Boundaries/BoundedWriter/Refinement.lean",
+      "sha256": "c6ef0f892696732622631324bd8d520d4ee462c2b423bdeeceff11a7ad3007f5",
+      "mode": "100644"
+    },
+    "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Funs.lean": {
+      "source": "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Funs.lean",
+      "sha256": "0a6bb72339b954065feed4ccfa8f736cfd9993c2760f082ce619666a8355afbe",
+      "mode": "100644"
+    },
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriterContract.lean": {
+      "source": "verification/experiments/stage1-protocol/envelope-writer/EnvelopeWriterContract.lean.in",
+      "sha256": "27abfdfea6284e8bc66abc83fc2952e53ca1c25c646befb0ddfc0cad285c7f3b",
+      "mode": "100644"
+    }
+  },
+  "encoding_transform_inputs": {
+    "verification/experiments/stage1-protocol/local_view.py": "95a41883b5d545de373bdfab2f9c013a37fc5178324cb841c33016254d480d03",
+    "verification/experiments/stage1-protocol/local-view.toml.in": "f38d6b65feaaaa8d64bcfffb4bf962790045f0ee162663b4dddf2deddebc67f2",
+    "verification/experiments/stage1-protocol/schema-leaves/protocol_leaves.rs.in": "1ff92f5c72baa9591bdbfe7f666055595e1e814401aa8636c6a39f442a7fe0f5",
+    "verification/experiments/stage1-protocol/schema-leaves/RoleLeaves.lean.in": "983c031a8cef77935ca06428917a0d49de157d04a89c46bf52aaaf1e195d5d4a",
+    "verification/experiments/stage1-protocol/envelope-schema/EnvelopeSchema.lean.in": "a6f331c8c76f51e7e77d76f2389d746e52be4aa560bc070517440f27121c4148",
+    "verification/experiments/stage1-protocol/envelope-bytes/EnvelopeBytes.lean.in": "388c2fbfa292c4305da646b0cb1e18a6dd8328b55b0743dbc0e78bbf50cad2a8",
+    "verification/experiments/stage1-protocol/envelope-budget/EnvelopeBudget.lean.in": "db488bba4334faceb41c75ca58e7ab89646b419836e6e8c6155952f2b291531d",
+    "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4",
+    "SandboxModel/Boundaries/JsonRequest/Encoding.lean": "122261da7c498c78bc8f9b8cb950c47a7775c3fea8ea57a76cc7583dfc8e936f"
+  },
+  "consumed_library_sources": {
+    "SandboxModel": ".",
+    "SandproofFoundations": "verification/aeneas/stage1-protocol/json-foundations",
+    "SandproofStage1Request": "verification/aeneas/stage1-protocol/request",
+    "SandproofProtocolResult": "verification/aeneas/stage1-protocol/schema-result",
+    "SandproofEnvelopeBudget": "verification/aeneas/stage1-protocol/envelope-budget",
+    "SandproofBoundedWriter": "verification/aeneas/stage1-protocol/envelope-writer"
+  },
+  "external_modules": [
+    "Aeneas",
+    "Init.Data.ByteArray.Lemmas",
+    "Lean.Elab.Command",
+    "Lean.Util.CollectAxioms"
+  ],
+  "unconsumed_library_declarations": [
+    "SandproofStage1Carriers",
+    "SandproofStage1Manifest"
+  ],
+  "formal_acceptance": false,
+  "source_bindings": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+    "controller-service/src/template_registry/evidence.rs": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+    "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+    "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/resume.rs": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad",
+    "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+    "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+    "verification/experiments/stage1-protocol/envelope-writer/extract.py": "547958b4c01576263ebce9dca5911fcae501a54d6a92d725c09c2a3684de38fa",
+    "verification/experiments/stage1-protocol/json-wire/accepted/lib.rs.in": "7063414c1abebfb8e33377428d3300b265cac8e2075975552ef801c316229226",
+    "verification/experiments/stage1-protocol/json-wire/extract.py": "a2e56fa55efc5b22136fa6fd75fb325c88afe2cf2e75684d5e933917a5884417",
+    "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh": "ce85beacaacb9e2d2eddd2bff9f13669d88f45e38b2a6663c7fe08642f67672c",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "raw_provenance": {
+    "source": "verification/experiments/stage1-protocol/production-json/raw/provenance.json",
+    "sha256": "5482b4a2b772d8011bc2546c8a46afdb58f29d0d538bae29c198415c2590b746"
+  },
+  "lake_view_mapping": {
+    "historical_config_sha256": "d412ef1b101500eb529639ca37421f8c292b2b259984083f95ab8136db255e5c",
+    "current_config_sha256": "f38d6b65feaaaa8d64bcfffb4bf962790045f0ee162663b4dddf2deddebc67f2",
+    "consumed_module_sources_match": true,
+    "configs_byte_identical": false,
+    "not_a_new_proof_result": true
+  }
+}

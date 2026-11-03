@@ -1,0 +1,69 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Core
+import Mathlib.Logic.Relation
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open controller.lifecycle_inbox.source_work.retirement
+
+theorem retains_refl (value : Option T) : Retains value value := by
+  cases value <;> simp [Retains]
+
+theorem retains_trans (a b c : Option T) (first : Retains a b) (second : Retains b c) :
+    Retains a c := by
+  cases a with
+  | none => trivial
+  | some value =>
+    have saved : b = some value := first
+    rw [saved] at second
+    exact second
+
+theorem state_retains_refl (value : Option State) : RetainsState value value := by
+  cases value with
+  | none => trivial
+  | some state => cases state <;> simp [RetainsState]
+
+theorem state_retains_trans (a b c : Option State)
+    (first : RetainsState a b) (second : RetainsState b c) : RetainsState a c := by
+  cases a with
+  | none => trivial
+  | some state =>
+    cases state <;> cases b with
+    | none => simp_all [RetainsState]
+    | some middle =>
+      cases middle <;> cases c with
+      | none => simp_all [RetainsState]
+      | some last => cases last <;> simp_all [RetainsState]
+
+theorem preserves_refl (record : Record) : Preserves record record :=
+  ⟨retains_refl _, retains_refl _, state_retains_refl _⟩
+
+theorem preserves_trans (a b c : Record) (first : Preserves a b) (second : Preserves b c) :
+    Preserves a c :=
+  ⟨retains_trans _ _ _ first.1 second.1,
+    retains_trans _ _ _ first.2.1 second.2.1,
+    state_retains_trans _ _ _ first.2.2 second.2.2⟩
+
+theorem accepted_compose (a b c : Record)
+    (first : preserves_saved_facts a b = .ok true)
+    (second : preserves_saved_facts b c = .ok true) :
+    preserves_saved_facts a c = .ok true :=
+  (accepts_iff a c).mpr (preserves_trans a b c ((accepts_iff a b).mp first) ((accepts_iff b c).mp second))
+
+/-- Every edge is an actual accepted guard value. The physical row, transaction
+outcomes and recovery history remain V5 connection obligations; unknown/failing
+saves are not supplied as successful edges by this theorem. -/
+theorem accepted_path_preserves {before after : Record}
+    (history : Relation.ReflTransGen (fun a b => preserves_saved_facts a b = .ok true) before after) :
+    Preserves before after := by
+  induction history with
+  | refl => exact preserves_refl _
+  | tail previous edge ih =>
+      exact preserves_trans _ _ _ ih ((accepts_iff _ _).mp edge)
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.retains_refl
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.retains_trans
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.state_retains_refl
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.state_retains_trans
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.preserves_refl
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.preserves_trans
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.accepted_compose
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.accepted_path_preserves

@@ -1,0 +1,110 @@
+import SandproofInboxSaveBlob.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.InboxSaveBlob
+open SandproofInboxSaveBlobRust
+
+abbrev Context := controller.lifecycle_inbox.codec.StandardInboxSave
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+abbrev Reply := core.result.Result Usize JournalError
+
+def inputs (bytes digest : Slice U8) : Array rusqlite.types.to_sql.ToSqlOutput 2#usize :=
+  Array.make 2#usize [.Borrowed (.Blob bytes), .Borrowed (.Blob digest)]
+
+def completeInputs (bytes digest : Slice U8) : List SqlValue := [.blob ⟨bytes⟩, .blob ⟨digest⟩]
+
+abbrev actual := controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+
+def expected (self : Context) (statement : Str) (bytes digest : Slice U8) :
+    Result (Reply × Context) := do
+  let prepared ← self.connection.prepare statement
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite error), self)
+  | .Ok _ =>
+      let completed ← self.connection.run statement (completeInputs bytes digest)
+      match completed with
+      | .Err error => .ok (.Err (.Sqlite error), self)
+      | .Ok count => .ok (.Ok count, self)
+
+-- Same fixed two-value iterator mathematics as the adopted lifetime SQL.
+-- The resulting arguments are a descriptor, not a successful raw-bind log.
+theorem array_complete_inputs (statement : rusqlite.statement.Statement) (bytes digest : Slice U8) :
+    ArrayT2.Insts.RusqliteParamsParams.__bind_in
+      rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+      (inputs bytes digest) statement =
+      .ok (.Ok (), {statement with arguments := statement.arguments ++ completeInputs bytes digest}) := by
+  simp only [ArrayT2.Insts.RusqliteParamsParams.__bind_in,
+    rusqlite.statement.Statement.bind_parameters,
+    SharedArray.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter,
+    core.slice.iter.IteratorSliceIter.next, inputs,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    observedBlobReply, observedBlobParameter,
+    SandproofSqliteStatementsRust.bindValues, List.append_assoc,
+    Slice.len_val, Array.make_val, bind_tc_ok, Nat.reduceAdd]
+  dsimp only [getElem, instGetElemSliceNatLtLengthVal, Slice.from, Slice.val,
+    Aeneas.Data.ListN.ListN.fromList, Aeneas.Data.ListN.ListN.toList]
+  simp [Slice.val, Slice.length, Aeneas.Data.ListN.ListN.toList,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql, completeInputs]
+
+theorem call_complete_inputs (connection : rusqlite.Connection) (statement : Str)
+    (bytes digest : Slice U8) :
+    rusqlite.Connection.execute
+      (ArrayT2.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      connection statement (inputs bytes digest) = (do
+        let prepared ← connection.prepare statement
+        match prepared with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok _ => connection.run statement (completeInputs bytes digest)) := by
+  simp only [rusqlite.Connection.execute,
+    SandproofSqliteStatementsRust.rusqlite.Connection.execute]
+  change (do
+    let prepared ← connection.prepare statement
+    match prepared with
+    | .Err error => .ok (core.result.Result.Err error)
+    | .Ok count => do
+        let (bound, result) ← ArrayT2.Insts.RusqliteParamsParams.__bind_in
+          rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+          (inputs bytes digest) ⟨count, [], connection.countError count⟩
+        match bound with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok () => connection.run statement result.arguments) = _
+  simp only [array_complete_inputs, bind_tc_ok, List.nil_append]
+
+theorem actual_complete (self : Context) (statement : Str) (bytes digest : Slice U8) :
+    actual self statement bytes digest = expected self statement bytes digest := by
+  unfold actual
+  simp only [controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update]
+  change (do
+    let reply ← rusqlite.Connection.execute
+      (ArrayT2.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      self.connection statement (inputs bytes digest)
+    let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+    match control with
+    | .Continue value => .ok (core.result.Result.Ok value, self)
+    | .Break error => do
+        let result ← core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Usize JournalError.Insts.CoreConvertFromError error
+        .ok (result, self)) = expected self statement bytes digest
+  rw [call_complete_inputs]
+  simp only [expected, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared <;> simp [
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+  congr 1
+  funext finished
+  cases finished <;> simp only [bind_tc_ok]
+
+theorem thin_root (self : Context) (statement : Str) (bytes digest : Slice U8) :
+    controller.lifecycle_inbox.codec.proof_stage1_save_blob_update self statement bytes digest =
+      actual self statement bytes digest := rfl
+
+end SandboxModel.Stage1Protocol.InboxSaveBlob
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveBlob.array_complete_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveBlob.call_complete_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveBlob.actual_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveBlob.thin_root

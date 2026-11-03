@@ -1,0 +1,23 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,20 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 恢复退出的三个匹配接口
++
++候选 `exit-observations` 读取9c50da7c的原 Direct、BeforeAdmission 与 Continued
++退出观察匹配。固定 Charon/Aeneas 捕获原三个方法与完整 ActionIdentity、EffectId、
++Command 和 process 比较；自有比较保持透明。只复用既有逐符号 A6 的 String 与
++Option 字典比较，以及固定数组、Vec、标量和翻译语义，没有增加业务 opaque、公理
++或整个 Serde/handler/事务正确性条件。String/Option 的模型正文在独立生成命名空间
++采用既有定义，避免同时导入两套生成类型的全局实例。
++
++FullExitMatchContract 描述全部已解码值。Direct 要求正PID/ticks及原 bootstrap boot；
++BeforeAdmission 与 Continued 分别比较保存 process / work.source.source 的完整
++PID、ticks、boot，不额外加入正值检查。完整32字节绑定值不证明计算过哈希。
++候选内部 authority、当前连接/lease/事务与提交仍由V1/V5连接；独立认证由V7、实际
++进程与材料事实由V6提供。本匹配不签发 dispatch、释放、死亡或耐久接受结论。
++原 validate_record/eligible/authority/candidates/driver、JSON/TLS 与重启继续开放。
