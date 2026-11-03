@@ -60,7 +60,7 @@
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
-    "docs/formal/dependencies.md": "7a78a1ff00b1b523a3907d3b796c79623fce7290b8171a515c157d5d2729da91"
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec"
   },
   "templates": {
     "verification/experiments/stage1-protocol/source-observation/Core.lean.in": "96ade38e1b224bc969ea24ac04742084a211abd5dae95039e60b6352a3fe1a1e",

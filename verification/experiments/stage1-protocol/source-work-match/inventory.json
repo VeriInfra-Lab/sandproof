@@ -63,7 +63,7 @@
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "SandboxModel/Lifecycle/Protocol/ReplayContract.lean": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
     "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
-    "docs/formal/dependencies.md": "7a78a1ff00b1b523a3907d3b796c79623fce7290b8171a515c157d5d2729da91"
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec"
   },
   "templates": {
     "verification/experiments/stage1-protocol/source-work-match/AnchorData.lean.in": "077b72a8b6c1206ae1b26c659f90b684a99063646449d1e88aeec52588e5f16e",
