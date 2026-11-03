@@ -88,7 +88,10 @@ fn proof_caller_destroy_keeps_the_real_new_current_operation_in_full_state() {
     .unwrap();
     let running_record = running.sandbox_record(local.sandbox).unwrap();
     assert_eq!(running_record.phase, core::Phase::Running);
-    assert_eq!(running_record.current_operation.unwrap().id, local.operation);
+    assert_eq!(
+        running_record.current_operation.unwrap().id,
+        local.operation
+    );
     let stop = destroy(&request);
     let result = journal
         .record_lifecycle_intent(&stop, &context(), &mut NeverCrash)
