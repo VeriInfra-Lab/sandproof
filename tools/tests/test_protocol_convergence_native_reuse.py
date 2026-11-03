@@ -123,8 +123,9 @@ class FixedNativeReuseTests(unittest.TestCase):
             changed = copy.deepcopy(self.key)
             changed[field]['different'] = 'new'
             with self.subTest(field=field):
-                self.assertFalse(convergence.native_reuse_matches(self.root,LABEL,
-                    self.original['key'],changed,receipts))
+                with self.assertRaisesRegex(ValueError, 'execution context changed'):
+                    convergence.native_reuse_matches(self.root,LABEL,
+                        self.original['key'],changed,receipts)
 
     def test_changed_current_admission_and_other_scope_are_rejected(self):
         self.reuse()

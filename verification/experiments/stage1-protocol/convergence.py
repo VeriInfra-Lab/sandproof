@@ -113,7 +113,7 @@ def native_reuse_matches(root, label, original, current, shared):
     # No claim of a general package dependency analyser is made here.
     if any(original[name] != current[name] for name in
            ('schema', 'label', 'command', 'rust', 'options', 'runtime', 'contracts', 'source_archives')):
-        return False
+        raise ValueError('fixed native reuse execution context changed: '+label)
     plan = definition['components'][label]
     selected = {n:h for n,h in current['rules'].items()
                 if n.startswith(tuple(plan['component_prefixes'])) or n in plan['dependency_files']}
