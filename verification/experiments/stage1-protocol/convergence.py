@@ -318,7 +318,7 @@ def check_actual(result, job, root):
         files = view['files'] if view else data['correct_files' if variant == 'correct' else 'wrong_files']
         file_inventory_matches = (set(actual.get('files', {})) == set(files) if view
                                   else len(actual.get('files', {})) == files)
-        audit_inventory_matches = (sorted(actual.get('audits', [])) == sorted(view['audits']) if view
+        audit_inventory_matches = (sorted(actual.get('audits', [])) == sorted(job['views'][variant]['audits']) if view
                                    else len(actual.get('audits', [])) == data[
                                        'correct_audits' if variant == 'correct' else 'wrong_audits'])
         rejection_matches = result.get('property_rejected') is (variant != 'correct')

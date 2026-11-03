@@ -899,6 +899,27 @@ def _check_fixed_create_flow(result, originals, job):
             raise ValueError('incomplete independent Create flow view: '+case)
 
 
+def _check_fixed_protocol_record(original, job):
+    """Keep the historical caller producer's exact positive/refutation format."""
+    variant, = job['cases']
+    recipe = job['views'][variant]
+    actual = original.get('actual', {})
+    rejection = variant != 'correct'
+    if (original.get('complete') is not True
+            or set(actual.get('files', {})) != set(recipe['files'])
+            or sorted(actual.get('audits', [])) != sorted(recipe['audits'])
+            or not actual.get('service_log_sha256')
+            or ('property_rejected' in original and
+                original['property_rejected'] is not rejection)):
+        raise ValueError('incomplete original caller physical evidence: '+variant)
+    if not rejection:
+        if original.get('kind') != 'actual-host24-caller-complete-physical-file-development-check':
+            raise ValueError('different original correct caller producer')
+    elif any(original.get(flag) is not True for flag in (
+            'formal_counterexample_complete', 'same_full_flow_contract', 'same_full_load_contract')):
+        raise ValueError('missing original caller same-property refutation: '+variant)
+
+
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
@@ -908,6 +929,8 @@ def _check_actual(result, job):
         originals = reader.originals(result)
         if job.get('create_package') == 'create-attachment-flow' and len(originals) > 1:
             _check_fixed_create_flow(result, originals, job)
+        elif job.get('convergence_package') == 'protocol-record' and len(originals) == 1:
+            _check_fixed_protocol_record(originals[0], job)
         elif len(originals) == 1:
             _check_actual(originals[0], job)
         else:

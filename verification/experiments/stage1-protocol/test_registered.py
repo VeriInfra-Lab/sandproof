@@ -111,6 +111,40 @@ class CreateDelivery(unittest.TestCase):
             with self.subTest(defect=defect), self.assertRaises(ValueError):
                 registered._check_fixed_create_flow(result, rows, job)
 
+    def test_original_caller_requires_every_same_property_flag_and_physical_audit(self):
+        jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
+        for job in (j for j in jobs if j.get('convergence_package') == 'protocol-record'):
+            variant, = job['cases']
+            recipe = job['views'][variant]
+            good = dict(complete=True,
+                kind='actual-host24-caller-complete-physical-file-development-check',
+                formal_counterexample_complete=True, same_full_flow_contract=True,
+                same_full_load_contract=True, actual=dict(
+                    files={n: 'a'*64 for n in recipe['files']},
+                    audits=list(recipe['audits']), service_log_sha256='b'*64))
+            registered._check_fixed_protocol_record(good, job)
+            defects = ['file', 'audit', 'service', 'outcome', 'incomplete']
+            defects += (['kind'] if variant == 'correct' else [
+                'formal_counterexample_complete', 'same_full_flow_contract', 'same_full_load_contract'])
+            for defect in defects:
+                bad = copy.deepcopy(good)
+                if defect == 'file':
+                    bad['actual']['files'].pop(next(iter(bad['actual']['files'])))
+                elif defect == 'audit':
+                    bad['actual']['audits'].pop()
+                elif defect == 'service':
+                    del bad['actual']['service_log_sha256']
+                elif defect == 'outcome':
+                    bad['property_rejected'] = variant == 'correct'
+                elif defect == 'incomplete':
+                    bad['complete'] = False
+                elif defect == 'kind':
+                    bad['kind'] = 'different-producer'
+                else:
+                    del bad[defect]
+                with self.subTest(variant=variant, defect=defect), self.assertRaises(ValueError):
+                    registered._check_fixed_protocol_record(bad, job)
+
     def test_native_property_rejection_is_not_a_mutant_clippy_exit(self):
         definition = registered.create_profile()
         for package in definition['packages']:
