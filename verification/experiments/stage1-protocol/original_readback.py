@@ -91,7 +91,9 @@ def prepare(bundle, output, root=ROOT):
             return name
         results = {}
         for name, row in spec['jobs'].items():
-            results[name] = retain('results', member(row['archive'], row['member']), row['sha256'])
+            records = row.get('originals', [row])
+            values = [retain('results', member(r['archive'], r['member']), r['sha256']) for r in records]
+            results[name] = values if 'originals' in row else values[0]
         for archive in spec['log_archives']:
             for row in json.loads(member(archive, 'index.json')):
                 name = retain('logs', member(archive, row['member']), row['sha256'])
@@ -160,8 +162,7 @@ def _source(root, stage, spec, expected, evidence):
     return value
 
 
-def _original(stage, index, expected, job, evidence):
-    name = index['results'][job]
+def _original(stage, name, expected, evidence):
     path = stage/safe(name)
     value = bytes_at(path)
     if digest(value) != expected['sha256']:
@@ -177,26 +178,37 @@ def _original(stage, index, expected, job, evidence):
 
 
 def _cases(result, expected):
-    for key in ('cases', 'views'):
+    for key in ('cases', 'views', 'variants'):
         if key in result:
             if list(result[key]) != list(expected['views']):
                 raise ValueError('original cases differ from the fixed complete selection')
             return result[key]
-    variant = result['variant']
-    if list(expected['views']) != [variant]:
+    if len(expected['views']) != 1:
         raise ValueError('original single variant differs')
-    return {variant: result}
+    # The exact original object is pinned by SHA. A historical variant's
+    # spelling may differ from its current registered job name; never edit it.
+    return {next(iter(expected['views'])): result}
 
 
-def _command_log(command):
+def _command_log(command, original_paths=None):
     if 'log' in command:
         return Path(command['log'])
-    return Path(command['folder'])/(command['label']+'.log')
+    if 'folder' in command:
+        return Path(command['folder'])/(command['label']+'.log')
+    matches = [Path(path) for path, item in (original_paths or {}).items()
+               if item['sha256'] == command['log_sha256']
+               and Path(path).name == command['label']+'.log']
+    if not matches:
+        raise ValueError('original command has no retained log bytes')
+    # Some original producers recorded the log's bytes and label but no path.
+    # Equal-content copies are not new executions; the original command stays
+    # unchanged and its pinned SHA binds the actual successful execution.
+    return min(matches)
 
 
 def _commands(result, case, row):
     commands = row.get('commands', result.get('commands', []))
-    if ('cases' in result or 'views' in result) and not row.get('commands'):
+    if ('cases' in result or 'views' in result or 'variants' in result) and not row.get('commands'):
         commands = [c for c in commands if case in _command_log(c).parts]
     if not commands or any(c.get('exit_code') != 0 for c in commands):
         raise ValueError('missing or failed original execution commands')
@@ -214,7 +226,8 @@ def _fingerprint(result, row):
             raise ValueError('missing complete original checked-view source inventory')
         inputs = dict(sources[0]['inputs'])
     else:
-        inputs = dict(row.get('source_inputs', result['inputs']))
+        inputs = dict(row.get('source_inputs', row.get('inputs', result.get('inputs', {}))))
+        inputs.update(row.get('private_derived_inputs', {}))
     inputs.update(row.get('installed', {}))
     inputs.update(row['actual']['files'])
     value = hashlib.sha256()
@@ -242,7 +255,20 @@ def _validate(root, job, stage, output, *, install):
             or index.get('archives') != spec['archives'] or index.get('proofs_executed') is not False):
         raise ValueError('different finite original evidence preparation')
     evidence[str(stage/'index.json')] = digest(bytes_at(stage/'index.json'))
-    result, result_path = _original(stage, index, expected, name, evidence)
+    descriptors = expected.get('originals', [expected])
+    if 'originals' in expected and [d['case'] for d in descriptors] != list(expected['views']):
+        raise ValueError('independent original views are missing or out of order')
+    names = index['results'][name] if 'originals' in expected else [index['results'][name]]
+    if len(names) != len(descriptors):
+        raise ValueError('missing independent original proof result')
+    originals_with_paths = [_original(stage, item, descriptor, evidence)
+                           for item, descriptor in zip(names, descriptors)]
+    selected_rows = []
+    for (raw, path), descriptor in zip(originals_with_paths, descriptors):
+        selected = ({descriptor['case']: expected['views'][descriptor['case']]}
+                    if 'originals' in expected else expected['views'])
+        for case, row in _cases(raw, {'views': selected}).items():
+            selected_rows.append((raw, path, case, row))
     spec_import = importlib.util.spec_from_file_location('finite_original_registered', root/HERE/'registered.py')
     registered = importlib.util.module_from_spec(spec_import)
     spec_import.loader.exec_module(registered)
@@ -264,9 +290,9 @@ def _validate(root, job, stage, output, *, install):
         elif bytes_at(path) != value:
             raise ValueError('materialized proof/log readback changed')
         evidence[str(path)] = digest(value)
-    for case, row in _cases(result, expected).items():
+    for result, result_path, case, row in selected_rows:
         view = expected['views'][case]
-        actual = row['actual']
+        actual = row.get('actual') or {k: row[k] for k in ('files', 'audits', 'service_log_sha256')}
         if (row.get('complete') is not True or actual['files'] != view['files']
                 or actual['audits'] != view['audits']
                 or actual['service_log_sha256'] != view['service_log_sha256']):
@@ -277,6 +303,14 @@ def _validate(root, job, stage, output, *, install):
                     'SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract'
                     not in actual['audits']):
                 raise ValueError('missing original native-readiness counterexample')
+        elif expected['package'] == 'protocol-record' and 'property_rejected' not in row:
+            if case == 'correct':
+                if row.get('kind') != 'actual-host24-caller-complete-physical-file-development-check':
+                    raise ValueError('different original correct caller proof')
+            elif (row.get('formal_counterexample_complete') is not True
+                    or row.get('same_full_flow_contract') is not True
+                    or row.get('same_full_load_contract') is not True):
+                raise ValueError('missing original full-property caller counterexample')
         elif row.get('property_rejected') is not (case not in ('correct', 'actual')):
             raise ValueError('original rejection result differs')
         folder = output/'views'/case
@@ -284,26 +318,31 @@ def _validate(root, job, stage, output, *, install):
         for target, h in actual['files'].items():
             placed(project/safe(target), _source(root, stage, spec, h, evidence))
         commands = _commands(result, case, row)
-        kernels = [c for c in commands if _command_log(c).name.startswith('kernel-')]
+        kernels = [c for c in commands if _command_log(c, index['original_paths']).name.startswith('kernel-')]
         if len(kernels) != len(actual['files']):
             raise ValueError('missing original kernel commands')
         for command in commands:
-            original_log(_command_log(command), command['log_sha256'])
+            original_log(_command_log(command, index['original_paths']), command['log_sha256'])
         projection = []
         for i, (target, command) in enumerate(zip(actual['files'], kernels)):
-            if (_command_log(command).name != 'kernel-'+str(i)+'.log'
+            if (_command_log(command, index['original_paths']).name != 'kernel-'+str(i)+'.log'
                     or command['argv'] != ['lake', 'env', 'lean', target]):
                 raise ValueError('original kernel command order differs')
-            placed(folder/('kernel-'+str(i)+'.log'), original_log(_command_log(command), command['log_sha256']))
+            placed(folder/('kernel-'+str(i)+'.log'), original_log(_command_log(command, index['original_paths']), command['log_sha256']))
             # This is a path projection for checking identical retained bytes,
             # not a new compilation command or a rewrite of the original JSON.
             projection.append(dict(command, cwd=str(project)))
-        old_physical = _command_log(kernels[0]).parent/'physical-files'
+        services = [Path(path) for path, item in index['original_paths'].items()
+                    if Path(path).name == 'service.log' and item['sha256'] == actual['service_log_sha256']]
+        if not services:
+            raise ValueError('missing exact original physical service log')
+        old_physical = min(services).parent
         for file in ('requests.jsonl', 'service.log'):
             placed(physical/file, original_log(old_physical/file,
                 actual['service_log_sha256'] if file == 'service.log' else None))
         registered._saved_physical_view(actual, project, physical, projection)
-        source_fingerprint, old_inputs = _fingerprint(result, row)
+        fingerprint_row = dict(row, actual=actual)
+        source_fingerprint, old_inputs = _fingerprint(result, fingerprint_row)
         revisions, checked_messages = [], []
         for line in bytes_at(physical/'service.log').decode().splitlines():
             try:
@@ -334,21 +373,42 @@ def _validate(root, job, stage, output, *, install):
             raise ValueError('original service changed revision during the view')
         messages.extend(checked_messages)
         views.append(dict(case=case, actual=actual, original_revision=revisions[0],
-                          original_project=kernels[0]['cwd'], materialized_project=str(project)))
-    return result, result_path, evidence, ('\n'.join(messages)+'\n').encode(), views
+                          original_project=kernels[0]['cwd'], materialized_project=str(project),
+                          original_result_path=str(result_path),
+                          original_source_commit=row.get('source_commit', result.get('source_commit', result.get('source_head'))),
+                          original_cpus=row.get('cpu_affinity', result.get('cpus'))))
+    return originals_with_paths, evidence, ('\n'.join(messages)+'\n').encode(), views
 
 
 def reader(root, job, directory, output):
     """Return the unchanged original object, consumed evidence, original messages."""
-    raw, _, evidence_files, stdout, _ = _validate(root, job, directory, output, install=True)
-    return raw, evidence_files, stdout
+    records, evidence_files, stdout, _ = _validate(root, job, directory, output, install=True)
+    values = [raw for raw, _ in records]
+    return values[0] if len(values) == 1 else values, evidence_files, stdout
+
+
+def originals(result):
+    """Original objects in fixed view order, never a fabricated parent batch."""
+    values = []
+    for row in result['original_results']:
+        value = bytes_at(row['path'])
+        if digest(value) != row['sha256']:
+            raise ValueError('changed original result')
+        values.append(json.loads(value))
+    return values
 
 
 def original(result):
-    value = bytes_at(result['original_result_path'])
-    if digest(value) != result['original_result_sha256']:
-        raise ValueError('changed original result')
-    return json.loads(value)
+    values = originals(result)
+    if len(values) != 1:
+        raise ValueError('independent proof objects require originals(result)')
+    return values[0]
+
+
+def _identities(records):
+    return [dict(path=str(path), sha256=digest(bytes_at(path)),
+                 source_commit=raw.get('source_commit', raw.get('source_head')),
+                 cpus=raw.get('cpus')) for raw, path in records]
 
 
 def check(result, root=ROOT, job=None):
@@ -357,14 +417,18 @@ def check(result, root=ROOT, job=None):
         raise ValueError('not a complete fixed original readback')
     if job is not None and result['job'] != job_name(job):
         raise ValueError('fixed readback belongs to a different job')
-    raw, path, consumed, stdout, views = _validate(root, result['job'],
+    records, consumed, stdout, views = _validate(root, result['job'],
         result['original_directory'], result['output_directory'], install=False)
-    if (result['original_result_path'] != str(path) or result['original_result_sha256'] != digest(bytes_at(path))
+    identities = _identities(records)
+    if (result['original_results'] != identities
             or result['actuals'] != [v['actual'] for v in views] or result['views'] != views
-            or result['evidence'] != consumed or result['stdout_sha256'] != digest(stdout)
-            or result['original_commit'] != raw.get('source_commit', raw.get('source_head'))
-            or result['original_cpus'] != raw.get('cpus')):
+            or result['evidence'] != consumed or result['stdout_sha256'] != digest(stdout)):
         raise ValueError('original proof identity or current readback changed')
+    if len(identities) == 1:
+        first = identities[0]
+        if (result['original_result_path'] != first['path'] or result['original_result_sha256'] != first['sha256']
+                or result['original_commit'] != first['source_commit'] or result['original_cpus'] != first['cpus']):
+            raise ValueError('original single-result identity differs')
     return True
 
 
@@ -381,12 +445,16 @@ def run(output, job, root=ROOT, directory=None):
     result = dict(kind=KIND, job=job_name(job), complete=False, execution='REUSE',
                   proofs_executed=False, current_batch_acceptance=False)
     try:
-        raw, path, consumed, stdout, views = _validate(root, job, directory, output, install=True)
+        records, consumed, stdout, views = _validate(root, job, directory, output, install=True)
+        identities = _identities(records)
         result.update(complete=True, original_directory=str(directory), output_directory=str(output),
-            original_result_path=str(path), original_result_sha256=digest(bytes_at(path)),
-            original_commit=raw.get('source_commit', raw.get('source_head')), original_cpus=raw.get('cpus'),
+            original_results=identities,
             actuals=[v['actual'] for v in views], views=views, evidence=consumed,
             stdout_sha256=digest(stdout), original_global_fingerprints_reconstructed=True)
+        if len(identities) == 1:
+            first = identities[0]
+            result.update(original_result_path=first['path'], original_result_sha256=first['sha256'],
+                          original_commit=first['source_commit'], original_cpus=first['cpus'])
         print(stdout.decode(), end='', flush=True)
     except BaseException as error:
         result.update(complete=False, error=repr(error))
