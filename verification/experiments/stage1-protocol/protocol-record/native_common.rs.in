@@ -78,6 +78,17 @@ fn proof_caller_destroy_keeps_the_real_new_current_operation_in_full_state() {
         .admit_lifecycle_create(&request, &context(), admission(), &mut NeverCrash)
         .unwrap();
     let local = admitted.local.unwrap();
+    let running = crate::finish_admitted_create_timed(
+        &mut journal,
+        local.sandbox,
+        local.operation,
+        &mut crate::controller::tests_support::worker,
+        &mut || Ok(20),
+    )
+    .unwrap();
+    let running_record = running.sandbox_record(local.sandbox).unwrap();
+    assert_eq!(running_record.phase, core::Phase::Running);
+    assert_eq!(running_record.current_operation.unwrap().id, local.operation);
     let stop = destroy(&request);
     let result = journal
         .record_lifecycle_intent(&stop, &context(), &mut NeverCrash)

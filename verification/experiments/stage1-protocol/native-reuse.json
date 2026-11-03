@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "kind": "fixed-17-original-native-receipts",
+  "kind": "fixed-batch-original-native-receipts",
   "scope": "stage1-protocol-convergence",
   "reviewed_execution_baseline": "1965971081fda59705335cbaa542e378754488fd",
   "production_rust": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
@@ -8,8 +8,8 @@
   "admission_rules": {
     "tools/acceptance_receipts.py": "d4a9a6a2709e269784d98126d11d7d6851b76637397b0bf63f6b93b47d23a70c",
     "tools/proof_native_suite.py": "4b4769c88c8b4aff88835d84a0a6aba665ce5c355db6b6b8ad35638f11c1e86b",
-    "verification/experiments/stage1-protocol/convergence.py": "f996774a7c604ed6390b98899b86b924712ce3c80395cbd89318e8e3a5ce158a",
-    "tools/tests/test_protocol_convergence_native_reuse.py": "1d31561140d64c42d9cbaa45c8671a4c73b32fa376cac2d5eeb3987be0a3cb11"
+    "verification/experiments/stage1-protocol/convergence.py": "39b6444b5b2d15a91da1f93600278b43b23909ff604dbfacd31d2e8ef17f1dc4",
+    "tools/tests/test_protocol_convergence_native_reuse.py": "3a43a96d533d356d52e43e4aec0f5aa7a32d6f9b948b038c9bf20ad101bf9b6a"
   },
   "components": {
     "stage1-protocol-restore-work": {
@@ -344,6 +344,16 @@
       ],
       "current_component_rules_sha256": "6c788d656465149c113b908155456eaed41d91431535abdc8b8d0624e8a68d1b",
       "dependency_files": []
+    },
+    "stage1-record-reply": {
+      "identity": "d5f5c699b19cd6d2cea1b6c084f0b565eb4108df20a5f320a6076c4d76608896",
+      "receipt_sha256": "7f4b3274a89fd255af6a5965867ec413c7d1c6350ccc6d56cdcac4472ac203a5",
+      "execution_commit": "e5c9c2aefe0eb8ffe2641df4cf31678ac7418c5c",
+      "component_prefixes": [
+        "verification/experiments/stage1-protocol/record-reply/"
+      ],
+      "dependency_files": [],
+      "current_component_rules_sha256": "536e04382564844701496f79545a2179c4be9e54c43e0e903002d0ec07898530"
     }
   }
 }

@@ -60,7 +60,7 @@ EXTRA_DRIVERS = {
 # One reviewed batch, not a general cross-version cache. Original receipts stay
 # at their original identities; the caller records a separate current admission.
 NATIVE_REUSE_MANIFEST = HERE/'native-reuse.json'
-NATIVE_REUSE_COMPONENTS = tuple(CASES)[:17]
+NATIVE_REUSE_COMPONENTS = (*tuple(CASES)[:17], 'record-reply')
 NATIVE_REUSE_ADMISSION_FILES = (
     'tools/acceptance_receipts.py', 'tools/proof_native_suite.py',
     str(HERE/'convergence.py'), str(NATIVE_REUSE_MANIFEST),
@@ -73,7 +73,7 @@ def native_reuse_definition(root):
     expected = {SPECIAL_LABELS.get(name, 'stage1-protocol-'+name)
                 for name in NATIVE_REUSE_COMPONENTS}
     if (data['schema'] != 1 or data['scope'] != SCOPE
-            or data['kind'] != 'fixed-17-original-native-receipts'
+            or data['kind'] != 'fixed-batch-original-native-receipts'
             or set(data['components']) != expected
             or set(data['admission_rules']) != set(NATIVE_REUSE_ADMISSION_FILES)-{str(NATIVE_REUSE_MANIFEST)}):
         raise ValueError('unknown fixed convergence native reuse definition')
@@ -100,7 +100,7 @@ def native_reuse_shared_rules(rules):
 
 
 def native_reuse_matches(root, label, original, current, shared):
-    """Only the reviewed unchanged execution inputs may use these 17 receipts."""
+    """Only the reviewed unchanged execution inputs may use these receipts."""
     definition = native_reuse_definition(root)
     if label not in definition['components']:
         return False

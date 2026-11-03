@@ -92,7 +92,8 @@ bash scripts/python-entry.sh tools/check_tls_pin_contract.py \
 
 固定 `protocol-convergence` 原生批次可显式设置
 `SANDPROOF_CONVERGENCE_REUSE_FIXED17=1`，引用
-[有限清单](experiments/stage1-protocol/native-reuse.json)中的17份原完整成功收据。
+[有限清单](experiments/stage1-protocol/native-reuse.json)登记的原完整成功收据；
+开关名保留本批初始17项的名称。
 原identity、提交、日志和耗时不改写；当前适用性另存对应记录，证明机核对同一记录。
 它仍要求全部22个组件和当前候选的一次完整functional，不适用于其它范围；缺证据
 直接拒绝，实际执行输入改变的组件不得复用。工具接通不等于整批已通过，实际结果
