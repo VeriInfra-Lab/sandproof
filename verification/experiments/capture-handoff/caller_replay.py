@@ -221,7 +221,8 @@ def main():
             required = ["sandbox_controller_core::worker::late_capture::" + name for name in ["record", "record_inner", "commit"]]
             required += ["sandbox_controller_core::request::handle_compensation"]
             required += ["sandbox_controller_core::effect::" + name for name in
-                         ("dispatch_stop", "dispatch_eligible", "dispatch_effect", "dispatched_capture")]
+                         ("dispatch_stop", "dispatch_eligible", "dispatch_effect", "dispatched_capture",
+                          "acknowledge_effect")]
             required += ["sandbox_controller_core::maintenance::released_execution::"
                          "{sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::command"]
             record["real_callers"] = verify_generation(correct, "CaptureCaller",
