@@ -33,6 +33,7 @@ registry_module = module('create-standard-sql_native_registry', ROOT / HERE.pare
 registry_module.HERE = HERE.parent / 'inbox-record'
 support = module('create_standard_sql_inputs', ROOT / HERE / 'support.py')
 sha = base.sha
+native_checks = module('create_standard_sql_native_checks', ROOT/HERE.parent/'registered.py')
 
 
 def run(output):
@@ -43,6 +44,13 @@ def run(output):
                   original_general_equivalence_proved=False,production_modified=False)
     try:
         inventory = support.inventory()
+        required_plan_fields = {'expected_clippy_codes', 'expected_clippy_errors', 'expected_failures', 'mutation', 'test_count'}
+        for variant, plan in inventory['native_variants'].items():
+            missing = required_plan_fields - plan.keys()
+            if variant == 'zero-deadline' and 'expected_clippy_source_sha256' not in plan:
+                missing.add('expected_clippy_source_sha256')
+            if missing:
+                raise ValueError(f'native variant {variant} is missing required fields: {sorted(missing)}')
         extra = {}
         for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
             extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})
@@ -140,32 +148,20 @@ def run(output):
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('Create standard_sql actual/restored assertions failed')
                 elif label == 'clippy':
-                    errors = []
-                    for line in text.splitlines():
-                        try:
-                            message = json.loads(line)
-                        except ValueError:
-                            continue
-                        if message.get('reason') != 'compiler-message' or message['message']['level'] != 'error':
-                            continue
-                        diagnostic = message['message']
-                        primary = [span for span in diagnostic['spans'] if span['is_primary']]
-                        if len(primary) != 1:
-                            raise ValueError('unexpected Clippy primary diagnostic')
-                        span = primary[0]
-                        source = Path(span['file_name'])
-                        if not source.is_absolute():
-                            source = project/source
-                        errors.append(dict(code=(diagnostic.get('code') or {}).get('code'),
-                            source=str(source.relative_to(project)), line=span['line_start']))
-                    expected_errors = []
-                    if plan['expected_clippy_codes']:
-                        raise ValueError('no lint exception is registered for this component')
-                    if errors != expected_errors or done.returncode != (101 if expected_errors else 0):
-                        raise ValueError('strict Clippy differs from the exact mutant-lint inventory')
-                    row['expected_mutant_lint_rejection'] = bool(expected_errors)
-                    row['clippy_errors'] = errors
-                    # A lint rejection is never a business-contract counterexample.
+                    expected_errors = plan['expected_clippy_errors']
+                    if variant == 'zero-deadline':
+                        # Only the original intentional fault may produce these diagnostics.
+                        where = [i+1 for i, line in enumerate((project/MODEL).read_text().splitlines())
+                                 if 'lifetime_sql::execute(self.connection, statement, deadline & 0, sandbox)' in line]
+                        if (plan['expected_clippy_codes'] != ['clippy::erasing_op']
+                                or len(where) != 1 or not expected_errors
+                                or sha(project/MODEL) != plan['expected_clippy_source_sha256']
+                                or any(e['code'] != 'clippy::erasing_op' or e['source'] != MODEL
+                                       or e['line'] != where[0] for e in expected_errors)):
+                            raise ValueError('reviewed original SQL delegate mutant lint site changed')
+                    elif plan['expected_clippy_codes'] or expected_errors:
+                        raise ValueError('no lint exception is registered for this SQL variant')
+                    native_checks.check_native_clippy(row, text, project, expected_errors)
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

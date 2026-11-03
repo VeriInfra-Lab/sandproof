@@ -626,7 +626,7 @@
     "StandardIdentityNumberWireCounter.lean.in": "94ad796301842ea8cd375d0b3772117d1f31ccfb58ffe04d8ce242f156bd8231"
   },
   "drivers": {
-    "native.py": "d614b426b820703a6e536aaaf3921ffb52eb0bdd8828c7829be50154fe06bd89",
+    "native.py": "cbaf8967c90e05640d42ecbfa4e2af2db5488b77feca12c4f532afd6e40c0099",
     "formal.py": "c199cf37ffe695d6807315e7a0569c80a34516c31ed3addc190a99f890ee7952",
     "support.py": "18d2aaaa9731094502abd8ed595210ebc60cbe2ec0731edcebbbb96e1eb6a2fb"
   },
@@ -1224,7 +1224,8 @@
     "actual": {
       "mutation": null,
       "expected_failures": [],
-      "test_count": 5
+      "test_count": 5,
+      "expected_clippy_codes": []
     },
     "namespace-omitted": {
       "mutation": {
@@ -1235,7 +1236,8 @@
         "normal_namespace_is_preserved",
         "invalid_namespace_preserves_error"
       ],
-      "test_count": 5
+      "test_count": 5,
+      "expected_clippy_codes": []
     },
     "number-truncated": {
       "mutation": {
@@ -1245,12 +1247,14 @@
       "expected_failures": [
         "all_numeric_bits_are_preserved"
       ],
-      "test_count": 5
+      "test_count": 5,
+      "expected_clippy_codes": []
     },
     "restored": {
       "mutation": null,
       "expected_failures": [],
-      "test_count": 5
+      "test_count": 5,
+      "expected_clippy_codes": []
     }
   },
   "source_execution_note": "Exact current grouped parent; prior 083580e5 prototype execution identities remain unchanged. This manifest defines inputs; a complete current execution requires the actual formal result and all raw evidence.",

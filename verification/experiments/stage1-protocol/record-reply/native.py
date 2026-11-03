@@ -47,6 +47,11 @@ def run(output):
         disk = os.statvfs(ROOT)
         assert disk.f_bavail*disk.f_frsize >= 64*2**30+2*4*2**30
         inventory = support.inventory()
+        required_plan_fields = {'expected_clippy_codes', 'expected_failures', 'mutation', 'test_count'}
+        for variant, plan in inventory['native_variants'].items():
+            missing = required_plan_fields - plan.keys()
+            if missing:
+                raise ValueError(f'native variant {variant} is missing required fields: {sorted(missing)}')
         extra = {}
         for group, prefix in [('source_inputs', ROOT), ('providers', ROOT), ('templates', ROOT/HERE), ('drivers', ROOT/HERE)]:
             extra.update({str(prefix/n):sha(prefix/n) for n in inventory[group]})

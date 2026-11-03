@@ -45,6 +45,11 @@ def run(output):
     try:
         admitted = support.inventory()
         inventory = json.loads((ROOT/HERE/'plan.json').read_text())
+        required_plan_fields = {'expected_clippy_codes', 'expected_failures', 'test_count'}
+        for variant, plan in inventory['native_variants'].items():
+            missing = required_plan_fields - plan.keys()
+            if missing:
+                raise ValueError(f'native variant {variant} is missing required fields: {sorted(missing)}')
         if inventory['production_adopted'] is not True or admitted['full_v3']:
             raise ValueError('this entry requires the reviewed adopted source and finite interface conditions')
         if sha(ROOT/MODEL) != inventory['actual_source_original_sha256']:

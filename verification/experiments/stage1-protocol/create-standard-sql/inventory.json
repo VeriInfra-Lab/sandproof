@@ -675,7 +675,7 @@
     "StandardSqlDelegate.lean.in": "d58b04e496a621167497bc2db218cf1bda4a0ef73eb8eec643d2655fc66b8542"
   },
   "drivers": {
-    "native.py": "72acb5e72a9b61c137413f9184b80a93e628af8f2572c3ee583deb02b1f27baa",
+    "native.py": "fb887a0ca5552e3493ea82b3551445e2a438757cdb9467334ca4a45933f2447b",
     "formal.py": "2451e806b87c1aec62a3bfa6f93cdead4f50b4ee292269a97436d427deb0c868",
     "support.py": "164f18de2b7f4715009e4d1b68727329e3317530231164aab30480765757678c"
   },
@@ -1257,7 +1257,9 @@
     "actual": {
       "mutation": null,
       "test_count": 6,
-      "expected_failures": []
+      "expected_failures": [],
+      "expected_clippy_codes": [],
+      "expected_clippy_errors": []
     },
     "zero-deadline": {
       "mutation": {
@@ -1268,7 +1270,34 @@
       "expected_failures": [
         "normal_full_values",
         "run_error_preserved"
-      ]
+      ],
+      "expected_clippy_codes": [
+        "clippy::erasing_op"
+      ],
+      "expected_clippy_errors": [
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 663
+        },
+        {
+          "code": "clippy::erasing_op",
+          "message": "this operation will always return zero. This is likely not the intended outcome",
+          "source": "controller-service/src/controller/lifecycle_inbox.rs",
+          "line": 663
+        }
+      ],
+      "expected_clippy_source_sha256": "6042a93e3078f422b1e7336271a42cc3e836579bad976abe24d95d965f72af32",
+      "expected_clippy_origin": {
+        "kind": "single-mutant-diagnostic-not-acceptance",
+        "source_commit": "4e2982e94a386b4e240498eed944978a53061db3",
+        "original_result_sha256": "58fb5e5af382d39dd2fdfc95a0a895b0f52a8a073c3246339ff6d1eebcdd08c9",
+        "test_log_sha256": "c0aefa0a46900575ca288a94efcb7a187fbc95e0fd14e9c51ccef62e4367d456",
+        "clippy_log_sha256": "0117700a22cfe0d4e09e85647a117b8676e8428a46ab07354f6f3863635aeb44",
+        "business_assertions_rejected": true,
+        "original_component_complete": false
+      }
     },
     "empty-sandbox": {
       "mutation": {
@@ -1280,12 +1309,16 @@
         "normal_full_values",
         "zero_deadline_is_not_omitted",
         "run_error_preserved"
-      ]
+      ],
+      "expected_clippy_codes": [],
+      "expected_clippy_errors": []
     },
     "restored": {
       "mutation": null,
       "test_count": 6,
-      "expected_failures": []
+      "expected_failures": [],
+      "expected_clippy_codes": [],
+      "expected_clippy_errors": []
     }
   },
   "source_note": "Exact current grouped parent and readmitted original lower helper; prior prototype execution identities remain unchanged. This manifest defines inputs; a complete current execution requires the actual formal result and all raw evidence.",

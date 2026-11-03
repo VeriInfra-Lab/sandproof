@@ -2578,7 +2578,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-identity/native.py": {
-      "sha256": "d614b426b820703a6e536aaaf3921ffb52eb0bdd8828c7829be50154fe06bd89",
+      "sha256": "cbaf8967c90e05640d42ecbfa4e2af2db5488b77feca12c4f532afd6e40c0099",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-identity/root.rs.in": {
@@ -2646,7 +2646,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-sql/native.py": {
-      "sha256": "72acb5e72a9b61c137413f9184b80a93e628af8f2572c3ee583deb02b1f27baa",
+      "sha256": "fb887a0ca5552e3493ea82b3551445e2a438757cdb9467334ca4a45933f2447b",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-sql/root.rs.in": {
@@ -7414,7 +7414,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/native.py": {
-      "sha256": "0f854e170a120d97f6196741cfcb62d4fa97e435033ffcefaa85b4faaa6f8332",
+      "sha256": "2a76b782bd26e8d256096e9fd1c06d2dcc7363774d144d4effd4bd50d1b61660",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/preparation.py": {
@@ -7514,7 +7514,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/native.py": {
-      "sha256": "4c122c4d5825bf05b941ae4582050d3c6e82b7b067357c2ccc3766a0bb8717d1",
+      "sha256": "0f9ebc086a845b004d6a3ddb8c72d95030ffeb71bca43b3d12cb15a1fc08ccf1",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/plan.json": {
@@ -7658,7 +7658,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/native.py": {
-      "sha256": "99079dc0125416375c41c38761a408153b7050856f64ac2a32e016969c540e97",
+      "sha256": "ebb2b854fc4f3c0f47a9088f96ebd5293f88f5777ae4e80cdfcffedb72188f63",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/plan.json": {
