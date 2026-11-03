@@ -12,8 +12,8 @@ fn check_all_six(bytes: &[u8], expected: [u8; 32]) {
         connection: &tx,
     };
     let original_world = tx.world();
-    let original_tx = effects.tx as *const WorldTransaction<'_>;
-    let original_connection = effects.connection as *const rusqlite::Connection;
+    let original_tx = std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx);
+    let original_connection = std::ptr::from_ref(effects.connection);
     assert_eq!(
         codec::InboxLoadEffects::digest(&mut config, bytes),
         expected
@@ -32,11 +32,11 @@ fn check_all_six(bytes: &[u8], expected: [u8; 32]) {
         expected
     );
     assert_eq!(source_work::digest(bytes).into_bytes(), expected);
-    assert_eq!(effects.tx as *const WorldTransaction<'_>, original_tx);
     assert_eq!(
-        effects.connection as *const rusqlite::Connection,
-        original_connection
+        std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx),
+        original_tx
     );
+    assert_eq!(std::ptr::from_ref(effects.connection), original_connection);
     assert!(std::ptr::eq(config.connection, effects.connection));
     assert_eq!(tx.world(), original_world);
 }

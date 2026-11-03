@@ -104,14 +104,14 @@ fn run_error_preserved() {
 fn complete_reference_and_world_context_preserved() {
     with_standard_effects(|effects| {
         let expected_world = effects.tx.world();
-        let expected_tx = effects.tx as *const WorldTransaction<'_>;
-        let expected_connection = effects.connection as *const rusqlite::Connection;
+        let expected_tx = std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx);
+        let expected_connection = std::ptr::from_ref(effects.connection);
         let _ = CreateLifetimeSqlEffects::execute_lifetime_update(effects, STATEMENT, 17, "wanted");
-        assert_eq!(effects.tx as *const WorldTransaction<'_>, expected_tx);
         assert_eq!(
-            effects.connection as *const rusqlite::Connection,
-            expected_connection
+            std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx),
+            expected_tx
         );
+        assert_eq!(std::ptr::from_ref(effects.connection), expected_connection);
         assert_eq!(effects.tx.world(), expected_world);
     });
 }

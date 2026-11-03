@@ -6,10 +6,10 @@ fn check_current(bytes: &[u8], expected: [u8; 32]) {
     let mut state = crate::controller::checkpoint::StandardConfigRead {
         connection: &connection,
     };
-    let pointer = state.connection as *const rusqlite::Connection;
+    let pointer = std::ptr::from_ref(state.connection);
     let autocommit = state.connection.is_autocommit();
     assert_eq!(InboxLoadEffects::digest(&mut state, bytes), expected);
-    assert_eq!(state.connection as *const rusqlite::Connection, pointer);
+    assert_eq!(std::ptr::from_ref(state.connection), pointer);
     assert_eq!(state.connection.is_autocommit(), autocommit);
 }
 

@@ -60,14 +60,14 @@ fn invalid_namespace_preserves_error() {
 fn complete_effect_context_is_preserved() {
     with_standard_effects(|effects| {
         let expected_world = effects.tx.world();
-        let expected_tx = effects.tx as *const WorldTransaction<'_>;
-        let expected_connection = effects.connection as *const rusqlite::Connection;
+        let expected_tx = std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx);
+        let expected_connection = std::ptr::from_ref(effects.connection);
         let _ = CreateAttachmentEffects::sandbox_id(effects, "normal", core::SandboxId(2));
-        assert_eq!(effects.tx as *const WorldTransaction<'_>, expected_tx);
         assert_eq!(
-            effects.connection as *const rusqlite::Connection,
-            expected_connection
+            std::ptr::from_ref::<WorldTransaction<'_>>(effects.tx),
+            expected_tx
         );
+        assert_eq!(std::ptr::from_ref(effects.connection), expected_connection);
         assert_eq!(effects.tx.world(), expected_world);
     });
 }

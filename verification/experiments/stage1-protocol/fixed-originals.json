@@ -2574,7 +2574,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-identity/native-cases.rs.in": {
-      "sha256": "0d8faf9832c14df87ced89530be5c4d7a997e8f375b37059b6ffdf1574f74320",
+      "sha256": "08dc6cc44157957f1d0ed71b3e7a314ba97b5580303cf92da432d04db9e5fda5",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-identity/native.py": {
@@ -2642,7 +2642,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-sql/native-cases.rs.in": {
-      "sha256": "5db9d98e73f71fad973adefbc61637b1afac92790d3ccab10046fa2425235239",
+      "sha256": "0a0869f41994d23a22d9bd1f219e0b54afaadebd8e3afd9390bb1fa1bd4075be",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/create-standard-sql/native.py": {
@@ -2722,7 +2722,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/digest-uses/native-cases.rs.in": {
-      "sha256": "0d361b1c2ccb8dec168753e8b724cb51952bfb36fe2b63819a808d2eaea1eaec",
+      "sha256": "3c44d5a314ff33557531dfbb64499041be1324a3dc8833dc80a5e2d5efbad19d",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/digest-uses/native-codec-root.rs.in": {
@@ -7510,7 +7510,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/native-cases.rs.in": {
-      "sha256": "a17f494c3633646e314f326cc8981b1adbfd4c9168893973be144d9909061ae5",
+      "sha256": "6e65643790fb26f16a673238cf1c49304a0ad850844d3528345fb9c546e3210c",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/native.py": {
@@ -7518,7 +7518,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/plan.json": {
-      "sha256": "3b1873c0eaeb3f222d6df90b9ced9aff48677f6a1f1aaa9e6cfbc6bc91270ee3",
+      "sha256": "9c32f0d1d7d81ce1dd9158da565197908007973478c921bec48c02571607de83",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-digest/preparation.py": {
@@ -7654,7 +7654,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/native-cases.rs.in": {
-      "sha256": "2bcced4988d92311152976c0416c0cf7a530016c13345b3ccd9e0f010c9c8e16",
+      "sha256": "870c60a2896d4242ab0cbfea35fc7679d131b29aa12a33ce730c4e0fea083b64",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/native.py": {
@@ -7662,7 +7662,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/plan.json": {
-      "sha256": "bedaa78986138178553459bc7031481f43c8df7acb891f4a431f82a9225a38d8",
+      "sha256": "628ed5f1fa7c5b446dae2d6d66fee81db828d10c5e1d55b95062f9b446771e31",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-save-digest/preparation.py": {
@@ -14860,7 +14860,14 @@
           "current": "c199cf37ffe695d6807315e7a0569c80a34516c31ed3addc190a99f890ee7952"
         }
       },
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/create-standard-identity/native-cases.rs.in",
+          "original_sha256": "0d8faf9832c14df87ced89530be5c4d7a997e8f375b37059b6ffdf1574f74320",
+          "current_sha256": "08dc6cc44157957f1d0ed71b3e7a314ba97b5580303cf92da432d04db9e5fda5",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        }
+      ]
     },
     "create-standard-sql": {
       "package": "create-standard-sql",
@@ -15091,7 +15098,14 @@
           "current": "2451e806b87c1aec62a3bfa6f93cdead4f50b4ee292269a97436d427deb0c868"
         }
       },
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/create-standard-sql/native-cases.rs.in",
+          "original_sha256": "5db9d98e73f71fad973adefbc61637b1afac92790d3ccab10046fa2425235239",
+          "current_sha256": "0a0869f41994d23a22d9bd1f219e0b54afaadebd8e3afd9390bb1fa1bd4075be",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        }
+      ]
     },
     "digest-uses": {
       "package": "digest-uses",
@@ -15349,7 +15363,14 @@
           "current": "6c49b7866459b128960602c0f43a5596cdc2f056a795bac6d6141528a7b1bfc1"
         }
       },
-      "non_math_provider_changes": []
+      "non_math_provider_changes": [
+        {
+          "path": "verification/experiments/stage1-protocol/digest-uses/native-cases.rs.in",
+          "original_sha256": "0d361b1c2ccb8dec168753e8b724cb51952bfb36fe2b63819a808d2eaea1eaec",
+          "current_sha256": "3c44d5a314ff33557531dfbb64499041be1324a3dc8833dc80a5e2d5efbad19d",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        }
+      ]
     },
     "record-reply": {
       "package": "record-reply",
@@ -30005,6 +30026,30 @@
           "original_sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
           "current_sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
           "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-digest/native-cases.rs.in",
+          "original_sha256": "a17f494c3633646e314f326cc8981b1adbfd4c9168893973be144d9909061ae5",
+          "current_sha256": "6e65643790fb26f16a673238cf1c49304a0ad850844d3528345fb9c546e3210c",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-digest/plan.json",
+          "original_sha256": "3b1873c0eaeb3f222d6df90b9ced9aff48677f6a1f1aaa9e6cfbc6bc91270ee3",
+          "current_sha256": "9c32f0d1d7d81ce1dd9158da565197908007973478c921bec48c02571607de83",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-save-digest/native-cases.rs.in",
+          "original_sha256": "2bcced4988d92311152976c0416c0cf7a530016c13345b3ccd9e0f010c9c8e16",
+          "current_sha256": "870c60a2896d4242ab0cbfea35fc7679d131b29aa12a33ce730c4e0fea083b64",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-save-digest/plan.json",
+          "original_sha256": "bedaa78986138178553459bc7031481f43c8df7acb891f4a431f82a9225a38d8",
+          "current_sha256": "628ed5f1fa7c5b446dae2d6d66fee81db828d10c5e1d55b95062f9b446771e31",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
         }
       ]
     },
@@ -31035,6 +31080,18 @@
           "original_sha256": "18594de000918817eef81a15743bb5856c57d9bb6b2bdde671e98c683c61a84c",
           "current_sha256": "08ba131ad9b1d5f1dabfbe2b78a2dc10ff4848e686fb3fe9be67dfc2bc9581e9",
           "basis": "Only the shared native-test fixture borrows Value parameters and native plan pins its actual formatted bytes. These tests are not injected by the original formal capture path; production read/digest source, generated Lean, all nine assertions, five native variants, expected failures and strict lint obligations are unchanged."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-digest/native-cases.rs.in",
+          "original_sha256": "a17f494c3633646e314f326cc8981b1adbfd4c9168893973be144d9909061ae5",
+          "current_sha256": "6e65643790fb26f16a673238cf1c49304a0ad850844d3528345fb9c546e3210c",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
+        },
+        {
+          "path": "verification/experiments/stage1-protocol/standard-digest/plan.json",
+          "original_sha256": "3b1873c0eaeb3f222d6df90b9ced9aff48677f6a1f1aaa9e6cfbc6bc91270ee3",
+          "current_sha256": "9c32f0d1d7d81ce1dd9158da565197908007973478c921bec48c02571607de83",
+          "basis": "Only native-test pointer identity syntax uses ptr::from_ref for the same shared reference and original pointee type. SQL, assertion operands, scope/lifetimes, test counts, wrong implementations and strict lint expectations are unchanged; fixture code is not injected into the original formal capture."
         }
       ]
     }

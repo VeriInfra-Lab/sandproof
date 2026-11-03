@@ -3,19 +3,19 @@ use super::*;
 
 fn check_current(bytes: &[u8], expected: [u8; 32]) {
     let connection = rusqlite::Connection::open_in_memory().unwrap();
-    let pointer = &connection as *const rusqlite::Connection;
+    let pointer = std::ptr::from_ref(&connection);
     let autocommit = connection.is_autocommit();
     let mut direct = StandardInboxSave {
         connection: &connection,
     };
     assert_eq!(InboxSaveEffects::digest(&mut direct, bytes), expected);
-    assert_eq!(direct.connection as *const rusqlite::Connection, pointer);
+    assert_eq!(std::ptr::from_ref(direct.connection), pointer);
     assert_eq!(direct.connection.is_autocommit(), autocommit);
     let mut delegated = crate::controller::checkpoint::StandardConfigRead {
         connection: &connection,
     };
     assert_eq!(InboxSaveEffects::digest(&mut delegated, bytes), expected);
-    assert_eq!(delegated.connection as *const rusqlite::Connection, pointer);
+    assert_eq!(std::ptr::from_ref(delegated.connection), pointer);
     assert_eq!(delegated.connection.is_autocommit(), autocommit);
 }
 

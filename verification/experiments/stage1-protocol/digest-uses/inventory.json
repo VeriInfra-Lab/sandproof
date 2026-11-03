@@ -58,7 +58,7 @@
     "create-roots.rs.in": "7c1cf094395a3328b64b91ab0b4306fc95b0d732499e8dc9961ae23d3b9f15a0",
     "fixed-interfaces.json": "6ed9ef0f12e69293c22007531bdedab34e1a493eb65a9e0a31d11f4e4d953f39",
     "leaf-root.rs.in": "f90a565fde0d57d6f51892c7e3f026c5c98c1bc9cc14196460ca4683517c8686",
-    "native-cases.rs.in": "0d361b1c2ccb8dec168753e8b724cb51952bfb36fe2b63819a808d2eaea1eaec",
+    "native-cases.rs.in": "3c44d5a314ff33557531dfbb64499041be1324a3dc8833dc80a5e2d5efbad19d",
     "native-codec-root.rs.in": "44ec916f8233ca80d07de281f0f57fbab25fd2a6721a50ab6df00e07f6fd45c9",
     "reuse/verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean": "b1499342657eba6f5fd9053e506b35a6a4d08cd7caf362eb1bf5f36f8ad309d7",
     "reuse/verification/aeneas/stage1-protocol/standard-create/SandproofStandardCreate/Types.lean": "a6fdf03e3b8fcb3a424e3578bf045433284bcc5c023f8847af46b9b4228b6b7e",
