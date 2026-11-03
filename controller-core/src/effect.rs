@@ -289,12 +289,10 @@ pub fn effect_outcome_valid(world: &World, command: &Command, outcome: EffectOut
 }
 
 fn dispatched_capture(
-    handoff: Option<crate::capture::CaptureHandoff>,
+    handoff: &Option<crate::capture::CaptureHandoff>,
 ) -> Option<crate::capture::CaptureHandoff> {
-    match handoff {
-        Some(handoff) => Some(handoff.registration_dispatched()),
-        None => None,
-    }
+    let handoff = (*handoff)?;
+    Some(handoff.registration_dispatched())
 }
 
 #[must_use]
@@ -320,7 +318,7 @@ pub fn dispatch_effect(world: &World, id: EffectId) -> World {
             && crate::transition::current_capture(world, sandbox, record).is_some()
         {
             let mut plan = stored.clone();
-            plan.capture = dispatched_capture(plan.capture);
+            plan.capture = dispatched_capture(&plan.capture);
             next.operation_plans.put(key, plan);
         }
     }
