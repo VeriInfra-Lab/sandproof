@@ -145,7 +145,7 @@
       "mutation": {
         "source": "sandbox-internal/src/server/lifecycle.rs",
         "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
-        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => Err(RecordReplyError::Unavailable),\n    }\n",
+        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
         "scope": "Only omit the original full matches decision; remove now-unreachable Ok fallback and mark the borrowed input used so this stays a compiling intended wrong implementation.",
         "common_normal": "RecordReplyValues.original / received",
         "counterexample": "same session and changed full capture: RecordReplyValues.original / changedCapture"
@@ -183,7 +183,7 @@
       "mutation": {
         "source": "sandbox-internal/src/server/lifecycle.rs",
         "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
-        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => Err(RecordReplyError::Unavailable),\n    }\n",
+        "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
         "scope": "Only omit the original full matches decision; remove now-unreachable Ok fallback and mark the borrowed input used so this stays a compiling intended wrong implementation.",
         "common_normal": "RecordReplyValues.original / received",
         "counterexample": "same session and changed full capture: RecordReplyValues.original / changedCapture"
@@ -254,6 +254,13 @@
         "original_sha256": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
         "current_sha256": "63ec64839b52dee49705e9a8934c44ed3a4df6697460a01be8633a3d033a9174",
         "basis": "Current public registration, dependency guarantee or build registration; original theorem text and proof result remain unchanged."
+      },
+      {
+        "field": "variants/native_variants.skip-match.mutation.after",
+        "original_sha256": "f9a9fb61e1f8f4b7e6f424e56d1e72a10641242c8dd86c7841d009e1fbc06a04",
+        "current_sha256": "def0dae214d4034278e0abb1823ef376898e032f9dcdb11dbd450f4daa69fb7e",
+        "basis": "Only the original rustfmt-required block layout for the unchanged Err(RecordReplyError::Unavailable) expression; the omitted matches decision, every branch result and original seven native assertions/two expected failures are unchanged.",
+        "original_formatter_log_sha256": "86b0b9a1e4f6fe2b9debfad043fac2bf117434209c05b43fd8673742dcd79f0c"
       }
     ],
     "manifest_is_proof_evidence": false
