@@ -105,6 +105,11 @@ def prepare(bundle, output, root=ROOT):
         for expected, recipe in spec['physical_sources'].items():
             if 'archive' in recipe:
                 retain('raw', member(recipe['archive'], recipe['member']), expected)
+        for job in spec['jobs'].values():
+            for view in job['views'].values():
+                if 'source_index' in view:
+                    source = view['source_index']
+                    retain('source-index', member(source['archive'], source['member']), source['sha256'])
         index = dict(kind='finite-original-proof-bytes', schema=1,
                      selection_sha256=digest(bytes_at(root/HERE/'fixed-originals.json')),
                      archives=spec['archives'], files=retained, results=results,
@@ -229,6 +234,9 @@ def _fingerprint(result, row):
         inputs = dict(row.get('source_inputs', row.get('inputs', result.get('inputs', {}))))
         inputs.update(row.get('private_derived_inputs', {}))
     inputs.update(row.get('installed', {}))
+    # Some historical physical runs recorded their additional prepared pages
+    # and private Lake view here, including pages outside the audit closure.
+    inputs.update(row.get('files', {}))
     inputs.update(row['actual']['files'])
     value = hashlib.sha256()
     # Match lean_session's Path-component ordering, not plain string ordering:
@@ -342,6 +350,17 @@ def _validate(root, job, stage, output, *, install):
                 actual['service_log_sha256'] if file == 'service.log' else None))
         registered._saved_physical_view(actual, project, physical, projection)
         fingerprint_row = dict(row, actual=actual)
+        if 'source_index' in view:
+            source = view['source_index']
+            path = stage/'source-index'/source['sha256']
+            source_bytes = bytes_at(path)
+            if digest(source_bytes) != source['sha256']:
+                raise ValueError('original archive source index changed')
+            evidence[str(path)] = source['sha256']
+            snapshot = json.loads(source_bytes)
+            if snapshot.get('kind') != 'original-source-fingerprints-not-proof':
+                raise ValueError('not an original source fingerprint index')
+            fingerprint_row['source_inputs'] = snapshot['inputs']
         source_fingerprint, old_inputs = _fingerprint(result, fingerprint_row)
         revisions, checked_messages = [], []
         for line in bytes_at(physical/'service.log').decode().splitlines():
