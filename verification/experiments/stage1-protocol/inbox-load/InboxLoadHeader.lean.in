@@ -57,14 +57,14 @@ theorem legacy_absence_success (state afterExists afterVersion after : E) (versi
   simp [versionStatement] at second
   simp [sourceStatement] at third
   simp only [LIFECYCLE_STORE_FORMAT_VERSION] at different
-  have differentValue : version.val ≠ 23 := by simpa [IScalar.eq_equiv] using different
+  have differentValue : version.val ≠ 24 := by simpa [IScalar.eq_equiv] using different
   simp [load_using, first, second, third, differentValue,
     LIFECYCLE_STORE_FORMAT_VERSION,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
   split
   · exfalso
-    exact (by assumption : (23#iscalar : I64).val ≠ 23) (by decide)
+    exact (by assumption : (24#iscalar : I64).val ≠ 24) (by decide)
   · simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
 
 
@@ -80,7 +80,7 @@ theorem current_missing_inbox_rejected (state afterExists afterVersion after : E
   simp [load_using, first, second, third, LIFECYCLE_STORE_FORMAT_VERSION,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
-  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  have literalValue : (24#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv]
 
 
@@ -95,14 +95,14 @@ theorem legacy_present_inbox_rejected (state afterExists afterVersion after : E)
   simp [versionStatement] at second
   simp [sourceStatement] at third
   simp only [LIFECYCLE_STORE_FORMAT_VERSION] at different
-  have differentValue : version.val ≠ 23 := by simpa [IScalar.eq_equiv] using different
+  have differentValue : version.val ≠ 24 := by simpa [IScalar.eq_equiv] using different
   simp [load_using, first, second, third, differentValue,
     LIFECYCLE_STORE_FORMAT_VERSION,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
   split
   · exfalso
-    exact (by assumption : (23#iscalar : I64).val ≠ 23) (by decide)
+    exact (by assumption : (24#iscalar : I64).val ≠ 24) (by decide)
   · simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
 
 
@@ -121,7 +121,7 @@ theorem internal_table_rejected (state afterExists afterVersion afterSource afte
   simp [load_using, first, second, third, fourth, LIFECYCLE_STORE_FORMAT_VERSION,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
-  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  have literalValue : (24#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv]
 
 
@@ -140,7 +140,7 @@ theorem internal_query_error (state afterExists afterVersion afterSource after :
   simp [load_using, first, second, third, fourth, LIFECYCLE_STORE_FORMAT_VERSION,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
-  have literalValue : (23#iscalar : I64).val = 23 := by decide
+  have literalValue : (24#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv]
 
 

@@ -19,7 +19,7 @@ registry=module('source_origin_original_registry',HERE.parent/'envelope-writer/n
 def source_guard():
     head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     require(subprocess.run(['git','merge-base','--is-ancestor',BASE,head],cwd=ROOT,check=False).returncode==0,'source base differs')
-    names=subprocess.check_output(['git','diff','--name-only','-z',BASE],cwd=ROOT).decode().split('\0')
+    names=subprocess.check_output(['git','diff','--name-only','-z','HEAD'],cwd=ROOT).decode().split('\0')
     names+=subprocess.check_output(['git','ls-files','--others','--exclude-standard','-z'],cwd=ROOT).decode().split('\0')
     require(all(n==SOURCE or n.startswith(('verification/experiments/stage1-protocol/source-origin/','verification/aeneas/stage1-protocol/source-origin/')) for n in filter(None,names)),'unowned source changed')
     data=json.loads((HERE/'inventory.json').read_text())

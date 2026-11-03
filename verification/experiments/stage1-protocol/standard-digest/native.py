@@ -43,9 +43,9 @@ def run(output):
                   ning_acceptance=False, shared_acceptance=False, full_v3=False, host=platform.node(),
                   original_direct_method_machine_refined=False,production_modified=False,production_adopted=True,finite_provider_adopted=True)
     try:
-        support.inventory()
+        admitted = support.inventory()
         inventory = json.loads((ROOT/HERE/'plan.json').read_text())
-        if inventory['production_adopted'] is not True or inventory['full_v3']:
+        if inventory['production_adopted'] is not True or admitted['full_v3']:
             raise ValueError('this entry requires the reviewed adopted source and finite interface conditions')
         if sha(ROOT/MODEL) != inventory['actual_source_original_sha256']:
             raise ValueError('actual production source changed before candidate preparation')
