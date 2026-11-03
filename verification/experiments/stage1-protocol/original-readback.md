@@ -3,7 +3,7 @@
 本入口只接收 `fixed-originals.json` 中逐项登记的原结果，不能搜索另一份成功记录，
 不能替代本批原生准入或全部 V3 验收。它不运行 Rust、翻译器或 Lean。
 
-在操作者控制的证据目录保存清单所列四个原始归档后，先准备一次可迁移的有限目录：
+在操作者控制的证据目录保存清单所列全部原始归档后，先准备一次可迁移的有限目录：
 
 ```sh
 python3 verification/experiments/stage1-protocol/original_readback.py prepare \
