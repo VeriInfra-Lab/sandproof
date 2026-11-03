@@ -2,8 +2,67 @@
   "schema": 1,
   "source_commit": "d3004a46449c0a11982fb21a6853f56a43f3f689",
   "source_repository": "https://github.com/VeriInfra-Lab/sandproof",
-  "archive_sha256": "a12d51490bf0ed926ddb3b913e9c0a521fb73e2c78508f450d429b88b63299e2",
-  "purpose": "Original captured source for scheduling algorithm fixtures only; current StandardRecord source admission remains strict and does not consume this test archive.",
+  "archive_sha256": "296e0ef07c67de54844ed67e98333c3cf427cec534cae7ce561529df41d97223",
+  "purpose": "Self-contained original source, capture/view and proof providers for scheduling algorithm fixtures only. Current production admission never consumes this test archive.",
+  "source_inputs": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "controller-core/Cargo.toml",
+    "controller-core/src/auxiliary.rs",
+    "controller-core/src/capture.rs",
+    "controller-core/src/capture/continuation.rs",
+    "controller-core/src/capture/drain.rs",
+    "controller-core/src/controller.rs",
+    "controller-core/src/effect.rs",
+    "controller-core/src/ids.rs",
+    "controller-core/src/lib.rs",
+    "controller-core/src/maintenance.rs",
+    "controller-core/src/maintenance/released_execution.rs",
+    "controller-core/src/maintenance/retirement.rs",
+    "controller-core/src/maintenance/slots.rs",
+    "controller-core/src/maintenance/windows.rs",
+    "controller-core/src/model.rs",
+    "controller-core/src/publication.rs",
+    "controller-core/src/recovery_monitor.rs",
+    "controller-core/src/request.rs",
+    "controller-core/src/scheduler.rs",
+    "controller-core/src/store.rs",
+    "controller-core/src/worker.rs",
+    "controller-service/Cargo.toml",
+    "controller-service/src/capture.rs",
+    "controller-service/src/controller/admission.rs",
+    "controller-service/src/controller/capacity.rs",
+    "controller-service/src/controller/checkpoint.rs",
+    "controller-service/src/controller/checkpoint/config.rs",
+    "controller-service/src/controller/internal_inbox.rs",
+    "controller-service/src/controller/internal_inbox/model.rs",
+    "controller-service/src/controller/lifecycle_inbox.rs",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs",
+    "controller-service/src/controller/lifecycle_inbox/model.rs",
+    "controller-service/src/controller/lifecycle_inbox/native_retirement.rs",
+    "controller-service/src/controller/lifecycle_inbox/readiness.rs",
+    "controller-service/src/controller/lifecycle_inbox/recording.rs",
+    "controller-service/src/controller/lifecycle_inbox/unload_resolution.rs",
+    "controller-service/src/controller/mod.rs",
+    "controller-service/src/controller/transaction.rs",
+    "controller-service/src/lib.rs",
+    "rust-toolchain.toml",
+    "sandbox-protocol/Cargo.toml",
+    "sandbox-protocol/src/internal.rs",
+    "sandbox-protocol/src/internal/lifecycle.rs",
+    "sandbox-protocol/src/lib.rs",
+    "sandbox-protocol/src/lifecycle.rs",
+    "sandbox-protocol/src/lifecycle/authority.rs",
+    "sandbox-protocol/src/lifecycle/digest.rs",
+    "sandbox-protocol/src/lifecycle/identity.rs",
+    "sandbox-protocol/src/lifecycle/observation.rs",
+    "sandbox-protocol/src/lifecycle/renewal.rs",
+    "sandbox-protocol/src/lifecycle/request.rs",
+    "sandbox-protocol/src/lifecycle/terminal.rs",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.lock",
+    "verification/experiments/stage1-protocol/inbox-record/Cargo.toml",
+    "verification/experiments/stage1-protocol/inbox-record/lib.rs"
+  ],
   "files": {
     "Cargo.lock": {
       "sha256": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
@@ -14,6 +73,61 @@
       "sha256": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
       "mode": "100644",
       "git_blob": "adf1ff700a4b9c9147642b7b5d99f497bdd5976d"
+    },
+    "SandboxModel/Access/Cloning.lean": {
+      "sha256": "4af0b705b4f12df99ed3927249ce3d1c69e085c0fbf967d2561d732a016d598a",
+      "mode": "100644",
+      "git_blob": "061234aad1d649c966e5f01a751c1b0118df18e9"
+    },
+    "SandboxModel/Foundations/Cloning.lean": {
+      "sha256": "506d1b9f1a2b487bfe821ba8075fbf39a69f9f4a472195f177f828fb90b42090",
+      "mode": "100644",
+      "git_blob": "909aa1a7c357f0458c87feae8aacbca50a1318b4"
+    },
+    "SandboxModel/Foundations/Containers.lean": {
+      "sha256": "2a2c85d734b4733bde95309e462f57895c0c98918b37cbed32af730593c2d869",
+      "mode": "100644",
+      "git_blob": "bb6f743dc476878bc06cdde1714e09f9760136d0"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Contracts.lean": {
+      "sha256": "09c33952c2dbb391ae74cef01ee83ce88a2615bcdc8a377b779cac0601a7318f",
+      "mode": "100644",
+      "git_blob": "68fc4c29192ec17e8da56f273eb243d617388a09"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Loop.lean": {
+      "sha256": "749f692b56bfba325a1187e62fbf7b06f1f53ccf41c9b9f7f424ed8a1e27e670",
+      "mode": "100644",
+      "git_blob": "3db0f883e929b7739209e5c91c039e941f965a0a"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Refinement.lean": {
+      "sha256": "b4ba1236ea979e0124d5db188a4880f032349d891f1dc0649a8993da86b132fd",
+      "mode": "100644",
+      "git_blob": "39b0273763b642d7cb016cceb42f347e10e5afca"
+    },
+    "SandboxModel/Foundations/Model.lean": {
+      "sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+      "mode": "100644",
+      "git_blob": "58c418a3b662c91396983c9f965d6d3e1d3046a1"
+    },
+    "SandboxModel/Foundations/TableQueryContracts.lean": {
+      "sha256": "9376c02ca0d8529463729e6a5abc9f9b6b2f79ee5dd44a1883c7462c01dabfe1",
+      "mode": "100644",
+      "git_blob": "2838deb3f8a630a8ee7bbba3bf6168c6d2f99a0b"
+    },
+    "SandboxModel/Foundations/TableWriteContracts.lean": {
+      "sha256": "31a90acda3429ffb9d6c1c4f60b09e3be21b492f94f701d42e5160f6f1a81be2",
+      "mode": "100644",
+      "git_blob": "a231dd0a1230e31a3d70e472f2ac84981a3ba3ee"
+    },
+    "SandboxModel/Foundations/TableWrites.lean": {
+      "sha256": "208dfa301f1dd93efe247f5dfb4fb81e91f1af0fc05c97eae0725ce06e154128",
+      "mode": "100644",
+      "git_blob": "a19c8fb19890d0a140fd631b192a891dc3866375"
+    },
+    "SandboxModel/ProofAuditCommand.lean": {
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+      "mode": "100644",
+      "git_blob": "e6d8fd17a3052ddea3c713a0aaa1263da9f84fb6"
     },
     "controller-core/Cargo.toml": {
       "sha256": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
@@ -210,6 +324,16 @@
       "mode": "100644",
       "git_blob": "91f7ecd6b66927e2348332884c34a6f9e19375eb"
     },
+    "lake-manifest.json": {
+      "sha256": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+      "mode": "100644",
+      "git_blob": "2752147bf134f7c7251fb0f52c0f9921ec09ecdb"
+    },
+    "lean-toolchain": {
+      "sha256": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+      "mode": "100644",
+      "git_blob": "18640c8b066b182147f324d3aefd8ee48ee45238"
+    },
     "rust-toolchain.toml": {
       "sha256": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
       "mode": "100644",
@@ -275,6 +399,71 @@
       "mode": "100644",
       "git_blob": "b8ae64d7b5ef00e3e4598cc8d021ab90b2093002"
     },
+    "scripts/lean-mcp-server.sh": {
+      "sha256": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+      "mode": "100644",
+      "git_blob": "1a6373254514432f2b6b632d00b4b6cb463000c7"
+    },
+    "tools/lean_session.py": {
+      "sha256": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+      "mode": "100644",
+      "git_blob": "dd5ce183746707d7de8f0a4663b5dc5d8c8b2fab"
+    },
+    "tools/proof_services.py": {
+      "sha256": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+      "mode": "100644",
+      "git_blob": "4ee3e2874dd9c25ea3145cfaaeb0e76091758937"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/Funs.lean": {
+      "sha256": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
+      "mode": "100644",
+      "git_blob": "bfb3ce7f9795d930f33ac01f1f03731fdd292df6"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": {
+      "sha256": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+      "mode": "100644",
+      "git_blob": "87183e94fd4e86cc04611907d128209926c8bb46"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": {
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+      "mode": "100644",
+      "git_blob": "a33ef20fb7362ecf638345b7e36a82ba328903c0"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": {
+      "sha256": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+      "mode": "100644",
+      "git_blob": "b30e946fd0b8729511d1d946f1201260dd21abf6"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": {
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+      "mode": "100644",
+      "git_blob": "1d31cf5bc3e3b67a8a8f1ec5136c791cf3dfb952"
+    },
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean": {
+      "sha256": "00aef5571e8c00ad2e91b88a53ce869f1faea84df3660f209a1d18a15f07b6cb",
+      "mode": "100644",
+      "git_blob": "0fd9d6cbd0b8868591d4272a5483993092709173"
+    },
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean": {
+      "sha256": "2390d17cca950a3fb2547600bed042089c73316d83919bf35a96cb355b939b06",
+      "mode": "100644",
+      "git_blob": "9efde932d2ff5e40db839a5bcd6c527e41c92098"
+    },
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+      "mode": "100644",
+      "git_blob": "ee517bf6fcf73b0c6ba3bbb647c5c28b27c0ae92"
+    },
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": {
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+      "mode": "100644",
+      "git_blob": "6e344466351302b5da1a9eab69fec0d8d269c304"
+    },
+    "verification/experiments/stage1-protocol/create-standard-adapter/StandardCreateCloningDelta.lean.in": {
+      "sha256": "9abf9e54e1ac16b86b6c2356c320a929edbf7a8e563a579e768f248040b1d32c",
+      "mode": "100644",
+      "git_blob": "ee735a0e91b2a3ab666b05662ead3b4227c83df6"
+    },
     "verification/experiments/stage1-protocol/inbox-record/Cargo.lock": {
       "sha256": "b1306c3943e3b35a8446f58c5c70e3700db10922cf0548ae4bfbe5c55d837183",
       "mode": "100644",
@@ -289,6 +478,61 @@
       "sha256": "5979b781630c4ae9a4ecf120d135352309868d97aa117a928d870ef7457136c3",
       "mode": "100644",
       "git_blob": "f36d388bb4695b0a14633bb4c2c0f7449de35794"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/FunsExternal.lean.in": {
+      "sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc",
+      "mode": "100644",
+      "git_blob": "1ed3729970ce3c2ea7988fc61c1d0923ead7fbb1"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/StandardRecordReads.lean.in": {
+      "sha256": "2fd16c70ac641f7dacc227548ec72d2b9532f3cbd3ffa4e91898055c807d5ca6",
+      "mode": "100644",
+      "git_blob": "f6f72b6a1f0b8fa5305ce9910f61ead222a17c7c"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in": {
+      "sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c",
+      "mode": "100644",
+      "git_blob": "30a521ab6114f78e7c043bef4df570f40da1556a"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/capture.json": {
+      "sha256": "31257713f9efb54c7a76157ce3d4f09b92876782990fa47092a992a7d8b0c3e6",
+      "mode": "100644",
+      "git_blob": "731e03089dc4c5e891561f1208312975f078db2f"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/formal.py": {
+      "sha256": "d499e4db85a8d1b39b1a2ee84c39fa0505576b25cec4cbc61fe76c00b5d4984e",
+      "mode": "100644",
+      "git_blob": "4e2676a9ffa1b72544df01fad1fc41005c6a188a"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean": {
+      "sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472",
+      "mode": "100644",
+      "git_blob": "311df089c7a6b9c2986319963929f07a9abdeea4"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean": {
+      "sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f",
+      "mode": "100644",
+      "git_blob": "e23506d52a60ea976b1bb25f3e19d2d9b7caad14"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/root.rs.in": {
+      "sha256": "433f9cc1e5b389172ccc2bcd4f39aea547c64822b7e7428d2601d4ac9d9ad396",
+      "mode": "100644",
+      "git_blob": "17f5ebea871c09a1f5be6df5d1485f8e48de3212"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/support.py": {
+      "sha256": "41a5447c862cfb99e438a7fed6304f909afd7ad3923c3708ba95ce9507a38cb9",
+      "mode": "100644",
+      "git_blob": "8837e21d4a69b4ff6b66175f7c95566bde3287f6"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/view.json": {
+      "sha256": "49df35fb9dd6bf7f32a91eeca95b323f0d387d5190c77444f813bbe734bca84e",
+      "mode": "100644",
+      "git_blob": "db02101d16bd740977ba4c3c34a27e146f479785"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/view.toml.in": {
+      "sha256": "4daadf2a4888e650811170edfa3ae72c784cff1d2977018e388fcbd498ec1ac3",
+      "mode": "100644",
+      "git_blob": "b1f242e220396f4cd2c61342348959f806bb9f51"
     }
   }
 }

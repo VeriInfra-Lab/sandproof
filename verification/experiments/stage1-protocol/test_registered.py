@@ -453,13 +453,18 @@ class CreateDelivery(OriginalReadPlanFixture):
 
 
 class Registration(OriginalReadPlanFixture):
-    def test_original_read_fixture_does_not_admit_changed_current_source(self):
+    def test_original_read_fixture_rejects_a_changed_private_source(self):
         adapter = registered.CONVERGENCE.extra(registered.ROOT, 'standard-record-read')
         # current() is the unmodified production source/mode validator. Only
         # plan() is routed to the archived source in scheduling fixtures.
         adapter.current(standard_read_reference_root())
-        with self.assertRaisesRegex(ValueError, 'actual read source/mode changed'):
-            adapter.current(registered.ROOT)
+        with tempfile.TemporaryDirectory() as directory:
+            changed = Path(directory) / 'source'
+            shutil.copytree(standard_read_reference_root(), changed)
+            path = changed / 'controller-core/src/capture/continuation.rs'
+            path.write_bytes(path.read_bytes() + b'\n// controlled source mutation\n')
+            with self.assertRaisesRegex(ValueError, 'actual read source/mode changed'):
+                adapter.current(changed)
 
     def test_convergence_has_a_fixed_separate_plan_and_retains_each_original_wrong_view(self):
         with patch.dict(os.environ, SANDPROOF_STAGE1_ONLY='restore-work'):
