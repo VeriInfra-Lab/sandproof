@@ -7492,6 +7492,7 @@
     "tools/tests/test_v0_use_inventory.py",
     "tools/tls_pin_reproduction.py",
     "tools/v0_use_inventory.py",
+    "verification/ProofAudit.lean",
     "verification/README.zh-CN.md",
     "verification/acceptance-inputs.sha256",
     "verification/aeneas/bounded-writer/translation.json",
@@ -7777,7 +7778,7 @@
     "verification/use-inventory/config.json",
     "verification/use-inventory/responsibilities.json"
   ],
-  "archive_sha256": "bfb6c3dd66b81d2600938dda0c93a6fcb7bfab3cca0009e57ca0c0dbf5d5fe31",
+  "archive_sha256": "e1762bd1d3e858927f997ccdfa3d962209c05b431a9317c60299cc84a1f834fd",
   "source_repository": "https://github.com/VeriInfra-Lab/sandproof",
-  "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing. SandboxModel.lean is archived at the same historical source version so adding current root imports does not change this fixture."
+  "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing. SandboxModel.lean is archived at the same historical source version so adding current root imports does not change this fixture. The same original ProofAudit.lean is archived so current audit additions do not mutate this historical reference."
 }

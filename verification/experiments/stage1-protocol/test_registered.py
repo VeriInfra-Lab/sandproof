@@ -16,13 +16,32 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from tools.tests.standard_read_fixture import reference_root as standard_read_reference_root
+
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('stage1_registered', HERE/'registered.py')
 registered = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registered)
 
 
-class CreateDelivery(unittest.TestCase):
+class OriginalReadPlanFixture(unittest.TestCase):
+    """Scheduling shape uses the captured original, never current admission."""
+    def setUp(self):
+        original = registered.CONVERGENCE.extra
+
+        def extra(root, name):
+            adapter = original(root, name)
+            if name == 'standard-record-read':
+                plan = adapter.plan
+                adapter.plan = lambda _root: plan(standard_read_reference_root())
+            return adapter
+
+        patcher = patch.object(registered.CONVERGENCE, 'extra', side_effect=extra)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+class CreateDelivery(OriginalReadPlanFixture):
     def plan(self):
         return registered.formal_plan(Path('/unused'), profile='create-delivery')
 
@@ -433,7 +452,15 @@ class CreateDelivery(unittest.TestCase):
                     registered.inherited_lock()
 
 
-class Registration(unittest.TestCase):
+class Registration(OriginalReadPlanFixture):
+    def test_original_read_fixture_does_not_admit_changed_current_source(self):
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'standard-record-read')
+        # current() is the unmodified production source/mode validator. Only
+        # plan() is routed to the archived source in scheduling fixtures.
+        adapter.current(standard_read_reference_root())
+        with self.assertRaisesRegex(ValueError, 'actual read source/mode changed'):
+            adapter.current(registered.ROOT)
+
     def test_convergence_has_a_fixed_separate_plan_and_retains_each_original_wrong_view(self):
         with patch.dict(os.environ, SANDPROOF_STAGE1_ONLY='restore-work'):
             jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
@@ -508,8 +535,14 @@ class Registration(unittest.TestCase):
         modules = next(ast.literal_eval(node.value) for node in names.body
                        if isinstance(node, ast.Assign) and any(
                            isinstance(t, ast.Name) and t.id == 'MODULES' for t in node.targets))
-        self.assertEqual(len(modules), 33)
-        self.assertIn('stage1-protocol', modules)
+        self.assertEqual(modules, (
+            'json-request', 'tls-pin', 'json-identifiers', 'json-counter', 'task-contract',
+            'revocation-contract', 'owned-message', 'notify', 'joinset', 'std-mutex', 'condvar',
+            'tokio-rwlock', 'tunnel', 'data-drain', 'sqlite', 'foundations', 'network',
+            'first-chain-linux', 'first-chain', 'storage', 'schema-domains', 'loop-callbacks',
+            'sqlite-statements', 'child-observation', 'callback-state', 'bounded-writer',
+            'btree-set-binding', 'protected-directory', 'tokio-mutex', 'capture-caller',
+            'pause-publication', 'pause-stop', 'pause-dispatch', 'stage1-protocol'))
         self.assertNotIn('component.py', {Path(j['driver']).name for j in registered.formal_plan(Path('/unused'))})
 
     def test_full_independent_positive_and_negative_schedule(self):
