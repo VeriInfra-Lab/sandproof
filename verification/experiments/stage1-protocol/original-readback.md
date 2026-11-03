@@ -68,3 +68,9 @@ SQLite的可搬运native_result使用同目录`native-packet/correct`四件和`n
 SQLite局部正式原件另包 `b-sqlite-formal-resume-08.tar.gz`，SHA-256为
 `68f221bc09923d75fd0051016a37b53af280c0bded60f0e1ef09974ad33d0729`，
 保留原失败、4项同性质拒绝、3反例及末段服务实际结果。
+
+固定清单另接入原 `lifetime-row` 四个视图和 `06835588` 的标准 BLOB 三个视图。
+前者保留原 `9a1dc04a…` 成功记录；后者保留 `6e104100…` 数学执行记录与原
+四核分配。标准 BLOB 的既有抽取复用与这次真实数学执行分开记录，后续公共元数据
+变化不把任一旧记录改成新的执行。新增原字节包为 `extra-success-originals-01.tar.gz`，
+摘要及精确视图仍以 `fixed-originals.json` 为准；其成功不表示另外两个标准摘要包已完成。
