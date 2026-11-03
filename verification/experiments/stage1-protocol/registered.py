@@ -903,11 +903,12 @@ def _check_fixed_protocol_record(original, job):
     """Keep the historical caller producer's exact positive/refutation format."""
     variant, = job['cases']
     recipe = job['views'][variant]
-    actual = original.get('actual', {})
+    actual = original.get('actual') or {
+        k: original.get(k) for k in ('files', 'audits', 'service_log_sha256')}
     rejection = variant != 'correct'
     if (original.get('complete') is not True
-            or set(actual.get('files', {})) != set(recipe['files'])
-            or sorted(actual.get('audits', [])) != sorted(recipe['audits'])
+            or set(actual.get('files') or {}) != set(recipe['files'])
+            or sorted(actual.get('audits') or []) != sorted(recipe['audits'])
             or not actual.get('service_log_sha256')
             or ('property_rejected' in original and
                 original['property_rejected'] is not rejection)):

@@ -123,6 +123,12 @@ class CreateDelivery(unittest.TestCase):
                     files={n: 'a'*64 for n in recipe['files']},
                     audits=list(recipe['audits']), service_log_sha256='b'*64))
             registered._check_fixed_protocol_record(good, job)
+            flat = dict(good, **good['actual'])
+            del flat['actual']
+            registered._check_fixed_protocol_record(flat, job)
+            del flat['files']
+            with self.assertRaises(ValueError):
+                registered._check_fixed_protocol_record(flat, job)
             defects = ['file', 'audit', 'service', 'outcome', 'incomplete']
             defects += (['kind'] if variant == 'correct' else [
                 'formal_counterexample_complete', 'same_full_flow_contract', 'same_full_load_contract'])
