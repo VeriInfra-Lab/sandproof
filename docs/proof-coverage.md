@@ -208,6 +208,15 @@ Types、Funs 和 translation 由完整原产物逐字节采用；原 11 个外�
 以及受影响的 capture-caller、pause-stop、pause-publication 三个有限范围仍须验收。
 原始命名冲突失败的完整 IR、日志与退出记录保留，不改记为成功。
 
+生产 `effect.rs` 和 `capture/continuation.rs` 还被
+`verification/create-delivery-inputs.sha256` 与
+`verification/protocol-convergence-inputs.sha256` 按整文件收录；两份清单在本片
+起点 `d3004a46` 匹配，本片修改后新增失配，不能归为原有历史阻断或直接刷新摘要。
+已静态检查的 21 份现存 stage1 翻译元数据未发现这两个文件的函数体，仅有未修改的
+`CaptureReject` 类型来源；这支持区分保守来源指纹与已发现的业务调用，但不是全部
+历史私有捕获的完整调用闭包证明。原 V3 结果仍限原输入；后续事务切片须逐包核对
+实际来源和适用性后处理两份清单，本派发片不重复运行完整 V3，也不称全局入口已通过。
+
 实际 `handle_effect_dispatch` 到 Stop 选择入口、Stop 回执到确认写回的外层调用连接，
 须分别说明机器证明与源码/原生回归证据；不称一般 receipt handler 已机器精化。
 确认写回不会自行证明物理 VM 退出、持久提交或系统最终进展。V5/V6/V9 的原义务保留，
