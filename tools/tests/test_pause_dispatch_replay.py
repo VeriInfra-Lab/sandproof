@@ -28,7 +28,7 @@ class DispatchInventoryTests(unittest.TestCase):
         self.target = checks.PREFIX+'synthetic_property'
         self.wrong = str(checks.HERE/'model/WrongBinding.lean')
         self.wrong_target = checks.PREFIX+'WrongBinding.synthetic_rejection'
-        self.targets = [self.target, *sorted(checks.REQUIRED_THEOREMS)]
+        self.targets = [self.target, *sorted(checks.REQUIRED_THEOREMS - checks.REQUIRED_ACCEPTANCE_THEOREMS)]
         self.wrong_targets = [self.wrong_target, *sorted(checks.REQUIRED_WRONG_THEOREMS)]
         self.manifest = dict(schema=1, namespace=checks.PREFIX.rstrip('.'),
             proofs={self.proof: list(self.targets)}, required_theorems=list(self.targets),
@@ -50,6 +50,16 @@ class DispatchInventoryTests(unittest.TestCase):
             relative = str(checks.BASE/(name+'.lean'))
             self.write(relative, 'namespace '+checks.PREFIX.rstrip('.')+'\nend\n')
             self.manifest['proofs'][relative] = []
+        self.acceptance_targets = sorted(checks.REQUIRED_ACCEPTANCE_THEOREMS)
+        acceptance = str(checks.BASE/'Acceptance.lean')
+        self.manifest['proofs'][acceptance] = self.acceptance_targets
+        self.write(acceptance, 'namespace '+checks.PREFIX.rstrip('.')+'\n'+''.join(
+            'theorem '+name.removeprefix(checks.PREFIX)+' : True := by trivial\n'
+            for name in self.acceptance_targets)+'end\n')
+        self.audit_targets = [*self.targets, *self.acceptance_targets]
+        self.manifest['required_theorems'] = list(self.audit_targets)
+        self.write(str(checks.BASE/'Audit.lean'), ''.join(
+            '#audit_controller_proof '+name+'\n' for name in self.audit_targets))
         self.save()
 
     def write(self, relative, text):
@@ -63,7 +73,7 @@ class DispatchInventoryTests(unittest.TestCase):
     def test_complete_inventory_comes_from_exact_final_manifest(self):
         files, manifest = checks.inventory(self.root)
         self.assertEqual(manifest, self.manifest)
-        self.assertEqual(files[str(checks.BASE/'Audit.lean')], self.targets)
+        self.assertEqual(files[str(checks.BASE/'Audit.lean')], self.audit_targets)
         self.assertEqual(files[self.wrong], self.wrong_targets)
         self.assertIn(self.proof, files)
 
@@ -126,9 +136,9 @@ class DispatchInventoryTests(unittest.TestCase):
                    'theorem normal_domain_nonempty : True := by trivial\n'
                    'end\nend Fixture\nend '+checks.PREFIX.rstrip('.')+'\n')
         self.write(str(checks.BASE/'Audit.lean'), ''.join(
-            '#audit_controller_proof '+name+'\n' for name in [*self.targets, nested]))
+            '#audit_controller_proof '+name+'\n' for name in [*self.targets, nested, *self.acceptance_targets]))
         self.assertEqual(checks.inventory(self.root)[0][str(checks.BASE/'Audit.lean')],
-                         [*self.targets, nested])
+                         [*self.targets, nested, *self.acceptance_targets])
 
     def test_wrong_required_property_cannot_be_replaced_with_only_helpers(self):
         text = (self.root/self.wrong).read_text().replace('synthetic_rejection', 'only_helper')
@@ -157,8 +167,19 @@ class DispatchInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'required actual pause dispatch proof page'):
             checks.inventory(self.root)
 
+    def test_acceptance_cannot_be_emptied_with_synchronized_manifest_and_audit(self):
+        path = str(checks.BASE/'Acceptance.lean')
+        self.write(path, 'namespace '+checks.PREFIX.rstrip('.')+'\nend\n')
+        self.manifest['proofs'][path] = []
+        self.manifest['required_theorems'] = list(self.targets)
+        self.save()
+        self.write(str(checks.BASE/'Audit.lean'), ''.join(
+            '#audit_controller_proof '+name+'\n' for name in self.targets))
+        with self.assertRaisesRegex(ValueError, 'Acceptance page'):
+            checks.inventory(self.root)
+
     def test_key_correct_target_cannot_be_erased_from_source_manifest_and_audit(self):
-        target = sorted(checks.REQUIRED_THEOREMS)[0]
+        target = checks.PREFIX+'same_property_accepts'
         path = self.root/self.proof
         path.write_text(path.read_text().replace(
             'theorem '+target.removeprefix(checks.PREFIX)+' : True := by trivial\n', ''))

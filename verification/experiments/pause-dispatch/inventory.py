@@ -49,10 +49,15 @@ REQUIRED_PAGES = frozenset((
     'Conditions', 'Frames', 'Acknowledgements', 'Safety', 'Composition',
     'ReceiptPair', 'Ready', 'Publication', 'Witness', 'Acceptance',
 ))
-# These names already exist in the actual business proof sources. The final
-# Acceptance target is added only when its precise interface is frozen by A.
+# These names are frozen against the actual business proof sources, including
+# the checked fresh-Commit chain. They are not inferred from a manifest.
 # Neither list comes from an editable manifest or from file discovery.
-REQUIRED_THEOREMS = frozenset(PREFIX + name for name in (
+REQUIRED_ACCEPTANCE_THEOREMS = frozenset(PREFIX + name for name in (
+    'Acceptance.fresh_commit_dispatch_stop_receipts_publish',
+    'Acceptance.FreshCommit.fresh_stop_initially_absent',
+    'Acceptance.FreshCommit.full_stop_created',
+))
+REQUIRED_THEOREMS = REQUIRED_ACCEPTANCE_THEOREMS | frozenset(PREFIX + name for name in (
     'same_property_accepts', 'stop_update_exact', 'selected_stop_bound',
     'commit_dispatch_original_generation', 'stop_commit_receipts_publish',
     'acknowledge_stale_current_check_unchanged', 'two_current_receipts_accept',
@@ -109,6 +114,8 @@ def inventory(source):
         raise ValueError('Final inventory does not cover every pause dispatch proof file')
     if not {str(BASE/(name+'.lean')) for name in REQUIRED_PAGES} <= expected_files:
         raise ValueError('Missing a required actual pause dispatch proof page')
+    if not REQUIRED_ACCEPTANCE_THEOREMS.issubset(manifest['proofs'][str(BASE/'Acceptance.lean')]):
+        raise ValueError('Acceptance page is missing the actual fresh-Commit chain obligations')
     files, targets = {}, []
     for name, expected in manifest['proofs'].items():
         path = Path(name)
