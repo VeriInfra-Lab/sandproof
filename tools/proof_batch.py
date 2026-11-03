@@ -19,7 +19,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol')
+           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.
@@ -32,6 +32,7 @@ EXTRA_AUDIT_FILES = ('verification/experiments/sqlite-statements/negative/Counte
     'verification/experiments/capture-handoff/model/IgnoreTarget.lean',
     'verification/experiments/pause-publication/model/IgnoreStop.lean',
     'verification/experiments/pause-stop/model/IgnoreHandoff.lean',
+    'verification/experiments/pause-dispatch/model/WrongBinding.lean',
     *('verification/experiments/stage1-protocol/' + name + '.lean.in' for name in
       ('NegativeResume', 'NegativeReplay', 'NegativeManifest',
        'NegativeValidation', 'NegativeFullReplay', 'NegativeSessionOnly')))
@@ -295,9 +296,9 @@ def step(name, command, root=ROOT):
             raise ValueError('module inputs changed during acceptance: '+name)
         evidence={}
         for directory in [p for p in artifacts.iterdir() if p.resolve() not in before_dirs]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop','pause-dispatch')))
         for directory in [p for p in temp_root.iterdir() if p.resolve() not in before_tmp and p.name.startswith('sandproof-')]:
-            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop')))
+            evidence.update(evidence_files(directory,include_sources=name in ('btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','stage1-protocol'),capture_caller=name in ('capture-caller','pause-publication','pause-stop','pause-dispatch')))
         for parent,prior_paths in before_external.items():
             for directory in parent.iterdir():
                 if directory.resolve() not in prior_paths:
@@ -527,7 +528,8 @@ def main(argv=None):
     sub=parser.add_subparsers(dest='mode',required=True)
     run=sub.add_parser('run');run.add_argument('--cache',type=Path,required=True);run.add_argument('--recompute',action='store_true')
     sub.add_parser('retained-protocol-files')
-    task=sub.add_parser('step');task.add_argument('name',choices=['foundations-generation','foundations']);task.add_argument('command',nargs=argparse.REMAINDER)
+    task=sub.add_parser('step');task.add_argument('name',choices=['foundations-generation','foundations',
+        'capture-caller','pause-publication','pause-stop','pause-dispatch']);task.add_argument('command',nargs=argparse.REMAINDER)
     args=parser.parse_args(argv)
     if args.mode=='run': run_batch(args.cache.resolve(),args.recompute)
     elif args.mode=='retained-protocol-files':

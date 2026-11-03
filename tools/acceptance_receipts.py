@@ -23,11 +23,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
 NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery',
-                 'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop')
+                 'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop',
+                 'pause-dispatch')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
-ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop')
+PAUSE_DISPATCH_CHILD_SCOPES = ('capture-caller', 'pause-publication', 'pause-stop')
+PAUSE_DISPATCH_LABELS = ('functional', *PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
+ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop',
+                         'pause-dispatch')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -199,6 +203,8 @@ def scoped_native_labels(scope):
                 'stage1-protocol-convergence': 'protocol-convergence'}
     if scope in profiles:
         return stage1_native_labels(profiles[scope])
+    if scope == 'pause-dispatch':
+        return PAUSE_DISPATCH_LABELS
     return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
             else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
 
@@ -207,6 +213,11 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
     check_native_scope(scope)
     if scope == 'all':
         return
+    keys = tuple(keys)
+    if scope == 'pause-dispatch' and not allow_additional and (
+            len(keys) != len(PAUSE_DISPATCH_LABELS)
+            or any(key.get('command') != ['component-case'] for key in keys)):
+        raise ValueError('pause-dispatch requires exactly five component-case records')
     expected = set(scoped_native_labels(scope))
     labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
     counts = Counter(labels)
@@ -218,6 +229,9 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
 def current_native_seal(seal, runtime, *, scope='all'):
     check_native_scope(scope)
     actual_scope = seal.get('scope')
+    if (actual_scope == 'pause-dispatch'
+            and scope not in ('pause-dispatch', *PAUSE_DISPATCH_CHILD_SCOPES)):
+        return False
     # Whole packet admission is deliberately stricter than component reuse.
     # A complete full/all seal cannot stand in for explicit Create/convergence,
     # and neither finite seal can stand in for full/all or another scope.
@@ -240,9 +254,13 @@ def current_native_seal(seal, runtime, *, scope='all'):
             return False
     elif actual_scope in ('stage1-create-delivery', 'stage1-protocol-convergence'):
         return False
+    # Only this fixed five-case packet may supply the three affected old
+    # components. validate_native still validates every parent receipt and
+    # its complete current key before any child can consume its own case.
+    dispatch_parent = actual_scope == 'pause-dispatch' and scope in PAUSE_DISPATCH_CHILD_SCOPES
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
-            and actual_scope in ('all', scope)
+            and (actual_scope in ('all', scope) or dispatch_parent)
             and seal.get('scope_complete') is True
             and seal.get('full_native_suite_complete') is (actual_scope == 'all')
             and seal.get('rules') == rules() and seal.get('runtime') == runtime
@@ -324,6 +342,15 @@ def validate_native(cache, *, scope='all'):
         if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
         keys.append(receipt['key'])
+    dispatch_parent = seal['scope'] == 'pause-dispatch'
+    if dispatch_parent:
+        check_native_components(keys, scope='pause-dispatch')
+        for key in keys:
+            current = native_key(key['label'], ['component-case'], ROOT)
+            if key != current or seal.get('rust') != current['rust']:
+                raise ValueError('pause-dispatch parent has foreign current inputs: ' + key['label'])
+        if seal.get('repository_sha256') != digest(repository_inputs(ROOT)):
+            raise ValueError('pause-dispatch functional source inventory changed')
     current_keys = {}
     if scope == 'stage1-protocol-convergence':
         prototype = native_key('current-component', ['component-case'], ROOT)
@@ -346,7 +373,8 @@ def validate_native(cache, *, scope='all'):
             if (seal['commands'].get(entry.name) != sha(entry/'receipt.json')
                     or original['key']['label'] != label):
                 raise ValueError('fixed original receipt absent from current native seal')
-    check_native_components(keys, scope=scope, allow_additional=seal['scope']=='all')
+    check_native_components(keys, scope=scope,
+                            allow_additional=seal['scope']=='all' or dispatch_parent)
     return seal
 
 
@@ -551,7 +579,7 @@ def native_case(label, source, output, action=None, *, scope='all'):
         for path in sorted(Path(output).rglob('*')):
             parts = path.relative_to(output).parts
             suffixes = ('.log', '.json', '.jsonl')
-            if label in ('capture-caller', 'pause-publication', 'pause-stop'):
+            if label in ('capture-caller', 'pause-publication', 'pause-stop', 'pause-dispatch'):
                 # Original CLI logs use .stdout/.stderr, including semantic
                 # names such as ignore-capture-target. Do not discard a log
                 # merely because its filename contains the word "target".
