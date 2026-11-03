@@ -22,6 +22,17 @@ noncomputable section
 
 namespace PauseHandoffWrongRust.sandbox_controller_core
 
+/-- [core::option::{core::option::Option<T>}::as_ref]:
+    Source: '/rustc/library/core/src/option.rs', lines 742:4-742:44
+    Name pattern: [core::option::{core::option::Option<@T>}::as_ref]
+    Visibility: public -/
+@[rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
+def core.option.Option.as_ref
+  {T : Type} (self : Option T) : Result (Option T) := do
+  match self with
+  | none => ok none
+  | some _ => ok self
+
 /-- [core::option::{core::option::Option<T>}::and_then]:
     Source: '/rustc/library/core/src/option.rs', lines 1537:4-1539:61
     Name pattern: [core::option::{core::option::Option<@T>}::and_then]
@@ -2903,11 +2914,12 @@ def effect.dispatch_effect
                 then
                   let plan ←
                     model.OperationPlan.Insts.CoreCloneClone.clone stored
-                  let o3 ← effect.dispatched_capture plan.capture
+                  let o3 ← core.option.Option.as_ref plan.capture
+                  let o4 ← effect.dispatched_capture o3
                   let s1 ←
                     store.Store.put
                       model.OperationKey.Insts.CoreCmpPartialEqOperationKey
-                      next.operation_plans key { plan with capture := o3 }
+                      next.operation_plans key { plan with capture := o4 }
                   ok { next with operation_plans := s1, effects := s }
                 else ok { next with effects := s }
               else ok { next with effects := s }
