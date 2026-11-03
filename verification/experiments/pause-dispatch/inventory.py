@@ -49,6 +49,18 @@ REQUIRED_PAGES = frozenset((
     'Conditions', 'Frames', 'Acknowledgements', 'Safety', 'Composition',
     'ReceiptPair', 'Ready', 'Publication', 'Witness', 'Acceptance',
 ))
+# These names already exist in the actual business proof sources. The final
+# Acceptance target is added only when its precise interface is frozen by A.
+# Neither list comes from an editable manifest or from file discovery.
+REQUIRED_THEOREMS = frozenset(PREFIX + name for name in (
+    'same_property_accepts', 'stop_update_exact', 'selected_stop_bound',
+    'commit_dispatch_original_generation', 'stop_commit_receipts_publish',
+    'acknowledge_stale_current_check_unchanged', 'two_current_receipts_accept',
+    'normal_two_receipts_then_publish',
+))
+REQUIRED_WRONG_THEOREMS = frozenset(WRONG_NAMESPACE + '.' + name for name in (
+    'actual_wrong_accepts', 'same_property_rejects',
+))
 # This isolated module instance supplies the new slice's finite rust/lean dual
 # keys to the existing validator. Repeated Rust names for loop bodies remain
 # distinct Lean definitions; no name-only dictionary discards them.
@@ -109,7 +121,9 @@ def inventory(source):
         files[name] = audits(text)
         targets.extend(actual)
     if (not targets or len(targets) != len(set(targets))
-            or not set(manifest['required_theorems']).issubset(targets)):
+            or not set(manifest['required_theorems']).issubset(targets)
+            or not REQUIRED_THEOREMS.issubset(targets)
+            or not REQUIRED_THEOREMS.issubset(manifest['required_theorems'])):
         raise ValueError('Duplicate or missing required pause dispatch theorem')
     audit = str(BASE/'Audit.lean')
     if audits(regular(source/audit).read_text()) != targets:
@@ -129,6 +143,8 @@ def inventory(source):
     if (not expected_wrong or len(expected_wrong) != len(set(expected_wrong))
             or any(not target.startswith(wrong_namespace+'.') for target in expected_wrong)
             or not set(wrong['required_theorems']).issubset(expected_wrong)
+            or not REQUIRED_WRONG_THEOREMS.issubset(expected_wrong)
+            or not REQUIRED_WRONG_THEOREMS.issubset(wrong['required_theorems'])
             or wrong['audits'] != expected_wrong or audits(text) != expected_wrong):
         raise ValueError('Wrong-binding declarations or audits changed')
     files[wrong_file] = expected_wrong

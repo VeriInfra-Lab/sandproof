@@ -28,16 +28,21 @@ class DispatchInventoryTests(unittest.TestCase):
         self.target = checks.PREFIX+'synthetic_property'
         self.wrong = str(checks.HERE/'model/WrongBinding.lean')
         self.wrong_target = checks.PREFIX+'WrongBinding.synthetic_rejection'
+        self.targets = [self.target, *sorted(checks.REQUIRED_THEOREMS)]
+        self.wrong_targets = [self.wrong_target, *sorted(checks.REQUIRED_WRONG_THEOREMS)]
         self.manifest = dict(schema=1, namespace=checks.PREFIX.rstrip('.'),
-            proofs={self.proof: [self.target]}, required_theorems=[self.target],
-            wrong=dict(file=self.wrong, namespace=checks.PREFIX+'WrongBinding',
-                       audits=[self.wrong_target], required_theorems=[self.wrong_target]))
-        self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\n'
-                   'theorem synthetic_property : True := by trivial\nend\n')
-        self.write(str(checks.BASE/'Audit.lean'), '#audit_controller_proof '+self.target+'\n')
-        self.write(self.wrong, 'namespace '+checks.PREFIX+'WrongBinding\n'
-                   'theorem synthetic_rejection : True := by trivial\nend\n'
-                   '#audit_controller_proof '+self.wrong_target+'\n')
+            proofs={self.proof: list(self.targets)}, required_theorems=list(self.targets),
+            wrong=dict(file=self.wrong, namespace=checks.WRONG_NAMESPACE,
+                       audits=list(self.wrong_targets), required_theorems=list(self.wrong_targets)))
+        self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\n'+''.join(
+            'theorem '+name.removeprefix(checks.PREFIX)+' : True := by trivial\n'
+            for name in self.targets)+'end\n')
+        self.write(str(checks.BASE/'Audit.lean'), ''.join(
+            '#audit_controller_proof '+name+'\n' for name in self.targets))
+        self.write(self.wrong, 'namespace '+checks.WRONG_NAMESPACE+'\n'+''.join(
+            'theorem '+name.removeprefix(checks.WRONG_NAMESPACE+'.')+' : True := by trivial\n'
+            for name in self.wrong_targets)+'end\n'+''.join(
+            '#audit_controller_proof '+name+'\n' for name in self.wrong_targets))
         for module, root in checks.LIBRARIES:
             for leaf in ('Types', 'FunsExternal', 'Funs'):
                 self.write(root+'/'+module+'/'+leaf+'.lean', '-- synthetic fixture only\n')
@@ -58,8 +63,8 @@ class DispatchInventoryTests(unittest.TestCase):
     def test_complete_inventory_comes_from_exact_final_manifest(self):
         files, manifest = checks.inventory(self.root)
         self.assertEqual(manifest, self.manifest)
-        self.assertEqual(files[str(checks.BASE/'Audit.lean')], [self.target])
-        self.assertEqual(files[self.wrong], [self.wrong_target])
+        self.assertEqual(files[str(checks.BASE/'Audit.lean')], self.targets)
+        self.assertEqual(files[self.wrong], self.wrong_targets)
         self.assertIn(self.proof, files)
 
     def test_missing_final_manifest_refuses_before_any_proof(self):
@@ -87,7 +92,7 @@ class DispatchInventoryTests(unittest.TestCase):
         self.save()
         self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\nend\n')
         self.write(str(checks.BASE/'Audit.lean'), '')
-        with self.assertRaisesRegex(ValueError, 'missing required pause Stop theorem'):
+        with self.assertRaisesRegex(ValueError, 'missing required pause dispatch theorem'):
             checks.inventory(self.root)
 
     def test_missing_extra_or_reordered_audits_are_rejected(self):
@@ -111,19 +116,19 @@ class DispatchInventoryTests(unittest.TestCase):
 
     def test_nested_fixture_namespace_and_sections_keep_full_theorem_names(self):
         nested = checks.PREFIX+'Fixture.normal_domain_nonempty'
-        self.manifest['proofs'][self.proof] = [self.target, nested]
+        self.manifest['proofs'][self.proof] = [*self.targets, nested]
         self.manifest['required_theorems'].append(nested)
         self.save()
-        self.write(self.proof, 'namespace '+checks.PREFIX.rstrip('.')+'\n'
-                   'theorem synthetic_property : True := by trivial\n'
+        original = (self.root/self.proof).read_text().rsplit('end\n', 1)[0]
+        self.write(self.proof, original+
                    'namespace Fixture\nnoncomputable section\n'
                    'local instance : DecidableEq Bool := inferInstance\n'
                    'theorem normal_domain_nonempty : True := by trivial\n'
                    'end\nend Fixture\nend '+checks.PREFIX.rstrip('.')+'\n')
-        self.write(str(checks.BASE/'Audit.lean'), '#audit_controller_proof '+self.target+
-                   '\n#audit_controller_proof '+nested+'\n')
+        self.write(str(checks.BASE/'Audit.lean'), ''.join(
+            '#audit_controller_proof '+name+'\n' for name in [*self.targets, nested]))
         self.assertEqual(checks.inventory(self.root)[0][str(checks.BASE/'Audit.lean')],
-                         [self.target, nested])
+                         [*self.targets, nested])
 
     def test_wrong_required_property_cannot_be_replaced_with_only_helpers(self):
         text = (self.root/self.wrong).read_text().replace('synthetic_rejection', 'only_helper')
@@ -150,6 +155,31 @@ class DispatchInventoryTests(unittest.TestCase):
         del self.manifest['proofs'][relative]
         self.save()
         with self.assertRaisesRegex(ValueError, 'required actual pause dispatch proof page'):
+            checks.inventory(self.root)
+
+    def test_key_correct_target_cannot_be_erased_from_source_manifest_and_audit(self):
+        target = sorted(checks.REQUIRED_THEOREMS)[0]
+        path = self.root/self.proof
+        path.write_text(path.read_text().replace(
+            'theorem '+target.removeprefix(checks.PREFIX)+' : True := by trivial\n', ''))
+        self.manifest['proofs'][self.proof].remove(target)
+        self.manifest['required_theorems'].remove(target)
+        self.save()
+        audit = self.root/checks.BASE/'Audit.lean'
+        audit.write_text(audit.read_text().replace('#audit_controller_proof '+target+'\n', ''))
+        with self.assertRaisesRegex(ValueError, 'missing required pause dispatch theorem'):
+            checks.inventory(self.root)
+
+    def test_key_wrong_certificate_cannot_be_erased_everywhere(self):
+        target = checks.WRONG_NAMESPACE+'.same_property_rejects'
+        path = self.root/self.wrong
+        text = path.read_text().replace(
+            'theorem same_property_rejects : True := by trivial\n', '')
+        path.write_text(text.replace('#audit_controller_proof '+target+'\n', ''))
+        self.manifest['wrong']['audits'].remove(target)
+        self.manifest['wrong']['required_theorems'].remove(target)
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'Wrong-binding'):
             checks.inventory(self.root)
 
     def test_unbalanced_or_unsupported_scope_is_not_silently_discovered(self):
