@@ -139,6 +139,7 @@ def run(args):
             for name in checks.ROOTS:
                 argv += ['--start-from', 'crate::'+name]
             argv += ['--include', 'sandbox_controller_core', '--include', 'core::option::*::and_then',
+                     '--include', 'core::option::*::as_ref',
                      '--dest-file', destination/'capture_handoff.llbc', '--', '--manifest-path',
                      'Cargo.toml', '--lib', '--locked', '--offline']
             command('charon-ignore-stop', argv, wrong/'controller-core', wrong_env)

@@ -37,6 +37,7 @@ if [[ "$variant" == worker || "$variant" == caller ]]; then
   args+=(--include 'core::option::*::and_then')
 fi
 if [[ "$variant" == caller ]]; then
+  args+=(--include 'core::option::*::as_ref')
   # Aeneas filters uncalled external top-level roots. Extract the real local
   # crate so late_capture::record survives into the final Lean, not just LLBC.
   crate=controller-core
