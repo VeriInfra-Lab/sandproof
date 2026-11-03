@@ -144,7 +144,7 @@ class FixedNativeReuseTests(unittest.TestCase):
 class FixedDefinitionTests(unittest.TestCase):
     def test_production_definition_requires_exact_registered_originals(self):
         data = convergence.native_reuse_definition(receipts.ROOT)
-        self.assertEqual(len(data['components']), 18)
+        self.assertEqual(len(data['components']), 22)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root/convergence.NATIVE_REUSE_MANIFEST

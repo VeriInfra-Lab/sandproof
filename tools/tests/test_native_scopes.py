@@ -162,6 +162,14 @@ class NativeScopeTests(unittest.TestCase):
             profile='create-delivery', scope='stage1-create-delivery')
 
     def test_convergence_requires_its_whole_fixed_scope_and_cannot_supply_full(self):
+        # Both producer and consumer must describe this synthetic checkout.
+        # The real validator still compares the complete current input key.
+        rust_inputs = receipts.rust_inputs
+        repository_inputs = receipts.repository_inputs
+        self.enterContext(mock.patch.object(receipts, 'rust_inputs', side_effect=
+            lambda source: rust_inputs(self.source)))
+        self.enterContext(mock.patch.object(receipts, 'repository_inputs', side_effect=
+            lambda source: repository_inputs(self.source)))
         self.labels = receipts.stage1_native_labels('protocol-convergence')
         self.assertEqual(len(self.labels), 23)
         self.assertLessEqual({'functional', 'stage1-accepted-json-parser',

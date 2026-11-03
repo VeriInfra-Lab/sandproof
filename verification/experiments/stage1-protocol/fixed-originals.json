@@ -2346,7 +2346,7 @@
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/registered.py": {
-      "sha256": "39de2b178163fcf418904aa42cc33433476c54979ee0b757e532ca068f9d555b",
+      "sha256": "f78fe0d85301f8fc9096219e3d520aac865adff2a155f3ff29d6d3a1f1391e81",
       "mode": "100644"
     },
     "verification/experiments/stage1-protocol/standard-blob/BlobColumnsCore.lean.in": {

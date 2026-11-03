@@ -42,6 +42,8 @@ SPECIAL_LABELS = {
         'create-standard-identity', 'create-standard-sql', 'record-reply',
         'create-attachment-flow')},
     'protocol-record': 'stage1-protocol-record',
+    'accepted-json-parser': 'stage1-accepted-json-parser',
+    'sqlite-commit': 'stage1-sqlite-commit',
 }
 NATIVE_DRIVERS = (*tuple((SPECIAL_LABELS.get(name, 'stage1-protocol-'+name),
                         str(HERE/name/'native.py'), False) for name in CASES),
@@ -60,11 +62,13 @@ EXTRA_DRIVERS = {
 # One reviewed batch, not a general cross-version cache. Original receipts stay
 # at their original identities; the caller records a separate current admission.
 NATIVE_REUSE_MANIFEST = HERE/'native-reuse.json'
-NATIVE_REUSE_COMPONENTS = (*tuple(CASES)[:17], 'record-reply')
+NATIVE_REUSE_COMPONENTS = (*tuple(CASES), 'accepted-json-parser', 'sqlite-commit')
 NATIVE_REUSE_ADMISSION_FILES = (
     'tools/acceptance_receipts.py', 'tools/proof_native_suite.py',
     str(HERE/'convergence.py'), str(NATIVE_REUSE_MANIFEST),
+    str(HERE/'registered.py'),
     'tools/tests/test_protocol_convergence_native_reuse.py',
+    'tools/tests/test_native_scopes.py',
 )
 
 
@@ -80,7 +84,9 @@ def native_reuse_definition(root):
     for name in NATIVE_REUSE_COMPONENTS:
         label = SPECIAL_LABELS.get(name, 'stage1-protocol-'+name)
         row = data['components'][label]
-        if (row['component_prefixes'] != [str(HERE/name)+'/']
+        prefix = ('verification/experiments/sqlite-commit/' if name == 'sqlite-commit'
+                  else str(HERE/name)+'/')
+        if (row['component_prefixes'] != [prefix]
                 or any(not re.fullmatch('[0-9a-f]{64}', row[k])
                        for k in ('identity', 'receipt_sha256', 'current_component_rules_sha256'))
                 or not re.fullmatch('[0-9a-f]{40}', row['execution_commit'])

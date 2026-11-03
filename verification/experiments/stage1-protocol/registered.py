@@ -696,7 +696,10 @@ def run_native(root, work, *, profile='full', scope=None):
         receipt = shared.native_case(label, root, output, action, scope=scope)
         original = _original_file(receipt, 'result.json')
         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
-            _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+            name = Path(driver).parent.name
+            admitted = ({'native_receipt': receipt} if profile == CONVERGENCE.PROFILE
+                        and name == 'create-attachment-flow' else {})
+            _check_create_native_result(root, name, original.parent, _read(original), **admitted)
         if label == 'stage1-sqlite-commit':
             CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
         receipts[label] = receipt
@@ -711,7 +714,7 @@ def run_native(root, work, *, profile='full', scope=None):
     return receipts
 
 
-def _check_create_native_result(root, name, folder, result):
+def _check_create_native_result(root, name, folder, result, *, native_receipt=None):
     """Read every original log; an exit code alone is not a mutant witness."""
     plans = _create_native_plan(name, _read(root/HERE/name/'inventory.json'), root)
     shared = _shared()
@@ -719,6 +722,23 @@ def _check_create_native_result(root, name, folder, result):
     # unrelated report needs a new functional receipt, not a relabelled source
     # snapshot or an unnecessary rebuild of unchanged Rust assertions.
     native_inputs = dict(shared.rust_inputs(root), **shared.rules(root), **shared.contract_inputs(root))
+    if native_receipt is not None:
+        if name != 'create-attachment-flow':
+            raise ValueError('only the fixed convergence Flow admits an original Create receipt')
+        label = 'stage1-create-attachment-flow'
+        current = shared.native_key(label, ['component-case'], root)
+        if native_receipt['key'] != current:
+            cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+            relative = 'admissions/'+label+'.json'
+            reference = dict(identity=shared.digest(native_receipt['key']), file=relative,
+                             sha256=_sha(cache/relative))
+            admitted, _ = shared.convergence_reuse_case(cache, label, current, reference=reference)
+            if admitted != native_receipt:
+                raise ValueError('Flow original receipt differs from its current admission')
+            key = native_receipt['key']
+            # Validate the old full snapshot against its own immutable key;
+            # current applicability was independently admitted, not relabelled.
+            native_inputs = dict(key['rust'], **key['rules'], **key['contracts']['source'])
     source = result.get('inputs', {})
     if (result.get('kind') != name+'-native-development' or result.get('complete') is not True
             or result.get('prepare_only') or tuple(result.get('variants', {})) != tuple(plans)
@@ -1778,7 +1798,10 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
         if label not in receipts:
             continue
         original = _original_file(receipts[label], 'result.json')
-        _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+        name = Path(driver).parent.name
+        admitted = ({'native_receipt': receipts[label]} if profile == CONVERGENCE.PROFILE
+                    and name == 'create-attachment-flow' else {})
+        _check_create_native_result(root, name, original.parent, _read(original), **admitted)
     check_create_sources(root)
     source_before = shared.repository_inputs(root)
     output = Path(output)
