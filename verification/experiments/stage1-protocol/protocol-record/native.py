@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -34,6 +35,29 @@ registry_module = module('protocol-record_native_registry', ROOT / HERE.parent /
 registry_module.HERE = HERE.parent / 'inbox-record'
 preparation = module('protocol-record_prepare', ROOT / HERE / 'prepare.py')
 sha = base.sha
+
+
+def check_clippy(row, text, source, variant, inventory):
+    if variant != 'replay-falls-through':
+        if row['exit_code'] != 0:
+            raise ValueError('clippy failed: '+variant)
+        return
+    expected = inventory['native_replay_lint']
+    errors = re.findall(r'^error(?:\[[^\]]+\])?:.*$', text, re.M)
+    locations = re.findall(r'^\s*--> (.+)$', text, re.M)
+    warnings = [n for n in text.splitlines() if n.startswith('warning:')
+                and n != 'warning: build failed, waiting for other jobs to finish...']
+    wanted = ['error: '+expected['message']]*expected['primary_count'] + expected['cargo_errors']
+    location = f"{expected['source']}:{expected['line']}:{expected['column']}"
+    if (row['exit_code'] != 101 or expected['code'] != 'dead_code'
+            or sha(source) != expected['source_sha256']
+            or sorted(errors) != sorted(wanted)
+            or locations != [location]*expected['primary_count'] or warnings
+            or text.count('= note: `-D dead-code` implied by `-D warnings`') != expected['primary_count']):
+        raise ValueError('unregistered original Replay mutant diagnostic')
+    row['expected_mutant_lint_rejection'] = True
+    row['original_diagnostic_lines'] = errors
+    # Only the separate original Rust assertion row may set property_rejected.
 
 
 def run(output):
@@ -146,6 +170,8 @@ def run(output):
                         row['property_rejected'] = True
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('protocol-record original/candidate/restored assertions failed')
+                elif label == 'clippy':
+                    check_clippy(row, text, project/preparation.SOURCE, variant, inventory)
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

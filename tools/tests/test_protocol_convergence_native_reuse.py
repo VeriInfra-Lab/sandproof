@@ -153,3 +153,37 @@ class FixedDefinitionTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, 'unknown fixed'):
                 convergence.native_reuse_definition(root)
+
+
+class OriginalReplayDiagnosticTests(unittest.TestCase):
+    """Synthetic diagnostic fragments, never a Rust counterexample receipt."""
+    @classmethod
+    def setUpClass(cls):
+        path = PATH.parent/'protocol-record/native.py'
+        spec = importlib.util.spec_from_file_location('original_replay_lint_test', path)
+        cls.reader = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.reader)
+
+    def test_only_original_replay_site_can_register_lint_rejection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'recording.rs'
+            source.write_text('synthetic unit source')
+            expected = dict(code='dead_code', message='variant `Replay` is never constructed',
+                source='controller-service/src/controller/lifecycle_inbox/recording.rs',
+                line=17, column=5, source_sha256=receipts.sha(source), primary_count=1,
+                cargo_errors=['error: could not compile `sandproof-controller-service` (lib) due to 1 previous error',
+                              'error: could not compile `sandproof-controller-service` (lib test) due to 1 previous error'])
+            text = ('error: '+expected['message']+'\n  --> '+expected['source']+':17:5\n'
+                    '= note: `-D dead-code` implied by `-D warnings`\n'
+                    +'\n'.join(expected['cargo_errors']))
+            row = dict(exit_code=101)
+            self.reader.check_clippy(row,text,source,'replay-falls-through',dict(native_replay_lint=expected))
+            self.assertTrue(row['expected_mutant_lint_rejection'])
+            self.assertNotIn('property_rejected', row)
+            for bad in (text.replace(':17:5', ':18:5'), text+'\nerror: another failure',
+                        text.replace('variant `Replay`', 'variant `Other`')):
+                with self.subTest(text=bad), self.assertRaisesRegex(ValueError, 'unregistered'):
+                    self.reader.check_clippy(dict(exit_code=101),bad,source,'replay-falls-through',
+                                             dict(native_replay_lint=expected))
+            with self.assertRaisesRegex(ValueError, 'clippy failed'):
+                self.reader.check_clippy(dict(exit_code=101),text,source,'original',{})

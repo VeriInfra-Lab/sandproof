@@ -8696,5 +8696,24 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "native_replay_lint": {
+    "code": "dead_code",
+    "message": "variant `Replay` is never constructed",
+    "source": "controller-service/src/controller/lifecycle_inbox/recording.rs",
+    "line": 17,
+    "column": 5,
+    "source_sha256": "a5d2fcfb89f371a6ea6e2f8d34f26627ba135199200cc9fb3164aa98d5c5b155",
+    "primary_count": 1,
+    "cargo_errors": [
+      "error: could not compile `sandproof-controller-service` (lib) due to 1 previous error",
+      "error: could not compile `sandproof-controller-service` (lib test) due to 1 previous error"
+    ],
+    "origin": {
+      "execution_commit": "5e5ebc11a4450192e72bf7b1a6da76153fb783b3",
+      "clippy_log_sha256": "b32db275c0f4da891caeb7848ee4626a82677103025074d683d7cb1a1cec3f71",
+      "original_component_complete": false,
+      "business_assertion_rejected": true
+    }
   }
 }
