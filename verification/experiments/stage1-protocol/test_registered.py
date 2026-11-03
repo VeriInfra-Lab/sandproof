@@ -774,7 +774,8 @@ class Registration(unittest.TestCase):
         templates = registered.audit_templates()
         names = {Path(path).name for path in templates}
         self.assertLessEqual({'NegativeFullCapture.lean.in', 'NegativeGuard.lean.in',
-                             'InboxStateWrongCurrent.lean.in', 'EnvelopeWriterWrong.lean.in'}, names)
+                             'InboxStateWrongCurrent.lean.in', 'EnvelopeWriterWrong.lean.in',
+                             'InboxLoadHostFormatValues.lean.in'}, names)
         self.assertTrue(all(audits for audits in templates.values()))
 
     def test_missing_or_empty_audit_source_is_rejected(self):
