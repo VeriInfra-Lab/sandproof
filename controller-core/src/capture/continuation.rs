@@ -610,7 +610,7 @@ pub fn capture_dispatch_allowed(world: &World, effect: &EffectId) -> bool {
                 && plan.generation == row.generation
                 && plan
                     .capture
-                    .is_some_and(CaptureHandoff::accepts_registration)
+                    .is_some_and(|handoff| handoff.accepts_registration())
         })
 }
 /// Never-issued obsolete work stays in the ledger until ordinary retirement;
