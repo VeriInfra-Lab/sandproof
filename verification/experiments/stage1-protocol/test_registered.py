@@ -1416,6 +1416,17 @@ class CheckpointExecution(unittest.TestCase):
         (evidence.parent/'receipt.json').write_text('{"controlled_fixture":true}')
         retained = self.directory/'retained.json'
         retained.write_text('{"controlled_fixture":true}')
+        # Keep the real result-shape gate. This executor-fault fixture controls
+        # only the separate seven-file packet I/O, not SQLite's field checks.
+        sqlite_adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        sqlite_result = self.directory/'sqlite-fixture/result.json'
+        sqlite_result.parent.mkdir()
+        sqlite_result.write_text(json.dumps(dict(convergence_entry='sqlite-commit', mode='native',
+            complete=True, actuals=[], source_commit=sqlite_adapter.SOURCE_COMMIT,
+            native_executed_here=False, packet=sqlite_adapter.PACKET)))
+        def original_file(receipt, name):
+            self.assertEqual(name, 'result.json')
+            return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
         output = self.directory/'public'
         shared = SimpleNamespace(validate_native=lambda *a,**k: None,
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
@@ -1448,7 +1459,9 @@ class CheckpointExecution(unittest.TestCase):
                     patch.object(registered,'check_create_sources'), \
                     patch.object(registered,'_shared',return_value=shared), \
                     patch.object(registered,'_evidence',return_value=evidence), \
-                    patch.object(registered,'_original_file',return_value=retained), patch.object(registered,'_retained_result'), \
+                    patch.object(registered,'_original_file',side_effect=original_file), patch.object(registered,'_retained_result'), \
+                    patch.object(registered.CONVERGENCE,'extra',return_value=sqlite_adapter), \
+                    patch.object(sqlite_adapter,'_native_readback',return_value={}) as sqlite_readback, \
                     patch.object(registered,'_check_create_native_result'), \
                     patch.object(registered,'_execution_helper',return_value=self.helper), \
                     patch.object(registered,'_execution_context',return_value=context), \
@@ -1468,6 +1481,7 @@ class CheckpointExecution(unittest.TestCase):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)
                 self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
+                sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
         finally:
             os.umask(before_umask)
         saved = registered._read(output/'registered-result.json')
