@@ -23,8 +23,16 @@ CAPTURE_METHODS = (
 ROOTS = tuple('capture::*::'+name for name in CAPTURE_METHODS) + (
     'request::handle_compensation', 'worker::late_capture::record',
     'publication::handle_publish_paused', 'worker::pause_stop::record',
+    'effect::dispatch_stop', 'maintenance::released_execution::*::command',
+)
+DISPATCH_FUNCTIONS = (
+    *((f'effect::{name}', f'effect.{name}') for name in
+      ('dispatch_stop', 'dispatch_eligible', 'dispatch_effect', 'dispatched_capture')),
+    ('maintenance::released_execution::{sandbox_controller_core::maintenance::released_execution::ReleasedExecution}::command',
+     'maintenance.released_execution.ReleasedExecution.command'),
 )
 REQUIRED_FUNCTIONS = (
+    *DISPATCH_FUNCTIONS,
     ('request::handle_compensation', 'request.handle_compensation'),
     ('worker::late_capture::record', 'worker.late_capture.record'),
     ('worker::late_capture::record_inner', 'worker.late_capture.record_inner'),

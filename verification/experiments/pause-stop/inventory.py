@@ -33,8 +33,10 @@ CAPTURE_METHODS = _shared.CAPTURE_METHODS
 ROOTS = tuple('capture::*::'+name for name in CAPTURE_METHODS) + (
     'request::handle_compensation', 'worker::late_capture::record',
     'publication::handle_publish_paused', 'worker::pause_stop::record',
+    'effect::dispatch_stop', 'maintenance::released_execution::*::command',
 )
 REQUIRED_FUNCTIONS = (
+    *_shared.DISPATCH_FUNCTIONS,
     *((f'worker::pause_stop::{name}', f'worker.pause_stop.{name}')
       for name in ('record', 'execute', 'commit_snapshot', 'stop_vm')),
     *((f'worker::{name}', f'worker.{name}')
