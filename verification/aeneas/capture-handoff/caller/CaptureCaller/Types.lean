@@ -758,15 +758,10 @@ structure model.World where
   controller_up : Bool
 
 /-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}]
-    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-614:9 -/
+    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-612:9 -/
 @[reducible]
 def capture.continuation.capture_dispatch_allowed.closure_1 :=
   model.SandboxRecord
-
-/-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}]
-    Source: 'controller-core/src/capture/continuation.rs', lines 613:33-613:73 -/
-@[reducible]
-def capture.continuation.capture_dispatch_allowed.closure_1.closure := Unit
 
 /-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure}]
     Source: 'controller-core/src/capture/continuation.rs', lines 607:25-607:81 -/

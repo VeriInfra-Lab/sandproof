@@ -189,12 +189,12 @@ V5 持久事务/回执、V6 完整 bundle/宿主退出与 V9 历史、身份/索
 
 本片基于 integration `d3004a46449c0a11982fb21a6853f56a43f3f689`，采用
 `edfeb932c808b03e4e2c8505c174646566d41efd` 的唯一 Stop 派发分支和
-`182b2eee5107e8dd4d35209a64e05969a163fbb2` 的一处原方法调用闭包。
+`9d8aab44bcf2a6834aa74b66d28645cf000d5827` 的共享 Option 读取及单点原方法判断。
 非 Stop 仍先执行原退休检查；Stop 进入共享的原守卫和更新体。释放记录的真实
 `command` 只构造终止 InstallFence，不能由此把完整退休验证算法当作已证明。
 
-固定原 CaptureCaller 在候选 `6f9fe055df97ca54fb616248ed89242a5604c78e` 完成
-19 根的 Charon→Aeneas 重生成，耗时 13.117155 秒；新增三个实际根为
+固定原 CaptureCaller 在候选 `8ff4c5cdd2c53038e33e8abf7079718a01a8279e` 完成
+19 根的 Charon→Aeneas 重生成，耗时 12.670229 秒；新增三个实际根为
 `effect::dispatch_stop`、`ReleasedExecution::command` 和 `effect::acknowledge_effect`。
 派发的唯一更新体、回执写回及 `effect::insert_unique` 的两个原循环保持透明。
 Types、Funs 和 translation 由完整原产物逐字节采用；原 11 个外部符号及其模型不变，

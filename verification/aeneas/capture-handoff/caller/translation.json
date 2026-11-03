@@ -140,7 +140,7 @@
       "reducible": false
     },
     {
-      "def_id": 329,
+      "def_id": 327,
       "lean_name": "alloc.string.String.Insts.CoreCmpPartialEqString.eq",
       "lean_file": "CaptureCaller/FunsExternal_Template.lean",
       "rust_name": "alloc::string::{impl core::cmp::PartialEq<alloc::string::String> for alloc::string::String}::eq",
@@ -361,7 +361,7 @@
       "reducible": false
     },
     {
-      "def_id": 320,
+      "def_id": 318,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.CaptureSealEnd.Insts.CoreCmpPartialEqCaptureSealEnd.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureSealEnd> for sandbox_controller_core::capture::continuation::CaptureSealEnd}::eq",
@@ -501,7 +501,7 @@
       "reducible": false
     },
     {
-      "def_id": 327,
+      "def_id": 325,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}::eq",
@@ -518,7 +518,7 @@
       "reducible": false
     },
     {
-      "def_id": 330,
+      "def_id": 328,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Protocol> for sandbox_controller_core::model::Protocol}::eq",
@@ -535,7 +535,7 @@
       "reducible": false
     },
     {
-      "def_id": 326,
+      "def_id": 324,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}::eq",
@@ -586,7 +586,7 @@
       "reducible": false
     },
     {
-      "def_id": 316,
+      "def_id": 314,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::PolicyDigest> for sandbox_controller_core::ids::PolicyDigest}::eq",
@@ -913,23 +913,6 @@
       "reducible": false
     },
     {
-      "def_id": 313,
-      "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once",
-      "lean_file": "CaptureCaller/Funs.lean",
-      "rust_name": "sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}}::call_once",
-      "is_local": true,
-      "source": {
-        "file": "controller-core/src/capture/continuation.rs",
-        "begin_line": 613,
-        "end_line": 613
-      },
-      "is_opaque": false,
-      "can_fail": true,
-      "can_diverge": false,
-      "is_rec": false,
-      "reducible": false
-    },
-    {
       "def_id": 257,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.capture_dispatch_allowed.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationPlanBool.call_once",
       "lean_file": "CaptureCaller/Funs.lean",
@@ -938,7 +921,7 @@
       "source": {
         "file": "controller-core/src/capture/continuation.rs",
         "begin_line": 608,
-        "end_line": 614
+        "end_line": 612
       },
       "is_opaque": false,
       "can_fail": true,
@@ -989,7 +972,7 @@
       "source": {
         "file": "controller-core/src/capture/continuation.rs",
         "begin_line": 578,
-        "end_line": 615
+        "end_line": 613
       },
       "is_opaque": false,
       "can_fail": true,
@@ -998,7 +981,7 @@
       "reducible": false
     },
     {
-      "def_id": 321,
+      "def_id": 319,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.maintenance.retirement.QuiescenceStatus.Insts.CoreCmpPartialEqQuiescenceStatus.eq",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::retirement::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::retirement::QuiescenceStatus> for sandbox_controller_core::maintenance::retirement::QuiescenceStatus}::eq",
@@ -1677,7 +1660,7 @@
       "source": {
         "file": "controller-core/src/effect.rs",
         "begin_line": 291,
-        "end_line": 298
+        "end_line": 296
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2149,7 +2132,7 @@
       "reducible": false
     },
     {
-      "def_id": 315,
+      "def_id": 313,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone.clone",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}::clone",
@@ -2292,8 +2275,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 301,
-        "end_line": 328
+        "begin_line": 299,
+        "end_line": 326
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2309,8 +2292,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 331,
-        "end_line": 349
+        "begin_line": 329,
+        "end_line": 347
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2326,8 +2309,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 425,
-        "end_line": 436
+        "begin_line": 423,
+        "end_line": 434
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2343,8 +2326,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 441,
-        "end_line": 449
+        "begin_line": 439,
+        "end_line": 447
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2360,8 +2343,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 484,
-        "end_line": 510
+        "begin_line": 482,
+        "end_line": 508
       },
       "is_opaque": false,
       "can_fail": true,
@@ -2377,8 +2360,8 @@
       "is_local": true,
       "source": {
         "file": "controller-core/src/effect.rs",
-        "begin_line": 477,
-        "end_line": 482
+        "begin_line": 475,
+        "end_line": 480
       },
       "is_opaque": false,
       "can_fail": true,
@@ -4555,19 +4538,7 @@
       "source": {
         "file": "controller-core/src/capture/continuation.rs",
         "begin_line": 608,
-        "end_line": 614
-      }
-    },
-    {
-      "def_id": 114,
-      "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.capture_dispatch_allowed.closure_1.closure",
-      "lean_file": "CaptureCaller/Types.lean",
-      "rust_name": "sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}",
-      "is_local": true,
-      "source": {
-        "file": "controller-core/src/capture/continuation.rs",
-        "begin_line": 613,
-        "end_line": 613
+        "end_line": 612
       }
     },
     {
@@ -4820,7 +4791,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 169,
+      "def_id": 167,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.CaptureSealEnd.Insts.CoreCmpPartialEqCaptureSealEnd",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::capture::continuation::{impl core::cmp::PartialEq<sandbox_controller_core::capture::continuation::CaptureSealEnd> for sandbox_controller_core::capture::continuation::CaptureSealEnd}",
@@ -4880,7 +4851,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 168,
+      "def_id": 166,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCmpPartialEqIpv4Cidr",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Ipv4Cidr> for sandbox_controller_core::model::Ipv4Cidr}",
@@ -4895,7 +4866,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 167,
+      "def_id": 165,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.model.Endpoint.Insts.CoreCmpPartialEqEndpoint",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::Endpoint> for sandbox_controller_core::model::Endpoint}",
@@ -5090,21 +5061,6 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 151,
-      "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool",
-      "lean_file": "CaptureCaller/Funs.lean",
-      "rust_name": "sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}}",
-      "is_local": true,
-      "source": {
-        "file": "controller-core/src/capture/continuation.rs",
-        "begin_line": 613,
-        "end_line": 613
-      },
-      "impl_trait_def_id": 6,
-      "impl_trait_rust_name": "core::ops::function::FnOnce",
-      "impl_trait_is_builtin": true
-    },
-    {
       "def_id": 127,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.capture.continuation.capture_dispatch_allowed.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationPlanBool",
       "lean_file": "CaptureCaller/Funs.lean",
@@ -5113,7 +5069,7 @@
       "source": {
         "file": "controller-core/src/capture/continuation.rs",
         "begin_line": 608,
-        "end_line": 614
+        "end_line": 612
       },
       "impl_trait_def_id": 6,
       "impl_trait_rust_name": "core::ops::function::FnOnce",
@@ -5555,7 +5511,7 @@
       "impl_trait_is_builtin": true
     },
     {
-      "def_id": 154,
+      "def_id": 152,
       "lean_name": "CaptureCallerRust.sandbox_controller_core.maintenance.windows.WindowRecord.Insts.CoreCloneClone",
       "lean_file": "CaptureCaller/Funs.lean",
       "rust_name": "sandbox_controller_core::maintenance::windows::{impl core::clone::Clone for sandbox_controller_core::maintenance::windows::WindowRecord}",

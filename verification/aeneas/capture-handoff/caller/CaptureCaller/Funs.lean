@@ -1187,30 +1187,8 @@ def capture.CaptureHandoff.accepts_registration
     else ok false
   else ok false
 
-/-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}}::call_once]:
-    Source: 'controller-core/src/capture/continuation.rs', lines 613:33-613:73 -/
-def
-  capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once
-  (c : capture.continuation.capture_dispatch_allowed.closure_1.closure)
-  (tupled_args : capture.CaptureHandoff) :
-  Result Bool
-  := do
-  capture.CaptureHandoff.accepts_registration tupled_args
-
-/-- Trait implementation: [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{impl core::ops::function::FnOnce<(sandbox_controller_core::capture::CaptureHandoff,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}::{closure}}]
-    Source: 'controller-core/src/capture/continuation.rs', lines 613:33-613:73 -/
-@[reducible]
-def
-  capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool
-  : core.ops.function.FnOnce
-  capture.continuation.capture_dispatch_allowed.closure_1.closure
-  capture.CaptureHandoff Bool := {
-  call_once :=
-    capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool.call_once
-}
-
 /-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::OperationPlan,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}<'_0>}::call_once]:
-    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-614:9 -/
+    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-612:9 -/
 def
   capture.continuation.capture_dispatch_allowed.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationPlanBool.call_once
   (c : capture.continuation.capture_dispatch_allowed.closure_1)
@@ -1221,14 +1199,18 @@ def
   then
     if tupled_args.generation = c.generation
     then
-      core.option.Option.is_some_and
-        capture.continuation.capture_dispatch_allowed.closure_1.closure.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffBool
-        tupled_args.capture ()
+      match tupled_args.capture with
+      | none => ok false
+      | some handoff =>
+        let b ← capture.CaptureHandoff.accepts_registration handoff
+        if b
+        then ok true
+        else ok false
     else ok false
   else ok false
 
 /-- Trait implementation: [sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::OperationPlan,), bool> for sandbox_controller_core::capture::continuation::capture_dispatch_allowed::{closure#1}<'_0>}]
-    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-614:9 -/
+    Source: 'controller-core/src/capture/continuation.rs', lines 608:49-612:9 -/
 @[reducible]
 def
   capture.continuation.capture_dispatch_allowed.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationPlanBool
@@ -1286,7 +1268,7 @@ def
 }
 
 /-- [sandbox_controller_core::capture::continuation::capture_dispatch_allowed]:
-    Source: 'controller-core/src/capture/continuation.rs', lines 578:0-615:1
+    Source: 'controller-core/src/capture/continuation.rs', lines 578:0-613:1
     Visibility: public -/
 def capture.continuation.capture_dispatch_allowed
   (world : model.World) (effect : model.EffectId) : Result Bool := do
@@ -2041,16 +2023,19 @@ def effect.effect_succeeded_check
     | model.EffectStatus.RetiredByCaptureDrain _ => ok false
 
 /-- [sandbox_controller_core::effect::dispatched_capture]:
-    Source: 'controller-core/src/effect.rs', lines 291:0-298:1 -/
+    Source: 'controller-core/src/effect.rs', lines 291:0-296:1 -/
 def effect.dispatched_capture
   (handoff : Option capture.CaptureHandoff) :
   Result (Option capture.CaptureHandoff)
   := do
-  match handoff with
-  | none => ok none
-  | some handoff1 =>
-    let ch ← capture.CaptureHandoff.registration_dispatched handoff1
+  let cf ← core.option.Option.Insts.CoreOpsTry_traitTry.branch handoff
+  match cf with
+  | core.ops.control_flow.ControlFlow.Continue val =>
+    let ch ← capture.CaptureHandoff.registration_dispatched val
     ok (some ch)
+  | core.ops.control_flow.ControlFlow.Break residual =>
+    core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+      capture.CaptureHandoff residual
 
 /-- [sandbox_controller_core::transition::operation_key]:
     Source: 'controller-core/src/transition.rs', lines 15:0-17:1
@@ -2866,7 +2851,7 @@ def model.World.Insts.CoreCloneClone.clone
     }
 
 /-- [sandbox_controller_core::effect::dispatch_effect]:
-    Source: 'controller-core/src/effect.rs', lines 301:0-328:1
+    Source: 'controller-core/src/effect.rs', lines 299:0-326:1
     Visibility: public -/
 def effect.dispatch_effect
   (world : model.World) (id : model.EffectId) : Result model.World := do
@@ -2934,7 +2919,7 @@ def effect.dispatch_effect
   | model.Command.CleanupSlot _ _ _ => ok { next with effects := s }
 
 /-- [sandbox_controller_core::effect::acknowledge_effect]:
-    Source: 'controller-core/src/effect.rs', lines 331:0-349:1
+    Source: 'controller-core/src/effect.rs', lines 329:0-347:1
     Visibility: public -/
 def effect.acknowledge_effect
   (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome) :
@@ -2984,7 +2969,7 @@ def effect.acknowledge_effect
   ok { next1 with effect_keys := v, effects := s }
 
 /-- [sandbox_controller_core::effect::is_startup_command]:
-    Source: 'controller-core/src/effect.rs', lines 425:0-436:1 -/
+    Source: 'controller-core/src/effect.rs', lines 423:0-434:1 -/
 def effect.is_startup_command (command : model.Command) : Result Bool := do
   match command with
   | model.Command.InstallFence _ _ b => if b
@@ -3003,7 +2988,7 @@ def effect.is_startup_command (command : model.Command) : Result Bool := do
   | model.Command.CleanupSlot _ _ _ => ok false
 
 /-- [sandbox_controller_core::effect::startup_dispatch_revoked]:
-    Source: 'controller-core/src/effect.rs', lines 441:0-449:1
+    Source: 'controller-core/src/effect.rs', lines 439:0-447:1
     Visibility: public -/
 def effect.startup_dispatch_revoked
   (world : model.World) (command : model.Command) : Result Bool := do
@@ -3018,7 +3003,7 @@ def effect.startup_dispatch_revoked
   else ok false
 
 /-- [sandbox_controller_core::effect::dispatch_eligible]:
-    Source: 'controller-core/src/effect.rs', lines 484:0-510:1 -/
+    Source: 'controller-core/src/effect.rs', lines 482:0-508:1 -/
 def effect.dispatch_eligible
   (world : model.World) (id : model.EffectId) :
   Result (core.result.Result effect.EffectDecision effect.EffectReject)
@@ -3073,7 +3058,7 @@ def effect.dispatch_eligible
   else ok (core.result.Result.Err effect.EffectReject.ControllerDown)
 
 /-- [sandbox_controller_core::effect::dispatch_stop]:
-    Source: 'controller-core/src/effect.rs', lines 477:0-482:1 -/
+    Source: 'controller-core/src/effect.rs', lines 475:0-480:1 -/
 def effect.dispatch_stop
   (world : model.World) (id : model.EffectId) :
   Result (Option (core.result.Result effect.EffectDecision
