@@ -86,6 +86,31 @@ class CreateDelivery(unittest.TestCase):
                 with self.subTest(package=job['name'], defect=defect), self.assertRaises(ValueError):
                     registered._check_actual(bad, job)
 
+    def test_independent_flow_requires_all_three_original_certificates(self):
+        job = next(j for j in self.plan() if j['name'] == 'create-attachment-flow')
+        originals = list(self.result(job)['variants'].values())
+        good = dict(views=[dict(case=case, actual=row['actual'])
+                          for case, row in zip(job['cases'], originals)],
+                    actuals=[row['actual'] for row in originals])
+        registered._check_fixed_create_flow(good, originals, job)
+        for defect in ('missing-view', 'order', 'certificate', 'seed', 'outcome', 'incomplete'):
+            rows, result = copy.deepcopy((originals, good))
+            if defect == 'missing-view':
+                result['views'].pop()
+            elif defect == 'order':
+                result['views'].reverse()
+            elif defect == 'certificate':
+                rows[1]['actual']['audits'].remove(
+                    'SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract')
+            elif defect == 'seed':
+                del rows[0]['actual']['files'][job['views']['actual']['seeds'][0]]
+            elif defect == 'outcome':
+                rows[1]['property_rejected'] = False
+            else:
+                rows[2]['complete'] = False
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                registered._check_fixed_create_flow(result, rows, job)
+
     def test_native_property_rejection_is_not_a_mutant_clippy_exit(self):
         definition = registered.create_profile()
         for package in definition['packages']:

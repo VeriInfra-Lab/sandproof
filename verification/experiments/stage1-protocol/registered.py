@@ -869,13 +869,49 @@ def _actuals(result):
     return [result.get('actual', {})]
 
 
+def _check_fixed_create_flow(result, originals, job):
+    """Admit three real original views without inventing a completed parent."""
+    cases = ('actual', 'skip-save', 'eager-world')
+    views = result.get('views', [])
+    certificates = (
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.full_flow_contract',
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract',
+        'SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.not_full_contract',
+    )
+    if (job['name'] != 'create-attachment-flow' or tuple(job['cases']) != cases
+            or len(originals) != len(cases) or [v.get('case') for v in views] != list(cases)
+            or result.get('actuals') != [v.get('actual') for v in views]):
+        raise ValueError('independent Create flow originals are missing or out of order')
+    for case, certificate, original, view in zip(cases, certificates, originals, views):
+        recipe = job['views'][case]
+        actual = original.get('actual') or {
+            k: original.get(k) for k in ('files', 'audits', 'service_log_sha256')}
+        # Some original diagnostic objects have no aggregate Boolean. Their
+        # exact original full-contract/refutation certificate is still required.
+        if (original.get('complete') is not True or actual != view.get('actual')
+                or ('property_rejected' in original and
+                    original['property_rejected'] is not recipe['property_rejected'])
+                or not actual.get('files') or not actual.get('service_log_sha256')
+                or sorted(actual.get('audits', [])) != sorted(recipe['audits'])
+                or certificate not in actual.get('audits', [])
+                or (recipe['files'] is not None and set(actual['files']) != set(recipe['files']))
+                or not set(recipe['seeds']) <= actual['files'].keys()):
+            raise ValueError('incomplete independent Create flow view: '+case)
+
+
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
     if result.get('kind') == 'fixed-original-proof-readback':
         reader = _original_reader()
         reader.check(result, ROOT, job)
-        CONVERGENCE.check_actual(reader.original(result), job, ROOT)
+        originals = reader.originals(result)
+        if job.get('create_package') == 'create-attachment-flow' and len(originals) > 1:
+            _check_fixed_create_flow(result, originals, job)
+        elif len(originals) == 1:
+            _check_actual(originals[0], job)
+        else:
+            raise ValueError('unexpected independent original proof objects')
         return
     if 'convergence_package' in job:
         CONVERGENCE.check_actual(result, job, ROOT)
@@ -1532,7 +1568,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
         seed_sha256 = hashlib.sha256(content).hexdigest()
     args = list(job['args'])
     driver = Path(job['driver'])
-    retained = (original_readback and 'convergence_package' in job
+    retained = (original_readback and ('convergence_package' in job or 'create_package' in job)
                 and _original_reader(root).supported(root, job))
     if retained:
         driver = HERE/'original_readback.py'
