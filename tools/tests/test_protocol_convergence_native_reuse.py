@@ -87,7 +87,7 @@ class FixedNativeReuseTests(unittest.TestCase):
         self.reuse()
         references = receipts.convergence_reuse_publication(self.cache,
             {self.identity:self.original['key']}, scope=SCOPE)
-        seal = dict(complete=True, commands={self.identity:receipts.sha(self.entry/'receipt.json')},
+        seal = dict(scope=SCOPE, complete=True, commands={self.identity:receipts.sha(self.entry/'receipt.json')},
                     convergence_reuse=references)
         receipts.write_json(self.cache/'complete.json', seal)
         receipts.write_json(self.cache/'runtime.json', self.key['runtime'])
