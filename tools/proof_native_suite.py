@@ -163,6 +163,12 @@ def run_locked_suite(output, *, scope='all'):
     os.environ['SANDPROOF_NATIVE_USED']=str(work/'commands-used.jsonl')
     def call(args):
         subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, check=True)
+    if scope == 'stage1-protocol-convergence' and os.environ.get('SANDPROOF_CONVERGENCE_REUSE_FIXED17') == '1':
+        # Admit unchanged originals and finish the missing components first.
+        # Each of the fixed 22 appears once; a failure cannot start functional.
+        run_stage1_native(work, scope=scope)
+        native_case('functional', ROOT, work/'functional', lambda: functional(work), scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     # Full Linux functional gate is still required, including every tool test,
     # no-default and diagnostics features, doctests, strict Clippy and docs.
     native_case('functional', ROOT, work / 'functional', lambda: functional(work), scope=scope)

@@ -7,7 +7,7 @@
   "shared_rules_sha256": "ebd4a1b734e4080c35c681bfa9755b6911ef0abecdb3ab935092ea70c5833c79",
   "admission_rules": {
     "tools/acceptance_receipts.py": "d4a9a6a2709e269784d98126d11d7d6851b76637397b0bf63f6b93b47d23a70c",
-    "tools/proof_native_suite.py": "2a4c0480f3084983eab0f604dcee5544b8a0385b1bcff9fc9971e6ea7a30b5c0",
+    "tools/proof_native_suite.py": "4b4769c88c8b4aff88835d84a0a6aba665ce5c355db6b6b8ad35638f11c1e86b",
     "verification/experiments/stage1-protocol/convergence.py": "538e8db360f8ebeca549466d0e2a924cbb29cb8470391a5403417aadf1a646da",
     "tools/tests/test_protocol_convergence_native_reuse.py": "0337daac5dcc4b78a9f0e065ab3eb66f1b72c3a5e3e36d6a7935be96c1c5fec4"
   },
