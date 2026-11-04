@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.SourceLive.Examples
+import SandboxModel.Lifecycle.Protocol.SourceLive.Counterexamples
+open Aeneas Aeneas.Std SandproofSourceLiveRust
+namespace SandboxModel.Stage1Protocol.SourceLive.NegativeStartup
+open sandbox_controller_core
+
+theorem actual_mutant_accepts : run Values.afterStartup Values.localBinding 4#u64 4#u64 30#i64 = .ok true := by
+  simp [run, controller.lifecycle_inbox.source_work.snapshot.live_native,
+    source_observation.SourceObservationGuard.allows,
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    ids.VmId.Insts.CoreCmpPartialEqVmId.eq,
+    model.Phase.Insts.CoreCmpPartialEqPhase.eq, model.Phase.read_discriminant,
+    SandproofSourceLiveRust.core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.is_some_and,
+    controller.lifecycle_inbox.source_work.snapshot.live_native.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+    Values.native, Values.localBinding, Values.life, Values.afterStartup]
+
+theorem violates_full_contract : ¬ FullLiveContract run :=
+  Counterexamples.false_positive_excludes run Values.afterStartup Values.localBinding 4#u64 4#u64 30#i64
+    Examples.startup_expected actual_mutant_accepts
+end SandboxModel.Stage1Protocol.SourceLive.NegativeStartup
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLive.NegativeStartup.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLive.NegativeStartup.violates_full_contract

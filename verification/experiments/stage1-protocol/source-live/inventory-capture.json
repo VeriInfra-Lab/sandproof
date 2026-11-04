@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "source_base": "2be04389e45482cb056c54e716dd097456d6168a",
+  "views": [
+    "correct",
+    "skip-version",
+    "allow-expired",
+    "ignore-startup"
+  ],
+  "providers": {
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
+    "verification/experiments/stage1-protocol/inbox-load/admission.py": "e32f33a57a2e8a30312bf7877b61a1fe5a77df23db1b58aecc3833568bc12639",
+    "tools/proof_batch.py": "8f4b894a7d570aab7c51a1609632b2b262821f4070bc44f4b43adae872707af1",
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec"
+  },
+  "drivers": {
+    "capture.py": "8cab6a806c2e22de6984df4b8509a5c8fb86d18986a231674ee5ac5793d880ef",
+    "test_capture.py": "8ef32cc75da1f1521bbfeb908cfdbf20063a6c67f26c6f5a567dd03d03c8810b",
+    "support.py": "5168a8d04f525202395346f4707cc87de6ca199b6a37d4438c2c1507e2e97a9f",
+    "mutations.json": "3f76ecf70636332e650930b00a270e656eecae353fcf823a0f6656780a4ecfef",
+    "inventory-native.json": "284bb4af3eeca7b8e6cf800531201d10db18012cd0860431924c3526a3aaec88"
+  },
+  "proof_templates": {
+    "Core.lean.in": "ef3cfe1fd47e444a87e44fb9aac092954823bca5a19abedff69ddfdf1553b70a",
+    "Counterexamples.lean.in": "5db87482058b2164932506e2bd4b4cf3b250ea839426a7d5e3cd0039cc847791",
+    "Examples.lean.in": "e9e9bc38f7fe1a22e9e56c2a94a65e9b1f2a52a4f8c1cf785f5ecc3a60f3a8ca",
+    "FunsExternal.lean.in": "5708802b97e620e8c8b2050c77571a5d64776aa677b64728b96ce429eb02a570",
+    "Guard.lean.in": "b5e9d71c71c45ace75616eb2948c9f8e6ad9997d6cb0362081d60dfb9740f3e5",
+    "Spec.lean.in": "03d014f3ae78825dcd24d11bc8cdabc5e9ffafadaafc435006ca5c6a60b08017",
+    "Started.lean.in": "1117af14ec8e23c73a14bf28ca80a505cde6dfefabd8adc5825b0c51a47a2f47",
+    "Values.lean.in": "1c5a6f554d1c35cb55b29007d433e1d13d5bec6752c3ac49d43f4a355f096537",
+    "Witnesses.lean.in": "c8f94d8539552f7d63a36c44465d7f8fcf88c158acc2a47e40230d23b1408a0a",
+    "native-tests.rs.in": "4ddf079c721d1246063ffed94ff347c144a96b51e78b0fba23d03f23d369c91d"
+  },
+  "original_shared_floor_bytes": 68719476736,
+  "four_view_write_budget_bytes": 17179869184,
+  "capture_only": true,
+  "formal_acceptance": false
+}

@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "adopted": false,
+  "source_base": "2be04389e45482cb056c54e716dd097456d6168a",
+  "providers": {
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "tools/proof_batch.py": "8f4b894a7d570aab7c51a1609632b2b262821f4070bc44f4b43adae872707af1",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
+    "verification/experiments/stage1-protocol/inbox-load/admission.py": "e32f33a57a2e8a30312bf7877b61a1fe5a77df23db1b58aecc3833568bc12639",
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
+  },
+  "templates": {
+    "Core.lean.in": "ef3cfe1fd47e444a87e44fb9aac092954823bca5a19abedff69ddfdf1553b70a",
+    "Counterexamples.lean.in": "5db87482058b2164932506e2bd4b4cf3b250ea839426a7d5e3cd0039cc847791",
+    "Examples.lean.in": "e9e9bc38f7fe1a22e9e56c2a94a65e9b1f2a52a4f8c1cf785f5ecc3a60f3a8ca",
+    "FunsExternal.lean.in": "5708802b97e620e8c8b2050c77571a5d64776aa677b64728b96ce429eb02a570",
+    "Guard.lean.in": "b5e9d71c71c45ace75616eb2948c9f8e6ad9997d6cb0362081d60dfb9740f3e5",
+    "NegativeDeadline.lean.in": "625f25279e416ef192058acf1c4e04aa6106f84a6bc81ed8a872e622974efa93",
+    "NegativeStartup.lean.in": "3a5ea317e2893271d8080f91ee8143e77e2d6250b9c05557448a7e332ac03d5f",
+    "NegativeVersion.lean.in": "42bd12a0b78416163ef5017c1491561b61890e9d929bdd3c972074f029683f11",
+    "Spec.lean.in": "03d014f3ae78825dcd24d11bc8cdabc5e9ffafadaafc435006ca5c6a60b08017",
+    "Started.lean.in": "1117af14ec8e23c73a14bf28ca80a505cde6dfefabd8adc5825b0c51a47a2f47",
+    "Values.lean.in": "1c5a6f554d1c35cb55b29007d433e1d13d5bec6752c3ac49d43f4a355f096537",
+    "Witnesses.lean.in": "c8f94d8539552f7d63a36c44465d7f8fcf88c158acc2a47e40230d23b1408a0a"
+  },
+  "drivers": {
+    "prepare.py": "15fc0b033c566f27ddb3abd63496f92d2e62132d82f1e88fb2b6faa72a17b44e",
+    "formal.py": "7af167f171d4e7c4284a3b891e1d7dc45596c1a15b710b89dd36e28d508333ee",
+    "capture.py": "8cab6a806c2e22de6984df4b8509a5c8fb86d18986a231674ee5ac5793d880ef",
+    "support.py": "5168a8d04f525202395346f4707cc87de6ca199b6a37d4438c2c1507e2e97a9f",
+    "lakefile.toml.in": "737fcc1d51bf7792ea5292ac545d489719952f517bc6930fa7ae535cc2831b42"
+  },
+  "generated": {
+    "correct": {
+      "Types.lean": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
+      "Funs.lean": "603b0982c4a2a84d3d469c6252e1605bf0207c42a03102866cd880ad47876a1f"
+    },
+    "skip-version": {
+      "Types.lean": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
+      "Funs.lean": "4947d5047121ad52af1f579cf2062bf1fd94cdcf3cdbfe229385f94cd5f10810"
+    },
+    "allow-expired": {
+      "Types.lean": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
+      "Funs.lean": "70505d4a5012902ce11addae0a20bd091d1e40ce3905a1d282ffc556974acb9f"
+    },
+    "ignore-startup": {
+      "Types.lean": "acbf9d34d40fb0638cba683780710d6db323ad50110c879b0295709745a5141c",
+      "Funs.lean": "f7ec029cb2f9acdc7720f0fca1bcefa863e27fd21475fdef205a189cad6a22ec"
+    }
+  },
+  "audits": {
+    "correct": [
+      "SandboxModel.Stage1Protocol.SourceLive.actual",
+      "SandboxModel.Stage1Protocol.SourceLive.full_contract",
+      "SandboxModel.Stage1Protocol.SourceLive.accepts_iff",
+      "SandboxModel.Stage1Protocol.SourceLive.rejects_iff",
+      "SandboxModel.Stage1Protocol.SourceLive.total",
+      "SandboxModel.Stage1Protocol.SourceLive.local_unused_fields",
+      "SandboxModel.Stage1Protocol.SourceLive.native_unused_fields",
+      "SandboxModel.Stage1Protocol.SourceLive.lifetime_unused_fields",
+      "SandboxModel.Stage1Protocol.SourceLive.version_mismatch_rejected",
+      "SandboxModel.Stage1Protocol.SourceLive.nonrunning_rejected",
+      "SandboxModel.Stage1Protocol.SourceLive.Counterexamples.false_positive_excludes",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.version_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.deadline_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.startup_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.phase_eq_running",
+      "SandboxModel.Stage1Protocol.SourceLive.actual_guard",
+      "SandboxModel.Stage1Protocol.SourceLive.actual_started",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.stale_version",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.at_deadline",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.after_startup",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.before_deadline",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.start_at_both_boundaries",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.missing_lifetime",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.missing_vm",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.missing_start",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.zero_version",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.other_owner",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.zero_generation",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.zero_epoch",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.terminal",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.negative_clock",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.future_start",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.permissive_boundary",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal_exists"
+    ],
+    "skip-version": [
+      "SandboxModel.Stage1Protocol.SourceLive.Counterexamples.false_positive_excludes",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.version_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.deadline_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.startup_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeVersion.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeVersion.violates_full_contract"
+    ],
+    "allow-expired": [
+      "SandboxModel.Stage1Protocol.SourceLive.Counterexamples.false_positive_excludes",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.version_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.deadline_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.startup_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeDeadline.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeDeadline.violates_full_contract"
+    ],
+    "ignore-startup": [
+      "SandboxModel.Stage1Protocol.SourceLive.Counterexamples.false_positive_excludes",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.version_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.deadline_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.Examples.startup_expected",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeStartup.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.SourceLive.NegativeStartup.violates_full_contract"
+    ]
+  },
+  "same_contract": "SandboxModel.Stage1Protocol.SourceLive.FullLiveContract",
+  "formal_batch_acceptance": false
+}
