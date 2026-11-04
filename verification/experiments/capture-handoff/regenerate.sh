@@ -20,7 +20,9 @@ case "$variant" in
            'capture::*::commit' 'capture::*::eligibility'
            'capture::*::has_capture_work' 'capture::*::has_unload_source'
            request::handle_compensation worker::late_capture::record
-           publication::handle_publish_paused worker::pause_stop::record)
+           publication::handle_publish_paused worker::pause_stop::record
+           effect::dispatch_stop effect::acknowledge_effect
+           'maintenance::released_execution::*::command')
     ;;
   *) echo 'expected values, handler, worker or caller' >&2; exit 2 ;;
 esac
@@ -35,6 +37,7 @@ if [[ "$variant" == worker || "$variant" == caller ]]; then
   args+=(--include 'core::option::*::and_then')
 fi
 if [[ "$variant" == caller ]]; then
+  args+=(--include 'core::option::*::as_ref')
   # Aeneas filters uncalled external top-level roots. Extract the real local
   # crate so late_capture::record survives into the final Lean, not just LLBC.
   crate=controller-core

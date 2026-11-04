@@ -288,6 +288,13 @@ pub fn effect_outcome_valid(world: &World, command: &Command, outcome: EffectOut
     }
 }
 
+fn dispatched_capture(
+    handoff: Option<&crate::capture::CaptureHandoff>,
+) -> Option<crate::capture::CaptureHandoff> {
+    let handoff = handoff?;
+    Some(handoff.registration_dispatched())
+}
+
 #[must_use]
 pub fn dispatch_effect(world: &World, id: EffectId) -> World {
     let mut next = world.clone();
@@ -311,9 +318,7 @@ pub fn dispatch_effect(world: &World, id: EffectId) -> World {
             && crate::transition::current_capture(world, sandbox, record).is_some()
         {
             let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.registration_dispatched());
-            }
+            plan.capture = dispatched_capture(plan.capture.as_ref());
             next.operation_plans.put(key, plan);
         }
     }
@@ -455,9 +460,26 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
 /// # Errors
 /// Returns the first failed guard; rejection leaves `world` unchanged.
 pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if let Some(result) = dispatch_stop(world, &id) {
+        return result;
+    }
     if crate::maintenance::released_execution::discharged(world, &id) {
         return Err(EffectReject::EffectRetired);
     }
+    dispatch_eligible(world, id)
+}
+
+// ReleasedExecution::command is always a terminal InstallFence. A StopVm can
+// never equal it, so discharged is structurally false for this command. The
+// live entry selects this route; all remaining checks and updates are shared.
+fn dispatch_stop(world: &World, id: &EffectId) -> Option<Result<EffectDecision, EffectReject>> {
+    match id.command() {
+        Command::StopVm { .. } => Some(dispatch_eligible(world, id.clone())),
+        _ => None,
+    }
+}
+
+fn dispatch_eligible(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
     if !world.controller_up {
         return Err(EffectReject::ControllerDown);
     }

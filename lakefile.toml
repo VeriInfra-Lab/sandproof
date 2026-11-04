@@ -18,6 +18,10 @@ name = "PauseHandoffWrong"
 srcDir = "verification/aeneas/pause-stop/wrong-permit"
 
 [[lean_lib]]
+name = "PauseDispatchWrong"
+srcDir = "verification/aeneas/pause-dispatch/wrong-binding"
+
+[[lean_lib]]
 name = "SandproofFoundations"
 srcDir = "verification/aeneas/foundations"
 

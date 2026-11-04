@@ -617,6 +617,9 @@ class RetentionTests(unittest.TestCase):
             stack.enter_context(patch.object(suite, 'trusted_checkout'))
             stack.enter_context(patch.object(suite, 'load_success', return_value={'key': {'fixture': True}}))
             stack.enter_context(patch.object(suite, 'check_native_components'))
+            # This synthetic inventory targets the final Cargo handoff guard;
+            # its archive prerequisite is tested by the native source tests.
+            stack.enter_context(patch.object(suite, 'stage1_source_admission'))
             with self.assertRaisesRegex(ValueError, 'changed Cargo target identity'):
                 suite.publish_suite(output, run.work, initial, 0, builds=builds)
         self.assertFalse((output / 'complete.json').exists())

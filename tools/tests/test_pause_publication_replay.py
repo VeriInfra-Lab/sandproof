@@ -182,7 +182,10 @@ class PublicationGenerationTests(unittest.TestCase):
         self.assertIn(self.namespace+'.publication.indexed_vms_closed_loop.body', selected)
         self.assertIn(self.namespace+'.publication.indexed_slots_closed_loop', selected)
         original = copy.deepcopy(self.functions)
-        for suffix in ('.publication.handle_publish_paused', '.publication.indexed_vms_closed_loop.body'):
+        for suffix in ('.publication.handle_publish_paused', '.publication.indexed_vms_closed_loop.body',
+                       '.effect.dispatch_stop', '.effect.acknowledge_effect',
+                       '.effect.insert_unique_loop0_loop0.body',
+                       '.maintenance.released_execution.ReleasedExecution.command'):
             self.functions = [row for row in original if not row['lean_name'].endswith(suffix)]
             self.save()
             with self.subTest(suffix=suffix), self.assertRaisesRegex(ValueError, 'actual local definition'):
