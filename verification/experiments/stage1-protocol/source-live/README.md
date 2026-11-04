@@ -1,5 +1,7 @@
 # 卸载来源的存活检查
 
+[文档目录](../../../../docs/README.md) · [协议范围](../../../../docs/formal/03-protocol-inbox.md) · [依赖合同](../../../../docs/formal/dependencies.md) · [证明工作流](../../../../docs/proof-workflow.md)
+
 本包对应固定公开基线 `2be04389e45482cb056c54e716dd097456d6168a` 的
 `controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs::live_native`。
 它从完整已解码值开始，使用原 SourceObservationGuard::allows 和启动时间闭包。
