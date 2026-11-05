@@ -22,11 +22,22 @@ case "$variant" in
            request::handle_compensation worker::late_capture::record
            publication::handle_publish_paused worker::pause_stop::record
            effect::dispatch_stop effect::acknowledge_effect
-           'maintenance::released_execution::*::command')
+           'maintenance::released_execution::*::command' effect::receipt_pause)
     ;;
   *) echo 'expected values, handler, worker or caller' >&2; exit 2 ;;
 esac
 out="${SANDPROOF_CAPTURE_OUTPUT:?set a fresh private output directory}"
+if [[ "$variant" == caller && -n "${SANDPROOF_PAUSE_RECEIPT_CORRECT_CAPTURE:-}" ]]; then
+  # This finite receipt batch already captured the same twenty real roots.
+  # Stage only after the original source/output admission; old callers still
+  # perform their own exact generation, model and proof checks below replay.
+  expected_roots=()
+  for root in "${roots[@]}"; do expected_roots+=(--expected-root "$root"); done
+  bash scripts/python-entry.sh verification/experiments/pause-receipt/capture.py \
+    --source "$ROOT" --origin "$SANDPROOF_PAUSE_RECEIPT_CORRECT_CAPTURE" --output "$out" \
+    "${expected_roots[@]}"
+  exit 0
+fi
 mkdir -m 700 "$out"
 args=()
 for root in "${roots[@]}"; do args+=(--start-from "crate::$root"); done

@@ -2,6 +2,58 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V4 暂停回执：共享回执入口的有限证明范围
+
+Refs #636。Rust 起点为 `9af6dd0cda1c786fff096147fc557eda0f9de05a`，承接
+integration `2be04389e45482cb056c54e716dd097456d6168a` 的 #767 派发/确认及 #749 发布。
+本片唯一生产变更在 `controller-core/src/effect.rs`：共享首次回执准入与原账本写回，
+`receipt_pause` 限定 StopVm/CommitSnapshot；保留其它原回执路径及实际拒绝顺序。
+本候选的生产变更仅为上述共享重构；未修改 Charon/Aeneas，新增了本片的验收接线。
+旧定理仍限原版本，本节不将旧批结论改签为当前通过。
+
+本次完整原生及公共形式验收均实际运行在 `a2449b45380d2d4f8109ab9a48166d7414f746b7`，
+tree 为 `0300e2a475c0895f190e45fb2a9dc9be08cf3f02`。本段记录原执行，
+后续纯文档更新不把这些收据改签为文档提交的新执行。
+
+- 原 CaptureCaller 的十九根加 `receipt_pause` 共二十根，正确/唯一跳过首次成功检查的
+  错误版均已由固定原 Charon/Aeneas 抽取；完整 World 与原十一项库模型保持，自有业务透明。
+- Conditions/Model、Observations/Admission/Acceptance 和错误证书已通过正式公共入口。
+  本片新增38项正例、4项反例审计声明，含辅助引理和正常见证；正例项目实际检查65个
+  Lean文件、50项审计，错误项目为63个文件、16项审计。声明或文件数量不表示覆盖率。
+- 一般首次成功/失败证据、精确原 Ack 写回、相同重复/冲突、缺行/未派发/退休拒绝、
+  旧尝试不污染当前逻辑结果，以及同一 World 的两次实际准入到原发布，是本片的有限性质范围。
+  正误版本使用相同 `RequiresOutcomeEvidence` 条件和 Model 字节，在独立项目检查。
+- 原正确捕获复用、受共享根影响的三个旧错误视图必要重新生成，以及本片错误的唯一实际
+  突变分别保留来源。开发阶段的成功、失败、源码与执行身份均保留，不代替本次正式结果。
+
+[有限组件与入口](../verification/experiments/pause-receipt/README.md)固定包含完整 Linux
+functional 和 capture-caller、pause-publication、pause-stop、pause-dispatch、pause-receipt。
+2026-11-06 读取的原普通测试环境的原始结果确认六项全部通过，6 RUN / 0 REUSE，
+完整入口退出码为0，总耗时1081.019秒；其中 functional 为909.550秒。
+本片原始八项回归断言未修改：正确与恢复版本各8/8通过；错误版本先完成新编译及严格
+Clippy，再准确触发原定五项断言失败，另外三项通过。编译失败或其它错误不充当反例成立。
+
+原始完整收据的 scope 为 `pause-receipt`，`complete=true`；
+`full_native_suite_complete=false`，不表示全项目 `all` 范围通过。
+原证明环境的五个公共形式范围均通过，顶层为5 RUN；嵌套子组件按原准入复用本批
+已封口的收据。完整形式入口退出码为0，总耗时2062.887秒；正确与错误项目的构建、
+内核检查、完整服务及审计均通过，源码、原生证据、工具环境和审计后置核对也通过。
+五个范围共执行583条审计命令，涉及511个不同目标；这不是全系统证明完成率。
+原生完整收据 SHA-256 为
+`5a321b3f622e5278438ce666adfce9d781215594e6618dfcb6aefe61c3ddbcd4`；
+本片公共形式模块收据 SHA-256 为
+`451451dcade291307d61291fa63ee65602d68541ca46c76c138ca2a1a46a115b`。
+完整原始执行记录及各范围明细见对应 PR 和 #636。
+CI 与合入状态见对应 PR 和 #636；本节只记录本片原生与形式范围，不代替整个 V4
+或完整系统验收。
+
+本片机器证明的入口为共享 `receipt_pause`。原外层一般回执处理器的接线有源码复核和
+原生回归支持，其完整函数证明仍属 V4 后续义务，不属于本片已完成范围。
+逻辑 Stopped/Reclaimed 与 Durable/immutable 不证明物理 VM 已退出或文件耐久。
+V5 的真实事务、V6 的物理宿主事实、V9 的历史与进展连接仍须分别完成。
+不新增 controller_up、身份或非零守卫，不把它们当作本函数已检查的条件。
+本片不完成整个 V4，也不启动暂停的 V3 事务探索、Resume/GC 或 test/main 晋升。
+
 <a id="current-status"></a>
 ## 当前实现、工程验收与证明边界
 

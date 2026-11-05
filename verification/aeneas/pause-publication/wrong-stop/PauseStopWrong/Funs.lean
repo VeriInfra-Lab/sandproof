@@ -1763,6 +1763,323 @@ def effect.insert_unique
   effect.insert_unique_loop0 corecloneCloneInst corecmpPartialEqInst values
     value 0#usize
 
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq]:
+    Source: 'controller-core/src/model.rs', lines 35:29-35:38
+    Visibility: public -/
+def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
+  (self : model.SnapshotStage) (other : model.SnapshotStage) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq]:
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38
+    Visibility: public -/
+def model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
+  (self : model.VmStatus) (other : model.VmStatus) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}]
+    Source: 'controller-core/src/model.rs', lines 25:29-25:38 -/
+@[reducible]
+impl_def model.VmStatus.Insts.CoreCmpPartialEqVmStatus : core.cmp.PartialEq
+  model.VmStatus model.VmStatus := {
+  eq := model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.VmStatus.Insts.CoreCmpPartialEqVmStatus
+}
+
+/-- [sandbox_controller_core::effect::command_result_present]:
+    Source: 'controller-core/src/effect.rs', lines 72:0-254:1
+    Visibility: public -/
+def effect.command_result_present
+  (world : model.World) (command : model.Command) : Result Bool := do
+  match command with
+  | model.Command.InstallFence sandbox epoch terminal =>
+    let o ←
+      store.Store.get ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        world.worker_fences sandbox
+    match o with
+    | none => ok false
+    | some fence =>
+      if epoch <= fence.epoch
+      then if terminal
+           then ok fence.terminal
+           else ok true
+      else ok false
+  | model.Command.PrepareVm sandbox _ generation vm slot _ =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    let o1 ←
+      store.Store.get ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+        world.net_slots slot
+    match o with
+    | none => ok false
+    | some vm_record =>
+      match o1 with
+      | none => ok false
+      | some slot_record =>
+        let b ←
+          ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq vm_record.sandbox
+            sandbox
+        if b
+        then
+          if vm_record.generation = generation
+          then
+            let b1 ←
+              core.cmp.PartialEq.ne.trait_default
+                model.VmStatus.Insts.CoreCmpPartialEqVmStatus vm_record.status
+                model.VmStatus.Reclaimed
+            if b1
+            then
+              let b2 ←
+                ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+                  slot_record.sandbox sandbox
+              if b2
+              then
+                if slot_record.generation = generation
+                then
+                  let b3 ←
+                    ids.VmId.Insts.CoreCmpPartialEqVmId.eq slot_record.vm vm
+                  if b3
+                  then ok (¬ slot_record.reclaimed)
+                  else ok false
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+  | model.Command.ConfigureNetwork sandbox _ generation vm slot policy =>
+    let o ←
+      store.Store.get ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+        world.net_slots slot
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then
+          let b1 ← ids.VmId.Insts.CoreCmpPartialEqVmId.eq record.vm vm
+          if b1
+          then
+            let b2 ←
+              model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq
+                record.policy policy
+            if b2
+            then ok record.configured
+            else ok false
+          else ok false
+        else ok false
+      else ok false
+  | model.Command.ActivateVm sandbox _ generation vm =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then
+          match record.status with
+          | model.VmStatus.Prepared => ok false
+          | model.VmStatus.Executing => ok true
+          | model.VmStatus.Frozen => ok true
+          | model.VmStatus.Stopped => ok true
+          | model.VmStatus.Reclaimed => ok true
+        else ok false
+      else ok false
+  | model.Command.FreezeVm sandbox _ generation vm =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then
+          match record.status with
+          | model.VmStatus.Prepared => ok false
+          | model.VmStatus.Executing => ok false
+          | model.VmStatus.Frozen => ok true
+          | model.VmStatus.Stopped => ok true
+          | model.VmStatus.Reclaimed => ok true
+        else ok false
+      else ok false
+  | model.Command.ApplyFilePolicy sandbox _ generation workspace policy =>
+    let o ←
+      store.Store.get ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        world.applied_file_policies sandbox
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if generation <= record.generation
+        then
+          let b1 ←
+            ids.FsId.Insts.CoreCmpPartialEqFsId.eq record.workspace workspace
+          if b1
+          then
+            model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq
+              record.policy policy
+          else ok false
+        else ok false
+      else ok false
+  | model.Command.SealSnapshot sandbox _ generation _ workspace snapshot
+    manifest =>
+    let o ←
+      store.Store.get ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+        world.snapshots snapshot
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.source_generation = generation
+        then
+          let b1 ←
+            ids.FsId.Insts.CoreCmpPartialEqFsId.eq record.workspace workspace
+          if b1
+          then
+            model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+              record.manifest manifest
+          else ok false
+        else ok false
+      else ok false
+  | model.Command.CommitSnapshot sandbox _ generation snapshot manifest =>
+    let o ←
+      store.Store.get ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId
+        world.snapshots snapshot
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.source_generation = generation
+        then
+          let b1 ←
+            model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq
+              record.manifest manifest
+          if b1
+          then
+            let b2 ←
+              model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
+                record.stage model.SnapshotStage.Durable
+            if b2
+            then ok record.immutable
+            else ok false
+          else ok false
+        else ok false
+      else ok false
+  | model.Command.StopVm sandbox _ generation vm =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then
+          match record.status with
+          | model.VmStatus.Prepared => ok false
+          | model.VmStatus.Executing => ok false
+          | model.VmStatus.Frozen => ok false
+          | model.VmStatus.Stopped => ok true
+          | model.VmStatus.Reclaimed => ok true
+        else ok false
+      else ok false
+  | model.Command.AbortPrepare sandbox _ generation vm slot =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    let o1 ←
+      store.Store.get ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+        world.net_slots slot
+    match o with
+    | none => ok false
+    | some vm_record =>
+      match o1 with
+      | none => ok false
+      | some slot_record =>
+        let b ←
+          ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq vm_record.sandbox
+            sandbox
+        if b
+        then
+          if vm_record.generation = generation
+          then
+            let b1 ←
+              model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq vm_record.status
+                model.VmStatus.Reclaimed
+            if b1
+            then
+              let b2 ←
+                ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+                  slot_record.sandbox sandbox
+              if b2
+              then
+                if slot_record.generation = generation
+                then
+                  let b3 ←
+                    ids.VmId.Insts.CoreCmpPartialEqVmId.eq slot_record.vm vm
+                  if b3
+                  then
+                    if slot_record.reclaimed
+                    then ok (¬ slot_record.active)
+                    else ok false
+                  else ok false
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+  | model.Command.CleanupVm sandbox generation vm =>
+    let o ← store.Store.get ids.VmId.Insts.CoreCmpPartialEqVmId world.vms vm
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then
+          model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq record.status
+            model.VmStatus.Reclaimed
+        else ok false
+      else ok false
+  | model.Command.CleanupSlot sandbox generation slot =>
+    let o ←
+      store.Store.get ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId
+        world.net_slots slot
+    match o with
+    | none => ok false
+    | some record =>
+      let b ←
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq record.sandbox sandbox
+      if b
+      then
+        if record.generation = generation
+        then ok record.reclaimed
+        else ok false
+      else ok false
+
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectId> for sandbox_controller_core::model::EffectId}::eq]:
     Source: 'controller-core/src/model.rs', lines 355:23-355:32
     Visibility: public -/
@@ -2032,6 +2349,21 @@ def effect.effect_succeeded_check
     | model.EffectStatus.RetiredByStop _ => ok false
     | model.EffectStatus.RetiredByCaptureEnd _ => ok false
     | model.EffectStatus.RetiredByCaptureDrain _ => ok false
+
+/-- [sandbox_controller_core::effect::effect_outcome_valid]:
+    Source: 'controller-core/src/effect.rs', lines 284:0-289:1
+    Visibility: public -/
+def effect.effect_outcome_valid
+  (world : model.World) (command : model.Command)
+  (outcome : model.EffectOutcome) :
+  Result Bool
+  := do
+  match outcome with
+  | model.EffectOutcome.Succeeded _ =>
+    effect.command_result_present world command
+  | model.EffectOutcome.Failed _ =>
+    let b ← effect.command_result_present world command
+    ok (¬ b)
 
 /-- [sandbox_controller_core::effect::dispatched_capture]:
     Source: 'controller-core/src/effect.rs', lines 291:0-296:1 -/
@@ -3094,6 +3426,164 @@ def effect.dispatch_stop
   | model.Command.CleanupVm _ _ _ => ok none
   | model.Command.CleanupSlot _ _ _ => ok none
 
+/-- [sandbox_controller_core::effect::receipt_finish]:
+    Source: 'controller-core/src/effect.rs', lines 584:0-604:1 -/
+def effect.receipt_finish
+  (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome)
+  (awaiting_result : Bool) :
+  Result (core.result.Result effect.EffectDecision effect.EffectReject)
+  := do
+  if awaiting_result
+  then
+    let c ← model.EffectId.command id
+    let b ← effect.effect_outcome_valid world c outcome
+    if b
+    then
+      let ei ← model.EffectId.Insts.CoreCloneClone.clone id
+      let w ← effect.acknowledge_effect world id outcome
+      ok (core.result.Result.Ok
+        { event := (model.Event.AcknowledgeEffect ei outcome), next := w })
+    else ok (core.result.Result.Err effect.EffectReject.InvalidOutcomeEvidence)
+  else
+    let w ← model.World.Insts.CoreCloneClone.clone world
+    ok (core.result.Result.Ok
+      { event := (model.Event.AcknowledgeEffect id outcome), next := w })
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq]:
+    Source: 'controller-core/src/model.rs', lines 138:29-138:38
+    Visibility: public -/
+def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
+  (self : model.FailureKind) (other : model.FailureKind) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}]
+    Source: 'controller-core/src/model.rs', lines 138:29-138:38 -/
+@[reducible]
+impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
+  core.cmp.PartialEq model.FailureKind model.FailureKind := {
+  eq := model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.FailureKind.Insts.CoreCmpPartialEqFailureKind
+}
+
+/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}]
+    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
+@[reducible]
+impl_def ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest :
+  core.cmp.PartialEq ids.ResultDigest ids.ResultDigest := {
+  eq := ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest
+}
+
+/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}::eq]:
+    Source: 'controller-core/src/model.rs', lines 377:29-377:38
+    Visibility: public -/
+def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
+  (self : model.EffectOutcome) (other : model.EffectOutcome) :
+  Result Bool
+  := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | model.EffectOutcome.Succeeded __self_0 =>
+      match other with
+      | model.EffectOutcome.Succeeded __arg1_0 =>
+        ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq __self_0
+          __arg1_0
+      | model.EffectOutcome.Failed _ => fail panic
+    | model.EffectOutcome.Failed __self_0 =>
+      match other with
+      | model.EffectOutcome.Succeeded _ => fail panic
+      | model.EffectOutcome.Failed __arg1_0 =>
+        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
+          __arg1_0
+  else ok false
+
+/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}]
+    Source: 'controller-core/src/model.rs', lines 377:29-377:38 -/
+@[reducible]
+impl_def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome :
+  core.cmp.PartialEq model.EffectOutcome model.EffectOutcome := {
+  eq := model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
+  ne := core.cmp.PartialEq.ne.trait_default
+    model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome
+}
+
+/-- [sandbox_controller_core::effect::receipt_awaiting_result]:
+    Source: 'controller-core/src/effect.rs', lines 561:0-582:1 -/
+def effect.receipt_awaiting_result
+  (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome) :
+  Result (core.result.Result Bool effect.EffectReject)
+  := do
+  let o ←
+    store.Store.get model.EffectId.Insts.CoreCmpPartialEqEffectId world.effects
+      id
+  match o with
+  | none => ok (core.result.Result.Err effect.EffectReject.EffectNotFound)
+  | some es =>
+    match es with
+    | model.EffectStatus.Committed =>
+      ok (core.result.Result.Err effect.EffectReject.NotAwaitingResult)
+    | model.EffectStatus.Dispatched => ok (core.result.Result.Ok true)
+    | model.EffectStatus.OutcomeUnknown => ok (core.result.Result.Ok true)
+    | model.EffectStatus.Acknowledged recorded =>
+      let b ←
+        core.cmp.PartialEq.ne.trait_default
+          model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome recorded
+          outcome
+      if b
+      then ok (core.result.Result.Err effect.EffectReject.ConflictingReceipt)
+      else ok (core.result.Result.Ok false)
+    | model.EffectStatus.RetiredByStop _ =>
+      ok (core.result.Result.Err effect.EffectReject.EffectRetired)
+    | model.EffectStatus.RetiredByCaptureEnd _ =>
+      ok (core.result.Result.Err effect.EffectReject.EffectRetired)
+    | model.EffectStatus.RetiredByCaptureDrain _ =>
+      ok (core.result.Result.Err effect.EffectReject.EffectRetired)
+
+/-- [sandbox_controller_core::effect::receipt_pause]:
+    Source: 'controller-core/src/effect.rs', lines 543:0-557:1 -/
+def effect.receipt_pause
+  (world : model.World) (id : model.EffectId) (outcome : model.EffectOutcome) :
+  Result (Option (core.result.Result effect.EffectDecision
+    effect.EffectReject))
+  := do
+  let c ← model.EffectId.command id
+  match c with
+  | model.Command.InstallFence _ _ _ => ok none
+  | model.Command.PrepareVm _ _ _ _ _ _ => ok none
+  | model.Command.ConfigureNetwork _ _ _ _ _ _ => ok none
+  | model.Command.ActivateVm _ _ _ _ => ok none
+  | model.Command.FreezeVm _ _ _ _ => ok none
+  | model.Command.ApplyFilePolicy _ _ _ _ _ => ok none
+  | model.Command.SealSnapshot _ _ _ _ _ _ _ => ok none
+  | model.Command.CommitSnapshot _ _ _ _ _ =>
+    let r ← effect.receipt_awaiting_result world id outcome
+    match r with
+    | core.result.Result.Ok awaiting_result =>
+      let ei ← model.EffectId.Insts.CoreCloneClone.clone id
+      let r1 ← effect.receipt_finish world ei outcome awaiting_result
+      ok (some r1)
+    | core.result.Result.Err reject =>
+      ok (some (core.result.Result.Err reject))
+  | model.Command.StopVm _ _ _ _ =>
+    let r ← effect.receipt_awaiting_result world id outcome
+    match r with
+    | core.result.Result.Ok awaiting_result =>
+      let ei ← model.EffectId.Insts.CoreCloneClone.clone id
+      let r1 ← effect.receipt_finish world ei outcome awaiting_result
+      ok (some r1)
+    | core.result.Result.Err reject =>
+      ok (some (core.result.Result.Err reject))
+  | model.Command.AbortPrepare _ _ _ _ _ => ok none
+  | model.Command.CleanupVm _ _ _ => ok none
+  | model.Command.CleanupSlot _ _ _ => ok none
+
 /-- [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::TenantId> for sandbox_controller_core::ids::TenantId}::eq]:
     Source: 'controller-core/src/ids.rs', lines 3:37-3:46
     Visibility: public -/
@@ -3109,16 +3599,6 @@ impl_def ids.TenantId.Insts.CoreCmpPartialEqTenantId : core.cmp.PartialEq
   eq := ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
   ne := core.cmp.PartialEq.ne.trait_default
     ids.TenantId.Insts.CoreCmpPartialEqTenantId
-}
-
-/-- Trait implementation: [sandbox_controller_core::ids::{impl core::cmp::PartialEq<sandbox_controller_core::ids::ResultDigest> for sandbox_controller_core::ids::ResultDigest}]
-    Source: 'controller-core/src/ids.rs', lines 3:37-3:46 -/
-@[reducible]
-impl_def ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest :
-  core.cmp.PartialEq ids.ResultDigest ids.ResultDigest := {
-  eq := ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest
 }
 
 /-- [sandbox_controller_core::maintenance::slots::{impl core::cmp::PartialEq<sandbox_controller_core::maintenance::slots::HostBinding> for sandbox_controller_core::maintenance::slots::HostBinding}::eq]:
@@ -3229,36 +3709,6 @@ impl_def model.Phase.Insts.CoreCmpPartialEqPhase : core.cmp.PartialEq
     model.Phase.Insts.CoreCmpPartialEqPhase
 }
 
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}::eq]:
-    Source: 'controller-core/src/model.rs', lines 25:29-25:38
-    Visibility: public -/
-def model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
-  (self : model.VmStatus) (other : model.VmStatus) : Result Bool := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::VmStatus> for sandbox_controller_core::model::VmStatus}]
-    Source: 'controller-core/src/model.rs', lines 25:29-25:38 -/
-@[reducible]
-impl_def model.VmStatus.Insts.CoreCmpPartialEqVmStatus : core.cmp.PartialEq
-  model.VmStatus model.VmStatus := {
-  eq := model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.VmStatus.Insts.CoreCmpPartialEqVmStatus
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}::eq]:
-    Source: 'controller-core/src/model.rs', lines 35:29-35:38
-    Visibility: public -/
-def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
-  (self : model.SnapshotStage) (other : model.SnapshotStage) :
-  Result Bool
-  := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::SnapshotStage> for sandbox_controller_core::model::SnapshotStage}]
     Source: 'controller-core/src/model.rs', lines 35:29-35:38 -/
 @[reducible]
@@ -3267,25 +3717,6 @@ impl_def model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage :
   eq := model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage.eq
   ne := core.cmp.PartialEq.ne.trait_default
     model.SnapshotStage.Insts.CoreCmpPartialEqSnapshotStage
-}
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}::eq]:
-    Source: 'controller-core/src/model.rs', lines 138:29-138:38
-    Visibility: public -/
-def model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
-  (self : model.FailureKind) (other : model.FailureKind) : Result Bool := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  ok (self1 = other1)
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::FailureKind> for sandbox_controller_core::model::FailureKind}]
-    Source: 'controller-core/src/model.rs', lines 138:29-138:38 -/
-@[reducible]
-impl_def model.FailureKind.Insts.CoreCmpPartialEqFailureKind :
-  core.cmp.PartialEq model.FailureKind model.FailureKind := {
-  eq := model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.FailureKind.Insts.CoreCmpPartialEqFailureKind
 }
 
 /-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::OperationStatus> for sandbox_controller_core::model::OperationStatus}::eq]:
@@ -3361,42 +3792,6 @@ impl_def model.Operation.Insts.CoreCmpPartialEqOperation : core.cmp.PartialEq
 def model.EffectId.initial
   (command : model.Command) : Result model.EffectId := do
   ok { logical := { command }, attempt := 0#u64 }
-
-/-- [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}::eq]:
-    Source: 'controller-core/src/model.rs', lines 377:29-377:38
-    Visibility: public -/
-def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
-  (self : model.EffectOutcome) (other : model.EffectOutcome) :
-  Result Bool
-  := do
-  let self1 := read_discriminant self
-  let other1 := read_discriminant other
-  if self1 = other1
-  then
-    match self with
-    | model.EffectOutcome.Succeeded __self_0 =>
-      match other with
-      | model.EffectOutcome.Succeeded __arg1_0 =>
-        ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq __self_0
-          __arg1_0
-      | model.EffectOutcome.Failed _ => fail panic
-    | model.EffectOutcome.Failed __self_0 =>
-      match other with
-      | model.EffectOutcome.Succeeded _ => fail panic
-      | model.EffectOutcome.Failed __arg1_0 =>
-        model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq __self_0
-          __arg1_0
-  else ok false
-
-/-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::EffectOutcome> for sandbox_controller_core::model::EffectOutcome}]
-    Source: 'controller-core/src/model.rs', lines 377:29-377:38 -/
-@[reducible]
-impl_def model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome :
-  core.cmp.PartialEq model.EffectOutcome model.EffectOutcome := {
-  eq := model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome.eq
-  ne := core.cmp.PartialEq.ne.trait_default
-    model.EffectOutcome.Insts.CoreCmpPartialEqEffectOutcome
-}
 
 /-- Trait implementation: [sandbox_controller_core::model::{impl core::cmp::PartialEq<sandbox_controller_core::model::StopCoverage> for sandbox_controller_core::model::StopCoverage}]
     Source: 'controller-core/src/model.rs', lines 401:29-401:38 -/

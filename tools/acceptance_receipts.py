@@ -24,14 +24,16 @@ PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
 NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery',
                  'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop',
-                 'pause-dispatch')
+                 'pause-dispatch', 'pause-receipt')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
 PAUSE_DISPATCH_CHILD_SCOPES = ('capture-caller', 'pause-publication', 'pause-stop')
 PAUSE_DISPATCH_LABELS = ('functional', *PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
+PAUSE_RECEIPT_CHILD_SCOPES = (*PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
+PAUSE_RECEIPT_LABELS = ('functional', *PAUSE_RECEIPT_CHILD_SCOPES, 'pause-receipt')
 ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop',
-                         'pause-dispatch')
+                         'pause-dispatch', 'pause-receipt')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -205,6 +207,8 @@ def scoped_native_labels(scope):
         return stage1_native_labels(profiles[scope])
     if scope == 'pause-dispatch':
         return PAUSE_DISPATCH_LABELS
+    if scope == 'pause-receipt':
+        return PAUSE_RECEIPT_LABELS
     return (PAUSE_PUBLICATION_LABELS if scope == 'pause-publication'
             else PAUSE_STOP_LABELS if scope == 'pause-stop' else CAPTURE_CALLER_LABELS)
 
@@ -214,10 +218,10 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
     if scope == 'all':
         return
     keys = tuple(keys)
-    if scope == 'pause-dispatch' and not allow_additional and (
-            len(keys) != len(PAUSE_DISPATCH_LABELS)
+    if scope in ('pause-dispatch', 'pause-receipt') and not allow_additional and (
+            len(keys) != len(scoped_native_labels(scope))
             or any(key.get('command') != ['component-case'] for key in keys)):
-        raise ValueError('pause-dispatch requires exactly five component-case records')
+        raise ValueError(scope+' requires exactly its fixed component-case records')
     expected = set(scoped_native_labels(scope))
     labels = [key.get('label') for key in keys if key.get('command') == ['component-case']]
     counts = Counter(labels)
@@ -231,6 +235,9 @@ def current_native_seal(seal, runtime, *, scope='all'):
     actual_scope = seal.get('scope')
     if (actual_scope == 'pause-dispatch'
             and scope not in ('pause-dispatch', *PAUSE_DISPATCH_CHILD_SCOPES)):
+        return False
+    if (actual_scope == 'pause-receipt'
+            and scope not in ('pause-receipt', *PAUSE_RECEIPT_CHILD_SCOPES)):
         return False
     # Whole packet admission is deliberately stricter than component reuse.
     # A complete full/all seal cannot stand in for explicit Create/convergence,
@@ -254,10 +261,11 @@ def current_native_seal(seal, runtime, *, scope='all'):
             return False
     elif actual_scope in ('stage1-create-delivery', 'stage1-protocol-convergence'):
         return False
-    # Only this fixed five-case packet may supply the three affected old
-    # components. validate_native still validates every parent receipt and
+    # Only these fixed packets may supply their affected old components.
+    # validate_native still validates every parent receipt and
     # its complete current key before any child can consume its own case.
-    dispatch_parent = actual_scope == 'pause-dispatch' and scope in PAUSE_DISPATCH_CHILD_SCOPES
+    dispatch_parent = ((actual_scope == 'pause-dispatch' and scope in PAUSE_DISPATCH_CHILD_SCOPES)
+                       or (actual_scope == 'pause-receipt' and scope in PAUSE_RECEIPT_CHILD_SCOPES))
     return (seal.get('schema') == NATIVE_SCHEMA and seal.get('complete') is True
             and type(seal.get('exit_code')) is int and seal.get('exit_code') == 0
             and (actual_scope in ('all', scope) or dispatch_parent)
@@ -342,15 +350,15 @@ def validate_native(cache, *, scope='all'):
         if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
         keys.append(receipt['key'])
-    dispatch_parent = seal['scope'] == 'pause-dispatch'
+    dispatch_parent = seal['scope'] in ('pause-dispatch', 'pause-receipt')
     if dispatch_parent:
-        check_native_components(keys, scope='pause-dispatch')
+        check_native_components(keys, scope=seal['scope'])
         for key in keys:
             current = native_key(key['label'], ['component-case'], ROOT)
             if key != current or seal.get('rust') != current['rust']:
-                raise ValueError('pause-dispatch parent has foreign current inputs: ' + key['label'])
+                raise ValueError(seal['scope']+' parent has foreign current inputs: ' + key['label'])
         if seal.get('repository_sha256') != digest(repository_inputs(ROOT)):
-            raise ValueError('pause-dispatch functional source inventory changed')
+            raise ValueError(seal['scope']+' functional source inventory changed')
     current_keys = {}
     if scope == 'stage1-protocol-convergence':
         prototype = native_key('current-component', ['component-case'], ROOT)
@@ -579,7 +587,7 @@ def native_case(label, source, output, action=None, *, scope='all'):
         for path in sorted(Path(output).rglob('*')):
             parts = path.relative_to(output).parts
             suffixes = ('.log', '.json', '.jsonl')
-            if label in ('capture-caller', 'pause-publication', 'pause-stop', 'pause-dispatch'):
+            if label in ('capture-caller', 'pause-publication', 'pause-stop', 'pause-dispatch', 'pause-receipt'):
                 # Original CLI logs use .stdout/.stderr, including semantic
                 # names such as ignore-capture-target. Do not discard a log
                 # merely because its filename contains the word "target".

@@ -516,38 +516,61 @@ pub fn handle_effect_receipt(
     id: EffectId,
     outcome: EffectOutcome,
 ) -> Result<EffectDecision, EffectReject> {
+    if let Some(result) = receipt_pause(world, &id, outcome) {
+        return result;
+    }
     if crate::maintenance::released_execution::discharged(world, &id) {
         return Err(EffectReject::EffectRetired);
     }
-    match world.effects.get(&id) {
-        None => Err(EffectReject::EffectNotFound),
-        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
-            if matches!(id.command(), Command::ActivateVm { .. })
-                && world
-                    .sandboxes
-                    .get(&id.command().sandbox())
-                    .is_some_and(|record| record.terminal)
-                && !crate::terminal::startup_effect_in_current_abort(world, &id)
-                && !crate::capture::continuation::activation_in_current_abort(world, &id)
-            {
-                return Err(EffectReject::NotAwaitingResult);
-            }
-            if !effect_outcome_valid(world, id.command(), outcome) {
-                return Err(EffectReject::InvalidOutcomeEvidence);
-            }
-            Ok(EffectDecision {
-                event: Event::AcknowledgeEffect(id.clone(), outcome),
-                next: acknowledge_effect(world, id, outcome),
+    let awaiting_result = receipt_awaiting_result(world, &id, outcome)?;
+    if awaiting_result
+        && matches!(id.command(), Command::ActivateVm { .. })
+        && world
+            .sandboxes
+            .get(&id.command().sandbox())
+            .is_some_and(|record| record.terminal)
+        && !crate::terminal::startup_effect_in_current_abort(world, &id)
+        && !crate::capture::continuation::activation_in_current_abort(world, &id)
+    {
+        return Err(EffectReject::NotAwaitingResult);
+    }
+    receipt_finish(world, id, outcome, awaiting_result)
+}
+
+// Neither pause command can equal ReleasedExecution::command (a terminal
+// InstallFence), and neither is ActivateVm. The live entry therefore shares
+// the original receipt checks and writes without running those other guards.
+fn receipt_pause(
+    world: &World,
+    id: &EffectId,
+    outcome: EffectOutcome,
+) -> Option<Result<EffectDecision, EffectReject>> {
+    match id.command() {
+        Command::StopVm { .. } | Command::CommitSnapshot { .. } => {
+            Some(match receipt_awaiting_result(world, id, outcome) {
+                Ok(awaiting_result) => receipt_finish(world, id.clone(), outcome, awaiting_result),
+                Err(reject) => Err(reject),
             })
         }
+        _ => None,
+    }
+}
+
+// true requests the first outcome check; false is an identical replay. The
+// replay must not re-check resource observations that may have since changed.
+fn receipt_awaiting_result(
+    world: &World,
+    id: &EffectId,
+    outcome: EffectOutcome,
+) -> Result<bool, EffectReject> {
+    match world.effects.get(id) {
+        None => Err(EffectReject::EffectNotFound),
+        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => Ok(true),
         Some(EffectStatus::Acknowledged(recorded)) => {
             if *recorded != outcome {
                 return Err(EffectReject::ConflictingReceipt);
             }
-            Ok(EffectDecision {
-                event: Event::AcknowledgeEffect(id, outcome),
-                next: world.clone(),
-            })
+            Ok(false)
         }
         Some(EffectStatus::Committed) => Err(EffectReject::NotAwaitingResult),
         Some(
@@ -555,6 +578,28 @@ pub fn handle_effect_receipt(
             | EffectStatus::RetiredByCaptureEnd(_)
             | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::EffectRetired),
+    }
+}
+
+fn receipt_finish(
+    world: &World,
+    id: EffectId,
+    outcome: EffectOutcome,
+    awaiting_result: bool,
+) -> Result<EffectDecision, EffectReject> {
+    if awaiting_result {
+        if !effect_outcome_valid(world, id.command(), outcome) {
+            return Err(EffectReject::InvalidOutcomeEvidence);
+        }
+        Ok(EffectDecision {
+            event: Event::AcknowledgeEffect(id.clone(), outcome),
+            next: acknowledge_effect(world, id, outcome),
+        })
+    } else {
+        Ok(EffectDecision {
+            event: Event::AcknowledgeEffect(id, outcome),
+            next: world.clone(),
+        })
     }
 }
 
