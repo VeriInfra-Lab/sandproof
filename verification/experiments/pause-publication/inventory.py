@@ -25,6 +25,7 @@ ROOTS = tuple('capture::*::'+name for name in CAPTURE_METHODS) + (
     'publication::handle_publish_paused', 'worker::pause_stop::record',
     'effect::dispatch_stop', 'effect::acknowledge_effect',
     'maintenance::released_execution::*::command',
+    'effect::receipt_pause',
 )
 DISPATCH_FUNCTIONS = (
     *((f'effect::{name}', f'effect.{name}') for name in

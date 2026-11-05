@@ -2,6 +2,36 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V4 暂停回执：正式验收候选，尚未交付
+
+Refs #636。Rust 起点为 `9af6dd0cda1c786fff096147fc557eda0f9de05a`，承接
+integration `2be04389e45482cb056c54e716dd097456d6168a` 的 #767 派发/确认及 #749 发布。
+本片唯一生产变更在 `controller-core/src/effect.rs`：共享首次回执准入与原账本写回，
+`receipt_pause` 限定 StopVm/CommitSnapshot；保留其它原回执路径及实际拒绝顺序。
+本候选的生产变更仅为上述 `9af6dd0c` 共享重构；未修改 Charon/Aeneas，新增了本片的验收接线。
+旧定理仍限原版本，本节不将旧批结论改签为当前通过。
+
+- 原 CaptureCaller 的十九根加 `receipt_pause` 共二十根，正确/唯一跳过首次成功检查的
+  错误版均已由固定原 Charon/Aeneas 抽取；完整 World 与原十一项库模型保持，自有业务透明。
+- Conditions/Model 已构建，Observations/Admission/Acceptance 和错误证书已通过开发阶段
+  的必要原服务及模块检查。声明清单为38正/4反，含辅助
+  引理和正常见证；两份完整审计及公共有限入口尚未执行，不能把清单数量称为正式覆盖率。
+- 一般首次成功/失败证据、精确原 Ack 写回、相同重复/冲突、缺行/未派发/退休拒绝、
+  旧尝试不污染当前逻辑结果，以及同一 World 的两次实际准入到原发布，是本片待正式验收范围。
+  正误版本使用相同 `RequiresOutcomeEvidence` 条件和 Model 字节，在独立项目检查。
+- 原正确捕获复用、受共享根影响的三个旧错误视图必要重新生成，以及本片错误的唯一实际
+  突变分别保留来源。原始成功、失败、源码与执行身份不因准备正式入口而改写。
+
+[有限组件与入口](../verification/experiments/pause-receipt/README.md)固定包含完整 Linux
+functional 和 capture-caller、pause-publication、pause-stop、pause-dispatch、pause-receipt。
+普通检查在测试环境，形式任务在原证明环境；使用原收据机制，明确RUN/REUSE。
+当前仍待同一稳定候选的完整普通/形式验收及CI，准备/冻结输入不等于这些检查通过。
+
+逻辑 Stopped/Reclaimed 与 Durable/immutable 不证明物理 VM 已退出或文件耐久；
+真实事务、宿主事实、外层一般回执处理器、重启和系统进展仍由 V5/V6/V9 提供。
+不新增 controller_up、身份或非零守卫，不把它们当作本函数已检查的条件。
+本片不完成整个 V4，也不启动暂停的 V3 事务探索、Resume/GC 或 test/main 晋升。
+
 <a id="current-status"></a>
 ## 当前实现、工程验收与证明边界
 

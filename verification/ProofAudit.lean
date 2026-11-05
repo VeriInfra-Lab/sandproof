@@ -1,6 +1,7 @@
 import SandboxModel
 import SandboxModel.ProofAuditCommand
 import SandboxModel.Lifecycle.PauseDispatch.Audit
+import SandboxModel.Lifecycle.PauseReceipt.Audit
 import SandboxModel.Boundaries.TlsPin.Audit
 import SandboxModel.Foundations.Audit
 import SandboxModel.Boundaries.JsonCounter.Audit
