@@ -94,7 +94,7 @@ impl recording::RecordCodec for RecordCodecProbe {
 fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection() {
     use super::super::checkpoint::ReadConfigEffects;
 
-    for fail_at in [None, Some(1), Some(2), Some(3), Some(4)] {
+    for fail_at in [None, Some(1), Some(2), Some(3), Some(4), Some(5)] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db");
         let mut journal = initialize(&path);
@@ -140,7 +140,7 @@ fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connecti
             crate::capture::StandardGraphicBytes,
             _,
         >(&mut effects, &create("alpha", "codec-session"), &context());
-        let expected_calls = fail_at.unwrap_or(4);
+        let expected_calls = fail_at.unwrap_or(5);
         assert_eq!(effects.codec.calls.len(), expected_calls);
         assert_eq!(
             effects.codec.token,
@@ -149,14 +149,22 @@ fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connecti
         let order: Vec<_> = effects.codec.calls.iter().map(|(kind, _)| *kind).collect();
         assert_eq!(
             order,
-            ["decode-inbox", "encode", "maintenance", "encode"][..expected_calls]
+            [
+                "maintenance",
+                "decode-inbox",
+                "encode",
+                "maintenance",
+                "encode"
+            ][..expected_calls]
         );
-        assert_eq!(effects.codec.calls[0].1, original);
-        if expected_calls >= 2 {
-            assert_eq!(effects.codec.calls[1].1, original);
-        }
-        if expected_calls >= 3 {
-            assert_eq!(effects.codec.calls[2].1, maintenance);
+        // Capacity and the later load policy each decode the complete original config.
+        for ((_, actual), expected) in effects.codec.calls.iter().zip([
+            maintenance.as_slice(),
+            original.as_slice(),
+            original.as_slice(),
+            maintenance.as_slice(),
+        ]) {
+            assert_eq!(actual, expected);
         }
         let stored = ReadConfigEffects::query_bytes(
             &mut effects,
@@ -166,11 +174,11 @@ fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connecti
         match fail_at {
             None => {
                 assert!(matches!(result, Ok(recording::RecordOutcome::Recorded(_))));
-                assert_eq!(effects.codec.calls[3].1, stored);
+                assert_eq!(effects.codec.calls[4].1, stored);
                 assert_ne!(stored, original);
                 recording::RecordTransaction::commit(effects).unwrap();
             }
-            Some(1) => {
+            Some(2) => {
                 assert!(matches!(result, Err(JournalError::CorruptStore)));
                 assert_eq!(stored, original);
                 drop(effects);
