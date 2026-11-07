@@ -1,0 +1,83 @@
+import V3CreateSqlStep.Types
+import SandproofSqliteSession.ReadOps
+
+open Aeneas Aeneas.Std
+namespace V3CreateSqlStepRust
+
+/-! Actual owned61fd external signatures, still unbuilt/unadmitted. The
+successor Rust candidate removes the as_mut/borrowed-expect combination by
+matching the original Option directly. No guessed Option model or generated
+body edit is supplied to hide the static signature blocker. -/
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+/-- Complete five-constructor transport. The shared data-only provider's f64
+retains the same 64 bits; there is no floating arithmetic in this slice. -/
+def fromSharedValue
+    (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
+    rusqlite.types.value_ref.ValueRef :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text bytes => .Text bytes
+  | .Blob bytes => .Blob bytes
+
+def toSharedValue (value : rusqlite.types.value_ref.ValueRef) :
+    SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text bytes => .Text bytes
+  | .Blob bytes => .Blob bytes
+
+def Usize.Insts.RusqliteRowRowIndex.idx (position : Usize)
+    (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Usize rusqlite.error.Error) :=
+  SandproofSqliteSession.index position statement
+
+def alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8) rusqlite.types.from_sql.FromSqlError) :=
+  SandproofSqliteSession.blobColumn (toSharedValue value)
+
+def rusqlite.row.Row.get {I T : Type}
+    (indexDictionary : rusqlite.row.RowIndex I)
+    (fromSqlDictionary : rusqlite.types.from_sql.FromSql T)
+    (row : rusqlite.row.Row) (position : I) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet indexDictionary.idx
+    (fun raw => fromSqlDictionary.column_result (fromSharedValue raw)) row position
+
+def Tuple.Insts.RusqliteParamsParams.__bind_in
+    (values : Unit) (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement) :=
+  SandproofSqliteSession.bindUnit values statement
+
+def rusqlite.Connection.query_row {T P F : Type}
+    (parameters : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (connection : rusqlite.Connection) (sql : Str) (values : P) (closure : F) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.queryRow parameters.__bind_in callback.call_once
+    connection.current.single sql values closure
+
+/-- Updates only the connection observation of the actual generated raw
+transaction. SQL Ok and Err both carry the actual selected successor view;
+drop_behavior is retained, with no inferred liveness/durability guarantee. -/
+def controller.transaction.sqlite_io.execute_blobs
+    (transaction : rusqlite.transaction.Transaction)
+    (statement : Str) (bytes digest : Slice U8) :
+    Result (core.result.Result Usize rusqlite.error.Error × rusqlite.transaction.Transaction) := do
+  let (reply, connection) ←
+    SandproofSqliteSession.executeBlobs transaction.conn statement bytes digest
+  .ok (reply, { transaction with conn := connection })
+
+end V3CreateSqlStepRust

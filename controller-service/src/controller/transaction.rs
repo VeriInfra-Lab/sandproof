@@ -131,12 +131,11 @@ impl<'a> WorldTransaction<'a> {
         bytes: &[u8],
         digest: &[u8],
     ) -> Result<usize, JournalError> {
-        Ok(sqlite_io::execute_blobs(
-            self.transaction.as_mut().expect("live transaction"),
-            statement,
-            bytes,
-            digest,
-        )?)
+        let transaction = match &mut self.transaction {
+            Some(transaction) => transaction,
+            None => panic!("live transaction"),
+        };
+        Ok(sqlite_io::execute_blobs(transaction, statement, bytes, digest)?)
     }
 
     pub(super) fn commit(self) -> Result<(), JournalError> {

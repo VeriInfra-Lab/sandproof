@@ -1,0 +1,90 @@
+import V3CreateSqlStep.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink
+noncomputable section
+
+abbrev Record := controller.lifecycle_inbox.recording.StandardRecord
+abbrev RawTransaction := rusqlite.transaction.Transaction
+
+/-- An expected post-value of the actual generated record. This is a field
+projection/update, not another World or transaction semantics. All untouched
+fields, including the full candidate, namespace and drop behavior, remain. -/
+def withWriteView (effects : Record) (raw : RawTransaction)
+    (view : SandproofSqliteSession.ReadView) : Record := {
+  effects with
+  tx := {
+    effects.tx with
+    transaction := some { raw with conn := { raw.conn with current := view } }
+  }
+}
+
+def journalReply (reply : SandproofSqliteSession.SqlReply Usize) :
+    core.result.Result Usize JournalError :=
+  match reply with
+  | .Ok count => .Ok count
+  | .Err error => .Err (.Sqlite error)
+
+theorem value_to_shared_roundtrip (value : rusqlite.types.value_ref.ValueRef) :
+    fromSharedValue (toSharedValue value) = value := by
+  cases value <;> rfl
+
+theorem shared_to_value_roundtrip
+    (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
+    toSharedValue (fromSharedValue value) = value := by
+  cases value <;> rfl
+
+/-- A per-operation transition supplied by the SQLite boundary is routed
+through the actual Rust method into its original owner slot. The hypothesis
+allows any successor view for SQL Err; it does not assert SQL liveness. -/
+theorem actual_update_routes_successor
+    (effects : Record) (raw : RawTransaction)
+    (view : SandproofSqliteSession.ReadView)
+    (statement : Str) (bytes digest : Slice U8)
+    (reply : SandproofSqliteSession.SqlReply Usize)
+    (present : effects.tx.transaction = some raw)
+    (transition : raw.conn.step raw.conn.current statement bytes digest =
+      .ok (reply, view)) :
+    controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+        effects statement bytes digest =
+      .ok (journalReply reply, withWriteView effects raw view) := by
+  cases reply <;>
+    simp [controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update,
+      controller.transaction.WorldTransaction.execute_inbox_update,
+      controller.transaction.sqlite_io.execute_blobs,
+      SandproofSqliteSession.executeBlobs, journalReply, withWriteView,
+      present, transition, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError, JournalError.Insts.CoreConvertFromError.from]
+
+/-- The actual update/read probe propagates a normal SQL update error with
+the same successor owner. It grants no permission to query or commit that
+owner afterwards. Normal Drop/rollback and the production caller's error
+exit remain separate obligations beyond this small extraction probe. -/
+theorem actual_update_error_returns_successor
+    (effects : Record) (raw : RawTransaction)
+    (view : SandproofSqliteSession.ReadView)
+    (statement : Str) (bytes digest : Slice U8)
+    (error : rusqlite.error.Error)
+    (present : effects.tx.transaction = some raw)
+    (transition : raw.conn.step raw.conn.current statement bytes digest =
+      .ok (.Err error, view)) :
+    controller.lifecycle_inbox.proof_record_update_then_read
+        effects statement bytes digest =
+      .ok (.Err (.Sqlite error), withWriteView effects raw view) := by
+  unfold controller.lifecycle_inbox.proof_record_update_then_read
+  rw [actual_update_routes_successor effects raw view statement bytes digest
+    (.Err error) present transition]
+  simp [journalReply, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end
+end SandboxModel.CreateTransactionLink
+
+#audit_controller_proof SandboxModel.CreateTransactionLink.value_to_shared_roundtrip
+#audit_controller_proof SandboxModel.CreateTransactionLink.shared_to_value_roundtrip
+#audit_controller_proof SandboxModel.CreateTransactionLink.actual_update_routes_successor
+#audit_controller_proof SandboxModel.CreateTransactionLink.actual_update_error_returns_successor

@@ -1,0 +1,27 @@
+import SandproofSqliteSession.Data
+import SandproofStandardCreate.TypesExternal
+
+/-! Candidate aliases for the exact owned61fd generated Types. No generated
+World/RawTransaction is imported from another view or replaced here. -/
+namespace V3CreateSqlStepRust
+
+abbrev F64 := SandproofFoundationsRust.F64
+abbrev core.cell.RefCell := SandproofStandardCreateRust.core.cell.RefCell
+abbrev core.io.error.Error := SandproofLoadBlobRust.core.io.error.Error
+abbrev serde_json.error.Error := SandproofLoadBlobRust.serde_json.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteSession.SqlError
+abbrev rusqlite.Connection := SandproofSqliteSession.Connection
+abbrev rusqlite.row.Row := SandproofSqliteSession.Row
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.RowStatement
+abbrev rusqlite.types.from_sql.FromSqlError :=
+  SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+
+/-- Full four-way library value, retained unchanged by this finite update/read
+binding. No Drop/rollback execution is inferred from merely retaining it. -/
+inductive rusqlite.transaction.DropBehavior where
+  | Rollback
+  | Commit
+  | Ignore
+  | Panic
+
+end V3CreateSqlStepRust
