@@ -8,6 +8,8 @@ import tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
 FILES=('SandboxModel.lean','verification/ProofAudit.lean',
+       *('SandboxModel/Lifecycle/Protocol/SourceLive/'+name+'.lean' for name in
+         ('Spec','Guard','Started','Core','Values','Examples','Witnesses','Counterexamples')),
        'SandboxModel/Lifecycle/PauseReceipt/Conditions.lean',
        'SandboxModel/Lifecycle/PauseReceipt/Model.lean',
        'SandboxModel/Lifecycle/PauseReceipt/Observations.lean',

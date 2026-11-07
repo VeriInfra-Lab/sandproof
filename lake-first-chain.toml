@@ -89,3 +89,7 @@ srcDir = "verification/aeneas/stage1-protocol/manifest"
 [[lean_lib]]
 name = "SandproofFirstChain"
 srcDir = "verification/aeneas/first-chain"
+
+[[lean_lib]]
+name = "SandproofSourceLive"
+srcDir = "verification/aeneas/stage1-protocol/source-live/correct"
