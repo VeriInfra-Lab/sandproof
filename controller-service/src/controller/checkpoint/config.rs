@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MaintenanceConfig {
+    /// Retained native Create/Pause/Resume/Kill operations for one sandbox.
+    /// New nonterminal operations must leave one position for termination.
+    /// This required deployment bound is distinct from SDK renewal history.
+    pub max_operations_per_sandbox: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<super::super::capacity::CapacityConfig>,
     pub retention_ms: u64,
@@ -26,7 +30,10 @@ impl MaintenanceConfig {
     /// # Errors
     /// Rejects zero, unrepresentable or contradictory explicit bounds.
     pub fn validate(&self) -> Result<(), JournalError> {
-        for value in [
+        if !(3..=128).contains(&self.max_operations_per_sandbox) {
+            return Err(JournalError::UnsupportedStore);
+        }
+        let values = [
             self.retention_ms,
             self.max_checkpoint_bytes,
             self.max_records,
@@ -35,10 +42,14 @@ impl MaintenanceConfig {
             self.max_tail_bytes,
             self.max_input_bytes,
             self.prune_batch_rows,
-        ] {
-            if value == 0 || i64::try_from(value).is_err() || usize::try_from(value).is_err() {
+        ];
+        let mut index = 0;
+        while index < values.len() {
+            let value = values[index];
+            if value == 0 || value > i64::MAX as u64 || value > usize::MAX as u64 {
                 return Err(JournalError::UnsupportedStore);
             }
+            index += 1;
         }
         if self.max_input_bytes > self.max_tail_bytes {
             return Err(JournalError::UnsupportedStore);
@@ -57,17 +68,42 @@ impl MaintenanceConfig {
     }
 }
 
+pub(in crate::controller) trait ReadConfigEffects {
+    fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError>;
+    fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError>;
+    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<MaintenanceConfig, JournalError>;
+}
+
+pub(in crate::controller) struct StandardConfigRead<'a> {
+    pub(in crate::controller) connection: &'a Connection,
+}
+
+impl ReadConfigEffects for StandardConfigRead<'_> {
+    fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
+        Ok(self.connection.query_row(statement, [], |row| row.get(0))?)
+    }
+    fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError> {
+        Ok(self.connection.query_row(statement, [], |row| row.get(0))?)
+    }
+    fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<MaintenanceConfig, JournalError> {
+        Ok(serde_json::from_slice(bytes)?)
+    }
+}
+
 pub(super) fn read(connection: &Connection) -> Result<Option<MaintenanceConfig>, JournalError> {
-    let format: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    read_using(&mut StandardConfigRead { connection })
+}
+
+pub(super) fn read_using<E: ReadConfigEffects>(
+    effects: &mut E,
+) -> Result<Option<MaintenanceConfig>, JournalError> {
+    let format: i64 = effects.query_i64("PRAGMA user_version")?;
     if format != MAINTAINED_FORMAT_VERSION {
         return Err(JournalError::UnsupportedStore);
     }
-    let bytes: Vec<u8> = connection.query_row(
-        "SELECT config_json FROM controller_maintenance_config WHERE id=1",
-        [],
-        |row| row.get(0),
-    )?;
-    let config: MaintenanceConfig = serde_json::from_slice(&bytes)?;
+    let bytes: Vec<u8> =
+        effects.query_bytes("SELECT config_json FROM controller_maintenance_config WHERE id=1")?;
+    let config: MaintenanceConfig = effects.decode_maintenance(&bytes)?;
     config.validate()?;
     Ok(Some(config))
 }

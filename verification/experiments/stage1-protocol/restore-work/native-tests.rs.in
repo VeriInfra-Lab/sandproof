@@ -1,0 +1,86 @@
+//! Same complete value and first-error assertions in every actual Rust view.
+use super::*;
+
+fn fixture() -> SourceWorkRecord {
+    crate::controller::lifecycle_inbox::source_work::tests::proof_restore_work_fixture()
+}
+
+fn assert_complete(record: &SourceWorkRecord) {
+    let claim = record.restore.as_ref().unwrap();
+    let captured = record.capture.as_ref().unwrap();
+    let result = super::work(record).unwrap();
+    assert_eq!(result.intent(), &claim.intent);
+    assert_eq!(result.source(), &record.work.requirement);
+    assert_eq!(result.committed().work(), &captured.full);
+    assert_eq!(
+        result.committed().manifest_digest(),
+        &captured.completed.unwrap()
+    );
+    assert_eq!(
+        result.committed().seal_action(),
+        captured.action.as_ref().unwrap()
+    );
+    assert_eq!(result.operation(), claim.local.operation);
+    assert_eq!(result.generation(), claim.generation);
+}
+
+#[test]
+fn normal_full_values() {
+    assert_complete(&fixture());
+}
+
+#[test]
+fn high_generation_keeps_all_bits() {
+    let mut record = fixture();
+    record.restore.as_mut().unwrap().generation = 0x125;
+    assert_complete(&record);
+}
+
+#[test]
+fn closed_material_use_is_rejected() {
+    let mut record = fixture();
+    record.restore.as_mut().unwrap().material_use = false;
+    assert!(matches!(
+        super::work(&record),
+        Err(JournalError::UnresolvedAction)
+    ));
+}
+
+#[test]
+fn missing_restore_is_first() {
+    let mut record = fixture();
+    record.restore = None;
+    record.capture = None;
+    assert!(matches!(super::work(&record), Err(JournalError::Conflict)));
+}
+
+#[test]
+fn missing_capture_precedes_closed_use() {
+    let mut record = fixture();
+    record.restore.as_mut().unwrap().material_use = false;
+    record.capture = None;
+    assert!(matches!(
+        super::work(&record),
+        Err(JournalError::CorruptStore)
+    ));
+}
+
+#[test]
+fn missing_manifest_is_rejected() {
+    let mut record = fixture();
+    record.capture.as_mut().unwrap().completed = None;
+    assert!(matches!(
+        super::work(&record),
+        Err(JournalError::CorruptStore)
+    ));
+}
+
+#[test]
+fn missing_action_is_rejected() {
+    let mut record = fixture();
+    record.capture.as_mut().unwrap().action = None;
+    assert!(matches!(
+        super::work(&record),
+        Err(JournalError::CorruptStore)
+    ));
+}

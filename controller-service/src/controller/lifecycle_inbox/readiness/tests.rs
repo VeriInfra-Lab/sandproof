@@ -180,9 +180,15 @@ fn credential_failure_host_timeout_and_changed_source_only_make_current_observat
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let (app, state) = running(&path);
-    let original = state.lock().unwrap().configurations[&1].clone();
+    let original = state.lock().unwrap().configurations[&(1, 1)].clone();
     let calls = state.lock().unwrap().actions.len();
-    state.lock().unwrap().configurations.get_mut(&1).unwrap().0 = "0".repeat(64);
+    state
+        .lock()
+        .unwrap()
+        .configurations
+        .get_mut(&(1, 1))
+        .unwrap()
+        .0 = "0".repeat(64);
     let result = app
         .observe_lifecycle_create(&v3::request(), &v3::context())
         .unwrap();
@@ -194,8 +200,15 @@ fn credential_failure_host_timeout_and_changed_source_only_make_current_observat
         result.historical_result,
         Some(core::OperationResult::Running(1))
     );
-    assert_eq!(state.lock().unwrap().configurations[&1].0, "0".repeat(64));
-    state.lock().unwrap().configurations.insert(1, original);
+    assert_eq!(
+        state.lock().unwrap().configurations[&(1, 1)].0,
+        "0".repeat(64)
+    );
+    state
+        .lock()
+        .unwrap()
+        .configurations
+        .insert((1, 1), original);
     state.lock().unwrap().observe_unavailable = true;
     assert_eq!(
         app.observe_lifecycle_create(&v3::request(), &v3::context())
@@ -324,7 +337,7 @@ fn sql_only_lifetime_change_and_later_intent_invalidate_old_observation_basis() 
             local.sandbox,
             20,
             Some(120),
-            crate::controller::tests_support::limits(),
+            v3::limits(),
         )
         .unwrap();
     let after = journal

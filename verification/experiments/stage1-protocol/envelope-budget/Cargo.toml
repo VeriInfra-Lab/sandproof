@@ -1,0 +1,18 @@
+[package]
+name = "sandproof-envelope-budget-check"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sandproof-internal = { path = "../../../../sandbox-internal" }
+sandproof-protocol = { path = "../../../../sandbox-protocol" }
+
+[lib]
+path = "roots.rs.in"
+
+[dev-dependencies]
+serde_json = "=1.0.142"
+sandproof-controller-service = { path = "../../../../controller-service", default-features = false }

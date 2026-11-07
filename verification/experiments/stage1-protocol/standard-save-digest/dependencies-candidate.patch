@@ -1,0 +1,24 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -319,6 +319,21 @@
+ 完整字符串表示及 A4/V5 的物理连接/事务/未知提交/重启、V7 认证、V1/V2 耐久发送、
+ V4/V5 本地结果、V6 实际材料和完整 V3 继续分别由原提供方落实。
+ 
++### A9/A6/B4 V3 标准 Save 摘要调用
++
++[Save 摘要组件](../../verification/experiments/stage1-protocol/standard-save-digest/README.md)
++只复用上一节同一个 sha2/digest/GenericArray 有限符号合同和纯命名接缝，不再添加
++另一份 SHA、数据库或协议模型。实际 StandardInboxSave 的原方法及候选纯叶子分别
++核对固定具体类型、所有字典、完整借用输入和32字节返回；来源准入不称密码库或
++一般旧新内核精化。原 StandardConfigRead 委托和两个接收者的完整可逆值表示独立核对。
++
++FullSaveDigestContract 是两个实际路径各自满足原 FullDigestContract 的合取。
++原有效配置预算和编码后实际长度检查提供 Save 调用的正常摘要输入域；泛型 Save
++组合只消去 digest agrees。原编码/update 的完整返回、首错、后态和 Graphic/表示
++条件保留。源候选与有限库合同仍待主控/V0协调采用；SQL 参数、A4/V5 的物理连接/
++lease/事务历史/未知提交/重启、JSON/TLS、认证、producer/driver、实际材料及 Resume
++不由摘要值关系提供，原 V7、V1/V2、V4/V5、V6 责任不变。
++
+ ## Redis 与 SQLite 的落地合同
+ 
+ | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |

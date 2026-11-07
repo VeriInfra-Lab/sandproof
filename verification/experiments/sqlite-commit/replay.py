@@ -48,10 +48,12 @@ def main():
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--tool-root", type=Path, required=True)
     parser.add_argument("--charon-target", type=Path)
+    parser.add_argument("--capture-only", action="store_true",
+                        help="preserve current-tool output for review; grants no proof acceptance")
     args = parser.parse_args()
     repository = HERE.parents[2]
     sys.path.insert(0, str(repository))
-    from tools.check_sqlite_extraction import check_libraries, check_pair, read_json
+    from tools.check_sqlite_extraction import check_libraries, check_pair, read_json, surface, llbc_digest
     check_libraries(repository, args.tool_root)
     destination = args.destination.absolute()
     if destination.exists() or destination.is_symlink():
@@ -91,9 +93,11 @@ def main():
                "-subdir", "SandproofSqlite", "-dest", str(generated), str(core)]
     stages.append(run(evidence, "aeneas", command, source, environment))
     expected_root = HERE.parents[1] / "aeneas/sqlite"
+    generated_comparisons = {}
     for name in ["SandproofSqlite/Types.lean", "SandproofSqlite/Funs.lean", "translation.json"]:
         expected = expected_root / name
-        if not expected.is_file() or (generated / name).read_bytes() != expected.read_bytes():
+        generated_comparisons[name] = expected.is_file() and (generated / name).read_bytes() == expected.read_bytes()
+        if not generated_comparisons[name] and not args.capture_only:
             raise ValueError(f"original-tool regeneration differs: {name}")
     for name, expected in config["candidate_files"].items():
         if digest(source / name) != expected:
@@ -119,10 +123,33 @@ def main():
     after["controller-service/src/controller/transaction.rs"] = hashlib.sha256(original).hexdigest()
     if after != before:
         raise ValueError("candidate inputs changed during extraction")
-    check_pair(repository, read_json(evidence / core_name), read_json(evidence / wrapper_name))
+    if args.capture_only:
+        current = read_json(HERE / "environment.json")
+        for role, path in (("core", evidence/core_name), ("wrapper", evidence/wrapper_name)):
+            data = read_json(path)
+            if data.get("has_errors") is not False:
+                raise ValueError("incomplete current capture: " + role)
+            options = data["translated"]["options"]
+            if any(options[n] for n in ("exclude", "skip_borrowck", "no_typecheck", "monomorphize", "remove_unused_clauses")):
+                raise ValueError("weakened current capture: " + role)
+            if options != current[role]["charon_options"]:
+                raise ValueError("unreviewed compiler settings: " + role)
+            own = [f for f in data["translated"]["fun_decls"] if f and
+                   f["item_meta"]["name"][0] == {"Ident": ["sandproof_controller_service", 0]}]
+            if any(not isinstance(f["body"], dict) for f in own):
+                raise ValueError("owned current SQLite body hidden")
+            current[role] = dict(llbc_digest=llbc_digest(data), charon_options=options, surface=surface(data))
+        current["translation"] = read_json(generated/"translation.json")
+        (evidence/"environment-candidate.json").write_text(json.dumps(current, indent=2)+"\n")
+    else:
+        check_pair(repository, read_json(evidence / core_name), read_json(evidence / wrapper_name))
     result = {"source_unchanged": True, "candidate_input_count": len(inputs), "base": profile["base"], "patch_sha256": config["patch_sha256"],
               "wrapper_probes_sha256": digest(HERE / "wrapper-roots.rs"), "stages": stages,
-              "generated_files_byte_identical": 3,
+              "capture_only": args.capture_only,
+              "formal_acceptance": False,
+              "actual_production_adopted": config.get("production_adopted") is True,
+              "generated_comparisons": generated_comparisons,
+              "generated_files_byte_identical": sum(generated_comparisons.values()),
               "core_llbc_sha256": digest(evidence / core_name),
               "wrapper_llbc_sha256": digest(evidence / wrapper_name),
               "scope": "actual core and wrapper/Drop; full commit validator graph is not admitted"}

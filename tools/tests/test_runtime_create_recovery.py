@@ -3,13 +3,14 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock
 
 from tools.runtime_create_recovery import (
-    RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
+    CURRENT_VERSIONS, LIFECYCLE_PROTOCOL_VERSION, RuntimeIdentityUnknown, find_runtime_create, load_runtime_intent,
     recover_runtime_create, terminal_result,
 )
 
@@ -24,20 +25,21 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         self.intent = dict(metadata=dict(benchmark='terminal-bench-2.0', task='sample',
             build='a'*32, revision='r1', runtime_attempt='e'*32), template=self.template)
         self.node = dict(deployment_id='test-deployment', node_id='host-runtime', node_generation=3)
-        self.binding = dict(protocol_version=3, node=copy.deepcopy(self.node), session='sandbox-17',
+        self.binding = dict(protocol_version=4, node=copy.deepcopy(self.node), session='sandbox-17',
             key=dict(deployment='test-deployment', owner='1', window=7, sequence=41),
             expected=dict(state='absent'))
         self.identity = dict(binding=copy.deepcopy(self.binding),
             center=dict(deployment='test-deployment', center='center-a'),
             retention=dict(slot=1, window=2), accepted_version=1)
         previous = self.response(session='sandbox-16', window=1, sequence=39)
-        versions = dict(internal_protocol=2, center_store=8, host_store=20)
+        versions = dict(internal_protocol=2, center_store=11, host_store=24)
         self.center = dict(schema_version=3, versions=copy.deepcopy(versions),
             deployment='test-deployment', revision=1, sandbox_highwater=17, operation_highwater=42, nodes=[], sandboxes=[], retention_lanes=[dict(node=copy.deepcopy(self.node),
                 retention_slot=1, retired_through=1, phase='open', last_retired=copy.deepcopy(previous))])
         self.host = dict(schema_version=2, versions=copy.deepcopy(versions), node=copy.deepcopy(self.node),
             native=[],host_slots=[],source_observation=dict(max_work_bytes=1024,max_configuration_bytes=1024,
-                max_executable_bytes=1024,max_kernel_bytes=1024,max_disk_bytes=4096),operations=[], retention_lanes=[dict(slot=1, retired_through=1, current_window=2,
+                max_executable_bytes=1024,max_kernel_bytes=1024,max_disk_bytes=4096,
+                max_material_bytes=8192),operations=[], retention_lanes=[dict(slot=1, retired_through=1, current_window=2,
                 last_retired=copy.deepcopy(previous))])
         self.now = 0
 
@@ -57,7 +59,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         operation = copy.deepcopy(self.identity) | dict(operation=dict(kind='create', target_incarnation=1),
             acceptance_time=dict(kind='sampled', at_ms=1000), running=None if pending else dict(
                 started_at_ms=1234, end_at_ms=301234, max_end_at_ms=601234,
-                startup_deadline_ms=301000, observed_at_ms=1234), create_refusal=None, terminal=None)
+                startup_deadline_ms=301000, observed_at_ms=1234), create_refusal=None, terminal=None, unloaded=None)
         self.center['sandboxes'] = [dict(private=False,
             create=dict(binding=copy.deepcopy(self.binding), metadata_sha256=checksum, resources=resources,
                 template_revision='r1', template_digest=[1]*32, options_sha256=hashlib.sha256(b'{}').hexdigest(),
@@ -74,7 +76,8 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
         operation = dict(binding=copy.deepcopy(accepted['request']['binding']),
             center=copy.deepcopy(accepted['center']), retention=copy.deepcopy(accepted['retention']),
             accepted_version=accepted['accepted_version'], acceptance_time=dict(kind='unsampled'),
-            operation=dict(kind='destroy'), running=None, create_refusal=None, terminal=copy.deepcopy(response))
+            operation=dict(kind='destroy'), running=None, create_refusal=None,
+            terminal=copy.deepcopy(response), unloaded=None)
         record = self.center['sandboxes'][0]
         record.update(released=True, terminating=True, phase='cleaned',
             terminal_confirmation=copy.deepcopy(response))
@@ -104,7 +107,15 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
 
     def test_equal_but_noninteger_versions_and_old_paired_store_formats_refuse(self):
         self.insert()
-        for versions in (dict(internal_protocol=2.0,center_store=8,host_store=20),
+        for versions in (dict(internal_protocol=2,center_store=10,host_store=23),
+                         dict(internal_protocol=2.0,center_store=11,host_store=24),
+                         dict(internal_protocol=2,center_store=11,host_store=23),
+                         dict(internal_protocol=2,center_store=11,host_store=21),
+                         dict(internal_protocol=2,center_store=11,host_store=22),
+                         dict(internal_protocol=2,center_store=9,host_store=23),
+                         dict(internal_protocol=2,center_store=8,host_store=20),
+                         dict(internal_protocol=2,center_store=8,host_store=21),
+                         dict(internal_protocol=2,center_store=9,host_store=20),
                          dict(internal_protocol=2,center_store=7,host_store=19)):
             center,host=copy.deepcopy(self.center),copy.deepcopy(self.host)
             center['versions']=copy.deepcopy(versions);host['versions']=copy.deepcopy(versions)
@@ -112,6 +123,84 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
                 find_runtime_create(center,self.intent['metadata'],deployment='test-deployment')
             with self.assertRaises(ValueError):
                 terminal_result(center,host,self.identity)
+
+    def test_current_versions_match_the_shared_production_constants(self):
+        source = (Path(__file__).resolve().parents[2] / 'sandbox-protocol/src/internal.rs').read_text()
+        actual = {}
+        for field, name in (('internal_protocol', 'INTERNAL_PROTOCOL_VERSION'),
+                            ('center_store', 'CENTER_STORE_FORMAT_VERSION'),
+                            ('host_store', 'HOST_STORE_FORMAT_VERSION')):
+            values = re.findall(r'^pub const ' + name + r': \w+ = (\d+);$', source, re.MULTILINE)
+            self.assertEqual(len(values), 1, name)
+            actual[field] = int(values[0])
+        self.assertEqual(CURRENT_VERSIONS, dict(internal_protocol=2, center_store=11, host_store=24))
+        self.assertEqual(actual, CURRENT_VERSIONS)
+        lifecycle = (Path(__file__).resolve().parents[2] / 'sandbox-protocol/src/lifecycle.rs').read_text()
+        versions = re.findall(r'^pub const PROTOCOL_VERSION: u16 = (\d+);$', lifecycle, re.MULTILINE)
+        self.assertEqual(versions, [str(LIFECYCLE_PROTOCOL_VERSION)])
+
+    def test_missing_version_fields_and_mixed_role_reports_refuse(self):
+        self.insert(terminal=True)
+        for side in ('center', 'host', 'both'):
+            for field in CURRENT_VERSIONS:
+                center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
+                if side in ('center', 'both'):
+                    del center['versions'][field]
+                if side in ('host', 'both'):
+                    del host['versions'][field]
+                with self.subTest(side=side, field=field), self.assertRaises(ValueError):
+                    terminal_result(center, host, self.identity)
+                if side != 'host':
+                    with self.assertRaises(ValueError):
+                        find_runtime_create(center, self.intent['metadata'], deployment='test-deployment')
+        for side in ('center', 'host'):
+            center, host = copy.deepcopy(self.center), copy.deepcopy(self.host)
+            (center if side == 'center' else host)['versions']['host_store'] = 20
+            with self.subTest(side=side), self.assertRaises(ValueError):
+                terminal_result(center, host, self.identity)
+        self.assertEqual(terminal_result(self.center, self.host, self.identity)['status'], 'cleaned')
+
+    def test_current_operation_cannot_drop_fields_or_relabel_an_old_projection(self):
+        self.insert(terminal=True)
+        for position in (0, -1):
+            for field in self.center['sandboxes'][0]['operations'][position]:
+                center = copy.deepcopy(self.center)
+                del center['sandboxes'][0]['operations'][position][field]
+                with self.subTest(position=position, field=field), self.assertRaises(ValueError):
+                    terminal_result(center, self.host, self.identity)
+                if position == 0:
+                    with self.assertRaises(ValueError):
+                        find_runtime_create(center, self.intent['metadata'], deployment='test-deployment')
+        center = copy.deepcopy(self.center)
+        for operation in center['sandboxes'][0]['operations']:
+            del operation['unloaded']
+        with self.assertRaises(ValueError):
+            find_runtime_create(center, self.intent['metadata'], deployment='test-deployment')
+        self.assertEqual(terminal_result(self.center, self.host, self.identity)['status'], 'cleaned')
+
+    def test_unloaded_material_is_not_a_cleaned_or_retired_result(self):
+        self.insert()
+        record = self.center['sandboxes'][0]
+        operation = copy.deepcopy(record['operations'][0])
+        operation['binding'] = copy.deepcopy(self.response()['request']['request']['binding'])
+        operation.update(accepted_version=2, operation=dict(kind='unload', source_incarnation=1, capture=1),
+            acceptance_time=dict(kind='unsampled'), running=None,
+            unloaded=dict(request=dict(request=dict(binding=copy.deepcopy(operation['binding']),
+                operation=dict(kind='unload', source_incarnation=1, capture=1)),
+                center=copy.deepcopy(operation['center']), retention=copy.deepcopy(operation['retention']),
+                accepted_version=2), outcome=dict(state='unloaded',facts=dict(source_incarnation=1, capture=1,
+                manifest_digest=[7]*32, material_bytes=4096, started_at_ms=1234,
+                end_at_ms=301234, max_end_at_ms=601234, startup_deadline_ms=301000))))
+        record['operations'].append(operation)
+        record['phase'] = 'unloaded'
+        self.assertEqual(find_runtime_create(self.center, self.intent['metadata'],
+            deployment='test-deployment'), self.identity)
+        self.assertIsNone(terminal_result(self.center, self.host, self.identity))
+        # A contradictory cleaned projection cannot reuse an Unload payload.
+        self.finish()
+        record['operations'][-1]['unloaded'] = operation['unloaded']
+        with self.assertRaises(ValueError):
+            terminal_result(self.center, self.host, self.identity)
 
     def tick(self, seconds):
         self.now += seconds
@@ -249,7 +338,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             ('center',('sandboxes',0,'terminal_confirmation','request','accepted_version'),2.0),
             ('host',('operations',0,'accepted_version'),2.0),
             ('host',('operations',0,'binding','expected','version'),True),
-            ('host',('operations',0,'binding','protocol_version'),3.0),
+            ('host',('operations',0,'binding','protocol_version'),4.0),
             ('host',('operations',0,'confirmed_terminal','request','retention','slot'),True),
             ('host',('operations',0,'confirmed_terminal','request','accepted_version'),2.0),
         ]
@@ -263,6 +352,12 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             with self.subTest(side=side,path=path),self.assertRaises(ValueError):
                 terminal_result(center,host,self.identity)
         self.assertEqual(terminal_result(self.center,self.host,self.identity)['status'],'cleaned')
+
+    def test_previous_lifecycle_protocol_cannot_authenticate_current_result(self):
+        self.insert(terminal=True)
+        host=copy.deepcopy(self.host)
+        host['operations'][0]['binding']['protocol_version']=3
+        self.assertIsNone(terminal_result(self.center,host,self.identity))
 
     def test_original_create_requires_exact_positive_incarnation_operation(self):
         self.insert()
@@ -405,6 +500,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_prepared_checkpoint_and_recovery_require_explicit_supervisor_authority(self):
         self.template['templateId'] = 'ci-' + 'a'*32
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         self.assertEqual(self.load_checkpoint(prepared_ci=True), self.intent)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
@@ -420,6 +516,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_two_point_one_requires_exact_live_dataset_binding(self):
         self.intent['metadata']['benchmark'] = 'terminal-bench@2.1'
         (self.root/'runtime-intent.json').write_text(json.dumps(self.intent))
+        (self.root/'runtime-intent.json').chmod(0o600)
         with self.assertRaises(ValueError):
             self.load_checkpoint()
         self.assertEqual(load_runtime_intent(self.root, task='sample', runtime_attempt='e'*32,
@@ -433,6 +530,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_requires_exact_task_attempt_build_revision_and_fingerprint(self):
         checkpoint = self.root/'runtime-intent.json'
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.assertEqual(self.load_checkpoint(), self.intent)
         variants = []
         for field, value in (('task', 'previous-task'), ('runtime_attempt', 'f'*32),
@@ -454,6 +552,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
     def test_checkpoint_rejects_partial_duplicate_and_oversized_json(self):
         for raw in ('{', '{"metadata":{},"metadata":{}}', ' '*(256*1024+1)):
             (self.root/'runtime-intent.json').write_text(raw)
+            (self.root/'runtime-intent.json').chmod(0o600)
             with self.subTest(size=len(raw)), self.assertRaises(ValueError):
                 self.load_checkpoint()
 
@@ -473,6 +572,7 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             self.load_checkpoint()
         checkpoint.unlink()
         checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
         self.root.chmod(0o755)
         try:
             with self.assertRaises(ValueError):

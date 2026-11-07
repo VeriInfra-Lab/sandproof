@@ -1,0 +1,142 @@
+import SandproofStandardRecord.Funs
+import SandboxModel.Access.Cloning
+import SandboxModel.Foundations.LoopCallbacks.Refinement
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStandardRecordRust
+namespace SandboxModel.Stage1Protocol.StandardRecordReads
+open sandbox_controller_core
+open sandproof_controller_service.controller
+
+abbrev Effects := lifecycle_inbox.recording.StandardRecord
+abbrev World := model.World
+abbrev WorldTx := transaction.WorldTransaction
+abbrev Local := internal_inbox.model.InternalLocalBinding
+abbrev Slot := maintenance.slots.HostSlotRecord
+abbrev SlotId := maintenance.slots.HostSlotId
+abbrev Sandbox := ids.SandboxId
+abbrev readWorld := transaction.WorldTransaction.world
+abbrev readReleasing := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing
+abbrev readCurrent := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation
+abbrev slotCallback := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool
+abbrev slotsCallback := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool
+
+def CandidateAt (tx : WorldTx) (world : World) : Prop :=
+  NormalWorldBorrow tx.candidate.beforeBorrowCount ∧ tx.candidate.value = some world
+
+theorem world_from_same_candidate (tx : WorldTx) (world : World)
+    (present : CandidateAt tx world) : readWorld tx = .ok world := by
+  rcases present with ⟨normal, present⟩
+  simp [readWorld, transaction.WorldTransaction.world, core.cell.RefCell.borrow,
+    normal, core.cell.Ref.Insts.CoreOpsDerefDeref.deref, core.option.Option.as_ref,
+    present, core.option.Option.expect]
+
+def slotMatches (sandbox : Sandbox) (row : SlotId × Slot) : Bool :=
+  decide (row.2.binding.sandbox = sandbox) &&
+    match row.2.phase with
+    | .Releasing => true
+    | _ => false
+
+theorem actual_slot_callback (sandbox : Sandbox) (row : SlotId × Slot) :
+    slotCallback.call_mut sandbox row = .ok (slotMatches sandbox row, sandbox) := by
+  rcases row with ⟨key, slot⟩
+  by_cases same : slot.binding.sandbox = sandbox <;>
+    cases phase : slot.phase <;>
+    simp_all [
+      lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool.call_mut,
+      ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq,
+      maintenance.slots.HostSlotPhase.read_discriminant, slotMatches]
+
+theorem anyList_of_unchanged_callback {T F : Type}
+    (callback : core.ops.function.FnMut F T Bool) (state : F) (predicate : T → Bool)
+    (law : ∀ item, callback.call_mut state item = .ok (predicate item, state))
+    (items : List T) :
+    ∃ count, anyList callback items state = .ok (items.any predicate, count) := by
+  induction items with
+  | nil => exact ⟨0, rfl⟩
+  | cons item rest ih =>
+      obtain ⟨count, restEq⟩ := ih
+      cases matched : predicate item
+      · exact ⟨count + 1, by simp [anyList, law, matched, restEq, List.any_cons]⟩
+      · exact ⟨1, by simp [anyList, law, matched, List.any_cons]⟩
+
+theorem actual_slots_callback (sandbox : Sandbox) (state : maintenance.MaintenanceState) :
+    lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once
+      sandbox state = .ok (state.slots.entries.val.any (slotMatches sandbox)) := by
+  obtain ⟨count, checked⟩ := anyList_of_unchanged_callback slotCallback sandbox
+    (slotMatches sandbox) (actual_slot_callback sandbox) state.slots.entries.val
+  simp [
+    lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once,
+    maintenance.MaintenanceState.host_slots, store.Store.impl.entries,
+    core.slice.Slice.iter, core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.any,
+    alloc.vec.Vec.deref, checked]
+
+def expectedReleasing (world : World) (sandbox : Sandbox) : Bool :=
+  match world.maintenance with
+  | none => false
+  | some state => state.slots.entries.val.any (slotMatches sandbox)
+
+theorem actual_releasing (effects : Effects) (binding : Local) (world : World)
+    (present : CandidateAt effects.tx world) :
+    readReleasing effects binding = .ok (expectedReleasing world binding.sandbox, effects) := by
+  simp only [readReleasing,
+    lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing,
+    world_from_same_candidate effects.tx world present, bind_tc_ok]
+  cases state : world.maintenance <;>
+    simp [maintenance.World.maintenance_state, core.option.Option.as_ref,
+      core.option.Option.is_some_and, state, expectedReleasing, actual_slots_callback]
+
+def sharedStore (rows : store.Store K V) :
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store K V := ⟨rows.entries⟩
+
+theorem get_agrees (comparison : core.cmp.PartialEq K K) (rows : store.Store K V) (key : K) :
+    store.Store.get comparison rows key =
+      SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get comparison (sharedStore rows) key := by
+  unfold store.Store.get store.Store.get_loop
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop
+  have bodies (index : Usize) : store.Store.get_loop.body comparison rows key index =
+      SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop.body
+        comparison (sharedStore rows) key index := by rfl
+  simp only [bodies]
+
+theorem actual_first_row (world : World) (sandbox : Sandbox) :
+    model.World.sandbox_record world sandbox =
+      .ok (SandboxModel.Foundations.tableLookup sandbox world.sandboxes.entries.val) := by
+  unfold model.World.sandbox_record
+  rw [get_agrees]
+  exact SandboxModel.Foundations.LoopCallbacks.original_get_refines
+    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+    (by intro left right; rfl) (sharedStore world.sandboxes) sandbox
+
+def expectedCurrent (world : World) (sandbox : Sandbox) : Option ids.OperationId :=
+  ((SandboxModel.Foundations.tableLookup sandbox world.sandboxes.entries.val).bind
+    (fun row => row.current_operation)).map (fun operation => operation.id)
+
+theorem actual_current_operation (effects : Effects) (sandbox : Sandbox) (world : World)
+    (present : CandidateAt effects.tx world) :
+    readCurrent effects sandbox = .ok (expectedCurrent world sandbox, effects) := by
+  simp only [readCurrent,
+    lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation,
+    world_from_same_candidate effects.tx world present, bind_tc_ok,
+    actual_first_row world sandbox]
+  cases found : SandboxModel.Foundations.tableLookup sandbox world.sandboxes.entries.val with
+  | none => simp [core.option.Option.and_then, core.option.Option.map, expectedCurrent, found]
+  | some row =>
+      cases operation : row.current_operation <;>
+        simp [core.option.Option.and_then, core.option.Option.map,
+          lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure.Insts.CoreOpsFunctionFnOnceTupleSharedSandboxRecordOptionOperation.call_once,
+          lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure_1.Insts.CoreOpsFunctionFnOnceTupleOperationOperationId.call_once,
+          expectedCurrent, found, operation]
+
+end SandboxModel.Stage1Protocol.StandardRecordReads
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.world_from_same_candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.actual_slot_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.anyList_of_unchanged_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.actual_slots_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.actual_releasing
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.get_agrees
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.actual_first_row
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardRecordReads.actual_current_operation

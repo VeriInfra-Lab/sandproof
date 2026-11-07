@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open scoped Classical
+noncomputable section
+
+theorem loop_done (body : α → Result (ControlFlow α β)) (state : α) (value : β)
+    (done : body state = .ok (.done value)) : loop body state = .ok value := by
+  rw [loop, done]
+  simp only [bind_ok]
+
+theorem loop_continue (body : α → Result (ControlFlow α β)) (state next : α)
+    (cont : body state = .ok (.cont next)) : loop body state = loop body next := by
+  rw [loop, cont]
+  simp only [bind_ok]
+
+theorem prior_empty_prefix (inbox : Inbox) (id : SessionId) (key : OperationKey) :
+    inbox.prior_retired_identity_conflict 0#usize id key = .ok false := by
+  obtain ⟨part, extracted, partVal, partLen⟩ := (WP.spec_equiv_exists _ _).mp
+    (alloc.vec.Vec.index_RangeTo_spec inbox.lanes ⟨0#usize⟩ (by scalar_tac))
+  have emptyPart : part.val = [] := by simpa [List.slice] using partVal
+  unfold Inbox.prior_retired_identity_conflict
+  rw [extracted]
+  simp only [bind_tc_ok, SharedSlice.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter]
+  unfold Inbox.prior_retired_identity_conflict_loop
+  rw [loop]
+  simp [Inbox.prior_retired_identity_conflict_loop.body,
+    core.slice.iter.IteratorSliceIter.next, Slice.len, emptyPart]
+
+theorem current_empty_sessions (inbox : Inbox) (id : SessionId) (key : OperationKey)
+    (emptySessions : inbox.sessions.val = []) :
+    inbox.current_identity_conflict id key = .ok false := by
+  unfold Inbox.current_identity_conflict
+  simp only [SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter,
+    core.slice.Slice.iter, bind_tc_ok]
+  unfold Inbox.current_identity_conflict_loop
+  rw [loop]
+  simp [Inbox.current_identity_conflict_loop.body, core.slice.iter.IteratorSliceIter.next,
+    alloc.vec.Vec.deref, Slice.len, emptySessions]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.loop_done
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.loop_continue
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.prior_empty_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.current_empty_sessions

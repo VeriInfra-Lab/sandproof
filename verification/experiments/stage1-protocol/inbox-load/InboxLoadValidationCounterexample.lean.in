@@ -1,0 +1,101 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadValidationAcceptance
+import SandboxModel.Lifecycle.Protocol.InboxLoadFixturePrefix
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+theorem wrong_validation_represented : DecodedStringsRepresentable wrongValidationEffects := by
+  intro state input inbox after returned
+  simp only [wrongValidationEffects, Result.ok.injEq, Prod.mk.injEq,
+    core.result.Result.Ok.injEq] at returned
+  rcases returned with ⟨same, _⟩
+  rw [← same]
+  exact InboxValidation.Values.fixture_representable
+
+theorem missing_lane_validation_rejected :
+    validation InboxValidation.Values.missingLane = InboxValidation.rejected :=
+  (InboxValidation.Values.lane_model_counterexamples saved terminal renewal unload).2
+
+theorem missing_lane_validated_rejected (trace : Trace) :
+    validatedView wrongValidationEffects validation budget InboxValidation.Values.missingLane 286720#u64 trace =
+      corrupt trace := by
+  have sameConfig : InboxValidation.Values.missingLane.config = InboxValidation.Values.normal.config := rfl
+  simp only [validatedView, budget, sameConfig, normal_budget, bind_tc_ok,
+    ne_eq, not_true_eq_false, ↓reduceIte, missing_lane_validation_rejected,
+    InboxValidation.rejected, corrupt]
+
+theorem validation_canonical_passes (trace : Trace) :
+    canonicalView wrongValidationEffects validation budget InboxValidation.Values.missingLane bytes 286720#u64 trace =
+      corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.missingLane]) := by
+  simp only [canonicalView, wrongValidationEffects, normalEffects, effects, attempt, bind_tc_ok]
+  change (do
+    let different ← alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 bytes bytes
+    if different then corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.missingLane])
+    else
+      validatedView wrongValidationEffects validation budget InboxValidation.Values.missingLane 286720#u64
+        (trace ++ [Event.encodedInbox InboxValidation.Values.missingLane])) = _
+  rw [InboxLoadLibrary.vec_ne]
+  simp only [ne_eq, not_true_eq_false, decide_false, bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+  exact missing_lane_validated_rejected _
+
+theorem validation_digest_passes (trace : Trace) :
+    digestView wrongValidationEffects validation budget InboxValidation.Values.missingLane bytes storedDigest 286720#u64 trace =
+      corrupt (trace ++ [Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.missingLane]) := by
+  simp only [digestView, wrongValidationEffects, normalEffects, effects, bind_tc_ok]
+  change (if digest.val ≠ storedDigest.val then corrupt (trace ++ [Event.digested bytes.val])
+    else canonicalView wrongValidationEffects validation budget InboxValidation.Values.missingLane bytes 286720#u64
+      (trace ++ [Event.digested bytes.val])) = _
+  have same : digest.val = storedDigest.val := rfl
+  simp only [same, ne_eq, not_true_eq_false, ↓reduceIte]
+  rw [validation_canonical_passes]
+  simp [corrupt, List.append_assoc]
+
+theorem wrong_validation_body_rejected (trace : Trace) :
+    bodyView wrongValidationEffects validation budget 286720#u64 trace =
+      corrupt (trace ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.missingLane]) := by
+  simp only [bodyView, wrongValidationEffects, normalEffects, effects, attempt, bind_tc_ok]
+  change digestView wrongValidationEffects validation budget InboxValidation.Values.missingLane bytes storedDigest 286720#u64
+    ((trace ++ [Event.bodyQuery bodyStatement]) ++ [Event.decodedInbox bytes.val]) = _
+  rw [validation_digest_passes]
+  simp [corrupt, List.append_assoc]
+
+def rejectedValidationTrace : Trace :=
+  beforeBody ++ [Event.bodyQuery bodyStatement, Event.decodedInbox bytes.val, Event.digested bytes.val, Event.encodedInbox InboxValidation.Values.missingLane]
+
+theorem wrong_validation_model_rejected (trace : Trace) :
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongValidationEffects trace =
+      .ok (.Err .CorruptStore, trace ++ rejectedValidationTrace) := by
+  change fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    (effects (.Ok InboxValidation.Values.missingLane) bytes bytes storedDigest 286720#i64
+      InboxLoadConfig.LifecycleValues.normal) trace = _
+  rw [fixture_to_body]
+  change bodyView wrongValidationEffects validation budget 286720#u64 (trace ++ beforeBody) = _
+  rw [wrong_validation_body_rejected]
+  simp [corrupt, rejectedValidationTrace, List.append_assoc]
+
+theorem wrong_validation_contract_rejected : ¬ FullLoadContract load_using := by
+  intro contract
+  have contradiction := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongValidationEffects ComposedConfig.standard_graphic_contract
+    wrong_validation_represented []
+  change load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic wrongValidationEffects [] =
+    fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ wrongValidationEffects [] at contradiction
+  rw [actual_wrong_validation_accepts, wrong_validation_model_rejected] at contradiction
+  simp [Result.ok.injEq] at contradiction
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_validation_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.missing_lane_validation_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.missing_lane_validated_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.validation_canonical_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.validation_digest_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_validation_body_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_validation_model_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.wrong_validation_contract_rejected

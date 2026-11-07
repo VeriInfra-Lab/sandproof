@@ -13,7 +13,9 @@ mod observation;
 mod public;
 mod renewal;
 mod request;
+mod resume;
 mod terminal;
+mod unload;
 
 pub use access::{AccessIdentityError, LifecycleAccessIdentity};
 pub use authority::{
@@ -35,16 +37,21 @@ pub use observation::{
 };
 pub use public::{
     CreateParameters, PublicAcceptance, PublicCreateRequest, PublicDestroyRequest,
-    PublicRequestWindow, PublicSessionPhase, PublicSessionView, PublicUnloadRequest,
+    PublicRequestWindow, PublicResumeRequest, PublicSessionPhase, PublicSessionView,
+    PublicUnloadRequest,
 };
 pub use renewal::{ConfirmedRenewal, RenewalConfirmation};
 pub use request::{LifecycleOperation, LifecycleRequest, ValidationError};
+pub use resume::{CurrentResumeReadiness, ResumeObservation};
 pub use terminal::{TerminalLifecycleObservation, TerminalStatus};
+pub use unload::{UnloadObservation, UnloadOutcome, UnloadedFacts};
 
 /// The only supported lifecycle wire format. Mismatches are refused.
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 pub const LIFECYCLE_PATH: &str = "/internal/lifecycle";
 pub const CREATE_OBSERVATION_PATH: &str = "/internal/lifecycle/create-observation";
+pub const UNLOAD_OBSERVATION_PATH: &str = "/internal/lifecycle/unload-observation";
+pub const RESUME_OBSERVATION_PATH: &str = "/internal/lifecycle/resume-observation";
 pub const TERMINAL_OBSERVATION_PATH: &str = "/internal/lifecycle/terminal-observation";
 /// Terminal envelopes carry no Create options; fixed full identities fit here.
 pub const TERMINAL_RESULT_BODY_BYTES: usize = 8192;

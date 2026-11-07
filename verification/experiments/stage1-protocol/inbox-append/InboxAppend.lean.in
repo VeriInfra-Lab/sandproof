@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendDestroy
+import SandboxModel.Lifecycle.Protocol.InboxAppendNonterminal
+import SandboxModel.Lifecycle.Protocol.InboxAppendCallerModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxAppend
+
+/-- Every existing-session operation, with exact first rejection and entire
+post-state, for arbitrary represented inboxes and decoded intents. -/
+theorem existing_contract : FullExistingContract Inbox.record_existing := by
+  intro inbox s intent bound
+  by_cases nonterminal : isDestroy intent.request.operation = false
+  · exact nonterminal_contract inbox s intent bound nonterminal
+  · have operation : intent.request.operation = .Destroy := by
+      cases operation : intent.request.operation <;> simp_all [isDestroy]
+    exact destroy_contract inbox s intent bound operation
+
+/-- The actual public recording caller reaches the proved existing-session
+body after full retained-key lookup and first session-ID selection. -/
+theorem record_existing_contract : FullRecordExistingContract Inbox.record := by
+  intro inbox intent s selected
+  rw [record_existing_path inbox intent s selected]
+  exact existing_contract inbox s intent (selected_bound inbox intent s selected)
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.existing_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.record_existing_contract

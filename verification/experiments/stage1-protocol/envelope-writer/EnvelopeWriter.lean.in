@@ -1,0 +1,305 @@
+import SandboxModel.Lifecycle.Protocol.EnvelopeWriterContract
+import SandboxModel.Lifecycle.Protocol.EnvelopeWriterWitnesses
+import SandboxModel.Lifecycle.Protocol.EnvelopeBudget
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std
+open SandproofBoundedWriterRust
+open sandproof_controller_service.template_registry.evidence
+open SandboxModel.Boundaries.BoundedWriter
+open SandboxModel.Boundaries.BoundedWriter.Refinement
+namespace SandboxModel.Stage1Protocol.EnvelopeWriter
+
+/-- Every traced call is the actual generated write, including the refused one. -/
+theorem trace_has_actual_history {B R : Type} (write : ActualWrite B R)
+    {initial final chunks result} (trace : SerializeTrace write initial chunks result final) :
+    ∃ entries, RustHistory write initial entries final := by
+  induction trace with
+  | done state => exact ⟨[], .nil state⟩
+  | accepted head _ ih =>
+    obtain ⟨entries, history⟩ := ih
+    exact ⟨_, .cons head history⟩
+  | refused head => exact ⟨_, .cons head (.nil _)⟩
+
+theorem successful_trace_has_complete_bytes {B R : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view) {initial final chunks result}
+    (trace : SerializeTrace (write_bounded ops) initial chunks result final)
+    (success : result = .Ok ()) :
+    view final.bytes = view initial.bytes ++ chunkBytes chunks ∧
+      final.exceeded = initial.exceeded := by
+  induction trace with
+  | done state => simp [chunkBytes]
+  | @accepted initial middle final chunk count tail result head rest ih =>
+    have step := actual_write_contract ops view laws initial chunk (.Ok count) middle head
+    have content := step.content
+    have tail := ih success
+    have appended : view middle.bytes = view initial.bytes ++ chunk.val := content.2.1
+    constructor
+    · simpa [chunkBytes, writerView, outcomeView, appended, List.append_assoc] using tail.1
+    · exact tail.2.trans content.2.2.2
+  | refused head => cases success
+
+theorem actual_encode_retains_call_and_finish {B R S T : Type} (ops : BoundedBuffer B R)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (created : ops.new_buffer = .ok buffer) :
+    encode_bounded_using ops serializer value limit = (do
+      let (result, final) ← serializer.serialize ⟨buffer, limit, false⟩ value
+      finish_bounded ops final result) := by
+  simp [encode_bounded_using, created]
+
+theorem actual_encode_normal_call {B R S T : Type} (ops : BoundedBuffer B R)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (result : JsonResult) (final : ActualWriter B R)
+    (created : ops.new_buffer = .ok buffer)
+    (called : serializer.serialize ⟨buffer, limit, false⟩ value = .ok (result, final)) :
+    encode_bounded_using ops serializer value limit = finish_bounded ops final result := by
+  simp [encode_bounded_using, created, called]
+
+theorem actual_encode_keeps_serializer_error {B R S T : Type} (ops : BoundedBuffer B R)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (error : serde_json.error.Error) (final : ActualWriter B R)
+    (created : ops.new_buffer = .ok buffer)
+    (called : serializer.serialize ⟨buffer, limit, false⟩ value = .ok (.Err error, final)) :
+    encode_bounded_using ops serializer value limit =
+      .ok (.Err (if final.exceeded then .MaintenanceCapacity else .Json error)) := by
+  rw [actual_encode_normal_call ops serializer value limit buffer (.Err error) final created called]
+  cases flag : final.exceeded <;> simp [finish_bounded, flag,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+
+theorem actual_encode_success_is_exact {B R S T : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (final : ActualWriter B R) (chunks : List (Slice U8)) (bytes : alloc.vec.Vec U8)
+    (created : ops.new_buffer = .ok buffer) (empty : view buffer = [])
+    (called : serializer.serialize ⟨buffer, limit, false⟩ value = .ok (.Ok (), final))
+    (trace : SerializeTrace (write_bounded ops) ⟨buffer, limit, false⟩ chunks (.Ok ()) final)
+    (encoded : encode_bounded_using ops serializer value limit = .ok (.Ok bytes)) :
+    bytes.val = chunkBytes chunks ∧ bytes.val.length ≤ limit.val := by
+  have actual := actual_encode_normal_call ops serializer value limit buffer (.Ok ()) final created called
+  have finished : finish_bounded ops final (.Ok ()) = .ok (.Ok bytes) := actual.symm.trans encoded
+  have complete := successful_trace_has_complete_bytes ops view laws trace rfl
+  have flag : final.exceeded = false := complete.2
+  have contents : view final.bytes = chunkBytes chunks := by simpa [empty] using complete.1
+  have related := actual_finish_contract ops view laws final (.Ok ()) (.Ok bytes) finished
+  have exactBytes : bytes.val = chunkBytes chunks := by
+    simpa [finishedView, finishSpec, writerView, flag, serializationView, contents] using related
+  obtain ⟨entries, history⟩ := trace_has_actual_history _ trace
+  have bounded := actual_history_preserves_bound ops view laws history (by simp [IsBounded, writerView, empty])
+  have finalBound := actual_finish_success_is_bounded ops view laws final (.Ok ()) bytes bounded finished
+  have sameLimit := history_preserves_limit
+    (actual_history_to_model view _ (actual_write_contract ops view laws) history)
+  change final.limit.val = limit.val at sameLimit
+  rw [sameLimit] at finalBound
+  exact ⟨exactBytes, finalBound⟩
+
+theorem actual_encode_complete_trace_returns {B R S T : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (final : ActualWriter B R) (chunks : List (Slice U8)) (bytes : alloc.vec.Vec U8)
+    (created : ops.new_buffer = .ok buffer) (empty : view buffer = [])
+    (called : serializer.serialize ⟨buffer, limit, false⟩ value = .ok (.Ok (), final))
+    (trace : SerializeTrace (write_bounded ops) ⟨buffer, limit, false⟩ chunks (.Ok ()) final)
+    (moved : ops.into_bytes final.bytes = .ok bytes) :
+    encode_bounded_using ops serializer value limit = .ok (.Ok bytes) ∧
+      bytes.val = chunkBytes chunks ∧ bytes.val.length ≤ limit.val := by
+  have flag := (successful_trace_has_complete_bytes ops view laws trace rfl).2
+  have encoded : encode_bounded_using ops serializer value limit = .ok (.Ok bytes) := by
+    rw [actual_encode_normal_call ops serializer value limit buffer (.Ok ()) final created called]
+    simp [finish_bounded, flag, core.result.Result.Insts.CoreOpsTry.branch, moved]
+  exact ⟨encoded, actual_encode_success_is_exact ops view laws serializer value limit buffer final chunks bytes
+    created empty called trace encoded⟩
+
+theorem actual_encoder_standard_success {B R S T : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : Serializer S B R T) (rendered : T → WireBytes)
+    (standard : StandardCalls ops serializer rendered)
+    (value : T) (limit : Usize) (bytes : alloc.vec.Vec U8)
+    (empty : ∀ buffer, ops.new_buffer = .ok buffer → view buffer = [])
+    (success : encode_bounded_using ops serializer value limit = .ok (.Ok bytes)) :
+    bytes.val = rendered value ∧ bytes.val.length ≤ limit.val := by
+  unfold encode_bounded_using at success
+  cases created : ops.new_buffer with
+  | div => simp [created] at success
+  | vis event continuation => simp [created] at success
+  | ret buffer =>
+    simp only [created, bind_tc_ok] at success
+    cases called : serializer.serialize ⟨buffer, limit, false⟩ value with
+    | div => simp [called] at success
+    | vis event continuation => simp [called] at success
+    | ret output =>
+      rcases output with ⟨result, final⟩
+      simp only [called, bind_tc_ok] at success
+      change finish_bounded ops final result = .ok (.Ok bytes) at success
+      obtain ⟨chunks, renderedChunks, trace⟩ := standard.traced _ value result final called
+      cases result with
+      | Err error =>
+        have impossible := actual_encode_keeps_serializer_error ops serializer value limit buffer error final created called
+        have actual := actual_encode_normal_call ops serializer value limit buffer (.Err error) final created called
+        rw [actual, success] at impossible
+        simp at impossible
+      | Ok valueUnit =>
+        cases valueUnit
+        have encoded : encode_bounded_using ops serializer value limit = .ok (.Ok bytes) := by
+          rw [actual_encode_normal_call ops serializer value limit buffer (.Ok ()) final created called]
+          exact success
+        have exactBytes := actual_encode_success_is_exact ops view laws serializer value limit buffer final chunks bytes
+          created (empty buffer created) called trace encoded
+        exact ⟨exactBytes.1.trans renderedChunks, exactBytes.2⟩
+
+theorem accepted_writer_roundtrip {B R S : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : Serializer S B R EnvelopeBytes.Accepted)
+    (rendered : EnvelopeBytes.Accepted → WireBytes)
+    (standard : StandardCalls ops serializer rendered)
+    (library : EnvelopeBytes.JsonLibrary) (binding : EnvelopeBytes.SliceContract library)
+    (value : EnvelopeBytes.Accepted) (domain : EnvelopeBytes.InputDomain value)
+    (limit : Usize) (actual reference : alloc.vec.Vec U8)
+    (empty : ∀ buffer, ops.new_buffer = .ok buffer → view buffer = [])
+    (emitted : library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok reference))
+    (sameRendering : rendered value = reference.val)
+    (success : encode_bounded_using ops serializer value limit = .ok (.Ok actual)) :
+    library.decodeAccepted actual.slice = .ok (.Ok value) ∧ actual.val.length ≤ limit.val := by
+  have complete := actual_encoder_standard_success ops view laws serializer rendered standard value limit actual empty success
+  have same : actual = reference := alloc.vec.Vec.ext _ _ (complete.1.trans sameRendering)
+  exact ⟨same ▸ EnvelopeBytes.accepted_conditional_roundtrip library binding value reference domain emitted, complete.2⟩
+
+theorem recorded_writer_roundtrip {B R S : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : Serializer S B R EnvelopeBytes.Recorded)
+    (rendered : EnvelopeBytes.Recorded → WireBytes)
+    (standard : StandardCalls ops serializer rendered)
+    (library : EnvelopeBytes.JsonLibrary) (binding : EnvelopeBytes.SliceContract library)
+    (value : EnvelopeBytes.Recorded) (domain : EnvelopeBytes.InputDomain value.intent)
+    (limit : Usize) (actual reference : alloc.vec.Vec U8)
+    (empty : ∀ buffer, ops.new_buffer = .ok buffer → view buffer = [])
+    (emitted : library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok reference))
+    (sameRendering : rendered value = reference.val)
+    (success : encode_bounded_using ops serializer value limit = .ok (.Ok actual)) :
+    library.decodeRecorded actual.slice = .ok (.Ok value) ∧ actual.val.length ≤ limit.val := by
+  have complete := actual_encoder_standard_success ops view laws serializer rendered standard value limit actual empty success
+  have same : actual = reference := alloc.vec.Vec.ext _ _ (complete.1.trans sameRendering)
+  exact ⟨same ▸ EnvelopeBytes.recorded_conditional_roundtrip library binding value reference domain emitted, complete.2⟩
+
+open SandboxModel.Boundaries.BoundedWriter.Refinement.Examples
+
+/-- Normal allocation in the existing ordinary Vec model. The policy called
+here is the actual generated Rust writer, not a replacement writer algorithm. -/
+theorem fitting_chunk_is_accepted (before : ActualWriter Buffer Unit) (chunk : Slice U8)
+    (fits : before.bytes.bytes.val.length + chunk.val.length ≤ before.limit.val) :
+    ∃ after, write_bounded (ordinaryOps false) before chunk = .ok (.Ok (Slice.len chunk), after) := by
+  have representable : before.bytes.bytes.val.length + chunk.val.length ≤ Usize.max := by scalar_tac
+  let length := Usize.ofNatCore (before.bytes.bytes.val.length + chunk.val.length) (by scalar_tac)
+  have added : Usize.checked_add (alloc.vec.Vec.len before.bytes.bytes) (Slice.len chunk) = some length := by
+    have arithmetic := Usize.checked_add_bv_spec (alloc.vec.Vec.len before.bytes.bytes) (Slice.len chunk)
+    cases equation : Usize.checked_add (alloc.vec.Vec.len before.bytes.bytes) (Slice.len chunk) with
+    | none => simp only [equation] at arithmetic; scalar_tac
+    | some sum =>
+      simp only [equation] at arithmetic
+      have equal : sum = length := by scalar_tac
+      simp [equal]
+  have within : length.val ≤ before.limit.val := fits
+  simp only [write_bounded, ordinaryOps, bind_tc_ok, added, lift]
+  simp only [show ¬length > before.limit by scalar_tac, ↓reduceIte]
+  split
+  · simp only [reserveBuffer, Bool.false_eq_true, ↓reduceIte,
+      show before.bytes.bytes.val.length + (Slice.len chunk).val ≤ Usize.max from representable]
+    simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+      appendBuffer, List.length_append]
+  · rename_i enough
+    have room : before.bytes.bytes.val.length + chunk.val.length ≤ before.bytes.capacity.val := by
+      change ¬before.bytes.capacity.val < length.val at enough
+      exact Nat.le_of_not_lt enough
+    simp [appendBuffer, room]
+
+theorem fitting_finite_chunks_have_complete_trace (before : ActualWriter Buffer Unit)
+    (chunks : List (Slice U8))
+    (fits : before.bytes.bytes.val.length + (chunkBytes chunks).length ≤ before.limit.val) :
+    ∃ final, SerializeTrace (write_bounded (ordinaryOps false)) before chunks (.Ok ()) final := by
+  induction chunks generalizing before with
+  | nil => exact ⟨before, .done before⟩
+  | cons chunk tail ih =>
+    have size : (chunkBytes (chunk :: tail)).length = chunk.val.length + (chunkBytes tail).length := by
+      simp [chunkBytes]
+    have fitsHead : before.bytes.bytes.val.length + chunk.val.length ≤ before.limit.val := by omega
+    obtain ⟨middle, head⟩ := fitting_chunk_is_accepted before chunk fitsHead
+    have step := actual_write_contract (ordinaryOps false) ordinaryView
+      (ordinary_operations_satisfy_laws false) before chunk (.Ok (Slice.len chunk)) middle head
+    have contents : middle.bytes.bytes.val = before.bytes.bytes.val ++ chunk.val := step.content.2.1
+    have limit : middle.limit.val = before.limit.val := step.limit_preserved
+    have fitsTail : middle.bytes.bytes.val.length + (chunkBytes tail).length ≤ middle.limit.val := by
+      rw [contents, List.length_append, limit]
+      omega
+    obtain ⟨final, rest⟩ := ih middle fitsTail
+    exact ⟨final, .accepted head rest⟩
+
+theorem actual_encoder_result_contract {B R S T : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view) (serializer : Serializer S B R T) :
+    EncodeResultContract ops view serializer (encode_bounded_using ops serializer) := by
+  intro value limit buffer result final output created called encoded
+  have same := actual_encode_normal_call ops serializer value limit buffer result final created called
+  exact actual_finish_contract ops view laws final result output (same.symm.trans encoded)
+
+theorem actual_encoder_full_contract {B R S T : Type} (ops : BoundedBuffer B R)
+    (view : B → WireBytes) (laws : BufferLaws ops view) (serializer : Serializer S B R T)
+    (rendered : T → WireBytes) (standard : StandardCalls ops serializer rendered)
+    (empty : ∀ buffer, ops.new_buffer = .ok buffer → view buffer = []) :
+    EncoderContract ops view serializer rendered (encode_bounded_using ops serializer) :=
+  ⟨actual_encoder_result_contract ops view laws serializer,
+    fun value limit bytes success => actual_encoder_standard_success ops view laws serializer rendered standard
+      value limit bytes empty success⟩
+
+/-- The serializer may diverge or expose an effect; the exact generated bind
+retains that computation rather than making a normal success out of it. -/
+theorem actual_encode_keeps_divergence {B R S T : Type} (ops : BoundedBuffer B R)
+    (serializer : Serializer S B R T) (value : T) (limit : Usize) (buffer : B)
+    (created : ops.new_buffer = .ok buffer)
+    (called : serializer.serialize ⟨buffer, limit, false⟩ value = .div) :
+    encode_bounded_using ops serializer value limit = .div := by
+  simp [encode_bounded_using, created, called]
+
+/-- A realizable instance of the same complete contract used in the mutant
+refutation; the witness is a library call, not a stand-in JSON implementation. -/
+theorem one_chunk_correct_full_contract (refuse : Bool) :
+    EncoderContract (ordinaryOps refuse) ordinaryView (oneChunkSerializer refuse) Slice.val
+      (encode_bounded_using (ordinaryOps refuse) (oneChunkSerializer refuse)) := by
+  apply actual_encoder_full_contract _ _ (ordinary_operations_satisfy_laws refuse) _ _
+    (one_chunk_library_satisfies_standard_calls refuse)
+  intro buffer created
+  have same : buffer = emptyBuffer := by simpa [ordinaryOps] using created.symm
+  simp [same, ordinaryView, emptyBuffer]
+
+theorem correct_encoder_keeps_allocation_error :
+    encode_bounded_using (ordinaryOps true) (oneChunkSerializer true) oneByte 1#usize =
+      .ok (.Err (.Json ⟨7⟩)) := by
+  simpa [initial] using actual_encode_keeps_serializer_error (ordinaryOps true) (oneChunkSerializer true)
+    oneByte 1#usize emptyBuffer ⟨7⟩ (initial 1#usize) rfl one_chunk_allocation_failure_call
+
+theorem correct_encoder_has_nonempty_success :
+    encode_bounded_using (ordinaryOps false) (oneChunkSerializer false) oneByte 1#usize =
+      .ok (.Ok withByte.bytes) := by
+  rw [actual_encode_normal_call (ordinaryOps false) (oneChunkSerializer false) oneByte 1#usize emptyBuffer
+    (.Ok ()) ⟨withByte, 1#usize, false⟩ rfl one_chunk_normal_call]
+  simp [finish_bounded, ordinaryOps, core.result.Result.Insts.CoreOpsTry.branch]
+
+end SandboxModel.Stage1Protocol.EnvelopeWriter
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.trace_has_actual_history
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.successful_trace_has_complete_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_retains_call_and_finish
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_normal_call
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_keeps_serializer_error
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_success_is_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_complete_trace_returns
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encoder_standard_success
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.accepted_writer_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.recorded_writer_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.fitting_chunk_is_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.fitting_finite_chunks_have_complete_trace
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encoder_result_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encoder_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.actual_encode_keeps_divergence
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.one_chunk_correct_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.correct_encoder_keeps_allocation_error
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeWriter.correct_encoder_has_nonempty_success

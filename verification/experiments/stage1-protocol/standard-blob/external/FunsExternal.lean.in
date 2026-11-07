@@ -1,0 +1,73 @@
+import SandproofLoadBlob.ReadTypeBindings
+
+open Aeneas Aeneas.Std
+namespace SandproofLoadBlobRust
+
+/-- Normal fixed usize index view; metadata and error identity must be supplied
+from the same original statement. This is a finite provider candidate. -/
+def Usize.Insts.RusqliteRowRowIndex.idx (index : Usize)
+    (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Usize rusqlite.error.Error) :=
+  if index.val < statement.columns.val then .ok (.Ok index)
+  else .ok (.Err (statement.invalidIndex index))
+
+/-- Fixed Vec<u8> conversion only: complete borrowed BLOB bytes are copied in
+the normal finite A6 representation. Other SQL value categories reject.
+This model does not claim allocation, unwind or library machine refinement. -/
+def alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8) rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Blob bytes => .ok (.Ok ⟨bytes⟩)
+  | _ => .ok (.Err invalidType)
+
+/-- Keeps the two original dictionaries, first index error, full raw value,
+conversion outcome and original mapped error. Only their fixed actual
+usize/Vec instance conformance is proposed; not arbitrary user dictionaries. -/
+def rusqlite.row.Row.get {I T : Type} (indexDictionary : rusqlite.row.RowIndex I)
+    (fromSqlDictionary : rusqlite.types.from_sql.FromSql T) (row : rusqlite.row.Row)
+    (index : I) : Result (core.result.Result T rusqlite.error.Error) := do
+  let checked ← indexDictionary.idx index row.statement
+  match checked with
+  | .Err error => .ok (.Err error)
+  | .Ok checked =>
+    let converted ← fromSqlDictionary.column_result (row.column checked)
+    match converted with
+    | .Ok value => .ok (.Ok value)
+    | .Err error => .ok (.Err (row.conversionError checked (row.column checked) error))
+
+/-- Proposed exact fixed count/error observation for one original statement.
+The actual guard body was captured, but opaque library Error construction is
+not translated by the fixed backend. This definition is a finite conformance
+condition, not a machine proof of the library or a whole-execute binder law. -/
+def rusqlite.statement.Statement.ensure_parameter_count
+    (statement : rusqlite.statement.Statement) (requested : Usize) :
+    Result (core.result.Result Unit rusqlite.error.Error) :=
+  if statement.canonical.expectedParameters = requested.val then .ok (.Ok ())
+  else .ok (.Err (statement.canonical.countError requested.val))
+
+/-- Proposed fixed query_row library interpretation. Preparation, the actual
+Params dictionary, first-row/no-row/step-error observation and the actual
+callback remain separate. expectedRow stands only for Rows::get_expected_row
+on the same original bound statement. It is not an inbox/transaction oracle.
+Normal ignored reset/finalization results do not imply a clean DB poststate. -/
+def rusqlite.Connection.query_row {T P F : Type}
+    (parameters : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (connection : rusqlite.Connection) (sql : Str) (values : P) (closure : F) :
+    Result (core.result.Result T rusqlite.error.Error) := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err error)
+  | .Ok count =>
+    let (bound, statement) ← parameters.__bind_in values (issuedReadStatement connection sql count)
+    match bound with
+    | .Err error => .ok (.Err error)
+    | .Ok () =>
+      let read ← connection.expectedRow sql statement
+      match read with
+      | .Err error => .ok (.Err error)
+      | .Ok row => callback.call_once closure row
+
+end SandproofLoadBlobRust

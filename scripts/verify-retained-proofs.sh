@@ -3,10 +3,17 @@ set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 # Check every retained project proof, including files omitted by an import
-# aggregator. The additive Linux Lake view also declares the first-chain
-# extraction library; it is checked against the unchanged base dependencies.
+# aggregator. V3 files requiring different generated views must first have a
+# current complete module receipt and exact physical-file coverage. They are
+# checked in those original views, never silently omitted from acceptance.
+# The other files use the additive Linux Lake view and unchanged dependencies.
+SCOPED_PROOFS="$(mktemp "${TMPDIR:-/tmp}/sandproof-retained-views.XXXXXXXX")"
+bash scripts/python-entry.sh tools/proof_batch.py retained-protocol-files > "$SCOPED_PROOFS"
 PROOF_TARGETS=(SandboxModel)
 while IFS= read -r proof_file; do
+  if grep -Fxq "$proof_file" "$SCOPED_PROOFS"; then
+    continue
+  fi
   proof_module="${proof_file%.lean}"
   PROOF_TARGETS+=("${proof_module//\//.}")
 done < <(rg --files SandboxModel -g '*.lean' | sort)

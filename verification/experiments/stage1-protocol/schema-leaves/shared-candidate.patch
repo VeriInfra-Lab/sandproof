@@ -1,0 +1,161 @@
+--- a/lakefile.toml
++++ b/lakefile.toml
+@@ -10,0 +11 @@
++leanOptions = { weak.linter.style.nameCheck = false }
+@@ -83,0 +85,4 @@
++
++[[lean_lib]]
++name = "SandproofProtocolResult"
++srcDir = "verification/aeneas/stage1-protocol/schema-result"
+--- a/verification/extract-foundations/src/lib.rs
++++ b/verification/extract-foundations/src/lib.rs
+@@ -195,0 +196,2 @@
++
++pub mod protocol_leaves;
+--- a/scripts/regenerate-foundations-lean.sh
++++ b/scripts/regenerate-foundations-lean.sh
+@@ -35,0 +36,7 @@
++  --start-from crate::protocol_leaves::session_decode \
++  --start-from crate::protocol_leaves::center_decode \
++  --start-from crate::protocol_leaves::incarnation_decode \
++  --start-from crate::protocol_leaves::capture_decode \
++  --start-from crate::protocol_leaves::request_window_decode \
++  --start-from crate::protocol_leaves::request_sequence_decode \
++  --start-from crate::protocol_leaves::retention_window_decode \
+--- a/verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean
++++ b/verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean
+@@ -0,0 +1 @@
++import SandproofProtocolResult.Funs
+@@ -250,0 +252,4 @@
++
++namespace Aeneas.Std
++abbrev core.result.Result.map := @SandproofProtocolResultRust.core.result.Result.map
++end Aeneas.Std
+--- /dev/null
++++ b/verification/extract-foundations/src/protocol_leaves.rs
+@@ -0,0 +1,125 @@
++//! Candidate extra roots for the original V0 generation, not a second leaf model.
++use sandproof_protocol::lifecycle::{
++    CaptureId, CenterId, IncarnationId, RequestSequence, RequestWindowId, RetentionWindowId,
++    SessionId,
++};
++use serde::{Deserialize, Deserializer};
++
++pub fn session_decode<'de, D: Deserializer<'de>>(input: D) -> Result<SessionId, D::Error> {
++    SessionId::deserialize(input)
++}
++
++pub fn center_decode<'de, D: Deserializer<'de>>(input: D) -> Result<CenterId, D::Error> {
++    CenterId::deserialize(input)
++}
++
++pub fn incarnation_decode<'de, D: Deserializer<'de>>(input: D) -> Result<IncarnationId, D::Error> {
++    IncarnationId::deserialize(input)
++}
++
++pub fn capture_decode<'de, D: Deserializer<'de>>(input: D) -> Result<CaptureId, D::Error> {
++    CaptureId::deserialize(input)
++}
++
++pub fn request_window_decode<'de, D: Deserializer<'de>>(
++    input: D,
++) -> Result<RequestWindowId, D::Error> {
++    RequestWindowId::deserialize(input)
++}
++
++pub fn request_sequence_decode<'de, D: Deserializer<'de>>(
++    input: D,
++) -> Result<RequestSequence, D::Error> {
++    RequestSequence::deserialize(input)
++}
++
++pub fn retention_window_decode<'de, D: Deserializer<'de>>(
++    input: D,
++) -> Result<RetentionWindowId, D::Error> {
++    RetentionWindowId::deserialize(input)
++}
++
++// A separate generation checks this original standard-library callback body.
++pub fn result_map<T, E, U, F: FnOnce(T) -> U>(value: Result<T, E>, op: F) -> Result<U, E> {
++    value.map(op)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    macro_rules! identifier_case {
++        ($test:ident, $role:ty, $text:path) => {
++            #[test]
++            fn $test() {
++                for text in ["id.A-1_".to_owned(), "a".repeat(128)] {
++                    let bytes = serde_json::to_vec(&text).unwrap();
++                    let value: $role = serde_json::from_slice(&bytes).unwrap();
++                    assert_eq!($text(&value), text);
++                    assert_eq!(serde_json::to_vec(&value).unwrap(), bytes);
++                }
++                let escaped: $role = serde_json::from_slice(br#""id\u002eA-1_""#).unwrap();
++                assert_eq!($text(&escaped), "id.A-1_");
++                for text in ["".to_owned(), "a b".to_owned(), "a".repeat(129)] {
++                    let bytes = serde_json::to_vec(&text).unwrap();
++                    assert!(serde_json::from_slice::<$role>(&bytes).is_err());
++                }
++                let invalid = serde_json::from_slice::<$role>(br#""" x"#).unwrap_err();
++                assert_eq!(invalid.to_string(), "invalid opaque identifier");
++                assert_eq!(invalid.classify(), serde_json::error::Category::Data);
++                let trailing = serde_json::from_slice::<$role>(br#""good" x"#).unwrap_err();
++                assert_eq!(trailing.classify(), serde_json::error::Category::Syntax);
++            }
++        };
++    }
++
++    macro_rules! counter_case {
++        ($test:ident, $role:ty) => {
++            #[test]
++            fn $test() {
++                for number in [1, 2, u64::MAX] {
++                    let bytes = serde_json::to_vec(&number).unwrap();
++                    let value: $role = serde_json::from_slice(&bytes).unwrap();
++                    assert_eq!(value.get(), number);
++                    assert_eq!(serde_json::to_vec(&value).unwrap(), bytes);
++                }
++                let invalid = serde_json::from_slice::<$role>(b"0 x").unwrap_err();
++                assert_eq!(invalid.to_string(), "invalid or exhausted internal counter");
++                assert_eq!(invalid.classify(), serde_json::error::Category::Data);
++                let trailing = serde_json::from_slice::<$role>(b"1 x").unwrap_err();
++                assert_eq!(trailing.classify(), serde_json::error::Category::Syntax);
++                for bytes in [b"-1".as_slice(), b"18446744073709551616", b"null"] {
++                    assert!(serde_json::from_slice::<$role>(bytes).is_err());
++                }
++            }
++        };
++    }
++
++    fn session_text(value: &SessionId) -> &str {
++        value.as_protocol_id().as_str()
++    }
++    identifier_case!(session_preserves_original_leaf, SessionId, session_text);
++    identifier_case!(center_preserves_original_leaf, CenterId, CenterId::as_str);
++    counter_case!(incarnation_preserves_original_leaf, IncarnationId);
++    counter_case!(capture_preserves_original_leaf, CaptureId);
++    counter_case!(request_window_preserves_original_leaf, RequestWindowId);
++    counter_case!(request_sequence_preserves_original_leaf, RequestSequence);
++    counter_case!(retention_window_preserves_original_leaf, RetentionWindowId);
++
++    #[test]
++    fn original_result_map_only_calls_on_success() {
++        let mut called = 0;
++        let failure = result_map::<u64, _, u64, _>(Err("original"), |_| {
++            called += 1;
++            2
++        });
++        assert_eq!(failure, Err("original"));
++        assert_eq!(called, 0);
++        let success = result_map::<_, &str, _, _>(Ok(7), |value| {
++            called += 1;
++            value + 1
++        });
++        assert_eq!(success, Ok(8));
++        assert_eq!(called, 1);
++    }
++}

@@ -1,0 +1,101 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
+import SandboxModel.Lifecycle.Protocol.InboxRecordConfigFrame
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+import SandboxModel.Lifecycle.Protocol.InboxPosition
+import SandboxModel.Lifecycle.Protocol.InboxAdmission
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxSynchronous
+open InboxRecord InboxRecordTotal
+noncomputable section
+
+-- A decoded load supplies the representation condition; record does not need
+-- another external assumption about its own configuration frame.
+theorem loaded_representable {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : InboxLoad.DecodedStringsRepresentable io)
+    (output : Inbox) (before after : E)
+    (returned : load_using saved terminal renewal unload graphic io before =
+      .ok (.Ok (some output), after)) :
+    ConfigValidation.Representable output.config := by
+  obtain ⟨reserve, bodyStart, evidence⟩ := InboxLoad.full_load_success_body
+    saved terminal renewal unload graphic graphicLaw io represented output before after returned
+  rcases evidence with ⟨bytes, sha, afterBytes, afterDecode, observed, afterEncoding,
+    _, decoded, _, _, _, _, _⟩
+  exact represented afterBytes (alloc.vec.Vec.deref bytes) output afterDecode decoded
+
+-- This relates the same objects and effect state across actual value calls.
+-- The new-key/success premises describe the caller branch where save follows;
+-- they do not strengthen the public request contract or assert persistence.
+theorem load_record_save_connected {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (readIO : InboxLoadEffects E) (writeIO : InboxSaveEffects E)
+    (represented : InboxLoad.DecodedStringsRepresentable readIO)
+    (loaded : Inbox) (before afterLoad : E)
+    (loadReturned : load_using saved terminal renewal unload graphic readIO before =
+      .ok (.Ok (some loaded), afterLoad))
+    (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext)
+    (guarded : authenticated loaded intent context = .ok (.Ok ())) :
+    ∃ reserve bodyStart out,
+      InboxLoad.BodyEvidence readIO
+        (InboxValidation.inboxView saved terminal renewal.encode unload.encode)
+        (fun config => .ok (InboxLoad.budgetValue config)) reserve bodyStart loaded ∧
+      (InboxAdmission.ContextMatches loaded context ∧ Validation.ValidEnvelope intent context) ∧
+      Inbox.record loaded intent = .ok out ∧ RecordPost loaded intent out ∧
+      out.2.config = loaded.config ∧
+      (∀ s e, out.1 = .Ok (s, e) →
+        ∃ state, out.2.state s e = .ok state ∧ state.intent = intent) ∧
+      (loaded.find intent = .ok (.Ok none) → ∀ s e, out.1 = .Ok (s, e) →
+        save_using saved terminal renewal unload graphic writeIO out.2 afterLoad =
+          InboxSave.saveView saved terminal renewal.encode unload.encode writeIO out.2 afterLoad) := by
+  obtain ⟨reserve, bodyStart, evidence⟩ := InboxLoad.full_load_success_body
+    saved terminal renewal unload graphic graphicLaw readIO represented loaded before afterLoad loadReturned
+  have bounded := loaded_representable saved terminal renewal unload graphic graphicLaw
+    readIO represented loaded before afterLoad loadReturned
+  obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists (InboxRecordTotal.record_contract loaded intent)
+  have frame := InboxRecordTotal.Connection.post_config loaded intent out post
+  refine ⟨reserve, bodyStart, out, evidence,
+    InboxAdmission.accepts_iff loaded intent context |>.mp guarded,
+    recorded, post, frame, ?_, ?_⟩
+  · intro s e success
+    exact InboxPosition.record_success_query loaded intent out s e recorded success
+  · intro _ s e _
+    apply InboxSave.save_refines saved terminal renewal unload graphic graphicLaw writeIO out.2 afterLoad
+    rw [frame]
+    exact bounded
+
+-- The actual load/guard premises are jointly inhabited by the existing legal
+-- empty Inbox and Create envelope; arbitrary field equality is not authorization.
+theorem normal_load_guard (trace : InboxLoad.Values.Trace) :
+    load_using InboxLoad.Values.saved InboxLoad.Values.terminal
+      (N := Unit) ⟨InboxLoad.Values.renewal⟩ (U := Unit) ⟨InboxLoad.Values.unload⟩
+      ComposedConfig.standardGraphic InboxLoad.Values.normalEffects trace =
+        .ok (.Ok (some InboxValidation.Values.normal),
+          trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) ∧
+    authenticated InboxValidation.Values.normal SavedRetirement.Values.createIntent
+      EnvelopeValues.context = .ok (.Ok ()) := by
+  refine ⟨InboxLoad.Values.normal_loaded trace, ?_⟩
+  apply (InboxAdmission.accepts_iff _ _ _).mpr
+  refine ⟨?_, SavedRetirement.Values.normal_envelopes.1⟩
+  constructor <;> rfl
+
+end
+end SandboxModel.Stage1Protocol.InboxSynchronous
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSynchronous.loaded_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSynchronous.load_record_save_connected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSynchronous.normal_load_guard

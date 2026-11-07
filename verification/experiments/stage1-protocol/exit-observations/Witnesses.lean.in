@@ -1,0 +1,23 @@
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Core
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations
+open controller.lifecycle_inbox.source_work.restore
+theorem direct_normal (c : Direct) :
+    exit.RestoreExitCandidate.matches c
+      ⟨c.action,c.work_binding,⟨1#u32,1#u64,c.work.source.host_bootstrap.boot_id⟩⟩ = .ok true := by
+  rw [direct_refines]; simp [DirectMatches]
+
+theorem before_normal (c : Before) :
+    continued_exit.BeforeAdmissionExitCandidate.matches c ⟨c.action,c.work_binding,c.process⟩ = .ok true := by
+  rw [before_refines]; simp [BeforeMatches]
+
+theorem continued_normal (c : Continued) :
+    continued_exit.ContinuedExitCandidate.matches c ⟨c.action,c.work_binding,c.work.source.source⟩ = .ok true := by
+  rw [continued_refines]; simp [ContinuedMatches]
+
+
+end SandboxModel.Stage1Protocol.ExitObservations
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.direct_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.before_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.continued_normal

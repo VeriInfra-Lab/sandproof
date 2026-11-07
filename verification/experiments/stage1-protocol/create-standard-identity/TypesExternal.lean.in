@@ -1,0 +1,13 @@
+import SandproofSqliteStatements.TypesExternal
+import SandproofStandardCreate.TypesExternal
+import SandproofFoundations.Types
+import SandproofStage1CreateAttachment.FixedFormatBinding
+
+namespace SandproofStage1CreateAttachmentRust
+abbrev core.io.error.Error := SandproofSqliteStatementsRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteStatementsRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteStatementsRust.serde_json.error.Error
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+abbrev rusqlite.Connection := SandproofSqliteStatementsRust.rusqlite.Connection
+abbrev core.cell.RefCell := SandproofStandardCreateRust.core.cell.RefCell
+end SandproofStage1CreateAttachmentRust

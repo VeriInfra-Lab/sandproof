@@ -13,7 +13,10 @@ use super::{
 };
 use crate::{CrashInjector, CrashPoint, JournalError};
 pub use config::MaintenanceConfig;
+pub(super) use config::{ReadConfigEffects, StandardConfigRead};
 pub use retirement::RetirementCandidate;
+pub(super) use retirement::execution_binding;
+pub(super) use retirement::material_retirement_pins_closed;
 pub(super) use retirement::original_binding;
 pub(super) use retirement::witnesses as release_witnesses;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -118,6 +121,12 @@ fn map_core(error: core::checkpoint::CheckpointReject) -> JournalError {
 pub(super) fn config(connection: &Connection) -> Result<Option<MaintenanceConfig>, JournalError> {
     config::read(connection)
 }
+
+pub(super) fn config_using<E: ReadConfigEffects>(
+    effects: &mut E,
+) -> Result<Option<MaintenanceConfig>, JournalError> {
+    config::read_using(effects)
+}
 pub(super) fn initialize(
     tx: &Transaction<'_>,
     world: &core::World,
@@ -139,11 +148,29 @@ pub(super) fn input_bytes(
 // Refuse unsupported new histories before allocating identity or outbox rows.
 // An exact existing-key replay is still decided by the original reducer.
 pub(super) fn check_input_profile(
-    _connection: &Connection,
-    _world: &core::World,
+    connection: &Connection,
+    world: &core::World,
     input: &core::ControllerInput,
 ) -> Result<(), JournalError> {
-    if let core::ControllerInput::Request(core::Request::Resume(_)) = input {
+    if let core::ControllerInput::Maintenance(
+        core::maintenance::MaintenanceInput::CloseReleasedExecution(basis),
+    ) = input
+        && !super::lifecycle_inbox::released_execution::permits(connection, world, *basis)?
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
+    if let core::ControllerInput::Capture(input) = input
+        && !super::lifecycle_inbox::source_work::full::permits_continue_input(
+            connection, world, input,
+        )?
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
+    if let core::ControllerInput::Request(core::Request::Resume(request)) = input
+        && !super::lifecycle_inbox::source_work::restore::permits_resume_input(
+            connection, world, request,
+        )?
+    {
         return Err(JournalError::UnsupportedInput);
     }
 
@@ -223,6 +250,7 @@ pub(super) fn validate_candidate(
     connection: &Connection,
     world: &core::World,
 ) -> Result<(), JournalError> {
+    super::lifecycle_inbox::released_execution::validate_saved(connection, world)?;
     let config = config(connection)?.ok_or(JournalError::UnsupportedStore)?;
     let value = envelope(connection, world, &config)?;
     encode_limited(&value, config.max_checkpoint_bytes)?;

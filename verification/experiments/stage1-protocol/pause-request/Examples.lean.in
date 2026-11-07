@@ -1,0 +1,19 @@
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Values
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest
+open Values
+theorem normal_expected : Expected base = .Ok (Assembled base 101#u64 1#u64) := rfl
+theorem domains_expected : Expected distinctNative = .Ok (Assembled distinctNative 101#u64 1#u64) := rfl
+theorem binding_expected : Expected changedBinding = .Ok (Assembled changedBinding 101#u64 1#u64) := rfl
+theorem create_expected : Expected createWork = .Err .Conflict := rfl
+theorem renew_expected : Expected renewWork = .Err .Conflict := rfl
+theorem resume_expected : Expected resumeWork = .Err .Conflict := rfl
+theorem destroy_expected : Expected destroyWork = .Err .Conflict := rfl
+end SandboxModel.Stage1Protocol.PauseRequest
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.domains_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.binding_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.create_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.renew_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.resume_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.destroy_expected

@@ -71,7 +71,7 @@ fn request() -> FullCaptureWorkRequest {
             "node":{"deployment_id":"deployment","node_id":"node","node_generation":1},
             "source_resource":raw().resource,"source":raw().source},
         "compatibility":profile(),"state_bytes":1_000_000,"memory_bytes":128*1_048_576,
-        "disk_bytes":8192,"api_timeout_ms":1000
+        "disk_bytes":8192,"api_timeout_ms":1000,"worker_timeout_ms":300_000
     })).unwrap()
 }
 #[test]
@@ -132,6 +132,7 @@ fn work_dto_cannot_replace_independent_profile_binding_or_any_copy_parameter() {
         "memory_bytes",
         "disk_bytes",
         "api_timeout_ms",
+        "worker_timeout_ms",
     ] {
         let mut actual = serde_json::to_value(&expected).unwrap();
         actual[field] = json!(actual[field].as_u64().unwrap() + 1);
@@ -191,6 +192,20 @@ fn protected_copy_settings_do_not_accept_unbounded_or_zero_values() {
         memory_copy_bytes: 128 * 1_048_576,
         disk_copy_bytes: 8192,
         api_timeout_ms: 1000,
+        worker_timeout_ms: 300_000,
+        material_project: sandbox_runtime::MaterialProjectSettings {
+            project_id: 63801,
+            hard_bytes: 1_073_741_824,
+            hard_inodes: 1024,
+            chattr: sandbox_runtime::ProjectTool {
+                path: "/protected/chattr".into(),
+                sha256: [2; 32],
+            },
+            lsattr: sandbox_runtime::ProjectTool {
+                path: "/protected/lsattr".into(),
+                sha256: [3; 32],
+            },
+        },
     };
     assert!(good.validate().is_ok());
     for (field, value) in [
@@ -201,12 +216,23 @@ fn protected_copy_settings_do_not_accept_unbounded_or_zero_values() {
         ("disk_copy_bytes", 0),
         ("api_timeout_ms", 999),
         ("api_timeout_ms", 300_001),
+        ("worker_timeout_ms", 999),
+        ("worker_timeout_ms", 300_001),
     ] {
         let mut changed = serde_json::to_value(&good).unwrap();
         changed[field] = json!(value);
         let changed: ProtectedCaptureSettings = serde_json::from_value(changed).unwrap();
         assert!(changed.validate().is_err());
     }
+    let mut missing = serde_json::to_value(&good).unwrap();
+    missing.as_object_mut().unwrap().remove("worker_timeout_ms");
+    assert!(serde_json::from_value::<ProtectedCaptureSettings>(missing).is_err());
+    let shorter_than_api = ProtectedCaptureSettings {
+        api_timeout_ms: 2_000,
+        worker_timeout_ms: 1_000,
+        ..good.clone()
+    };
+    assert!(shorter_than_api.validate().is_err());
     let bad = ProtectedCaptureSettings {
         layout_parent: "relative".into(),
         ..good

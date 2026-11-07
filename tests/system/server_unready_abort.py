@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sqlite3
@@ -59,12 +60,12 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="s11-", dir=parent))
     namespace = secrets.token_hex(8)
     vm_name = f"vm-{namespace}-0"
-    if len(os.fsencode(root / "jails" / args.firecracker.name / vm_name / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / args.firecracker.name / vm_name / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("dedicated test path is too long for Firecracker API")
     key = secrets.token_hex(32)
     port = free_loopback_port()
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -85,7 +86,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)),
         "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -125,7 +126,7 @@ def exercise(args: argparse.Namespace) -> None:
             "templateID": "base", "timeout": 5, "allow_internet_access": False,
             "metadata": metadata,
         })
-        claim = root / "jails/.claims" / vm_name
+        claim = original_chroot(root) / ".claims" / vm_name
         record = json.loads(wait_for(
             lambda: (claim / "record.json").read_text() if (claim / "record.json").exists() else None,
             3, "durable VMM process record",
@@ -155,7 +156,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert process_start_ticks(pid) != ticks, "exact VMM survived durable abort"
         marker = claim / "failed-prepare.json"
         assert marker.is_file(), "physical reclaim marker missing before receipt"
-        assert not (root / "jails" / args.firecracker.name / vm_name).exists()
+        assert not (original_chroot(root) / args.firecracker.name / vm_name).exists()
         assert not Path(f"/run/netns/{vm_name}").exists()
         if cgroup is not None:
             assert not cgroup.exists()
@@ -175,7 +176,7 @@ def exercise(args: argparse.Namespace) -> None:
         status, body = fetch(opener, base_url, "GET", "/v2/sandboxes", key)
         assert status == 200 and json.loads(body) == [], (status, body)
         assert process_start_ticks(pid) != ticks
-        assert not (root / "jails" / args.firecracker.name / vm_name).exists()
+        assert not (original_chroot(root) / args.firecracker.name / vm_name).exists()
         assert not Path(f"/run/netns/{vm_name}").exists()
         if cgroup is not None:
             assert not cgroup.exists()

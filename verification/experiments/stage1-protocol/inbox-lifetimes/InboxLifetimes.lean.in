@@ -1,0 +1,110 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesLoop
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.admission
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+
+/-- Same borrowed-Vec condition used by InboxLineage. V0 call-site adoption
+is pending; this statement provides no history, authority or durability facts. -/
+def BorrowedVecBinding : Prop :=
+  ∀ values : alloc.vec.Vec Entry,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter Global values =
+      .ok (cursor (alloc.vec.Vec.deref values) 0)
+
+def FirstBinding : Prop :=
+  ∀ values : Slice Entry, core.slice.Slice.first values = .ok values.val.head?
+
+def ConversionBinding : Prop :=
+  ∀ value : U64, I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from value =
+    .ok (if (value.val : Int) ≤ I64.max then .Ok (UScalar.hcast .I64 value) else .Err ())
+
+theorem applied_with_binding (binding : BorrowedVecBinding) :
+    FullAppliedContract validate_applied_lifetimes := by
+  intro session lifetime start deadline
+  unfold validate_applied_lifetimes
+  rw [binding]
+  simp only [bind_tc_ok]
+  have spec := loop_refines (alloc.vec.Vec.deref session.entries) lifetime start
+    (initial deadline) 0 (by omega)
+  simpa [initial, alloc.vec.Vec.deref] using spec
+
+theorem entry_refines (binding : ConversionBinding) (start : I64) (entry : Entry) :
+    validate_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryOptionI64.call_once start entry =
+      .ok (fromEntry start entry) := by
+  unfold ConversionBinding at binding
+  unfold validate_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryOptionI64.call_once
+  cases operation : entry.intent.request.operation <;>
+    simp [fromEntry, operation, binding, duration, core.result.Result.ok,
+      SandproofFoundationsRust.core.result.Result.ok, core.option.Option.and_then,
+      validate_lifetimes.closure.closure.Insts.CoreOpsFunctionFnOnceTupleI64OptionI64.call_once]
+  split_ifs <;> simp_all
+
+theorem initialization_refines (first : FirstBinding) (conversion : ConversionBinding)
+    (session : Session) (start : I64) :
+    (do let entry ← core.slice.Slice.first (alloc.vec.Vec.deref session.entries)
+        core.option.Option.and_then
+          validate_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryOptionI64
+          entry start) = .ok (initialDeadline session.entries.val start) := by
+  rw [first]
+  cases head : session.entries.val.head? <;>
+    simp [alloc.vec.Vec.deref, head, initialDeadline, core.option.Option.and_then,
+      entry_refines conversion]
+
+/-- Full result refinement for the private function-extraction candidate.
+It does not assert that the production refactor has been adopted or proved
+equivalent, nor connect the Lifetime value to the live store transaction. -/
+theorem caller_with_bindings (iterator : BorrowedVecBinding) (first : FirstBinding)
+    (conversion : ConversionBinding) : FullLifetimeContract validate_lifetimes := by
+  intro session lifetime
+  unfold validate_lifetimes
+  cases started : lifetime.started_at_ms <;>
+    simp [started, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.convert.FromSame.from, validateView, observed]
+  rw [← bind_assoc_eq, initialization_refines first conversion]
+  simp only [bind_tc_ok]
+  cases initialized : initialDeadline session.entries.val _ <;>
+    simp
+  split
+  · rfl
+  · exact applied_with_binding iterator session lifetime _ _
+
+theorem candidate_iterator_binding : BorrowedVecBinding := by intro values; rfl
+theorem candidate_first_binding : FirstBinding := by intro values; rfl
+theorem candidate_conversion_binding : ConversionBinding := by
+  intro value
+  unfold I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+  split <;> rfl
+
+theorem candidate_validate_contract : FullLifetimeContract validate_lifetimes :=
+  caller_with_bindings candidate_iterator_binding candidate_first_binding candidate_conversion_binding
+
+theorem accepts_iff (session : Session) (lifetime : Lifetime) :
+    validate_lifetimes session lifetime = .ok (.Ok ()) ↔ validateView session lifetime = .ok () := by
+  rw [candidate_validate_contract]
+  cases result : validateView session lifetime with
+  | error reason => simp [observed]
+  | ok value => cases value; simp [observed]
+
+theorem rejects_iff (session : Session) (lifetime : Lifetime) :
+    validate_lifetimes session lifetime = .ok (.Err .CorruptStore) ↔
+      ∃ reason, validateView session lifetime = .error reason := by
+  rw [candidate_validate_contract]
+  cases result : validateView session lifetime with
+  | error reason => simp [observed]
+  | ok value => cases value; simp [observed]
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.applied_with_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.entry_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.initialization_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.caller_with_bindings
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.candidate_iterator_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.candidate_first_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.candidate_conversion_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.candidate_validate_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.rejects_iff

@@ -1,0 +1,107 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+import SandboxModel.Lifecycle.Protocol.InboxLoadLifecycleConfigValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.checkpoint.config
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+
+abbrev saved := SavedRetirement.Values.small
+abbrev terminal := SessionShape.Values.small
+def renewal : InboxRenewal.Encoding := fun _ => .ok (.Ok (vector [] (by decide)))
+def unload : UnloadResolution.Encoding := fun _ => .ok (.Ok (vector [] (by decide)))
+
+inductive Event where
+  | boolQuery (sql : Str)
+  | integerQuery (sql : Str)
+  | bytesQuery (sql : Str)
+  | lengthQuery (sql : Str)
+  | bodyQuery (sql : Str)
+  | decodedConfig (bytes : List U8)
+  | decodedInbox (bytes : List U8)
+  | encodedInbox (inbox : Inbox)
+  | digested (bytes : List U8)
+
+abbrev Trace := List Event
+
+def bytes : alloc.vec.Vec U8 := vector [17#u8, 29#u8] (by decide)
+def configBytes : alloc.vec.Vec U8 := vector [31#u8] (by decide)
+def digest : Array U8 32#usize := Array.from (List.replicate 32 165#u8) (by decide)
+def storedDigest : alloc.vec.Vec U8 := alloc.vec.Vec.from digest.val (by simp [digest]; scalar_tac)
+
+-- These are synthetic, explicit callbacks. Their arguments and ordering are
+-- observable, without pretending they implement actual JSON, SHA or SQLite.
+def policyEffects (policy : MaintenanceConfig) : ReadConfigEffects Trace := {
+  query_i64 := fun trace sql => .ok (.Ok
+    (if sql = InboxLoadConfig.formatStatement then journal.MAINTAINED_FORMAT_VERSION
+     else LIFECYCLE_STORE_FORMAT_VERSION), trace ++ [.integerQuery sql])
+  query_bytes := fun trace sql => .ok (.Ok configBytes, trace ++ [.bytesQuery sql])
+  decode_maintenance := fun trace data => .ok (.Ok policy, trace ++ [.decodedConfig data.val]) }
+
+def effects (decoded : core.result.Result Inbox JournalError)
+    (encoded stored hash : alloc.vec.Vec U8) (reserve : I64) (policy : MaintenanceConfig) :
+    InboxLoadEffects Trace := {
+  checkpointconfigReadConfigEffectsInst := policyEffects policy
+  query_bool := fun trace sql => .ok (.Ok (decide (sql ≠ internalStatement)), trace ++ [.boolQuery sql])
+  query_i64_pair := fun trace sql => .ok (.Ok (2#i64, reserve), trace ++ [.lengthQuery sql])
+  query_bytes_pair := fun trace sql => .ok (.Ok (stored, hash), trace ++ [.bodyQuery sql])
+  decode_inbox := fun trace data => .ok (decoded, trace ++ [.decodedInbox data.val])
+  encode_inbox := fun trace inbox => .ok (.Ok encoded, trace ++ [.encodedInbox inbox])
+  digest := fun trace data => .ok (digest, trace ++ [.digested data.val]) }
+
+def normalEffects : InboxLoadEffects Trace :=
+  effects (.Ok InboxValidation.Values.normal) bytes bytes storedDigest 286720#i64
+    InboxLoadConfig.LifecycleValues.normal
+
+def policyTrace : Trace :=
+  [.integerQuery InboxLoadConfig.formatStatement, .bytesQuery InboxLoadConfig.configStatement,
+   .decodedConfig configBytes.val]
+
+def completeTrace (inbox : Inbox) : Trace :=
+  [.boolQuery existsStatement, .integerQuery versionStatement,
+   .boolQuery sourceStatement, .boolQuery internalStatement] ++ policyTrace ++
+  [.lengthQuery lengthsStatement, .bodyQuery bodyStatement, .decodedInbox bytes.val,
+   .digested bytes.val, .encodedInbox inbox] ++ policyTrace
+
+theorem policy_read (trace : Trace) :
+    InboxLoadConfig.readFullView (policyEffects InboxLoadConfig.LifecycleValues.normal) trace =
+      .ok (.Ok (some InboxLoadConfig.LifecycleValues.normal), trace ++ policyTrace) := by
+  have accepted : InboxLoadConfig.maintenanceResult InboxLoadConfig.LifecycleValues.normal =
+      .ok (.Ok ()) := by
+    rw [← InboxLoadConfig.maintenance_full_refines]
+    exact InboxLoadConfig.LifecycleValues.normal_accepted
+  simp [InboxLoadConfig.readFullView, policyEffects, accepted, policyTrace,
+    alloc.vec.Vec.deref, List.append_assoc]
+
+theorem capacity_read (trace : Trace) :
+    InboxLoadConfig.capacityReadView (policyEffects InboxLoadConfig.LifecycleValues.normal) trace =
+      .ok (.Ok (some InboxLoadConfig.LifecycleValues.capacity), trace ++ policyTrace) := by
+  simp only [InboxLoadConfig.capacityReadView, policy_read, bind_tc_ok]
+  rfl
+
+theorem final_policy_accepts (inbox : Inbox) (small : inbox.config.max_operations_per_session.val ≤ 8)
+    (trace : Trace) :
+    finishView normalEffects inbox trace = .ok (.Ok (some inbox), trace ++ policyTrace) := by
+  have under : ¬ inbox.config.max_operations_per_session.val >
+      InboxLoadConfig.LifecycleValues.normal.max_operations_per_sandbox.val := by
+    change ¬ inbox.config.max_operations_per_session.val > 8
+    omega
+  simp only [finishView, normalEffects, effects, policy_read, attempt, bind_tc_ok]
+  change (if inbox.config.max_operations_per_session.val >
+      InboxLoadConfig.LifecycleValues.normal.max_operations_per_sandbox.val
+    then corrupt (trace ++ policyTrace)
+    else .ok (.Ok (some inbox), trace ++ policyTrace)) = _
+  exact if_neg under
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.policy_read
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.capacity_read
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.final_policy_accepts

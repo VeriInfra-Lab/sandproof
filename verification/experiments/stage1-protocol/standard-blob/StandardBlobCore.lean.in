@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobLibrary
+import SandboxModel.Lifecycle.Protocol.BlobColumnsCore
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+open BlobColumns
+
+abbrev actual := controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+abbrev callback := controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once
+abbrev callbackDictionary := controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error
+abbrev empty : Unit := ()
+
+theorem callback_refines (row : rusqlite.row.Row) :
+    callback () row = .ok (BlobColumns.expected row 0#usize 1#usize) :=
+  BlobColumns.actual_refines row 0#usize 1#usize
+
+theorem query_refines (connection : rusqlite.Connection) (sql : Str) :
+    rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams
+      callbackDictionary connection sql empty () = queryView connection sql := by
+  simp only [rusqlite.Connection.query_row, queryView,
+    empty_bind_refines]
+  congr 1
+  funext prepared
+  cases prepared with
+  | Err error => rfl
+  | Ok count =>
+    by_cases equal : count = 0
+    · simp [issuedReadStatement, equal, callback_refines]
+      rfl
+    · simp [issuedReadStatement, equal]
+
+theorem standard_refines (self : Context) (sql : Str) :
+    actual self sql = expected self sql := by
+  unfold actual controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+  rw [query_refines]
+  unfold expected
+  congr 1
+  funext reply
+  cases reply <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from]
+
+theorem full_standard_read_contract : FullStandardReadContract actual := by
+  intro self sql
+  exact standard_refines self sql
+
+theorem thin_root_refines (self : Context) (sql : Str) :
+    controller.lifecycle_inbox.codec.proof_stage1_load_blob_pair self sql = expected self sql :=
+  standard_refines self sql
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.query_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.standard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.full_standard_read_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.thin_root_refines

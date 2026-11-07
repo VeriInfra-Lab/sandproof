@@ -14,7 +14,7 @@ abbrev File := sandproof_protocol.lifecycle.manifest.SnapshotFile
 def digest : Array U8 32#usize := Array.from (List.replicate 32 (0#u8)) (by simp)
 def original : Capture := {
   operation := {
-    protocol_version := 3#u16, node := ⟨"deployment", "node", 1#u64⟩,
+    protocol_version := 4#u16, node := ⟨"deployment", "node", 1#u64⟩,
     session := "session", key := ⟨"deployment", "owner", 1#u64, 1#u64⟩,
     expected := .Version 1#u64 },
   source_incarnation := 1#u64, capture := 1#u64 }

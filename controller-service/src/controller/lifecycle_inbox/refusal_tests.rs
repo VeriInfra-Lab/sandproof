@@ -91,7 +91,7 @@ fn current_refusal_store_rejects_prior_format_in_both_original_entries() {
         .unwrap();
     drop(journal);
     let before = std::fs::read(&path).unwrap();
-    let host = crate::controller::tests_support::host(4);
+    let host = fixture::host(&path);
     let maintenance = crate::controller::tests_support::lifecycle_application::maintenance();
     assert!(matches!(
         ControllerJournal::preflight_complete(&path, "0123456789abcdef", &host, &maintenance),
@@ -299,7 +299,7 @@ fn recovery_rejects_refusal_attached_to_an_original_native_mapping() {
         ControllerJournal::open_complete(
             &path,
             "0123456789abcdef",
-            crate::controller::tests_support::host(4),
+            fixture::host(&path),
             crate::controller::tests_support::lifecycle_application::maintenance(),
             0
         ),

@@ -1,0 +1,132 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobNormalContext
+import SandproofStage1Request.Funs
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlobReplyBridge
+noncomputable section
+open StandardBlobNormalContext StandardBlobDomain
+
+abbrev OriginalError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+abbrev OriginalOutcome := core.result.Result (BlobColumns.Bytes × BlobColumns.Bytes) OriginalError
+
+def toOriginalSqlError (error : rusqlite.error.Error) :
+    SandproofStage1RequestRust.rusqlite.error.Error := ⟨error.identity⟩
+
+def fromOriginalSqlError (error : SandproofStage1RequestRust.rusqlite.error.Error) :
+    rusqlite.error.Error := ⟨error.identity⟩
+
+theorem original_error_roundtrip (error : SandproofStage1RequestRust.rusqlite.error.Error) :
+    toOriginalSqlError (fromOriginalSqlError error) = error := by
+  cases error
+  rfl
+
+theorem standard_error_roundtrip (error : rusqlite.error.Error) :
+    fromOriginalSqlError (toOriginalSqlError error) = error := by
+  cases error
+  rfl
+
+/-- Exact representation of reachable standard replies between the two
+unchanged original generated views. Other full JournalError variants are
+explicitly unrepresentable here; no field is guessed or erased. -/
+def encode (reply : StandardBlob.Outcome) : Option OriginalOutcome :=
+  match reply with
+  | .Ok pair => some (.Ok pair)
+  | .Err (.Sqlite error) => some (.Err (.Sqlite (toOriginalSqlError error)))
+  | .Err _ => none
+
+def transport {E : Type} (run : Result (StandardBlob.Outcome × E)) :
+    Result (OriginalOutcome × E) := do
+  let (reply, after) ← run
+  match encode reply with
+  | some original => .ok (original, after)
+  | none => .fail .panic
+
+theorem actual_reply_representable (self : StandardBlob.Context) (statement : Str)
+    (reply : StandardBlob.Outcome) (after : StandardBlob.Context)
+    (returned : StandardBlob.actual self statement = .ok (reply, after)) :
+    ∃ original, encode reply = some original := by
+  have modeled := (StandardBlob.standard_refines self statement).symm.trans returned
+  unfold StandardBlob.expected at modeled
+  obtain ⟨raw, _, finished⟩ := bind_success_value _ _ _ modeled
+  cases raw with
+  | Err error =>
+    have same : (core.result.Result.Err (.Sqlite error) : StandardBlob.Outcome) = reply :=
+      congrArg Prod.fst (Result.ok_injective finished)
+    exact ⟨.Err (.Sqlite (toOriginalSqlError error)), congrArg encode same.symm⟩
+  | Ok pair =>
+    have same : (core.result.Result.Ok pair : StandardBlob.Outcome) = reply :=
+      congrArg Prod.fst (Result.ok_injective finished)
+    exact ⟨.Ok pair, congrArg encode same.symm⟩
+
+/-- Covers the complete outer effect, every returned raw SQL outcome and the
+whole original Context. The unrepresentable branch is absent for this method. -/
+theorem transported_actual (self : StandardBlob.Context) (statement : Str) :
+    transport (StandardBlob.actual self statement) = (do
+      let raw ← StandardBlob.queryView self.connection statement
+      match raw with
+      | .Err error => .ok (.Err (.Sqlite (toOriginalSqlError error)), self)
+      | .Ok pair => .ok (.Ok pair, self)) := by
+  rw [StandardBlob.standard_refines]
+  unfold transport StandardBlob.expected
+  simp only [bind_assoc]
+  congr 1
+  funext raw
+  cases raw <;> simp [encode]
+
+theorem transport_success_inversion {E : Type} (run : Result (StandardBlob.Outcome × E))
+    (left right : BlobColumns.Bytes) (after : E)
+    (returned : transport run = .ok (.Ok (left, right), after)) :
+    run = .ok (.Ok (left, right), after) := by
+  unfold transport at returned
+  obtain ⟨⟨reply, state⟩, observed, finished⟩ := bind_success_value _ _ _ returned
+  cases reply with
+  | Err error => cases error <;> simp [encode] at finished
+  | Ok pair =>
+    have same := Result.ok_injective finished
+    have pairs := Prod.mk.inj same
+    have values := core.result.Result.Ok.inj pairs.1
+    exact observed.trans (congrArg Result.ok (Prod.ext (congrArg core.result.Result.Ok values) pairs.2))
+
+def read (state : NormalContext) (statement : Str) : Result (OriginalOutcome × NormalContext) :=
+  transport (StandardBlobNormalContext.read state statement)
+
+def forgetOriginal (run : Result (OriginalOutcome × NormalContext)) :
+    Result (OriginalOutcome × StandardBlob.Context) := do
+  let (reply, after) ← run
+  .ok (reply, after.val)
+
+theorem projected_actual_read (state : NormalContext) (statement : Str) :
+    forgetOriginal (read state statement) = transport (StandardBlob.actual state.val statement) := by
+  rw [← forget_actual_read state statement]
+  unfold forgetOriginal read transport forget
+  simp only [bind_assoc]
+  congr 1
+  funext returned
+  rcases returned with ⟨reply, after⟩
+  cases encoded : encode reply <;> simp [encoded]
+
+theorem successful_read_bound (state after : NormalContext) (statement : Str)
+    (left right : BlobColumns.Bytes)
+    (returned : read state statement = .ok (.Ok (left, right), after)) :
+    left.val.length ≤ 2147483647 := by
+  exact StandardBlobNormalContext.successful_read_bound state after statement left right
+    (transport_success_inversion _ left right after returned)
+
+theorem normal_read :
+    read normal StandardBlob.Values.sql =
+      .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  unfold read
+  rw [StandardBlobNormalContext.normal_read]
+  simp [transport, encode]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlobReplyBridge
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.original_error_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.standard_error_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.actual_reply_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.transported_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.transport_success_inversion
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.projected_actual_read
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.successful_read_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobReplyBridge.normal_read

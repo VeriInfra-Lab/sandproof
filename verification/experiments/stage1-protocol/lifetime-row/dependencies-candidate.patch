@@ -1,0 +1,10 @@
+diff --git a/docs/formal/dependencies.md b/docs/formal/dependencies.md
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -432,0 +433,6 @@
++V3 期限行的两个有限连接候选，待公共维护方核对唯一采用：
++`alloc.string.String.Insts.CoreCmpPartialEqShared0Str.ne` 对完整 String 字节与原 str 字节作不等比较；有效有限 UTF-8/正常值域沿用 A6-identifiers。
++`U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from` 固定 i64→u64 的使用点仅要求非负时返回完整数值；原业务先拒绝 bytes<=0，失败不可达。真实错误含 IntErrorKind、固定后端为 Unit，不据此提供一般错误载荷表示或错误文本/source 观察。
++Option::is_some_and 复用原 A6 的 None 不调用、Some 恰调用原回调及原样失败传播；本包实际时间谓词保持透明。
++这两项是显式库符合性条件，非标准库实现已机器证明；实际 SQL、六列顺序、owner 映射及事务仍属 V3/V5，不能由本候选担保。
++

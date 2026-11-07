@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredScans
+import SandboxModel.Lifecycle.Protocol.InboxRetiredWitnessSupport
+import SandboxModel.Lifecycle.Protocol.InboxRetiredValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.RetiredIdentity.WrongActive
+open Values
+open scoped Classical
+noncomputable section
+
+theorem active_conflict_detected :
+    activeConflict.current_identity_conflict intent.request.binding.session intent.request.binding.key = .ok true := by
+  have entries : BorrowedVecBinding Entry := by intro value; rfl
+  have sessions : BorrowedVecBinding Session := by intro value; rfl
+  rw [current_refines entries sessions]
+  simp [activeConflict, Values.singleton, sessionHit, entryHit, session, entry]
+
+theorem actual_return : activeConflict.validate_retired_identities = .ok (.Ok ()) := by
+  let values := alloc.vec.Vec.deref activeConflict.lanes
+  have first : outerBody activeConflict (enumCursor values 0#usize) =
+      .ok (.cont (enumCursor values 1#usize)) := by
+    unfold outerBody Inbox.validate_retired_identities_loop.body
+    rw [enum_next_some values 0#usize 1#usize (by decide) (by rfl)]
+    have selected : values.val[0] = lane retired := by rfl
+    simp [selected, lane, retired, prior_empty_prefix]
+    change (do
+      let _ ← activeConflict.current_identity_conflict intent.request.binding.session intent.request.binding.key
+      .ok (.cont (enumCursor values 1#usize)) : Result (ControlFlow (EnumIter LifecycleRetentionLane) Return)) = _
+    rw [active_conflict_detected]
+    simp
+  have last : outerBody activeConflict (enumCursor values 1#usize) = .ok (.done (.Ok ())) := by
+    unfold outerBody Inbox.validate_retired_identities_loop.body
+    rw [enum_next_none values 1#usize (by decide)]
+    simp
+  have completed : loop (outerBody activeConflict) (enumCursor values 0#usize) = .ok (.Ok ()) := by
+    rw [loop_continue _ _ _ first]
+    exact loop_done _ _ _ last
+  simpa [Inbox.validate_retired_identities, Inbox.validate_retired_identities_loop,
+    core.slice.Slice.iter, core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, enumCursor, outerBody, values] using completed
+
+theorem refutes_full_contract : ¬FullRetiredIdentityContract Inbox.validate_retired_identities := by
+  intro contract
+  have required := contract activeConflict
+  rw [actual_return, expected_outcomes.2.2.1] at required
+  cases (Result.ok_injective required)
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity.WrongActive
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongActive.active_conflict_detected
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongActive.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.WrongActive.refutes_full_contract

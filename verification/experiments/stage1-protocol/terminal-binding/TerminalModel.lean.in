@@ -1,0 +1,23 @@
+import SandboxModel.Lifecycle.Protocol.ValidationModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.Terminal
+
+/-- Full value binding only; this predicate does not inspect status or authenticate a peer. -/
+def Matches (observation : TerminalLifecycleObservation) (request : AcceptedLifecycleIntent) : Prop :=
+  observation.request = request ∧ request.request.operation = .Destroy ∧
+  0 < request.accepted_version.val ∧ Validation.retentionOK request.retention ∧
+  Validation.versionOK request
+
+noncomputable def expected (observation : TerminalLifecycleObservation)
+    (request : AcceptedLifecycleIntent) : Bool := by
+  classical
+  exact decide (Matches observation request)
+
+def FullTerminalContract
+    (run : TerminalLifecycleObservation → AcceptedLifecycleIntent → Result Bool) : Prop :=
+  ∀ observation request, run observation request = .ok (expected observation request)
+
+end SandboxModel.Stage1Protocol.Terminal

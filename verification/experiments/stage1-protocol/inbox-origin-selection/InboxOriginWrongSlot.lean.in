@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginWitnessSupport
+import SandboxModel.Lifecycle.Protocol.InboxOriginValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.OriginSelection.WrongSlot
+noncomputable section
+
+theorem first_slot : Session.current_execution_origin_loop.body Values.fieldsCase.entries 2#usize =
+    .ok (.done (some Values.created)) := by
+  have sub : ((2#usize - 1#usize) : Result Usize) = .ok 1#usize :=
+    subtract_one _ _ (by decide) (by decide)
+  simp [Session.current_execution_origin_loop.body, sub,
+    alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize,
+    Values.fieldsCase, Values.session, Values.created, Values.changedFields, Values.entry,
+    Values.create]
+
+theorem actual_return : Session.current_execution_origin Values.fieldsCase = .ok (some Values.created) := by
+  unfold Session.current_execution_origin
+  change Session.current_execution_origin_loop Values.fieldsCase.entries 2#usize = _
+  rw [loop_done _ _ _ first_slot]
+
+theorem refutes_full_contract : ¬FullOriginContract Session.current_execution_origin := by
+  intro contract
+  have wrong := contract Values.fieldsCase
+  rw [actual_return, Values.expected_outcomes.2.1] at wrong
+  exact Values.distinctions.2 (by simpa only [Result.ok.injEq, Option.some.injEq] using wrong)
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection.WrongSlot
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.WrongSlot.first_slot
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.WrongSlot.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.WrongSlot.refutes_full_contract

@@ -1,0 +1,9 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_inbox_config_valid(config: &LifecycleInboxConfig) -> bool {
+    config.valid()
+}
+
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_inbox_required_bytes(config: &LifecycleInboxConfig) -> u64 {
+    config.required_bytes()
+}

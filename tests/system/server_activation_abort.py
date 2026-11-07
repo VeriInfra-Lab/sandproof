@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import signal
@@ -78,10 +79,10 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sa-", dir=parent))
     namespace = secrets.token_hex(8)
     vm_name = f"vm-{namespace}-0"
-    if len(os.fsencode(root / "jails" / args.firecracker.name / vm_name / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / args.firecracker.name / vm_name / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("test path too long for Firecracker socket")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
@@ -94,7 +95,7 @@ def exercise(args: argparse.Namespace) -> None:
     values = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
+        "chroot_base": str(root / "p/v"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1,
         "max_active_global": 1, "max_active_per_tenant": 1,
@@ -123,7 +124,7 @@ def exercise(args: argparse.Namespace) -> None:
         }), process, 87)
         identity = original_create_identity(services, metadata)
         native_id = services.native_id_for(identity['binding']['session'])
-        claim = root / "jails/.claims" / vm_name
+        claim = original_chroot(root) / ".claims" / vm_name
         record = json.loads((claim / "record.json").read_text())
         pid, ticks = record["pid"], record["start_time_ticks"]
         assert record["resource_id"] == vm_name
@@ -169,7 +170,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert all(state == "receipted" for a, state, _ in actions
                    if any(name in a["command"]["logical"]["command"] for name in ("StopVm", "CleanupVm", "CleanupSlot")))
         assert process_start_ticks(pid) != ticks
-        assert not (root / "jails" / args.firecracker.name / vm_name).exists()
+        assert not (original_chroot(root) / args.firecracker.name / vm_name).exists()
         assert not Path("/run/netns", vm_name).exists()
         if args.cgroup_parent is not None:
             assert not (args.cgroup_parent / vm_name).exists()
@@ -188,10 +189,10 @@ def exercise(args: argparse.Namespace) -> None:
         status, body = fetch(opener, base_url, "DELETE", f"/sandboxes/{sandbox_id}", key)
         assert status == 204, (status, body)
         wait_for(lambda: not processes_in_uid_range(args.uid_base, args.uid_base), 15, "all test VM exits")
-        for path in (root / "jails/.claims").iterdir():
+        for path in (original_chroot(root) / ".claims").iterdir():
             saved = json.loads((path / "record.json").read_text())
             assert process_start_ticks(saved["pid"]) != saved["start_time_ticks"]
-            assert not (root / "jails" / args.firecracker.name / path.name).exists()
+            assert not (original_chroot(root) / args.firecracker.name / path.name).exists()
             assert not Path("/run/netns", path.name).exists()
             if args.cgroup_parent is not None:
                 assert not (args.cgroup_parent / path.name).exists()

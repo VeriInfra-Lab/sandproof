@@ -1,0 +1,73 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadControlFlow
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity.Fixture
+noncomputable section
+open InboxLoad InboxLoad.Values
+
+/-- Reuse the original observable synthetic callbacks, including the full encoded Inbox. -/
+def ioFor (inbox : Inbox) : InboxLoadEffects Trace :=
+  effects (.Ok inbox) bytes bytes storedDigest 286720#i64 InboxLoadConfig.LifecycleValues.normal
+
+set_option maxHeartbeats 1200000 in
+theorem model_loaded (inbox : Inbox) (validate : Inbox → Check)
+    (accepted : validate inbox = .ok (.Ok ()))
+    (budgetFn : LifecycleInboxConfig → Result U64)
+    (charged : budgetFn inbox.config = .ok 286720#u64)
+    (small : inbox.config.max_operations_per_session.val ≤ 8) (trace : Trace) :
+    loadView (ioFor inbox) validate budgetFn trace =
+      .ok (.Ok (some inbox), trace ++ completeTrace inbox) := by
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionReturns (state : Trace) : (policyEffects InboxLoadConfig.LifecycleValues.normal).query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp only [policyEffects, versionDifferent, ↓reduceIte]
+  have sameDigest : digest.val = storedDigest.val := rfl
+  have castLength : core.num.I64.cast_unsigned 2#i64 = .ok 2#u64 := rfl
+  have castReserve : core.num.I64.cast_unsigned 286720#i64 = .ok 286720#u64 := rfl
+  have under : ¬ inbox.config.max_operations_per_session.val >
+      InboxLoadConfig.LifecycleValues.normal.max_operations_per_sandbox.val := by
+    change ¬ inbox.config.max_operations_per_session.val > 8
+    omega
+  simp [loadView, currentView, capacityView, limitsView, bodyView, digestView, canonicalView,
+    validatedView, finishView, ioFor, effects, attempt, existsDifferent,
+    sourceDifferent, versionReturns, LIFECYCLE_STORE_FORMAT_VERSION, capacity_read, policy_read,
+    castLength, castReserve, InboxLoadConfig.LifecycleValues.capacity, maximumBytes,
+    InboxLoadLibrary.vec_ne, sameDigest, charged, accepted, under, completeTrace,
+    policyTrace, List.append_assoc]
+  have literalValue : ((24#64)#iscalar : I64).val = 24 := by decide
+  split <;> simp_all [IScalar.eq_equiv, alloc.vec.Vec.deref]
+
+theorem actual_loaded {R T N U B : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+    (inbox : Inbox)
+    (accepted : Inbox.validate_using saved terminal renewal unload graphic inbox = .ok (.Ok ()))
+    (charged : LifecycleInboxConfig.required_bytes inbox.config = .ok 286720#u64)
+    (small : inbox.config.max_operations_per_session.val ≤ 8) (trace : Trace) :
+    load_using saved terminal renewal unload graphic (ioFor inbox) trace =
+      .ok (.Ok (some inbox), trace ++ completeTrace inbox) := by
+  rw [load_control_flow_refines]
+  exact model_loaded inbox _ accepted _ charged small trace
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity.Fixture
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Fixture.model_loaded
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Fixture.actual_loaded

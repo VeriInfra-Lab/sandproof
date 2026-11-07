@@ -1,0 +1,105 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.InboxSave
+noncomputable section
+
+variable {E : Type} (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (bounded : ConfigValidation.Representable inbox.config)
+
+include bounded
+
+theorem validation_error_preserves_state (error : JournalError)
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Err error)) :
+    runSave saved terminal renewal unload io inbox state = .ok (.Err error, state) := by
+  rw [full_save_contract saved terminal renewal unload io inbox state bounded]
+  simp [saveView, checked]
+
+theorem validated_save
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ())) :
+    runSave saved terminal renewal unload io inbox state = encodeAndSave io inbox state := by
+  rw [full_save_contract saved terminal renewal unload io inbox state bounded]
+  simp [saveView, checked]
+
+theorem encoding_error_preserves_state
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (error : JournalError) (afterEncode : E)
+    (encoded : io.encode state inbox = .ok (.Err error, afterEncode)) :
+    runSave saved terminal renewal unload io inbox state = .ok (.Err error, afterEncode) := by
+  rw [validated_save saved terminal renewal unload io inbox state bounded checked]
+  simp [encodeAndSave, encoded]
+
+theorem budget_rejection_preserves_encoding
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (bytes : alloc.vec.Vec U8) (afterEncode : E)
+    (encoded : io.encode state inbox = .ok (.Ok bytes, afterEncode))
+    (over : bytes.val.length > ConfigBudget.bytes inbox.config) :
+    runSave saved terminal renewal unload io inbox state = .ok (.Err .MaintenanceCapacity, afterEncode) := by
+  rw [validated_save saved terminal renewal unload io inbox state bounded checked]
+  simp [encodeAndSave, encoded, over]
+
+theorem update_outcome_preserves_effects
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (bytes : alloc.vec.Vec U8) (afterEncode : E)
+    (encoded : io.encode state inbox = .ok (.Ok bytes, afterEncode))
+    (fits : bytes.val.length ≤ ConfigBudget.bytes inbox.config)
+    (digest : Array U8 32#usize) (afterDigest : E)
+    (hashed : io.digest afterEncode (alloc.vec.Vec.deref bytes) = .ok (digest, afterDigest))
+    (result : core.result.Result Usize JournalError) (afterUpdate : E)
+    (updated : io.update afterDigest statement (alloc.vec.Vec.deref bytes) (Array.to_slice digest) =
+      .ok (result, afterUpdate)) :
+    runSave saved terminal renewal unload io inbox state =
+      .ok ((match result with
+        | .Err error => .Err error
+        | .Ok count => if count.val = 1 then .Ok () else .Err .CorruptStore), afterUpdate) := by
+  rw [validated_save saved terminal renewal unload io inbox state bounded checked]
+  have under : ¬bytes.val.length > ConfigBudget.bytes inbox.config := by omega
+  cases result <;> simp [encodeAndSave, encoded, under, hashed, updated]
+
+theorem successful_update_returns_post_state
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (bytes : alloc.vec.Vec U8) (afterEncode : E)
+    (encoded : io.encode state inbox = .ok (.Ok bytes, afterEncode))
+    (fits : bytes.val.length ≤ ConfigBudget.bytes inbox.config)
+    (digest : Array U8 32#usize) (afterDigest : E)
+    (hashed : io.digest afterEncode (alloc.vec.Vec.deref bytes) = .ok (digest, afterDigest))
+    (afterUpdate : E)
+    (updated : io.update afterDigest statement (alloc.vec.Vec.deref bytes) (Array.to_slice digest) =
+      .ok (.Ok 1#usize, afterUpdate)) :
+    runSave saved terminal renewal unload io inbox state = .ok (.Ok (), afterUpdate) := by
+  simpa using update_outcome_preserves_effects saved terminal renewal unload io inbox state bounded
+    checked bytes afterEncode encoded fits digest afterDigest hashed (.Ok 1#usize) afterUpdate updated
+
+-- Encoding may have already changed the provider before it fails or diverges.
+-- There is no observable post-state in an outer failure/divergence result.
+theorem encoding_failure_propagates
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (error : Aeneas.Std.Error) (failed : io.encode state inbox = .fail error) :
+    runSave saved terminal renewal unload io inbox state = .fail error := by
+  rw [validated_save saved terminal renewal unload io inbox state bounded checked]
+  simp [encodeAndSave, failed]
+
+theorem encoding_divergence_propagates
+    (checked : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (diverged : io.encode state inbox = .div) :
+    runSave saved terminal renewal unload io inbox state = .div := by
+  rw [validated_save saved terminal renewal unload io inbox state bounded checked]
+  simp [encodeAndSave, diverged]
+
+end
+end SandboxModel.Stage1Protocol.InboxSave
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.validation_error_preserves_state
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.validated_save
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.encoding_error_preserves_state
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.budget_rejection_preserves_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.update_outcome_preserves_effects
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.successful_update_returns_post_state
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.encoding_failure_propagates
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.encoding_divergence_propagates

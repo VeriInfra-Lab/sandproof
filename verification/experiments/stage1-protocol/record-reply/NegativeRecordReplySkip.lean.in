@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.RecordReplyModel
+import SandboxModel.Lifecycle.Protocol.RecordReplyValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.RecordReply
+namespace SandboxModel.Stage1Protocol.NegativeRecordReplySkip
+noncomputable section
+
+abbrev actual := server.lifecycle.record_reply
+
+theorem common_normal : actual original (.Ok received) = .ok (.Ok received) := by
+  rfl
+
+theorem actual_changed_capture : actual original (.Ok changedCapture) = .ok (.Ok changedCapture) := by
+  rfl
+
+theorem not_full_contract : ¬FullReplyContract actual := by
+  intro contract
+  have impossible := contract original (.Ok changedCapture)
+  rw [actual_changed_capture, expected_changed] at impossible
+  simp only [Result.ok.injEq, reduceCtorEq] at impossible
+
+end
+end SandboxModel.Stage1Protocol.NegativeRecordReplySkip
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplySkip.common_normal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplySkip.actual_changed_capture
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRecordReplySkip.not_full_contract

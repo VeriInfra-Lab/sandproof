@@ -1,4 +1,4 @@
-"""Synthetic source-materialization admission tests; not SQLite semantic proofs."""
+"""Historical source-materialization admission tests; not SQLite semantic proofs."""
 import hashlib
 import importlib.util
 import json
@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT=Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT=reference_root()
 ASSETS=ROOT/'verification/experiments/sqlite-statements'
 
 

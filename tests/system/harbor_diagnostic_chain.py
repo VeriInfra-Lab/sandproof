@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import subprocess
@@ -105,7 +106,7 @@ def save_identity(root: Path, sandbox: Sandbox, identities: list[dict], services
     services.processes.start('host-0')
     services.wait_ready(for_admission=False)
     _, name, record = record_for(root, native_id=native_id)
-    network = json.loads((root / "jails/.claims" / name / "network.json").read_text())
+    network = json.loads((original_chroot(root) / ".claims" / name / "network.json").read_text())
     identity = {**record, "network_inode": network["namespace_inode"],
                 "sandbox_id": sandbox.sandbox_id, "native_id": native_id}
     path = root / f"{name}.identity.json"
@@ -133,7 +134,7 @@ def no_exact_residual(root: Path, namespace: str, first_uid: int,
         name = identity["resource_id"]
         assert name.startswith(prefix), "saved claim belongs to another namespace"
         audit_gone(root, firecracker, cgroup_parent, name, identity=identity)
-    for parent in (root / "jails" / firecracker.name, Path("/run/netns")):
+    for parent in (original_chroot(root) / firecracker.name, Path("/run/netns")):
         assert not list(parent.glob(f"{prefix}*")), f"VM residue under {parent}"
     assert not list(Path("/sys/fs/cgroup").rglob(f"{prefix}*")), "VM cgroup residue"
     assert not processes_in_uid_range(first_uid, first_uid), "physical-slot UID process residue"
@@ -254,10 +255,10 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sp13-", dir=parent))
     namespace = secrets.token_hex(8)
     firecracker = args.firecracker.resolve(strict=True)
-    if len(os.fsencode(root / "jails" / firecracker.name / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / firecracker.name / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("Firecracker socket path too long")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel, rootfs = root / "vmlinux", root / "rootfs.ext4"
     for source_file, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
@@ -275,7 +276,7 @@ def exercise(args: argparse.Namespace) -> None:
     settings = complete_runtime({
         "namespace": namespace, "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"), "jailer": str(args.jailer.resolve(strict=True)),
-        "firecracker": str(firecracker), "chroot_base": str(root / "jails"),
+        "firecracker": str(firecracker), "chroot_base": str(root / "p/v"),
         "kernel": str(kernel), "rootfs": str(rootfs), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 2048,
         "host_resources": {"cgroup_parent": str(cgroup_parent), "memory_max_bytes": 2304 * MIB},
@@ -286,12 +287,12 @@ def exercise(args: argparse.Namespace) -> None:
         "cleanup_reserve_bytes": rootfs.stat().st_size, "max_timeout_secs": 86400,
         "max_lifetime_secs": 86400, "default_timeout_secs": 300,
         "expiry_scan_seconds": 1, "public_ipv4_enabled": True, "startup_timeout_secs": 300,
-    }, slots=1)
+    }, slots=1, inbox_sessions=len(selection)+3)
     registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
         max_artifact_bytes_global=rootfs.stat().st_size+kernel.stat().st_size,
         max_artifact_bytes_per_tenant=rootfs.stat().st_size+kernel.stat().st_size, validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
-        f'127.0.0.1:{port}', args.service_cgroup_record, job_count=len(selection)+2, registry_config=registry)
+        f'127.0.0.1:{port}', args.service_cgroup_record, retained_sessions=(len(selection)+2) + settings['max_active_global'], registry_config=registry)
     completed = False
     results = []
     identities = []

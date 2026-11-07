@@ -1,0 +1,66 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallCore
+import SandboxModel.Lifecycle.Protocol.CreateSelection
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateInstall
+
+theorem for_session_positions (session : Session) (intent : AcceptedLifecycleIntent)
+    (si ei s e : Usize) (deadline : U64)
+    (returned : CreateSelection.forSession session intent si ei = .Ok (s, e, deadline)) :
+    si = s ∧ ei = e := by
+  unfold CreateSelection.forSession at returned
+  (split_ifs at returned; try cases returned)
+  cases operation : intent.request.operation <;> simp_all
+
+theorem selection_success_reads (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (s e : Usize) (deadline : U64)
+    (returned : CreateSelection.run inbox intent = .ok (.Ok (s, e, deadline))) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent := by
+  have outcome := InboxLookup.find_outcome inbox intent
+  cases shape : InboxLookup.inboxSpec intent inbox.sessions.val 0 with
+  | absent =>
+      have rejected := CreateSelection.absent inbox intent (by simpa [shape] using outcome)
+      rw [rejected] at returned
+      cases Result.ok_injective returned
+  | conflict =>
+      have rejected := CreateSelection.conflict inbox intent (by simpa [shape] using outcome)
+      rw [rejected] at returned
+      cases Result.ok_injective returned
+  | found si ei =>
+      simp only [shape] at outcome
+      obtain ⟨is, ie, spos, epos, found⟩ := outcome
+      subst si
+      subst ei
+      obtain ⟨session, entry, sessionRead, entryRead, full⟩ :=
+        InboxPosition.inbox_found_reads intent inbox.sessions.val is.val ie.val shape
+      obtain ⟨bound, same⟩ := List.getElem?_eq_some_iff.mp sessionRead
+      rw [CreateSelection.found inbox intent is ie found bound] at returned
+      have successful : CreateSelection.forSession inbox.sessions.val[is.val] intent is ie = .Ok (s, e, deadline) :=
+        Result.ok_injective returned
+      obtain ⟨rfl, rfl⟩ := for_session_positions inbox.sessions.val[is.val] intent is ie s e deadline successful
+      exact ⟨session, entry, sessionRead, entryRead, full⟩
+
+theorem selected_install (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (s e : Usize) (deadline : U64) (binding : InternalLocalBinding)
+    (returned : CreateSelection.run inbox intent = .ok (.Ok (s, e, deadline)))
+    (ownerLimit : inbox.owners.val.length ≤ inbox.config.max_sessions.val) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent ∧
+      run inbox s e binding ⦃ result => Installed inbox s e session entry binding result ⦄ := by
+  obtain ⟨session, entry, sessionRead, entryRead, full⟩ := selection_success_reads inbox intent s e deadline returned
+  obtain ⟨bound, same⟩ := List.getElem?_eq_some_iff.mp sessionRead
+  obtain ⟨ebound, esame⟩ := List.getElem?_eq_some_iff.mp entryRead
+  have entryBound : e.val < inbox.sessions.val[s.val].entries.val.length := by simpa [same] using ebound
+  have installed := install_complete inbox s e binding bound entryBound (by intro _; exact owners_room_from_limit inbox ownerLimit)
+  refine ⟨session, entry, sessionRead, entryRead, full, ?_⟩
+  simpa [same, esame] using installed
+
+end SandboxModel.Stage1Protocol.CreateInstall
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.for_session_positions
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.selection_success_reads
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.selected_install

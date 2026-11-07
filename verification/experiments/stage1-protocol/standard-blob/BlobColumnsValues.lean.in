@@ -1,0 +1,71 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsLibrary
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.BlobColumns.Values
+noncomputable section
+open BlobColumns
+
+-- Logical finite library observations, not persisted Inbox or JSON witnesses.
+def leftBytes : Bytes := alloc.vec.Vec.from (List.replicate 32 17#u8) (by simp; scalar_tac)
+def rightBytes : Bytes := alloc.vec.Vec.from (List.replicate 32 29#u8) (by simp; scalar_tac)
+
+def statement : rusqlite.statement.Statement := {
+  canonical := { expectedParameters := 0, arguments := [], countError := fun _ => ⟨31⟩ }
+  object := 7
+  columns := 2#usize
+  invalidIndex := fun _ => ⟨41⟩
+}
+
+def observing (left right : Bytes) : rusqlite.row.Row := {
+  object := 9
+  statement := statement
+  column := fun index => .Blob (if index.val = 0 then left.1 else right.1)
+  conversionError := fun index _ _ => if index.val = 0 then ⟨11⟩ else ⟨12⟩
+}
+
+def normal : rusqlite.row.Row := observing leftBytes leftBytes
+def distinct : rusqlite.row.Row := observing leftBytes rightBytes
+def bothErrors : rusqlite.row.Row := {
+  normal with column := fun _ => .Null
+}
+
+theorem bytes_differ : leftBytes ≠ rightBytes := by
+  intro equal
+  have lists := congrArg (fun bytes : Bytes => bytes.val) equal
+  cases lists
+
+theorem normal_expected : expected normal 0#usize 1#usize = .Ok (leftBytes, leftBytes) := by rfl
+
+theorem distinct_expected : expected distinct 0#usize 1#usize = .Ok (leftBytes, rightBytes) := by rfl
+
+theorem first_error_expected : expected bothErrors 0#usize 1#usize = .Err ⟨11⟩ := by rfl
+
+theorem first_index_expected : expected normal 2#usize 1#usize = .Err ⟨41⟩ := by rfl
+
+theorem observing_bound (left right : Bytes)
+    (leftBound : left.val.length ≤ 2147483647) (rightBound : right.val.length ≤ 2147483647) :
+    RowBlobBound (observing left right) := by
+  intro index bytes _ observed
+  change (rusqlite.types.value_ref.ValueRef.Blob
+    (if index.val = 0 then left.1 else right.1)) = .Blob bytes at observed
+  split at observed <;> cases observed
+  · exact leftBound
+  · exact rightBound
+
+theorem normal_bound : RowBlobBound normal :=
+  observing_bound leftBytes leftBytes (by decide) (by decide)
+
+theorem distinct_bound : RowBlobBound distinct :=
+  observing_bound leftBytes rightBytes (by decide) (by decide)
+
+end
+end SandboxModel.Stage1Protocol.BlobColumns.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.bytes_differ
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.distinct_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.first_error_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.first_index_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.observing_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.normal_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.Values.distinct_bound

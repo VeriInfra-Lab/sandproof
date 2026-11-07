@@ -5,7 +5,9 @@ import unittest
 
 from tools.check_json_request_binding import check_registry, snapshot
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class JsonRequestBindingTests(unittest.TestCase):
@@ -13,7 +15,7 @@ class JsonRequestBindingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.registry = json.loads((ROOT / 'verification/json-request-binding.json').read_text())
 
-    def test_current_source_and_finite_trust_surface(self):
+    def test_frozen_reference_and_finite_trust_surface(self):
         self.assertEqual(set(check_registry(ROOT)['entries']), {'json_request::decode', 'json_request::encode'})
 
     def test_production_drift_and_missing_provider_source_are_rejected(self):
@@ -123,6 +125,31 @@ class JsonRequestBindingTests(unittest.TestCase):
                 llbc['translated']['options']['opaque'] = ['sandproof_protocol::_']
                 with self.assertRaisesRegex(ValueError, 'extraction options'):
                     snapshot(llbc, kind)
+
+class CurrentProductionAdmissionTests(unittest.TestCase):
+    def test_actual_source_differences_cannot_reuse_historical_binding(self):
+        import shutil
+        import tempfile
+        from tools.tests.proof_input_fixture import CHECKOUT
+        changed = [name for name in self.registry_sources()
+                   if (CHECKOUT / name).read_bytes() != (ROOT / name).read_bytes()]
+        # A future legitimately re-proved tree may equal the reference; source
+        # drift rejection itself remains covered by the existing hash mutation.
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / 'reference'
+            shutil.copytree(ROOT, candidate)
+            for name in changed:
+                shutil.copyfile(CHECKOUT / name, candidate / name)
+            if changed:
+                with self.assertRaisesRegex(ValueError, 'production binding source changed'):
+                    check_registry(candidate)
+            else:
+                self.assertEqual(set(check_registry(candidate)['entries']),
+                                 {'json_request::decode', 'json_request::encode'})
+
+    @staticmethod
+    def registry_sources():
+        return json.loads((ROOT / 'verification/json-request-binding.json').read_text())['production_sources']
 
 
 if __name__ == '__main__':

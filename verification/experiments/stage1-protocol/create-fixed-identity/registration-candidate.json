@@ -1,0 +1,72 @@
+{
+  "kind": "candidate-only-current-fixed-identity-public-registration",
+  "source_baseline": "723d84acb3576fc624b172ba71e6bc966c5b32ca",
+  "shared_file": "verification/experiments/stage1-protocol/registered.py",
+  "shared_base_sha256": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+  "requires_prior_flow_candidate": "../create-attachment-flow/public-registration-candidate.patch",
+  "after_flow_candidate_sha256": "08bbe5dea0b603e330e26ee02ce3cc4687eaa6fa92ea6987c10f7f899ebb974e",
+  "after_this_candidate_sha256": "ed59c41c3d3c3660e1fa9bdb60611470284c3f65d24dc2c50124b6c8ed85c236",
+  "zero_context_patch": true,
+  "native_label": "stage1-create-fixed-identity",
+  "formal_cases": [
+    "actual",
+    "empty-namespace",
+    "truncate-number"
+  ],
+  "native_views": [
+    "actual",
+    "empty-namespace",
+    "truncate-number",
+    "restored-actual"
+  ],
+  "native_assertions_per_view": 5,
+  "new_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.actual_namespace_lost",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.actual_number_truncated",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.all_numeric_bits_retained",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.empty_namespace_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.invalid_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.normal_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.unicode_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.full_identity_contract",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.identity_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete"
+  ],
+  "expected_views": {
+    "actual": {
+      "files": 23,
+      "audits": 15
+    },
+    "empty-namespace": {
+      "files": 22,
+      "audits": 12
+    },
+    "truncate-number": {
+      "files": 22,
+      "audits": 12
+    }
+  },
+  "global_counts_must_be_recomputed": true,
+  "shared_files_modified": false,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "patches": {
+    "registration-candidate.patch": "09e477a753f2cdca31316e57ffdbfbe360c60ebdd33e59e21cbd399a8591a107",
+    "dependencies-candidate.patch": "c70525f098b9607073171e0ae71111701746684f4b53a15b6edd66b28a054605",
+    "coverage-candidate.patch": "93e8fd8f85bcbd109e8cde5f27f33b28b4a96c15f1245e149654652a97814cd6"
+  }
+}

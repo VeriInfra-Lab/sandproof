@@ -169,6 +169,26 @@ fn terminal_activation_stops_without_initializing_and_releases_quota_only_after_
 }
 
 #[test]
+fn confirmed_activation_receipt_replay_after_termination_keeps_original_world() {
+    let (_directory, mut journal, activation) = setup();
+    let receipt = success(&activation);
+    journal.complete(&receipt, &mut NeverCrash).unwrap();
+    assert_eq!(
+        journal.abort_due_startups(1_000, &mut NeverCrash).unwrap(),
+        1
+    );
+    finish_compensating_create(&mut journal, SANDBOX, CREATE_OP, &mut worker).unwrap();
+    let before = journal.world().unwrap();
+    assert!(before.sandbox_record(SANDBOX).unwrap().terminal);
+    assert_eq!(
+        before.sandbox_record(SANDBOX).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert_eq!(journal.complete(&receipt, &mut NeverCrash).unwrap(), before);
+    assert_eq!(journal.world().unwrap(), before);
+}
+
+#[test]
 fn uncertain_or_mismatched_stop_keeps_activation_terminal_and_quota_held() {
     let (_directory, mut journal, activation) = setup();
     journal.abort_due_startups(1_000, &mut NeverCrash).unwrap();

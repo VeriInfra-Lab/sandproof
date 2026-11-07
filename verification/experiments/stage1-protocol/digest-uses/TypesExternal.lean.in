@@ -1,0 +1,11 @@
+import SandproofStandardCreate.Types
+/-! Reuse the one complete receiver model; these aliases do not assert
+physical connection identity, authorization or a live transaction. -/
+namespace SandproofDigestUsesRust
+abbrev rusqlite.Connection := SandproofStandardCreateRust.rusqlite.Connection
+abbrev core.cell.RefCell := SandproofStandardCreateRust.core.cell.RefCell
+abbrev sandbox_controller_core.model.World :=
+  SandproofStandardCreateRust.sandbox_controller_core.model.World
+abbrev sandproof_controller_service.controller.transaction.CommittedWorld :=
+  SandproofStandardCreateRust.sandproof_controller_service.controller.transaction.CommittedWorld
+end SandproofDigestUsesRust

@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.CreateObservationValues
+import SandboxModel.Lifecycle.Protocol.CreateObservationEquality
+import SandboxModel.Lifecycle.Protocol.ResumeBindings
+import SandboxModel.Lifecycle.Protocol.RenewalResultBindings
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request sandproof_protocol.lifecycle.observation
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Validation
+open SandboxModel.Stage1Protocol.ReadyFactValues SandboxModel.Stage1Protocol.CreateValues
+namespace SandboxModel.Stage1Protocol.NegativeCreateKeyOnly
+
+theorem actual_mutant_accepts : create_matches_request changedRequest createIntent = .ok true := by
+  simp [create_matches_request, CreateObservation.matches_request,
+    changedRequest, observation, changedCreate, createIntent, createPayload,
+    EnvelopeValues.intent, EnvelopeValues.center, EnvelopeValues.node,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.accepted_eq, Replay.center_eq, Replay.retention_eq, Replay.node_eq, Replay.key_eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    validate_body_refines, expectedResult, expectationOK,
+    RenewalResultTag.actual_is_err, RenewalResultTag.IsError,
+    createView, resourceView, SandboxModel.Foundations.CreatePlan.valid,
+    SandboxModel.Foundations.ResourceVector.positive, SandboxModel.Foundations.maxCounter]
+
+theorem violates_same_full_contract : ¬ CreateBinding.FullContract create_matches_request := by
+  classical
+  intro contract
+  have exact_result := contract changedRequest createIntent
+  rw [actual_mutant_accepts] at exact_result
+  have rejected := omitted_fields_violate_contract.1
+  simp [rejected] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeCreateKeyOnly
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCreateKeyOnly.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeCreateKeyOnly.violates_same_full_contract

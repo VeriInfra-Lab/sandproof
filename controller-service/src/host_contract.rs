@@ -251,6 +251,20 @@ pub struct HostSlotContext {
 pub trait HostEvidence: ResourceEvidence {
     fn validates(&self, command: &core::Command) -> bool;
 
+    /// Exact immutable material digest checked for this original Seal/Commit.
+    /// Ordinary observations and helper exit alone cannot supply this fact.
+    fn capture_manifest_digest(
+        &self,
+        _command: &core::Command,
+    ) -> Option<sandproof_protocol::lifecycle::ContentDigest> {
+        None
+    }
+
+    /// Checked sum of the actual immutable manifest file lengths, never the reservation limit.
+    fn capture_material_bytes(&self, _command: &core::Command) -> Option<u64> {
+        None
+    }
+
     /// Return the process identity from the matching successful original
     /// Prepare/Activate observation, never from a future capture manifest.
     /// The adapter must match `command` and the independently expected resource.

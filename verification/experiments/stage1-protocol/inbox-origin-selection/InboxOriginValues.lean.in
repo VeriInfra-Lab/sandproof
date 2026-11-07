@@ -1,0 +1,83 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.OriginSelection.Values
+noncomputable section
+
+def create : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent },
+    operation := .Create Validation.Examples.createPayload 1#u64 } }
+
+def follow (version previous : U64) (operation : LifecycleOperation) : AcceptedLifecycleIntent := { create with
+  accepted_version := version,
+  request := { create.request with
+    operation := operation,
+    binding := { create.request.binding with
+      expected := .Version previous,
+      key := { create.request.binding.key with sequence := version } } } }
+
+def resume : AcceptedLifecycleIntent := follow 3#u64 2#u64 (.Resume 1#u64 1#u64 9#u64 Request.digest)
+def renew : AcceptedLifecycleIntent := follow 2#u64 1#u64 (.Renew 1#u64 100#i64 false)
+def destroy : AcceptedLifecycleIntent := follow 3#u64 2#u64 .Destroy
+def entry (intent : AcceptedLifecycleIntent) (operation : Option U64) : Entry :=
+  ⟨intent, operation, none, none, none⟩
+def created : Entry := entry create (some 30#u64)
+def resumed : Entry := entry resume none
+def changedFields : Entry := { created with
+  local_operation := some 31#u64,
+  applied_deadline := some 700#i64, previous_effective_end_at_ms := some 600#i64 }
+
+def session (entries : alloc.vec.Vec Entry) : Session := {
+  id := create.request.binding.session, retention := create.retention,
+  owner := create.request.binding.key.owner, current_version := 3#u64,
+  terminal := false, refusal := none, incarnation := some 1#u64, «local» := none,
+  entries := entries, confirmed_terminal := none, confirmed_renewal := none,
+  compacted_sdk_through := none, native_retirement := none }
+def resumeCase : Session := session (alloc.vec.Vec.from [created, resumed] (by scalar_tac))
+def fieldsCase : Session := session (alloc.vec.Vec.from [created, changedFields] (by scalar_tac))
+def trailingCase : Session := session
+  (alloc.vec.Vec.from [created, entry renew none, entry destroy none] (by scalar_tac))
+def noOriginCase : Session := session
+  (alloc.vec.Vec.from [entry renew none, entry destroy none] (by scalar_tac))
+def emptyCase : Session := session (alloc.vec.Vec.from [] (by simp))
+
+theorem normal_envelopes :
+    Validation.ValidEnvelope create EnvelopeValues.context ∧
+    Validation.ValidEnvelope resume EnvelopeValues.context ∧
+    Validation.ValidEnvelope renew EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroy EnvelopeValues.context := by
+  have add1 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  have add2 : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK,
+    Validation.versionOK, create, follow, resume, renew, destroy,
+    EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.node, EnvelopeValues.center,
+    Validation.Examples.createPayload, Validation.createView, Validation.resourceView,
+    SandboxModel.Foundations.CreatePlan.valid, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter, add1, add2]
+
+theorem expected_outcomes :
+    selection resumeCase.entries.val = some resumed ∧
+    selection fieldsCase.entries.val = some changedFields ∧
+    selection trailingCase.entries.val = some created ∧
+    selection noOriginCase.entries.val = none ∧
+    selection emptyCase.entries.val = none := by
+  simp [selection, origin, resumeCase, fieldsCase, trailingCase, noOriginCase, emptyCase,
+    session, created, resumed, changedFields, entry, create, resume, renew, destroy, follow]
+
+theorem distinctions : created ≠ resumed ∧ created ≠ changedFields := by
+  simp [created, resumed, changedFields, entry, create, resume, follow]
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.Values.expected_outcomes
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.Values.distinctions

@@ -1,0 +1,10 @@
+{
+  "repeat-first": {
+    "before": "    Ok((r.get(first)?, r.get(second)?))",
+    "after": "    let _ = second;\n    Ok((r.get(first)?, r.get(first)?))"
+  },
+  "second-error-first": {
+    "before": "    Ok((r.get(first)?, r.get(second)?))",
+    "after": "    let right = r.get(second)?;\n    let left = r.get(first)?;\n    Ok((left, right))"
+  }
+}

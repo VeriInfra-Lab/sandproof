@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.ReadyFactValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.observation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.ReadyFacts
+open SandboxModel.Stage1Protocol.ReadyFactValues
+namespace SandboxModel.Stage1Protocol.NegativeRenewDeadline
+
+theorem actual_mutant_accepts : ready_matches_resumed_renewal negativeFacts resumeIntent (currentIntent ((-1)#i64) false) negativeSource = .ok true := by
+  have cast : IScalar.hcast .U64 ((-1)#i64) = 18446744073709551615#u64 := by decide
+  simp [ready_matches_resumed_renewal,
+    sandproof_protocol.lifecycle.resume.CurrentReadyFacts.matches_resumed_renewal,
+    sandproof_protocol.lifecycle.resume.CurrentReadyFacts.matches_resume_source,
+    sandproof_protocol.lifecycle.resume.current_facts, negativeFacts, negativeSource, facts, source,
+    resumeIntent, currentIntent, cast, lift,
+    IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq, CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+    PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq, Replay.array_eq]
+
+theorem violates_same_full_contract : ¬ FullRenewedContract ready_matches_resumed_renewal := by
+  classical
+  intro contract
+  have exact_result := contract negativeFacts resumeIntent (currentIntent ((-1)#i64) false) negativeSource
+  rw [actual_mutant_accepts] at exact_result
+  simp [RenewedMatches, resumeIntent, currentIntent] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeRenewDeadline
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRenewDeadline.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRenewDeadline.violates_same_full_contract

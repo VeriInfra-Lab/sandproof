@@ -1,0 +1,27 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -58,0 +59 @@
++    ('stage1-create-lifetime-sql', str(HERE/'create-lifetime-sql/native.py'), False),
+@@ -426,0 +428,2 @@
++    add('create-lifetime-sql', HERE/'create-lifetime-sql/formal.py',
++        native=('stage1-create-lifetime-sql',), cases=('actual', 'zero-deadline', 'empty-sandbox'))
+@@ -431,0 +435,2 @@
++        return [row.get('actual', {}) for row in result.get('variants', {}).values()]
++    if result.get('kind') == 'actual-lifetime-sql-development-batch':
+@@ -455,0 +461,13 @@
++    if job['name'] == 'create-lifetime-sql':
++        variants = result.get('variants', {})
++        if (result.get('kind') != 'actual-lifetime-sql-development-batch'
++                or set(variants) != set(job['cases'])
++                or result.get('all_three_variants_complete') is not True
++                or result.get('prepare_only') is not False
++                or any(row.get('complete') is not True for row in variants.values())
++                or any(row.get('property_rejected') is not (name != 'actual')
++                       for name, row in variants.items())
++                or any(row.get('actual', {}).get('files') != row.get('files')
++                       or row.get('actual', {}).get('audits') != row.get('audits')
++                       for row in variants.values())):
++            raise ValueError('missing complete current lifetime SQL correct/two-mutant evidence')
+@@ -981 +999 @@
+-    if job['name'] in ('create-attachment-flow', 'create-fixed-identity'):
++    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql'):

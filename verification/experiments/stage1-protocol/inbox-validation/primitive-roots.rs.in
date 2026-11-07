@@ -1,0 +1,9 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_standard_graphic_bytes(value: &str) -> bool {
+    <StandardGraphicBytes as GraphicBytes>::all_graphic(value)
+}
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_result_is_error<T, E>(value: &Result<T, E>) -> bool {
+    value.is_err()
+}

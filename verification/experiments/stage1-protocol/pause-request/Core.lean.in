@@ -1,0 +1,39 @@
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Spec
+import SandboxModel.Lifecycle.Protocol.PauseRequest.Cloning
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest
+open ProtocolCloning Cloning
+theorem actual (work : Work) : proof_source_pause_request work = .ok (Expected work) := by
+  cases h : work.anchor.request.request.operation <;>
+    simp [proof_source_pause_request,
+      controller.lifecycle_inbox.source_work.full.SourceWork.pause_request,
+      controller.lifecycle_inbox.source_work.SourceWork.request, Expected, Assembled, h]
+theorem full_pause_contract : FullPauseContract proof_source_pause_request := actual
+
+theorem accepts_iff (work : Work) (value : Request) :
+    proof_source_pause_request work = .ok (.Ok value) ↔
+      ∃ source capture, work.anchor.request.request.operation = .Unload source capture ∧
+        value = Assembled work source capture := by
+  rw [actual]
+  cases h : work.anchor.request.request.operation <;> simp [Expected, h, eq_comm]
+theorem refusal_iff (work : Work) : proof_source_pause_request work = .ok (.Err .Conflict) ↔
+    ∀ source capture, work.anchor.request.request.operation ≠ .Unload source capture := by
+  rw [actual]
+  cases h : work.anchor.request.request.operation <;> simp [Expected, h]
+theorem total (work : Work) : ∃ returned, proof_source_pause_request work = .ok returned :=
+  ⟨Expected work, actual work⟩
+theorem complete_fields (work : Work) (value : Request)
+    (accepted : proof_source_pause_request work = .ok (.Ok value)) :
+    value.binding.operation = work.anchor.request.request.binding ∧
+    value.source_work_binding = work.requirement.work_binding ∧
+    value.node = work.requirement.node ∧ value.source_resource = work.requirement.resource ∧
+    value.source = work.requirement.source := by
+  obtain ⟨source, capture, _, rfl⟩ := (accepts_iff work value).mp accepted
+  simp [Assembled]
+end SandboxModel.Stage1Protocol.PauseRequest
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.actual
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.full_pause_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.refusal_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.total
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.complete_fields

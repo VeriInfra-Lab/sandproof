@@ -109,7 +109,7 @@ impl Fixture {
                 "max_block_bytes":8_388_608,"memory_bytes":67_108_864,"operation_timeout_ms":1000,"writer_root":path("writer")},
             "tls":{"certificate_chain_der":[path("center.der")],"private_key_der":path("center-key.der"),
                 "trusted_roots_der":[path("ca.der")],"max_connections":12,"handshake_timeout_ms":500,"request_timeout_ms":1000},
-            "bounds":{"max_nodes":2,"max_templates_per_node":4,"max_sandboxes":4,"operations_per_sandbox":4,"max_options_bytes":4096,"result_retention_ms":300000,"platform":resources},
+            "bounds":{"max_nodes":2,"max_templates_per_node":4,"max_sandboxes":4,"operations_per_sandbox":4,"max_options_bytes":4096,"result_retention_ms":300_000,"platform":resources},
             "tenants":[{"tenant":"1","limit":resources}],
             "nodes":[{"registration":{"identity":{"deployment_id":"assembly-fixture","node_id":"host-a","node_generation":1},
                 "role":"runtime","limit":resources,"mode":"accepting","healthy_until_ms":0,"free":{"instances":0,"cpu":0,"memory_bytes":0,"disk_bytes":0},

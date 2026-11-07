@@ -1,0 +1,14 @@
+{
+  "production": {
+    "core/src/convert/num.rs": "dfb01dca46ba5fc8defaad61c26e3a03eb29e4ac090693f5c853020b5b3b6b13",
+    "core/src/num/mod.rs": "f0820f9dfb94999440c8cb4a349736fa21df7e5668e19b6b49e016ff67c05ce3",
+    "core/src/ops/arith.rs": "596368a6b3e7e16251f13ec80344f170e13517eb927ceaa9e3d4c7a1fa3b8ae0",
+    "core/src/result.rs": "fc9cedba2ca1bb3d07b07d0f15160ed0277ed9a9cbc91fa5045125a73cdacb1d"
+  },
+  "extraction": {
+    "core/src/convert/num.rs": "cef1248e8e76d58077b34f622c51d07f25d78a1293783a6bd7ae371f639b84db",
+    "core/src/num/mod.rs": "eb06b0b1ad4d9de07a6246957c4407c2f6f1e0db9460a85ad5833dfbf03c253b",
+    "core/src/ops/arith.rs": "a495c8c9838be09ce2c239462153a6221b6f471aa2efe43ce437e83581636c91",
+    "core/src/result.rs": "b7a1da21e96c0fbb74af31dfcf4904c8f74a974733aa62a69b0ae41c2107a196"
+  }
+}

@@ -25,6 +25,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import re
 import shutil
 import sqlite3
@@ -178,12 +179,12 @@ def exercise(args):
     def no_resources():
         for index, pool_namespace in enumerate(deployment.namespaces):
             pool = root / str(index)
-            if (pool / "jails/.claims").is_dir():
+            if (original_chroot(pool) / ".claims").is_dir():
                 check_no_resources(pool, pool_namespace, firecracker, args.uid_base + index * 100)
             assert_terminal_rows(pool / "db/controller.db")
         # .claims intentionally retains stopped identity tombstones; inspect
         # their PID/start time above, not their directory names as live VMs.
-            for parent in (pool / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
+            for parent in (original_chroot(pool) / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
                 assert not list(parent.rglob(f"vm-{pool_namespace}-*")), "test resource remains"
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 164)
     request = {"kind": "dockerfile", "disk_mib": 1024, "min_free_mib": 64,

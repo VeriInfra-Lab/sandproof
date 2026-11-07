@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.AcceptedWireModel
+import SandboxModel.Lifecycle.Protocol.Accepted
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+open sandproof_internal.lifecycle
+open SandboxModel.Stage1Protocol.AcceptedWire
+namespace SandboxModel.Stage1Protocol.AcceptedWire.Negative
+
+theorem actual_mutant_accepts_foreign_center (bytes : Slice U8) :
+    accepted_decode valueReader bytes EnvelopeValues.context (.Ok foreignCenterIntent) =
+      .ok (.Ok foreignCenterIntent) := by
+  simp [accepted_decode, decode_accepted_with, valueReader,
+    core.result.Result.map_err,
+    decode_accepted_with.closure.Insts.CoreOpsFunctionFnOnceTupleEAcceptedBodyError.call_once,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_mutant_violates_same_contract :
+    ¬WireContract (@accepted_decode (core.result.Result AcceptedLifecycleIntent Unit) Unit) := by
+  intro contract
+  let bytes : Slice U8 := Slice.new U8
+  have claim := contract valueReader bytes EnvelopeValues.context (.Ok foreignCenterIntent)
+  rw [actual_mutant_accepts_foreign_center] at claim
+  simp [expectedRun, valueReader, expectedPost,
+    Validation.expectedAccepted, foreignCenterIntent, EnvelopeValues.context, EnvelopeValues.center] at claim
+
+end SandboxModel.Stage1Protocol.AcceptedWire.Negative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.Negative.actual_mutant_accepts_foreign_center
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.Negative.actual_mutant_violates_same_contract

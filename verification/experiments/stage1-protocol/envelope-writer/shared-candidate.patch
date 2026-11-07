@@ -1,0 +1,11 @@
+--- a/lakefile.toml
++++ b/lakefile.toml
+@@ -57,7 +57,7 @@
+ 
+ [[lean_lib]]
+ name = "SandproofBoundedWriter"
+-srcDir = "verification/aeneas/bounded-writer"
++srcDir = "verification/aeneas/stage1-protocol/envelope-writer"
+ 
+ [[lean_lib]]
+ name = "SandproofBtreeSetProbe"

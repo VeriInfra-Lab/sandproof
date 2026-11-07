@@ -1,0 +1,34 @@
+import SandproofRestoreWork.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork
+open controller.lifecycle_inbox.source_work
+
+/-- Missing restore claim is the first rejection, regardless of all later fields. -/
+theorem no_restore (record : SourceWorkRecord) (missing : record.restore = none) :
+    restore.work record = .ok (.Err JournalError.Conflict) := by
+  simp [restore.work, missing, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- Missing capture precedes the claim's material-use check. -/
+theorem no_capture (record : SourceWorkRecord) (claim : restore.RestoreClaim)
+    (restorePresent : record.restore = some claim) (missing : record.capture = none) :
+    restore.work record = .ok (.Err JournalError.CorruptStore) := by
+  simp [restore.work, restorePresent, missing, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- A closed material use rejects before consulting completion or action. -/
+theorem closed_material_use (record : SourceWorkRecord) (claim : restore.RestoreClaim)
+    (capture : full.CaptureWork) (restorePresent : record.restore = some claim)
+    (capturePresent : record.capture = some capture) (closed : claim.material_use = false) :
+    restore.work record = .ok (.Err JournalError.UnresolvedAction) := by
+  simp [restore.work, restorePresent, capturePresent, closed, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+end SandboxModel.Stage1Protocol.RestoreWork
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.no_restore
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.no_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.closed_material_use

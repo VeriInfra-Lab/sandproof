@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "production_baseline": "a9c9967889c4cf298e4378c7106948018835fc64",
+  "parent_commit": "27cc13364deda50f7e77a2b07221909e12ff384a",
+  "production_modified": false,
+  "shared_acceptance": false,
+  "full_v3": false,
+  "audits": {
+    "InboxRecordTotal": [
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.record_contract"
+    ],
+    "InboxRecordTotalModel": [
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.total_implies_existing",
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.total_implies_new_session"
+    ],
+    "InboxRecordTotalWrongCapture": [
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.wrong_capture_rejects_total"
+    ],
+    "InboxRecordTotalWrongSdk": [
+      "SandboxModel.Stage1Protocol.InboxRecordTotal.wrong_sdk_rejects_total"
+    ]
+  },
+  "current_input_review": {
+    "source_commit": "0c8f457a7a047e2ba49ac4e36452703f28f7333b",
+    "prior_source_commit": "a9c9967889c4cf298e4378c7106948018835fc64",
+    "method": "re-extract adopted production bodies and all existing negative variants; hashes alone do not constitute acceptance",
+    "shared_error_change": "JournalError::CaptureMaterialQuotaExceeded",
+    "acceptance_complete": false,
+    "changed_input_count": 0
+  },
+  "production_adopted": true
+}

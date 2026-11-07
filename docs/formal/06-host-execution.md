@@ -2,11 +2,11 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#638](https://github.com/VeriInfra-Lab/sandproof/issues/638)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#638](https://github.com/VeriInfra-Lab/sandproof/issues/638)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 实现范围
 
-对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。当前 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 明确拒绝 snapshot source，不能将历史 Freeze/Seal/Commit 命令或模型记为真实支持。本阶段新增固定 Firecracker/jailer 1.16.1 的完整路径，原身份/围栏/受保护目录及清理继续复用。
+对应 [sandbox-node](../../sandbox-node/src/linux.rs)、[sandbox-runtime](../../sandbox-runtime/README.md)。通用 `sandbox-node/src/linux/execution.rs` 的 `PrepareVm` 仍明确拒绝 snapshot source；恢复由 `linux/restore.rs` 的 `restore_action` 消费原恢复工作及激活许可，调用 Runtime 的 `load_paused_snapshot` / `activate_loaded_snapshot`。不能将历史 Freeze/Seal/Commit 命令或模型记为这些新连接已证明。本阶段使用固定 Firecracker/jailer 1.16.1，原身份/围栏/受保护目录及清理继续复用；已有有限实机范围见覆盖记录，新增 CoW 路径仍须相应工程验收与实现对应。
 
 新增外部接口合同仅为[依赖登记 S-C1–6](dependencies.md#第一阶段新增依赖合同)。选择哪个 manifest、原 VM 是否允许停止、何时激活和哪些文件允许删除属于自有业务。外部工具可返回错误但留下部分效果。
 
@@ -20,7 +20,7 @@
 | LoadPaused | 唯一 claim、新候选/私有盘、File backend、resume_vm=false、已取得 pin | 使用指定完整 bundle；新 jail 保持设备相对路径；不自动运行、不写坏来源 |
 | ActivateOriginal | 已持久 MayHaveExecuted、原 candidate、当前围栏/寿命/凭据 | 只激活该候选；重复投递不创建新候选；旧任务不能绕过终止 |
 | Observe/StopOriginal | 精确 VMM/辅助进程及工作身份 | Exit/Stopped/排空/Released 分开；PID/路径缺席不能证明无迟到作用 |
-| DeleteBundle | V5 删除许可、精确对象、无 pin/映射/可复活任务 | 只删授权原对象；部分删除保持原责任，实际释放后才退额度 |
+| DeleteBundle | V5 原材料级删除许可及固定 work/plan、精确对象、无 pin/映射/可复活任务 | 终止或后继接管共用原删除路径；只删授权原对象，部分删除/丢回执/重启继续原计划，实际释放后才结算原额度 |
 
 物理效果必须接原日志/尝试/进程身份的持续观察。文件从路径取得原句柄到校验/使用是一个安全链；Metadata 条件证明不能代替 open_checked 的路径/FD/竞态证明。需先解决 V0 T8 的可抽取拆分或明确阻断，不能扩大可信业务层。
 
@@ -29,6 +29,10 @@
 完整 bundle 接管前不得停止原唯一状态；回滚暂停前先让迟到 capture 工作失效。LoadPaused 返回后，内存 backing 仍被 VMM 使用，文件不能改写或逐出。设置 MayHaveExecuted 后，即使后来看到 paused 或 stopped，也不能允许重载旧来源。
 
 停止/回收以原身份驱动且可重试。manager 重启保留运行 VMM，不能以服务停止代替 VM 清理。实际进程父子关系、退出信号和 service/cgroup 配置必须核对：声明中的管理服务崩溃不能被自有停止钩子转换为未授权的 VMM 终止；对应故障注入需要真实验证。unexpected VMM death 后的状态保证按声明故障域报告失败，不以冷重启补成功。
+
+后继保存点接管后的旧材料回收要求材料级真实结束提供方：原 Full 写者/API/worker、恢复 loader、activation/运行实例均已按原完整身份结束，原 jail/private backing 已精确清理，原运行位置与其它外部使用已释放。一次超时、PID/路径缺席或当前会话的终止证书不能替代这些事实。V5 在原 R1 释放与后继 B 成为 Unloaded 的同一事务固定原见证，V6 不从已复用位置重造旧释放身份。新 R2 的无关通道和当前活文件不属于删除 A 的范围。
+
+物理删除消费已经持久保存的原计划，在管理锁和 SQL 事务外执行；部分效果后不能重新枚举生成新计划。每次许可与回执核对原材料、work/plan 和对象身份，错误/迟到回执不能清理新材料或复用位置。CoW 独立 inode 不增加父链依赖，也不取消本阶段原使用结束的前提；逻辑材料预留结算与共享物理块的实际释放分别观察。本批工程实现不把上述自有判断整体移入可信依赖，具体已测范围只见覆盖记录。
 
 ## 4. 验收与边界
 
@@ -40,17 +44,53 @@
 
 `Runtime::pause_original_vm` 绑定原进程的 PID、启动时间、boot 身份和原 jail，只有 API 确认为 paused 才产生 `PausedOriginalVm`。句柄只是观察结果，不授予当前操作资格；丢弃它不会停止或恢复原 VM。
 
-`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并复制到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
+`capture_full_into` 发送固定 Full 请求，从原目录句柄打开 state/memory 和白名单 rootfs，保持暂停并克隆到独立 store。首 profile 对应 `stage_and_boot` 的 rootfs→rootfs.ext4。调用方必须持续持有原工作/围栏及无写者条件，不能用过期观察代替它。
 
-`SnapshotStage` 检查原 FD 的类型、属主、权限、链接数及长度，逐块复制并计算真实 SHA-256。发布前核对保留的目标 FD、替换/修改及全部测量，随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。
+`SnapshotStage` 的 `copy_artifact` 接口沿原 FD 的类型、属主、权限、链接数及长度检查，
+调用唯一 `clone_whole_file` 作同文件系统整文件 FICLONE，再读取目标计算完整 SHA-256；
+接口名不表示仍保留另一条字节复制实现。发布前核对保留的目标 FD、替换/修改及全部测量，
+随后同步文件、目录并执行不覆盖的同目录 rename。任何错误都保留材料；rename 后的同步
+错误可能已有可见效果。已有名字不自动判为同键成功，须查询原持久工作。单个文件的
+克隆原子性不能代替整个捕获截面的无写者条件；Full RAM 写入及全量摘要读取仍存在。
 
-`CapturedFullSnapshot` 与普通文件复制结果分型；节点 `full_snapshot::seal_full_capture` 再核对原 VM 身份、完整 capture 目录键和原 profile，并从实际测量构建完整 manifest。`PublishedFullCapture` 只表示文件与同步事实；V5 持久登记前没有 stop 许可。此模块无删除/kill/thaw 的失败补偿，尚未接入默认节点命令，不等于完整 pause/unload 已验收。具体提交和证据在 #638 记录。
+捕获观察使用 `SnapshotArtifactEvent` 的 `BeforeClone`、`Cloned`、
+`Measuring { measured_bytes, total_bytes }`、`BeforeSync`、`Synced`。
+`Cloned` 只说明同一目标已经完成整文件克隆，不表示摘要、同步或 bundle 发布完成；
+`Measuring` 表示随后读取目标计算摘要的进度，不是复制写入进度。任何事件/回调失败
+仍保留原工作与材料；观察事件不能充当 Full 成功、持久登记或 Stop 许可。
+
+`CapturedFullSnapshot` 与普通文件复制结果分型；节点 `full_snapshot::seal_full_capture` 再核对原 VM 身份、完整 capture 目录键和原 profile，并从实际测量构建完整 manifest。`PublishedFullCapture` 只表示文件与同步事实；V5 持久登记前没有 stop 许可。此底层模块无删除/kill/thaw 的失败补偿；正式 Full 调用已由后文许可接线连接，底层调用成功仍不等于完整 pause/unload 已验收。具体提交和证据在 #638 记录。
 
 纯 `snapshot_policy::accepts` 是复制路径实际调用的 Metadata 接受检查；其局部证明不能替代原 FD 获取、冻结期间无写者、完整 manifest/事务连接或 S-C 文件持久性合同。
 
-`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，通过同一个父 FD 创建、检查两原句柄，记录布局版本、原部署配置绑定及父目录/两子目录的设备、inode 和出生身份，先同步再发布。`reopen` 读取原持久记录，允许目录已有运行材料，逐一核对原身份与绑定；缺失、部分初始化、替换或版本不符均拒绝，不转为重新初始化或另建编号。Full 捕获消费这个私有构造的布局，并重查原 runtime root，任意两个 Path 不提供同等保证。这里仍采用受控静态挂载、无无关特权写者的部署条件；自有初始化/重开判断没有被整体列为可信依赖。
+`SnapshotLayout::initialize` 只在受保护的空父目录首次创建 `v`、`s`，从同一个父 FD
+取得两原句柄，并核对同 XFS、同一当次挂载及不同目录身份。随后在原父目录创建两个
+私有探针文件，实际克隆、读回、同步，按原 inode/目录项核对后精确删除并同步父目录。
+探针及后续同步全部成功后才发布唯一的 `LayoutRecord` version 2；其 `binding`、
+`parent`、`runtime`、`store` 字段仍保存原配置绑定和目录设备/inode/出生身份。
+version 1 明确拒绝，不自动迁移、不保留双格式。version 2 只登记该次克隆能力探针成功，
+不代替项目配额部署/读回或每次真实克隆的错误处理。
 
-运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。布局格式 1 是新 stage1 的有限布局，不收养或迁移旧 profile。此布局已接真实组件和故障回归；其完整 Rust 对应证明及与正式物理 profile 激活的连接仍须补齐。root/0400 封存文件供 jailer File 后端加载时的权限路径、是否需要私有 RAM 副本及相应峰值预算属于恢复批缺口，当前恢复仍不启用。
+初始化发生效果后失败时，已创建的 `v`/`s` 和可能剩余的探针/发布文件保留，不能当作
+空目录重新初始化；即使探针名称已经删除，原目录锚点也保留这项未结责任。`reopen`
+读取原 version 2 记录，允许目录已有运行材料，核对原目录身份、配置和当次 FD 的
+XFS/挂载关系，不重新创建探针，也不持久化 MNT_ID。缺失、部分初始化、替换或旧格式
+均拒绝，不现场重造身份或另建编号。Full 捕获消费这个私有构造的布局并重查原 runtime
+root，任意两个 Path 不提供同等保证。这里仍依赖受控挂载和无无关特权写者；自有初始化、
+探针、精确删除和重开判断都不是整体可信依赖。
+
+运行清理只针对 `v` 下原 VM，不删除共同父目录或 `s`。本次内部布局记录改为 version 2，
+bundle/manifest 的数据字段不因文件系统块共享而改变，不增加旧布局兼容路径。部署提供
+受保护布局与匹配的 reflink/项目配额能力；`MaterialProject` 保留原 store FD，向目录赋予
+项目标签前复用同一 XFS/当次挂载检查，不把同设备别名当作该 store 的目标。
+`load_paused_snapshot` 通过 `SnapshotBundle::clone_for_restore`
+从原封存 bundle 创建新 jail 私有 state、RAM 与磁盘的独立 inode；先核来源，create-new，
+调用同一 `clone_whole_file`，按原长度上界读取目标校验 SHA-256，再核原来源与目录项，
+设置原 UID/GID、state/RAM 0400 或磁盘0600，完成文件/目录同步。私有 File backing 在
+克隆前接入原材料项目，保留到精确 VMM 退出与 jail 清理；共享块不解除 loader/pin 责任。
+不支持/跨挂载/配额/同步失败保留部分文件，不改回旧复制算法。能力和实际峰值按完整
+逻辑写入上界准入，不能把初始共享块占用当永久预算。外部保证见
+[A3 CoW 合同](dependencies.md#a3整文件-cow-克隆的准确边界)；自有实际连接仍须实现对应。
 
 ### 原捕获动作与已发布材料观察
 
@@ -72,7 +112,7 @@
 
 当前冷启动来源观察先将实际 GET `/vm/config` 按固定 Firecracker 1.16.1 的返回形状解析，再与启动实际使用的同一 `BootPlan` 对照：vCPU/RAM、内核路径和参数、单 rootfs 的可写/缓存/同步 I/O 配置、零或一个原网卡、MMDS 版本/地址/接口，以及不使用 balloon、hotplug、pmem、vsock、entropy。额外或重复字段、额外设备、未知配置、缺失必需字段均拒绝，不把观察值回填成期望值。固定返回投影的依据是 [VmmConfig::from](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/resources.rs)、[machine](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/machine_config.rs)、[drive](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/drive.rs)、[network](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/net.rs) 和 [MMDS](https://github.com/firecracker-microvm/firecracker/blob/2038188f145fb81b8d098147a10e9d9f392fd22f/src/vmm/src/vmm_config/mmds.rs)。该检查不是任意 VMM 或恢复来源的通用兼容验证器；恢复批须按原候选来源和固定工具真实返回继续连接，不能用此冷启动检查直接背书多周期。
 
-特别是该固定工具的 GET 投影会将 custom CPU、logger、metrics 返回为 null，并隐藏 custom CPU 的 machine 字段；null 不能证明它们从未配置。原唯一启动路径、受保护工具字节及没有未登记 API 写者的部署条件仍不可省略。这个可见配置判断不认证 CPU/初始镜像兼容、编码堆界、捕获前物理预留，也不授予捕获或停止许可。节点仍须与第一次 Create 前的受保护 epoch、原 CreateOptions/template 和实际原文件测量对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。当前只读组件不代表这些连接已经实现或证明。
+特别是该固定工具的 GET 投影会将 custom CPU、logger、metrics 返回为 null，并隐藏 custom CPU 的 machine 字段；null 不能证明它们从未配置。原唯一启动路径、受保护工具字节及没有未登记 API 写者的部署条件仍不可省略。这个可见配置判断不认证 CPU/初始镜像兼容、编码堆界、捕获前物理预留，也不授予捕获或停止许可。节点仍须与第一次 Create 前的受保护 epoch、原 CreateOptions/template 和实际原文件测量对照；缺少事实不得填默认值。原可写盘仍在变化，当前长度不替代后续连续暂停区间内的完整测量。V5 接受回传后须重核原工作/版本并在原事务保存，同一责任接管成功后才发物理捕获许可；不在 SQL 事务内等待文件或 API I/O。manager 重启不能仅凭历史 epoch 观察继续启动，须重新核对当前受保护部署。只读组件本身不证明这些连接；正式放行接线见后文，机器对应仍须补齐。
 
 ### 原来源绑定的停止与退出观察
 
@@ -101,7 +141,7 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 正式初始化从 `LinuxWorker::host_epoch_registration` 取得既有受保护文件的完整 SHA-256、boot 和原节点/namespace 绑定，并重新核对同一 provider 的真实宿主信息。`ProtectedHostEpochSource::provision` 仅供显式操作者命令生成全新当前格式文件：原父目录 FD 下 create-new、root/0400、全字节写入及文件/目录同步；不覆盖、修复或自动升级。错误可留下未登记文件，不能把错误当“没有写入”。服务重启必须核对已存原 registration，不能用这次观察自动改写旧值。实际工具字节与固定 Firecracker/jailer 语义的对应、完整宿主 proc/sys 视图及 epoch 内配置不变仍是部署条件；该接口不产生快照兼容、捕获预算或停止许可。正式 CLI/初始化/重启连接和本批验收由唯一服务装配完成，单个生成函数不代表这些连接已经通过。
 
 
-重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续分段捕获接线属于本批运行组件，尚待真实固定 VMM endpoint 和完整卸载验收，不声称获得新机器证明。
+重启后 `Runtime::observe_original_pause_state` 只观察持久工作指定的原来源：原 claim、PID/启动 ticks/boot、宿主 PID/user namespace、jail/cgroup 与保留目录必须匹配，GET 使用该目录下同一个 Unix 连接并核对实际 peer PID/UID/GID。Paused 只返回此次观察的私有句柄，Running 保留未决责任，Exited 需要原记录一致及内核退出依据；API/格式/权限/连接/超时错误和单纯 proc 路径缺失都不生成 Paused/Exited。观察没有 PATCH、Full、Stop、重新初始化或位置释放。Exited 也不证明旧捕获 worker 已结束，管理重启不能据此无条件重发 Full。该观察与后续捕获已接入正式卸载，有限真实 VMM 场景的版本与结果见[覆盖记录](../proof-coverage.md#current-status)；这些工程结果不构成新机器证明，也不覆盖全部准备断点。
 
 
 ### 原 Pause 的 Node 接线候选
@@ -110,7 +150,7 @@ UID 的数值编号域也必须相同：扫描者分别将 `/proc/self/ns/pid`�
 
 Node 沿原 Occupied 位置、owner/VM/generation、原 helper 独占门和未终止当前围栏执行；在 Pause 两侧重新核对原 epoch、实际源配置和文件事实，确认同一私有 paused 句柄后，才构造原 action 的 `Frozen` 回执。任何错误仍可能已经 Pause，原责任不退。`observe_pause_original` 复用相同 guard 和 source 输入，只读重开原 paused 观察，绝不重发 PATCH 或 Full；Running、Exited 或不能确认均不产生 Frozen。通用 execute/observe 在缺少这些原输入时仍拒绝 Freeze，不靠当前 PID/全局 boot 补字段。
 
-此候选尚待统一 ning 编译/针对性回归、真实固定 VMM 端点、对应 Rust 抽取和完整卸载验收。Full 仍是后继独立 `SealSnapshot`，须额外接 protected layout、实际来源匹配的兼容配置和原持久预算；不能从请求里的 profile/尺寸直接制造期望或预留。Linux 文件大小限额与原 cgroup 只提供各自实际约束，不能保证唯一源 VM 在撞限时存活，也不是正常支持条件充分的证明。尚未闭合这些条件之前不启用物理 Full，更不因此赋予 Stop、Unloaded 或释放资格。
+这一低层暂停步骤与后继 `SealSnapshot` 的正式 Full 放行必须分开。后文已接 protected layout、实际来源匹配的兼容配置和原持久预算；不能从请求里的 profile/尺寸直接制造期望或预留。实际工程验收与未完成 Rust 对应见覆盖记录。Linux 文件大小限额与原 cgroup 只提供各自实际约束，不能保证唯一源 VM 在撞限时存活，也不是正常支持条件充分的证明。调用方缺少上述条件时不得放行 Full；Full 成功也不自行赋予 Stop、Unloaded 或释放资格。
 
 
 ### 原启动 CPU 范围与实际 VMM 线程
@@ -124,19 +164,22 @@ Node 从同一原 `HostEpochRegistration.policy` 绑定的 protected payload 取
 固定 jailer/Firecracker 启动路径不扩大 affinity、没有未登记外部 affinity/CPU 热插拔/微码写者、真实完整宿主 proc 视图及受保护 CPU 域在原 epoch 内不变仍是必要条件；读回不能证明整个中间区间或未来永远不变。该检查也不读取 guest CPUID/MSR 或实际 VM XSAVE，不自动认证 Xmax、编码上界、预留、捕获资格或停止权。尚待本批定向原生检查、固定依赖亲和行为源码依据、真实启动/Pause/Full 及 Rust 对应证明；旧 boot 或 Metadata 定理不自动背书新增字段/调用。
 
 
-### 私有 Full profile 与实际提供方候选
+### 私有 Full profile 与实际提供方
 
-唯一服务装配可用 `NodeHost::with_capture_settings(settings, journal.host_epoch_requirement()?)` 将一份独立 profile 保存在 NodeHost 私有状态中。公开 settings 只来自受保护的 HostConfig：原 layout_parent、layout_binding、state_copy_bytes、memory_copy_bytes、disk_copy_bytes、api_timeout_ms；装配只重开并核原 layout/runtime 根和原 epoch，不自动初始化。profile 本身不反序列化，没有公开字段，不是 HTTP/work DTO 的一个可替换输入。复制/读取接受界不提供写前上界或物理预留，V5 原持久领取、预算及 V8 关闭/排空仍是实际动作的独立前置，未闭合前正式服务不装配/派发 Full。
+唯一服务装配通过 `NodeHost::with_capture_settings(settings, journal.host_epoch_requirement()?)` 保存独立 profile。settings 来自受保护的 HostConfig，包含原 layout/binding、state/memory/disk 读取界、API/worker 期限及材料项目配置；服务只重开并核对已准备的 layout/runtime 根和原 epoch，不自动初始化。profile 本身不反序列化，没有公开字段，不接受 HTTP/work DTO 替换。当前正式路径已连接 Full 子进程准备、原 SQL 授权和完成采纳；仍须先通过原持久工作、预算和关闭/排空检查，未配置或核对失败不能派发。读取界不是写前编码上界或物理预留证明。
 
 `prepare_full_capture(pause, original_source)` 只读生成建议参数，不代表授权。它从原受保护文件取已登记工具字节摘要，从同一 Node 原位置和密封 launch credential 取完整 managed-template 描述，用实际启动共用的 BootPlan 求设备指纹，比较真实 executable、原私有 kernel SHA/长度、盘长度和同一 CPU 范围。原模板、位置在观察两侧还须相同。此 adapter 路径只接原 managed-template 来源，不用当前基盘或工作请求补造旧镜像来源；独立 Full 文件组件/诊断 CLI 的旧精确证据不能背书该生产提供方。
 
 固定 FC 1.16.1 的实际 snapshot version 为 10.0.0，本 profile 的 snapshot_format 取 10；工具字段为原受保护 executable SHA，devices 为同一 BootPlan 的规范编码 SHA，image_configuration 绑定原完整 template canonical_digest 与设备指纹。cpu 绑定原 Bootstrap policy（整份宿主注册内容摘要），只在同一固定宿主/boot/内核/微码/CPU 域及已列依赖条件下使用，不能称为实测 guest CPUID/VM XSAVE 指纹。actual source 检查和固定无模板启动责任不可省略；null/摘要相等或 DTO.validate 不能代替这些条件。
 
-`capture_original(action, full, original_source)` 只消费原 SealSnapshot 动作，重新生成独立期望并比较完整 Full 输入，持原 helper 门、Occupied/owner/generation/VM 及未终止围栏，然后只读重开原 Paused 句柄，不再发送 Pause。实际 Full/Seal/原 key 重开后仍重新核对原来源、模板和围栏，成功返回 `FullCaptureObservation`。任何后置错误可能已有完整材料或原 VMM 仍在写，原 Dispatched/Unknown Full 名额与材料责任不能因为 Rust 回调返回而释放，也不产生 Stop/Resume 许可。
+正式 SealSnapshot 由 `prepare_capture_worker(action, full, original_source)` 准备同一受保护宿主程序的等待子进程，核对原位置/helper 门、owner/generation/VM、围栏及独立 Full 输入。`PreparedCaptureWorker` 保留原子进程和位置门，只提供原 PID/start/boot 与输入摘要，准备成功不授予 Full 许可。原 `ControllerApplication::execute_capture_action` 随后在短事务内调用 `ControllerJournal::authorize_lifecycle_full_capture`，重新核对完整工作、动作及 attempt、当前身份/寿命、原 dispatched outbox，持久保存同一 worker 和 job 后才返回不可公开构造或反序列化的 `FullCaptureLaunchPermit`。提交未知不返回许可，已登记 worker 不再次授权。
 
-`observe_full_capture` 只为仍持原来源位置的未决 Full 工作核同一原 key、独立 profile/原输入及已有 manifest 摘要（若有），返回 `CheckedStoredCapture` 文件事实；不要求原 VMM 仍运行，不再次 Pause/Full，不从文件存在推出捕获 provenance、原 writer/helper/copy 退出或数据库接管。卸载后释放原位置的恢复 C 路径须按独立持久 bundle/pin 记录继续，不能依赖仍有旧 Occupied 位置，也不能把此未决 Full 观察误作通用恢复资格。
+正式 SealSnapshot 只经 `ControllerApplication::execute_capture_action` 的原 SQL 授权，再由 `PreparedNodeCapture::release` 调用 `LinuxWorker::execute_prepared_full_capture` 和 crate 内部的 `LinuxWorker::release_prepared_full_capture`。这条唯一放行链消费原许可，分别比较完整 action、Full binding、实际 worker 和 job 摘要，才开放原 gate；准备壳和 worker 的 PID 在 exec 前后不变。`run_capture_worker` 是同一宿主二进制的同步早期入口，不装配服务或另起异步捕获任务。它核对有界输入及原摘要，重开原 Bootstrap/layout 和原 Paused 句柄，再沿来源、实际配置和 CPU 检查执行 Full、复制、Seal 和重开，不重新 Pause。
 
-当前冷启动链没有 Node snapshot-source Prepare 成功路径，T=0 仅限这条原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射；C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套 0 或删掉真实恢复状态。本批新增纯参数/配置/实际文件比较回归仍为受控数据，未获真实 VMM、完整 Full 预算或对应 Rust 证明结论。
+worker 完成后保存绑定原 action/Full/job/worker/source 的 completion；父调用必须核对有界回复、原材料和结束依据。原 `complete` 的同一 SQL 事务通过 `full::save_receipt` 采纳 manifest 摘要和实际字节，再推进原动作，CommitSnapshot 仍须与原已采纳值一致。回调返回、退出码0、文件存在或 Paused/Exited 均不能单独证明成功或准许 Stop/退额。任何错误都保留原 Unknown/Dispatched 工作、材料和进程责任。正常 Drop 或 `cancel` 只请求对原自有子进程作有界停止/回收；结果未知仍由原见证及 reaper 跟踪，不把 Drop 当作进程实际结束、无效果或退款回执。
 
+`LinuxWorker::observe_full_capture` 仍只是未决工作在原 key、独立 profile/原输入及已有摘要下的文件观察；它不再次 Pause/Full，也不单凭完整文件提供捕获来源、worker 退出或数据库接管证明。当前完成观察还需结合原 SQL worker、completion 和实际退出依据。未采用的 `CapturePreparationObservation`/`observe_capture_preparation` 保留在 #638 后续范围：当前没有在原独占门内保留 canonical/stage、并让观察对象覆盖短事务的这套准备恢复接口，三个准备阶段的 manager 崩溃断点回归也尚未接入。正常 Full 后的管理进程重启验收不代表这些断点已覆盖。
 
-`NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 是材料已由原数据库登记后的只读入口。该 service 类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要；Node 使用这两项独立期望与同一受保护 store/epoch、读取界检查原 key 和全部字节，不访问旧 Occupied 位置、launch secret 或活 VMM。未决工作仍使用前述 `observe_full_capture`。材料观察不提供恢复、pin、删除、访问、停止或退额许可，完整材料不自行产生来源或提交证明。当前原 journal 的持久接管及该类型提供方尚未实现，不能从 DTO、文件存在或测试替身构造成功凭证；消费接口可编译不表示卸载后重开已端到端接通。
+通用冷启动路径仍不接受 Node snapshot-source Prepare，恢复走独立的原工作入口；T=0 仅限原无 static/custom template、无额外 API 改写的实际冷启动及原来源映射。C 的恢复 vCPU MSR 集合必须另按原 bundle 和固定恢复实现保留/计界，不能自动套0或删掉真实恢复状态。恢复、LoadPaused、材料 GC 及有限故障代表已有正式工程证据，精确版本、复用范围和失败记录见[覆盖记录](../proof-coverage.md#current-status)。这不覆盖所有未知提交、准备阶段崩溃或任意并发历史；整体 Rust/Lean 对应仍未闭合。
+
+`NodeHost::observe_committed_capture(&CommittedCaptureExpectation)` 消费原 journal 提供的独立材料期望。`sealed_capture_expectation`/`committed_capture_expectation` 已从原持久记录及各阶段检查提供期望，分别连接 CommitSnapshot 前的材料核对和提交后的 Stop/清理观察；封存材料不等于已提交，动作资格仍由原工作流检查。该类型字段私有、没有 Deserialize 或公开构造，只保存原完整 Full 工作和已登记 manifest 摘要。Node 核同一受保护 store/epoch、原 key 和全部字节，不依赖旧 Occupied 位置、launch secret 或活 VMM。材料观察不提供恢复、pin、删除、访问、停止或退额许可；后续恢复仍须独立持久 bundle/pin 记录和自己的资格证明，不能由正常卸载通过外推。

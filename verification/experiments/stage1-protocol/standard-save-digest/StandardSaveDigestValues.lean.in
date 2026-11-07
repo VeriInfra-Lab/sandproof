@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestRepresentation
+import SandboxModel.Lifecycle.Protocol.StandardDigestValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardSaveDigest.Values
+abbrev normal := StandardDigest.Values.normal
+abbrev empty := StandardDigest.Values.empty
+abbrev abc := StandardDigest.Values.abc
+
+/-- Reuses the two existing complete payload computations; no second hash model. -/
+theorem complete_hashes_differ :
+    DigestByteBridge.referenceOutput empty ≠ DigestByteBridge.referenceOutput abc := by
+  intro same
+  have payloads := congrArg (fun value : Array U8 32#usize =>
+    (SandproofFoundationsRust.IdentifierLibrary.byteArray value.val).toList) same
+  rw [StandardDigest.Values.empty_full_payload, StandardDigest.Values.abc_full_payload] at payloads
+  have first := (List.cons.inj payloads).1
+  exact (by decide : (0xe3 : UInt8) ≠ 0xba) first
+
+/-- Unchanged arbitrary-array observation from the earlier tail counter. -/
+theorem overwritten_byte_zero (output : Array U8 32#usize) :
+    (SandproofFoundationsRust.IdentifierLibrary.byteArray (output.set 31#usize 0#u8).val).toList[31]? =
+      some 0 := by
+  rw [SandboxModel.Foundations.byteArray_toList_data]
+  simp only [SandproofFoundationsRust.IdentifierLibrary.byteArray, Array.set_val_eq,
+    List.toList_toArray, List.getElem?_map]
+  simp
+
+end SandboxModel.Stage1Protocol.StandardSaveDigest.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.Values.complete_hashes_differ
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.Values.overwritten_byte_zero

@@ -1,0 +1,128 @@
+import SandboxModel.Lifecycle.Protocol.AcceptedWireModel
+import SandboxModel.Lifecycle.Protocol.Accepted
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+open sandproof_internal.lifecycle
+open SandboxModel.Stage1Protocol.Validation
+namespace SandboxModel.Stage1Protocol.AcceptedWire
+
+theorem candidate_refines {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F) :
+    accepted_decode reader bytes context decode = expectedRun reader bytes context decode := by
+  unfold accepted_decode decode_accepted_with expectedRun
+  apply congrArg (fun next => reader.call_once decode bytes >>= next)
+  funext decoded
+  cases decoded with
+  | Err error =>
+    simp [expectedPost, core.result.Result.map_err,
+      decode_accepted_with.closure.Insts.CoreOpsFunctionFnOnceTupleEAcceptedBodyError.call_once,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok intent =>
+    have guard : AcceptedLifecycleIntent.validate intent context = .ok (expectedAccepted intent context) :=
+      envelope_refines intent context
+    cases hr : expectedAccepted intent context <;>
+      simp [expectedPost, core.result.Result.map_err,
+        decode_accepted_with.closure_1.Insts.CoreOpsFunctionFnOnceTupleAcceptedIntentErrorAcceptedBodyError.call_once,
+        guard, hr, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem expectedPost_accepted_iff {E : Type} (context : AuthenticatedCenterContext)
+    (decoded : core.result.Result AcceptedLifecycleIntent E) (intent : AcceptedLifecycleIntent) :
+    expectedPost context decoded = .Ok intent ↔ decoded = .Ok intent ∧ ValidEnvelope intent context := by
+  cases decoded with
+  | Err error => simp [expectedPost]
+  | Ok original =>
+    cases hr : expectedAccepted original context with
+    | Ok value =>
+      cases value
+      have valid := (expectedAccepted_success_iff original context).mp hr
+      simp only [expectedPost, hr, core.result.Result.Ok.injEq]
+      constructor
+      · intro same
+        subst intent
+        exact ⟨rfl, valid⟩
+      · exact fun h => h.1
+    | Err error =>
+      simp only [expectedPost, hr, reduceCtorEq, core.result.Result.Ok.injEq,
+        false_iff, not_and]
+      intro same
+      subst intent
+      intro valid
+      have ok := (expectedAccepted_success_iff original context).mpr valid
+      rw [hr] at ok
+      cases ok
+
+theorem decoded_accepts_iff {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F)
+    (decoded : core.result.Result AcceptedLifecycleIntent E) (intent : AcceptedLifecycleIntent)
+    (read : reader.call_once decode bytes = .ok decoded) :
+    accepted_decode reader bytes context decode = .ok (.Ok intent) ↔
+      decoded = .Ok intent ∧ ValidEnvelope intent context := by
+  rw [candidate_refines]
+  simpa [expectedRun, read] using expectedPost_accepted_iff context decoded intent
+
+theorem parser_error_precedes_guard {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F) (error : E)
+    (read : reader.call_once decode bytes = .ok (.Err error)) :
+    accepted_decode reader bytes context decode = .ok (.Err .InvalidJson) := by
+  rw [candidate_refines]
+  simp [expectedRun, read, expectedPost]
+
+theorem parser_failure_preserved {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F) (error : Error)
+    (read : reader.call_once decode bytes = .fail error) :
+    accepted_decode reader bytes context decode = .fail error := by
+  rw [candidate_refines]
+  simp [expectedRun, read]
+
+theorem parser_divergence_preserved {F E : Type}
+    (reader : core.ops.function.FnOnce F (Slice U8) (core.result.Result AcceptedLifecycleIntent E))
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (decode : F)
+    (read : reader.call_once decode bytes = .div) :
+    accepted_decode reader bytes context decode = .div := by
+  rw [candidate_refines]
+  simp [expectedRun, read]
+
+theorem legal_value_witness (bytes : Slice U8) :
+    accepted_decode valueReader bytes EnvelopeValues.context (.Ok (EnvelopeValues.intent 1#u64)) =
+      .ok (.Ok (EnvelopeValues.intent 1#u64)) := by
+  exact (decoded_accepts_iff valueReader bytes _ _ _ _ rfl).mpr
+    ⟨rfl, EnvelopeValues.both_inputs_have_valid_shape.1⟩
+
+theorem foreign_center_value_refused (bytes : Slice U8) :
+    accepted_decode valueReader bytes EnvelopeValues.context (.Ok foreignCenterIntent) =
+      .ok (.Err .InvalidIntent) := by
+  rw [candidate_refines]
+  simp [expectedRun, valueReader, expectedPost, expectedAccepted, foreignCenterIntent,
+    EnvelopeValues.context, EnvelopeValues.center]
+
+theorem candidate_complete {F E : Type} : WireContract (@accepted_decode F E) := by
+  intro reader bytes context decode
+  exact candidate_refines reader bytes context decode
+
+end SandboxModel.Stage1Protocol.AcceptedWire
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.candidate_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.candidate_complete
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.expectedPost_accepted_iff
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.decoded_accepts_iff
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.parser_error_precedes_guard
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.parser_failure_preserved
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.parser_divergence_preserved
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.legal_value_witness
+
+#audit_controller_proof SandboxModel.Stage1Protocol.AcceptedWire.foreign_center_value_refused

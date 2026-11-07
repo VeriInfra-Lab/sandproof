@@ -1,0 +1,30 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.ResultValues
+import SandboxModel.Lifecycle.Protocol.Accepted
+import SandboxModel.Lifecycle.Protocol.ResultEquality
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal sandproof_protocol.lifecycle.confirmation
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Confirmation
+open SandboxModel.Stage1Protocol.ConfirmationValues
+namespace SandboxModel.Stage1Protocol.NegativeClosePending
+
+theorem actual_mutant_accepts : window_close_valid ⟨terminal .Pending⟩ = .ok true := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [window_close_valid, LifecycleWindowClose.is_terminal_result,
+    TerminalLifecycleObservation.matches_request, Replay.accepted_eq,
+    Validation.retention_valid, Validation.version_comparison, terminal, intent,
+    EnvelopeValues.intent, Validation.retentionOK, Validation.versionOK, checked]
+
+theorem violates_same_full_contract : ¬ FullCloseContract window_close_valid := by
+  classical
+  intro contract
+  have exact_result := contract ⟨terminal .Pending⟩
+  rw [actual_mutant_accepts] at exact_result
+  simp [CloseValid, terminal] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeClosePending
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeClosePending.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeClosePending.violates_same_full_contract

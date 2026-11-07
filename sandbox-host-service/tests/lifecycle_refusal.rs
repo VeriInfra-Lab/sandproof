@@ -2,47 +2,27 @@
 //! this does not exercise TLS, center refund, SDK or a production VM.
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../controller-service/tests/support/lifecycle_application.rs"]
-mod fixture;
+mod current;
+use current::fixture as local;
 use sandproof_host_service::HostLifecycle;
 use sandproof_internal::LifecycleReceiver;
 use sandproof_protocol::lifecycle::{
-    CreateRefusalReason, CurrentCreateReadiness, ExpectedSession, LifecycleOperation,
-    LifecycleWindowClose, TerminalStatus,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateRefusalReason,
+    CurrentCreateReadiness, ExpectedSession, LifecycleOperation, LifecycleWindowClose,
+    TerminalStatus,
 };
 use std::sync::{Arc, Mutex};
 
-#[tokio::test]
-async fn original_capacity_refusal_survives_restart_and_projects_through_current_destroy() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("db");
-    let state = Arc::new(Mutex::new(fixture::fixture::State {
-        epoch: fixture::fixture::TestEpoch::Matching,
-        disk_available: Some(0),
-        ..fixture::fixture::State::default()
-    }));
-    let application = Arc::new(fixture::application(&path, state.clone(), true));
-    application.establish_lifecycle_host_epoch().unwrap();
-    let host = HostLifecycle::new(application);
-    let create = fixture::request();
-    let context = fixture::context();
-    host.record_lifecycle(create.clone(), context.clone())
-        .await
-        .unwrap();
-    let refused = host
-        .advance(
-            create.clone(),
-            Some(fixture::fixture::template()),
-            fixture::fixture::compute(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(refused.refusal, Some(CreateRefusalReason::Capacity));
-    assert!(refused.local.is_none());
+async fn assert_original_capacity_refusal(
+    host: &HostLifecycle<local::TestHost>,
+    create: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) {
     let observed = host
         .observe_create(create.clone(), context.clone())
         .await
         .unwrap();
-    assert!(observed.matches_request(&create));
+    assert!(observed.matches_request(create));
     assert_eq!(
         observed.readiness,
         CurrentCreateReadiness::Refused {
@@ -50,6 +30,52 @@ async fn original_capacity_refusal_survives_restart_and_projects_through_current
         }
     );
     assert!(!observed.historical_create_succeeded);
+}
+
+fn original_renewal(create: &AcceptedLifecycleIntent) -> AcceptedLifecycleIntent {
+    let LifecycleOperation::Create {
+        target_incarnation, ..
+    } = &create.request.operation
+    else {
+        panic!()
+    };
+    let mut sdk = create.clone();
+    sdk.accepted_version = 2;
+    sdk.request.binding.expected = ExpectedSession::Version(1);
+    sdk.request.binding.key.window = 2.try_into().unwrap();
+    sdk.request.binding.key.sequence = 2.try_into().unwrap();
+    sdk.request.operation = LifecycleOperation::Renew {
+        incarnation: *target_incarnation,
+        end_at_ms: 90_010,
+        extend_only: false,
+    };
+    sdk
+}
+
+#[tokio::test]
+async fn original_capacity_refusal_survives_restart_and_projects_through_current_destroy() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let state = Arc::new(Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        disk_available: Some(0),
+        ..local::State::default()
+    }));
+    let application = Arc::new(current::application(&path, state.clone(), true));
+    application.establish_lifecycle_host_epoch().unwrap();
+    let host = HostLifecycle::new(application);
+    let create = current::request();
+    let context = current::context();
+    host.record_lifecycle(create.clone(), context.clone())
+        .await
+        .unwrap();
+    let refused = host
+        .advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    assert_eq!(refused.refusal, Some(CreateRefusalReason::Capacity));
+    assert!(refused.local.is_none());
+    assert_original_capacity_refusal(&host, &create, &context).await;
     assert!(
         host.pending(context.expected_node().clone())
             .await
@@ -59,10 +85,10 @@ async fn original_capacity_refusal_survives_restart_and_projects_through_current
     drop(host);
 
     state.lock().unwrap().disk_available = None;
-    let application = Arc::new(fixture::application(&path, state.clone(), false));
+    let application = Arc::new(current::application(&path, state.clone(), false));
     let host = HostLifecycle::new(application);
     assert_eq!(
-        host.advance(create.clone(), None, fixture::fixture::compute())
+        host.advance(create.clone(), None, local::compute())
             .await
             .unwrap(),
         refused
@@ -127,41 +153,22 @@ async fn current_host_receiver_confirms_only_actual_renewal_and_reopens_the_same
     use sandproof_protocol::lifecycle::RenewalConfirmation;
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("db");
-    let state = Arc::new(Mutex::new(fixture::fixture::State {
-        epoch: fixture::fixture::TestEpoch::Matching,
-        ..fixture::fixture::State::default()
+    let state = Arc::new(Mutex::new(local::State {
+        epoch: local::TestEpoch::Matching,
+        ..local::State::default()
     }));
-    let application = Arc::new(fixture::application(&path, state.clone(), true));
+    let application = Arc::new(current::application(&path, state.clone(), true));
     application.establish_lifecycle_host_epoch().unwrap();
     let host = HostLifecycle::new(Arc::clone(&application));
-    let create = fixture::request();
-    let context = fixture::context();
+    let create = current::request();
+    let context = current::context();
     host.record_lifecycle(create.clone(), context.clone())
         .await
         .unwrap();
-    host.advance(
-        create.clone(),
-        Some(fixture::fixture::template()),
-        fixture::fixture::compute(),
-    )
-    .await
-    .unwrap();
-    let LifecycleOperation::Create {
-        target_incarnation, ..
-    } = create.request.operation
-    else {
-        panic!()
-    };
-    let mut sdk = create.clone();
-    sdk.accepted_version = 2;
-    sdk.request.binding.expected = ExpectedSession::Version(1);
-    sdk.request.binding.key.window = 2.try_into().unwrap();
-    sdk.request.binding.key.sequence = 2.try_into().unwrap();
-    sdk.request.operation = LifecycleOperation::Renew {
-        incarnation: target_incarnation,
-        end_at_ms: 90_010,
-        extend_only: false,
-    };
+    host.advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    let sdk = original_renewal(&create);
     let result = RenewalConfirmation {
         request: sdk.clone(),
         effective_end_at_ms: 90_010,
@@ -209,7 +216,7 @@ async fn current_host_receiver_confirms_only_actual_renewal_and_reopens_the_same
     let actions = state.lock().unwrap().actions.clone();
     drop(host);
     drop(application);
-    let application = Arc::new(fixture::application(&path, state.clone(), false));
+    let application = Arc::new(current::application(&path, state.clone(), false));
     let host = HostLifecycle::new(application);
     assert!(
         host.confirm_renewal(next_result.clone(), context.clone())

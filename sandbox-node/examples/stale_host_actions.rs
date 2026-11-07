@@ -171,7 +171,7 @@ mod probe {
         let input: Input = private_json(Path::new(&actions_path))?;
         input.validate(&config.namespace)?;
         // Initialization failure is failure, never evidence of stale rejection.
-        let mut worker = LinuxWorker::new(config).map_err(|_| "worker initialization failed")?;
+        let worker = LinuxWorker::new(config).map_err(|_| "worker initialization failed")?;
         let inventory = worker
             .host_slot_inventory()
             .map_err(|_| "host slot inventory unavailable")?;

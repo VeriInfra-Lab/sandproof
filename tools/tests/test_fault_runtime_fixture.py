@@ -38,7 +38,7 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             image.write_bytes(b"controlled-image")
             firecracker.write_bytes(b"controlled-runtime")
             values = dict(namespace="1234567890abcdef", database=str(root / "db/controller.db"),
-                node_state_dir=str(root / "state"), chroot_base=str(root / "jails"),
+                node_state_dir=str(root / "state"), chroot_base=str(root / "p/v"),
                 jailer="/approved/jailer", firecracker=str(firecracker), kernel=str(kernel),
                 rootfs=str(image), uid_base=3200000, vcpu_count=1, memory_mib=256,
                 file_policy_digest=1, max_active_global=2, max_active_per_tenant=1,
@@ -67,7 +67,8 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
             self.assertEqual(catalog["templates"][0]["resources"]["memory_mib"],256)
             self.assertEqual(catalog["templates"][0]["kernel"]["sha256"],
                              hashlib.sha256(kernel.read_bytes()).hexdigest())
-            self.assertEqual(data["job_count"], 4)
+            self.assertEqual(data["retained_sessions"], 6)
+            self.assertNotIn("job_count", data)
             self.assertEqual(native["maintenance"]["max_tail_inputs"], 1000)
             with patch.object(runtime.RuntimeServices, "prepare", return_value="one-fixture") as selected:
                 faults.prepare_fault_services(args, root, values, slots=2,
@@ -120,7 +121,7 @@ class FaultRuntimeFixtureTests(unittest.TestCase):
         processes.children = {"center": Mock(poll=Mock(return_value=None))}
         services = SimpleNamespace(processes=processes,
             center_config={"deployment_id": "synthetic-deployment"})
-        original = dict(binding=dict(protocol_version=3, session='synthetic-global-id',
+        original = dict(binding=dict(protocol_version=4, session='synthetic-global-id',
             node=dict(deployment_id='synthetic-deployment',node_id='host',node_generation=1),
             key=dict(deployment='synthetic-deployment',owner='1',window=1,sequence=1),
             expected=dict(state='absent')),center=dict(deployment='synthetic-deployment',center='center'),

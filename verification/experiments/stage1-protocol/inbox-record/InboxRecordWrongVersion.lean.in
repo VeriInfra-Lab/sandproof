@@ -1,0 +1,92 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordWitnessSupport
+import SandboxModel.Lifecycle.Protocol.InboxRecordWindowComparison
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecord.WrongVersion
+open InboxLookup.Witness Values
+
+def corruptedIntent := { createIntent with accepted_version := 0#u64 }
+def corruptedSession : Session := {
+  freshSession createIntent false (some 1#u64) with entries := freshEntries corruptedIntent }
+
+theorem corrupted_version_inserted :
+    ∃ (sessions : alloc.vec.Vec Session) (index : Usize),
+      emptyInbox.record_fresh createIntent =
+        .ok (.Ok (index, 0#usize), {emptyInbox with sessions := sessions}) ∧
+      index.val = 0 ∧
+      sessions.val = [corruptedSession] := by
+  obtain ⟨sessions, index, pushed, subtracted, indexval, contents⟩ :=
+    push_record_outcome emptyInbox corruptedSession
+      (by simp [emptyInbox, InboxLookup.Witness.empty, inbox])
+  refine ⟨sessions, index, ?_, indexval, contents⟩
+  obtain ⟨selected, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec emptyInbox.lanes 0#usize
+      (by simp [emptyInbox, InboxLookup.Witness.singleton]))
+  have retired : emptyInbox.recently_retired_identity createIntent = .ok false := by
+    rw [recently_retired_identity_spec]; rfl
+  have zero : ¬ createIntent.retention.slot = 0#u16 := by decide
+  have range : ¬ emptyInbox.config.max_sessions < createIntent.retention.slot := by decide
+  have slot : createIntent.retention.slot = 1#u16 := rfl
+  have capacity : ¬ emptyInbox.config.max_sessions.val ≤ emptyInbox.sessions.val.length := by decide
+  have occupied : emptyInbox.retention_slot_used 1#u16 = .ok false := by
+    rw [retention_slot_used_spec]; rfl
+  have operation : createIntent.request.operation =
+      .Create Validation.Examples.createPayload 1#u64 := rfl
+  have options : Validation.Examples.createPayload.options.val.length ≤ emptyInbox.config.max_options_bytes.val := by decide
+  have selected_eq : selected = ⟨1#u16, 0#u64, some 1#u64, none⟩ := by
+    simpa [emptyInbox, InboxLookup.Witness.singleton] using same
+  have window : selected.current_window = some createIntent.retention.window := by
+    rw [selected_eq]; rfl
+  have mismatch : decide (selected.current_window ≠ some createIntent.retention.window) = false := by simp [window]
+  unfold Inbox.record_fresh
+  rw [retired]
+  simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte, zero, range]
+  rw [slot, empty_lane_index]
+  simp only [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    bind_tc_ok, alloc.vec.Vec.index_slice_index, indexed, retention_window_ne, mismatch,
+    Bool.false_eq_true, ↓reduceIte, lift]
+  simp only [UScalar.le_equiv, alloc.vec.Vec.len_val,
+    core.convert.num.FromUsizeU16.from_val_eq, capacity, ↓reduceIte]
+  rw [occupied]
+  simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte, operation, U32.cast_Usize_val_eq,
+    options, SessionId_clone, TenantId_clone, AcceptedLifecycleIntent_clone]
+  have singleton_push := fresh_entries_push corruptedIntent
+  dsimp [pendingEntry, corruptedIntent] at singleton_push
+  rw [singleton_push]
+  dsimp [corruptedSession, freshSession, corruptedIntent] at pushed
+  simp only [bind_tc_ok, pushed, subtracted]
+
+theorem corrupted_version_violates_post :
+    ¬ (emptyInbox.record_fresh createIntent
+      ⦃ out => FreshPost emptyInbox createIntent (freshDecision emptyInbox createIntent) out ⦄) := by
+  intro contract
+  obtain ⟨sessions, index, actual, _, contents⟩ := corrupted_version_inserted
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  rw [actual] at returned
+  have same : out = (.Ok (index, 0#usize), {emptyInbox with sessions := sessions}) := by simpa using returned.symm
+  rw [same] at post
+  rw [normal_decision] at post
+  obtain ⟨_, _, _, _, exact_entries⟩ := post
+  have versions := congrArg (fun rows : List Session =>
+    rows.map (fun session => session.entries.val.map (fun entry => entry.intent.accepted_version))) exact_entries
+  simp [contents, emptyInbox, empty, corruptedSession, corruptedIntent, freshSession,
+    freshEntries, pendingEntry, createIntent, EnvelopeValues.intent] at versions
+
+theorem rejects_same_full_fresh_contract : ¬ FullFreshContract Inbox.record_fresh := by
+  intro contract
+  exact corrupted_version_violates_post (contract emptyInbox createIntent)
+
+theorem rejects_same_full_record_contract : ¬ FullNewSessionContract Inbox.record := by
+  intro contract
+  have post := contract emptyInbox createIntent both_new_sessions.1
+  rw [record_new_session_path emptyInbox createIntent both_new_sessions.1] at post
+  exact corrupted_version_violates_post post
+
+end SandboxModel.Stage1Protocol.InboxRecord.WrongVersion
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongVersion.corrupted_version_inserted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongVersion.corrupted_version_violates_post
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongVersion.rejects_same_full_fresh_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongVersion.rejects_same_full_record_contract

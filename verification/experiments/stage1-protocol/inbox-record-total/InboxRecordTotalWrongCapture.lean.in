@@ -1,0 +1,15 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel
+import SandboxModel.Lifecycle.Protocol.InboxAppendWrongCapture
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecordTotal
+
+theorem wrong_capture_rejects_total : ¬ FullRecordContract Inbox.record := by
+  intro contract
+  exact InboxAppend.WrongCapture.rejects_same_full_record_contract
+    (total_implies_existing Inbox.record contract)
+
+end SandboxModel.Stage1Protocol.InboxRecordTotal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.wrong_capture_rejects_total

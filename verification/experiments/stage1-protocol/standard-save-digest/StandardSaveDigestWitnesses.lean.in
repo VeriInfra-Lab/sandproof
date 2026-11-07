@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestCore
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardSaveDigest
+
+theorem empty_save_normal :
+    throughSave Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty :=
+  through_save_refines _ _ StandardDigest.Values.empty_normal
+
+theorem empty_rebind_normal :
+    throughRebind Values.normal Values.empty = StandardDigest.expected Values.normal Values.empty :=
+  through_rebind_refines _ _ StandardDigest.Values.empty_normal
+
+theorem abc_save_normal :
+    throughSave Values.normal Values.abc = StandardDigest.expected Values.normal Values.abc :=
+  through_save_refines _ _ StandardDigest.Values.abc_normal
+
+theorem abc_rebind_normal :
+    throughRebind Values.normal Values.abc = StandardDigest.expected Values.normal Values.abc :=
+  through_rebind_refines _ _ StandardDigest.Values.abc_normal
+end SandboxModel.Stage1Protocol.StandardSaveDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.empty_save_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.empty_rebind_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.abc_save_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.abc_rebind_normal

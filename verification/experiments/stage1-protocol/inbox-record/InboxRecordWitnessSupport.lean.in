@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordFreshSupport
+import SandboxModel.Lifecycle.Protocol.InboxRecordValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecord
+open InboxLookup.Witness
+
+theorem empty_lane_index : Values.emptyInbox.retention_lane_index 1#u16 = .ok (some 0#usize) := by
+  obtain ⟨index, returned, position⟩ := WP.spec_imp_exists
+    (retention_lane_index_spec Values.emptyInbox 1#u16)
+  have zero : index = some 0#usize := by
+    cases index with
+    | none => simp [Values.emptyInbox, InboxLookup.Witness.singleton, firstIndex] at position
+    | some index =>
+      have value : index.val = 0 := by
+        simpa [Values.emptyInbox, InboxLookup.Witness.singleton, firstIndex] using position
+      have same : index = 0#usize := by scalar_tac
+      simp [same]
+  simpa [zero] using returned
+
+theorem push_record_outcome (inbox : Inbox) (session : Session)
+    (room : inbox.sessions.val.length < inbox.config.max_sessions.val) :
+    ∃ (sessions : alloc.vec.Vec Session) (index : Usize),
+      inbox.sessions.push session = .ok sessions ∧
+      ((alloc.vec.Vec.len sessions - 1#usize) : Result Usize) = .ok index ∧
+      index.val = inbox.sessions.val.length ∧
+      sessions.val = inbox.sessions.val ++ [session] := by
+  have capacity : inbox.sessions.val.length < Usize.max := by scalar_tac
+  obtain ⟨sessions, pushed, contents⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.push_spec inbox.sessions session capacity)
+  have length : sessions.val.length = inbox.sessions.val.length + 1 := by simp [contents]
+  obtain ⟨index, subtracted, post⟩ := WP.spec_imp_exists
+    (Usize.sub_spec (x := alloc.vec.Vec.len sessions) (y := 1#usize) (by simp; omega))
+  refine ⟨sessions, index, pushed, subtracted, ?_, contents⟩
+  simp only [alloc.vec.Vec.len_val] at post
+  scalar_tac
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.empty_lane_index
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.push_record_outcome

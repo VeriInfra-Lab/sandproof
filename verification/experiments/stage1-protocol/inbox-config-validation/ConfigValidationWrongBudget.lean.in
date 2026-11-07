@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationLibrary
+import SandboxModel.Lifecycle.Protocol.ConfigValidationValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigValidation.WrongBudget
+noncomputable section
+
+theorem actual_return : LifecycleInboxConfig.valid Values.overLimit = .ok true := by
+  have budget : LifecycleInboxConfig.required_bytes Values.overLimit = .ok 16777344#u64 :=
+    (ConfigBudget.required_bytes_iff _ _).mpr (by decide)
+  have kib : (32#u64 * 1024#u64 : Result U64) = .ok 32768#u64 := by rfl
+  have mib : (32768#u64 * 1024#u64 : Result U64) = .ok 33554432#u64 := by rfl
+  simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.ops.range.RangeInclusive.new, bind_tc_ok,
+    range_u16_refines, range_u32_refines, budget, kib, mib]
+  simp [Values.overLimit, Values.exactLimit, Values.small, ConfigBudget.Values.small,
+    EnvelopeValues.center, EnvelopeValues.node]
+
+theorem refutes_full_contract : ¬ FullConfigContract LifecycleInboxConfig.valid := by
+  intro full
+  have bounded : Representable Values.overLimit := by
+    simp [Representable, Values.overLimit, Values.exactLimit, Values.small, ConfigBudget.Values.small]
+  have result := full Values.overLimit bounded
+  rw [actual_return] at result
+  have invalid := Values.rejected_shapes.1
+  simp [invalid] at result
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation.WrongBudget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongBudget.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongBudget.refutes_full_contract

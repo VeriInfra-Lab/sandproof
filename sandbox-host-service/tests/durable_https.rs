@@ -81,6 +81,90 @@ async fn changed_requests_are_refused(
 }
 
 #[tokio::test]
+async fn actual_https_resume_forwards_original_pending_through_facade_and_wrapper() {
+    use sandproof_protocol::lifecycle::{
+        ContentDigest, CurrentResumeReadiness, LifecycleOperation,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(local::State {
+        lose_activation: true,
+        ..local::state()
+    }));
+    let app = local::application(
+        &path,
+        state.clone(),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+        true,
+    );
+    let facade = facade(app);
+    let inbox = facade.lifecycle();
+    let (server, listener, client, foreign) = validation::validation_transport(facade).await;
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let create = local::request();
+    client.record_lifecycle(&create).await.unwrap();
+    // Reuse the original lost-activation fixture: the native mapping exists,
+    // but the original journal retains the unknown action responsibility.
+    inbox
+        .advance(create.clone(), Some(local::template()), local::compute())
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .observe_lifecycle_create(&create)
+            .await
+            .unwrap()
+            .readiness,
+        CurrentCreateReadiness::Pending
+    );
+    let mut unload = local::destroy(&create);
+    unload.request.operation = LifecycleOperation::Unload {
+        source_incarnation: 101.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+    };
+    client.record_lifecycle(&unload).await.unwrap();
+    let mut resume = local::destroy(&unload);
+    resume.request.operation = LifecycleOperation::Resume {
+        source_incarnation: 101.try_into().unwrap(),
+        capture: 1.try_into().unwrap(),
+        target_incarnation: 102.try_into().unwrap(),
+        manifest_digest: ContentDigest::from_sha256([7; 32]),
+    };
+    client.record_lifecycle(&resume).await.unwrap();
+    // Only reception is complete; no Unload/Resume worker ran. The original
+    // unresolved native action prevents Ready without inventing a restore pin.
+    let expected = inbox
+        .observe_resume(resume.clone(), local::context())
+        .await
+        .unwrap();
+    assert_eq!(expected.readiness, CurrentResumeReadiness::Pending);
+    assert!(expected.matches_request(&resume));
+    let before = local::audit(&path);
+    let actions = state.lock().unwrap().actions.clone();
+    let actual = client.observe_lifecycle_resume(&resume).await.unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(actual.request, resume);
+    assert_eq!(actual.current_request, resume);
+    assert_eq!(local::audit(&path), before);
+    assert_eq!(state.lock().unwrap().actions, actions);
+    assert!(foreign.observe_lifecycle_resume(&resume).await.is_err());
+    let mut altered = resume.clone();
+    altered.retention.window = 2.try_into().unwrap();
+    assert!(client.observe_lifecycle_resume(&altered).await.is_err());
+    assert_eq!(
+        client.observe_lifecycle_resume(&resume).await.unwrap(),
+        expected
+    );
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
+    assert_eq!(client.active_calls(), 0);
+    assert_eq!(inbox.active_work(), 0);
+}
+
+#[tokio::test]
 async fn actual_https_records_original_journal_and_replays_after_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");

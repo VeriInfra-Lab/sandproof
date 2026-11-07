@@ -1,0 +1,64 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.SourceData
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.AnchorEquality
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch
+open SourceData Scalars
+
+theorem work_eq (left right : Work) :
+    controller.lifecycle_inbox.source_work.SourceWork.Insts.CoreCmpPartialEqSourceWork.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [controller.lifecycle_inbox.source_work.SourceWork.Insts.CoreCmpPartialEqSourceWork.eq,
+    anchor_eq, requirement_eq, controller.lifecycle_inbox.source_work.SourceWork.mk.injEq,
+    RequestEquality.ok_and]
+
+theorem comparison_exact (left right : Work) :
+    proof_source_work_eq left right = .ok (by classical exact decide (left = right)) := by
+  exact work_eq left right
+
+theorem full_derived_contract :
+    FullWorkContract controller.lifecycle_inbox.source_work.SourceWork.Insts.CoreCmpPartialEqSourceWork.eq := by
+  intro left right
+  exact work_eq left right
+
+theorem full_work_contract : FullWorkContract proof_source_work_eq := by
+  intro left right
+  exact comparison_exact left right
+
+theorem accepts_iff (left right : Work) :
+    proof_source_work_eq left right = .ok true ↔ left = right := by
+  rw [comparison_exact]
+  simp
+
+theorem rejects_iff (left right : Work) :
+    proof_source_work_eq left right = .ok false ↔ left ≠ right := by
+  rw [comparison_exact]
+  simp
+
+theorem total (left right : Work) : ∃ value, proof_source_work_eq left right = .ok value := by
+  classical
+  exact ⟨decide (left = right), comparison_exact left right⟩
+
+theorem self_matches (work : Work) : proof_source_work_eq work work = .ok true :=
+  (accepts_iff work work).mpr rfl
+
+theorem accepts_full_anchor (left right : Work)
+    (accepted : proof_source_work_eq left right = .ok true) : left.anchor = right.anchor :=
+  congrArg controller.lifecycle_inbox.source_work.SourceWork.anchor ((accepts_iff left right).mp accepted)
+
+theorem accepts_full_requirement (left right : Work)
+    (accepted : proof_source_work_eq left right = .ok true) : left.requirement = right.requirement :=
+  congrArg controller.lifecycle_inbox.source_work.SourceWork.requirement ((accepts_iff left right).mp accepted)
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.work_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.comparison_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.full_derived_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.full_work_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.total
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.self_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.accepts_full_anchor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.accepts_full_requirement

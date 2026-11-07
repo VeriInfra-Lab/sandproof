@@ -1,0 +1,27 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -60,0 +61 @@
++    ('stage1-create-standard-identity', str(HERE/'create-standard-identity/native.py'), False),
+@@ -432,0 +434,2 @@
++    add('create-standard-identity', HERE/'create-standard-identity/formal.py',
++        native=('stage1-create-standard-identity',), cases=('actual', 'namespace-omitted', 'number-truncated'))
+@@ -441,0 +445,2 @@
++        return [row.get('actual', {}) for row in result.get('variants', {}).values()]
++    if result.get('kind') == 'actual-standard-identity-delegate-development-batch':
+@@ -491,0 +497,13 @@
++    if job['name'] == 'create-standard-identity':
++        variants = result.get('variants', {})
++        if (result.get('kind') != 'actual-standard-identity-delegate-development-batch'
++                or set(variants) != set(job['cases'])
++                or result.get('all_variants_complete') is not True
++                or result.get('prepare_only') is not False
++                or any(row.get('complete') is not True for row in variants.values())
++                or any(row.get('property_rejected') is not (name != 'actual')
++                       for name, row in variants.items())
++                or any(row.get('actual', {}).get('files') != row.get('files')
++                       or row.get('actual', {}).get('audits') != row.get('audits')
++                       for row in variants.values())):
++            raise ValueError('missing complete current create-standard-identity correct/two-mutant evidence')
+@@ -1017 +1035 @@
+-    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter'):
++    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter', 'create-standard-identity'):

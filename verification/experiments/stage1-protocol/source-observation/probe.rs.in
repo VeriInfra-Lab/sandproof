@@ -1,0 +1,9 @@
+
+#[cfg(feature = "durable")]
+#[must_use]
+pub fn proof_source_observation_matches(
+    observation: &capture::RawSourceObservation,
+    requirement: &capture::SourceObservationRequirement,
+) -> bool {
+    observation.matches(requirement)
+}

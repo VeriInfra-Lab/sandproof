@@ -451,6 +451,7 @@ mod tests {
         );
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: "/unused/jailer".into(),
@@ -586,6 +587,7 @@ mod tests {
         }
         let disabled = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_resources: None,
                 ..runtime.config.clone()

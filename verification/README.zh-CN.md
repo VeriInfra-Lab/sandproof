@@ -90,6 +90,15 @@ bash scripts/python-entry.sh tools/check_tls_pin_contract.py \
 
 输出目录必须全新；先提交本批冻结输入再复现。入口在独立 Git 副本应用[固定补丁](fixtures/tls-pin-candidate.patch)，只调用原 Charon/Aeneas，实际重抽取两个同步入口，比较完整规范化 LLBC 和原样生成文件，再核对真实 Rust/SHA-256、实际 TLS 回环及同性质错误版。Lean 使用原库和同一标准服务客户端，外部模板只保留为未编译证据；不把模板公理导入项目。工具目录结构与其他模块一致，版本及二进制仍按共享冻结环境核对。接口保证、候选适用范围、快照/摘要/外层可信条件和未验证的生产连接只见[依赖登记](../docs/formal/dependencies.md#a6b4-tls-叶证书指纹接口)，不能把包通过称为原生产 TLS 或整个部署已验证。
 
+固定 `protocol-convergence` 原生批次可显式设置
+`SANDPROOF_CONVERGENCE_REUSE_FIXED17=1`，引用
+[有限清单](experiments/stage1-protocol/native-reuse.json)登记的原完整成功收据；
+开关名保留本批初始17项的名称。
+原identity、提交、日志和耗时不改写；当前适用性另存对应记录，证明机核对同一记录。
+它仍要求全部22个组件和当前候选的一次完整functional，不适用于其它范围；缺证据
+直接拒绝，实际执行输入改变的组件不得复用。工具接通不等于整批已通过，实际结果
+与其余验收规则仍见[证明工作流](../docs/proof-workflow.md)及覆盖记录。
+
 本页只维护工具链与产物含义，不维护阶段进度；已覆盖入口和剩余义务统一
 见证明覆盖记录。已有纯核心定理不自动覆盖新增服务或真实持久化与执行。
 

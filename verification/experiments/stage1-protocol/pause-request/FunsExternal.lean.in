@@ -1,0 +1,7 @@
+import Aeneas
+import SandproofPauseRequest.Types
+open Aeneas Aeneas.Std
+namespace SandproofPauseRequestRust
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+end SandproofPauseRequestRust

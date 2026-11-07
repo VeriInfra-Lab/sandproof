@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetiredIdentity.Values
+open scoped Classical
+noncomputable section
+
+def singleton (value : α) : alloc.vec.Vec α := alloc.vec.Vec.from [value] (by scalar_tac)
+def pair (first second : α) : alloc.vec.Vec α := alloc.vec.Vec.from [first, second] (by scalar_tac)
+def empty (α : Type) : alloc.vec.Vec α := alloc.vec.Vec.from [] (by simp)
+
+def intent : AcceptedLifecycleIntent := { (EnvelopeValues.intent 1#u64) with
+  request := { (EnvelopeValues.intent 1#u64).request with operation := .Destroy } }
+def retired : TerminalLifecycleObservation := ⟨intent, .Cleaned⟩
+def lane (value : TerminalLifecycleObservation) : LifecycleRetentionLane :=
+  ⟨1#u16, 1#u64, some 2#u64, some value⟩
+def entry (value : AcceptedLifecycleIntent) : Entry := ⟨value, none, none, none, none⟩
+def session (value : AcceptedLifecycleIntent) : Session := {
+  id := "active", retention := value.retention, owner := value.request.binding.key.owner,
+  current_version := 1#u64, terminal := false, refusal := none, incarnation := some 1#u64,
+  «local» := none, entries := singleton (entry value), confirmed_terminal := none,
+  confirmed_renewal := none, compacted_sdk_through := none, native_retirement := none }
+def base : Inbox := {
+  config := ⟨EnvelopeValues.center, EnvelopeValues.node, none, 2#u16, 8#u16, 1024#u32, 1024#u32, 1024#u32⟩,
+  host_epoch_observation := none, owner_high_water := 0#u64, owners := empty _,
+  sessions := empty _, lanes := singleton (lane retired) }
+def changedOwner : AcceptedLifecycleIntent := { intent with
+  request := { intent.request with binding := { intent.request.binding with
+    key := { intent.request.binding.key with owner := "other" } } } }
+def distinctKeys : Inbox := { base with sessions := singleton (session changedOwner) }
+def activeConflict : Inbox := { base with sessions := singleton (session intent) }
+def priorConflict : Inbox := { base with lanes := pair (lane retired) (lane ⟨changedOwner, .Cleaned⟩) }
+
+theorem normal_envelopes :
+    Validation.ValidEnvelope intent EnvelopeValues.context ∧
+    Validation.ValidEnvelope changedOwner EnvelopeValues.context := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    intent, changedOwner, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+    EnvelopeValues.node, checked]
+
+theorem expected_outcomes :
+    validationResult (remainingConflict base 0) = .Ok () ∧
+    validationResult (remainingConflict distinctKeys 0) = .Ok () ∧
+    validationResult (remainingConflict activeConflict 0) = .Err .CorruptStore ∧
+    validationResult (remainingConflict priorConflict 0) = .Err .CorruptStore := by
+  simp [validationResult, remainingConflict, conflictAt, laneHit, sessionHit, entryHit,
+    base, distinctKeys, activeConflict, priorConflict, singleton, pair, empty, lane, retired,
+    entry, session, intent, changedOwner, EnvelopeValues.intent, Option.any]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.Values.expected_outcomes

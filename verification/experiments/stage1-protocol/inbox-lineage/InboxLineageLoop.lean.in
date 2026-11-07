@@ -1,0 +1,57 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageStep
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxLineage
+
+theorem loop_spec (values : Slice Entry) (expected : Option IncarnationId)
+    (state : LineageState) (start : Nat) (upper : start ≤ values.val.length) :
+    Session.validate_execution_lineage_loop (cursor values start) expected
+      state.incarnation state.previous state.frontier
+      ⦃ result => result = observed (scan expected (values.val.drop start) state) ⦄ := by
+  unfold Session.validate_execution_lineage_loop
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun (value : LoopState) => values.val.length - value.1.i)
+    (fun value => ∃ index current, value =
+      (cursor values index, current.incarnation, current.previous, current.frontier) ∧
+      index ≤ values.val.length ∧
+      observed (scan expected (values.val.drop index) current) =
+        observed (scan expected (values.val.drop start) state))
+    (fun result => result = observed (scan expected (values.val.drop start) state))
+  · rintro value ⟨index, current, rfl, bound, same⟩
+    dsimp only
+    by_cases inside : index < values.val.length
+    · rw [body_next values index expected current inside]
+      cases decision : step current values.val[index] with
+      | error reason =>
+          simp only [bodyResult, decision]
+          apply WP.spec.ret
+          rw [List.drop_eq_getElem_cons inside] at same
+          simpa [scan, decision, observed] using same
+      | ok next =>
+          simp only [bodyResult, decision]
+          apply WP.spec.ret
+          constructor
+          · refine ⟨index + 1, next, rfl, by omega, ?_⟩
+            rw [List.drop_eq_getElem_cons inside] at same
+            simpa [scan, decision] using same
+          · dsimp [cursor]; omega
+    · rw [body_end values index expected current (Nat.le_of_not_gt inside)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt inside)] at same
+      exact same
+  · exact ⟨start, state, rfl, upper, rfl⟩
+
+theorem loop_refines (values : Slice Entry) (expected : Option IncarnationId)
+    (state : LineageState) (start : Nat) (upper : start ≤ values.val.length) :
+    Session.validate_execution_lineage_loop (cursor values start) expected
+      state.incarnation state.previous state.frontier =
+      .ok (observed (scan expected (values.val.drop start) state)) := by
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists (loop_spec values expected state start upper)
+  simpa only [same] using returned
+
+end SandboxModel.Stage1Protocol.InboxLineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.loop_refines

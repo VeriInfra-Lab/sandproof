@@ -1,0 +1,77 @@
+// Identical assertions for actual Rust, each real mutation, and restored actual Rust.
+// This uses the original load fixture; it does not implement the owner allocator.
+#[test]
+fn loaded_fresh_owner_install_preserves_high_water_and_entire_inbox() {
+    let mut original = recorded();
+    original.owner_high_water = 19;
+    original.validate().unwrap();
+    let connection = database(&original);
+    let mut inbox = codec::load(&connection).unwrap().unwrap();
+    assert_eq!(inbox, original);
+    let intent = inbox.sessions[0].entries[0].intent.clone();
+    let (s, e, _) = super::super::create_attachment_selection(&inbox, &intent).unwrap();
+    let local = crate::InternalLocalBinding {
+        sandbox: core::SandboxId(2),
+        owner: core::TenantId(20),
+        operation: core::OperationId(30),
+    };
+    assert!(
+        !super::super::check_existing_create_owner(&inbox, &inbox.sessions[s].owner, local.owner)
+            .unwrap()
+    );
+    super::super::check_new_create_owner(&inbox, &core::initial_world(), local).unwrap();
+    let mut expected = inbox.clone();
+    expected.owner_high_water = 20;
+    expected.owners.push(Owner {
+        external: inbox.sessions[s].owner.clone(),
+        local: local.owner,
+    });
+    expected.sessions[s].local = Some(local);
+    expected.sessions[s].entries[e].local_operation = Some(local.operation);
+    super::super::create_attachment_install(&mut inbox, s, e, local);
+    assert_eq!(inbox, expected);
+    assert!(original.owner_high_water < inbox.owner_high_water);
+}
+
+#[test]
+fn fresh_owner_rejects_allocation_below_original_high_water() {
+    let mut inbox = recorded();
+    inbox.owner_high_water = 64;
+    inbox.validate().unwrap();
+    let local = crate::InternalLocalBinding {
+        sandbox: core::SandboxId(2),
+        owner: core::TenantId(1),
+        operation: core::OperationId(30),
+    };
+    assert!(matches!(
+        super::super::check_new_create_owner(&inbox, &core::initial_world(), local),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn existing_owner_install_preserves_original_high_water_and_entire_inbox() {
+    let mut inbox = recorded();
+    inbox.owner_high_water = 99;
+    inbox.owners = vec![Owner {
+        external: inbox.sessions[0].owner.clone(),
+        local: core::TenantId(20),
+    }];
+    inbox.validate().unwrap();
+    let intent = inbox.sessions[0].entries[0].intent.clone();
+    let (s, e, _) = super::super::create_attachment_selection(&inbox, &intent).unwrap();
+    let local = crate::InternalLocalBinding {
+        sandbox: core::SandboxId(2),
+        owner: core::TenantId(20),
+        operation: core::OperationId(30),
+    };
+    assert!(
+        super::super::check_existing_create_owner(&inbox, &inbox.sessions[s].owner, local.owner)
+            .unwrap()
+    );
+    let mut expected = inbox.clone();
+    expected.sessions[s].local = Some(local);
+    expected.sessions[s].entries[e].local_operation = Some(local.operation);
+    super::super::create_attachment_install(&mut inbox, s, e, local);
+    assert_eq!(inbox, expected);
+}

@@ -1,0 +1,90 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalReduction
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+open scoped Classical
+noncomputable section
+
+theorem option_i64_ne (left right : Option I64) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqI64) left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+  scalar_tac
+
+theorem checkpoint_step (values : Slice Entry) (index : Nat)
+    (inside : index < values.val.length) (confirmed : RenewalConfirmation) :
+    renewal_confirmation.checkpoint_entry_invalid_loop.body confirmed (sliceCursor values index) =
+      .ok (if checkpointMatches confirmed values.val[index]
+        then .done (entryInvalid confirmed values.val[index])
+        else .cont (sliceCursor values (index + 1))) := by
+  unfold renewal_confirmation.checkpoint_entry_invalid_loop.body
+  rw [slice_next_some _ _ inside]
+  simp only [Replay.accepted_eq]
+  simp only [option_i64_ne, checkpointMatches, entryInvalid, core.option.Option.is_none]
+  split <;> simp_all
+  split <;> simp_all
+
+theorem checkpoint_loop_spec (values : Slice Entry) (confirmed : RenewalConfirmation)
+    (start : Nat) (bound : start ≤ values.val.length) :
+    loop (renewal_confirmation.checkpoint_entry_invalid_loop.body confirmed) (sliceCursor values start)
+      ⦃ result => result = checkpointInvalid (values.val.drop start) confirmed ⦄ := by
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun it => values.val.length - it.i)
+    (fun it => ∃ index : Nat, it = sliceCursor values index ∧ index ≤ values.val.length ∧
+      checkpointInvalid (values.val.drop index) confirmed =
+        checkpointInvalid (values.val.drop start) confirmed)
+    (fun (result : Bool) => result = checkpointInvalid (values.val.drop start) confirmed)
+  · rintro it ⟨index, rfl, upper, same⟩
+    by_cases inside : index < values.val.length
+    · rw [checkpoint_step values index inside confirmed]
+      cases hit : checkpointMatches confirmed values.val[index] with
+      | true =>
+        simp only [↓reduceIte]
+        apply WP.spec.ret
+        rw [List.drop_eq_getElem_cons inside] at same
+        simpa only [checkpointInvalid, List.find?_cons, hit, ↓reduceIte] using same
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        apply WP.spec.ret
+        constructor
+        · refine ⟨index + 1, rfl, by omega, ?_⟩
+          rw [List.drop_eq_getElem_cons inside] at same
+          simpa only [checkpointInvalid, List.find?_cons, hit, Bool.false_eq_true, ↓reduceIte] using same
+        · dsimp [sliceCursor]; omega
+    · unfold renewal_confirmation.checkpoint_entry_invalid_loop.body
+      rw [slice_next_none _ _ (Nat.le_of_not_gt inside)]
+      simp only [bind_tc_ok]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt inside)] at same
+      simpa [checkpointInvalid] using same
+  · exact ⟨start, rfl, bound, rfl⟩
+
+theorem checkpoint_with_binding (binding : BorrowedVecBinding) (session : Session) (confirmed : RenewalConfirmation) :
+    renewal_confirmation.checkpoint_entry_invalid session confirmed =
+      .ok (checkpointInvalid session.entries.val confirmed) := by
+  have loop_spec := checkpoint_loop_spec (alloc.vec.Vec.deref session.entries) confirmed 0 (by omega)
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists loop_spec
+  simp only [List.drop_zero] at same
+  rw [same] at returned
+  unfold renewal_confirmation.checkpoint_entry_invalid
+  rw [binding]
+  simpa [renewal_confirmation.checkpoint_entry_invalid_loop, sliceCursor, alloc.vec.Vec.deref] using returned
+
+theorem checkpoint_spec (session : Session) (confirmed : RenewalConfirmation) :
+    renewal_confirmation.checkpoint_entry_invalid session confirmed =
+      .ok (checkpointInvalid session.entries.val confirmed) := by
+  exact checkpoint_with_binding borrowed_vec_model session confirmed
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.option_i64_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.checkpoint_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.checkpoint_loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.checkpoint_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.checkpoint_with_binding

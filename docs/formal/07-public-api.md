@@ -2,13 +2,15 @@
 
 [文档目录](../README.md) · [验证总览](../formal-verification-design.md) · [模块合同](../module-contracts.md) · [依赖登记](dependencies.md) · [证明覆盖](../proof-coverage.md)
 
-任务：[#639](https://github.com/VeriInfra-Lab/sandproof/issues/639)。状态：第一阶段实施与证明计划；代码定位基线 `56b14d64`。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
+任务：[#639](https://github.com/VeriInfra-Lab/sandproof/issues/639)。本页定义第一阶段的实现与证明义务；实际版本及已验证范围以[覆盖记录](../proof-coverage.md)为准。本页的性质是验收义务，已有结果按覆盖记录复用，不自动成为新生命周期的已证结论。
 
 ## 1. 输入输出与范围
 
 对应 [sandbox-api](../../sandbox-api/src/lib.rs) 与 [sandbox-center-service](../../sandbox-center-service/src/lib.rs) 的正式中心入口。本阶段重点是 create/unload/resume/destroy、请求窗口和授权结果查询。完整 get/list 投影、分页与所有兼容端点后置；原功能/检查不删除。
 
 公开路径/schema 和键规则以[模块合同](../module-contracts.md#身份请求和结果)为准。客户端第一次发操作前已有键，owner 从鉴权派生，规范化输入含种类、完整参数、会话和期望版本；不能事后生成内部 ID 冒充客户端可重试身份。
+
+当前正式路由和中心端口已支持请求窗口、create、unload、resume、destroy、query；`resume_lifecycle` 接受原请求的耐久工作，不表示恢复执行已经成功，工程验收按覆盖记录的精确版本复用，当前真实 handler/端口与模型的实现对应仍须补齐。可以先证明真实 `secret_equal`、认证 owner 来源及操作键构造；HeaderMap、JSON 与响应接线必须逐项连接已登记合同，不能把整个 handler 信任。字节相等定理不包含常数时间或侧信道保证。Redis 确认失败仍须拒绝使用旧缓存；查询确认次数及历史故障的处理结论见覆盖记录，不把正常样例成功当作持续可用性保证。
 
 ## 2. 待证义务
 

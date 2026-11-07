@@ -31,7 +31,7 @@ def settings():
                   data_transfer=dict(max_transfers=8, max_transfers_per_vm=4, control_reserve=1),
                   bounded_host=dict(uid_base=10000, uplink_base=0, console_policy='discard',
                                     maintenance=dict(max_host_slots=2)),
-                  maintenance=dict(retention_ms=1000, capacity=cap, max_checkpoint_bytes=16384,
+                  maintenance=dict(retention_ms=1000, max_operations_per_sandbox=8, capacity=cap, max_checkpoint_bytes=16384,
                                    max_tail_inputs=20, max_tail_bytes=16384))
     pool = dict(role='runtime', namespace=result['namespace'], database=result['database'],
                 node_state_dir=result['node_state_dir'], chroot_base=result['chroot_base'],
@@ -94,6 +94,9 @@ class ConfigurationTests(unittest.TestCase):
             (('max_vm_id',), 4),
             (('max_active_global',), 3),
             (('maintenance', 'retention_ms'), 30000),
+            (('maintenance', 'max_operations_per_sandbox'), 0),
+            (('maintenance', 'max_operations_per_sandbox'), True),
+            (('maintenance', 'max_operations_per_sandbox'), 2**64),
             (('max_timeout_secs',), 300),
             (('database',), '/run/random/controller.db'),
         ):
@@ -105,6 +108,9 @@ class ConfigurationTests(unittest.TestCase):
             invalid.append(value)
         value = copy.deepcopy(valid)
         del value['maintenance']['capacity']
+        invalid.append(value)
+        value = copy.deepcopy(valid)
+        del value['maintenance']['max_operations_per_sandbox']
         invalid.append(value)
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):

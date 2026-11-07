@@ -1,0 +1,67 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxState.Values
+
+def older : AcceptedLifecycleIntent := EnvelopeValues.intent 1#u64
+def newer : AcceptedLifecycleIntent := { (EnvelopeValues.intent 2#u64) with
+  accepted_version := 2#u64,
+  request := { (EnvelopeValues.intent 2#u64).request with binding := {
+    (EnvelopeValues.intent 2#u64).request.binding with
+    expected := .Version 1#u64,
+    key := { (EnvelopeValues.intent 2#u64).request.binding.key with sequence := 2#u64 } } } }
+def oldEntry : Entry := ⟨older, some 41#u64, none, none, none⟩
+def newEntry : Entry := ⟨newer, none, none, none, none⟩
+def session : Session := {
+  id := "session", retention := ⟨1#u16, 1#u64⟩, owner := "owner",
+  current_version := 2#u64, terminal := false, refusal := none,
+  incarnation := some 1#u64, «local» := some ⟨10#u64, 20#u64, 30#u64⟩,
+  entries := alloc.vec.Vec.from [oldEntry, newEntry] (by simp; scalar_tac),
+  confirmed_terminal := none, confirmed_renewal := none, compacted_sdk_through := none,
+  native_retirement := none }
+def inbox : Inbox := {
+  config := ⟨EnvelopeValues.center, EnvelopeValues.node, none, 2#u16, 8#u16, 1024#u32, 1024#u32, 1024#u32⟩,
+  host_epoch_observation := none, owner_high_water := 0#u64,
+  owners := alloc.vec.Vec.from [] (by simp), lanes := alloc.vec.Vec.from [] (by simp),
+  sessions := alloc.vec.Vec.from [session] (by simp; scalar_tac) }
+
+theorem inputs_valid : Validation.ValidEnvelope older EnvelopeValues.context ∧
+    Validation.ValidEnvelope newer EnvelopeValues.context := by
+  have add01 : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  have add12 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    older, newer, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+    EnvelopeValues.node, add01, add12]
+
+theorem session_bound : (0#usize).val < inbox.sessions.val.length := by simp [inbox]
+theorem old_bound : (0#usize).val < inbox.sessions.val[0].entries.val.length := by simp [inbox, session]
+theorem new_bound : (1#usize).val < inbox.sessions.val[0].entries.val.length := by simp [inbox, session]
+
+/-- Actual Vec reads and complete clone, shared by positive and negative views. -/
+theorem reads :
+    alloc.vec.Vec.index_usize inbox.sessions 0#usize = .ok session ∧
+    alloc.vec.Vec.index_usize session.entries 0#usize = .ok oldEntry ∧
+    alloc.vec.Vec.index_usize session.entries 1#usize = .ok newEntry := by
+  constructor
+  · obtain ⟨value, returned, same⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.index_usize_spec inbox.sessions 0#usize session_bound)
+    simpa [same, inbox] using returned
+  · constructor
+    · obtain ⟨value, returned, same⟩ := WP.spec_imp_exists
+        (alloc.vec.Vec.index_usize_spec session.entries 0#usize (by simp [session]))
+      simpa [same, session] using returned
+    · obtain ⟨value, returned, same⟩ := WP.spec_imp_exists
+        (alloc.vec.Vec.index_usize_spec session.entries 1#usize (by simp [session]))
+      simpa [same, session] using returned
+
+end SandboxModel.Stage1Protocol.InboxState.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.Values.inputs_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.Values.session_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.Values.old_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.Values.new_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.Values.reads

@@ -1,0 +1,415 @@
+import SandboxModel.Lifecycle.Protocol.RoleLeaves
+import SandboxModel.Lifecycle.Protocol.EnvelopeSchema
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Foundations SandboxModel.Boundaries
+namespace SandboxModel.Stage1Protocol.EnvelopeBytes
+
+abbrev Accepted := SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev Recorded := SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.RecordedLifecycleIntent
+abbrev Operation := SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation
+
+/-! Field descriptors select existing generated callbacks. They are not another
+protocol value/state model or an implementation of parsing. Paths denote schema
+members; actual byte positions and the original dictionary remain in each reader. -/
+inductive IdentifierCode where
+  | original (kind : OpaqueKind)
+  | role (kind : RoleLeaves.IdentifierRole)
+  deriving DecidableEq
+
+inductive CounterCode where
+  | original
+  | role (kind : RoleLeaves.CounterRole)
+  deriving DecidableEq
+
+def IdentifierCode.kind : IdentifierCode → OpaqueKind
+  | .original kind => kind
+  | .role kind => kind.kind
+
+def IdentifierCode.actual {D E : Type} (code : IdentifierCode)
+    (provider : serde_core.de.Deserializer D E) (input : D) : Result (core.result.Result String E) :=
+  match code with
+  | .original kind => JsonIdentifiers.actual kind provider input
+  | .role kind => RoleLeaves.identifier kind provider input
+
+def CounterCode.actual {D E : Type} (code : CounterCode)
+    (provider : serde_core.de.Deserializer D E) (input : D) : Result (core.result.Result U64 E) :=
+  match code with
+  | .original => JsonCounter.actual provider input
+  | .role kind => RoleLeaves.counter kind provider input
+
+theorem identifier_code_refines {D E : Type} (code : IdentifierCode)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    code.actual provider input = JsonIdentifiers.actual code.kind provider input := by
+  cases code <;> simp only [IdentifierCode.actual, IdentifierCode.kind, RoleLeaves.identifier_refines]
+
+theorem counter_code_refines {D E : Type} (code : CounterCode)
+    (provider : serde_core.de.Deserializer D E) (input : D) :
+    code.actual provider input = JsonCounter.actual provider input := by
+  cases code <;> simp only [CounterCode.actual, RoleLeaves.counter_refines]
+
+structure IdentifierField where
+  path : List String
+  code : IdentifierCode
+  value : String
+  deriving DecidableEq
+
+structure CounterField where
+  path : List String
+  code : CounterCode
+  value : U64
+  deriving DecidableEq
+
+def operationIdentifiers : Operation → List IdentifierField
+  | .Create create _ => [⟨["request", "operation", "create", "template_revision"],
+      .original .resource, create.template_revision⟩]
+  | .Unload _ _ | .Resume _ _ _ _ | .Renew _ _ _ | .Destroy => []
+
+def operationCounters : Operation → List CounterField
+  | .Create _ target => [⟨["request", "operation", "target_incarnation"], .role .incarnation, target⟩]
+  | .Unload source capture => [
+      ⟨["request", "operation", "source_incarnation"], .role .incarnation, source⟩,
+      ⟨["request", "operation", "capture"], .role .capture, capture⟩]
+  | .Resume source capture target _ => [
+      ⟨["request", "operation", "source_incarnation"], .role .incarnation, source⟩,
+      ⟨["request", "operation", "capture"], .role .capture, capture⟩,
+      ⟨["request", "operation", "target_incarnation"], .role .incarnation, target⟩]
+  | .Renew incarnation _ _ => [⟨["request", "operation", "incarnation"], .role .incarnation, incarnation⟩]
+  | .Destroy => []
+
+def identifiers (value : Accepted) : List IdentifierField := [
+    ⟨["request", "binding", "node", "deployment_id"], .original .deployment, value.request.binding.node.deployment_id⟩,
+    ⟨["request", "binding", "node", "node_id"], .original .node, value.request.binding.node.node_id⟩,
+    ⟨["request", "binding", "session"], .role .session, value.request.binding.session⟩,
+    ⟨["request", "binding", "key", "deployment"], .original .deployment, value.request.binding.key.deployment⟩,
+    ⟨["request", "binding", "key", "owner"], .original .tenant, value.request.binding.key.owner⟩] ++
+  operationIdentifiers value.request.operation ++ [
+    ⟨["center", "deployment"], .original .deployment, value.center.deployment⟩,
+    ⟨["center", "center"], .role .center, value.center.center⟩]
+
+def counters (value : Accepted) : List CounterField := [
+    ⟨["request", "binding", "node", "node_generation"], .original, value.request.binding.node.node_generation⟩,
+    ⟨["request", "binding", "key", "window"], .role .requestWindow, value.request.binding.key.window⟩,
+    ⟨["request", "binding", "key", "sequence"], .role .requestSequence, value.request.binding.key.sequence⟩] ++
+  operationCounters value.request.operation ++ [
+    ⟨["retention", "window"], .role .retentionWindow, value.retention.window⟩]
+
+def InputDomain (value : Accepted) : Prop :=
+  (∀ field ∈ identifiers value, opaqueValid field.value) ∧
+    (∀ field ∈ counters value, validCounter field.value.val)
+
+structure FieldReaders where
+  identifiers : IdentifierField → JsonRequest.SliceFieldReader
+  counters : CounterField → JsonRequest.SliceFieldReader
+
+def FieldReaders.BoundTo (readers : FieldReaders) (value : Accepted) (bytes : Slice U8) : Prop :=
+  (∀ field ∈ EnvelopeBytes.identifiers value, (readers.identifiers field).BoundTo bytes) ∧
+    (∀ field ∈ EnvelopeBytes.counters value, (readers.counters field).BoundTo bytes)
+
+def OwnFieldCalls (value : Accepted) (readers : FieldReaders) : Prop :=
+  (∀ field ∈ identifiers value,
+    field.code.actual (readers.identifiers field).provider (readers.identifiers field).input =
+      .ok (.Ok field.value)) ∧
+  (∀ field ∈ counters value,
+    field.code.actual (readers.counters field).provider (readers.counters field).input =
+      .ok (.Ok field.value))
+
+def EncodingFieldReads (value : Accepted) (readers : FieldReaders) : Prop :=
+  (∀ field ∈ identifiers value,
+    JsonIdentifiers.primitive (readers.identifiers field).provider (readers.identifiers field).input = (do
+      let text ← ownedValue field.code.kind field.value
+      .ok (.Ok text))) ∧
+  (∀ field ∈ counters value,
+    JsonCounter.primitive (readers.counters field).provider (readers.counters field).input = (do
+      let number ← counter_into_u64 field.value
+      .ok (.Ok number)))
+
+theorem own_calls_provide_complete_domain (value : Accepted) (readers : FieldReaders)
+    (called : OwnFieldCalls value readers) : InputDomain value := by
+  constructor
+  · intro field member
+    have call := called.1 field member
+    rw [identifier_code_refines] at call
+    exact JsonIdentifiers.actual_safe field.code.kind _ _ field.value call
+  · intro field member
+    have call := called.2 field member
+    rw [counter_code_refines] at call
+    exact JsonRequest.counter_success_valid {
+      D := (readers.counters field).D, E := serde_json.error.Error,
+      provider := (readers.counters field).provider, input := (readers.counters field).input,
+      accepted := call }
+
+theorem original_conversions_read_back (value : Accepted) (readers : FieldReaders)
+    (domain : InputDomain value) (reads : EncodingFieldReads value readers) : OwnFieldCalls value readers := by
+  constructor
+  · intro field member
+    rw [identifier_code_refines]
+    apply JsonIdentifiers.valid_read_preserved
+    · simpa [owned_values_refine] using reads.1 field member
+    · exact domain.1 field member
+  · intro field member
+    rw [counter_code_refines]
+    apply JsonCounter.nonzero_preserved
+    · simpa [counter_into_u64_refines] using reads.2 field member
+    · intro zero
+      have positive := (domain.2 field member).1
+      simp [zero] at positive
+
+theorem readers_keep_original_slice (value : Accepted) (readers : FieldReaders) (bytes : Slice U8)
+    (bound : readers.BoundTo value bytes) :
+    (∀ field ∈ identifiers value, (readers.identifiers field).before.input = bytes.val ∧
+      (readers.identifiers field).after.input = bytes.val) ∧
+    (∀ field ∈ counters value, (readers.counters field).before.input = bytes.val ∧
+      (readers.counters field).after.input = bytes.val) := by
+  exact ⟨fun field member => ⟨(bound.1 field member).1, (bound.1 field member).2.1⟩,
+    fun field member => ⟨(bound.2 field member).1, (bound.2 field member).2.1⟩⟩
+
+theorem actual_field_zero_precedes_end (value : Accepted) (readers : FieldReaders) (bytes : Slice U8)
+    (bound : readers.BoundTo value bytes) (field : CounterField) (member : field ∈ counters value)
+    (read : JsonCounter.primitive (readers.counters field).provider (readers.counters field).input =
+      .ok (.Ok 0#u64))
+    (endCheck : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    JsonRequest.finishDocument
+      (field.code.actual (readers.counters field).provider (readers.counters field).input) endCheck =
+      .ok (.Err ⟨"invalid or exhausted internal counter", .data, 0, 0⟩) := by
+  rw [counter_code_refines]
+  exact JsonRequest.decoder_error_precedes_end _ _ _
+    (JsonRequest.bound_zero_uses_original_json_error _ bytes (bound.2 field member) read)
+
+theorem actual_field_invalid_id_precedes_end (value : Accepted) (readers : FieldReaders) (bytes : Slice U8)
+    (bound : readers.BoundTo value bytes) (field : IdentifierField) (member : field ∈ identifiers value)
+    (text : String) (read : JsonIdentifiers.primitive (readers.identifiers field).provider
+      (readers.identifiers field).input = .ok (.Ok text))
+    (representable : IdentifierLibrary.StringRepresentable text) (invalid : ¬opaqueValid text)
+    (endCheck : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    JsonRequest.finishDocument
+      (field.code.actual (readers.identifiers field).provider (readers.identifiers field).input) endCheck =
+      .ok (.Err ⟨"invalid opaque identifier", .data, 0, 0⟩) := by
+  rw [identifier_code_refines]
+  exact JsonRequest.decoder_error_precedes_end _ _ _
+    (JsonRequest.bound_invalid_id_uses_original_json_error _ bytes (bound.1 field member)
+      field.code.kind text read representable invalid)
+
+theorem field_counts (value : Accepted) :
+    (identifiers value).length = 7 + (match value.request.operation with | .Create _ _ => 1 | _ => 0) ∧
+    (counters value).length = 4 + (match value.request.operation with
+      | .Create _ _ | .Renew _ _ _ => 1 | .Unload _ _ => 2 | .Resume _ _ _ _ => 3 | .Destroy => 0) := by
+  cases op : value.request.operation <;> simp [identifiers, counters, operationIdentifiers, operationCounters, op]
+
+theorem field_paths_are_unique (value : Accepted) :
+    ((identifiers value).map IdentifierField.path).Nodup ∧
+      ((counters value).map CounterField.path).Nodup := by
+  cases op : value.request.operation <;> simp [identifiers, counters, operationIdentifiers, operationCounters, op]
+
+theorem ordinary_versions_and_slot_keep_domain (value : Accepted) (version : U64) (slot protocol : U16)
+    (expected : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.ExpectedSession) :
+    InputDomain { value with
+      accepted_version := version
+      retention := { value.retention with slot := slot }
+      request := { value.request with binding := { value.request.binding with
+        protocol_version := protocol
+        expected := expected } } } ↔ InputDomain value := by
+  rfl
+
+/-- A Recorded value nests the same fields under the actual `intent` member. -/
+def IdentifierField.under (parentPath : List String) (field : IdentifierField) : IdentifierField :=
+  { field with path := parentPath ++ field.path }
+
+def CounterField.under (parentPath : List String) (field : CounterField) : CounterField :=
+  { field with path := parentPath ++ field.path }
+
+def FieldReaders.under (readers : FieldReaders) (parentPath : List String) : FieldReaders :=
+  ⟨fun field => readers.identifiers (field.under parentPath),
+    fun field => readers.counters (field.under parentPath)⟩
+
+def recordedIdentifiers (value : Recorded) : List IdentifierField :=
+  (identifiers value.intent).map (IdentifierField.under ["intent"])
+
+def recordedCounters (value : Recorded) : List CounterField :=
+  (counters value.intent).map (CounterField.under ["intent"])
+
+theorem recorded_readers_use_actual_outer_path (value : Recorded) (readers : FieldReaders) :
+    (∀ field ∈ identifiers value.intent,
+      (readers.under ["intent"]).identifiers field =
+        readers.identifiers { field with path := "intent" :: field.path }) ∧
+    (∀ field ∈ counters value.intent,
+      (readers.under ["intent"]).counters field =
+        readers.counters { field with path := "intent" :: field.path }) := by
+  exact ⟨fun _ _ => rfl, fun _ _ => rfl⟩
+
+theorem recorded_paths_are_unique (value : Recorded) :
+    ((recordedIdentifiers value).map IdentifierField.path).Nodup ∧
+      ((recordedCounters value).map CounterField.path).Nodup := by
+  have base := field_paths_are_unique value.intent
+  simpa [recordedIdentifiers, recordedCounters, IdentifierField.under, CounterField.under,
+    List.map_map, Function.comp_def] using
+    And.intro (base.1.map (f := fun path => "intent" :: path) (by intro a b h; exact List.cons.inj h |>.2))
+      (base.2.map (f := fun path => "intent" :: path) (by intro a b h; exact List.cons.inj h |>.2))
+
+theorem normal_five_domains (request : SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest)
+    (version : U64) (member : (request, version) ∈ EnvelopeSchema.normalRequests) :
+    InputDomain (EnvelopeSchema.envelopeFor request version) := by
+  simp only [EnvelopeSchema.normalRequests, List.mem_cons, List.not_mem_nil, or_false,
+    Prod.mk.injEq] at member
+  rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp only [InputDomain, identifiers, counters]
+    dsimp [EnvelopeSchema.envelopeFor, operationIdentifiers, operationCounters,
+      Validation.Examples.createRequest, Validation.Examples.destroyRequest, Request.unload, Request.resume]
+    simp only [List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
+    unfold opaqueValid opaqueBytesValid validCounter maxCounter
+    decide
+
+theorem invalid_identifier_excludes_domain (value : Accepted) (field : IdentifierField)
+    (member : field ∈ identifiers value) (invalid : ¬ opaqueValid field.value) :
+    ¬ InputDomain value := fun domain => invalid (domain.1 field member)
+
+theorem zero_counter_excludes_domain (value : Accepted) (field : CounterField)
+    (member : field ∈ counters value) (zero : field.value = 0#u64) : ¬ InputDomain value := by
+  intro domain
+  have positive := (domain.2 field member).1
+  simp [zero] at positive
+
+/-- Seven actual role fields, all rejected by the same complete domain. -/
+theorem omitted_role_counterexamples :
+    let original := EnvelopeValues.intent 1#u64
+    ¬ InputDomain { original with request := { original.request with
+      binding := { original.request.binding with session := "" } } } ∧
+    ¬ InputDomain { original with center := { original.center with center := "" } } ∧
+    ¬ InputDomain { original with request := { original.request with operation := .Unload 0#u64 1#u64 } } ∧
+    ¬ InputDomain { original with request := { original.request with operation := .Unload 1#u64 0#u64 } } ∧
+    ¬ InputDomain { original with request := { original.request with binding := {
+      original.request.binding with key := { original.request.binding.key with window := 0#u64 } } } } ∧
+    ¬ InputDomain { original with request := { original.request with binding := {
+      original.request.binding with key := { original.request.binding.key with sequence := 0#u64 } } } } ∧
+    ¬ InputDomain { original with retention := { original.retention with window := 0#u64 } } := by
+  dsimp only
+  simp only [InputDomain, identifiers, counters]
+  dsimp [EnvelopeValues.intent, operationIdentifiers, operationCounters]
+  simp only [List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
+  unfold opaqueValid opaqueBytesValid validCounter maxCounter
+  repeat' apply And.intro
+  all_goals decide
+
+/-- Standard SliceRead and derive observations, with original field dictionaries.
+This explicit dependency record is a candidate A6/B4 use site, not an axiom or an
+instance for the production parser. The full byte implementation binding remains
+required. The successful compact emission is a premise; totality/budget/Writer
+are separate obligations. No validator or authorization is hidden here. -/
+structure JsonLibrary where
+  decodeAccepted : Slice U8 → Result (core.result.Result Accepted serde_json.error.Error)
+  decodeRecorded : Slice U8 → Result (core.result.Result Recorded serde_json.error.Error)
+  compact : JsonRequest.JsonOutput → Result
+    (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+
+structure SliceContract (library : JsonLibrary) : Prop where
+  accepted_calls : ∀ bytes value, library.decodeAccepted bytes = .ok (.Ok value) →
+    ∃ readers : FieldReaders, readers.BoundTo value bytes ∧ OwnFieldCalls value readers
+  recorded_calls : ∀ bytes value, library.decodeRecorded bytes = .ok (.Ok value) →
+    ∃ readers : FieldReaders, (readers.under ["intent"]).BoundTo value.intent bytes ∧
+      OwnFieldCalls value.intent (readers.under ["intent"])
+  accepted_reads : ∀ value encoded,
+    library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok encoded) →
+    ∃ readers : FieldReaders, readers.BoundTo value encoded.slice ∧ EncodingFieldReads value readers ∧
+      (OwnFieldCalls value readers → ∃ decoded,
+        library.decodeAccepted encoded.slice = .ok (.Ok decoded) ∧
+          EnvelopeSchema.acceptedFields decoded = EnvelopeSchema.acceptedFields value)
+  recorded_reads : ∀ value encoded,
+    library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok encoded) →
+    ∃ readers : FieldReaders, (readers.under ["intent"]).BoundTo value.intent encoded.slice ∧
+      EncodingFieldReads value.intent (readers.under ["intent"]) ∧
+      (OwnFieldCalls value.intent (readers.under ["intent"]) → ∃ decoded,
+        library.decodeRecorded encoded.slice = .ok (.Ok decoded) ∧
+          EnvelopeSchema.recordedFields decoded = EnvelopeSchema.recordedFields value)
+
+theorem accepted_decode_provides_domain (library : JsonLibrary) (binding : SliceContract library)
+    (bytes : Slice U8) (value : Accepted) (decoded : library.decodeAccepted bytes = .ok (.Ok value)) :
+    InputDomain value := by
+  obtain ⟨readers, _, calls⟩ := binding.accepted_calls bytes value decoded
+  exact own_calls_provide_complete_domain value readers calls
+
+theorem recorded_decode_provides_domain (library : JsonLibrary) (binding : SliceContract library)
+    (bytes : Slice U8) (value : Recorded) (decoded : library.decodeRecorded bytes = .ok (.Ok value)) :
+    InputDomain value.intent := by
+  obtain ⟨readers, _, calls⟩ := binding.recorded_calls bytes value decoded
+  exact own_calls_provide_complete_domain value.intent (readers.under ["intent"]) calls
+
+theorem accepted_conditional_roundtrip (library : JsonLibrary) (binding : SliceContract library)
+    (value : Accepted) (encoded : alloc.vec.Vec U8) (domain : InputDomain value)
+    (emitted : library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok encoded)) :
+    library.decodeAccepted encoded.slice = .ok (.Ok value) := by
+  obtain ⟨readers, _, reads, assemble⟩ := binding.accepted_reads value encoded emitted
+  obtain ⟨decoded, result, same⟩ := assemble (original_conversions_read_back value readers domain reads)
+  have equal := (EnvelopeSchema.accepted_fields_eq_iff decoded value).mp same
+  simpa only [equal] using result
+
+theorem recorded_conditional_roundtrip (library : JsonLibrary) (binding : SliceContract library)
+    (value : Recorded) (encoded : alloc.vec.Vec U8) (domain : InputDomain value.intent)
+    (emitted : library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok encoded)) :
+    library.decodeRecorded encoded.slice = .ok (.Ok value) := by
+  obtain ⟨readers, _, reads, assemble⟩ := binding.recorded_reads value encoded emitted
+  obtain ⟨decoded, result, same⟩ := assemble
+    (original_conversions_read_back value.intent (readers.under ["intent"]) domain reads)
+  have equal := (EnvelopeSchema.recorded_fields_eq_iff decoded value).mp same
+  simpa only [equal] using result
+
+open SandproofStage1RequestRust (accepted_validate recorded_matches)
+open SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority
+
+theorem decoded_envelope_keeps_exact_guard (library : JsonLibrary) (binding : SliceContract library)
+    (bytes : Slice U8) (value : Accepted) (decoded : library.decodeAccepted bytes = .ok (.Ok value))
+    (context : AuthenticatedCenterContext) :
+    InputDomain value ∧
+      (accepted_validate value context = .ok (.Ok ()) ↔ Validation.ValidEnvelope value context) ∧
+      (∀ error, accepted_validate value context = .ok (.Err error) ↔
+        Validation.FirstAcceptedError value context error) := by
+  exact ⟨accepted_decode_provides_domain library binding bytes value decoded,
+    Validation.envelope_accepts_iff value context, Validation.envelope_error_iff value context⟩
+
+theorem decoded_record_keeps_exact_match (library : JsonLibrary) (binding : SliceContract library)
+    (bytes : Slice U8) (value : Recorded) (decoded : library.decodeRecorded bytes = .ok (.Ok value))
+    (original : Accepted) :
+    InputDomain value.intent ∧ (recorded_matches value original = .ok true ↔
+      Validation.RecordsOriginal value original) := by
+  exact ⟨recorded_decode_provides_domain library binding bytes value decoded,
+    Stage1Protocol.Recorded.accepts_iff value original⟩
+
+theorem normal_five_conditional_roundtrips (library : JsonLibrary) (binding : SliceContract library)
+    (request : SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest)
+    (version : U64) (member : (request, version) ∈ EnvelopeSchema.normalRequests)
+    (encoded : alloc.vec.Vec U8)
+    (emitted : library.compact (EnvelopeSchema.acceptedFields
+      (EnvelopeSchema.envelopeFor request version)) = .ok (.Ok encoded)) :
+    library.decodeAccepted encoded.slice = .ok (.Ok (EnvelopeSchema.envelopeFor request version)) ∧
+    accepted_validate (EnvelopeSchema.envelopeFor request version)
+      ⟨EnvelopeValues.center, Request.node⟩ = .ok (.Ok ()) := by
+  exact ⟨accepted_conditional_roundtrip library binding _ encoded
+    (normal_five_domains request version member) emitted,
+    EnvelopeSchema.all_five_normal_envelopes request version member⟩
+
+end SandboxModel.Stage1Protocol.EnvelopeBytes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.identifier_code_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.counter_code_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.own_calls_provide_complete_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.original_conversions_read_back
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.readers_keep_original_slice
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.actual_field_zero_precedes_end
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.actual_field_invalid_id_precedes_end
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.field_counts
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.field_paths_are_unique
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.ordinary_versions_and_slot_keep_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.recorded_readers_use_actual_outer_path
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.recorded_paths_are_unique
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.normal_five_domains
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.invalid_identifier_excludes_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.zero_counter_excludes_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.omitted_role_counterexamples
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.accepted_decode_provides_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.recorded_decode_provides_domain
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.accepted_conditional_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.recorded_conditional_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.decoded_envelope_keeps_exact_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.decoded_record_keeps_exact_match
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeBytes.normal_five_conditional_roundtrips

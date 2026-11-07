@@ -1,0 +1,15 @@
+import SandproofStandardCreate.Funs
+import SandboxModel.ProofAuditCommand
+
+namespace SandboxModel.Access
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+
+/-- Current OperationPlan also carries the complete capture handoff. -/
+@[simp] theorem capture_CaptureHandoff_clone_exact
+    (value : sandbox_controller_core.capture.CaptureHandoff) :
+    sandbox_controller_core.capture.CaptureHandoff.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+end SandboxModel.Access
+
+#audit_controller_proof SandboxModel.Access.capture_CaptureHandoff_clone_exact

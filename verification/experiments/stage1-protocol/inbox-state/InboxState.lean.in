@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateModel
+import SandboxModel.Lifecycle.Protocol.InboxRecordCloning
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxState
+
+theorem state_contract : FullStateContract Inbox.state := by
+  intro inbox s e session_bound entry_bound
+  obtain ⟨session, indexed_session, same_session⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.sessions s session_bound)
+  subst session
+  obtain ⟨entry, indexed_entry, same_entry⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.sessions.val[s.val].entries e entry_bound)
+  subst entry
+  simp [Inbox.state, alloc.vec.Vec.index_slice_index, indexed_session, indexed_entry,
+    InboxRecord.AcceptedLifecycleIntent_clone, workState]
+
+theorem valid_position_returns (inbox : Inbox) (s e : Usize)
+    (valid : ValidPosition inbox s e) :
+    ∃ state, inbox.state s e = .ok state := by
+  obtain ⟨session_bound, entry_bound⟩ := valid
+  exact ⟨_, state_contract inbox s e session_bound entry_bound⟩
+
+end SandboxModel.Stage1Protocol.InboxState
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.state_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.valid_position_returns

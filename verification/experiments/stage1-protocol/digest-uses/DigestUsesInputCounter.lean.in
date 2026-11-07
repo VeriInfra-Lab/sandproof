@@ -1,0 +1,45 @@
+import SandboxModel.Lifecycle.Protocol.DigestUsesValues
+open Aeneas Aeneas.Std SandproofDigestUsesRust
+namespace SandboxModel.Stage1Protocol.DigestUses.InputCounter
+
+theorem original_slice_truncated (bytes : Slice U8) :
+    core.slice.index.Slice.index (core.slice.index.SliceIndexRangeToUsizeSlice U8)
+      bytes { «end» := 0#usize } = .ok Values.empty := by
+  simp [core.slice.index.SliceIndexRangeToUsizeSlice.index, Values.empty, List.slice]
+
+theorem actual_input_lost (bytes : Slice U8) :
+    sourceDigest bytes = .ok (expected Values.empty) := by
+  unfold sourceDigest sandproof_controller_service.controller.lifecycle_inbox.source_work.digest
+  rw [original_slice_truncated]
+  simp only [bind_tc_ok]
+  have compute : sandproof_controller_service.controller.lifecycle_inbox.sha256.digest Values.empty = .ok (expected Values.empty) := by
+    unfold sandproof_controller_service.controller.lifecycle_inbox.sha256.digest
+    exact if_pos (by simp [Values.empty])
+  rw [compute]
+  simp only [bind_tc_ok, sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem empty_still_matches : sourceDigest Values.empty = .ok (expected Values.empty) :=
+  actual_input_lost _
+
+theorem same_source_contract_rejected : ¬ SourceDigestContract sourceDigest := by
+  intro law
+  have promised := law Values.abc Values.abc_normal
+  rw [actual_input_lost] at promised
+  have values := Result.ok_injective promised
+  have payload := congrArg
+    (fun output : Array U8 32#usize =>
+      (SandproofFoundationsRust.IdentifierLibrary.byteArray output.val).toList) values
+  rw [Values.empty_full_payload, Values.abc_full_payload] at payload
+  have first := congrArg List.head? payload
+  exact (by decide : (some (0xe3 : UInt8)) ≠ some 0xba) first
+
+theorem same_full_contract_rejected : ¬ FullDigestUsesContract actualCalls := by
+  intro law
+  exact same_source_contract_rejected law.2.2.2.2.2
+
+end SandboxModel.Stage1Protocol.DigestUses.InputCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.InputCounter.original_slice_truncated
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.InputCounter.actual_input_lost
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.InputCounter.empty_still_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_source_contract_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.DigestUses.InputCounter.same_full_contract_rejected

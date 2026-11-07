@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValidation
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateFixedIdentity
+open SandproofStage1CreateAttachmentRust
+
+theorem identity_complete (value : Str) (text : String) (sandbox : U64)
+    (represented : value.val = SandproofFoundationsRust.IdentifierLibrary.stringBytes text)
+    (bounded : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable (rendered text sandbox)) :
+    sandproof_controller_service.controller.identity.sandbox_id value sandbox =
+      .ok (expected text sandbox) := by
+  have constructor := sandbox_constructor_complete (rendered text sandbox) bounded
+  simp only [rendered] at constructor
+  have writer := SandboxModel.Foundations.default_string_write_refines
+    (⟨"sb-"⟩ : SandproofFoundationsRust.core.fmt.Formatter) value text represented
+  simp [sandproof_controller_service.controller.identity.sandbox_id,
+    Str.Insts.CoreFmtDisplay,
+    SandproofStage1CreateAttachmentRust.core.fmt.rt.Argument.new_display, SandproofStage1CreateAttachmentRust.core.fmt.Arguments.new,
+    SandproofFoundationsRust.core.fmt.rt.Argument.new_display,
+    SandproofFoundationsRust.core.fmt.Arguments.new, alloc.fmt.format,
+    fixedSandboxPieces, Shared0T.Insts.CoreFmtDisplay.fmt,
+    SandproofFoundationsRust.Shared0T.Insts.CoreFmtDisplay.fmt,
+    Str.Insts.CoreFmtDisplay.fmt, writer,
+    SandproofStage1CreateAttachmentRust.core.fmt.num.imp.DisplayU64.fmt,
+    SandproofFoundationsRust.core.fmt.num.imp.DisplayU64.fmt,
+    core.hint.must_use, rendered,
+    expected, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    sandproof_controller_service.JournalError.Insts.CoreConvertFromContractError.from]
+  all_goals split <;> simp_all
+
+theorem full_identity_contract :
+    FullIdentityContract sandproof_controller_service.controller.identity.sandbox_id := by
+  intro value text sandbox represented bounded
+  exact identity_complete value text sandbox represented bounded
+
+end SandboxModel.Stage1Protocol.CreateFixedIdentity
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.identity_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.full_identity_contract

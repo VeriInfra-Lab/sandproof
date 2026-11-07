@@ -95,7 +95,8 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
             .operation_plan(key)
             .ok_or(JournalError::CorruptStore)?;
         if key.sandbox != sandbox
-            || plan.vm != Some(vm)
+            || (plan.vm != Some(vm)
+                && !core::capture::continuation::activation_belongs_to_continuation(plan, command))
             || plan.generation != generation
             || command.epoch() != Some(plan.epoch)
             || action.identity.owner != identity::owner_id(current.owner)?
@@ -119,14 +120,12 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
         let source = evidence
             .source_process_identity(command, &action.identity.resource)
             .ok_or(JournalError::UnresolvedAction)?;
-        agree(
-            if is_prepare {
-                &mut prepared
-            } else {
-                &mut activated
-            },
-            source,
-        )?;
+        let observed = if is_prepare {
+            &mut prepared
+        } else {
+            &mut activated
+        };
+        agree(observed, source)?;
     }
     match (prepared, activated) {
         (Some(prepared), Some(activated)) if prepared == activated => Ok(prepared),

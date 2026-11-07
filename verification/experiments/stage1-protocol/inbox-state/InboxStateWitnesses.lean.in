@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.InboxState
+import SandboxModel.Lifecycle.Protocol.InboxStateValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxState
+open Values
+
+theorem retained_state : inbox.state 0#usize 0#usize = .ok (workState session oldEntry) := by
+  simpa [inbox, session] using state_contract inbox 0#usize 0#usize session_bound old_bound
+
+theorem current_state : inbox.state 0#usize 1#usize = .ok (workState session newEntry) := by
+  simpa [inbox, session] using state_contract inbox 0#usize 1#usize session_bound new_bound
+
+theorem retained_is_stale_with_own_operation :
+    (workState session oldEntry).current = false ∧
+    (workState session oldEntry).local_operation = some 41#u64 := by decide
+
+theorem current_has_no_entry_operation :
+    (workState session newEntry).current = true ∧
+    (workState session newEntry).local_operation = none := by decide
+
+end SandboxModel.Stage1Protocol.InboxState
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.retained_state
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.current_state
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.retained_is_stale_with_own_operation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.current_has_no_entry_operation

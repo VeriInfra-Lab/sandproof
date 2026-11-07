@@ -272,7 +272,9 @@ pub fn effect_succeeded_check(world: &World, command: &Command) -> bool {
             | EffectStatus::Dispatched
             | EffectStatus::OutcomeUnknown
             | EffectStatus::Acknowledged(EffectOutcome::Failed(_))
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         )
         | None => false,
     }
@@ -284,6 +286,13 @@ pub fn effect_outcome_valid(world: &World, command: &Command, outcome: EffectOut
         EffectOutcome::Succeeded(_) => command_result_present(world, command),
         EffectOutcome::Failed(_) => !command_result_present(world, command),
     }
+}
+
+fn dispatched_capture(
+    handoff: Option<&crate::capture::CaptureHandoff>,
+) -> Option<crate::capture::CaptureHandoff> {
+    let handoff = handoff?;
+    Some(handoff.registration_dispatched())
 }
 
 #[must_use]
@@ -309,9 +318,7 @@ pub fn dispatch_effect(world: &World, id: EffectId) -> World {
             && crate::transition::current_capture(world, sandbox, record).is_some()
         {
             let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.registration_dispatched());
-            }
+            plan.capture = dispatched_capture(plan.capture.as_ref());
             next.operation_plans.put(key, plan);
         }
     }
@@ -443,7 +450,8 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
     let Some(status) = world.effect_status(effect) else {
         return false;
     };
-    status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown
+    (status == EffectStatus::Dispatched || status == EffectStatus::OutcomeUnknown)
+        && !crate::maintenance::released_execution::discharged(world, effect)
 }
 
 /// Dispatch the current attempt, rejecting new capture work after revocation.
@@ -452,6 +460,26 @@ pub(crate) fn outcome_is_unresolved(world: &World, effect: &EffectId) -> bool {
 /// # Errors
 /// Returns the first failed guard; rejection leaves `world` unchanged.
 pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if let Some(result) = dispatch_stop(world, &id) {
+        return result;
+    }
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
+    dispatch_eligible(world, id)
+}
+
+// ReleasedExecution::command is always a terminal InstallFence. A StopVm can
+// never equal it, so discharged is structurally false for this command. The
+// live entry selects this route; all remaining checks and updates are shared.
+fn dispatch_stop(world: &World, id: &EffectId) -> Option<Result<EffectDecision, EffectReject>> {
+    match id.command() {
+        Command::StopVm { .. } => Some(dispatch_eligible(world, id.clone())),
+        _ => None,
+    }
+}
+
+fn dispatch_eligible(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
     if !world.controller_up {
         return Err(EffectReject::ControllerDown);
     }
@@ -461,21 +489,8 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
             if startup_dispatch_revoked(world, id.command()) {
                 return Err(EffectReject::NotDispatchable);
             }
-            if matches!(
-                id.command(),
-                Command::FreezeVm { .. }
-                    | Command::SealSnapshot { .. }
-                    | Command::CommitSnapshot { .. }
-            ) {
-                let sandbox = id.command().sandbox();
-                let Some(record) = world.sandboxes.get(&sandbox) else {
-                    return Err(EffectReject::NotDispatchable);
-                };
-                if !crate::transition::current_capture(world, sandbox, record)
-                    .is_some_and(crate::capture::CaptureHandoff::accepts_registration)
-                {
-                    return Err(EffectReject::NotDispatchable);
-                }
+            if !crate::capture::continuation::capture_dispatch_allowed(world, &id) {
+                return Err(EffectReject::NotDispatchable);
             }
             Ok(EffectDecision {
                 event: Event::DispatchEffect(id.clone()),
@@ -485,7 +500,9 @@ pub fn handle_effect_dispatch(world: &World, id: EffectId) -> Result<EffectDecis
         Some(
             EffectStatus::Dispatched
             | EffectStatus::Acknowledged(_)
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatchable),
     }
 }
@@ -499,37 +516,90 @@ pub fn handle_effect_receipt(
     id: EffectId,
     outcome: EffectOutcome,
 ) -> Result<EffectDecision, EffectReject> {
-    match world.effects.get(&id) {
-        None => Err(EffectReject::EffectNotFound),
-        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
-            if matches!(id.command(), Command::ActivateVm { .. })
-                && world
-                    .sandboxes
-                    .get(&id.command().sandbox())
-                    .is_some_and(|record| record.terminal)
-                && !crate::terminal::startup_effect_in_current_abort(world, &id)
-            {
-                return Err(EffectReject::NotAwaitingResult);
-            }
-            if !effect_outcome_valid(world, id.command(), outcome) {
-                return Err(EffectReject::InvalidOutcomeEvidence);
-            }
-            Ok(EffectDecision {
-                event: Event::AcknowledgeEffect(id.clone(), outcome),
-                next: acknowledge_effect(world, id, outcome),
+    if let Some(result) = receipt_pause(world, &id, outcome) {
+        return result;
+    }
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
+    let awaiting_result = receipt_awaiting_result(world, &id, outcome)?;
+    if awaiting_result
+        && matches!(id.command(), Command::ActivateVm { .. })
+        && world
+            .sandboxes
+            .get(&id.command().sandbox())
+            .is_some_and(|record| record.terminal)
+        && !crate::terminal::startup_effect_in_current_abort(world, &id)
+        && !crate::capture::continuation::activation_in_current_abort(world, &id)
+    {
+        return Err(EffectReject::NotAwaitingResult);
+    }
+    receipt_finish(world, id, outcome, awaiting_result)
+}
+
+// Neither pause command can equal ReleasedExecution::command (a terminal
+// InstallFence), and neither is ActivateVm. The live entry therefore shares
+// the original receipt checks and writes without running those other guards.
+fn receipt_pause(
+    world: &World,
+    id: &EffectId,
+    outcome: EffectOutcome,
+) -> Option<Result<EffectDecision, EffectReject>> {
+    match id.command() {
+        Command::StopVm { .. } | Command::CommitSnapshot { .. } => {
+            Some(match receipt_awaiting_result(world, id, outcome) {
+                Ok(awaiting_result) => receipt_finish(world, id.clone(), outcome, awaiting_result),
+                Err(reject) => Err(reject),
             })
         }
+        _ => None,
+    }
+}
+
+// true requests the first outcome check; false is an identical replay. The
+// replay must not re-check resource observations that may have since changed.
+fn receipt_awaiting_result(
+    world: &World,
+    id: &EffectId,
+    outcome: EffectOutcome,
+) -> Result<bool, EffectReject> {
+    match world.effects.get(id) {
+        None => Err(EffectReject::EffectNotFound),
+        Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => Ok(true),
         Some(EffectStatus::Acknowledged(recorded)) => {
             if *recorded != outcome {
                 return Err(EffectReject::ConflictingReceipt);
             }
-            Ok(EffectDecision {
-                event: Event::AcknowledgeEffect(id, outcome),
-                next: world.clone(),
-            })
+            Ok(false)
         }
         Some(EffectStatus::Committed) => Err(EffectReject::NotAwaitingResult),
-        Some(EffectStatus::RetiredByStop(_)) => Err(EffectReject::EffectRetired),
+        Some(
+            EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
+        ) => Err(EffectReject::EffectRetired),
+    }
+}
+
+fn receipt_finish(
+    world: &World,
+    id: EffectId,
+    outcome: EffectOutcome,
+    awaiting_result: bool,
+) -> Result<EffectDecision, EffectReject> {
+    if awaiting_result {
+        if !effect_outcome_valid(world, id.command(), outcome) {
+            return Err(EffectReject::InvalidOutcomeEvidence);
+        }
+        Ok(EffectDecision {
+            event: Event::AcknowledgeEffect(id.clone(), outcome),
+            next: acknowledge_effect(world, id, outcome),
+        })
+    } else {
+        Ok(EffectDecision {
+            event: Event::AcknowledgeEffect(id, outcome),
+            next: world.clone(),
+        })
     }
 }
 
@@ -538,6 +608,9 @@ pub fn handle_effect_receipt(
 /// # Errors
 /// Returns the first failed guard in the same order as the Lean reducer.
 pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecision, EffectReject> {
+    if crate::maintenance::released_execution::discharged(world, &id) {
+        return Err(EffectReject::EffectRetired);
+    }
     match world.effects.get(&id) {
         None => Err(EffectReject::EffectNotFound),
         Some(EffectStatus::Dispatched) => Ok(EffectDecision {
@@ -551,7 +624,9 @@ pub fn handle_effect_timeout(world: &World, id: EffectId) -> Result<EffectDecisi
         Some(
             EffectStatus::Committed
             | EffectStatus::Acknowledged(_)
-            | EffectStatus::RetiredByStop(_),
+            | EffectStatus::RetiredByStop(_)
+            | EffectStatus::RetiredByCaptureEnd(_)
+            | EffectStatus::RetiredByCaptureDrain(_),
         ) => Err(EffectReject::NotDispatched),
     }
 }

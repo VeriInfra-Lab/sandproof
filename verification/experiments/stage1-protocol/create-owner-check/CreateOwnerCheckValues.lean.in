@@ -1,0 +1,68 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckModel
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorValues
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck.Values
+open OwnerMapping.Values CreateOwnerSuccessor.Values
+/-- Both checked fields and the untouched operation are retained in the original binding. -/
+def binding (sandbox owner : U64) : InternalLocalBinding :=
+  { sandbox := sandbox, owner := owner, operation := 99#u64 }
+
+theorem existing_full_owner : existingExpected twoOwners "bravo" 9#u64 = .Ok true := rfl
+
+theorem existing_first_duplicate : existingExpected repeatedOwner "alpha" 7#u64 = .Ok true := rfl
+
+theorem existing_first_conflict : existingExpected repeatedOwner "alpha" 9#u64 = .Err .Conflict := rfl
+
+theorem existing_missing : existingExpected (noOwners 0#u64) "alpha" 9#u64 = .Ok false := rfl
+
+theorem existing_exhausted_bypasses_allocator : existingExpected exhaustedExisting "alpha" 7#u64 = .Ok true := rfl
+
+theorem new_empty : newExpected (noOwners 0#u64) emptyWorld (binding 1#u64 1#u64) = .Ok () := by
+  change guardExpected 1#u64 (CreateOwnerSuccessor.expected (noOwners 0#u64) emptyWorld 1#u64) = _
+  rw [CreateOwnerSuccessor.Values.empty_expected]
+  rfl
+
+theorem new_excluded_largest : newExpected (noOwners 5#u64) worldTriple (binding 2#u64 18#u64) = .Ok () := by
+  change guardExpected 18#u64 (CreateOwnerSuccessor.expected (noOwners 5#u64) worldTriple 2#u64) = _
+  rw [CreateOwnerSuccessor.Values.excluded_largest_expected]
+  rfl
+
+theorem new_wrong_owner : newExpected (noOwners 5#u64) worldTriple (binding 2#u64 41#u64) = .Err .Conflict := by
+  change guardExpected 41#u64 (CreateOwnerSuccessor.expected (noOwners 5#u64) worldTriple 2#u64) = _
+  rw [CreateOwnerSuccessor.Values.excluded_largest_expected]
+  rfl
+
+theorem new_high_water : newExpected (noOwners 64#u64) worldTriple (binding 2#u64 65#u64) = .Ok () := by
+  change guardExpected 65#u64 (CreateOwnerSuccessor.expected (noOwners 64#u64) worldTriple 2#u64) = _
+  rw [CreateOwnerSuccessor.Values.high_water_expected]
+  rfl
+
+theorem new_excluded_maximum : newExpected (noOwners 5#u64) worldMaximum (binding 1#u64 6#u64) = .Ok () := by
+  change guardExpected 6#u64 (CreateOwnerSuccessor.expected (noOwners 5#u64) worldMaximum 1#u64) = _
+  rw [CreateOwnerSuccessor.Values.excluded_maximum_expected]
+  rfl
+
+theorem new_other_maximum_first_error : newExpected (noOwners 5#u64) worldMaximum (binding 2#u64 1#u64) = .Err .IdentifierExhausted := by
+  change guardExpected 1#u64 (CreateOwnerSuccessor.expected (noOwners 5#u64) worldMaximum 2#u64) = _
+  rw [CreateOwnerSuccessor.Values.other_maximum_expected]
+  rfl
+
+theorem new_high_water_first_error : newExpected (noOwners limit) emptyWorld (binding 1#u64 7#u64) = .Err .IdentifierExhausted := by
+  change guardExpected 7#u64 (CreateOwnerSuccessor.expected (noOwners limit) emptyWorld 1#u64) = _
+  rw [CreateOwnerSuccessor.Values.high_water_exhausted_expected]
+  rfl
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.existing_full_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.existing_first_duplicate
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.existing_first_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.existing_missing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.existing_exhausted_bypasses_allocator
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_excluded_largest
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_wrong_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_high_water
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_excluded_maximum
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_other_maximum_first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Values.new_high_water_first_error

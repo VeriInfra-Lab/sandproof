@@ -86,16 +86,20 @@ impl Calls {
             secrets: live
                 .iter()
                 .map(|session| {
-                    let id = session
+                    let id: u64 = session
                         .sandbox_id
                         .rsplit('-')
                         .next()
                         .unwrap()
                         .parse()
                         .unwrap();
-                    (id, (session.envd_access_token.clone(), BTreeMap::new()))
+                    (
+                        (id, 1),
+                        (session.envd_access_token.clone(), BTreeMap::new()),
+                    )
                 })
-                .collect::<BTreeMap<_, _>>().into(),
+                .collect::<BTreeMap<_, _>>()
+                .into(),
             ..FakeHost::default()
         }
     }

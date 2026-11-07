@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentFlow
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentFlowValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses
+noncomputable section
+open Values
+open InboxLoad.Values (saved terminal renewal unload Trace)
+
+-- Whole normal generic Rust call on a fully valid loaded/post Inbox, with exact
+-- complete load and save traces. Explicit effects are not real JSON/SHA/SQL.
+theorem normal (count : Usize) (template : templates.TemplateBinding) (trace : Trace) :
+    attach_create_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (effects count) trace namespaceValue (attachment template) =
+      .ok (.Ok (),trace ++ normalTrace) := by
+  exact (full_flow_contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic (effects count) ComposedConfig.standard_graphic_contract
+    represented trace namespaceValue (attachment template)).trans (model_normal count template trace)
+
+-- The lifetime UPDATE accepts zero rows in the original algorithm. The final
+-- inbox save still requires its own separate successful one-row update.
+theorem zero_rows_lifetime_update_succeeds (template : templates.TemplateBinding) :
+    attach_create_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (effects 0#usize) [] namespaceValue (attachment template) =
+      .ok (.Ok (),normalTrace) := by
+  simpa only [List.nil_append] using normal 0#usize template []
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.normal
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.zero_rows_lifetime_update_succeeds

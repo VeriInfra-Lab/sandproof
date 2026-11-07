@@ -1,0 +1,119 @@
+{
+  "complete": true,
+  "functions": {
+    "toStr": {
+      "provider": "verification/aeneas/sqlite/SandproofSqlite/FunsExternal.lean",
+      "provider_sha256": "adbfedb0660a4f16446af005dc4c36c6fb276678f4d28a875891bf54e8a0f384",
+      "exact_current_body_sha256": "beb02cde84b7e463366bd57733a28dd8f3089cde0c750343c3f98f17df65c8fd",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "Bool.Insts.CoreCmpPartialEqBool.ne": {
+      "provider": "verification/experiments/stage1-protocol/inbox-state/FunsExternal.lean.in",
+      "provider_sha256": "1cf8a2bf8242cfd10bee010195e3a8758a8b10cf08e88e8baa6f78d5a84801fd",
+      "exact_current_body_sha256": "08e6b882dba1a5b7bd50e599cf88ec5d035b0f059d7d3fd329844c04361dc68d",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.option.Option.is_some_and": {
+      "provider": "verification/experiments/stage1-protocol/inbox-record/FunsExternal.lean.in",
+      "provider_sha256": "8a56bd8b9b573cd3fcf5a5f647f7f122c4fb6112ade17bf1f3897d65e33f46a3",
+      "exact_current_body_sha256": "8a4cdbe6bd8c08bf42616ec0fd6cff1775302f3b20a099445f99bbc5b33ca905",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.option.Option.is_none_or": {
+      "provider": "verification/experiments/stage1-protocol/inbox-record/FunsExternal.lean.in",
+      "provider_sha256": "8a56bd8b9b573cd3fcf5a5f647f7f122c4fb6112ade17bf1f3897d65e33f46a3",
+      "exact_current_body_sha256": "438ec6db470b8f4e790b6180fc03768039593134bd71f9213201425bb9fe062b",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.option.Option.as_ref": {
+      "provider": "verification/aeneas/network/SandproofNetwork/FunsExternal.lean",
+      "provider_sha256": "b17d3cc41e54c25a39ba00b063cda23bc30567a31b896d28def65711e7bcf260",
+      "exact_current_body_sha256": "ba41ee55b8ffb50e09924b6bc13af49dffaf8c8b2b0843b22fb71c4fe6d7dc9e",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.option.Option.Insts.CoreCmpPartialEqOption.eq": {
+      "provider": "verification/aeneas/network/SandproofNetwork/FunsExternal.lean",
+      "provider_sha256": "b17d3cc41e54c25a39ba00b063cda23bc30567a31b896d28def65711e7bcf260",
+      "exact_current_body_sha256": "536cd30547498f243c20669ea3cb44c20551b07d9ba1fae8178f57545e4b2e08",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.result.Result.ok": {
+      "provider": "verification/experiments/stage1-protocol/inbox-record/FunsExternal.lean.in",
+      "provider_sha256": "8a56bd8b9b573cd3fcf5a5f647f7f122c4fb6112ade17bf1f3897d65e33f46a3",
+      "exact_current_body_sha256": "8b087b886367ecb35c9a56a1ba899b87aa1aaf458ed24e407a67b02e2de395da",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.string.String.Insts.CoreCmpPartialEqString.eq": {
+      "provider": "verification/experiments/stage1-protocol/inbox-state/FunsExternal.lean.in",
+      "provider_sha256": "1cf8a2bf8242cfd10bee010195e3a8758a8b10cf08e88e8baa6f78d5a84801fd",
+      "exact_current_body_sha256": "e6bf5e90ddfd0c995bbbb54c66e8a655d461327d8603c11260b20085779e134f",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.string.String.len": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/FunsExternal.lean.in",
+      "provider_sha256": "53a72fbbd9aaf72fe39f9ae9de0bc41752cdf9adc51707296dff55cdf73ebc4b",
+      "exact_current_body_sha256": "eebef6b2b0ad85af8eaa2a2d157b10205f8ac89ce90987c3cff32a0c3b5667df",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.string.String.is_empty": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/FunsExternal.lean.in",
+      "provider_sha256": "53a72fbbd9aaf72fe39f9ae9de0bc41752cdf9adc51707296dff55cdf73ebc4b",
+      "exact_current_body_sha256": "de1e767307a7670dd47d1d770302d2b941dd3a1e368f14dba31d5178324769a9",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.string.String.Insts.CoreCloneClone.clone": {
+      "provider": "verification/experiments/stage1-protocol/inbox-state/FunsExternal.lean.in",
+      "provider_sha256": "1cf8a2bf8242cfd10bee010195e3a8758a8b10cf08e88e8baa6f78d5a84801fd",
+      "exact_current_body_sha256": "de3e758dd2a692c1fc58ac1c14c3815ba0edb4fc1241b0da303e997f78f60815",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref": {
+      "provider": "verification/aeneas/storage/SandproofStorage/FunsExternal.lean",
+      "provider_sha256": "354963d55ef3d80baba69f9e7ac39d2e866c3bc155d30be09b6427779aa9edce",
+      "exact_current_body_sha256": "eff2c660595531c4403e200191bd13dfda95e6284a85f780848f660d762412e1",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "alloc.vec.Vec.is_empty": {
+      "provider": "verification/experiments/stage1-protocol/inbox-state/FunsExternal.lean.in",
+      "provider_sha256": "1cf8a2bf8242cfd10bee010195e3a8758a8b10cf08e88e8baa6f78d5a84801fd",
+      "exact_current_body_sha256": "0d584a95dc221f06f123d9be75a33e98d0b1acce90e71e174c2a254f7c70fbd1",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter": {
+      "provider": "verification/experiments/stage1-protocol/inbox-lineage/FunsExternal.lean.in",
+      "provider_sha256": "5fa491a79d00b1eb954333ff4a35e41a143c60e1a672c803f087cb4009afda35",
+      "exact_current_body_sha256": "97a462af472ff2235feb940a9f606deb48ebf7168f232b52b8d121e51a3d6a13",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    },
+    "core.result.Result.is_err": {
+      "provider": "verification/experiments/stage1-protocol/inbox-validation/FunsExternal.lean.in",
+      "provider_sha256": "53a72fbbd9aaf72fe39f9ae9de0bc41752cdf9adc51707296dff55cdf73ebc4b",
+      "exact_current_body_sha256": "d338298b3aec6f37bbda161fe8beb938052b86044bf84f65d9284414b38166bf",
+      "only_existing_library_namespace_renamed": false,
+      "not_new_std_implementation_proof": true
+    }
+  },
+  "missing": [],
+  "explicit_alias_connections": {
+    "alloc.collections.btree.map.BTreeMap": "Existing Storage complete key/value carrier; actual String,String,Global field type is checked, no map operation contract added.",
+    "core.num.error.TryFromIntError": "View-local alias to the complete original generated six-variant IntErrorKind, linked to the real single-field wrapper. Fixed backend remains unchanged.",
+    "core.io.error.Error / rusqlite.error.Error / serde_json.error.Error": "Original registered BoundedWriter error carriers, no SQL/IO/JSON operation guarantee supplied here.",
+    "sandproof_protocol.ContractError": "Full original enum independently captured and checked before Foundations alias binding."
+  },
+  "public_shared_definition_adoption": false,
+  "full_v3": false
+}

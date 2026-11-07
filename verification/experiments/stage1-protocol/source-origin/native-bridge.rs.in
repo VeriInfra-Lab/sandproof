@@ -1,0 +1,9 @@
+#[cfg(test)]
+pub(super) fn proof_source_origin_validate(
+    world: &sandbox_controller_core::World,
+    inbox: &crate::controller::lifecycle_inbox::model::Inbox,
+    anchor: &super::SourceAnchor,
+    session: usize,
+) -> Result<(), crate::JournalError> {
+    validate_execution_origin(world, inbox, anchor, session)
+}

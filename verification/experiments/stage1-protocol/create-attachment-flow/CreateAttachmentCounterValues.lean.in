@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.CreateAttachmentFlowValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+namespace SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues
+noncomputable section
+open Values
+open SessionShape.Values (vector)
+open InboxLoad.Values (saved terminal renewal unload)
+
+-- Concrete full input carrier. These path/hash fields do not establish real
+-- registration, computed digests, files, resources, or successful admission.
+def template : templates.TemplateBinding := {
+  template_id := "base", revision := "base", owner := some 2#u64,
+  kernel := {
+    path := ⟨⟨⟨vector [47#u8,107#u8,101#u8,114#u8,110#u8,101#u8,108#u8] (by decide)⟩⟩⟩,
+    sha256 := "0000000000000000000000000000000000000000000000000000000000000000", size_bytes := 1#u64 },
+  rootfs := {
+    path := ⟨⟨⟨vector [47#u8,114#u8,111#u8,111#u8,116#u8,102#u8,115#u8] (by decide)⟩⟩⟩,
+    sha256 := "0000000000000000000000000000000000000000000000000000000000000000", size_bytes := 1#u64 },
+  resources := ⟨1#u8,128#u32,268435456#u64,134217728#u64⟩,
+  envd_version := "witness", guest := none, startup := none }
+
+theorem full_input_inhabited : Nonempty
+    sandproof_controller_service.controller.lifecycle_inbox.CreateAttachment :=
+  ⟨attachment template⟩
+
+theorem normal_specification :
+    flowView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩ (effects 0#usize)
+      [] namespaceValue (attachment template) = .ok (.Ok (),normalTrace) := by
+  simpa only [List.nil_append] using model_normal 0#usize template []
+
+end
+end SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.full_input_inhabited
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification

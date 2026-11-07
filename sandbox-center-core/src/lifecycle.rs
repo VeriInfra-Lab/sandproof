@@ -2,7 +2,7 @@
 //! One Sandbox row owns one bounded operation history; no shadow lifecycle table.
 use crate::{CenterState, DecisionError, NodeRole, Sandbox, TenantBudget};
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, CaptureId, CenterIdentity, CreateRefusalReason, CurrentReadyFacts,
+    AcceptedLifecycleIntent, CenterIdentity, CreateRefusalReason, CurrentReadyFacts,
     ExpectedSession, IncarnationId, LifecycleOperation, LifecycleRequest, OperationBinding,
     OperationKey, RequestWindowId, SessionId, TerminalLifecycleObservation,
 };
@@ -11,11 +11,13 @@ use serde::{Deserialize, Serialize};
 mod key;
 mod ready;
 mod renewal;
+mod resume;
+mod unloaded;
 mod validation;
 pub use sandproof_protocol::lifecycle::CreateParameters;
 
 /// One supported current format. Missing registration is not a legacy profile.
-pub const LIFECYCLE_PROFILE_VERSION: u16 = 5;
+pub const LIFECYCLE_PROFILE_VERSION: u16 = 8;
 
 pub(crate) fn required_option<'de, D, T>(input: D) -> Result<Option<T>, D::Error>
 where
@@ -45,6 +47,11 @@ pub enum LifecycleSubmission {
         session: SessionId,
         expected_version: u64,
     },
+    Resume {
+        key: OperationKey,
+        session: SessionId,
+        expected_version: u64,
+    },
     Renew {
         key: OperationKey,
         session: SessionId,
@@ -64,6 +71,7 @@ impl LifecycleSubmission {
         match self {
             Self::Create { key, .. }
             | Self::Unload { key, .. }
+            | Self::Resume { key, .. }
             | Self::Renew { key, .. }
             | Self::Destroy { key, .. } => key,
         }
@@ -77,6 +85,9 @@ pub enum SessionPhase {
     Running,
     Renewing,
     Unloading,
+    Unloaded,
+    Resuming,
+    StateLost,
     Terminating,
     Cleaned,
 }
@@ -90,12 +101,16 @@ pub struct LifecycleOperationRecord {
     pub(crate) allocation_number: u64,
     pub(crate) acceptance_time: AcceptanceTime,
     pub(crate) running: Option<CurrentReadyFacts>,
+    #[serde(deserialize_with = "required_option")]
+    pub(crate) unloaded: Option<sandproof_protocol::lifecycle::UnloadObservation>,
     /// Actual predecessor lifetime sampled on admission, not reconstructed
     /// from Create or a later native observation after compaction.
     #[serde(deserialize_with = "required_option")]
     pub(crate) previous_effective_end_at_ms: Option<u64>,
     /// Exact original Create refusal; later Destroy never erases its cause.
     pub(crate) create_refusal: Option<CreateRefusalReason>,
+    /// Only an explicit matching Host loss observation may establish this.
+    pub(crate) resume_state_lost: bool,
     pub(crate) terminal: Option<RetainedTerminalResult>,
 }
 /// Timed requests preserve their actual sample for deadline reconstruction.
@@ -146,13 +161,15 @@ impl LifecycleOperationRecord {
                 AcceptanceTime::Sampled { at_ms: now_ms }
             },
             running: None,
+            unloaded: None,
             previous_effective_end_at_ms: if matches!(submission, LifecycleSubmission::Renew { .. })
             {
-                previous.running.as_ref().map(|facts| facts.end_at_ms)
+                previous.running().map(|facts| facts.end_at_ms)
             } else {
                 None
             },
             create_refusal: None,
+            resume_state_lost: false,
             terminal: None,
         }
     }
@@ -163,7 +180,32 @@ impl LifecycleOperationRecord {
     }
     #[must_use]
     pub const fn running(&self) -> Option<&CurrentReadyFacts> {
-        self.running.as_ref()
+        match self.running.as_ref() {
+            Some(facts) => Some(facts),
+            None => match self.unloaded.as_ref() {
+                Some(result) => result.outcome.continued(),
+                None => None,
+            },
+        }
+    }
+    /// Current confirmed execution lineage, including an original continued VM.
+    pub(super) fn running_incarnation(&self) -> Option<IncarnationId> {
+        if let LifecycleOperation::Unload {
+            source_incarnation, ..
+        } = self.intent.request.operation
+        {
+            return self
+                .unloaded
+                .as_ref()?
+                .outcome
+                .continued()
+                .map(|_| source_incarnation);
+        }
+        resume::running_incarnation(&self.intent.request.operation)
+    }
+    #[must_use]
+    pub const fn unloaded(&self) -> Option<&sandproof_protocol::lifecycle::UnloadObservation> {
+        self.unloaded.as_ref()
     }
     #[must_use]
     pub const fn create_refusal(&self) -> Option<CreateRefusalReason> {
@@ -228,8 +270,13 @@ impl Sandbox {
         let Some(operation) = self.operations.last() else {
             return SessionPhase::Creating;
         };
+        if operation.resume_state_lost {
+            return SessionPhase::StateLost;
+        }
         match &operation.intent.request.operation {
-            LifecycleOperation::Create { .. } | LifecycleOperation::Renew { .. }
+            LifecycleOperation::Create { .. }
+            | LifecycleOperation::Renew { .. }
+            | LifecycleOperation::Resume { .. }
                 if operation.running.is_some() =>
             {
                 SessionPhase::Running
@@ -238,9 +285,20 @@ impl Sandbox {
             LifecycleOperation::Renew { .. } => SessionPhase::Renewing,
             LifecycleOperation::Destroy {} if self.released() => SessionPhase::Cleaned,
             LifecycleOperation::Destroy {} => SessionPhase::Terminating,
-            LifecycleOperation::Unload { .. } | LifecycleOperation::Resume { .. } => {
-                SessionPhase::Unloading
+            LifecycleOperation::Unload { .. } if operation.running().is_some() => {
+                SessionPhase::Running
             }
+            LifecycleOperation::Unload { .. }
+                if operation
+                    .unloaded
+                    .as_ref()
+                    .and_then(|o| o.outcome.unloaded())
+                    .is_some() =>
+            {
+                SessionPhase::Unloaded
+            }
+            LifecycleOperation::Unload { .. } => SessionPhase::Unloading,
+            LifecycleOperation::Resume { .. } => SessionPhase::Resuming,
         }
     }
     #[must_use]
@@ -503,7 +561,10 @@ impl CenterState {
             .iter()
             .filter_map(|record| {
                 let operation = record.operations.last()?;
-                if operation.running.is_some() && record.unconfirmed_sdk_renewal().is_none() {
+                if operation.unloaded.is_some() {
+                    return None;
+                }
+                if operation.running().is_some() && record.unconfirmed_sdk_renewal().is_none() {
                     return None;
                 }
                 if operation.terminal.as_ref().is_some_and(|retained| {
@@ -605,6 +666,11 @@ impl CenterState {
                 expected_version,
                 ..
             }
+            | LifecycleSubmission::Resume {
+                session,
+                expected_version,
+                ..
+            }
             | LifecycleSubmission::Renew {
                 session,
                 expected_version,
@@ -667,8 +733,10 @@ impl CenterState {
                 allocation_number: allocation.operation_number,
                 acceptance_time: AcceptanceTime::Sampled { at_ms: now_ms },
                 running: None,
+                unloaded: None,
                 previous_effective_end_at_ms: None,
                 create_refusal: None,
+                resume_state_lost: false,
                 terminal: None,
             }],
             terminal_confirmation: None,
@@ -693,6 +761,9 @@ impl CenterState {
         let previous = &self.sandboxes[index];
         let prior = previous.operations.last().ok_or(DecisionError::Invalid)?;
         let version = next_lifecycle_version(expected, prior.intent.accepted_version)?;
+        if matches!(submission, LifecycleSubmission::Resume { .. }) {
+            return self.accept_lifecycle_resume(index, submission, version, now_ms);
+        }
         let destroy = matches!(submission, LifecycleSubmission::Destroy { .. });
         let cap = usize::from(self.bounds.operations_per_sandbox);
         if previous.operations.len() >= cap - usize::from(!destroy) {
@@ -719,13 +790,10 @@ impl CenterState {
         if number.checked_add(remaining).is_none() {
             return Err(DecisionError::Exhausted);
         }
-        let incarnation = match &prior.intent.request.operation {
-            LifecycleOperation::Create {
-                target_incarnation, ..
-            } => *target_incarnation,
-            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
-            _ if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
-            _ => return Err(DecisionError::Conflict),
+        let incarnation = match prior.running_incarnation() {
+            Some(incarnation) => incarnation,
+            None if destroy => IncarnationId::try_from(1).map_err(|_| DecisionError::Invalid)?,
+            None => return Err(DecisionError::Conflict),
         };
         let mut request = prior.intent.request.clone();
         request.binding.key = submission.key().clone();
@@ -734,14 +802,14 @@ impl CenterState {
             LifecycleSubmission::Destroy { .. } => LifecycleOperation::Destroy {},
             LifecycleSubmission::Unload { .. } => LifecycleOperation::Unload {
                 source_incarnation: incarnation,
-                capture: CaptureId::try_from(1).map_err(|_| DecisionError::Invalid)?,
+                capture: resume::next_capture(previous.operations())?,
             },
             LifecycleSubmission::Renew {
                 timeout_secs,
                 extend_only,
                 ..
             } => {
-                let facts = prior.running.as_ref().ok_or(DecisionError::Conflict)?;
+                let facts = prior.running().ok_or(DecisionError::Conflict)?;
                 let end = normalized_renewal_end(now_ms, *timeout_secs, facts.max_end_at_ms);
                 if *timeout_secs == 0 || facts.end_at_ms <= now_ms || facts.max_end_at_ms <= now_ms
                 {
@@ -756,7 +824,9 @@ impl CenterState {
                     extend_only: *extend_only,
                 }
             }
-            LifecycleSubmission::Create { .. } => return Err(DecisionError::Invalid),
+            LifecycleSubmission::Create { .. } | LifecycleSubmission::Resume { .. } => {
+                return Err(DecisionError::Invalid);
+            }
         };
         let intent = AcceptedLifecycleIntent {
             retention: prior.intent.retention,

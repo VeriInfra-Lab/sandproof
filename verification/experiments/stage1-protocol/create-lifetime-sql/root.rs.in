@@ -1,0 +1,20 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_execute(
+    connection: &Connection,
+    statement: &str,
+    deadline: i64,
+    sandbox: &str,
+) -> Result<usize, JournalError> {
+    execute(connection, statement, deadline, sandbox)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_original_integer_to_sql(value: &i64) -> rusqlite::Result<ToSqlOutput<'_>> {
+    rusqlite::ToSql::to_sql(value)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_original_text_to_sql<'a>(value: &'a &'a str) -> rusqlite::Result<ToSqlOutput<'a>> {
+    rusqlite::ToSql::to_sql(value)
+}

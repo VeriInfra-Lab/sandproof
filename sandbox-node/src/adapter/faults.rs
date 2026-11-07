@@ -5,6 +5,15 @@ use sandproof_controller_service::WorkerTransportError;
 use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
 use std::{fs, os::unix::fs::MetadataExt, path::PathBuf};
 
+mod restore_gate;
+pub(crate) use restore_gate::RestoreActivationGate;
+mod capture_cancel;
+pub(super) use capture_cancel::CaptureCancelGate;
+mod capture_copy;
+pub(crate) use capture_copy::CaptureCopyGate;
+mod material_retirement;
+pub(super) use material_retirement::after_material_delete;
+
 pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
     // Debug-only deterministic crash after the outbox dispatch claim,
     // before any host side effect. Recovery must not assume the
@@ -72,6 +81,8 @@ pub(super) fn after_execute(
         if matches!(
             (target.as_deref(), command),
             (Some("prepare_vm"), core::Command::PrepareVm { .. })
+                | (Some("freeze_vm"), core::Command::FreezeVm { .. })
+                | (Some("seal_snapshot"), core::Command::SealSnapshot { .. })
                 | (
                     Some("configure_network"),
                     core::Command::ConfigureNetwork { .. }

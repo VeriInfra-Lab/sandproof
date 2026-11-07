@@ -270,6 +270,18 @@ fn a_real_nonleader_thread_is_observed_until_joined() {
     let task = ready_receive.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(require_task_unused(&task, rustix::process::geteuid().as_raw()).is_err());
     drop(thread);
+    // pthread join is released by clear_child_tid before the kernel finishes
+    // removing /proc task entries. Observe actual disappearance rather than
+    // treating the userspace join as a physical absence receipt.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match fs::symlink_metadata(&task) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => panic!("cannot observe exited thread: {error}"),
+            Ok(_) => assert!(Instant::now() < deadline, "joined task remains in /proc"),
+        }
+        std::thread::yield_now();
+    }
     assert!(require_task_unused(&task, rustix::process::geteuid().as_raw()).is_ok());
 }
 

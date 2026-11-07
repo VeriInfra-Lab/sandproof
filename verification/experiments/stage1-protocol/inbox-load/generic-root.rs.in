@@ -1,0 +1,14 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_inbox_load_using<
+    R: super::native_retirement::RetirementEncoding,
+    T: super::model::TerminalEncoding,
+    N: super::renewal_confirmation::RenewalEncoding,
+    U: super::unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: InboxLoadEffects,
+>(
+    effects: &mut E,
+) -> Result<Option<Inbox>, JournalError> {
+    load_using::<R, T, N, U, B, E>(effects)
+}

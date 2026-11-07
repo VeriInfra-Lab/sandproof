@@ -129,6 +129,14 @@ struct Reception {
     loss_observed: Arc<Notify>,
 }
 impl LifecycleReceiver for Reception {
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        self.host.observe_resume(intent, context).await
+    }
+
     async fn record_lifecycle(
         &self,
         request: AcceptedLifecycleIntent,

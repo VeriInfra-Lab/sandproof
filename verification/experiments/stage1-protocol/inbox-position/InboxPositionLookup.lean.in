@@ -1,0 +1,75 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxLookup
+
+/-- A successful full replay points into the actual list and carries the entire
+accepted intent. No uniqueness condition on keys or sessions is needed. -/
+theorem entry_found_split (intent : AcceptedLifecycleIntent) (entries : List Entry)
+    (start index : Nat) (hit : entrySpec intent entries start = .found index) :
+    ∃ (before after : List Entry) (entry : Entry),
+      entries = before ++ entry :: after ∧ index = start + before.length ∧ entry.intent = intent := by
+  classical
+  induction entries generalizing start with
+  | nil => simp [entrySpec] at hit
+  | cons entry tail ih =>
+      by_cases key : entry.intent.request.binding.key = intent.request.binding.key
+      · by_cases full : entry.intent = intent
+        · simp [entrySpec, full] at hit
+          exact ⟨[], tail, entry, rfl, by simpa using hit.symm, full⟩
+        · simp [entrySpec, key, full] at hit
+      · have rest : entrySpec intent tail (start + 1) = .found index := by
+          simpa [entrySpec, key] using hit
+        obtain ⟨before, after, selected, shape, position, full⟩ := ih (start + 1) rest
+        refine ⟨entry :: before, after, selected, ?_, ?_, full⟩
+        · simp [shape]
+        · simp only [List.length_cons]
+          omega
+
+theorem inbox_found_split (intent : AcceptedLifecycleIntent) (sessions : List Session)
+    (start s e : Nat) (hit : inboxSpec intent sessions start = .found s e) :
+    ∃ (before after : List Session) (session : Session)
+      (earlier later : List Entry) (entry : Entry),
+      sessions = before ++ session :: after ∧ s = start + before.length ∧
+      session.entries.val = earlier ++ entry :: later ∧ e = earlier.length ∧ entry.intent = intent := by
+  induction sessions generalizing start with
+  | nil => simp [inboxSpec] at hit
+  | cons session tail ih =>
+      cases outcome : entrySpec intent session.entries.val 0 with
+      | absent =>
+          have rest : inboxSpec intent tail (start + 1) = .found s e := by
+            simpa [inboxSpec, outcome] using hit
+          obtain ⟨before, after, selected, earlier, later, entry, shape, position, entries, epos, full⟩ :=
+            ih (start + 1) rest
+          refine ⟨session :: before, after, selected, earlier, later, entry, ?_, ?_, entries, epos, full⟩
+          · simp [shape]
+          · simp only [List.length_cons]
+            omega
+      | found index =>
+          simp only [inboxSpec, outcome, InboxReply.found.injEq] at hit
+          obtain ⟨same_s, same_e⟩ := hit
+          obtain ⟨earlier, later, entry, entries, position, full⟩ :=
+            entry_found_split intent session.entries.val 0 index outcome
+          refine ⟨[], tail, session, earlier, later, entry, rfl, ?_, entries, ?_, full⟩
+          · simpa using same_s.symm
+          · omega
+      | conflict => simp [inboxSpec, outcome] at hit
+
+theorem inbox_found_reads (intent : AcceptedLifecycleIntent) (sessions : List Session)
+    (s e : Nat) (hit : inboxSpec intent sessions 0 = .found s e) :
+    ∃ (session : Session) (entry : Entry),
+      sessions[s]? = some session ∧ session.entries.val[e]? = some entry ∧ entry.intent = intent := by
+  obtain ⟨before, after, session, earlier, later, entry, shape, spos, entries, epos, full⟩ :=
+    inbox_found_split intent sessions 0 s e hit
+  refine ⟨session, entry, ?_, ?_, full⟩
+  · simp [shape, spos]
+  · simp [entries, epos]
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.entry_found_split
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.inbox_found_split
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.inbox_found_reads

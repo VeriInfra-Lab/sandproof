@@ -1,0 +1,89 @@
+import SandboxModel.Lifecycle.Protocol.CreateSelectionModel
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateSelection.Values
+open InboxLookup.Witness
+
+def intent : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent },
+    operation := .Create Validation.Examples.createPayload 1#u64 } }
+
+def entry : Entry := ⟨intent, none, none, none, none⟩
+def selected : Session := { session 1#u64 with entries := InboxLookup.Witness.singleton entry }
+def withSession (value : Session) : Inbox := { inbox 1#u64 with sessions := InboxLookup.Witness.singleton value }
+def normal : Inbox := withSession selected
+def terminal : Inbox := withSession { selected with terminal := true }
+def refused : Inbox := withSession { selected with refusal := some .Capacity }
+def older : Inbox := withSession { selected with current_version := 2#u64 }
+def mapped : Inbox := withSession { selected with «local» := some ⟨10#u64, 20#u64, 30#u64⟩ }
+
+theorem envelope_valid : Validation.ValidEnvelope intent EnvelopeValues.context := by
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    intent, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.center, EnvelopeValues.node, Validation.Examples.createPayload,
+    Validation.createView, SandboxModel.Foundations.CreatePlan.valid,
+    Validation.resourceView, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter]
+
+theorem lookup_shape (value : Session) (entries : value.entries = InboxLookup.Witness.singleton entry) :
+    InboxLookup.inboxSpec intent (withSession value).sessions.val 0 = .found 0 0 := by
+  classical
+  simp [withSession, inbox, InboxLookup.Witness.singleton, InboxLookup.inboxSpec, InboxLookup.entrySpec, entries, entry]
+
+theorem lookup_returns (value : Session) (entries : value.entries = InboxLookup.Witness.singleton entry) :
+    (withSession value).find intent = .ok (.Ok (some (0#usize, 0#usize))) := by
+  have outcome := InboxLookup.find_outcome (withSession value) intent
+  rw [lookup_shape value entries] at outcome
+  obtain ⟨s, e, spos, epos, returned⟩ := outcome
+  have sz : s = 0#usize := by scalar_tac
+  have ez : e = 0#usize := by scalar_tac
+  simpa [sz, ez] using returned
+
+theorem normal_expected : expected normal intent = .Ok (0, 0, 2#u64) := by
+  simp only [normal, expected, lookup_shape selected rfl]
+  simp [withSession, inbox, InboxLookup.Witness.singleton, forSession, selected, session, intent, EnvelopeValues.intent,
+    Validation.Examples.createPayload]
+
+theorem terminal_expected : expected terminal intent = .Err .Conflict := by
+  simp only [terminal, expected, lookup_shape { selected with terminal := true } rfl]
+  simp [withSession, inbox, InboxLookup.Witness.singleton, forSession, selected, session]
+
+theorem refused_expected : expected refused intent = .Err .Conflict := by
+  simp only [refused, expected, lookup_shape { selected with refusal := some .Capacity } rfl]
+  simp [withSession, inbox, InboxLookup.Witness.singleton, forSession, selected, session]
+
+theorem older_expected : expected older intent = .Err .Conflict := by
+  simp only [older, expected, lookup_shape { selected with current_version := 2#u64 } rfl]
+  simp [withSession, inbox, InboxLookup.Witness.singleton, forSession, selected, session, intent, EnvelopeValues.intent]
+
+theorem mapped_expected : expected mapped intent = .Err .Conflict := by
+  simp only [mapped, expected, lookup_shape { selected with «local» := some ⟨10#u64, 20#u64, 30#u64⟩ } rfl]
+  simp [withSession, inbox, InboxLookup.Witness.singleton, forSession, selected, session, intent, EnvelopeValues.intent]
+
+
+theorem singleton_index (value : Session) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      (InboxLookup.Witness.singleton value) 0#usize = .ok value := by
+  rw [alloc.vec.Vec.index_slice_index]
+  obtain ⟨item, returned, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec (InboxLookup.Witness.singleton value) 0#usize
+      (by simp [InboxLookup.Witness.singleton]))
+  simpa [same, InboxLookup.Witness.singleton] using returned
+
+end SandboxModel.Stage1Protocol.CreateSelection.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.envelope_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.lookup_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.lookup_returns
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.terminal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.refused_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.older_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.mapped_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Values.singleton_index

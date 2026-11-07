@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.RecordReplyModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.RecordReply
+noncomputable section
+
+abbrev actual := server.lifecycle.record_reply
+
+theorem actual_refines (intent : AcceptedLifecycleIntent) (received : Received) :
+    actual intent received = .ok (expected intent received) := by
+  cases received with
+  | Err error => cases error <;> rfl
+  | Ok recorded =>
+    have guarded : RecordedLifecycleIntent.matches recorded intent =
+        .ok (Validation.expectedRecorded recorded intent) := by
+      simpa only [proof_record_reply_roots.recorded_matches] using
+        Recorded.matches_refines recorded intent
+    cases result : Validation.expectedRecorded recorded intent <;>
+      simp [actual, server.lifecycle.record_reply, guarded, expected, result]
+
+theorem full_reply_contract : FullReplyContract actual := actual_refines
+
+/-- Every original returned field, including terminal, is retained on success.
+The original matches guard intentionally does not certify the terminal flag. -/
+theorem actual_payload_iff (intent : AcceptedLifecycleIntent) (received : Received)
+    (recorded : RecordedLifecycleIntent) :
+    actual intent received = .ok (.Ok recorded) ↔
+      received = .Ok recorded ∧ Validation.RecordsOriginal recorded intent := by
+  simpa [actual_refines] using expected_payload_iff intent received recorded
+
+end
+end SandboxModel.Stage1Protocol.RecordReply
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.actual_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.full_reply_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.actual_payload_iff

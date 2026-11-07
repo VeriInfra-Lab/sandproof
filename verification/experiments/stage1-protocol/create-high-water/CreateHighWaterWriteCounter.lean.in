@@ -1,0 +1,83 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterModel
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterValues
+import SandboxModel.Lifecycle.Protocol.CreateInstallQuery
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckExisting
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckNew
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter
+noncomputable section
+open scoped Classical
+open Values
+
+def mapped : Session := { session with
+  «local» := some (binding 20#u64),
+  entries := InboxLookup.Witness.singleton { entry with local_operation := some (binding 20#u64).operation } }
+def output : Inbox := { inbox 19#u64 with
+  owner_high_water := 0#u64,
+  owners := InboxLookup.Witness.singleton (CreateInstall.ownerRow session (binding 20#u64)),
+  sessions := InboxLookup.Witness.singleton mapped }
+
+theorem missing : CreateOwnerCheck.existingRun (inbox 19#u64) session.owner (binding 20#u64).owner =
+    .ok (.Ok false) := by
+  rw [CreateOwnerCheck.existing_complete]
+  rfl
+
+theorem fresh_accepts : CreateOwnerCheck.newRun (inbox 19#u64) emptyWorld (binding 20#u64) = .ok (.Ok ()) := by
+  rw [CreateOwnerCheck.new_complete]
+  apply congrArg Result.ok
+  have required : CreateOwnerSuccessor.expected (inbox 19#u64) emptyWorld 2#u64 = .Ok 20#u64 := by
+    change OwnerMapping.allocation 19 = .Ok 20#u64
+    exact OwnerMapping.Values.allocation_known 19 20#u64 (by scalar_tac) (by scalar_tac)
+  simp only [CreateOwnerCheck.newExpected, binding]
+  rw [required]
+  simp [CreateOwnerCheck.guardExpected]
+
+theorem observed (water : U64) : CreateInstall.run (inbox water) 0#usize 0#usize (binding 20#u64) = .ok output := by
+  have capacity : 1 ≤ U32.max ∨ 1 ≤ Usize.max := by
+    left
+    scalar_tac
+  unfold CreateInstall.run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_install
+  simp [capacity, CreateInstall.present_complete, CreateInstall.HasOwner, CreateInstall.ownerRow,
+    alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_mut_slice_index,
+    alloc.vec.Vec.index_usize, alloc.vec.Vec.index_mut_usize, alloc.vec.Vec.push,
+    alloc.vec.Vec.set, sandproof_protocol.TenantId.Insts.CoreCloneClone.clone,
+    alloc.string.String.Insts.CoreCloneClone.clone, bind_tc_ok, uncurry_apply_pair,
+    inbox, CreateInstall.Values.base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+    InboxLookup.Witness.inbox, InboxLookup.Witness.singleton, InboxLookup.Witness.empty,
+    session, CreateInstall.Values.selected, CreateSelection.Values.selected,
+    entry, CreateInstall.Values.entry, mapped, output, binding]
+
+theorem violates_full_install_contract : ¬ CreateInstall.FullInstallContract CreateInstall.run := by
+  intro contract
+  have b := bounds 19#u64
+  have required := contract (inbox 19#u64) 0#usize 0#usize (binding 20#u64) b.1 b.2
+    (by intro _; simpa only [inbox] using CreateInstall.Values.base_room)
+  rw [observed] at required
+  simp only [WP.spec_ok] at required
+  obtain ⟨owners, _, frame⟩ := required
+  have high := congrArg (fun value : Inbox => value.owner_high_water) frame
+  simp [output, CreateInstall.HasOwner, inbox,
+    CreateInstall.Values.base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+    InboxLookup.Witness.inbox, InboxLookup.Witness.singleton, InboxLookup.Witness.empty,
+    session, CreateInstall.Values.selected, CreateSelection.Values.selected, binding] at high
+
+theorem actually_decreases : output.owner_high_water.val < (inbox 19#u64).owner_high_water.val := by decide
+
+theorem violates_checked_install_contract : ¬ FullCheckedInstallContract
+    CreateOwnerCheck.existingRun CreateOwnerCheck.newRun CreateInstall.run := by
+  intro contract
+  have required := contract (inbox 19#u64) emptyWorld (binding 20#u64) 0#usize 0#usize session entry
+    (session_read 19#u64) entry_read (owner_limit 19#u64) (Or.inr ⟨missing, fresh_accepts⟩)
+  rw [observed] at required
+  simp only [WP.spec_ok] at required
+  exact Nat.not_lt_of_ge required.2 actually_decreases
+
+end
+end SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.missing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.fresh_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.violates_full_install_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.actually_decreases
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.WriteCounter.violates_checked_install_contract

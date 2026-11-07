@@ -1,0 +1,50 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.RenewalValues
+import SandboxModel.Lifecycle.Protocol.RenewalLibrary
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.renewal sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Validation
+open SandboxModel.Stage1Protocol.Renewal SandboxModel.Stage1Protocol.RenewalValues
+namespace SandboxModel.Stage1Protocol.NegativeRenewalKey
+
+theorem actual_mutant_accepts : renewal_matches exactResult changedRetention = .ok true := by
+  have checked : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [renewal_matches,
+    RenewalConfirmation.matches_request,
+    RenewalConfirmation.is_sdk_renewal,
+    request_error_bind,
+    Replay.key_eq,
+    exactResult,
+    changedRetention,
+    intent,
+    EnvelopeValues.intent,
+    EnvelopeValues.center,
+    EnvelopeValues.node,
+    RequestWindowId.get,
+    sandproof_protocol.internal.PositiveCounter.get,
+    AcceptedLifecycleIntent.accepted_version_for_request,
+    Library.option_u64_eq,
+    core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    retention_valid,
+    retentionOK,
+    ValidRequest,
+    headersOK,
+    expectationOK,
+    operationOK,
+    checked]
+
+theorem violates_same_full_contract : ¬ FullMatchesContract renewal_matches := by
+  classical
+  intro contract
+  have exact_result := contract exactResult changedRetention
+  rw [actual_mutant_accepts] at exact_result
+  simp [Matches, exactResult, changed_request_is_distinct] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeRenewalKey
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRenewalKey.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeRenewalKey.violates_same_full_contract

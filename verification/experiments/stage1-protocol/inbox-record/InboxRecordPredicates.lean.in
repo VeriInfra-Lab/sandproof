@@ -1,0 +1,214 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordSelection
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+abbrev sliceCursor (values : Slice T) (index : Nat) : core.slice.iter.Iter T := ⟨values, index⟩
+
+theorem slice_next_none (values : Slice T) (index : Nat) (bound : values.val.length ≤ index) :
+    core.slice.iter.IteratorSliceIter.next (sliceCursor values index) =
+      .ok (none, sliceCursor values index) := by
+  simp [core.slice.iter.IteratorSliceIter.next, sliceCursor, Slice.len, Nat.not_lt.mpr bound]
+
+theorem slice_next_some (values : Slice T) (index : Nat) (bound : index < values.val.length) :
+    core.slice.iter.IteratorSliceIter.next (sliceCursor values index) =
+      .ok (some values.val[index], sliceCursor values (index + 1)) := by
+  simp [core.slice.iter.IteratorSliceIter.next, sliceCursor, Slice.len, bound]
+  rfl
+
+theorem any_loop_spec (values : Slice T) (predicate : T → Bool)
+    (body : core.slice.iter.Iter T → Result (ControlFlow (core.slice.iter.Iter T) Bool))
+    (at_end : ∀ index, values.val.length ≤ index →
+      body (sliceCursor values index) = .ok (.done false))
+    (at_next : ∀ index, ∀ bound : index < values.val.length,
+      body (sliceCursor values index) =
+        .ok (if predicate values.val[index] then .done true else .cont (sliceCursor values (index + 1))))
+    (start : Nat) (bound : start ≤ values.val.length) :
+    Aeneas.Std.loop body (sliceCursor values start)
+      ⦃ result => result = (values.val.drop start).any predicate ⦄ := by
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun it => values.val.length - it.i)
+    (fun it => ∃ index : Nat, it = sliceCursor values index ∧ index ≤ values.val.length ∧
+      (values.val.drop index).any predicate = (values.val.drop start).any predicate)
+    (fun (result : Bool) => result = (values.val.drop start).any predicate)
+  · rintro it ⟨index, rfl, upper, same⟩
+    by_cases inside : index < values.val.length
+    · rw [at_next index inside]
+      cases hit : predicate values.val[index] with
+      | true =>
+        simp only [↓reduceIte]
+        apply WP.spec.ret
+        rw [List.drop_eq_getElem_cons inside] at same
+        simpa only [List.any_cons, hit, Bool.true_or] using same
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte]
+        apply WP.spec.ret
+        constructor
+        · refine ⟨index + 1, rfl, by omega, ?_⟩
+          rw [List.drop_eq_getElem_cons inside] at same
+          simpa only [List.any_cons, hit, Bool.false_or] using same
+        · dsimp [sliceCursor]; omega
+    · rw [at_end index (Nat.le_of_not_gt inside)]
+      apply WP.spec.ret
+      rw [List.drop_eq_nil_of_le (Nat.le_of_not_gt inside)] at same
+      simpa using same
+  · exact ⟨start, rfl, bound, rfl⟩
+
+theorem retention_slot_used_spec (inbox : Inbox) (slot : U16) :
+    inbox.retention_slot_used slot =
+      .ok (inbox.sessions.val.any (fun session => decide (session.retention.slot = slot))) := by
+  have loop_spec := any_loop_spec (alloc.vec.Vec.deref inbox.sessions)
+    (fun session => decide (session.retention.slot = slot)) (Inbox.retention_slot_used_loop.body slot)
+    (by intro index bound; unfold Inbox.retention_slot_used_loop.body; rw [slice_next_none _ _ bound]; simp)
+    (by
+      intro index bound
+      unfold Inbox.retention_slot_used_loop.body
+      rw [slice_next_some _ _ bound]
+      simp
+      split <;> simp_all)
+    0 (by omega)
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists loop_spec
+  simp only [List.drop_zero] at same
+  rw [same] at returned
+  simpa [Inbox.retention_slot_used, Inbox.retention_slot_used_loop, core.slice.Slice.iter,
+    sliceCursor, alloc.vec.Vec.deref] using returned
+
+noncomputable def retiredMatch (intent : AcceptedLifecycleIntent) (lane : LifecycleRetentionLane) : Bool := by
+  classical
+  exact lane.last_retired.any (fun last => decide
+    (last.request.request.binding.session = intent.request.binding.session ∨
+      last.request.request.binding.key = intent.request.binding.key))
+
+theorem retired_callback (intent : AcceptedLifecycleIntent)
+    (last : sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation) :
+    Inbox.recently_retired_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTerminalLifecycleObservationBool.call_once intent last =
+      .ok (by classical exact decide (last.request.request.binding.session = intent.request.binding.session ∨
+        last.request.request.binding.key = intent.request.binding.key)) := by
+  classical
+  unfold Inbox.recently_retired_identity.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTerminalLifecycleObservationBool.call_once
+  simp [SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq, Replay.key_eq]
+  split <;> simp_all
+
+theorem recently_retired_identity_spec (inbox : Inbox) (intent : AcceptedLifecycleIntent) :
+    inbox.recently_retired_identity intent = .ok (inbox.lanes.val.any (retiredMatch intent)) := by
+  classical
+  have loop_spec := any_loop_spec (alloc.vec.Vec.deref inbox.lanes)
+    (retiredMatch intent) (Inbox.recently_retired_identity_loop.body intent)
+    (by intro index bound; unfold Inbox.recently_retired_identity_loop.body; rw [slice_next_none _ _ bound]; simp)
+    (by
+      intro index bound
+      unfold Inbox.recently_retired_identity_loop.body
+      rw [slice_next_some _ _ bound]
+      have hindex : index < inbox.lanes.val.length := by simpa [alloc.vec.Vec.deref] using bound
+      cases shape : inbox.lanes.val[index].last_retired <;>
+        simp [alloc.vec.Vec.deref, shape, retiredMatch, core.option.Option.as_ref,
+          SandproofFoundationsRust.core.option.Option.as_ref, core.option.Option.is_some_and,
+          SandproofFoundationsRust.core.option.Option.is_some_and,
+          retired_callback]
+      split <;> simp_all)
+    0 (by omega)
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists loop_spec
+  simp only [List.drop_zero] at same
+  rw [same] at returned
+  simpa [Inbox.recently_retired_identity, Inbox.recently_retired_identity_loop, core.slice.Slice.iter,
+    sliceCursor, alloc.vec.Vec.deref] using returned
+
+def sdkRenewal (intent : AcceptedLifecycleIntent) : Bool :=
+  decide (intent.request.binding.key.window = 2#u64) &&
+    match intent.request.operation with
+    | .Renew _ _ _ => true
+    | _ => false
+
+theorem sdk_renewal_spec (intent : AcceptedLifecycleIntent) :
+    renewal_confirmation.is_sdk_renewal intent = .ok (sdkRenewal intent) := by
+  unfold renewal_confirmation.is_sdk_renewal sdkRenewal
+  simp only [RequestWindowId.get, sandproof_protocol.internal.PositiveCounter.get, bind_tc_ok]
+  split <;> cases intent.request.operation <;> simp_all
+
+def unconfirmedSdk (confirmed : Option RenewalConfirmation) (entry : Entry) : Bool :=
+  sdkRenewal entry.intent && match confirmed with
+    | none => true
+    | some prior => decide (prior.request.accepted_version < entry.intent.accepted_version)
+
+theorem has_unconfirmed_sdk_spec (session : Session) :
+    renewal_confirmation.has_unconfirmed_sdk session =
+      .ok (session.entries.val.any (unconfirmedSdk session.confirmed_renewal)) := by
+  have loop_spec := any_loop_spec (alloc.vec.Vec.deref session.entries)
+    (unconfirmedSdk session.confirmed_renewal)
+    (renewal_confirmation.has_unconfirmed_sdk_loop.body session.confirmed_renewal)
+    (by intro index bound; unfold renewal_confirmation.has_unconfirmed_sdk_loop.body; rw [slice_next_none _ _ bound]; simp)
+    (by
+      intro index bound
+      unfold renewal_confirmation.has_unconfirmed_sdk_loop.body
+      rw [slice_next_some _ _ bound]
+      simp only [sdk_renewal_spec, bind_tc_ok]
+      have hindex : index < session.entries.val.length := by simpa [alloc.vec.Vec.deref] using bound
+      cases hit : sdkRenewal session.entries.val[index].intent <;> cases shape : session.confirmed_renewal <;>
+        simp [alloc.vec.Vec.deref, hit, unconfirmedSdk, core.option.Option.as_ref,
+          SandproofFoundationsRust.core.option.Option.as_ref, core.option.Option.is_none_or,
+          SandproofFoundationsRust.core.option.Option.is_none_or,
+          renewal_confirmation.has_unconfirmed_sdk.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRenewalConfirmationBool.call_once]
+      split <;> simp_all)
+    0 (by omega)
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists loop_spec
+  simp only [List.drop_zero] at same
+  rw [same] at returned
+  simpa [renewal_confirmation.has_unconfirmed_sdk, renewal_confirmation.has_unconfirmed_sdk_loop,
+    core.slice.Slice.iter, sliceCursor, alloc.vec.Vec.deref] using returned
+
+def unloadHasResult : unload_resolution.UnloadResolution → Bool
+  | .BeforeAdmission _ result => result.isSome
+  | .AfterCapture _ => true
+
+def entryAllowsRunning (entry : Entry) : Bool :=
+  match entry.intent.request.operation with
+  | .Create _ _ | .Resume _ _ _ _ => entry.local_operation.isSome
+  | .Renew _ _ _ => true
+  | .Unload _ _ => entry.unload_resolution.any unloadHasResult
+  | .Destroy => false
+
+theorem running_callback (entry : Entry) :
+    Session.can_follow_running.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once () entry =
+      .ok (entryAllowsRunning entry) := by
+  cases operation : entry.intent.request.operation <;>
+    simp [Session.can_follow_running.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+      entryAllowsRunning, operation, core.option.Option.is_some,
+      core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+      core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and]
+  cases resolution : entry.unload_resolution with
+  | none => simp
+  | some value =>
+    cases value <;>
+      simp [unloadHasResult,
+        Session.can_follow_running.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedUnloadResolutionBool.call_once,
+        unload_resolution.UnloadResolution.result, core.option.Option.is_some,
+        core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref]
+
+theorem can_follow_running_spec (session : Session) :
+    session.can_follow_running = .ok (session.entries.val.getLast?.any entryAllowsRunning) := by
+  unfold Session.can_follow_running
+  rw [last_entry_spec]
+  cases shape : session.entries.val.getLast? <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      running_callback]
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.slice_next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.slice_next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.any_loop_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.retention_slot_used_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.retired_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.recently_retired_identity_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.sdk_renewal_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.has_unconfirmed_sdk_spec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.running_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.can_follow_running_spec

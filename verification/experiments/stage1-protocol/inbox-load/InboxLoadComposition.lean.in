@@ -1,0 +1,48 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadContextual
+import SandboxModel.Lifecycle.Protocol.InboxLoadControlFlow
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+-- All business validation reuses the existing decoded-value specification.
+-- Effect providers remain arbitrary: this says neither that SQL/JSON/SHA is
+-- implemented correctly nor that a returned value has been durably accepted.
+
+theorem full_load_refines {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io) (state : E) :
+    load_using saved terminal renewal unload graphic io state =
+      fullLoadView saved terminal renewal unload io state := by
+  rw [load_control_flow_refines]
+  apply load_view_congr io represented
+  · intro inbox bounded
+    exact InboxValidation.inbox_refines saved terminal renewal unload graphic graphicLaw inbox bounded
+  · exact budget_refines
+
+theorem full_load_contract : FullLoadContract load_using := by
+  intro R T N U B E saved terminal renewal unload graphic io graphicLaw represented state
+  exact full_load_refines saved terminal renewal unload graphic graphicLaw io represented state
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+
+
+
+
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.full_load_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.full_load_contract

@@ -1,4 +1,4 @@
-//! Admission-owned lifetime leases for the fixed V1 create/kill graph.
+//! Admission-owned lifetime leases for a bounded retained lifecycle graph.
 //! Unknown work keeps its lease. No identity is allocated until an input is
 //! actually appended; reservations are counters, not holes in the replay log.
 use super::{allocators, bounded, checkpoint, identity};
@@ -52,10 +52,11 @@ struct Graph {
     sql_rows: u64,
     operations: u64,
 }
-fn graph(_policy: &checkpoint::MaintenanceConfig) -> Graph {
-    // The one-pause profile adds fence/freeze/seal/register/stop (the final
-    // kill's stop has a different epoch). Reserve all retries before create.
-    let logical = LOGICAL + 5;
+fn single_pause_graph() -> Graph {
+    // The one-pause profile adds fence/freeze/seal/register/stop and the
+    // original-VM continuation Activate (the final kill has a later epoch).
+    // Reserve all retries, including a stopped activation, before create.
+    let logical = LOGICAL + 6;
     let attempts = logical * (core::DEFAULT_RETRY_LIMIT + 1);
     let receipts = attempts * 2;
     Graph {
@@ -68,7 +69,9 @@ fn graph(_policy: &checkpoint::MaintenanceConfig) -> Graph {
         inputs: INPUTS
             + 4 * (attempts - ATTEMPTS)
             + (logical - LOGICAL) * (core::DEFAULT_RETRY_LIMIT + 1)
-            + 16,
+            + 16
+            + (core::DEFAULT_RETRY_LIMIT + 1) // continuation activation retirement
+            + 2, // exact original-continue prepare and publish inputs
         sql_rows: SQL_ROWS
             + (attempts - ATTEMPTS)
             + (receipts - RECEIPTS)
@@ -76,6 +79,34 @@ fn graph(_policy: &checkpoint::MaintenanceConfig) -> Graph {
             + 1,
         operations: 3,
     }
+}
+
+// A three-operation deployment retains the original graph plus continuation.
+// For N >= 4, each additional native operation receives a whole baseline
+// graph. Its 16 logical actions dominate the <=8 new actions per operation:
+// 16*(N-2) >= 8*N. Attempts/receipts/inputs and row/scalar/policy copies scale
+// together; no unused retry credit is silently reclaimed from old operations.
+// Each of N plans can retain N VM and N slot references, so those two arrays
+// get a separate quadratic charge rather than an assumed linear bound.
+fn graph(policy: &checkpoint::MaintenanceConfig) -> Result<Graph, JournalError> {
+    let n = policy.max_operations_per_sandbox;
+    if !(3..=128).contains(&n) {
+        return Err(JournalError::UnsupportedStore);
+    }
+    let base = single_pause_graph();
+    let factor = n - 2;
+    let plan_refs = if n == 3 { 0 } else { mul(2, mul(n, n)?)? };
+    Ok(Graph {
+        logical: mul(base.logical, factor)?,
+        attempts: mul(base.attempts, factor)?,
+        receipts: mul(base.receipts, factor)?,
+        records: mul(base.records, factor)?,
+        references: add(mul(base.references, factor)?, plan_refs)?,
+        policy_copies: mul(base.policy_copies, factor)?,
+        inputs: mul(base.inputs, factor)?,
+        sql_rows: mul(base.sql_rows, factor)?,
+        operations: n,
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,18 +163,22 @@ impl CapacityConfig {
             self.checkpoint_scratch_bytes,
             self.max_online_storage_bytes,
         ];
-        if values
-            .into_iter()
-            .any(|n| n == 0 || i64::try_from(n).is_err() || usize::try_from(n).is_err())
+        if invalid_capacity_values(values)
             || self.max_transaction_inputs < 4
             || self.max_transaction_inputs > policy.max_tail_inputs
             || self.max_transaction_bytes
                 < mul(self.max_transaction_inputs, policy.max_input_bytes)?
             || self.max_transaction_bytes > policy.max_tail_bytes
             || policy.max_input_bytes < SCALAR_BYTES + 9
-            || self.max_sql_value_bytes
-                < add(mul(3, policy.max_input_bytes)?, SCALAR_BYTES)?
-                    .max(2 * OPTIONS_BYTES + SCALAR_BYTES)
+            || self.max_sql_value_bytes < {
+                let computed = add(mul(3, policy.max_input_bytes)?, SCALAR_BYTES)?;
+                let options = 2 * OPTIONS_BYTES + SCALAR_BYTES;
+                if computed > options {
+                    computed
+                } else {
+                    options
+                }
+            }
             || self.max_receipt_bytes < add(policy.max_input_bytes, SCALAR_BYTES)?
             || self.max_receipt_bytes > self.max_sql_value_bytes
             || self.checkpoint_scratch_bytes < mul(2, policy.max_checkpoint_bytes)?
@@ -162,7 +197,13 @@ impl CapacityConfig {
 }
 
 pub(super) fn config(connection: &Connection) -> Result<Option<CapacityConfig>, JournalError> {
-    let policy = checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    config_using(&mut checkpoint::StandardConfigRead { connection })
+}
+
+pub(super) fn config_using<E: checkpoint::ReadConfigEffects>(
+    effects: &mut E,
+) -> Result<Option<CapacityConfig>, JournalError> {
+    let policy = checkpoint::config_using(effects)?.ok_or(JournalError::UnsupportedStore)?;
     Ok(Some(policy.capacity.ok_or(JournalError::UnsupportedStore)?))
 }
 
@@ -185,7 +226,7 @@ pub(super) fn configure(
     }
     tx.execute_batch("CREATE TABLE controller_capacity_reservations(sandbox_id TEXT PRIMARY KEY REFERENCES sandboxes(sandbox_id) DEFERRABLE INITIALLY DEFERRED, policy_entries INTEGER NOT NULL, policy_bytes INTEGER NOT NULL, input_left INTEGER NOT NULL, effect_left INTEGER NOT NULL, outbox_left INTEGER NOT NULL, receipt_left INTEGER NOT NULL);")?;
     let (initial, _) = sql_usage(tx, cap, policy)?;
-    if add(initial.rows, graph(policy).sql_rows)? > cap.max_sql_rows
+    if add(initial.rows, graph(policy)?.sql_rows)? > cap.max_sql_rows
         || add(initial.bytes, sql_lease(policy, cap)?)? > cap.max_sql_bytes
     {
         return Err(JournalError::UnsupportedStore);
@@ -216,15 +257,19 @@ pub(super) fn validate_host(
         )?,
     )?;
     if host.console_policy != Some(super::ConsolePolicy::Discard)
-        || host.maintenance.max_retained_results < graph(policy).operations
-        || policy.max_records < add(base, graph(policy).records)?
-        || policy.max_references < graph(policy).references
+        || host.maintenance.max_retained_results < graph(policy)?.operations
+        || policy.max_records < add(base, graph(policy)?.records)?
+        || policy.max_references < graph(policy)?.references
         || policy.max_checkpoint_bytes
             < mul(
-                base + 6 + graph(policy).records + graph(policy).references + 2,
+                base + 6 + graph(policy)?.records + graph(policy)?.references + 2,
                 SCALAR_BYTES,
-            )? + graph(policy).policy_copies * 9
-        || cap.max_sql_rows < add(graph(policy).sql_rows + 10, host.maintenance.max_host_slots)?
+            )? + graph(policy)?.policy_copies * 9
+        || cap.max_sql_rows
+            < add(
+                graph(policy)?.sql_rows + 10,
+                host.maintenance.max_host_slots,
+            )?
         || cap.max_sql_bytes < add(fixed_sql, sql_lease(policy, cap)?)?
     {
         return Err(JournalError::UnsupportedStore);
@@ -348,10 +393,10 @@ pub(super) fn admit(
             identity::sandbox_id(&namespace, request.sandbox)?.as_str(),
             sql(entries)?,
             sql(bytes)?,
-            sql(graph(&policy).inputs)?,
-            sql(graph(&policy).logical)?,
-            sql(graph(&policy).attempts)?,
-            sql(graph(&policy).receipts)?
+            sql(graph(&policy)?.inputs)?,
+            sql(graph(&policy)?.logical)?,
+            sql(graph(&policy)?.attempts)?,
+            sql(graph(&policy)?.receipts)?
         ],
     )?;
     Ok(())
@@ -364,6 +409,32 @@ pub(super) fn cursors(tx: &Connection) -> Result<[u64; 4], JournalError> {
         allocators::read(tx, "outbox", "")?,
         allocators::read(tx, "receipt", "")?,
     ])
+}
+
+/// Only new native operations consume history positions. Replays, retries,
+/// compensation and scheduler progress keep the already reserved graph.
+pub(super) fn require_operation_room(
+    connection: &Connection,
+    world: &core::World,
+    key: core::OperationKey,
+    kind: core::OperationKind,
+) -> Result<(), JournalError> {
+    if world.operation_record(key).is_some() {
+        return Ok(());
+    }
+    let policy = checkpoint::config(connection)?.ok_or(JournalError::UnsupportedStore)?;
+    let used = world
+        .operation_records()
+        .iter()
+        .filter(|(k, _)| k.sandbox == key.sandbox)
+        .count() as u64;
+    let next = add(used, 1)?;
+    if next > policy.max_operations_per_sandbox
+        || kind != core::OperationKind::Kill && next == policy.max_operations_per_sandbox
+    {
+        return Err(JournalError::MaintenanceCapacity);
+    }
+    Ok(())
 }
 
 pub(super) fn spend(
@@ -534,7 +605,7 @@ fn charged_inbox_bytes(
     match table {
         "controller_internal_inbox" => super::internal_inbox::charged_bytes(row, bytes, cap),
         "controller_lifecycle_inbox" => super::lifecycle_inbox::charged_bytes(row, bytes, cap),
-        "controller_source_work" => {
+        "controller_source_work" | "controller_source_work_records" => {
             super::lifecycle_inbox::source_work::charged_bytes(row, bytes, cap)
         }
         _ => Ok(bytes),
@@ -595,7 +666,7 @@ fn sql_lease(
 ) -> Result<u64, JournalError> {
     // Actions contain a policy-sized command plus fixed identities; each
     // outbox row has its final receipt and receipt history keeps <=2 copies.
-    let g = graph(policy);
+    let g = graph(policy)?;
     let actions = mul(g.attempts, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
     let receipts = mul(g.attempts + g.receipts, cap.max_receipt_bytes)?;
     let keys = mul(g.logical, add(policy.max_input_bytes, SCALAR_BYTES)?)?;
@@ -618,7 +689,7 @@ pub(super) fn validate(connection: &Connection, world: &core::World) -> Result<(
     let host = bounded::config(connection)?.ok_or(JournalError::CorruptStore)?;
     let (mut sql, owned) = sql_usage(connection, cap, &policy)?;
     let sql_bytes = sql_lease(&policy, cap)?;
-    let g = graph(&policy);
+    let g = graph(&policy)?;
     let mut q=connection.prepare("SELECT sandbox_id,policy_entries,policy_bytes,input_left,effect_left,outbox_left,receipt_left FROM controller_capacity_reservations")?;
     let mut count = 0_u64;
     let mut refs = 0_u64;
@@ -808,13 +879,25 @@ pub(super) fn fixture_sql_budget(
     for (sandbox, _) in world.sandbox_records() {
         let id = identity::sandbox_id(&namespace, *sandbox)?;
         let usage = owned.get(id.as_str()).copied().unwrap_or_default();
-        total.rows = add(total.rows, graph(&policy).sql_rows - usage.rows)?;
+        total.rows = add(total.rows, graph(&policy)?.sql_rows - usage.rows)?;
         total.bytes = add(total.bytes, sql_lease(&policy, cap)? - usage.bytes)?;
     }
     Ok((
         total.rows,
         total.bytes,
-        graph(&policy).sql_rows,
+        graph(&policy)?.sql_rows,
         sql_lease(&policy, cap)?,
     ))
+}
+
+fn invalid_capacity_values(values: [u64; 12]) -> bool {
+    let mut index = 0;
+    while index < values.len() {
+        let value = values[index];
+        if value == 0 || value > i64::MAX as u64 || value > usize::MAX as u64 {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }

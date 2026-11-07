@@ -1,0 +1,66 @@
+import SandproofStandardRecord.Types
+open Aeneas Aeneas.Std
+namespace SandproofStandardRecordRust
+
+-- Exact existing kernel-bound literal wrapper; the default Aeneas literal
+-- tactic uses native_decide, which the unchanged dependency auditor rejects.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def NormalWorldBorrow (count : Int) : Prop := 0 ≤ count ∧ count < 2^63 - 1
+
+instance (count : Int) : Decidable (NormalWorldBorrow count) :=
+  inferInstanceAs (Decidable (0 ≤ count ∧ count < 2^63 - 1))
+
+@[rust_fun "core::cell::{core::cell::RefCell<@T>}::borrow"]
+def core.cell.RefCell.borrow {T : Type} (cell : core.cell.RefCell T) :
+    Result (core.cell.Ref T) :=
+  if NormalWorldBorrow cell.beforeBorrowCount then
+    .ok ⟨cell.object, cell.value, cell.beforeBorrowCount + 1⟩
+  else .fail .panic
+
+@[rust_fun "core::cell::{core::ops::deref::Deref<core::cell::Ref<'0, @T>, @T>}::deref"]
+def core.cell.Ref.Insts.CoreOpsDerefDeref.deref {T : Type} (guard : core.cell.Ref T) :
+    Result T := .ok guard.value
+
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+
+@[rust_fun "core::option::{core::clone::Clone<core::option::Option<@T>>}::clone"]
+def core.option.Option.Insts.CoreCloneClone.clone {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some item => do
+      let copied ← dictionary.clone item
+      .ok (some copied)
+
+
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok false
+  | some item => callback.call_once state item
+
+/-- Fixed shared slice Iterator::any: ordered FnMut calls, first true short-circuit,
+    callback state threaded, failure preserved, and exact consumed cursor count.
+    Library conformance only; no business predicate is assumed correct. -/
+def anyList {T F : Type} (callback : core.ops.function.FnMut F T Bool) :
+    List T → F → Result (Bool × Nat)
+  | [], _ => .ok (false, 0)
+  | item :: rest, state => do
+      let (matched, next) ← callback.call_mut state item
+      if matched then .ok (true, 1)
+      else
+        let (found, consumed) ← anyList callback rest next
+        .ok (found, consumed + 1)
+
+def core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.any
+    {T F : Type} (callback : core.ops.function.FnMut F T Bool)
+    (iter : core.slice.iter.Iter T) (state : F) : Result (Bool × core.slice.iter.Iter T) := do
+  let (found, consumed) ← anyList callback (iter.slice.val.drop iter.i) state
+  .ok (found, { iter with i := iter.i + consumed })
+
+end SandproofStandardRecordRust

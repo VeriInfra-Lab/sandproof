@@ -1,0 +1,31 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -173,0 +174,3 @@
++    target = work / 'stage1-inbox-state'
++    native_case('stage1-inbox-state', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-state/native.py', '--output', p]))
+@@ -251 +254 @@
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state'])
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -16,0 +17,4 @@
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-state
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-state/formal.py --require-native --variant correct --output "$EVIDENCE/state-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-state/formal.py --require-native --variant always-current --output "$EVIDENCE/state-always-current"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-state/formal.py --require-native --variant drop-operation --output "$EVIDENCE/state-drop-operation"
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -54,0 +55 @@
++| V3 原收件查询候选 | 未重构 Inbox::state 的任意有界索引完整七字段值合同，以及 current/operation 遗漏的同合同真实 Rust 反例，见[候选范围](../verification/experiments/stage1-protocol/inbox-state/README.md) | 索引有效性是显式前提；record 返回位置推导/组合、ning/native、V0 调用采用及共享验收未完成；不表示授权、资源存在或持久事务 |
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -48,0 +49,8 @@
++
++### 待采用的 V3 原收件查询同步接线
++
++[查询候选](../../verification/experiments/stage1-protocol/inbox-state/README.md)直接抽取原 Inbox::state，
++连接固定 Vec.index_slice_index/index_usize_spec 及既有完整 AcceptedLifecycleIntent clone；
++两次索引均显式有界。五个外部绑定复用既有 String.eq/clone、Vec.is_empty、Bool.ne、
++Option 字典比较；原闭包不含 ContractError，不新增错误枚举别名或业务 opaque。
++V0/主控负责本调用采用，资源/授权/持久性与 record 返回索引推导不由查询定理提供。

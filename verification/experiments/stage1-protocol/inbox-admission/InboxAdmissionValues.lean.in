@@ -1,0 +1,38 @@
+import SandboxModel.Lifecycle.Protocol.InboxAdmissionModel
+import SandboxModel.Lifecycle.Protocol.InboxLookupValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAdmission
+
+def foreignContext : AuthenticatedCenterContext :=
+  { EnvelopeValues.context with expected_node := { EnvelopeValues.node with node_generation := 2#u64 } }
+
+def foreignIntent : AcceptedLifecycleIntent :=
+  { EnvelopeValues.intent 1#u64 with request := {
+    (EnvelopeValues.intent 1#u64).request with binding := {
+      (EnvelopeValues.intent 1#u64).request.binding with node := foreignContext.expected_node } } }
+
+theorem foreign_envelope_has_valid_shape : Validation.ValidEnvelope foreignIntent foreignContext := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [Validation.ValidEnvelope, foreignIntent, foreignContext, EnvelopeValues.intent,
+    EnvelopeValues.context, EnvelopeValues.node, EnvelopeValues.center,
+    Validation.ValidRequest, Validation.headersOK, Validation.expectationOK,
+    Validation.operationOK, Validation.retentionOK, Validation.versionOK, checked]
+
+def invalidIntent : AcceptedLifecycleIntent :=
+  { EnvelopeValues.intent 1#u64 with retention := ⟨0#u16,9#u64⟩, accepted_version := 0#u64 }
+
+theorem invalid_retention_is_first :
+    Validation.FirstAcceptedError invalidIntent EnvelopeValues.context .InvalidRetention := by
+  have valid := EnvelopeValues.both_inputs_have_valid_shape.1
+  simpa [Validation.FirstAcceptedError, Validation.retentionOK, invalidIntent, EnvelopeValues.intent] using
+    And.intro valid.1 (And.intro valid.2.1 valid.2.2.1)
+
+end SandboxModel.Stage1Protocol.InboxAdmission
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.foreign_envelope_has_valid_shape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.invalid_retention_is_first

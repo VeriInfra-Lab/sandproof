@@ -19,6 +19,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import re
 import shutil
 import subprocess
@@ -93,10 +94,10 @@ def exercise(args):
     def no_resources():
         for index, namespace in enumerate(deployment.namespaces):
             pool = root / str(index)
-            if (pool / "jails/.claims").is_dir():
+            if (original_chroot(pool) / ".claims").is_dir():
                 check_no_resources(pool, namespace, args.firecracker, args.uid_base + index * 100)
             assert_terminal_rows(pool / "db/controller.db")
-            for parent in (pool / "jails" / args.firecracker.name, Path("/run/netns"), args.build_cgroup_parent if index else args.cgroup_parent):
+            for parent in (original_chroot(pool) / args.firecracker.name, Path("/run/netns"), args.build_cgroup_parent if index else args.cgroup_parent):
                 assert not list(parent.glob(f"vm-{namespace}-*")), "test resource remains"
         assert not processes_in_uid_range(args.uid_base, args.uid_base + 164)
 

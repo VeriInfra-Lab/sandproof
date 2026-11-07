@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallCore
+import SandboxModel.Lifecycle.Protocol.CreateInstallValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateInstall.Examples
+noncomputable section
+open scoped Classical
+open Values InboxLookup.Witness
+
+theorem missing_owner : run base 0#usize 0#usize binding = .ok freshResult := by
+  obtain ⟨result, returned, owners, contents, frame⟩ :=
+    install_outcome base 0#usize 0#usize binding base_bounds.1 base_bounds.2 (by intro _; exact base_room)
+  have missing : ¬ HasOwner base base.sessions.val[0].owner := by
+    simpa [base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+      InboxLookup.Witness.inbox, InboxLookup.Witness.singleton] using base_missing
+  erw [if_neg missing] at contents frame
+  have same : owners = InboxLookup.Witness.singleton (ownerRow selected binding) := by
+    apply alloc.vec.Vec.ext
+    simpa [missing, base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+      InboxLookup.Witness.inbox, InboxLookup.Witness.singleton, empty] using contents
+  rw [frame, same] at returned
+  convert returned using 1
+  simp [freshResult, mapped, sessionAfter,
+    base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.singleton, selected, CreateSelection.Values.selected, alloc.vec.Vec.eq_iff,
+    alloc.vec.Vec.set_val_eq]
+
+theorem existing_owner : run known 0#usize 0#usize binding = .ok knownResult := by
+  have bound : (0#usize).val < known.sessions.val.length := by simpa [known] using base_bounds.1
+  have ebound : (0#usize).val < known.sessions.val[0].entries.val.length := by simpa [known] using base_bounds.2
+  have present : HasOwner known known.sessions.val[0].owner := by
+    simpa [known, base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+      InboxLookup.Witness.inbox, InboxLookup.Witness.singleton] using known_present
+  obtain ⟨result, returned, owners, contents, frame⟩ :=
+    install_outcome known 0#usize 0#usize binding bound ebound (by intro absent; exact False.elim (absent present))
+  erw [if_pos present] at contents frame
+  have same : owners = known.owners := by
+    apply alloc.vec.Vec.ext
+    exact contents
+  rw [frame, same] at returned
+  convert returned using 1
+  simp [knownResult, mapped, sessionAfter, known,
+    base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.singleton, selected, CreateSelection.Values.selected, alloc.vec.Vec.eq_iff,
+    alloc.vec.Vec.set_val_eq]
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall.Examples
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Examples.missing_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Examples.existing_owner

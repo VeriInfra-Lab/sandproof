@@ -90,6 +90,19 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
         app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead)
             .unwrap(),
     );
+    check_renewal_limits_and_expiry(&app, &renew, incarnation, &access, &clock);
+    assert_eq!(startup_calls, state.lock().unwrap().actions.len());
+}
+
+fn check_renewal_limits_and_expiry(
+    app: &sandproof_controller_service::application::ControllerApplication<fixture::TestHost>,
+    renew: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    incarnation: sandproof_protocol::lifecycle::IncarnationId,
+    access: &sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+    clock: &fixture::TestClock,
+) {
+    use sandproof_controller_service::application::DataKind;
+    use std::sync::atomic::Ordering;
     let mut extended = renew.clone();
     extended.accepted_version = 3;
     extended.request.binding.expected = ExpectedSession::Version(2);
@@ -105,7 +118,7 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
         120_010
     );
     assert!(matches!(
-        app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead),
+        app.lifecycle_data_authorization(access, &context(), DataKind::FileRead),
         Err(ApplicationError::NotFound)
     ));
     let mut excessive = extended.clone();
@@ -140,12 +153,11 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
     // Historical replay says only that this update committed, not that it is
     // current or the VM is alive; a new unapplied update cannot revive expiry.
     assert!(
-        !app.apply_lifecycle_renew(&renew, &context())
+        !app.apply_lifecycle_renew(renew, &context())
             .unwrap()
             .0
             .current
     );
-    assert_eq!(startup_calls, state.lock().unwrap().actions.len());
 }
 
 #[test]
@@ -406,7 +418,7 @@ fn mapped_destroy_revokes_routes_and_restarted_cleanup_needs_no_startup_epoch() 
     app.record_lifecycle_intent(&request(), &context()).unwrap();
     app.establish_lifecycle_host_epoch().unwrap();
     let local = advance(&app).unwrap().local.unwrap();
-    let secret = state.lock().unwrap().configurations[&local.sandbox.0]
+    let secret = state.lock().unwrap().configurations[&(local.sandbox.0, 1)]
         .0
         .clone();
     let permit = app

@@ -1,0 +1,54 @@
+// Same assertions for the actual Rust, the real default-world mutation,
+// and restored actual Rust. Ning owns execution and ordinary acceptance.
+use super::*;
+
+#[test]
+fn normal_candidate_full_value() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let expected = journal.world().unwrap();
+    // Normal open uses the actual Maintenance::Enable input, so this candidate
+    // contains complete configured state and differs from the default World.
+    assert_ne!(expected, core::initial_world());
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &tx,
+    };
+    assert_eq!(CreateAttachmentEffects::world(&mut effects), expected);
+}
+
+#[test]
+fn candidate_remains_complete_after_read() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let expected = journal.world().unwrap();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &tx,
+    };
+    let _ = CreateAttachmentEffects::world(&mut effects);
+    assert_eq!(effects.tx.world(), expected);
+}
+
+#[test]
+fn both_rebindings_use_actual_connection() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut journal = super::tests::initialize(&directory.path().join("db"));
+    let other = rusqlite::Connection::open_in_memory().unwrap();
+    let tx =
+        WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world).unwrap();
+    let selected: &rusqlite::Connection = &tx;
+    let mut effects = StandardCreateAttachment {
+        tx: &tx,
+        connection: &other,
+    };
+    CreateAttachmentEffects::begin_lifetime_update(&mut effects);
+    assert!(std::ptr::eq(effects.connection, selected));
+    effects.connection = &other;
+    CreateAttachmentEffects::begin_inbox_save(&mut effects);
+    assert!(std::ptr::eq(effects.connection, selected));
+}

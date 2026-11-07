@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.LaneLibrary
+import SandboxModel.Lifecycle.Protocol.LaneValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.internal sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetentionLane
+noncomputable section
+open scoped Classical
+
+theorem wrong_status_accepts : run Values.small Values.wrongStatus Values.context = .ok true := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := rfl
+  have next : successor 1#u64 = some 2#u64 := rfl
+  simp [run, LifecycleRetentionLane.valid_using, Aeneas.Std.lift,
+    next_spec, window_option_ne, status_cleaned, terminal_full, envelope_body, envelope_ok,
+    terminal_encoded_within_limit, RetentionWindowId.get, PositiveCounter.get,
+    Values.wrongStatus, Values.normal, Values.retired, Values.context,
+    Values.small, Values.encode, Values.bytes_length, next, checked,
+    Terminal.Values.observation, Terminal.Values.original, EnvelopeValues.intent,
+    EnvelopeValues.context, EnvelopeValues.center, EnvelopeValues.node,
+    Terminal.Matches, Validation.ValidEnvelope, Validation.ValidRequest,
+    Validation.headersOK, Validation.expectationOK, Validation.operationOK,
+    Validation.retentionOK, Validation.versionOK, alloc.vec.Vec.len]
+
+theorem status_omission_refutes_full_contract : ¬ FullLaneContract run := by
+  intro contract
+  have same := contract Values.small Values.wrongStatus Values.context
+  rw [wrong_status_accepts, Values.model_rejections.2.1] at same
+  simp at same
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.wrong_status_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.status_omission_refutes_full_contract

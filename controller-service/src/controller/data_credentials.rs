@@ -167,6 +167,40 @@ pub(super) fn validate(
     Ok(())
 }
 
+/// Withdraw only the exact original generation inside Resume's existing
+/// admission transaction, before that same transaction installs its successor.
+/// No new credential or physical launch configuration is created here.
+pub(in crate::controller) fn withdraw_for_resume(
+    connection: &Connection,
+    world: &core::World,
+    namespace: &str,
+    sandbox: core::SandboxId,
+    original: (core::Generation, [u8; 32]),
+) -> Result<(), JournalError> {
+    let row = world
+        .sandbox_record(sandbox)
+        .ok_or(JournalError::Conflict)?;
+    if row.terminal
+        || row.phase != core::Phase::Paused
+        || row.generation != original.0
+        || row.current_operation.is_none_or(|operation| {
+            operation.kind != core::OperationKind::Pause
+                || operation.status != core::OperationStatus::Succeeded
+        })
+    {
+        return Err(JournalError::Conflict);
+    }
+    if snapshot(connection, world, namespace, sandbox, true)? != Some(original) {
+        return Err(JournalError::Conflict);
+    }
+    let public = identity::sandbox_id(namespace, sandbox)?;
+    if connection.execute(
+        "DELETE FROM controller_data_credentials WHERE sandbox_id=?1 AND generation=?2 AND digest=?3",
+        params![public.as_str(), original.0.to_string(), original.1.as_slice()],
+    )? != 1 { return Err(JournalError::CorruptStore); }
+    Ok(())
+}
+
 impl ControllerJournal {
     /// Register one trusted token digest for the original admitted generation.
     /// The identical tuple is idempotent; another digest never replaces it.

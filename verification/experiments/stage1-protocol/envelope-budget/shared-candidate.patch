@@ -1,0 +1,10 @@
+--- a/lakefile.toml
++++ b/lakefile.toml
+@@ -86,3 +86,7 @@
+ [[lean_lib]]
+ name = "SandproofProtocolResult"
+ srcDir = "verification/aeneas/stage1-protocol/schema-result"
++
++[[lean_lib]]
++name = "SandproofEnvelopeBudget"
++srcDir = "verification/aeneas/stage1-protocol/envelope-budget"

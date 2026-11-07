@@ -82,7 +82,16 @@ class DeploymentExamplesTests(unittest.TestCase):
         profile = host['native']['bounded_host']['physical_storage']
         self.assertEqual(profile['host_template_caches'], [host['template_cache']])
         owners = {Path(item['root']).name: item['owner_uid'] for item in profile['service_data']}
-        self.assertEqual(owners, {'center': 1001, 'redis': 1002, 'control': 0})
+        self.assertEqual(owners, {'center': 1001, 'redis': 1002, 'control': 0, 's': 0})
+        capture = host['capture']
+        store = Path(capture['layout_parent']) / 's'
+        self.assertEqual(Path(host['native']['chroot_base']), Path(capture['layout_parent']) / 'v')
+        self.assertNotEqual(store, Path(host['native']['chroot_base']))
+        material_roots = [item for item in profile['service_data'] if Path(item['root']) == store]
+        self.assertEqual(len(material_roots), 1)
+        self.assertEqual(material_roots[0]['owner_uid'], 0)
+        self.assertGreaterEqual(material_roots[0]['peak_bytes'], capture['material_project']['hard_bytes'])
+        self.assertGreaterEqual(material_roots[0]['inode_budget'], capture['material_project']['hard_inodes'])
         self.assertEqual(center['credentials'][0]['secret'], '')
         self.assertEqual(center['redis']['password'], '')
 

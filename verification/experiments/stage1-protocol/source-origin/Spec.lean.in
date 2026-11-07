@@ -1,0 +1,81 @@
+import SandproofSourceOrigin.Funs
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin
+open sandbox_controller_core
+abbrev World := model.World
+abbrev Anchor := controller.lifecycle_inbox.source_work.SourceAnchor
+abbrev Inbox := controller.lifecycle_inbox.model.Inbox
+abbrev Native := controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev Plan := model.OperationPlan
+abbrev Ledger := model.OperationLedgerRecord
+abbrev Identity := capture.continuation.OriginalContinueIdentity
+abbrev epochRun := controller.lifecycle_inbox.source_work.snapshot.source_origin_epoch_matches
+abbrev run := controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin
+abbrev history := controller.lifecycle_inbox.source_work.full.continuation.historical_identity
+abbrev Reply := core.result.Result Unit JournalError
+
+deriving instance DecidableEq for model.OperationKey
+deriving instance DecidableEq for capture.continuation.OriginalContinueIdentity
+deriving instance DecidableEq for model.OperationKind
+
+noncomputable def EpochExpected (world : World) (anchor : Anchor) (plan : Plan) : Result Bool := by
+  classical
+  exact match anchor.continued_from with
+  | none => .ok (decide (plan.epoch = anchor.native.epoch))
+  | some identity => do
+      let actual ← history world anchor.local anchor.native
+      .ok (decide (actual = some identity))
+
+def OriginFields (kind : model.OperationKind) (plan : Plan)
+    (row : Ledger) (native : Native) (epoch : Bool) : Prop :=
+  row.operation.kind = kind ∧ plan.generation = native.generation ∧ epoch = true ∧
+  plan.vm = native.current_vm ∧ ((kind = .Create) ↔ plan.restore_from = none)
+
+def originKind : sandproof_protocol.lifecycle.request.LifecycleOperation → Option model.OperationKind
+  | .Create _ _ => some .Create
+  | .Resume _ _ _ _ => some .Resume
+  | _ => none
+
+def Reject : Result Reply := .ok (.Err .CorruptStore)
+
+def readAt (values : alloc.vec.Vec T) (index : Usize) : Result T :=
+  match values.val[index.val]? with
+  | some value => .ok value
+  | none => .fail .arrayOutOfBounds
+
+/-- Actual readonly queries stay explicit and transparent. This contract does not
+assert they came from one durable transaction or an authenticated/physical source. -/
+noncomputable def Expected (world : World) (inbox : Inbox) (anchor : Anchor)
+    (session : Usize) : Result Reply := by
+  classical
+  exact do
+    let found ← controller.lifecycle_inbox.model.Inbox.find inbox anchor.execution_origin
+    match found with
+    | .Err _ => Reject
+    | .Ok none => Reject
+    | .Ok (some (originSession, originEntry)) =>
+      if originSession ≠ session then Reject else do
+        let selected ← readAt inbox.sessions session
+        let entry ← readAt selected.entries originEntry
+        if entry.local_operation ≠ some anchor.local.operation then Reject else do
+          let plan ← model.World.operation_plan world
+            ⟨anchor.local.sandbox, anchor.local.operation⟩
+          match plan with
+          | none => Reject
+          | some plan => do
+            let row ← model.World.operation_record world
+              ⟨anchor.local.sandbox, anchor.local.operation⟩
+            match row with
+            | none => Reject
+            | some row =>
+              match originKind anchor.execution_origin.request.operation with
+              | none => Reject
+              | some kind => do
+                let epoch ← EpochExpected world anchor plan
+                if OriginFields kind plan row anchor.native epoch
+                then .ok (.Ok ()) else Reject
+
+def FullOriginContract (operation : World → Inbox → Anchor → Usize → Result Reply) : Prop :=
+  ∀ world inbox anchor session, operation world inbox anchor session =
+    Expected world inbox anchor session
+end SandboxModel.Stage1Protocol.SourceOrigin

@@ -84,6 +84,132 @@ def file_entry(path, content, permissions='0644', owner='root:root'):
     return {'path': path, 'content': content, 'permissions': permissions, 'owner': owner}
 
 
+# This root recipe runs before the unprivileged listener, only in its disposable
+# overlay. It never accepts a PR-supplied path, image, device or shell command.
+COW_SCRATCH_ROOT = '/var/lib/sandproof-ci-cow'
+COW_SCRATCH_SETUP = r"""import json, os, pwd, stat, subprocess, sys
+from pathlib import Path
+
+ROOT = Path('/var/lib/sandproof-ci-cow')
+SIZE = 1024 ** 3
+PROBE = r'''import fcntl, json, os, stat, subprocess, sys, tempfile
+from pathlib import Path
+if sys.flags.optimize != 0:
+    raise ValueError('scratch probe requires enabled assertions')
+root = Path('/var/lib/sandproof-ci-cow/mount/tmp')
+assert os.geteuid() != 0
+info = root.stat()
+assert info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700
+with tempfile.TemporaryDirectory(dir=root) as directory:
+    directory = Path(directory)
+    source, target = directory / 'source', directory / 'target'
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    with os.fdopen(os.open(source, flags, 0o600), 'wb+') as src:
+        src.write(b'original' * 512)
+        src.flush()
+        os.fsync(src.fileno())
+        with os.fdopen(os.open(target, flags, 0o600), 'wb+') as dst:
+            fcntl.ioctl(dst.fileno(), 0x40049409, src.fileno())
+            os.fsync(dst.fileno())
+            a, b = os.fstat(src.fileno()), os.fstat(dst.fileno())
+            assert a.st_dev == b.st_dev and a.st_ino != b.st_ino
+            assert a.st_nlink == b.st_nlink == 1
+            assert dst.read() == b'original' * 512
+            dst.seek(0)
+            dst.write(b'T')
+            dst.flush()
+            src.seek(0)
+            assert src.read(1) == b'o'
+            src.seek(1)
+            src.write(b'S')
+            src.flush()
+            dst.seek(0)
+            assert dst.read(2) == b'Tr'
+    executable = directory / 'executable'
+    executable.write_text('#!/bin/sh\nexit 0\n')
+    executable.chmod(0o700)
+    subprocess.run([str(executable)], check=True, timeout=10)
+print(json.dumps({'runner_uid': os.geteuid(), 'python_optimize': sys.flags.optimize,
+                  'clone_and_write_isolation': True,
+                  'executable_tmpdir': True}))
+'''
+
+
+def run():
+    if sys.flags.optimize != 0:
+        raise ValueError('scratch preparation requires enabled assertions')
+    if os.geteuid() != 0:
+        raise ValueError('scratch preparation requires the trusted guest root recipe')
+    for parent in [ROOT.parent, *ROOT.parent.parents]:
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('scratch ancestor is not a protected root directory')
+    os.umask(0o077)
+    ROOT.mkdir(mode=0o711)  # Existing entries are never adopted or reformatted.
+    ROOT.chmod(0o711)
+    image, mount = ROOT / 'scratch.img', ROOT / 'mount'
+    mount.mkdir(mode=0o700)
+    fd = os.open(image, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.posix_fallocate(fd, 0, SIZE)
+        os.fsync(fd)
+        def identity():
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                    or info.st_size != SIZE):
+                raise ValueError('scratch image identity changed')
+            current = image.lstat()
+            if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                raise ValueError('scratch image name changed')
+            return (info.st_dev, info.st_ino)
+        original = identity()
+        subprocess.run(['/usr/sbin/mkfs.xfs', '-f', '-K', '-m', 'reflink=1',
+                        '/proc/self/fd/' + str(fd)], pass_fds=(fd,), check=True, timeout=30)
+        if identity() != original:
+            raise ValueError('scratch format changed the image identity')
+        os.fsync(fd)
+        subprocess.run(['/usr/bin/mount', '-o', 'loop,prjquota,nodev,nosuid',
+                        str(image), str(mount)], check=True, timeout=30)
+        if identity() != original:
+            raise ValueError('scratch mount changed the image identity')
+        filesystem = json.loads(subprocess.run(['/usr/bin/findmnt', '--json',
+            '--target', str(mount), '--output', 'TARGET,FSTYPE,OPTIONS'],
+            check=True, capture_output=True, text=True, timeout=10).stdout)['filesystems']
+        if len(filesystem) != 1 or filesystem[0]['target'] != str(mount):
+            raise ValueError('scratch mount observation is ambiguous')
+        entry = filesystem[0]
+        options = set(entry['options'].split(','))
+        if (entry['fstype'] != 'xfs' or not {'rw', 'nodev', 'nosuid'} <= options
+                or not options & {'prjquota', 'pquota'} or 'noexec' in options):
+            raise ValueError('scratch filesystem or mount options do not meet the job contract')
+        mount.chmod(0o711)
+        tmp = mount / 'tmp'
+        tmp.mkdir(mode=0o700)
+        runner = pwd.getpwnam('runner')
+        os.chown(tmp, runner.pw_uid, runner.pw_gid)
+        probe = subprocess.run(['/usr/sbin/runuser', '-u', 'runner', '--',
+            '/usr/bin/python3', '-I', '-c', PROBE], check=True, capture_output=True,
+            text=True, timeout=30)
+        witness = json.loads(probe.stdout)
+        if witness != {'runner_uid': runner.pw_uid, 'python_optimize': 0,
+                       'clone_and_write_isolation': True,
+                       'executable_tmpdir': True}:
+            raise ValueError('scratch runner capability probe did not complete')
+        info = os.fstat(fd)
+        print('SANDPROOF_CI_COW_READY ' + json.dumps(dict(witness,
+            preparation_python_optimize=sys.flags.optimize,
+            logical_bytes=SIZE, allocated_bytes=info.st_blocks * 512,
+            filesystem=entry['fstype'], mount_options=sorted(options))), flush=True)
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    run()
+"""
+
+
 def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None):
     env = ('http_proxy=' + PROXY + '\nhttps_proxy=' + PROXY + '\n'
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
@@ -253,9 +379,15 @@ if processes():
             file_entry('/home/runner/.jitconfig', jit, '0600', 'runner:runner'),
             file_entry('/opt/actions-runner/start-jit.sh', start, '0755'),
             file_entry('/etc/systemd/system/sandproof-ci-job.service', unit)]
+        preparation = ''
+        if role in {'rust', 'sdk'}:
+            result['write_files'][0]['content'] += 'TMPDIR=' + COW_SCRATCH_ROOT + '/mount/tmp\n'
+            result['write_files'].append(file_entry('/root/ci-cow-scratch.py',
+                                                   COW_SCRATCH_SETUP, '0500'))
+            preparation = '/usr/bin/python3 -I /root/ci-cow-scratch.py && '
         result['runcmd'] = [['chown', '-R', 'runner:runner', '/opt/actions-runner'],
             ['systemctl', 'daemon-reload'], ['bash', '-c',
-            'if runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
+            'if ' + preparation + 'runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
             'systemctl start --no-block sandproof-ci-job.service; else poweroff; fi']]
     return result
 

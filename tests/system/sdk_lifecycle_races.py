@@ -21,6 +21,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -82,13 +83,13 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="s7-", dir=parent))
     namespace = secrets.token_hex(8)
     vm_name = f"vm-{namespace}-0"
-    longest_socket = root / "jails" / args.firecracker.name / f"vm-{namespace}-1000" / "root/api.socket"
+    longest_socket = root / "p/v" / args.firecracker.name / f"vm-{namespace}-1000" / "root/api.socket"
     if len(os.fsencode(longest_socket)) >= 108:
         root.rmdir()  # nothing has been written under this exact new root
         raise RuntimeError("dedicated test root is too long for Firecracker API socket")
     key = secrets.token_hex(32)
     port = free_loopback_port()
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -103,7 +104,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)),
         "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -155,7 +156,7 @@ def exercise(args: argparse.Namespace) -> None:
         process = services.processes.start("host-0", env=gate_env)
         services.wait_ready(for_admission=False)
 
-        record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+        record = json.loads((original_chroot(root) / ".claims" / vm_name / "record.json").read_text())
         pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -189,7 +190,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert sum(b'"Kill"' in row for row in inputs) == 1, "second kill was accepted"
         assert process_start_ticks(pid) != ticks, "original VM still runs or was reused"
         assert not Path(f"/run/netns/{vm_name}").exists(), "private network remains"
-        assert not (root / "jails" / args.firecracker.name / vm_name).exists(), "private jail remains"
+        assert not (original_chroot(root) / args.firecracker.name / vm_name).exists(), "private jail remains"
         assert not gate.exists(), "test gate remains"
 
         # A rejected request must never reach admission or physical work.
@@ -237,7 +238,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert Sandbox.list(**sdk).next_items() == []
         failed_vm = f"vm-{namespace}-1"
         assert not Path(f"/run/netns/{failed_vm}").exists()
-        assert not (root / "jails" / args.firecracker.name / failed_vm).exists()
+        assert not (original_chroot(root) / args.firecracker.name / failed_vm).exists()
         assert fetch(opener, base_url, "GET", "/sandboxes/" + original['binding']['session'], key)[0] == 404
         assert terminal_cleanup_confirmed(root / "db/controller.db", native_id)
         assert sha256_file(rootfs) == base_digest

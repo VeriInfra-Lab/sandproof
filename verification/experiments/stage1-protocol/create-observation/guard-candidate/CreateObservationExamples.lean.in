@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.CreateObservationBindings
+import SandboxModel.Lifecycle.Protocol.CreateObservationValues
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.observation
+open SandboxModel.Stage1Protocol.ReadyFactValues SandboxModel.Stage1Protocol.CreateBinding
+namespace SandboxModel.Stage1Protocol.CreateValues
+
+theorem actual_normal_witnesses :
+    create_matches_request (observation createIntent .Pending false) createIntent = .ok true ∧
+    create_matches_request (observation createIntent (.Observed facts) true) createIntent = .ok true ∧
+    create_matches_request (observation (renewed 50#i64 false) (.Observed facts) true) createIntent = .ok true ∧
+    create_matches_request (observation unloaded (.Observed facts) true) createIntent = .ok true ∧
+    create_matches_request (observation destroyed .NotCurrent false) createIntent = .ok true ∧
+    create_matches_request (observation createIntent (.Refused .Capacity) false) createIntent = .ok true ∧
+    create_matches_request (observation destroyed (.Refused .Capacity) false) createIntent = .ok true := by
+  simpa only [accepts_iff] using normal_contract_witnesses
+
+theorem actual_omissions_rejected :
+    create_matches_request changedRequest createIntent = .ok false ∧
+    create_matches_request (observation changedRetention .Pending false) createIntent = .ok false ∧
+    create_matches_request (observation createIntent (.Refused .Capacity) true) createIntent = .ok false ∧
+    create_matches_request wrapObservation negativeOriginal = .ok false := by
+  simpa only [rejects_iff] using omitted_fields_violate_contract
+
+theorem actual_negative_pending_allowed :
+    create_matches_request (observation (renewed ((-2)#i64) false) .Pending false) createIntent = .ok true :=
+  (accepts_iff _ _).mpr negative_pending_satisfies_contract
+
+theorem actual_reused_key_allowed :
+    let sameKeyRenew := { renewed 50#i64 false with request := {
+      (renewed 50#i64 false).request with binding := {
+        (renewed 50#i64 false).request.binding with key := createIntent.request.binding.key } } }
+    let sameKeyDestroy := { destroyed with request := { destroyed.request with binding := {
+      destroyed.request.binding with key := createIntent.request.binding.key } } }
+    create_matches_request (observation sameKeyRenew .Pending false) createIntent = .ok true ∧
+    create_matches_request (observation sameKeyDestroy .NotCurrent false) createIntent = .ok true := by
+  simpa only [accepts_iff] using reused_key_satisfies_contract
+
+theorem actual_changed_non_refused_does_not_validate_original :
+    let old := { createIntent with request := { createIntent.request with binding := {
+      createIntent.request.binding with protocol_version := 3#u16 } } }
+    ¬ Validation.ValidRequest old.request old.request.binding.node ∧
+      create_matches_request ⟨old, destroyed, false, .NotCurrent⟩ old = .ok true := by
+  simpa only [accepts_iff] using changed_non_refused_does_not_require_valid_original
+
+end SandboxModel.Stage1Protocol.CreateValues
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateValues.actual_normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateValues.actual_omissions_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateValues.actual_negative_pending_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateValues.actual_reused_key_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateValues.actual_changed_non_refused_does_not_validate_original

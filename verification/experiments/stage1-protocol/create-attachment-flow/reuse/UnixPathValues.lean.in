@@ -1,0 +1,117 @@
+import SandproofUnixPath.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofUnixPathRust
+namespace SandboxModel.Stage1Protocol.UnixPathValues
+
+abbrev PathValue := std.path.PathBuf
+abbrev ByteValue := alloc.vec.Vec U8
+
+def bytes (path : PathValue) : ByteValue := path.inner.inner.inner
+def pack (value : ByteValue) : PathValue := ⟨⟨⟨value⟩⟩⟩
+
+theorem os_from_vec_exact (value : ByteValue) :
+    std.ffi.os_str.OsString.Insts.StdOsUnixFfiOs_strOsStringExt.from_vec value =
+      .ok ⟨⟨value⟩⟩ := rfl
+
+theorem os_into_vec_exact (value : std.ffi.os_str.OsString) :
+    std.ffi.os_str.OsString.Insts.StdOsUnixFfiOs_strOsStringExt.into_vec value =
+      .ok value.inner.inner := rfl
+
+theorem path_into_os_exact (path : PathValue) :
+    std.path.PathBuf.into_os_string path = .ok path.inner := rfl
+
+theorem path_from_os_exact (value : std.ffi.os_str.OsString) :
+    std.path.PathBuf.Insts.CoreConvertFromOsString.from value = .ok ⟨value⟩ := rfl
+
+theorem actual_path_bytes_exact (path : PathValue) :
+    path_bytes path = .ok (bytes path) := by
+  simp [path_bytes, path_into_os_exact, os_into_vec_exact, bytes]
+
+theorem actual_path_from_bytes_exact (value : ByteValue) :
+    path_from_bytes value = .ok (pack value) := by
+  simp [path_from_bytes, os_from_vec_exact, path_from_os_exact, pack]
+
+theorem bytes_pack (value : ByteValue) : bytes (pack value) = value := rfl
+
+theorem pack_bytes (path : PathValue) : pack (bytes path) = path := rfl
+
+theorem bytes_injective : Function.Injective bytes := by
+  intro left right same
+  calc
+    left = pack (bytes left) := (pack_bytes left).symm
+    _ = pack (bytes right) := congrArg pack same
+    _ = right := pack_bytes right
+
+theorem full_value_iff_bytes (left right : PathValue) :
+    left = right ↔ bytes left = bytes right :=
+  ⟨congrArg bytes, fun same => bytes_injective same⟩
+
+theorem actual_bytes_roundtrip (value : ByteValue) :
+    (path_from_bytes value >>= path_bytes) = .ok value := by
+  simp [actual_path_from_bytes_exact, actual_path_bytes_exact, bytes_pack]
+
+theorem actual_path_roundtrip (path : PathValue) :
+    (path_bytes path >>= path_from_bytes) = .ok path := by
+  simp [actual_path_bytes_exact, actual_path_from_bytes_exact, pack_bytes]
+
+/-- This is complete raw value identity, not the standard library's path equality operation. -/
+def FullPathValueContract
+    (encode : PathValue → Result ByteValue) (decode : ByteValue → Result PathValue) : Prop :=
+  (∀ path, encode path = .ok (bytes path)) ∧
+  (∀ value, decode value = .ok (pack value))
+
+theorem full_contract : FullPathValueContract path_bytes path_from_bytes :=
+  ⟨actual_path_bytes_exact, actual_path_from_bytes_exact⟩
+
+def emptyBytes : ByteValue := alloc.vec.Vec.from [] (by simp)
+def opaqueBytes : ByteValue :=
+  alloc.vec.Vec.from [0#u8, 255#u8, 128#u8, 47#u8, 46#u8] (by scalar_tac)
+def withoutLeadingZero : ByteValue :=
+  alloc.vec.Vec.from [255#u8, 128#u8, 47#u8, 46#u8] (by scalar_tac)
+
+theorem empty_witness :
+    (path_from_bytes emptyBytes >>= path_bytes) = .ok emptyBytes :=
+  actual_bytes_roundtrip _
+
+theorem invalid_utf8_and_nul_preserved :
+    (path_from_bytes opaqueBytes >>= path_bytes) = .ok opaqueBytes :=
+  actual_bytes_roundtrip _
+
+theorem omission_same_suffix :
+    opaqueBytes.val.tail = withoutLeadingZero.val := rfl
+
+theorem omission_distinct_full_values : pack opaqueBytes ≠ pack withoutLeadingZero := by
+  intro same
+  have values := congrArg (fun path => (bytes path).val.length) same
+  change 5 = 4 at values
+  omega
+
+theorem actual_outputs_keep_omitted_byte :
+    path_bytes (pack opaqueBytes) ≠ path_bytes (pack withoutLeadingZero) := by
+  intro same
+  have sameBytes : opaqueBytes = withoutLeadingZero := by
+    simpa [actual_path_bytes_exact, bytes_pack] using same
+  have values := congrArg (fun value : ByteValue => value.val.length) sameBytes
+  change 5 = 4 at values
+  omega
+
+end SandboxModel.Stage1Protocol.UnixPathValues
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.os_from_vec_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.os_into_vec_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.path_into_os_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.path_from_os_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.actual_path_bytes_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.actual_path_from_bytes_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.bytes_pack
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.pack_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.bytes_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.full_value_iff_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.actual_bytes_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.actual_path_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.empty_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.invalid_utf8_and_nul_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.omission_same_suffix
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.omission_distinct_full_values
+#audit_controller_proof SandboxModel.Stage1Protocol.UnixPathValues.actual_outputs_keep_omitted_byte

@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredModel
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open scoped Classical
+noncomputable section
+
+theorem next_some (values : Slice α) (index : Nat) (inside : index < values.val.length) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (some values.val[index], cursor values (index + 1)) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, inside]
+
+theorem next_none (values : Slice α) (index : Nat) (outside : values.val.length ≤ index) :
+    core.slice.iter.IteratorSliceIter.next (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr outside]
+
+theorem any_loop (values : Slice α) (pred : α → Bool)
+    (body : core.slice.iter.Iter α → Result (ControlFlow (core.slice.iter.Iter α) Bool))
+    (step : ∀ i, body (cursor values i) = .ok
+      (if h : i < values.val.length then
+        if pred values.val[i] then .done true else .cont (cursor values (i+1))
+       else .done false)) (index : Nat) :
+    loop body (cursor values index) = .ok ((values.val.drop index).any pred) := by
+  induction remaining : values.val.length - index using Nat.strong_induction_on generalizing index with
+  | h remaining ih =>
+    rw [loop, step]
+    by_cases inside : index < values.val.length
+    · simp only [inside, ↓reduceDIte]
+      rw [List.drop_eq_getElem_cons inside]
+      cases hit : pred values.val[index] with
+      | true => simp only [List.any_cons, hit, Bool.true_or, ↓reduceIte, bind_ok]
+      | false =>
+        have later := ih (values.val.length - (index+1)) (by omega) (index+1) rfl
+        simp only [List.any_cons, hit, Bool.false_or, Bool.false_eq_true, ↓reduceIte, bind_ok, later]
+    · simp [inside, List.drop_eq_nil_of_le (by omega : values.val.length ≤ index)]
+
+theorem session_eq (a b : SessionId) :
+    SessionId.Insts.CoreCmpPartialEqSessionId.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem enum_next_none (values : Slice α) (index : Usize) (bound : values.val.length ≤ index.val) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter α) (enumCursor values index) =
+      .ok (none, enumCursor values index) := by
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, enumCursor, Slice.len, Nat.not_lt.mpr bound]
+
+theorem enum_next_some (values : Slice α) (index next : Usize)
+    (bound : index.val < values.val.length) (added : next.val = index.val + 1) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter α) (enumCursor values index) =
+      .ok (some (index, values.val[index.val]), enumCursor values next) := by
+  have add : ((index + 1#usize) : Result Usize) = .ok next := by
+    obtain ⟨v, hv, post⟩ := (WP.spec_equiv_exists _ _).mp
+      (Usize.add_bv_spec (x := index) (y := 1#usize) (by scalar_tac))
+    have same : v = next := by scalar_tac
+    simpa [same] using hv
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, enumCursor, Slice.len, bound, add, added]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.any_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.session_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.enum_next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.enum_next_some

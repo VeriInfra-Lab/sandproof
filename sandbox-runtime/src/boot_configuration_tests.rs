@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 fn config(networked: bool) -> RuntimeConfig {
     RuntimeConfig {
+        guest_instance_id: "guest-instance".into(),
         console_policy: None,
         host_slot: None,
         jailer: "/fixed/jailer".into(),

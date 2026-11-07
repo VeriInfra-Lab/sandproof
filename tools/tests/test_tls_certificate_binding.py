@@ -8,7 +8,9 @@ import unittest
 
 from tools import check_tls_certificate_binding as binding
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class TlsCertificateBindingTests(unittest.TestCase):
