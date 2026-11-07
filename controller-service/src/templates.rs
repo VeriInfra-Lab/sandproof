@@ -172,8 +172,14 @@ impl TemplateBinding {
             && !self.envd_version.is_empty()
             && self.envd_version.len() <= 64
             && !self.envd_version.contains('\0')
-            && self.guest.as_ref().is_none_or(TemplateGuest::is_valid)
-            && self.startup.as_ref().is_none_or(TemplateStartup::is_valid)
+            && match self.guest.as_ref() {
+                Some(guest) => guest.is_valid(),
+                None => true,
+            }
+            && match self.startup.as_ref() {
+                Some(startup) => startup.is_valid(),
+                None => true,
+            }
     }
 }
 
