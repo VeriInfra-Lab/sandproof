@@ -20,7 +20,8 @@ theorem actual_full_write_read_contract :
   simp only [updateExpected, bind_assoc_eq]
   apply congrArg (fun continuation =>
     Bind.bind (raw.conn.step raw.conn.current updateSql bytes digest) continuation)
-  rintro ⟨reply, view⟩
+  funext outcome
+  rcases outcome with ⟨reply, view⟩
   cases reply with
   | Err error =>
     simp [core.result.Result.Insts.CoreOpsTry.branch,

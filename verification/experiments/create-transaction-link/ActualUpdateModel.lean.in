@@ -28,10 +28,11 @@ theorem actual_update_model (effects : Record) (raw : RawTransaction)
   unfold controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update updateExpected
   simp only [controller.transaction.WorldTransaction.execute_inbox_update, present,
     controller.transaction.sqlite_io.execute_blobs, SandproofSqliteSession.executeBlobs,
-    bind_assoc_eq, bind_tc_ok]
+    bind_assoc_eq]
   apply congrArg (fun continuation =>
     Bind.bind (raw.conn.step raw.conn.current statement bytes digest) continuation)
-  rintro ⟨reply, view⟩
+  funext outcome
+  rcases outcome with ⟨reply, view⟩
   cases reply <;>
     simp [core.result.Result.Insts.CoreOpsTry.branch,
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
