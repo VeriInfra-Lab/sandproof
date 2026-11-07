@@ -11,9 +11,9 @@
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
-    "tools/proof_batch.py": "8f4b894a7d570aab7c51a1609632b2b262821f4070bc44f4b43adae872707af1",
+    "tools/proof_batch.py": "9244aa95ae73001e293dcfcc1eb78328dcbba8c6d1f3007f5cc1d277f7e59930",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
@@ -37,7 +37,7 @@
   },
   "drivers": {
     "prepare.py": "15fc0b033c566f27ddb3abd63496f92d2e62132d82f1e88fb2b6faa72a17b44e",
-    "formal.py": "7af167f171d4e7c4284a3b891e1d7dc45596c1a15b710b89dd36e28d508333ee",
+    "formal.py": "f4f51a353df456a35e5d0459aa16b53fba8c17a96c72651810ee6cb16b09574f",
     "capture.py": "8cab6a806c2e22de6984df4b8509a5c8fb86d18986a231674ee5ac5793d880ef",
     "support.py": "5168a8d04f525202395346f4707cc87de6ca199b6a37d4438c2c1507e2e97a9f",
     "lakefile.toml.in": "737fcc1d51bf7792ea5292ac545d489719952f517bc6930fa7ae535cc2831b42"

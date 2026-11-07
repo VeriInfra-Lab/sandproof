@@ -60,8 +60,8 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 164)
-            self.assertEqual(len(registered.native_labels()), 74)
+            self.assertEqual(len(full), 165)
+            self.assertEqual(len(registered.native_labels()), 75)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -520,8 +520,8 @@ class Registration(OriginalReadPlanFixture):
                 registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
 
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 74)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 74)
+        self.assertEqual(len(registered.NATIVE_CASES), 75)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 75)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -547,13 +547,13 @@ class Registration(OriginalReadPlanFixture):
             'first-chain-linux', 'first-chain', 'storage', 'schema-domains', 'loop-callbacks',
             'sqlite-statements', 'child-observation', 'callback-state', 'bounded-writer',
             'btree-set-binding', 'protected-directory', 'tokio-mutex', 'capture-caller',
-            'pause-publication', 'pause-stop', 'pause-dispatch', 'pause-receipt', 'stage1-protocol'))
+            'pause-publication', 'pause-stop', 'pause-dispatch', 'pause-receipt', 'source-live', 'stage1-protocol'))
         self.assertNotIn('component.py', {Path(j['driver']).name for j in registered.formal_plan(Path('/unused'))})
 
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 164)
+        self.assertEqual(len(jobs), 165)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',

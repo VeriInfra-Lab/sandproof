@@ -71,6 +71,12 @@ def run(root, output, lock_path, lock_fd=None):
                     if message.startswith('Checked '):
                         print(message, flush=True)
                 entry['service_stdout_sha256'] = support.sha(stream)
+                physical, = (project / 'artifacts').glob('physical-service-*')
+                physical.rename(project / 'artifacts/physical-files')
+                for index, name in enumerate(entry['files']):
+                    command(project, 'kernel-' + str(index), ['lake', 'env', 'lean', name])
+                entry['actual'] = dict(files=entry['inputs'], audits=entry['audits'],
+                    service_log_sha256=support.sha(project / 'artifacts/physical-files/service.log'))
                 support.require(all(support.sha(project / p) == h for p, h in entry['inputs'].items()),
                                 'actual proof files changed during checking')
             base = support.module('source_live_postguard_snapshot', root /

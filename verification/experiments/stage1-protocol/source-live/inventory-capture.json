@@ -16,7 +16,7 @@
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/inbox-load/admission.py": "e32f33a57a2e8a30312bf7877b61a1fe5a77df23db1b58aecc3833568bc12639",
-    "tools/proof_batch.py": "8f4b894a7d570aab7c51a1609632b2b262821f4070bc44f4b43adae872707af1",
+    "tools/proof_batch.py": "9244aa95ae73001e293dcfcc1eb78328dcbba8c6d1f3007f5cc1d277f7e59930",
     "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec"
   },
   "drivers": {

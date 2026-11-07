@@ -175,6 +175,9 @@ def run_locked_suite(output, *, scope='all'):
     if scope in ('stage1-protocol', 'stage1-create-delivery', 'stage1-protocol-convergence'):
         run_stage1_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'stage1-source-live':
+        run_source_live_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     if scope == 'capture-caller':
         run_capture_caller_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
@@ -321,6 +324,14 @@ def run_pause_receipt_native(work, *, scope='all'):
     native_case('pause-receipt', ROOT, target, original_component, scope=scope)
 
 
+def run_source_live_native(work, *, scope='all'):
+    target = work / 'source-live'
+    def original_component():
+        subprocess.run([sys.executable, 'tools/check_source_live_components.py',
+                        'native', '--output', str(target)], cwd=ROOT, check=True)
+    native_case('source-live', ROOT, target, original_component, scope=scope)
+
+
 def run_stage1_native(work, *, scope='all'):
     target = work / 'stage1-protocol'
     def retained():
@@ -407,7 +418,7 @@ def main(argv=None):
     run.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     registered = load('stage1_registered_components',
                       ROOT / 'verification/experiments/stage1-protocol/registered.py')
-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','pause-receipt','stage1-protocol', *registered.native_labels()])
+    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','pause-receipt','source-live','stage1-protocol', *registered.native_labels()])
     req.add_argument('--scope', choices=NATIVE_SCOPES, default='all')
     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)

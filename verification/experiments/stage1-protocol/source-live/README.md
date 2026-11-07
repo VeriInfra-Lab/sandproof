@@ -63,8 +63,9 @@ ning 运行原版、三错和实际恢复的五个新 target，同一11项断言
 SANDPROOF_ACCEPTANCE_ROLE=native bash scripts/python-entry.sh verification/experiments/stage1-protocol/source-live/native.py --output artifacts/source-live-native
 ```
 
-组件不运行共享完整 functional，也不签署 ning 或公共父范围收据。公共 Lake/根导入、
-native case、正式 profile、根冻结和覆盖记录由主控统一采用；登记建议见
-[候选登记](registration-candidate.json)。verify-stage1-protocol.sh 未因本包源码存在
-就自动覆盖它，不能跑旧根后报告本包通过。整个 V3 的原18要求/49义务及五组剩余
+组件不运行共享完整 functional，也不签署 ning 或公共父范围收据。公共 Lake/正确根、native case、正式模块及原 V3 全清单已接线；
+有限原生入口为 `tools/proof_native_suite.py run --scope stage1-source-live`，形式入口为
+`scripts/verify-source-live.sh`。当前候选的实际验收及未覆盖范围见覆盖记录；原始登记边界见
+[候选登记](registration-candidate.json)。原 V3 默认完整入口已额外登记本包；
+本批只运行固定有限范围，不能以旧根或其它范围的结果报告本包通过。整个 V3 的原18要求/49义务及五组剩余
 业务连接保持开放。

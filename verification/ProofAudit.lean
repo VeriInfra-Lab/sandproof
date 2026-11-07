@@ -45,3 +45,6 @@ this check.  This inventory certifies the listed proofs, not missing inputs. -/
 #audit_controller_proof SandboxModel.workflowRank_cleanupEffectReceipt_strict
 #audit_controller_proof SandboxModel.handleEffectReceipt_cleanup_progress
 #audit_controller_proof SandboxModel.cleanupReceiptEvent_rank_strict
+
+import SandboxModel.Lifecycle.Protocol.SourceLive.Witnesses
+import SandboxModel.Lifecycle.Protocol.SourceLive.Counterexamples
