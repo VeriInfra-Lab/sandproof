@@ -130,7 +130,7 @@ impl TemplateStartup {
                 .iter()
                 .map(|(key, value)| key.len() + value.len())
                 .sum::<usize>()
-                + self.argv.iter().map(String::len).sum::<usize>()
+                + self.argv.iter().map(|arg| arg.len()).sum::<usize>()
                 <= 32 * 1024
     }
 }
