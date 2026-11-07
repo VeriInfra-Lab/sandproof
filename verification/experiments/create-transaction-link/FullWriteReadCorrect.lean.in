@@ -27,8 +27,9 @@ theorem actual_full_write_read_contract :
     simp [core.result.Result.Insts.CoreOpsTry.branch,
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
   | Ok count =>
-    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
-    rw [actual_select_model (post effects raw view)
+    dsimp only
+    simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+    erw [actual_select_model (post effects raw view)
       { raw with conn := { raw.conn with current := view } } rfl]
     simp only [readExpected, bind_assoc_eq]
     apply congrArg (fun continuation => Bind.bind (select view) continuation)
