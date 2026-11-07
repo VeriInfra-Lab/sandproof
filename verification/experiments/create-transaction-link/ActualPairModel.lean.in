@@ -47,8 +47,7 @@ theorem actual_pair_model (row : SandproofSqliteSession.Row) :
     apply congrArg (fun continuation => Bind.bind (column row 1#usize) continuation)
     funext second
     cases second <;>
-      simp [core.result.Result.Insts.CoreOpsTry.branch,
-        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
 
 end
 end SandboxModel.CreateTransactionLink.FullWriteRead
