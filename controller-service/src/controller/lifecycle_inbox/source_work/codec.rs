@@ -124,6 +124,26 @@ pub(super) fn load(connection: &Connection) -> Result<Option<Sources>, JournalEr
     }))
 }
 
+type SourceRecordRow = (Vec<u8>, Vec<u8>, Option<Vec<u8>>);
+
+fn decode_record_row(
+    row: rusqlite::Result<SourceRecordRow>,
+) -> Result<Option<SourceWorkRecord>, JournalError> {
+    let (bytes, sha, key) = row?;
+    let record: Option<SourceWorkRecord> = checked(&bytes, &sha)?;
+    match (record, key) {
+        (None, None) => Ok(None),
+        (Some(record), Some(key))
+            if key.as_slice() == record.work.requirement.work_binding.as_bytes()
+                && record.work.requirement.work_binding
+                    == super::digest(&serde_json::to_vec(&record.work.anchor)?) =>
+        {
+            Ok(Some(record))
+        }
+        _ => Err(JournalError::CorruptStore),
+    }
+}
+
 fn load_records(
     connection: &Connection,
     config: &Configuration,
@@ -144,6 +164,7 @@ fn load_records(
         "SELECT state_json,sha256,work_key FROM controller_source_work_records ORDER BY id",
     )?;
     let mut records = Vec::new();
+    let mut row_error = None;
     for row in statement.query_map([], |row| {
         Ok((
             row.get::<_, Vec<u8>>(0)?,
@@ -151,19 +172,17 @@ fn load_records(
             row.get::<_, Option<Vec<u8>>>(2)?,
         ))
     })? {
-        let (bytes, sha, key) = row?;
-        let record: Option<SourceWorkRecord> = checked(&bytes, &sha)?;
-        match (record, key) {
-            (None, None) => (),
-            (Some(record), Some(key))
-                if key.as_slice() == record.work.requirement.work_binding.as_bytes()
-                    && record.work.requirement.work_binding
-                        == super::digest(&serde_json::to_vec(&record.work.anchor)?) =>
-            {
-                records.push(record);
+        match decode_record_row(row) {
+            Ok(None) => (),
+            Ok(Some(record)) => records.push(record),
+            Err(error) => {
+                row_error = Some(error);
+                break;
             }
-            _ => return Err(JournalError::CorruptStore),
         }
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     Ok(records)
 }
