@@ -118,8 +118,8 @@ pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
         return Ok(None);
     };
     let sources = codec::load(connection)?.ok_or(JournalError::CorruptStore)?;
-    let record = first_record_for_key(&sources.records, identity.key)
-        .ok_or(JournalError::CorruptStore)?;
+    let record =
+        first_record_for_key(&sources.records, identity.key).ok_or(JournalError::CorruptStore)?;
     if record.work.anchor.local != local {
         return Err(JournalError::CorruptStore);
     }
@@ -212,8 +212,8 @@ fn action_record<'a>(
     ) {
         return Ok(None);
     }
-    let record = first_record_for_key(&sources.records, origin)
-        .ok_or(JournalError::CorruptStore)?;
+    let record =
+        first_record_for_key(&sources.records, origin).ok_or(JournalError::CorruptStore)?;
     let question = work(record, world)?.ok_or(JournalError::CorruptStore)?;
     if logical.current_attempt != action.command.attempt
         || action.identity.owner != identity::owner_id(record.work.anchor.local.owner)?
