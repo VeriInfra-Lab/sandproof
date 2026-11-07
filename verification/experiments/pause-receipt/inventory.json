@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "namespace": "SandboxModel.Lifecycle.PauseReceipt",
+  "proofs": {
+    "SandboxModel/Lifecycle/PauseReceipt/Conditions.lean": [],
+    "SandboxModel/Lifecycle/PauseReceipt/Model.lean": [],
+    "SandboxModel/Lifecycle/PauseReceipt/Observations.lean": [
+      "SandboxModel.Lifecycle.PauseReceipt.publication_command",
+      "SandboxModel.Lifecycle.PauseReceipt.vm_get_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.snapshot_get_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.stop_result_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.commit_result_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.observed_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.observed_true_iff",
+      "SandboxModel.Lifecycle.PauseReceipt.outcome_valid_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.outcome_eq_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.outcome_ne_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.released_execution_is_not_commit",
+      "SandboxModel.Lifecycle.PauseReceipt.effect_get_exact"
+    ],
+    "SandboxModel/Lifecycle/PauseReceipt/Admission.lean": [
+      "SandboxModel.Lifecycle.PauseReceipt.receipt_route",
+      "SandboxModel.Lifecycle.PauseReceipt.finish_first_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.finish_replay_exact",
+      "SandboxModel.Lifecycle.PauseReceipt.first_check",
+      "SandboxModel.Lifecycle.PauseReceipt.first_route",
+      "SandboxModel.Lifecycle.PauseReceipt.first_acceptance_facts",
+      "SandboxModel.Lifecycle.PauseReceipt.same_property_accepts",
+      "SandboxModel.Lifecycle.PauseReceipt.first_success_observes_result",
+      "SandboxModel.Lifecycle.PauseReceipt.first_failure_observes_absence",
+      "SandboxModel.Lifecycle.PauseReceipt.first_receipt_frame",
+      "SandboxModel.Lifecycle.PauseReceipt.identical_replay",
+      "SandboxModel.Lifecycle.PauseReceipt.conflicting_replay",
+      "SandboxModel.Lifecycle.PauseReceipt.missing_effect_rejects",
+      "SandboxModel.Lifecycle.PauseReceipt.undispatched_committed_rejects",
+      "SandboxModel.Lifecycle.PauseReceipt.retired_stop_rejects",
+      "SandboxModel.Lifecycle.PauseReceipt.retired_capture_end_rejects",
+      "SandboxModel.Lifecycle.PauseReceipt.retired_capture_drain_rejects",
+      "SandboxModel.Lifecycle.PauseReceipt.first_stale_current_check_unchanged",
+      "SandboxModel.Lifecycle.PauseReceipt.first_failure_preserves_logical",
+      "SandboxModel.Lifecycle.PauseReceipt.wrap_first_ack"
+    ],
+    "SandboxModel/Lifecycle/PauseReceipt/Acceptance.lean": [
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.stop_observed",
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.commit_observed",
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.stop_first_unresolved",
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.commit_lookup",
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.after_stop_ack_commit_ready",
+      "SandboxModel.Lifecycle.PauseReceipt.Acceptance.fresh_commit_dispatch_stop_receipts_publish"
+    ]
+  },
+  "required_theorems": [
+    "SandboxModel.Lifecycle.PauseReceipt.Acceptance.fresh_commit_dispatch_stop_receipts_publish",
+    "SandboxModel.Lifecycle.PauseReceipt.conflicting_replay",
+    "SandboxModel.Lifecycle.PauseReceipt.first_acceptance_facts",
+    "SandboxModel.Lifecycle.PauseReceipt.first_failure_observes_absence",
+    "SandboxModel.Lifecycle.PauseReceipt.first_failure_preserves_logical",
+    "SandboxModel.Lifecycle.PauseReceipt.first_receipt_frame",
+    "SandboxModel.Lifecycle.PauseReceipt.first_stale_current_check_unchanged",
+    "SandboxModel.Lifecycle.PauseReceipt.first_success_observes_result",
+    "SandboxModel.Lifecycle.PauseReceipt.identical_replay",
+    "SandboxModel.Lifecycle.PauseReceipt.missing_effect_rejects",
+    "SandboxModel.Lifecycle.PauseReceipt.retired_capture_drain_rejects",
+    "SandboxModel.Lifecycle.PauseReceipt.retired_capture_end_rejects",
+    "SandboxModel.Lifecycle.PauseReceipt.retired_stop_rejects",
+    "SandboxModel.Lifecycle.PauseReceipt.same_property_accepts",
+    "SandboxModel.Lifecycle.PauseReceipt.undispatched_committed_rejects"
+  ],
+  "wrong": {
+    "templates": {
+      "SandboxModel/Lifecycle/PauseReceipt/WrongOutcome.lean": "verification/experiments/pause-receipt/model/WrongOutcome.lean.in",
+      "SandboxModel/Lifecycle/PauseReceipt/WrongAudit.lean": "verification/experiments/pause-receipt/model/WrongAudit.lean.in"
+    },
+    "proofs": {
+      "verification/experiments/pause-receipt/model/WrongOutcome.lean.in": [
+        "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.first_receipt",
+        "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.no_success_evidence",
+        "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.actual_wrong_accepts",
+        "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.same_property_rejects"
+      ],
+      "verification/experiments/pause-receipt/model/WrongAudit.lean.in": []
+    },
+    "required_theorems": [
+      "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.actual_wrong_accepts",
+      "SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.same_property_rejects"
+    ]
+  }
+}

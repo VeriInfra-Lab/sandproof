@@ -1,0 +1,89 @@
+-- Checked only in the independently captured wrong project;
+-- this file must never share an import graph with the correct Admission proof.
+import SandboxModel.Lifecycle.PauseReceipt.Model
+import SandboxModel.Lifecycle.PauseDispatch.Acceptance
+
+namespace SandboxModel.Lifecycle.PauseReceipt.WrongOutcome
+open Aeneas Aeneas.Std CaptureCallerRust SandboxModel.Foundations
+open CaptureCallerRust.sandbox_controller_core
+open SandboxModel.Lifecycle.CaptureHandoffCaller
+open SandboxModel.Lifecycle.PauseReceipt
+
+def command : model.Command := SandboxModel.Lifecycle.PauseDispatch.Acceptance.command
+def id : model.EffectId := SandboxModel.Lifecycle.PauseDispatch.Acceptance.id
+def stored : model.LogicalEffectRecord := SandboxModel.Lifecycle.PauseDispatch.Acceptance.logicalRecord
+
+-- The VM remains Frozen. Only the effect bookkeeping is reduced to one row.
+def world : model.World :=
+  { SandboxModel.Lifecycle.PauseDispatch.Acceptance.world with
+    effects := SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry id .Dispatched
+    logical_effects := SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry id.logical stored
+    effect_keys := SandboxModel.Lifecycle.PauseDispatch.Acceptance.one id }
+
+theorem first_receipt : FirstPauseReceipt world id := by
+  classical
+  constructor
+  · exact PauseCommand.stop _ _ _ _
+  · left
+    simp [world,id,tableLookup,
+      SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry,
+      SandboxModel.Lifecycle.PauseDispatch.Acceptance.one]
+
+theorem no_success_evidence : ¬ expectedOutcome world id (.Succeeded 12#u64) := by
+  classical
+  simp [expectedOutcome,outcomeMatches,observed,stopObserved,world,id,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.id,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.command,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.world,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.vm,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.one,tableLookup]
+
+theorem actual_wrong_accepts :
+    ∃ decision, actualAccepts world id (.Succeeded 12#u64) decision := by
+  classical
+  have logicalRead := SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry_get
+    model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId id.logical stored
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.logical_same
+  have statusRead := SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry_get
+    model.EffectId.Insts.CoreCmpPartialEqEffectId id model.EffectStatus.Dispatched
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.id_same
+  have read : store.Store.get model.LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId
+      world.logical_effects ⟨command⟩ = .ok (some stored) := by
+    exact logicalRead
+  have capacity : TableWriteCapacity world.effects.entries.val id := by
+    left
+    simp [world,tableLookup,SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry,
+      SandboxModel.Lifecycle.PauseDispatch.Acceptance.one]
+  have indexed : id ∈ world.effect_keys.val := by
+    simp [world,SandboxModel.Lifecycle.PauseDispatch.Acceptance.one]
+  obtain ⟨next,ack,_check⟩ := SandboxModel.Lifecycle.PauseDispatch.acknowledge_current_accepts
+    world command (.stop _ _ _ _) 0#u64 12#u64 stored read (by rfl) capacity indexed
+  have acknowledged : effect.acknowledge_effect world id (.Succeeded 12#u64) = .ok next := ack
+  have gate : effect.receipt_awaiting_result world id (.Succeeded 12#u64) = .ok (.Ok true) := by
+    simp only [effect.receipt_awaiting_result,
+      show world.effects = SandboxModel.Lifecycle.PauseDispatch.Acceptance.entry id .Dispatched from rfl,
+      statusRead,bind_tc_ok]
+  have finished : effect.receipt_finish world id (.Succeeded 12#u64) true =
+      .ok (.Ok ⟨.AcknowledgeEffect id (.Succeeded 12#u64),next⟩) := by
+    simp [effect.receipt_finish,model_EffectId_clone_exact,acknowledged]
+  refine ⟨⟨.AcknowledgeEffect id (.Succeeded 12#u64),next⟩,?_⟩
+  -- The following reduction is intentionally tied to the real wrong capture:
+  -- Succeeded bypasses effect_outcome_valid, even for the first receipt.
+  simp only [actualAccepts,effect.receipt_pause,model.EffectId.command,
+    id,SandboxModel.Lifecycle.PauseDispatch.Acceptance.id,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.command,bind_tc_ok]
+  simp only [id,SandboxModel.Lifecycle.PauseDispatch.Acceptance.id,
+    SandboxModel.Lifecycle.PauseDispatch.Acceptance.command] at gate finished
+  rw [gate]
+  simp only [bind_tc_ok,model_EffectId_clone_exact]
+  rw [finished]
+  simp only [bind_tc_ok]
+
+theorem same_property_rejects :
+    ¬ RequiresOutcomeEvidence FirstPauseReceipt actualAccepts expectedOutcome := by
+  intro safe
+  obtain ⟨decision,accepted⟩ := actual_wrong_accepts
+  exact no_success_evidence (safe world id (.Succeeded 12#u64) decision first_receipt accepted)
+
+end SandboxModel.Lifecycle.PauseReceipt.WrongOutcome

@@ -547,7 +547,7 @@ class Registration(OriginalReadPlanFixture):
             'first-chain-linux', 'first-chain', 'storage', 'schema-domains', 'loop-callbacks',
             'sqlite-statements', 'child-observation', 'callback-state', 'bounded-writer',
             'btree-set-binding', 'protected-directory', 'tokio-mutex', 'capture-caller',
-            'pause-publication', 'pause-stop', 'pause-dispatch', 'stage1-protocol'))
+            'pause-publication', 'pause-stop', 'pause-dispatch', 'pause-receipt', 'stage1-protocol'))
         self.assertNotIn('component.py', {Path(j['driver']).name for j in registered.formal_plan(Path('/unused'))})
 
     def test_full_independent_positive_and_negative_schedule(self):
