@@ -24,6 +24,10 @@ pub(super) trait RecordEffects: InboxLoadEffects + InboxSaveEffects {
     fn current_operation(&mut self, sandbox: core::SandboxId) -> Option<core::OperationId>;
 }
 
+pub(super) trait RecordTransaction: RecordEffects {
+    fn commit(self) -> Result<(), JournalError>;
+}
+
 pub(super) fn record_using<
     R: RetirementEncoding,
     T: TerminalEncoding,
@@ -47,6 +51,33 @@ pub(super) fn record_using<
     attach_destroy(effects, &mut inbox, intent, s, e)?;
     codec::save_using::<R, T, N, U, B, E>(&inbox, effects)?;
     Ok(RecordOutcome::Recorded(inbox.state(s, e)))
+}
+
+// One owner carries the original transaction through recording and commit.
+// Replay and every early error drop that same owner; only commit consumes it.
+pub(super) fn record_transaction_using<
+    R: RetirementEncoding,
+    T: TerminalEncoding,
+    N: RenewalEncoding,
+    U: UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: RecordTransaction,
+    C: CrashInjector,
+>(
+    mut transaction: E,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+    crashes: &mut C,
+) -> Result<LifecycleWorkState, JournalError> {
+    let outcome = record_using::<R, T, N, U, B, E>(&mut transaction, intent, context)?;
+    let state = match outcome {
+        RecordOutcome::Replay(state) => return Ok(state),
+        RecordOutcome::Recorded(state) => state,
+    };
+    crashes.hit(CrashPoint::BeforeCommit)?;
+    transaction.commit()?;
+    crashes.hit(CrashPoint::AfterCommit)?;
+    Ok(state)
 }
 
 fn guard_destroy<E: RecordEffects>(
@@ -193,5 +224,11 @@ impl RecordEffects for StandardRecord<'_, '_> {
             .sandbox_record(sandbox)
             .and_then(|record| record.current_operation)
             .map(|operation| operation.id)
+    }
+}
+
+impl RecordTransaction for StandardRecord<'_, '_> {
+    fn commit(self) -> Result<(), JournalError> {
+        self.tx.commit()
     }
 }
