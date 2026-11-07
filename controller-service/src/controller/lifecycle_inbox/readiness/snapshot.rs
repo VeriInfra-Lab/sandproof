@@ -192,7 +192,13 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     let Some(found) = found.into_iter().collect::<Option<Vec<_>>>() else {
         return Err(JournalError::UnresolvedAction);
     };
-    Ok(found.into_iter().unzip())
+    let mut actions = Vec::new();
+    let mut receipts = Vec::new();
+    for (action, receipt) in found {
+        actions.push(action);
+        receipts.push(receipt);
+    }
+    Ok((actions, receipts))
 }
 
 pub(in crate::controller) fn native_snapshot(
