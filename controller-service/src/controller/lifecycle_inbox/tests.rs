@@ -46,6 +46,31 @@ struct RecordCodecProbe {
     fail_at: Option<usize>,
 }
 impl RecordCodecProbe {
+    fn assert_trace(&self, original: &[u8], maintenance: &[u8]) {
+        let expected_calls = self.fail_at.unwrap_or(5);
+        assert_eq!(self.calls.len(), expected_calls);
+        assert_eq!(self.token, 41 + 7 * u64::try_from(expected_calls).unwrap());
+        let order: Vec<_> = self.calls.iter().map(|(kind, _)| *kind).collect();
+        assert_eq!(
+            order,
+            [
+                "maintenance",
+                "decode-inbox",
+                "encode",
+                "maintenance",
+                "encode"
+            ][..expected_calls]
+        );
+        // Capacity and the later load policy each decode the complete original config.
+        for ((_, actual), expected) in
+            self.calls
+                .iter()
+                .zip([maintenance, original, original, maintenance])
+        {
+            assert_eq!(actual, expected);
+        }
+    }
+
     fn observe(
         &mut self,
         connection: &rusqlite::Connection,
@@ -140,32 +165,7 @@ fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connecti
             crate::capture::StandardGraphicBytes,
             _,
         >(&mut effects, &create("alpha", "codec-session"), &context());
-        let expected_calls = fail_at.unwrap_or(5);
-        assert_eq!(effects.codec.calls.len(), expected_calls);
-        assert_eq!(
-            effects.codec.token,
-            41 + 7 * u64::try_from(expected_calls).unwrap()
-        );
-        let order: Vec<_> = effects.codec.calls.iter().map(|(kind, _)| *kind).collect();
-        assert_eq!(
-            order,
-            [
-                "maintenance",
-                "decode-inbox",
-                "encode",
-                "maintenance",
-                "encode"
-            ][..expected_calls]
-        );
-        // Capacity and the later load policy each decode the complete original config.
-        for ((_, actual), expected) in effects.codec.calls.iter().zip([
-            maintenance.as_slice(),
-            original.as_slice(),
-            original.as_slice(),
-            maintenance.as_slice(),
-        ]) {
-            assert_eq!(actual, expected);
-        }
+        effects.codec.assert_trace(&original, &maintenance);
         let stored = ReadConfigEffects::query_bytes(
             &mut effects,
             "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
