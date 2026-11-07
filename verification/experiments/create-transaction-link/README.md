@@ -3,7 +3,8 @@
 Refs #637。当前仅准备第二道可行性检查，尚未通过普通或形式验收，不是公共证明入口。
 原完整提交闭包的 Charon 类型检查仍有阻断；本候选不能据此声明真实事务链已经闭合。
 
-生产候选保留同一个 `WorldTransaction`，由 `StandardRecord` 可变借用它。
+生产候选把同一个 `WorldTransaction` 移入现有 `StandardRecord`，记录结束后再移出，
+继续执行原重放返回或提交分支。它不复制事务或 World；记录出错时由原事务的 Drop 收尾。
 保存仍执行原编码、完整字节与摘要、原 SQL 和恰好一行检查；只有原 UPDATE 的转交
 经过 `transaction::sqlite_io::execute_blobs`。该函数把原 raw transaction、statement
 和两份完整 BLOB 按原顺序交给真实 SQLite，保留原始行数和错误。

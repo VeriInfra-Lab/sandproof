@@ -84,26 +84,26 @@ fn attach_destroy<E: RecordEffects>(
 }
 
 pub(super) struct StandardRecord<'a, 'journal> {
-    pub(super) tx: &'a mut WorldTransaction<'journal>,
+    pub(super) tx: WorldTransaction<'journal>,
     pub(super) namespace: &'a str,
 }
 
 impl ReadConfigEffects for StandardRecord<'_, '_> {
     fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .query_i64(statement)
     }
     fn query_bytes(&mut self, statement: &str) -> Result<Vec<u8>, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .query_bytes(statement)
     }
     fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<MaintenanceConfig, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .decode_maintenance(bytes)
     }
@@ -112,38 +112,38 @@ impl ReadConfigEffects for StandardRecord<'_, '_> {
 impl InboxLoadEffects for StandardRecord<'_, '_> {
     fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .query_bool(statement)
     }
     fn query_i64_pair(&mut self, statement: &str) -> Result<(i64, i64), JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .query_i64_pair(statement)
     }
     fn query_bytes_pair(&mut self, statement: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .query_bytes_pair(statement)
     }
     fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .decode_inbox(bytes)
     }
     fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
         StandardConfigRead {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .encode_inbox(inbox)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
         InboxLoadEffects::digest(
             &mut StandardConfigRead {
-                connection: self.tx,
+                connection: &self.tx,
             },
             bytes,
         )
@@ -153,14 +153,14 @@ impl InboxLoadEffects for StandardRecord<'_, '_> {
 impl InboxSaveEffects for StandardRecord<'_, '_> {
     fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
         StandardInboxSave {
-            connection: self.tx,
+            connection: &self.tx,
         }
         .encode(inbox)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
         InboxSaveEffects::digest(
             &mut StandardInboxSave {
-                connection: self.tx,
+                connection: &self.tx,
             },
             bytes,
         )
@@ -185,7 +185,7 @@ impl RecordEffects for StandardRecord<'_, '_> {
         })
     }
     fn terminate_local(&mut self, local: InternalLocalBinding) -> Result<(), JournalError> {
-        super::super::internal_inbox::terminate_local(self.tx, self.namespace, local)
+        super::super::internal_inbox::terminate_local(&self.tx, self.namespace, local)
     }
     fn current_operation(&mut self, sandbox: core::SandboxId) -> Option<core::OperationId> {
         self.tx

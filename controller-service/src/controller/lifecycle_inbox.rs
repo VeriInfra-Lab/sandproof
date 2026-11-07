@@ -236,21 +236,20 @@ impl ControllerJournal {
         context: &AuthenticatedCenterContext,
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
-        let mut tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let outcome = {
-            let mut effects = recording::StandardRecord {
-                tx: &mut tx,
-                namespace: &self.namespace,
-            };
-            recording::record_using::<
-                native_retirement::StandardRetirementEncoding,
-                model::StandardTerminalEncoding,
-                renewal_confirmation::StandardRenewalEncoding,
-                unload_resolution::StandardUnloadEncoding,
-                crate::capture::StandardGraphicBytes,
-                _,
-            >(&mut effects, intent, context)?
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let mut effects = recording::StandardRecord {
+            tx,
+            namespace: &self.namespace,
         };
+        let outcome = recording::record_using::<
+            native_retirement::StandardRetirementEncoding,
+            model::StandardTerminalEncoding,
+            renewal_confirmation::StandardRenewalEncoding,
+            unload_resolution::StandardUnloadEncoding,
+            crate::capture::StandardGraphicBytes,
+            _,
+        >(&mut effects, intent, context)?;
+        let tx = effects.tx;
         let state = match outcome {
             recording::RecordOutcome::Replay(state) => return Ok(state),
             recording::RecordOutcome::Recorded(state) => state,
