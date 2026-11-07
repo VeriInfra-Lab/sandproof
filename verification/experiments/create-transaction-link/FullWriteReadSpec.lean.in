@@ -1,0 +1,96 @@
+import V3CreateSqlStep.FunsExternal
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead
+
+abbrev Bytes := Slice U8
+abbrev BlobPair := alloc.vec.Vec U8 × alloc.vec.Vec U8
+abbrev Record := controller.lifecycle_inbox.recording.StandardRecord
+abbrev RawTransaction := rusqlite.transaction.Transaction
+abbrev ProbeReply := core.result.Result (Usize × BlobPair) JournalError
+abbrev Probe := Record → Str → Bytes → Bytes → Result (ProbeReply × Record)
+
+def updateSql : Str := V3CreateSqlStepRust.toStr
+  "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1"
+
+def selectSql : Str := V3CreateSqlStepRust.toStr
+  "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1"
+
+/-- Mathematical library-column observation; no actual owned Rust callback
+is assumed correct or used as the specification of its own result. -/
+def column (row : SandproofSqliteSession.Row) (position : Usize) :
+    Result (SandproofSqliteSession.SqlReply (alloc.vec.Vec U8)) :=
+  SandproofSqliteSession.rowGet SandproofSqliteSession.index
+    SandproofSqliteSession.blobColumn row position
+
+def pair (row : SandproofSqliteSession.Row) :
+    Result (SandproofSqliteSession.SqlReply BlobPair) := do
+  let first ← column row 0#usize
+  match first with
+  | .Err error => .ok (.Err error)
+  | .Ok first =>
+    let second ← column row 1#usize
+    match second with
+    | .Err error => .ok (.Err error)
+    | .Ok second => .ok (.Ok (first, second))
+
+def select (view : SandproofSqliteSession.ReadView) :
+    Result (SandproofSqliteSession.SqlReply BlobPair) :=
+  SandproofSqliteSession.queryRow SandproofSqliteSession.bindUnit
+    (fun (_ : Unit) row => pair row) view.single selectSql () ()
+
+/-- Expected post-value of the actual record, retaining every unrelated field.
+This is not a new World/RawTransaction type or a Rust evaluator. -/
+def post (effects : Record) (raw : RawTransaction)
+    (view : SandproofSqliteSession.ReadView) : Record := {
+  effects with
+  tx := {
+    effects.tx with
+    transaction := some { raw with conn := { raw.conn with current := view } }
+  }
+}
+
+/-- Finite functional specification over the two library observations. Every
+normal count and SQL error is retained, first failure stops, and the SELECT
+uses only the view returned by this UPDATE. Outer failure/divergence propagate.
+Returning a post-value on SQL Err grants no SQL liveness or physical frame. -/
+def expected (effects : Record) (raw : RawTransaction) (bytes digest : Bytes) :
+    Result (ProbeReply × Record) := do
+  let (written, view) ← raw.conn.step raw.conn.current updateSql bytes digest
+  let after := post effects raw view
+  match written with
+  | .Err error => .ok (.Err (.Sqlite error), after)
+  | .Ok count =>
+    let read ← select view
+    match read with
+    | .Err error => .ok (.Err (.Sqlite error), after)
+    | .Ok blobs => .ok (.Ok (count, blobs), after)
+
+/-- The A4 clause for this exact UPDATE and subsequent successful first row
+of the fixed SELECT. It does not promise either call succeeds. In particular,
+it constrains neither UPDATE Err poststates nor an active SQL T after any Err.
+Same-physical-call binding is an external conformance duty, not a Nat-tag law.
+The caller, not this probe, still owns the production row-count==1 check. -/
+def A4FixedUpdateSelect (connection : SandproofSqliteSession.Connection)
+    (bytes digest : Bytes) : Prop :=
+  ∀ count view,
+    connection.step connection.current updateSql bytes digest = .ok (.Ok count, view) →
+    count.val = 1 →
+    ∀ statement row,
+      view.single.expectedRow selectSql statement = .ok (.Ok row) →
+      row.statement.columns.val = 2 ∧
+      row.column 0#usize = .Blob bytes ∧ row.column 1#usize = .Blob digest
+
+/-- One non-vacuous complete-outcome property for correct and actual wrong
+Rust entrypoints. Success is required when the selected primitive observations
+succeed; merely returning Err cannot satisfy this contract. Full new-byte
+contents at count==1 must then be derived from the A4 clause above. -/
+def FullWriteReadContract (run : Probe) : Prop :=
+  ∀ effects raw bytes digest,
+    effects.tx.transaction = some raw →
+    A4FixedUpdateSelect raw.conn bytes digest →
+    run effects updateSql bytes digest = expected effects raw bytes digest
+
+end SandboxModel.CreateTransactionLink.FullWriteRead

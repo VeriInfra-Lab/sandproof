@@ -1,6 +1,7 @@
 // Extraction-only forwarding probe. It exercises the actual StandardRecord
 // methods and their returned owner; it is not the production recording chain.
-#[expect(dead_code, reason = "selected by fixed Charon")]
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+#[cfg_attr(test, allow(dead_code, reason = "isolated native probe alternatives"))]
 fn proof_record_update_then_read(
     effects: &mut recording::StandardRecord<'_, '_>,
     statement: &str,
@@ -12,5 +13,23 @@ fn proof_record_update_then_read(
         effects,
         "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1",
     )?;
+    Ok((count, pair))
+}
+
+// Deliberately wrong extraction-only sibling. The native negative uses the
+// same full write/read assertion; production code never calls this function.
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon for the negative"))]
+#[cfg_attr(test, allow(dead_code, reason = "isolated native probe alternatives"))]
+fn proof_record_read_then_update(
+    effects: &mut recording::StandardRecord<'_, '_>,
+    statement: &str,
+    bytes: &[u8],
+    digest: &[u8],
+) -> Result<(usize, (Vec<u8>, Vec<u8>)), JournalError> {
+    let pair = codec::InboxLoadEffects::query_bytes_pair(
+        effects,
+        "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1",
+    )?;
+    let count = codec::InboxSaveEffects::update(effects, statement, bytes, digest)?;
     Ok((count, pair))
 }

@@ -1,0 +1,88 @@
+import SandboxModel.CreateTransactionLink.FullWriteReadSpec
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead.Witness
+noncomputable section
+
+/-! One finite normal SQLite observation instance, not a SQL interpreter or
+an implementation of arbitrary calls. The selected digest has the schema's
+32-byte size. No query_map/default trace selection is provided or consumed.
+An arbitrary actual seed retains every business/World field; only the raw
+transaction's finite library observations are selected for this instance. -/
+
+def oldBytes : Bytes :=
+  (alloc.vec.Vec.from [34#u8, 111#u8, 108#u8, 100#u8, 34#u8]
+    (by simp; scalar_tac)).1
+
+def newBytes : Bytes :=
+  (alloc.vec.Vec.from [34#u8, 110#u8, 101#u8, 119#u8, 34#u8]
+    (by simp; scalar_tac)).1
+
+def oldDigest : Bytes :=
+  (alloc.vec.Vec.from (List.replicate 32 17#u8) (by simp; scalar_tac)).1
+
+def newDigest : Bytes :=
+  (alloc.vec.Vec.from (List.replicate 32 29#u8) (by simp; scalar_tac)).1
+
+def view (bytes digest : Bytes) : SandproofSqliteSession.ReadView := {
+  single := {
+    canonical := {
+      identity := 0
+      prepare := fun _ => .ok (.Ok 0)
+      countError := fun _ _ => ⟨1⟩
+      run := fun _ _ => .ok (.Err ⟨1⟩)
+    }
+    statementObject := fun _ => 0
+    columns := fun _ => 2#usize
+    invalidIndex := fun _ _ => ⟨1⟩
+    expectedRow := fun _ statement =>
+      if statement.columns.val = 2 then .ok (.Ok {
+        object := 0
+        statement := statement
+        column := fun position =>
+          if position.val = 0 then .Blob bytes
+          else if position.val = 1 then .Blob digest
+          else .Null
+        conversionError := fun _ _ _ => ⟨1⟩
+      }) else .ok (.Err ⟨1⟩)
+  }
+  scans := fun _ _ => False
+}
+
+def connection : SandproofSqliteSession.Connection := {
+  current := view oldBytes oldDigest
+  step := fun _ _ bytes digest => .ok (.Ok 1#usize, view bytes digest)
+}
+
+def raw : RawTransaction := { conn := connection, drop_behavior := .Rollback }
+
+def effects (seed : Record) : Record := {
+  seed with tx := { seed.tx with transaction := some raw }
+}
+
+theorem coherent : A4FixedUpdateSelect connection newBytes newDigest := by
+  intro count after written _one statement row returned
+  simp only [connection] at written
+  cases written
+  by_cases columns : statement.columns.val = 2
+  · simp [view, columns] at returned
+    cases returned
+    exact ⟨columns, by rfl, by rfl⟩
+  · simp [view, columns] at returned
+
+theorem different_full_bytes :
+    (⟨oldBytes⟩ : alloc.vec.Vec U8) ≠ ⟨newBytes⟩ := by
+  intro equal
+  have values := congrArg (fun value : alloc.vec.Vec U8 => value.val) equal
+  cases values
+
+theorem expected_normal (seed : Record) :
+    expected (effects seed) raw newBytes newDigest =
+      .ok (.Ok (1#usize, (⟨newBytes⟩, ⟨newDigest⟩)),
+        post (effects seed) raw (view newBytes newDigest)) := by
+  rfl
+
+end
+end SandboxModel.CreateTransactionLink.FullWriteRead.Witness

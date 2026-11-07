@@ -1,4 +1,5 @@
 import V3CreateSqlStep.Funs
+import SandboxModel.CreateTransactionLink.ValueTransport
 import SandboxModel.ProofAuditCommand
 
 open Aeneas Aeneas.Std
@@ -27,15 +28,6 @@ def journalReply (reply : SandproofSqliteSession.SqlReply Usize) :
   match reply with
   | .Ok count => .Ok count
   | .Err error => .Err (.Sqlite error)
-
-theorem value_to_shared_roundtrip (value : rusqlite.types.value_ref.ValueRef) :
-    fromSharedValue (toSharedValue value) = value := by
-  cases value <;> rfl
-
-theorem shared_to_value_roundtrip
-    (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
-    toSharedValue (fromSharedValue value) = value := by
-  cases value <;> rfl
 
 /-- A per-operation transition supplied by the SQLite boundary is routed
 through the actual Rust method into its original owner slot. The hypothesis

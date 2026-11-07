@@ -1,0 +1,45 @@
+import SandboxModel.CreateTransactionLink.FullWriteReadWitness
+import SandboxModel.CreateTransactionLink.ActualReadModel
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead
+noncomputable section
+
+/-! This file imports the common library/specification and actual raw Funs,
+not FullWriteReadCorrect or its correctness theorem. The bad function is the
+real Rust read-before-write sibling, independently selected by original Charon.
+No compile failure is used as a counterexample. -/
+
+theorem actual_wrong_normal (seed : Record) :
+    controller.lifecycle_inbox.proof_record_read_then_update
+        (Witness.effects seed) updateSql Witness.newBytes Witness.newDigest =
+      .ok (.Ok (1#usize, (⟨Witness.oldBytes⟩, ⟨Witness.oldDigest⟩)),
+        post (Witness.effects seed) Witness.raw
+          (Witness.view Witness.newBytes Witness.newDigest)) := by
+  rfl
+
+def returnedFirst (outcome : Result (ProbeReply × Record)) :
+    Option (alloc.vec.Vec U8) :=
+  match outcome with
+  | .ok (.Ok (_, blobs), _) => some blobs.1
+  | _ => none
+
+/-- A concrete old/new BLOB observation violates the identical complete
+contract for the actual wrong Rust function, for any retained business seed. -/
+theorem actual_wrong_rejected (seed : Record) :
+    ¬ FullWriteReadContract controller.lifecycle_inbox.proof_record_read_then_update := by
+  intro claimed
+  have agreed := claimed (Witness.effects seed) Witness.raw
+    Witness.newBytes Witness.newDigest rfl Witness.coherent
+  rw [actual_wrong_normal, Witness.expected_normal] at agreed
+  have bytes := congrArg returnedFirst agreed
+  change some (⟨Witness.oldBytes⟩ : alloc.vec.Vec U8) = some ⟨Witness.newBytes⟩ at bytes
+  exact Witness.different_full_bytes (Option.some.inj bytes)
+
+end
+end SandboxModel.CreateTransactionLink.FullWriteRead
+
+#audit_controller_proof SandboxModel.CreateTransactionLink.FullWriteRead.actual_wrong_rejected

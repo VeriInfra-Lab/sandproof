@@ -1,0 +1,17 @@
+import V3CreateSqlStep.FunsExternal
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink
+
+theorem value_to_shared_roundtrip (value : rusqlite.types.value_ref.ValueRef) :
+    fromSharedValue (toSharedValue value) = value := by
+  cases value <;> rfl
+
+theorem shared_to_value_roundtrip
+    (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
+    toSharedValue (fromSharedValue value) = value := by
+  cases value <;> rfl
+
+end SandboxModel.CreateTransactionLink

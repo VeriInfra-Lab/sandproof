@@ -1,0 +1,94 @@
+import SandboxModel.CreateTransactionLink.FullWriteReadSpec
+import SandboxModel.CreateTransactionLink.ValueTransport
+import V3CreateSqlStep.Funs
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead
+noncomputable section
+
+/-- The actual fixed usize/Vec dictionaries implement the mathematical column
+observation, retaining index errors, conversion errors and all borrowed bytes. -/
+theorem actual_column_model (row : SandproofSqliteSession.Row) (position : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql row position =
+      column row position := by
+  have converted :
+      (fun raw =>
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+          (fromSharedValue raw)) = SandproofSqliteSession.blobColumn := by
+    funext raw
+    simp [alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      SandboxModel.CreateTransactionLink.shared_to_value_roundtrip]
+  simp only [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex,
+    Usize.Insts.RusqliteRowRowIndex.idx,
+    alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql, converted, column]
+
+/-- This is the original Rust two-get callback, not an assumed callback
+contract. The independent specification preserves the first column failure. -/
+theorem actual_pair_model (row : SandproofSqliteSession.Row) :
+    controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize =
+      pair row := by
+  simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- Only a pure-value return is described on an SQL Err. It does not carry a
+physical database frame or permission to reuse that connection after error. -/
+def readExpected (effects : Record) (view : SandproofSqliteSession.ReadView) :
+    Result (core.result.Result BlobPair JournalError × Record) := do
+  let read ← select view
+  match read with
+  | .Err error => .ok (.Err (.Sqlite error), effects)
+  | .Ok blobs => .ok (.Ok blobs, effects)
+
+/-- The actual StandardRecord method reads the connection of the actual raw
+transaction in its current slot, with the original SELECT and callback. -/
+theorem actual_select_model (effects : Record) (raw : RawTransaction)
+    (present : effects.tx.transaction = some raw) :
+    controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+        effects selectSql = readExpected effects raw.conn.current := by
+  simp [controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, core.option.Option.expect, Result.ofOption,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
+    rusqlite.Connection.query_row, Tuple.Insts.RusqliteParamsParams,
+    Tuple.Insts.RusqliteParamsParams.__bind_in,
+    controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error,
+    controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once,
+    actual_pair_model, select, readExpected, present,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+
+/-- The independent column specification returns both complete BLOBs under
+the fixed two-column row observation, with no digest/length-only shortcut. -/
+theorem pair_complete (row : SandproofSqliteSession.Row) (bytes digest : Bytes)
+    (columns : row.statement.columns.val = 2)
+    (first : row.column 0#usize = .Blob bytes)
+    (second : row.column 1#usize = .Blob digest) :
+    pair row = .ok (.Ok (⟨bytes⟩, ⟨digest⟩)) := by
+  simp [pair, column, SandproofSqliteSession.rowGet, SandproofSqliteSession.index,
+    SandproofSqliteSession.blobColumn, columns, first, second]
+
+/-- A normal SELECT witness is an additional hypothesis. UPDATE success
+alone never supplies this preparation/first-row witness. -/
+theorem select_complete (view : SandproofSqliteSession.ReadView)
+    (row : SandproofSqliteSession.Row) (bytes digest : Bytes)
+    (prepared : view.single.canonical.prepare selectSql = .ok (.Ok 0))
+    (observed : view.single.expectedRow selectSql
+      (SandproofLoadBlobRust.issuedReadStatement view.single selectSql 0) = .ok (.Ok row))
+    (columns : row.statement.columns.val = 2)
+    (first : row.column 0#usize = .Blob bytes)
+    (second : row.column 1#usize = .Blob digest) :
+    select view = .ok (.Ok (⟨bytes⟩, ⟨digest⟩)) := by
+  have bound : SandproofSqliteSession.bindUnit ()
+      (SandproofLoadBlobRust.issuedReadStatement view.single selectSql 0) =
+      .ok (.Ok (), SandproofLoadBlobRust.issuedReadStatement view.single selectSql 0) := rfl
+  have complete := pair_complete row bytes digest columns first second
+  simp [select, SandproofSqliteSession.queryRow, prepared, bound, observed, complete]
+
+end
+end SandboxModel.CreateTransactionLink.FullWriteRead
