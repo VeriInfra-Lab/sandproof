@@ -6,20 +6,39 @@ use sandbox_controller_core as core;
 use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
 use serde::de::DeserializeOwned;
 
+/// Accumulated observations retain their original order and full identity.
+struct OriginalSourceRows {
+    prepared: Option<SourceProcessIdentity>,
+    activated: Option<SourceProcessIdentity>,
+}
+
+fn decode_original_action(bytes: &[u8]) -> Result<WorkAction<core::EffectId>, serde_json::Error> {
+    serde_json::from_slice(bytes)
+}
+
+fn decode_original_receipt<E: DeserializeOwned>(
+    bytes: &[u8],
+) -> Result<WorkReceipt<E>, serde_json::Error> {
+    serde_json::from_slice(bytes)
+}
+
 fn agree(
-    slot: &mut Option<SourceProcessIdentity>,
+    slot: Option<SourceProcessIdentity>,
     observed: SourceProcessIdentity,
-) -> Result<(), JournalError> {
+) -> (Result<(), JournalError>, Option<SourceProcessIdentity>) {
     if observed.pid == 0 || observed.boot_id.is_empty() {
-        return Err(JournalError::UnresolvedAction);
+        return (Err(JournalError::UnresolvedAction), slot);
     }
     match slot {
-        Some(previous) if previous != &observed => Err(JournalError::UnresolvedAction),
-        Some(_) => Ok(()),
-        None => {
-            *slot = Some(observed);
-            Ok(())
+        Some(previous) => {
+            let result = if previous != observed {
+                Err(JournalError::UnresolvedAction)
+            } else {
+                Ok(())
+            };
+            (result, Some(previous))
         }
+        None => (Ok(()), Some(observed)),
     }
 }
 
@@ -29,12 +48,17 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     namespace: &str,
     current: &core::SandboxRecord,
     binding: (core::SandboxId, core::VmId, &sandproof_protocol::SandboxId),
-    prepared: &mut Option<SourceProcessIdentity>,
-    activated: &mut Option<SourceProcessIdentity>,
-) -> Result<(), JournalError> {
+    mut rows: OriginalSourceRows,
+) -> (Result<(), JournalError>, OriginalSourceRows) {
     let (sandbox, vm, public_sandbox) = binding;
-    let (action_bytes, receipt_bytes) = row?;
-    let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
+    let (action_bytes, receipt_bytes) = match row {
+        Ok(value) => value,
+        Err(error) => return (Err(error.into()), rows),
+    };
+    let action = match decode_original_action(&action_bytes) {
+        Ok(value) => value,
+        Err(error) => return (Err(error.into()), rows),
+    };
     let command = action.command.command();
     let (is_prepare, generation, found_vm) = match command {
         core::Command::PrepareVm {
@@ -49,55 +73,79 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
             vm,
             ..
         } if *found == sandbox => (false, *generation, *vm),
-        _ => return Ok(()),
+        _ => return (Ok(()), rows),
     };
     if generation != current.generation || found_vm != vm {
-        return Ok(());
+        return (Ok(()), rows);
     }
     if !core::effect::effect_succeeded_check(world, command) {
-        return Ok(());
+        return (Ok(()), rows);
     }
-    let logical = world
-        .logical_effect(&action.command.logical)
-        .ok_or(JournalError::CorruptStore)?;
+    let logical = match world.logical_effect(&action.command.logical) {
+        Some(value) => value,
+        None => return (Err(JournalError::CorruptStore), rows),
+    };
     if logical.current_attempt != action.command.attempt {
-        return Ok(());
+        return (Ok(()), rows);
     }
     let core::EffectOrigin::Operation(key) = logical.origin else {
-        return Err(JournalError::CorruptStore);
+        return (Err(JournalError::CorruptStore), rows);
     };
-    let plan = world
-        .operation_plan(key)
-        .ok_or(JournalError::CorruptStore)?;
+    let plan = match world.operation_plan(key) {
+        Some(value) => value,
+        None => return (Err(JournalError::CorruptStore), rows),
+    };
     if key.sandbox != sandbox
         || (plan.vm != Some(vm)
             && !core::capture::continuation::activation_belongs_to_continuation(plan, command))
         || plan.generation != generation
         || command.epoch() != Some(plan.epoch)
-        || action.identity.owner != identity::owner_id(current.owner)?
+        || action.identity.owner
+            != match identity::owner_id(current.owner) {
+                Ok(value) => value,
+                Err(error) => return (Err(error), rows),
+            }
         || &action.identity.sandbox != public_sandbox
-        || action.identity.operation != identity::operation_id(namespace, key)?
+        || action.identity.operation
+            != match identity::operation_id(namespace, key) {
+                Ok(value) => value,
+                Err(error) => return (Err(error), rows),
+            }
         || action.identity.epoch != plan.epoch
         || action.identity.attempt != action.command.attempt
         || action.identity.generation != generation
-        || action.identity.resource != identity::resource(namespace, command)?
+        || action.identity.resource
+            != match identity::resource(namespace, command) {
+                Ok(value) => value,
+                Err(error) => return (Err(error), rows),
+            }
     {
-        return Err(JournalError::CorruptStore);
+        return (Err(JournalError::CorruptStore), rows);
     }
-    let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
-    receipt.validate_for(&action)?;
+    let receipt = match decode_original_receipt::<E>(&receipt_bytes) {
+        Ok(value) => value,
+        Err(error) => return (Err(error.into()), rows),
+    };
+    if let Err(error) = receipt.validate_for(&action) {
+        return (Err(error.into()), rows);
+    }
     let WorkOutcome::ObservedSuccess(evidence) = receipt.outcome else {
-        return Err(JournalError::UnresolvedAction);
+        return (Err(JournalError::UnresolvedAction), rows);
     };
     if !evidence.validates(command) {
-        return Err(JournalError::InvalidHostEvidence);
+        return (Err(JournalError::InvalidHostEvidence), rows);
     }
-    let source = evidence
-        .source_process_identity(command, &action.identity.resource)
-        .ok_or(JournalError::UnresolvedAction)?;
-    let observed = if is_prepare { prepared } else { activated };
-    agree(observed, source)?;
-    Ok(())
+    let source = match evidence.source_process_identity(command, &action.identity.resource) {
+        Some(value) => value,
+        None => return (Err(JournalError::UnresolvedAction), rows),
+    };
+    let result;
+    if is_prepare {
+        (result, rows.prepared) = agree(rows.prepared, source);
+    } else {
+        (result, rows.activated) = agree(rows.activated, source);
+    }
+    (result, rows)
 }
 
 /// Read only already committed original observations under the same SQL
@@ -132,19 +180,22 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
     let rows = statement.query_map([public_sandbox.as_str()], |row| {
         Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
     })?;
-    let mut prepared = None;
-    let mut activated = None;
+    let mut source_rows = OriginalSourceRows {
+        prepared: None,
+        activated: None,
+    };
     let mut row_error = None;
     for row in rows {
-        if let Err(error) = accept_original_source_row::<E>(
+        let (result, next_rows) = accept_original_source_row::<E>(
             row,
             world,
             namespace,
             current,
             (sandbox, vm, &public_sandbox),
-            &mut prepared,
-            &mut activated,
-        ) {
+            source_rows,
+        );
+        source_rows = next_rows;
+        if let Err(error) = result {
             row_error = Some(error);
             break;
         }
@@ -152,7 +203,7 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
     if let Some(error) = row_error {
         return Err(error);
     }
-    match (prepared, activated) {
+    match (source_rows.prepared, source_rows.activated) {
         (Some(prepared), Some(activated)) if prepared == activated => Ok(prepared),
         _ => Err(JournalError::UnresolvedAction),
     }
