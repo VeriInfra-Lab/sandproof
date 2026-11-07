@@ -300,9 +300,11 @@ class Stage1ReceiptReuseTests(unittest.TestCase):
                 if label in ('functional', 'stage1-protocol'):
                     continue
                 out = self.base/('scope-fixture-'+label)
-                def action(out=out):
+                def action(out=out, label=label):
                     out.mkdir()
                     (out/'fixture.log').write_text('synthetic scope admission fixture\n')
+                    if label in acceptance_receipts.ARCHIVED_NATIVE_CASES:
+                        archive.build(self.root, out/'source.tar', out/'source-manifest.json')
                 components.append(acceptance_receipts.native_case(label, self.root, out, action))
             for receipt in components:
                 entry = cache/'commands'/acceptance_receipts.digest(receipt['key'])
