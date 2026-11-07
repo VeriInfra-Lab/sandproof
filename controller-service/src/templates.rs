@@ -95,6 +95,10 @@ pub struct TemplateStartup {
 
 impl TemplateStartup {
     #[must_use]
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "fixed Aeneas cannot represent String::len function item regions; retain explicit closure"
+    )]
     pub fn is_valid(&self) -> bool {
         self.user.len() <= 64
             && self
