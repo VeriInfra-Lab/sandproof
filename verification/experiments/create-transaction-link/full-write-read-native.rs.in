@@ -25,6 +25,7 @@ fn proof_full_write_read_contract() {
     let mut effects = super::recording::StandardRecord {
         tx: transaction,
         namespace: &journal.namespace,
+        codec: super::recording::StandardRecordCodec,
     };
     let (count, pair) = super::proof_record_update_then_read(
         &mut effects,

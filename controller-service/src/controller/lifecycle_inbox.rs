@@ -240,6 +240,7 @@ impl ControllerJournal {
         let transaction = recording::StandardRecord {
             tx,
             namespace: &self.namespace,
+            codec: recording::StandardRecordCodec,
         };
         recording::record_transaction_using::<
             native_retirement::StandardRetirementEncoding,

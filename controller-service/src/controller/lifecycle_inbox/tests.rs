@@ -40,6 +40,161 @@ fn context() -> AuthenticatedCenterContext {
 }
 
 #[test]
+fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection() {
+    use super::super::checkpoint::{MaintenanceConfig, ReadConfigEffects};
+
+    struct StatefulCodec {
+        connection: *const rusqlite::Connection,
+        calls: Vec<(&'static str, Vec<u8>)>,
+        token: u64,
+        fail_at: Option<usize>,
+    }
+    impl StatefulCodec {
+        fn observe(
+            &mut self,
+            connection: &rusqlite::Connection,
+            kind: &'static str,
+            bytes: &[u8],
+        ) -> serde_json::Result<()> {
+            assert!(std::ptr::eq(connection, self.connection));
+            self.calls.push((kind, bytes.to_vec()));
+            self.token += 7;
+            if self.fail_at == Some(self.calls.len()) {
+                Err(serde_json::Error::io(std::io::Error::other("codec fault")))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    impl recording::RecordCodec for StatefulCodec {
+        fn decode_maintenance(
+            &mut self,
+            connection: &rusqlite::Connection,
+            bytes: &[u8],
+        ) -> serde_json::Result<MaintenanceConfig> {
+            self.observe(connection, "maintenance", bytes)?;
+            serde_json::from_slice(bytes)
+        }
+        fn decode_inbox(
+            &mut self,
+            connection: &rusqlite::Connection,
+            bytes: &[u8],
+        ) -> serde_json::Result<Inbox> {
+            self.observe(connection, "decode-inbox", bytes)?;
+            serde_json::from_slice(bytes)
+        }
+        fn encode_inbox(
+            &mut self,
+            connection: &rusqlite::Connection,
+            inbox: &Inbox,
+        ) -> serde_json::Result<Vec<u8>> {
+            let bytes = serde_json::to_vec(inbox)?;
+            self.observe(connection, "encode", &bytes)?;
+            Ok(bytes)
+        }
+    }
+
+    for fail_at in [None, Some(1), Some(2), Some(3), Some(4)] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let mut journal = initialize(&path);
+        let original: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let maintenance: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT config_json FROM controller_maintenance_config WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let codec = StatefulCodec {
+            connection: std::ptr::from_ref(&journal.journal.connection),
+            calls: Vec::new(),
+            token: 41,
+            fail_at,
+        };
+        let tx = super::super::transaction::WorldTransaction::begin(
+            &mut journal.journal.connection,
+            &journal.committed_world,
+        )
+        .unwrap();
+        let mut effects = recording::StandardRecord {
+            tx,
+            namespace: NS,
+            codec,
+        };
+        let result = recording::record_using::<
+            native_retirement::StandardRetirementEncoding,
+            model::StandardTerminalEncoding,
+            renewal_confirmation::StandardRenewalEncoding,
+            unload_resolution::StandardUnloadEncoding,
+            crate::capture::StandardGraphicBytes,
+            _,
+        >(&mut effects, &create("alpha", "codec-session"), &context());
+        let expected_calls = fail_at.unwrap_or(4);
+        assert_eq!(effects.codec.calls.len(), expected_calls);
+        assert_eq!(
+            effects.codec.token,
+            41 + 7 * u64::try_from(expected_calls).unwrap()
+        );
+        let order: Vec<_> = effects.codec.calls.iter().map(|(kind, _)| *kind).collect();
+        assert_eq!(
+            order,
+            ["decode-inbox", "encode", "maintenance", "encode"][..expected_calls]
+        );
+        assert_eq!(effects.codec.calls[0].1, original);
+        if expected_calls >= 2 {
+            assert_eq!(effects.codec.calls[1].1, original);
+        }
+        if expected_calls >= 3 {
+            assert_eq!(effects.codec.calls[2].1, maintenance);
+        }
+        let stored = ReadConfigEffects::query_bytes(
+            &mut effects,
+            "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+        )
+        .unwrap();
+        match fail_at {
+            None => {
+                assert!(matches!(result, Ok(recording::RecordOutcome::Recorded(_))));
+                assert_eq!(effects.codec.calls[3].1, stored);
+                assert_ne!(stored, original);
+                recording::RecordTransaction::commit(effects).unwrap();
+            }
+            Some(1) => {
+                assert!(matches!(result, Err(JournalError::CorruptStore)));
+                assert_eq!(stored, original);
+                drop(effects);
+            }
+            Some(_) => {
+                assert!(matches!(result, Err(JournalError::Json(_))));
+                assert_eq!(stored, original);
+                drop(effects);
+            }
+        }
+        let durable: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(durable, stored);
+    }
+}
+
+#[test]
 fn unknown_release_confirmation_recovers_without_rebinding_released_position() {
     use super::super::tests_support::lifecycle_application as app_fixture;
     use crate::application::HostSlots;

@@ -114,12 +114,62 @@ fn attach_destroy<E: RecordEffects>(
     Ok(())
 }
 
-pub(super) struct StandardRecord<'a, 'journal> {
-    pub(super) tx: WorldTransaction<'journal>,
-    pub(super) namespace: &'a str,
+// These three fixed-schema calls carry the actual codec state explicitly.
+// The connection argument preserves the original transaction dereference and
+// immutable borrow across the call; the standard codec performs no SQL.
+pub(super) trait RecordCodec {
+    fn decode_maintenance(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<MaintenanceConfig>;
+    fn decode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<Inbox>;
+    fn encode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        inbox: &Inbox,
+    ) -> serde_json::Result<Vec<u8>>;
 }
 
-impl ReadConfigEffects for StandardRecord<'_, '_> {
+pub(super) struct StandardRecordCodec;
+
+impl RecordCodec for StandardRecordCodec {
+    fn decode_maintenance(
+        &mut self,
+        _connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<MaintenanceConfig> {
+        serde_json::from_slice(bytes)
+    }
+
+    fn decode_inbox(
+        &mut self,
+        _connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<Inbox> {
+        serde_json::from_slice(bytes)
+    }
+
+    fn encode_inbox(
+        &mut self,
+        _connection: &rusqlite::Connection,
+        inbox: &Inbox,
+    ) -> serde_json::Result<Vec<u8>> {
+        serde_json::to_vec(inbox)
+    }
+}
+
+pub(super) struct StandardRecord<'a, 'journal, D = StandardRecordCodec> {
+    pub(super) tx: WorldTransaction<'journal>,
+    pub(super) namespace: &'a str,
+    pub(super) codec: D,
+}
+
+impl<D: RecordCodec> ReadConfigEffects for StandardRecord<'_, '_, D> {
     fn query_i64(&mut self, statement: &str) -> Result<i64, JournalError> {
         StandardConfigRead {
             connection: &self.tx,
@@ -133,14 +183,12 @@ impl ReadConfigEffects for StandardRecord<'_, '_> {
         .query_bytes(statement)
     }
     fn decode_maintenance(&mut self, bytes: &[u8]) -> Result<MaintenanceConfig, JournalError> {
-        StandardConfigRead {
-            connection: &self.tx,
-        }
-        .decode_maintenance(bytes)
+        let connection: &rusqlite::Connection = &self.tx;
+        Ok(self.codec.decode_maintenance(connection, bytes)?)
     }
 }
 
-impl InboxLoadEffects for StandardRecord<'_, '_> {
+impl<D: RecordCodec> InboxLoadEffects for StandardRecord<'_, '_, D> {
     fn query_bool(&mut self, statement: &str) -> Result<bool, JournalError> {
         StandardConfigRead {
             connection: &self.tx,
@@ -160,16 +208,12 @@ impl InboxLoadEffects for StandardRecord<'_, '_> {
         .query_bytes_pair(statement)
     }
     fn decode_inbox(&mut self, bytes: &[u8]) -> Result<Inbox, JournalError> {
-        StandardConfigRead {
-            connection: &self.tx,
-        }
-        .decode_inbox(bytes)
+        let connection: &rusqlite::Connection = &self.tx;
+        Ok(self.codec.decode_inbox(connection, bytes)?)
     }
     fn encode_inbox(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
-        StandardConfigRead {
-            connection: &self.tx,
-        }
-        .encode_inbox(inbox)
+        let connection: &rusqlite::Connection = &self.tx;
+        Ok(self.codec.encode_inbox(connection, inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
         InboxLoadEffects::digest(
@@ -181,12 +225,10 @@ impl InboxLoadEffects for StandardRecord<'_, '_> {
     }
 }
 
-impl InboxSaveEffects for StandardRecord<'_, '_> {
+impl<D: RecordCodec> InboxSaveEffects for StandardRecord<'_, '_, D> {
     fn encode(&mut self, inbox: &Inbox) -> Result<Vec<u8>, JournalError> {
-        StandardInboxSave {
-            connection: &self.tx,
-        }
-        .encode(inbox)
+        let connection: &rusqlite::Connection = &self.tx;
+        Ok(self.codec.encode_inbox(connection, inbox)?)
     }
     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
         InboxSaveEffects::digest(
@@ -206,7 +248,7 @@ impl InboxSaveEffects for StandardRecord<'_, '_> {
     }
 }
 
-impl RecordEffects for StandardRecord<'_, '_> {
+impl<D: RecordCodec> RecordEffects for StandardRecord<'_, '_, D> {
     fn releasing(&mut self, local: InternalLocalBinding) -> bool {
         self.tx.world().maintenance_state().is_some_and(|state| {
             state.host_slots().iter().any(|(_, slot)| {
@@ -227,7 +269,7 @@ impl RecordEffects for StandardRecord<'_, '_> {
     }
 }
 
-impl RecordTransaction for StandardRecord<'_, '_> {
+impl<D: RecordCodec> RecordTransaction for StandardRecord<'_, '_, D> {
     fn commit(self) -> Result<(), JournalError> {
         self.tx.commit()
     }
