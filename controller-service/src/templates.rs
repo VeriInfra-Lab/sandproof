@@ -23,7 +23,10 @@ impl TemplateArtifact {
     #[must_use]
     pub fn is_valid(&self) -> bool {
         self.path.is_absolute()
-            && self.path.to_str().is_some_and(|path| !path.contains('\0'))
+            && self
+                .path
+                .to_str()
+                .is_some_and(|path| !path.as_bytes().contains(&0))
             && self
                 .path
                 .components()
@@ -93,6 +96,27 @@ pub struct TemplateStartup {
     pub argv: Vec<String>,
 }
 
+// Exact slash-delimited parent segment detection; no normalization or allocation.
+fn has_parent_segment(value: &str) -> bool {
+    // 0: empty, 1: one dot, 2: exactly two dots, 3: any other segment.
+    let mut segment = 0_u8;
+    for byte in value.as_bytes() {
+        if *byte == b'/' {
+            if segment == 2 {
+                return true;
+            }
+            segment = 0;
+        } else {
+            segment = match (segment, *byte) {
+                (0, b'.') => 1,
+                (1, b'.') => 2,
+                _ => 3,
+            };
+        }
+    }
+    segment == 2
+}
+
 impl TemplateStartup {
     #[must_use]
     #[expect(
@@ -110,10 +134,14 @@ impl TemplateStartup {
                 .user
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
-            && self.workdir.starts_with('/')
+            && self
+                .workdir
+                .as_bytes()
+                .first()
+                .is_some_and(|byte| *byte == b'/')
             && self.workdir.len() <= 4096
-            && !self.workdir.contains(['\0', '\\'])
-            && !self.workdir.split('/').any(|part| part == "..")
+            && !(self.workdir.as_bytes().contains(&0) || self.workdir.as_bytes().contains(&b'\\'))
+            && !has_parent_segment(&self.workdir)
             && self.env_vars.len() <= 256
             && self.env_vars.iter().all(|(key, value)| {
                 key.bytes()
@@ -121,13 +149,13 @@ impl TemplateStartup {
                     .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
                     && key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
                     && key.len() + value.len() <= 8192
-                    && !value.contains('\0')
+                    && !value.as_bytes().contains(&0)
             })
             && self.argv.len() <= 256
             && self
                 .argv
                 .iter()
-                .all(|arg| arg.len() <= 8192 && !arg.contains('\0'))
+                .all(|arg| arg.len() <= 8192 && !arg.as_bytes().contains(&0))
             && self.argv.first().is_none_or(|command| !command.is_empty())
             && self
                 .env_vars
@@ -175,7 +203,7 @@ impl TemplateBinding {
             && self.rootfs.size_bytes == self.resources.disk_bytes
             && !self.envd_version.is_empty()
             && self.envd_version.len() <= 64
-            && !self.envd_version.contains('\0')
+            && !self.envd_version.as_bytes().contains(&0)
             && match self.guest.as_ref() {
                 Some(guest) => guest.is_valid(),
                 None => true,
@@ -264,5 +292,71 @@ impl TemplateCatalog {
             return Err(TemplateError::Unauthorized);
         }
         Ok(template.clone())
+    }
+}
+
+#[cfg(test)]
+mod proof_pattern_tests {
+    use super::has_parent_segment;
+
+    #[test]
+    fn fixed_ascii_queries_match_original_patterns() {
+        for value in [
+            "", "/", "//", ".", "..", "...", "=", "a=b", "a\0b", "\\", "\\\0", "/a", "é", "中",
+            "🙂", "é/中", "／a", "a\\b", "e\u{301}",
+        ] {
+            assert_eq!(
+                value.as_bytes().contains(&0),
+                value.contains('\0'),
+                "{value:?}"
+            );
+            assert_eq!(
+                value.as_bytes().contains(&b'='),
+                value.contains('='),
+                "{value:?}"
+            );
+            assert_eq!(
+                value.as_bytes().contains(&0) || value.as_bytes().contains(&b'\\'),
+                value.contains(['\0', '\\']),
+                "{value:?}",
+            );
+            assert_eq!(
+                value.as_bytes().first().is_some_and(|byte| *byte == b'/'),
+                value.starts_with('/'),
+                "{value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn parent_segment_matches_original_split() {
+        let parts = [
+            "", ".", "..", "...", "a", "..a", "a..", "é", "中", "\0", "\\",
+        ];
+        for first in parts {
+            assert_eq!(
+                has_parent_segment(first),
+                first.split('/').any(|part| part == "..")
+            );
+            for second in parts {
+                for last in parts {
+                    let value = format!("{first}/{second}/{last}");
+                    assert_eq!(
+                        has_parent_segment(&value),
+                        value.split('/').any(|part| part == ".."),
+                        "{value:?}",
+                    );
+                }
+            }
+        }
+        for length in [4095, 4096, 4097] {
+            for tail in ["/..", "/...", "/é", "/..\0", "/..\\"] {
+                let value = format!("{}{tail}", "a".repeat(length));
+                assert_eq!(
+                    has_parent_segment(&value),
+                    value.split('/').any(|part| part == ".."),
+                );
+            }
+        }
     }
 }

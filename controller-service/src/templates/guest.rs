@@ -81,9 +81,93 @@ fn hex(value: &str, length: usize) -> bool {
 }
 
 fn package(value: &str) -> bool {
-    value.len() <= 17
-        && value.split('.').count() == 3
-        && value.split('.').all(|part| {
-            !part.is_empty() && part.len() <= 5 && part.bytes().all(|b| b.is_ascii_digit())
-        })
+    value.len() <= 17 && has_three_decimal_parts(value)
+}
+
+fn has_three_decimal_parts(value: &str) -> bool {
+    let mut parts = 1_u8;
+    let mut digits = 0_u8;
+    for byte in value.as_bytes() {
+        if *byte == b'.' {
+            if digits == 0 || parts >= 3 {
+                return false;
+            }
+            parts += 1;
+            digits = 0;
+        } else {
+            if !byte.is_ascii_digit() || digits >= 5 {
+                return false;
+            }
+            digits += 1;
+        }
+    }
+    parts == 3 && digits > 0
+}
+
+#[cfg(test)]
+mod proof_pattern_tests {
+    use super::package;
+
+    fn original_package(value: &str) -> bool {
+        value.len() <= 17
+            && value.split('.').count() == 3
+            && value.split('.').all(|part| {
+                !part.is_empty()
+                    && part.len() <= 5
+                    && part.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    }
+
+    #[test]
+    fn package_matches_original_split() {
+        for value in [
+            "",
+            ".",
+            "..",
+            "...",
+            "1",
+            "1.2",
+            "1.2.3",
+            "0.0.0",
+            "01.002.00003",
+            ".1.2",
+            "1..2",
+            "1.2.",
+            "1.2.3.4",
+            "1.2.3.",
+            "12345.12345.12345",
+            "123456.12345.12345",
+            "é.1.2",
+            "１２.1.2",
+            "١.1.2",
+            "1.2.3\0",
+            "-1.2.3",
+        ] {
+            assert_eq!(package(value), original_package(value), "{value:?}");
+        }
+        let parts = [
+            "", "0", "1", "01", "12345", "123456", "a", "é", "１２", "1\0", "-1", ".", "1.2",
+        ];
+        for first in parts {
+            for second in parts {
+                for last in parts {
+                    let value = format!("{first}.{second}.{last}");
+                    assert_eq!(package(&value), original_package(&value), "{value:?}");
+                }
+            }
+        }
+        for first in 0..=7 {
+            for second in 0..=7 {
+                for last in 0..=7 {
+                    let value = format!(
+                        "{}.{}.{}",
+                        "1".repeat(first),
+                        "2".repeat(second),
+                        "3".repeat(last)
+                    );
+                    assert_eq!(package(&value), original_package(&value), "{value:?}");
+                }
+            }
+        }
+    }
 }

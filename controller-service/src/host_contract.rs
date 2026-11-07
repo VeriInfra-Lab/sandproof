@@ -70,12 +70,13 @@ impl CreateOptions {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         if self.env_vars.iter().any(|(key, value)| {
-            key.is_empty() || key.contains('=') || key.contains('\0') || value.contains('\0')
-        }) || self
-            .metadata
-            .iter()
-            .any(|(key, value)| key.is_empty() || key.contains('\0') || value.contains('\0'))
-        {
+            key.is_empty()
+                || key.as_bytes().contains(&b'=')
+                || key.as_bytes().contains(&0)
+                || value.as_bytes().contains(&0)
+        }) || self.metadata.iter().any(|(key, value)| {
+            key.is_empty() || key.as_bytes().contains(&0) || value.as_bytes().contains(&0)
+        }) {
             return Err(AdmissionError::InvalidCreateOptions);
         }
         let encoded = serde_json::to_vec(self).map_err(|_| AdmissionError::InvalidCreateOptions)?;
@@ -286,4 +287,45 @@ pub trait HostEvidence: ResourceEvidence {
 pub enum WorkerTransportError {
     ConnectionLost,
     ReplyLost,
+}
+
+#[cfg(test)]
+mod proof_pattern_tests {
+    use super::{AdmissionError, CreateOptions};
+
+    #[test]
+    fn encoded_ascii_conditions_match_original() {
+        for key in [
+            "", "KEY", "A=B", "=", "\0", "X\0Y", "é", "中", "🙂", "/", "e\u{301}",
+        ] {
+            for value in ["", "plain", "=", "a\0b", "é", "\\"] {
+                for metadata in [false, true] {
+                    let mut options = CreateOptions::default();
+                    let invalid = if metadata {
+                        options.metadata.insert(key.into(), value.into());
+                        key.is_empty() || key.contains('\0') || value.contains('\0')
+                    } else {
+                        options.env_vars.insert(key.into(), value.into());
+                        key.is_empty()
+                            || key.contains('=')
+                            || key.contains('\0')
+                            || value.contains('\0')
+                    };
+                    let actual = options.encoded();
+                    if invalid {
+                        assert!(
+                            matches!(actual, Err(AdmissionError::InvalidCreateOptions)),
+                            "metadata={metadata}, key={key:?}, value={value:?}",
+                        );
+                    } else {
+                        assert_eq!(
+                            actual.unwrap(),
+                            serde_json::to_vec(&options).unwrap(),
+                            "metadata={metadata}, key={key:?}, value={value:?}",
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
