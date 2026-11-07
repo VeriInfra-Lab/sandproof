@@ -58,6 +58,43 @@ pub(in crate::controller) fn historical_identity(
     .then_some(identity)
 }
 
+fn accept_ready_row<E: HostEvidence + DeserializeOwned>(
+    row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
+    sources: &codec::Sources,
+    world: &core::World,
+    namespace: &str,
+    identity: &core::capture::OriginalContinueIdentity,
+    question: &OriginalContinueWorkRequest,
+    found: &mut Option<ContinuedEvidence>,
+) -> Result<(), JournalError> {
+    let (action, bytes) = row?;
+    let action: WorkAction<core::EffectId> = serde_json::from_slice(&action)?;
+    if *action.command.command() != identity.activation_command() {
+        return Ok(());
+    }
+    if world
+        .logical_effect(&action.command.logical)
+        .is_none_or(|l| l.current_attempt != action.command.attempt)
+    {
+        return Ok(());
+    }
+    action_record(sources, world, namespace, &action)?.ok_or(JournalError::CorruptStore)?;
+    let receipt: WorkReceipt<E> = serde_json::from_slice(&bytes)?;
+    receipt.validate_for(&action)?;
+    let WorkOutcome::ObservedSuccess(ref evidence) = receipt.outcome else {
+        return Err(JournalError::CorruptStore);
+    };
+    if !evidence.validates(action.command.command())
+        || evidence.source_process_identity(action.command.command(), &action.identity.resource)
+            != Some(question.source().source.clone())
+        || found.is_some()
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    *found = Some((question.clone(), action, bytes));
+    Ok(())
+}
+
 pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
     connection: &rusqlite::Connection,
     world: &core::World,
@@ -80,35 +117,20 @@ pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
     let question = work(record, world)?.ok_or(JournalError::CorruptStore)?;
     let mut statement=connection.prepare("SELECT action_json,receipt_json FROM outbox WHERE operation_id=?1 AND dispatch_state='receipted' ORDER BY id")?;
     let mut found = None;
+    let mut row_error = None;
     for row in statement.query_map(
         [identity::operation_id(namespace, identity.key)?.as_str()],
         |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?)),
     )? {
-        let (action, bytes) = row?;
-        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action)?;
-        if *action.command.command() != identity.activation_command() {
-            continue;
+        if let Err(error) = accept_ready_row::<E>(
+            row, &sources, world, namespace, &identity, &question, &mut found,
+        ) {
+            row_error = Some(error);
+            break;
         }
-        if world
-            .logical_effect(&action.command.logical)
-            .is_none_or(|l| l.current_attempt != action.command.attempt)
-        {
-            continue;
-        }
-        action_record(&sources, world, namespace, &action)?.ok_or(JournalError::CorruptStore)?;
-        let receipt: WorkReceipt<E> = serde_json::from_slice(&bytes)?;
-        receipt.validate_for(&action)?;
-        let WorkOutcome::ObservedSuccess(ref evidence) = receipt.outcome else {
-            return Err(JournalError::CorruptStore);
-        };
-        if !evidence.validates(action.command.command())
-            || evidence.source_process_identity(action.command.command(), &action.identity.resource)
-                != Some(question.source().source.clone())
-            || found.is_some()
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        found = Some((question.clone(), action, bytes));
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     found.map(Some).ok_or(JournalError::UnresolvedAction)
 }
