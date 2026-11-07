@@ -3,7 +3,7 @@ use super::{
     LifecycleCreateObservation, LifecycleReadyBasis, LifecycleReadyObservation,
     NativeCreateSnapshot, SourceProcessIdentity, core,
 };
-use crate::controller::lifecycle_inbox::{authenticated, codec};
+use crate::controller::lifecycle_inbox::{authenticated, codec, model::Entry};
 use crate::controller::{
     admission, allocators, capture, data_credentials, identity, internal_inbox, storage,
 };
@@ -300,6 +300,15 @@ fn original_result(
     }
 }
 
+fn first_entry_at_version(entries: &[Entry], version: u64) -> Option<&Entry> {
+    for entry in entries {
+        if entry.intent.accepted_version == version {
+            return Some(entry);
+        }
+    }
+    None
+}
+
 pub(in crate::controller) fn base_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
@@ -317,10 +326,7 @@ pub(in crate::controller) fn base_snapshot(
         return Err(JournalError::UnsupportedInput);
     }
     let session = &inbox.sessions[s];
-    let current_entry = session
-        .entries
-        .iter()
-        .find(|entry| entry.intent.accepted_version == session.current_version)
+    let current_entry = first_entry_at_version(&session.entries, session.current_version)
         .ok_or(JournalError::CorruptStore)?;
     let current_request = current_entry.intent.clone();
     let local = session.local;

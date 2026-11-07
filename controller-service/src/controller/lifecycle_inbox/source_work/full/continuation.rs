@@ -95,6 +95,18 @@ fn accept_ready_row<E: HostEvidence + DeserializeOwned>(
     Ok(())
 }
 
+fn first_record_for_key(
+    records: &[SourceWorkRecord],
+    operation: core::OperationKey,
+) -> Option<&SourceWorkRecord> {
+    for record in records {
+        if key(record) == Some(operation) {
+            return Some(record);
+        }
+    }
+    None
+}
+
 pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
     connection: &rusqlite::Connection,
     world: &core::World,
@@ -106,10 +118,7 @@ pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
         return Ok(None);
     };
     let sources = codec::load(connection)?.ok_or(JournalError::CorruptStore)?;
-    let record = sources
-        .records
-        .iter()
-        .find(|r| key(r) == Some(identity.key))
+    let record = first_record_for_key(&sources.records, identity.key)
         .ok_or(JournalError::CorruptStore)?;
     if record.work.anchor.local != local {
         return Err(JournalError::CorruptStore);
@@ -203,10 +212,7 @@ fn action_record<'a>(
     ) {
         return Ok(None);
     }
-    let record = sources
-        .records
-        .iter()
-        .find(|r| key(r) == Some(origin))
+    let record = first_record_for_key(&sources.records, origin)
         .ok_or(JournalError::CorruptStore)?;
     let question = work(record, world)?.ok_or(JournalError::CorruptStore)?;
     if logical.current_attempt != action.command.attempt
