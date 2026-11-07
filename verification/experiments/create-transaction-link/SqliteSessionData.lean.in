@@ -25,7 +25,7 @@ structure Query where
 /-- Observations of one issued cursor, not one global stream for an SQL string.
 Both SQL errors and end-of-stream remain distinct from a present row. -/
 structure ScanTrace where
-  at : Nat → Result (SqlReply (Option Row))
+  observe : Nat → Result (SqlReply (Option Row))
 
 /-- Existing single-row observations plus the family of allowed cursor
 observations. A relation permits separate unordered scans to differ. Selecting
@@ -66,7 +66,7 @@ structure Cursor where
   calls : Nat
 
 def cursorNext (cursor : Cursor) : Result (SqlReply (Option Row) × Cursor) := do
-  let reply ← cursor.trace.at cursor.calls
+  let reply ← cursor.trace.observe cursor.calls
   .ok (reply, { cursor with calls := cursor.calls + 1 })
 
 /-- Original callback state is retained, including a callback that returns Err. -/
