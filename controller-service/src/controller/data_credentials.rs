@@ -16,22 +16,23 @@ pub(super) fn initialize(tx: &Transaction<'_>) -> Result<(), JournalError> {
     Ok(())
 }
 
-fn poisoned(connection: &Connection) -> Result<bool, JournalError> {
-    for (name, expected) in [
-        ("controller_data_credential_state", STATE_SQL),
-        ("controller_data_credentials", INDEX_SQL),
-    ] {
-        let sql: Option<String> = connection
-            .query_row(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
-                [name],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if sql.as_deref() != Some(expected) {
-            return Err(JournalError::CorruptStore);
-        }
+fn require_schema(connection: &Connection, name: &str, expected: &str) -> Result<(), JournalError> {
+    let sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            [name],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if sql.as_deref() != Some(expected) {
+        return Err(JournalError::CorruptStore);
     }
+    Ok(())
+}
+
+fn poisoned(connection: &Connection) -> Result<bool, JournalError> {
+    require_schema(connection, "controller_data_credential_state", STATE_SQL)?;
+    require_schema(connection, "controller_data_credentials", INDEX_SQL)?;
     let (rows, id, state): (i64, Option<i64>, Option<i64>) = connection.query_row(
         "SELECT count(*),max(id),max(poisoned) FROM controller_data_credential_state",
         [],
@@ -140,6 +141,20 @@ fn binding(
     Ok((sandbox, generation))
 }
 
+fn accept_credential_row(
+    row: rusqlite::Result<(String, String, Vec<u8>)>,
+    world: &core::World,
+    namespace: &str,
+    digests: &mut BTreeSet<Vec<u8>>,
+) -> Result<(), JournalError> {
+    let (sandbox, generation, digest) = row?;
+    binding(world, namespace, &sandbox, &generation)?;
+    if digest.len() != 32 || !digests.insert(digest) {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(())
+}
+
 // A well-formed poison is a durable data-authentication stop, not a reason to
 // stop lifecycle recovery or reclamation. Corrupt shared mappings remain errors.
 pub(super) fn validate(
@@ -151,6 +166,7 @@ pub(super) fn validate(
     let mut query = connection
         .prepare("SELECT sandbox_id,generation,digest FROM controller_data_credentials")?;
     let mut digests = BTreeSet::new();
+    let mut row_error = None;
     for row in query.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -158,11 +174,13 @@ pub(super) fn validate(
             row.get::<_, Vec<u8>>(2)?,
         ))
     })? {
-        let (sandbox, generation, digest) = row?;
-        binding(world, namespace, &sandbox, &generation)?;
-        if digest.len() != 32 || !digests.insert(digest) {
-            return Err(JournalError::CorruptStore);
+        if let Err(error) = accept_credential_row(row, world, namespace, &mut digests) {
+            row_error = Some(error);
+            break;
         }
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     Ok(())
 }
