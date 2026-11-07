@@ -18,7 +18,10 @@ fn proof_record_update_then_read(
 
 // Deliberately wrong extraction-only sibling. The native negative uses the
 // same full write/read assertion; production code never calls this function.
-#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon for the negative"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "selected by fixed Charon for the negative")
+)]
 #[cfg_attr(test, allow(dead_code, reason = "isolated native probe alternatives"))]
 fn proof_record_read_then_update(
     effects: &mut recording::StandardRecord<'_, '_>,

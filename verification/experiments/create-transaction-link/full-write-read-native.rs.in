@@ -19,11 +19,9 @@ fn proof_full_write_read_contract() {
     let digest = sha2::Sha256::digest(&bytes).to_vec();
     assert_ne!(before, (bytes.clone(), digest.clone()), "distinct fixture");
 
-    let transaction = super::WorldTransaction::begin(
-        &mut journal.journal.connection,
-        &journal.committed_world,
-    )
-    .unwrap();
+    let transaction =
+        super::WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world)
+            .unwrap();
     let mut effects = super::recording::StandardRecord {
         tx: transaction,
         namespace: &journal.namespace,
@@ -36,5 +34,9 @@ fn proof_full_write_read_contract() {
     )
     .unwrap();
     assert_eq!(count, 1, "full write/read contract: original count");
-    assert_eq!(pair, (bytes, digest), "full write/read contract: complete BLOBs");
+    assert_eq!(
+        pair,
+        (bytes, digest),
+        "full write/read contract: complete BLOBs"
+    );
 }
