@@ -133,6 +133,57 @@ fn expected_commands(
 }
 
 pub(in crate::controller) type StartupEvidence = (Vec<WorkAction<core::EffectId>>, Vec<Vec<u8>>);
+type StartupActionReceipt = (WorkAction<core::EffectId>, Vec<u8>);
+
+fn accept_startup_row<E: HostEvidence + DeserializeOwned>(
+    row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
+    world: &core::World,
+    namespace: &str,
+    local: InternalLocalBinding,
+    commands: &[core::Command],
+    plan: &core::OperationPlan,
+    found: &mut [Option<StartupActionReceipt>],
+) -> Result<(), JournalError> {
+    let (action_bytes, receipt_bytes) = row?;
+    let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
+    let Some(index) = commands
+        .iter()
+        .position(|command| command == action.command.command())
+    else {
+        return Ok(());
+    };
+    let logical = world
+        .logical_effect(&action.command.logical)
+        .ok_or(JournalError::CorruptStore)?;
+    if logical.current_attempt != action.command.attempt {
+        return Ok(());
+    }
+    let key = core::OperationKey {
+        sandbox: local.sandbox,
+        operation: local.operation,
+    };
+    if logical.origin != core::EffectOrigin::Operation(key)
+        || !core::effect::effect_succeeded_check(world, action.command.command())
+        || action.identity.owner != identity::owner_id(local.owner)?
+        || action.identity.sandbox != identity::sandbox_id(namespace, local.sandbox)?
+        || action.identity.operation != identity::operation_id(namespace, key)?
+        || action.identity.epoch != plan.epoch
+        || action.identity.generation != plan.generation
+        || action.identity.attempt != action.command.attempt
+        || action.identity.resource != identity::resource(namespace, action.command.command())?
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
+    receipt.validate_for(&action)?;
+    if !matches!(receipt.outcome, WorkOutcome::ObservedSuccess(ref evidence) if evidence.validates(action.command.command()))
+        || found[index].is_some()
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    found[index] = Some((action, receipt_bytes));
+    Ok(())
+}
 
 pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>(
     tx: &Transaction<'_>,
@@ -148,46 +199,22 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     let plan = world
         .operation_plan(key)
         .ok_or(JournalError::CorruptStore)?;
-    let mut found: Vec<Option<(WorkAction<core::EffectId>, Vec<u8>)>> = vec![None; 5];
+    let mut found: Vec<Option<StartupActionReceipt>> = vec![None; 5];
     let mut query = tx.prepare("SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id")?;
+    let mut row_error = None;
     for row in query.query_map(
         [identity::sandbox_id(namespace, local.sandbox)?.as_str()],
         |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?)),
     )? {
-        let (action_bytes, receipt_bytes) = row?;
-        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
-        let Some(index) = commands
-            .iter()
-            .position(|command| command == action.command.command())
-        else {
-            continue;
-        };
-        let logical = world
-            .logical_effect(&action.command.logical)
-            .ok_or(JournalError::CorruptStore)?;
-        if logical.current_attempt != action.command.attempt {
-            continue;
-        }
-        if logical.origin != core::EffectOrigin::Operation(key)
-            || !core::effect::effect_succeeded_check(world, action.command.command())
-            || action.identity.owner != identity::owner_id(local.owner)?
-            || action.identity.sandbox != identity::sandbox_id(namespace, local.sandbox)?
-            || action.identity.operation != identity::operation_id(namespace, key)?
-            || action.identity.epoch != plan.epoch
-            || action.identity.generation != plan.generation
-            || action.identity.attempt != action.command.attempt
-            || action.identity.resource != identity::resource(namespace, action.command.command())?
+        if let Err(error) =
+            accept_startup_row::<E>(row, world, namespace, local, &commands, plan, &mut found)
         {
-            return Err(JournalError::CorruptStore);
+            row_error = Some(error);
+            break;
         }
-        let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
-        receipt.validate_for(&action)?;
-        if !matches!(receipt.outcome, WorkOutcome::ObservedSuccess(ref evidence) if evidence.validates(action.command.command()))
-            || found[index].is_some()
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        found[index] = Some((action, receipt_bytes));
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     let Some(found) = found.into_iter().collect::<Option<Vec<_>>>() else {
         return Err(JournalError::UnresolvedAction);
