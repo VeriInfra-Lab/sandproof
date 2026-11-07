@@ -25,10 +25,8 @@ mod tests {
     use super::*;
     use rusqlite::{Connection, TransactionBehavior};
 
-    const UPDATE: &str =
-        "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1";
-    const SELECT: &str =
-        "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1";
+    const UPDATE: &str = "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1";
+    const SELECT: &str = "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1";
 
     fn database() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
