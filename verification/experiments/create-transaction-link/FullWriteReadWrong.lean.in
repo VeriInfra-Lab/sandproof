@@ -25,10 +25,11 @@ theorem actual_wrong_normal (seed : Record) :
     simp [readExpected, Witness.raw, Witness.connection, Witness.selected_view]
   unfold controller.lifecycle_inbox.proof_record_read_then_update
   erw [actual_select_model (Witness.effects seed) Witness.raw rfl, before]
-  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  simp! only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
   erw [actual_update_model (Witness.effects seed) Witness.raw updateSql
     Witness.newBytes Witness.newDigest rfl]
-  simp [updateExpected, Witness.raw, Witness.connection]
+  simp! [updateExpected, Witness.raw, Witness.connection,
+    core.result.Result.Insts.CoreOpsTry.branch]
 
 def returnedFirst (outcome : ProbeReply × Record) :
     Option (alloc.vec.Vec U8) :=
