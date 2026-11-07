@@ -7,7 +7,7 @@ use super::model::{Inbox, LifecycleWorkState, TerminalEncoding};
 use super::native_retirement::RetirementEncoding;
 use super::renewal_confirmation::RenewalEncoding;
 use super::unload_resolution::UnloadEncoding;
-use crate::{InternalLocalBinding, JournalError};
+use crate::{CrashInjector, CrashPoint, InternalLocalBinding, JournalError};
 use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
