@@ -145,6 +145,32 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     (result, rows)
 }
 
+// Retain lazy iteration and every callback outcome, including row errors.
+fn accept_original_rows<I, F>(
+    rows: I,
+    mut state: OriginalSourceRows,
+    mut accept: F,
+) -> (Result<(), JournalError>, OriginalSourceRows)
+where
+    I: Iterator,
+    F: FnMut(I::Item, OriginalSourceRows) -> (Result<(), JournalError>, OriginalSourceRows),
+{
+    let mut row_error = None;
+    for row in rows {
+        let (result, next_state) = accept(row, state);
+        state = next_state;
+        if let Err(error) = result {
+            row_error = Some(error);
+            break;
+        }
+    }
+    let result = match row_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    };
+    (result, state)
+}
+
 /// Read only already committed original observations under the same SQL
 /// snapshot as the candidate. Admission will persist the resulting identity
 /// with its original capture work before any physical capture call.
@@ -177,29 +203,21 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
     let rows = statement.query_map([public_sandbox.as_str()], |row| {
         Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
     })?;
-    let mut source_rows = OriginalSourceRows {
+    let source_rows = OriginalSourceRows {
         prepared: None,
         activated: None,
     };
-    let mut row_error = None;
-    for row in rows {
-        let (result, next_rows) = accept_original_source_row::<E>(
+    let (result, source_rows) = accept_original_rows(rows, source_rows, |row, state| {
+        accept_original_source_row::<E>(
             row,
             world,
             namespace,
             current,
             (sandbox, vm, &public_sandbox),
-            source_rows,
-        );
-        source_rows = next_rows;
-        if let Err(error) = result {
-            row_error = Some(error);
-            break;
-        }
-    }
-    if let Some(error) = row_error {
-        return Err(error);
-    }
+            state,
+        )
+    });
+    result?;
     match (source_rows.prepared, source_rows.activated) {
         (Some(prepared), Some(activated)) if prepared == activated => Ok(prepared),
         _ => Err(JournalError::UnresolvedAction),

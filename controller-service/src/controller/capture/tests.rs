@@ -164,3 +164,114 @@ fn source_observation_does_not_authorize_another_sandbox() {
         Err(JournalError::UnsupportedInput)
     ));
 }
+
+struct OriginalRowsTrace<I> {
+    inner: I,
+    events: std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>,
+}
+impl<I: Iterator> Iterator for OriginalRowsTrace<I> {
+    type Item = I::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.events.borrow_mut().push("next");
+        self.inner.next()
+    }
+}
+impl<I> Drop for OriginalRowsTrace<I> {
+    fn drop(&mut self) {
+        self.events.borrow_mut().push("iterator_drop");
+    }
+}
+
+#[test]
+fn generic_original_row_driver_keeps_order_prefix_and_stops_before_next() {
+    use std::{cell::RefCell, rc::Rc};
+
+    type Case = (
+        Vec<rusqlite::Result<u8>>,
+        Option<u32>,
+        Option<u32>,
+        u8,
+        Vec<&'static str>,
+    );
+    let cases: Vec<Case> = vec![
+        (vec![], Some(9), Some(8), 0, vec!["next", "iterator_drop"]),
+        (
+            vec![Ok(1), Ok(2)],
+            Some(2),
+            None,
+            0,
+            vec!["next", "accept", "next", "accept", "next", "iterator_drop"],
+        ),
+        (
+            vec![Ok(1), Err(rusqlite::Error::InvalidQuery), Ok(2)],
+            Some(1),
+            None,
+            1,
+            vec!["next", "accept", "next", "accept", "iterator_drop"],
+        ),
+        (
+            vec![Ok(1), Ok(3), Ok(2)],
+            Some(1),
+            Some(3),
+            2,
+            vec!["next", "accept", "next", "accept", "iterator_drop"],
+        ),
+        (
+            vec![Err(rusqlite::Error::InvalidQuery), Ok(2)],
+            None,
+            None,
+            1,
+            vec!["next", "accept", "iterator_drop"],
+        ),
+    ];
+    for (input, prepared, activated, expected_result, expected_events) in cases {
+        let observed = |pid: Option<u32>| {
+            pid.map(|pid| {
+                let mut value = source();
+                value.pid = pid;
+                value
+            })
+        };
+        let initial = if input.is_empty() {
+            OriginalSourceRows {
+                prepared: observed(Some(9)),
+                activated: observed(Some(8)),
+            }
+        } else {
+            OriginalSourceRows {
+                prepared: None,
+                activated: None,
+            }
+        };
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let iterator = OriginalRowsTrace {
+            inner: input.into_iter(),
+            events: Rc::clone(&events),
+        };
+        let (result, state) = accept_original_rows(iterator, initial, |row, mut state| {
+            events.borrow_mut().push("accept");
+            let value = match row {
+                Ok(value) => value,
+                Err(error) => return (Err(JournalError::Sqlite(error)), state),
+            };
+            let mut observed = source();
+            observed.pid = u32::from(value);
+            if value == 3 {
+                state.activated = Some(observed);
+                return (Err(JournalError::UnresolvedAction), state);
+            }
+            state.prepared = Some(observed);
+            (Ok(()), state)
+        });
+        let actual_result = match result {
+            Ok(()) => 0,
+            Err(JournalError::Sqlite(rusqlite::Error::InvalidQuery)) => 1,
+            Err(JournalError::UnresolvedAction) => 2,
+            other => panic!("unexpected actual driver result: {other:?}"),
+        };
+        assert_eq!(actual_result, expected_result);
+        assert_eq!(state.prepared, observed(prepared));
+        assert_eq!(state.activated, observed(activated));
+        assert_eq!(*events.borrow(), expected_events);
+    }
+}
