@@ -36,6 +36,48 @@ pub(in crate::controller) fn original_binding(
     execution_binding(world, sandbox, generation)
 }
 
+fn accept_execution_binding(
+    world: &core::World,
+    key: &core::OperationKey,
+    operation: &core::OperationLedgerRecord,
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+    owner: core::TenantId,
+    binding: &mut Option<HostBinding>,
+) -> Result<(), JournalError> {
+    if key.sandbox != sandbox
+        || !matches!(
+            operation.operation.kind,
+            core::OperationKind::Create | core::OperationKind::Resume
+        )
+    {
+        return Ok(());
+    }
+    let plan = world
+        .operation_plan(*key)
+        .ok_or(JournalError::CorruptStore)?;
+    if plan.generation != generation {
+        return Ok(());
+    }
+    match (plan.vm, plan.slot) {
+        (Some(vm), Some(network)) => {
+            if binding.is_some() {
+                return Err(JournalError::CorruptStore);
+            }
+            *binding = Some(HostBinding {
+                owner,
+                sandbox,
+                generation: plan.generation,
+                vm,
+                network,
+            });
+        }
+        (None, None) => {}
+        _ => return Err(JournalError::CorruptStore),
+    }
+    Ok(())
+}
+
 /// Resolve a retained execution's own immutable plan, including a released
 /// older generation. This does not make that generation currently usable.
 pub(in crate::controller) fn execution_binding(
@@ -50,37 +92,23 @@ pub(in crate::controller) fn execution_binding(
         return Err(JournalError::CorruptStore);
     }
     let mut binding = None;
+    let mut row_error = None;
     for (key, operation) in world.operation_records() {
-        if key.sandbox != sandbox
-            || !matches!(
-                operation.operation.kind,
-                core::OperationKind::Create | core::OperationKind::Resume
-            )
-        {
-            continue;
+        if let Err(error) = accept_execution_binding(
+            world,
+            key,
+            operation,
+            sandbox,
+            generation,
+            row.owner,
+            &mut binding,
+        ) {
+            row_error = Some(error);
+            break;
         }
-        let plan = world
-            .operation_plan(*key)
-            .ok_or(JournalError::CorruptStore)?;
-        if plan.generation != generation {
-            continue;
-        }
-        match (plan.vm, plan.slot) {
-            (Some(vm), Some(network)) => {
-                if binding.is_some() {
-                    return Err(JournalError::CorruptStore);
-                }
-                binding = Some(HostBinding {
-                    owner: row.owner,
-                    sandbox,
-                    generation: plan.generation,
-                    vm,
-                    network,
-                });
-            }
-            (None, None) => {}
-            _ => return Err(JournalError::CorruptStore),
-        }
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     Ok(binding)
 }
