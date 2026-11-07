@@ -65,7 +65,8 @@ def effects (seed : Record) : Record := {
 theorem coherent : A4FixedUpdateSelect connection newBytes newDigest := by
   intro count after written _one statement row returned
   simp only [connection] at written
-  cases written
+  have same := Result.ok_injective written
+  cases same
   by_cases columns : statement.columns.val = 2
   · simp [view, columns] at returned
     cases returned
@@ -82,7 +83,11 @@ theorem expected_normal (seed : Record) :
     expected (effects seed) raw newBytes newDigest =
       .ok (.Ok (1#usize, (⟨newBytes⟩, ⟨newDigest⟩)),
         post (effects seed) raw (view newBytes newDigest)) := by
-  rfl
+  simp [expected, raw, connection, select, view,
+    SandproofSqliteSession.queryRow, SandproofSqliteSession.bindUnit,
+    SandproofLoadBlobRust.issuedReadStatement,
+    pair, column, SandproofSqliteSession.rowGet, SandproofSqliteSession.index,
+    SandproofSqliteSession.blobColumn]
 
 end
 end SandboxModel.CreateTransactionLink.FullWriteRead.Witness

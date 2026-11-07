@@ -1,0 +1,54 @@
+import SandboxModel.CreateTransactionLink.FullWriteReadSpec
+import SandboxModel.CreateTransactionLink.ValueTransport
+import V3CreateSqlStep.Funs
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead
+noncomputable section
+
+/-- The actual fixed usize/Vec dictionaries implement the mathematical column
+observation, retaining index errors, conversion errors and all borrowed bytes. -/
+theorem actual_column_model (row : SandproofSqliteSession.Row) (position : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql row position =
+      column row position := by
+  have converted :
+      (fun raw =>
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+          (fromSharedValue raw)) = SandproofSqliteSession.blobColumn := by
+    funext raw
+    simp [alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      SandboxModel.CreateTransactionLink.shared_to_value_roundtrip]
+  change SandproofSqliteSession.rowGet
+      V3CreateSqlStepRust.Usize.Insts.RusqliteRowRowIndex.idx
+      (fun raw =>
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+          (fromSharedValue raw)) row position = column row position
+  rw [converted]
+  rfl
+
+/-- The original Rust callback and the independent two-column specification
+are equal for the existing Result monad, including outer effects/non-return. -/
+theorem actual_pair_model (row : SandproofSqliteSession.Row) :
+    controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize =
+      pair row := by
+  unfold controller.lifecycle_inbox.codec.read_blob_pair pair
+  simp only [actual_column_model]
+  apply congrArg (fun continuation => Bind.bind (column row 0#usize) continuation)
+  funext first
+  cases first with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok bytes =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    apply congrArg (fun continuation => Bind.bind (column row 1#usize) continuation)
+    funext second
+    cases second <;>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end
+end SandboxModel.CreateTransactionLink.FullWriteRead

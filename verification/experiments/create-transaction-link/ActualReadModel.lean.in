@@ -1,5 +1,5 @@
 import SandboxModel.CreateTransactionLink.FullWriteReadSpec
-import SandboxModel.CreateTransactionLink.ValueTransport
+import SandboxModel.CreateTransactionLink.ActualPairModel
 import V3CreateSqlStep.Funs
 
 open Aeneas Aeneas.Std
@@ -7,57 +7,6 @@ open V3CreateSqlStepRust
 
 namespace SandboxModel.CreateTransactionLink.FullWriteRead
 noncomputable section
-
-/-- The actual fixed usize/Vec dictionaries implement the mathematical column
-observation, retaining index errors, conversion errors and all borrowed bytes. -/
-theorem actual_column_model (row : SandproofSqliteSession.Row) (position : Usize) :
-    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
-        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql row position =
-      column row position := by
-  have converted :
-      (fun raw =>
-        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
-          (fromSharedValue raw)) = SandproofSqliteSession.blobColumn := by
-    funext raw
-    simp [alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
-      SandboxModel.CreateTransactionLink.shared_to_value_roundtrip]
-  change SandproofSqliteSession.rowGet
-      V3CreateSqlStepRust.Usize.Insts.RusqliteRowRowIndex.idx
-      (fun raw =>
-        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
-          (fromSharedValue raw)) row position = column row position
-  rw [converted]
-  rfl
-
-/-- This is the original Rust two-get callback, not an assumed callback
-contract. The independent specification preserves the first column failure. -/
-theorem actual_pair_model (row : SandproofSqliteSession.Row) :
-    controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize =
-      pair row := by
-  cases first : column row 0#usize with
-  | fail error =>
-    simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair, first]
-  | div =>
-    simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair, first]
-  | ok firstReply =>
-    cases firstReply with
-    | Err error =>
-      simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair, first,
-        core.result.Result.Insts.CoreOpsTry.branch,
-        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
-    | Ok bytes =>
-      cases second : column row 1#usize with
-      | fail error =>
-        simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair,
-          first, second, core.result.Result.Insts.CoreOpsTry.branch]
-      | div =>
-        simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair,
-          first, second, core.result.Result.Insts.CoreOpsTry.branch]
-      | ok secondReply =>
-        cases secondReply <;>
-          simp [controller.lifecycle_inbox.codec.read_blob_pair, actual_column_model, pair,
-            first, second, core.result.Result.Insts.CoreOpsTry.branch,
-            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
 
 /-- Only a pure-value return is described on an SQL Err. It does not carry a
 physical database frame or permission to reuse that connection after error. -/
