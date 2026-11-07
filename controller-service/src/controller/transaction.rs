@@ -135,7 +135,12 @@ impl<'a> WorldTransaction<'a> {
             Some(transaction) => transaction,
             None => panic!("live transaction"),
         };
-        Ok(sqlite_io::execute_blobs(transaction, statement, bytes, digest)?)
+        Ok(sqlite_io::execute_blobs(
+            transaction,
+            statement,
+            bytes,
+            digest,
+        )?)
     }
 
     pub(super) fn commit(self) -> Result<(), JournalError> {
