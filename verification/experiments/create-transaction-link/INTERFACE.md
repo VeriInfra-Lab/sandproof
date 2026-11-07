@@ -3,8 +3,9 @@
 [切片范围](README.md) · [正式依赖登记](../../../docs/formal/dependencies.md)
 
 本接口供 Create/Replay 事务连接和真实 Unload 来源读取共用。定义在
-[SqliteSessionData.lean.in](SqliteSessionData.lean.in)，尚未构建、连接实际 Funs 或通过正式验收。
-候选提交不是已经交付的库保证；实际 Rust、模型绑定、内核、错误版和完整验收仍须接通。
+[SqliteSessionData.lean.in](SqliteSessionData.lean.in)。`9de84ca1` 的固定 BLOB 更新/双列读取
+已连接实际 Funs，并通过局部内核、物理文件服务、原生正错恢复检查；精确范围见切片说明。
+游标、其它标量、完整 record/commit 和公共验收尚未完成，不据此提供全部查询的库保证。
 本包不修改 Charon/Aeneas，不定义另一套 World 或 RawTransaction，不解释任意 SQL。
 
 ## 唯一类型与复用位置
@@ -28,8 +29,8 @@ DropBehavior、原槽和其它字段不由库模型替换。
 
 ## 实际生成签名与未完成部分
 
-`61fd3361` 的实际更新后读取窄入口已于 2026-11-07 在原 MSRA 环境完成原版
-Charon/Aeneas 生成，尚未连接下列模板或进行 Lean 内核检查。实际库转发签名为：
+`9de84ca1` 的两个实际窄入口已完成原版 Charon/Aeneas 生成及局部 Lean 检查。
+实际库转发签名为：
 
 ```lean
 execute_blobs : RawTransaction → Str → Slice U8 → Slice U8 →
@@ -42,20 +43,17 @@ UPDATE 返回的 `effects1` 交给实际 `query_bytes_pair`；UPDATE 的正常 S
 分支同样返回 `effects1`。因此既有 Aeneas 可以保留原事务所有者的后继，无须定义
 另一套 World 解释器；这不等于已经证明后继满足预期数据库条件。
 
-实际外部模板还含 `Option.as_ref/as_mut`、`Connection.query_row`、单位参数绑定、
-`Row.get`、`usize` 列索引和 `Vec<u8>` 的 `FromSql` 等待绑定项。应按这些实际
-签名提供定义并核对原库行为，再检查实际生成体；生成模板中的 `axiom` 洞不能
-作为已交付实现。游标扩展也仍需与实际生成签名连接，不能从本次窄入口推称已覆盖。
+窄绑定位于 `TypesExternal.lean.in`、`FunsExternal.lean.in` 和 `SqliteReadOps.lean.in`，
+处理原 BLOB 写、`Option.as_ref`、单位参数绑定、`query_row`、`Row.get`、`usize`
+列索引及 `Vec<u8>` 的 `FromSql`。它们复用原数据提供方和完整五种列值的逐构造转换，
+不导入另一套生成 World；本片没有未实现外部公理。这里不包含 String/i64/bool、
+NULL/Optional 的完整字典，也不包含实际游标/扫描绑定，不能从枚举传输推出这些已完成。
 
-后继窄绑定草稿位于 `TypesExternal.lean.in`、`FunsExternal.lean.in` 和
-`SqliteReadOps.lean.in`，只处理本门的原始 BLOB 写、单位参数和双 BLOB 读。
-它们复用原数据提供方和两个完整列值枚举的逐构造转换，不导入另一套生成 World。
-`UpdateOwner.lean.in` 的候选结论检查实际更新方法的所有者返回和更新出错时的立即传播；
-尚未经过内核或文件服务，不能据此宣布成功读取一致或完整记录入口已经证明。
-
-静态检查还发现旧生成体借用 `Option.expect` 的成对返回与冻结标准库仅返回值的
-签名不一致，原内核尚未实测。后继只在 Rust 中直接匹配原事务槽，不修改生成体，
-也不添加 `expect` 重载或猜测的可变 `Option` 模型；须重新生成并检查实际新函数。
+`ActualPairModel`、`ActualReadModel` 和 `ActualUpdateModel` 把实际方法连接到独立
+逐操作规格，`UpdateOwner` 保留实际更新的原槽和错误后继结论。完整写后读及错误版
+证书消费这些对应；均已经过局部内核和文件服务，但完整记录入口仍未证明。
+Rust 直接匹配原事务槽避开旧可变 `Option.expect` 的冻结库签名问题；不修改生成体，
+不添加 `expect` 重载或另一套可变借用模型。
 
 ## 写入后的视图
 

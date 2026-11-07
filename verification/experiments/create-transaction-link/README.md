@@ -1,7 +1,7 @@
 # Create/Replay 的连续事务连接候选
 
-Refs #637。当前已有定点普通测试和实际 Rust 抽取结果，尚未完成正式验收，不是公共证明入口。
-原完整提交闭包的 Charon 类型检查仍有阻断；本候选不能据此声明真实事务链已经闭合。
+Refs #637。`9de84ca1` 已完成真实 Rust 双 BLOB 更新后读取的局部证明，以及同一性质的
+原生正确、错误和恢复检查。尚未接入公共证明入口，不表示完整记录/提交链或 V3 已完成。
 
 生产候选把同一个 `WorldTransaction` 移入现有 `StandardRecord`，记录结束后再移出，
 继续执行原重放返回或提交分支。它不复制事务或 World；记录出错时由原事务的 Drop 收尾。
@@ -16,26 +16,49 @@ Refs #637。当前已有定点普通测试和实际 Rust 抽取结果，尚未�
 这只具体使用既有 [A4/B4 合同](../../../docs/formal/dependencies.md)，不把整个事务、
 四个校验器或记录业务设为可信函数，也不引入自定义公理。
 
-稳定 Rust 候选 `61fd3361` 已在原 Ning 环境通过格式检查、严格 Clippy 和五项定点测试：
-同事务写后读和确认提交、未提交写的正常 Drop 回滚、库错误后可能保留已写内容，
-以及原 Create admission 重放/重启和提交回执丢失重试两项回归，共约 35 秒。
-它们不是完整记录入口的所有故障验收。错误保留写入的 trigger 仅为库原语
-故障夹具，不是受支持的生产 schema。普通测试只在原普通测试环境运行，抽取、内核与
-真实文件服务只在原证明环境运行；两道可行性门均接通后才进入正式有限切片验收。
+## 已证明的实际入口和条件
 
-同一 Rust 候选的实际 `StandardRecord` 更新后读取窄入口，已在原 MSRA 环境通过
-原版 Charon 和 Aeneas，约 55 秒。生成体将写入返回的 `effects1` 交给下一次实际读取，
-正常 SQL 错误分支也返回该后继；没有把自有业务函数设为 opaque。
-只有已列明的 `execute_blobs` 库转发属于新增机械边界。
-实际外部函数绑定、共享观察接口的构建、Lean 内核检查、错误版及完整提交入口仍待完成；
-工具生成模板中的 `axiom` 洞不属于已完成的模型或证明。
+[roots.rs.in](roots.rs.in) 只追加到隔离源码，不进入产品运行入口。
+正确函数调用原 `StandardRecord.update`，再调用原 `query_bytes_pair`；错误函数只交换
+这两个调用的顺序。两者都由固定原版 Charon/Aeneas 抽取，保留原生成体，未把这些
+自有方法设为 opaque。`execute_inbox_update` 直接匹配原事务槽；`None` 保留原 panic，
+不添加自定义的可变 `Option.expect` 翻译。
 
-[共享 SQLite 接口候选](INTERFACE.md) 记录逐操作条件和仍需连接的实际生成签名，
-不作为已交付的依赖保证。
+| 结论 | 实际证明和范围 |
+|---|---|
+| 完整写后读 | `actual_full_write_read_contract` 对实际正确生成函数证明：SELECT 消费 UPDATE 返回的视图，保留原行数、两份完整 BLOB、后继所有者和首错；外层失败/不返回按原 Result 传播 |
+| 读取刚写入的内容 | `actual_success_returns_complete_new_blobs` 另要求 A4 固定 UPDATE 的一行写入条件，以及这次 SELECT 的正常 prepare/首行观察，推出完整新 bytes/digest；不能从 UPDATE 成功推出 SELECT 成功 |
+| 同一规格拒绝真实错误版 | `actual_wrong_rejected` 对实际先读后写生成函数给出具体反例；旧新字节不同，行数和摘要长度相同，不能靠编译失败、只比摘要或只比长度通过 |
+| 原槽与值的转交 | 保留两项值枚举往返及两项实际更新所有者/错误后继定理；SQL Err 后没有连接仍活动的结论 |
 
-对上述生成体的静态接线检查发现，可变 `Option.expect` 调用要求的返回类型与冻结
-Aeneas 标准库定义不一致；这尚不是原 Lean 内核实测失败。后继源码只在
-`execute_inbox_update` 中直接匹配原事务槽，`None` 仍以 `live transaction` panic，
-其余原 SQL、完整参数、结果和所有者布局保留。该后继须重新生成、经过原内核和
-文件服务检查；不能复用旧候选的生成成功标记。新增绑定与逐操作定理仍是未构建候选，
-先限定于本门所需的 BLOB 写和双 BLOB 读。
+规格在 [FullWriteReadSpec.lean.in](FullWriteReadSpec.lean.in)，不导入正确函数的对应定理。
+正确版、内容推论、错误版证书分别在 `FullWriteReadCorrect.lean.in` 和
+`FullWriteReadWrong.lean.in`，均检查真实生成函数，而非另写一个 Rust 解释器。
+反例的有限库观察在 `FullWriteReadWitness.lean.in`，不提供任意 SQL 的执行器。
+
+## 已执行的检查
+
+`9de84ca1` 的两根实际 Rust 已重新经过原 Charon/Aeneas；同一三项结论、原四项审计、
+受影响的十份实际物理文件均通过原内核、文件服务诊断及原始记录读回，总耗时约 131 秒。
+另外十二份未变闭包文件按原源码、依赖、工具和原始证据严格复用，不称本次重新证明。
+旧 `161f242b` / `6fe28de6` 的证明和捕获保留原版本；格式后根的生成物另行保留，
+不把旧成功记录换标签用于新输入。
+
+[full-write-read-native.rs.in](full-write-read-native.rs.in) 在原普通测试环境接通真实
+SQLite 和原 `WorldTransaction`。完整 BLOB/原行数断言在三相中不变，仅切换被调用的
+真实根：正确版退出 0，先读后写版确实编译后因完整内容断言退出 101，恢复版退出 0。
+三份测试程序均为当前同 crate 业务与测试源码的新编译结果；恢复源码及程序摘要与
+正确版一致，总耗时约 42 秒。最初格式检查失败的记录另存，不计为性质反例。
+普通检查和证明检查分属原各自环境；这些是局部检查，不是完整普通或公共证明封口。
+
+## 仍需提供的保证
+
+[共享 SQLite 接口](INTERFACE.md) 列明具体库绑定和条件。SQLite 及机械转发仍依赖
+已登记 A4/B4：实际使用同一个原事务、完整 SQL/参数，成功写入与后续成功读取一致。
+纯 Lean 载体相同不证明物理句柄相同，接口模型的定义也不等于真实 SQLite 已被验证。
+
+生产 `record_lifecycle_intent` 尚须连接实际 load/认证/重放或记录、编码与一行检查、
+原四个校验器、同一候选 World、commit/memo 和真实 Drop。当前窄入口没有覆盖这些
+完整业务决定。正常 Drop 的库测试不能代替 Drop 对应证明；错误保留部分写入的
+trigger 只是库原语故障夹具，不是生产 schema。后续先固定最小实际调用段和库接口，
+不以当前局部成果或宽闭包抽取失败宣称这些义务已解决。
