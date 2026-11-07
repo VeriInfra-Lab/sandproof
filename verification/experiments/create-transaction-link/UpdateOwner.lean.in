@@ -58,7 +58,7 @@ theorem actual_update_routes_successor
       SandproofSqliteSession.executeBlobs, journalReply, withWriteView,
       present, transition, core.result.Result.Insts.CoreOpsTry.branch,
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
-      JournalError.Insts.CoreConvertFromError, JournalError.Insts.CoreConvertFromError.from]
+      JournalError.Insts.CoreConvertFromError.from]
 
 /-- The actual update/read probe propagates a normal SQL update error with
 the same successor owner. It grants no permission to query or commit that
