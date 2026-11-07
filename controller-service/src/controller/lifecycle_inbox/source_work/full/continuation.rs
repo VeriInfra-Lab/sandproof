@@ -95,6 +95,10 @@ fn accept_ready_row<E: HostEvidence + DeserializeOwned>(
     Ok(())
 }
 
+#[expect(
+    clippy::manual_find,
+    reason = "fixed Aeneas does not support slice find HRTB; preserve ordered borrowed lookup"
+)]
 fn first_record_for_key(
     records: &[SourceWorkRecord],
     operation: core::OperationKey,

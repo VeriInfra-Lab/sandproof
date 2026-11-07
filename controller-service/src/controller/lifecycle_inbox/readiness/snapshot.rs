@@ -300,6 +300,10 @@ fn original_result(
     }
 }
 
+#[expect(
+    clippy::manual_find,
+    reason = "fixed Aeneas does not support slice find HRTB; preserve ordered borrowed lookup"
+)]
 fn first_entry_at_version(entries: &[Entry], version: u64) -> Option<&Entry> {
     for entry in entries {
         if entry.intent.accepted_version == version {
