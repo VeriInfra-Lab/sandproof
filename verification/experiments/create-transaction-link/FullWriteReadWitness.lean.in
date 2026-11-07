@@ -79,15 +79,18 @@ theorem different_full_bytes :
   have values := congrArg (fun value : alloc.vec.Vec U8 => value.val) equal
   cases values
 
+theorem selected_view (bytes digest : Bytes) :
+    select (view bytes digest) = .ok (.Ok (⟨bytes⟩, ⟨digest⟩)) := by
+  simp [select, view, SandproofSqliteSession.queryRow, SandproofSqliteSession.bindUnit,
+    SandproofLoadBlobRust.issuedReadStatement,
+    pair, column, SandproofSqliteSession.rowGet, SandproofSqliteSession.index,
+    SandproofSqliteSession.blobColumn]
+
 theorem expected_normal (seed : Record) :
     expected (effects seed) raw newBytes newDigest =
       .ok (.Ok (1#usize, (⟨newBytes⟩, ⟨newDigest⟩)),
         post (effects seed) raw (view newBytes newDigest)) := by
-  simp [expected, raw, connection, select, view,
-    SandproofSqliteSession.queryRow, SandproofSqliteSession.bindUnit,
-    SandproofLoadBlobRust.issuedReadStatement,
-    pair, column, SandproofSqliteSession.rowGet, SandproofSqliteSession.index,
-    SandproofSqliteSession.blobColumn]
+  simp [expected, raw, connection, selected_view]
 
 end
 end SandboxModel.CreateTransactionLink.FullWriteRead.Witness

@@ -1,5 +1,6 @@
 import SandboxModel.CreateTransactionLink.FullWriteReadWitness
 import SandboxModel.CreateTransactionLink.ActualReadModel
+import SandboxModel.CreateTransactionLink.ActualUpdateModel
 import SandboxModel.ProofAuditCommand
 
 open Aeneas Aeneas.Std
@@ -19,13 +20,21 @@ theorem actual_wrong_normal (seed : Record) :
       .ok (.Ok (1#usize, (⟨Witness.oldBytes⟩, ⟨Witness.oldDigest⟩)),
         post (Witness.effects seed) Witness.raw
           (Witness.view Witness.newBytes Witness.newDigest)) := by
-  rfl
+  have before : readExpected (Witness.effects seed) Witness.raw.conn.current =
+      .ok (.Ok (⟨Witness.oldBytes⟩, ⟨Witness.oldDigest⟩), Witness.effects seed) := by
+    simp [readExpected, Witness.raw, Witness.connection, Witness.selected_view]
+  unfold controller.lifecycle_inbox.proof_record_read_then_update
+  rw [actual_select_model (Witness.effects seed) Witness.raw rfl, before]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rw [actual_update_model (Witness.effects seed) Witness.raw updateSql
+    Witness.newBytes Witness.newDigest rfl]
+  simp [updateExpected, Witness.raw, Witness.connection]
 
-def returnedFirst (outcome : Result (ProbeReply × Record)) :
+def returnedFirst (outcome : ProbeReply × Record) :
     Option (alloc.vec.Vec U8) :=
-  match outcome with
-  | .ok (.Ok (_, blobs), _) => some blobs.1
-  | _ => none
+  match outcome.1 with
+  | .Ok (_, blobs) => some blobs.1
+  | .Err _ => none
 
 /-- A concrete old/new BLOB observation violates the identical complete
 contract for the actual wrong Rust function, for any retained business seed. -/
@@ -35,7 +44,7 @@ theorem actual_wrong_rejected (seed : Record) :
   have agreed := claimed (Witness.effects seed) Witness.raw
     Witness.newBytes Witness.newDigest rfl Witness.coherent
   rw [actual_wrong_normal, Witness.expected_normal] at agreed
-  have bytes := congrArg returnedFirst agreed
+  have bytes := congrArg returnedFirst (Result.ok_injective agreed)
   change some (⟨Witness.oldBytes⟩ : alloc.vec.Vec U8) = some ⟨Witness.newBytes⟩ at bytes
   exact Witness.different_full_bytes (Option.some.inj bytes)
 

@@ -1,0 +1,41 @@
+import SandboxModel.CreateTransactionLink.FullWriteReadSpec
+import V3CreateSqlStep.Funs
+
+open Aeneas Aeneas.Std
+open V3CreateSqlStepRust
+
+namespace SandboxModel.CreateTransactionLink.FullWriteRead
+noncomputable section
+
+/-- Composable observation of the actual update method, preserving the same
+arbitrary outer Result computation and all its effects, failure/non-return.
+This is the one UPDATE operation, not a World/Rust interpreter. -/
+def updateExpected (effects : Record) (raw : RawTransaction)
+    (statement : Str) (bytes digest : Bytes) :
+    Result (core.result.Result Usize JournalError × Record) := do
+  let (reply, view) ← raw.conn.step raw.conn.current statement bytes digest
+  let mapped := match reply with
+    | .Ok count => .Ok count
+    | .Err error => .Err (JournalError.Sqlite error)
+  .ok (mapped, post effects raw view)
+
+theorem actual_update_model (effects : Record) (raw : RawTransaction)
+    (statement : Str) (bytes digest : Bytes)
+    (present : effects.tx.transaction = some raw) :
+    controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+        effects statement bytes digest =
+      updateExpected effects raw statement bytes digest := by
+  unfold controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update updateExpected
+  simp only [controller.transaction.WorldTransaction.execute_inbox_update, present,
+    controller.transaction.sqlite_io.execute_blobs, SandproofSqliteSession.executeBlobs,
+    bind_assoc_eq, bind_tc_ok]
+  apply congrArg (fun continuation =>
+    Bind.bind (raw.conn.step raw.conn.current statement bytes digest) continuation)
+  rintro ⟨reply, view⟩
+  cases reply <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from, post]
+
+end
+end SandboxModel.CreateTransactionLink.FullWriteRead

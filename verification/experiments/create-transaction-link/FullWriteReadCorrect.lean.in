@@ -1,4 +1,5 @@
 import SandboxModel.CreateTransactionLink.ActualReadModel
+import SandboxModel.CreateTransactionLink.ActualUpdateModel
 import SandboxModel.CreateTransactionLink.UpdateOwner
 import SandboxModel.ProofAuditCommand
 
@@ -14,46 +15,25 @@ bytes/digest; no whole-program correctness assumption occurs here. -/
 theorem actual_full_write_read_contract :
     FullWriteReadContract controller.lifecycle_inbox.proof_record_update_then_read := by
   intro effects raw bytes digest present _coherent
-  cases transition : raw.conn.step raw.conn.current updateSql bytes digest with
-  | fail error =>
-    simp [controller.lifecycle_inbox.proof_record_update_then_read, expected,
-      controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update,
-      controller.transaction.WorldTransaction.execute_inbox_update,
-      controller.transaction.sqlite_io.execute_blobs,
-      SandproofSqliteSession.executeBlobs, present, transition]
-  | div =>
-    simp [controller.lifecycle_inbox.proof_record_update_then_read, expected,
-      controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update,
-      controller.transaction.WorldTransaction.execute_inbox_update,
-      controller.transaction.sqlite_io.execute_blobs,
-      SandproofSqliteSession.executeBlobs, present, transition]
-  | ok outcome =>
-    rcases outcome with ⟨reply, view⟩
-    cases reply with
-    | Err error =>
-      simpa [expected, transition, post, withWriteView] using
-        actual_update_error_returns_successor effects raw view updateSql bytes digest
-          error present transition
-    | Ok count =>
-      have owner := actual_update_routes_successor effects raw view updateSql bytes digest
-        (.Ok count) present transition
-      have read := actual_select_model (withWriteView effects raw view)
-        { raw with conn := { raw.conn with current := view } } rfl
-      cases selected : select view with
-      | fail error =>
-        simp [controller.lifecycle_inbox.proof_record_update_then_read, owner, read,
-          expected, transition, readExpected, selected, post, withWriteView,
-          journalReply, core.result.Result.Insts.CoreOpsTry.branch]
-      | div =>
-        simp [controller.lifecycle_inbox.proof_record_update_then_read, owner, read,
-          expected, transition, readExpected, selected, post, withWriteView,
-          journalReply, core.result.Result.Insts.CoreOpsTry.branch]
-      | ok selectedReply =>
-        cases selectedReply <;>
-          simp [controller.lifecycle_inbox.proof_record_update_then_read, owner, read,
-            expected, transition, readExpected, selected, post, withWriteView,
-            journalReply, core.result.Result.Insts.CoreOpsTry.branch,
-            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  unfold controller.lifecycle_inbox.proof_record_update_then_read expected
+  rw [actual_update_model effects raw updateSql bytes digest present]
+  simp only [updateExpected, bind_assoc_eq]
+  apply congrArg (fun continuation =>
+    Bind.bind (raw.conn.step raw.conn.current updateSql bytes digest) continuation)
+  rintro ⟨reply, view⟩
+  cases reply with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok count =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    rw [actual_select_model (post effects raw view)
+      { raw with conn := { raw.conn with current := view } } rfl]
+    simp only [readExpected, bind_assoc_eq]
+    apply congrArg (fun continuation => Bind.bind (select view) continuation)
+    funext selected
+    cases selected <;>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
 
 /-- Actual Rust success with the original count and complete newly written
 bytes/digest, derived from the per-operation A4 clause and normal SELECT

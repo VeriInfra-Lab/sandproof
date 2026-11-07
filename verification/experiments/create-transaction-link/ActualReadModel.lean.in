@@ -41,32 +41,18 @@ theorem actual_select_model (effects : Record) (raw : RawTransaction)
         raw.conn.current.single selectSql () () = select raw.conn.current
     rw [binding, callback]
     rfl
-  cases selected : select raw.conn.current with
-  | fail error =>
-    simp [controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-      controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
-      core.option.Option.as_ref, core.option.Option.expect, Result.ofOption,
-      rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
-      controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-      library, selected, readExpected, present]
-  | div =>
-    simp [controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-      controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
-      core.option.Option.as_ref, core.option.Option.expect, Result.ofOption,
-      rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
-      controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-      library, selected, readExpected, present]
-  | ok reply =>
-    cases reply <;>
-      simp [controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-        controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
-        core.option.Option.as_ref, core.option.Option.expect, Result.ofOption,
-        rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
-        controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
-        library, selected, readExpected, present,
-        core.result.Result.Insts.CoreOpsTry.branch,
-        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
-        JournalError.Insts.CoreConvertFromError.from]
+  unfold controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair readExpected
+  simp only [controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, core.option.Option.expect, Result.ofOption,
+    present, rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
+    library, bind_tc_ok, bind_assoc_eq]
+  apply congrArg (fun continuation => Bind.bind (select raw.conn.current) continuation)
+  funext reply
+  cases reply <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from]
 
 /-- The independent column specification returns both complete BLOBs under
 the fixed two-column row observation, with no digest/length-only shortcut. -/
