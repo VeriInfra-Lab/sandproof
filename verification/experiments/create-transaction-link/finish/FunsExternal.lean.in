@@ -1,0 +1,43 @@
+import SandproofTxFinish.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofTxFinishRust
+noncomputable section
+
+-- FOR THE NEW OPAQUE VIEW ONLY. Never import into transparent 02b Funs:
+-- those old reducible definitions ignore value and cannot satisfy these laws.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+/-- B2 model, restricted to the original distinct cells and normal borrowing.
+The argument is the complete original Option<World>, not a hash or ID.
+The returned record is an updated CONTENT VIEW of the same cell pair. -/
+def controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    (self : controller.transaction.TransactionCells)
+    (value : Option sandbox_controller_core.model.World) :
+    Result controller.transaction.TransactionCells :=
+  .ok { self with committed := value }
+
+/-- B2 take of the original whole candidate, clearing only that cell. -/
+def controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.take_candidate
+    (self : controller.transaction.TransactionCells) :
+    Result (Option sandbox_controller_core.model.World × controller.transaction.TransactionCells) :=
+  .ok (self.candidate, { self with candidate := none })
+
+-- Existing finite Result interface. Not a SQL/error classifier.
+def core.result.Result.is_err {T E : Type} (reply : core.result.Result T E) : Result Bool :=
+  match reply with
+  | .Ok _ => .ok false
+  | .Err _ => .ok true
+
+/-- Existing A4, whole original rollback call. Both normal replies and outer
+failure/non-return remain possible through the observation, never default Ok.
+Consumption of the actual raw T is retained by the original generated call.
+No SQL liveness, connection-close or completed-rollback claim on Err. -/
+def rusqlite.transaction.Transaction.rollback (transaction : rusqlite.transaction.Transaction) :
+    Result (core.result.Result Unit rusqlite.error.Error) :=
+  transaction.conn.rollbackReply
+
+end
+end SandproofTxFinishRust

@@ -1,0 +1,105 @@
+import SandproofTxFinish.Funs
+import SandproofTxFinish.Model
+
+open Aeneas Aeneas.Std
+namespace SandproofTxFinishRust.FiniteCells
+noncomputable section
+
+abbrev World := sandbox_controller_core.model.World
+abbrev Cells := controller.transaction.TransactionCells
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev RawT := rusqlite.transaction.Transaction
+abbrev SlotView := SandproofSqliteRust.Model.Slots World
+
+-- Whole actual generated World; no parallel World type or encoding.
+def toSlots (cells : Cells) : SlotView := ⟨cells.committed, cells.candidate⟩
+def fromSlots (values : SlotView) : Cells := ⟨values.committed, values.candidate⟩
+
+theorem from_to (cells : Cells) : fromSlots (toSlots cells) = cells := by
+  cases cells
+  rfl
+
+theorem to_from (values : SlotView) : toSlots (fromSlots values) = values := by
+  cases values
+  rfl
+
+-- These are equations of NEW modeled opaque primitives, NOT hypotheses or
+-- theorems asserted about the old transparent implementation that lost value.
+theorem set_view (cells : Cells) (value : Option World) :
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+      cells value = .ok (fromSlots { toSlots cells with committed := value }) := by
+  cases cells
+  rfl
+
+theorem take_view (cells : Cells) :
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.take_candidate
+      cells = .ok ((toSlots cells).candidate,
+        fromSlots { toSlots cells with candidate := none }) := by
+  cases cells
+  rfl
+
+-- Proof-only name for the ONE actual expression in the generated wrapper.
+-- It does not cause a second physical call or interpret Rust/SQL.
+def memoInput (owner : Owner) : Cells :=
+  ⟨owner.committed.value, owner.candidate⟩
+
+def memoInvocation {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (commit : F) :
+    Result (core.result.Result Unit JournalError × Option RawT × Cells) :=
+  controller.transaction.memo.commit_with
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    api owner.transaction (memoInput owner) commit
+
+-- Header/name and rfl still require the next actual raw Funs check.
+-- Crucially this says only how the RETURN VALUE is projected; no false claim
+-- that immutable owner.committed.value became the physical post-value.
+theorem wrapper_projects_actual_memo {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (commit : F) :
+    controller.transaction.WorldTransaction.commit_with api owner commit =
+      (do let (reply, _, _) ← memoInvocation api owner commit; .ok reply) := by
+  rfl
+
+def rollbackInvocation (owner : Owner) : Result (Option RawT × Cells) :=
+  controller.transaction.memo.rollback_if_live
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError
+    owner.transaction (memoInput owner) ()
+
+theorem handler_projects_actual_memo (owner : Owner) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop owner =
+      (do let (slot, _) ← rollbackInvocation owner; .ok { owner with transaction := slot }) := by
+  rfl
+
+-- Separate B4 condition on the value ACTUALLY observed in original surviving
+-- committed at normal return. Concrete equality for every normal result;
+-- no arbitrary predicate, None premise, or assumed business acceptance.
+def LinkedCommitted {R : Type} (actualObserved : Option World)
+    (invocation : Result R) (cellsOf : R → Cells) : Prop :=
+  ∀ returned, invocation = .ok returned →
+    actualObserved = (toSlots (cellsOf returned)).committed
+
+def SurvivingCommittedObservation
+    (actualObserved : Option World) (afterMemo : Cells) : Prop :=
+  actualObserved = (toSlots afterMemo).committed
+
+theorem linked_ok {R : Type} (returned : R) (cellsOf : R → Cells) :
+    LinkedCommitted (toSlots (cellsOf returned)).committed (.ok returned) cellsOf := by
+  intro other same
+  have values := Result.ok_injective same
+  cases values
+  rfl
+
+theorem observe_none (actualObserved : Option World) (afterMemo : Cells)
+    (mechanical : SurvivingCommittedObservation actualObserved afterMemo)
+    (core : (toSlots afterMemo).committed = none) : actualObserved = none :=
+  mechanical.trans core
+
+-- No equation equates immutable owner/returnedSelf snapshots with the
+-- physical poststate. B2 + exact original-field/callback/normal-cleanup frame
+-- is the trusted provider of LinkedCommitted, not these pure definitions.
+-- The owned candidate may be disposed after memo return; observe only the
+-- surviving committed at wrapper return, not a live candidate after exit.
+end
+end SandproofTxFinishRust.FiniteCells

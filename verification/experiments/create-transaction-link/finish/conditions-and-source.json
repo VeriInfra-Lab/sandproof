@@ -1,0 +1,160 @@
+{
+  "source_bindings": {
+    "set_committed": {
+      "path": "controller-service/src/controller/transaction.rs",
+      "source_head": "c3e47b98f6e97828b02ca0b8e60bee3459988808",
+      "body": "fn set_committed(&mut self, value: Option<World>) {\n        *self.committed.borrow_mut() = value;\n    }",
+      "body_text_sha256": "ef5c28eaf6af91d0187146b87a14bdbe554e63de3eb2c3f2be5a67e3fb5500f9",
+      "span": {
+        "Untagged": {
+          "data": {
+            "file_id": 5,
+            "beg": {
+              "line": 85,
+              "col": 4
+            },
+            "end": {
+              "line": 87,
+              "col": 5
+            }
+          },
+          "generated_from_span": null
+        }
+      },
+      "old_transparent_IR_def_id": 31
+    },
+    "take_candidate": {
+      "path": "controller-service/src/controller/transaction.rs",
+      "source_head": "c3e47b98f6e97828b02ca0b8e60bee3459988808",
+      "body": "fn take_candidate(&mut self) -> Option<World> {\n        self.candidate.borrow_mut().take()\n    }",
+      "body_text_sha256": "6bde150b53e4eaaad382c8fc65845327d6e3822e5a666c6ccc12683a40c5f353",
+      "span": {
+        "Untagged": {
+          "data": {
+            "file_id": 5,
+            "beg": {
+              "line": 89,
+              "col": 4
+            },
+            "end": {
+              "line": 91,
+              "col": 5
+            }
+          },
+          "generated_from_span": null
+        }
+      },
+      "old_transparent_IR_def_id": 32
+    },
+    "commit_with": {
+      "path": "controller-service/src/controller/transaction.rs",
+      "source_head": "c3e47b98f6e97828b02ca0b8e60bee3459988808",
+      "body": "fn commit_with(\n        mut self,\n        commit: impl FnOnce(Transaction<'a>) -> rusqlite::Result<()>,\n    ) -> Result<(), JournalError> {\n        let mut cells = TransactionCells {\n            committed: &self.committed.value,\n            candidate: &self.candidate,\n        };\n        memo::commit_with(&mut self.transaction, &mut cells, commit)\n    }",
+      "body_text_sha256": "4fe1d1b33e0a42b72192dcd9e66791bd150387cf9e573f991ae9fb1a537f94c5",
+      "span": {
+        "Untagged": {
+          "data": {
+            "file_id": 5,
+            "beg": {
+              "line": 164,
+              "col": 4
+            },
+            "end": {
+              "line": 173,
+              "col": 5
+            }
+          },
+          "generated_from_span": null
+        }
+      },
+      "old_transparent_IR_def_id": 21
+    },
+    "drop": {
+      "path": "controller-service/src/controller/transaction.rs",
+      "source_head": "c3e47b98f6e97828b02ca0b8e60bee3459988808",
+      "body": "fn drop(&mut self) {\n        let mut cells = TransactionCells {\n            committed: &self.committed.value,\n            candidate: &self.candidate,\n        };\n        memo::rollback_if_live(&mut self.transaction, &mut cells, |transaction| {\n            transaction.rollback()\n        });\n    }",
+      "body_text_sha256": "d7cddb4c91a6e35f87f2ad2dffbd38833508704b5c0e2ccd64b37ea5faa4ba8e",
+      "span": {
+        "Untagged": {
+          "data": {
+            "file_id": 5,
+            "beg": {
+              "line": 185,
+              "col": 4
+            },
+            "end": {
+              "line": 193,
+              "col": 5
+            }
+          },
+          "generated_from_span": null
+        }
+      },
+      "old_transparent_IR_def_id": 12
+    }
+  },
+  "B2_set": {
+    "domain": [
+      "the original committed/candidate RefCells in this one live transaction interval",
+      "distinct original objects, valid normal mutable borrowing, no outstanding conflicting guards",
+      "whole plain World values, no custom resource Drop/callback effects"
+    ],
+    "physical_effect": [
+      "write exactly given full Option<World> into original committed.value",
+      "candidate, raw T/slot, data_version, input_start, DB state and all unrelated state unchanged by THIS primitive",
+      "temporary RefMut released before returning; no guard spans database callback"
+    ],
+    "trusted_not_machine_proved": "Rust body 85-87 and std RefCell internal write-back; boundary representation is a value observation, not a pointer/heap model"
+  },
+  "B2_take": {
+    "physical_effect": [
+      "return exactly original full candidate Option<World>",
+      "set only original candidate to None",
+      "committed.value, raw T/slot, data_version, input_start, DB state and unrelated state unchanged by THIS primitive",
+      "normal guard release before returning"
+    ],
+    "source": "transaction.rs89-91"
+  },
+  "B4_entry": [
+    "actual cells.committed is &self.committed.value, cells.candidate is &self.candidate; not a swapped pair even when their values happen equal",
+    "actual self.transaction is original raw slot passed to memo, no replacement T",
+    "normal borrowing has valid lifetime through call; no move of a borrowed owner/cell",
+    "physical same-object fact is supplied by exact source/call binding, never inferred from Nat/value equality"
+  ],
+  "B4_callback_frame": [
+    "original production commit/rollback function and any internal registered DB hooks cannot modify or reenter either memo cell; FnOnce capture/destructor frame included",
+    "callbacks may change DB and return any admitted outcome; no memo-cell mutation or live RefMut during callback",
+    "a generic FnOnce type alone does not establish this frame; the concrete use must supply it"
+  ],
+  "B4_observation": [
+    "B2 calls are the two exact models, so memo intermediate returned Cells denotes values of these original cells at memo return",
+    "surviving external committed cell retains its observed memo value until wrapper return, under no other writer and the normal cleanup frame",
+    "this is an explicit trusted physical observation/connection condition, not a theorem of the immutable generated Self and not a premise naming desired None/candidate/validity",
+    "candidate is observed at memo/handler return while alive; consumed Self may subsequently dispose it, so no physical candidate-liveness claim after wrapper return",
+    "next invocation must receive a fresh original-cell observation; reusing the stale pure returned Self across calls is not permitted"
+  ],
+  "normal_Drop_dispatch": [
+    "normal Rust compiler/DropGlue and exact source ownership connect each audited normal live-owner exit to this actual handler",
+    "original LLBC normal/unwind syntactic sites retained; current generated caller erases handler calls, so no machine proof of dispatch",
+    "under normal memo return raw slot is None, so old rollback_absent lemma plus frame leaves committed unchanged during normal cleanup",
+    "panic/unwind/abort/crash and arbitrary mem::forget/ManuallyDrop not covered"
+  ],
+  "internal_not_trusted": [
+    "None/original candidate selection, clear-before-commit, callback/error classification, take/publish order: actual memo.rs machine proof",
+    "candidate provenance/validity, same-T SQL contents, all four validators, record/auth/replay, recovery and whole WorldTransaction.commit remain owned obligations"
+  ],
+  "A4_finish_observation": [
+    "one library API call, complete rollback/finalization outcome, not one synthetic SQL command",
+    "normal Ok/Err plus outer failure/non-return representable; Err supplies neither no-effect nor active/closed-connection conclusions",
+    "read projection preserved solely as a pre-finish observation; no DB frame after finish Err is inferred"
+  ],
+  "what_would_make_this_plan_insufficient": "If the requirement is to machine-prove the physical B4 observation relation from the old pure wrapper alone, the plan cannot do that. The accepted B2/B4 boundary is essential. No contradictory old-setter law or generic shared heap is added.",
+  "authority": {
+    "path": "docs/formal/dependencies.md",
+    "existing_section": "A4/B2/B4 SQLite 提交回执与缓存发布接口",
+    "source_lines": "404-421 at c3e47b98",
+    "new_trusted_category": false
+  },
+  "B4_observation_concrete": "actualObservedCommitted = (toSlots actualMemoReturnedCells).committed; the value is from the original surviving RefCell, not freely chosen by the theorem. No None/success/candidate-choice condition hidden in this relation.",
+  "nonempty_normal_instances": "NonemptyWitness constructs the actual generated World/RawT views and all five normal memo paths, concrete equality observations for unknown/success, and rejects a stale Some observation or a primitive writing the wrong cell. These are logical witnesses, not proof of the physical B2/B4 implementation."
+}

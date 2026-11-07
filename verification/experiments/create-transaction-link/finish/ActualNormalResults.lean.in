@@ -1,0 +1,151 @@
+import SandproofTxFinish.CellViewBridge
+import SandproofTxFinish.Results
+
+open Aeneas Aeneas.Std
+namespace SandproofTxFinishRust.FiniteCells
+noncomputable section
+
+def cleared (owner : Owner) : Cells := { memoInput owner with committed := none }
+def taken (owner : Owner) : Cells := { memoInput owner with committed := none, candidate := none }
+def published (owner : Owner) : Cells :=
+  { memoInput owner with committed := owner.candidate, candidate := none }
+
+theorem actual_memo_commit_unknown {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F) (error : rusqlite.error.Error)
+    (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Err error)) :
+    memoInvocation api owner commit = .ok (.Err (.CommitUncertain error), none, cleared owner) := by
+  unfold memoInvocation
+  rw [live]
+  exact Results.commit_unknown_abstract _ _ _ _ _ _ _ rfl reply
+
+theorem actual_memo_commit_success {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F)
+    (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Ok ())) :
+    memoInvocation api owner commit = .ok (.Ok (), none, published owner) := by
+  unfold memoInvocation
+  rw [live]
+  exact Results.commit_success_abstract _ _ (cleared owner) (taken owner)
+    (published owner) raw owner.candidate api commit rfl rfl rfl reply
+
+theorem actual_wrapper_unknown {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F) (error : rusqlite.error.Error)
+    (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Err error)) :
+    controller.transaction.WorldTransaction.commit_with api owner commit = .ok (.Err (.CommitUncertain error)) := by
+  rw [wrapper_projects_actual_memo, actual_memo_commit_unknown api owner raw commit error live reply]
+  simp!
+
+theorem actual_wrapper_success {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F)
+    (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Ok ())) :
+    controller.transaction.WorldTransaction.commit_with api owner commit = .ok (.Ok ()) := by
+  rw [wrapper_projects_actual_memo, actual_memo_commit_success api owner raw commit live reply]
+  simp!
+
+-- Conditions below concern the actual fixed library rollback call, not an
+-- assumption that the handler already satisfies its desired postcondition.
+theorem actual_memo_rollback_absent (owner : Owner)
+    (absent : owner.transaction = none) :
+    rollbackInvocation owner = .ok (none, memoInput owner) := by
+  unfold rollbackInvocation
+  rw [absent]
+  exact Results.rollback_absent_abstract _ _ _ ()
+
+theorem actual_memo_rollback_success (owner : Owner) (raw : RawT)
+    (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Ok ())) :
+    rollbackInvocation owner = .ok (none, memoInput owner) := by
+  unfold rollbackInvocation
+  rw [live]
+  apply Results.rollback_success_abstract
+  simpa [controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError,
+    controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once] using reply
+
+theorem actual_memo_rollback_unknown (owner : Owner) (raw : RawT) (error : rusqlite.error.Error)
+    (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Err error)) :
+    rollbackInvocation owner = .ok (none, cleared owner) := by
+  unfold rollbackInvocation
+  rw [live]
+  apply Results.rollback_unknown_abstract _ _ (cleared owner) _ _ () error rfl
+  simpa [controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError,
+    controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once] using reply
+
+theorem actual_handler_absent (owner : Owner) (absent : owner.transaction = none) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop owner =
+      .ok { owner with transaction := none } := by
+  rw [handler_projects_actual_memo, actual_memo_rollback_absent owner absent]
+  simp!
+
+theorem actual_handler_success (owner : Owner) (raw : RawT)
+    (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Ok ())) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop owner =
+      .ok { owner with transaction := none } := by
+  rw [handler_projects_actual_memo, actual_memo_rollback_success owner raw live reply]
+  simp!
+
+theorem actual_handler_unknown (owner : Owner) (raw : RawT) (error : rusqlite.error.Error)
+    (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Err error)) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop owner =
+      .ok { owner with transaction := none } := by
+  rw [handler_projects_actual_memo, actual_memo_rollback_unknown owner raw error live reply]
+  simp!
+
+-- Explicit B4 transport. This generic normal-result link is not the claim
+-- 'cache=None': it is faithful observation of the returned original pair.
+theorem actual_unknown_with_physical_link {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F) (error : rusqlite.error.Error)
+    (actualObserved : Option World) (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Err error))
+    (physical : LinkedCommitted actualObserved (memoInvocation api owner commit) (fun out => out.2.2)) :
+    controller.transaction.WorldTransaction.commit_with api owner commit = .ok (.Err (.CommitUncertain error)) ∧
+      actualObserved = none := by
+  constructor
+  · exact actual_wrapper_unknown api owner raw commit error live reply
+  · exact physical _ (actual_memo_commit_unknown api owner raw commit error live reply)
+
+theorem actual_success_with_physical_link {F : Type}
+    (api : core.ops.function.FnOnce F RawT (core.result.Result Unit rusqlite.error.Error))
+    (owner : Owner) (raw : RawT) (commit : F) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (reply : api.call_once commit raw = .ok (.Ok ()))
+    (physical : LinkedCommitted actualObserved (memoInvocation api owner commit) (fun out => out.2.2)) :
+    controller.transaction.WorldTransaction.commit_with api owner commit = .ok (.Ok ()) ∧
+      actualObserved = owner.candidate := by
+  constructor
+  · exact actual_wrapper_success api owner raw commit live reply
+  · exact physical _ (actual_memo_commit_success api owner raw commit live reply)
+-- The physical cache poststate is separately linked to this same actual
+-- handler invocation. Nothing asserts it equals the immutable returned Self.
+theorem actual_rollback_absent_with_physical_link (owner : Owner)
+    (actualObserved : Option World) (absent : owner.transaction = none)
+    (physical : LinkedCommitted actualObserved (rollbackInvocation owner) Prod.snd) :
+    actualObserved = owner.committed.value := by
+  exact physical _ (actual_memo_rollback_absent owner absent)
+
+theorem actual_rollback_success_with_physical_link (owner : Owner) (raw : RawT)
+    (actualObserved : Option World) (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Ok ()))
+    (physical : LinkedCommitted actualObserved (rollbackInvocation owner) Prod.snd) :
+    actualObserved = owner.committed.value := by
+  exact physical _ (actual_memo_rollback_success owner raw live reply)
+
+theorem actual_rollback_unknown_with_physical_link (owner : Owner) (raw : RawT)
+    (error : rusqlite.error.Error) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (reply : rusqlite.transaction.Transaction.rollback raw = .ok (.Err error))
+    (physical : LinkedCommitted actualObserved (rollbackInvocation owner) Prod.snd) :
+    actualObserved = none := by
+  exact physical _ (actual_memo_rollback_unknown owner raw error live reply)
+end
+end SandproofTxFinishRust.FiniteCells

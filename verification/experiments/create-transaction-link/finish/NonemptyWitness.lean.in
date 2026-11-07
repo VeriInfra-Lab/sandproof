@@ -1,0 +1,125 @@
+import SandproofTxFinish.CellViewBridge
+import SandproofTxFinish.Results
+import SandproofSqliteSession.ReadWitnessData
+
+open Aeneas Aeneas.Std
+namespace SandproofTxFinishRust.FiniteCells
+noncomputable section
+
+def emptyVec {T : Type} : alloc.vec.Vec T :=
+  alloc.vec.Vec.from [] (by simp)
+
+def emptyStore {K V : Type} : sandbox_controller_core.store.Store K V :=
+  ⟨emptyVec⟩
+
+-- An ordinary actual generated World value, not a parallel World definition
+-- or a proof of Rust initial_world/validity. All complete values are retained.
+def sampleWorld : World := {
+  maintenance := none
+  sandboxes := emptyStore
+  vms := emptyStore
+  filesystems := emptyStore
+  snapshots := emptyStore
+  net_slots := emptyStore
+  applied_file_policies := emptyStore
+  worker_fences := emptyStore
+  operations := emptyStore
+  operation_plans := emptyStore
+  resource_indexes := emptyStore
+  logical_effects := emptyStore
+  effect_keys := emptyVec
+  effects := emptyStore
+  next_vm_id := 0#u64
+  next_slot_id := 0#u64
+  next_snapshot_id := 0#u64
+  next_manifest_digest := 0#u64
+  inflight := emptyVec
+  controller_up := true
+}
+
+def sampleCells : Cells := fromSlots ⟨some sampleWorld, some sampleWorld⟩
+
+theorem sample_committed_value : (toSlots sampleCells).committed = some sampleWorld := rfl
+theorem sample_candidate_value : (toSlots sampleCells).candidate = some sampleWorld := rfl
+
+-- No false old-setter law is needed; witness uses the NEW boundary model.
+theorem sample_set_complete_none : controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    sampleCells none = .ok (fromSlots ⟨none, some sampleWorld⟩) := rfl
+
+-- Existing library conditions allow normal Ok AND Err; no success-only API.
+def rollbackView (reads : SandproofSqliteSession.Connection)
+    (reply : core.result.Result Unit rusqlite.error.Error) : RollbackCallView :=
+  ⟨reads, .ok reply⟩
+-- Existing already-checked finite read observation; not a second SQL model.
+def sampleReads : SandproofSqliteSession.Connection :=
+  SandboxModel.CreateTransactionLink.FullWriteRead.Witness.connection
+
+def sampleRaw (reply : core.result.Result Unit rusqlite.error.Error) : RawT := {
+  conn := ⟨sampleReads, .ok reply⟩
+  drop_behavior := .Rollback
+}
+
+def clearedCells : Cells := fromSlots ⟨none, some sampleWorld⟩
+def publishedCells : Cells := fromSlots ⟨some sampleWorld, none⟩
+
+def givenReply (reply : Result (core.result.Result Unit rusqlite.error.Error)) :
+    core.ops.function.FnOnce Unit RawT (core.result.Result Unit rusqlite.error.Error) where
+  call_once := fun _ _ => reply
+
+-- Concrete realizable normal core paths; reuse transported original results.
+-- These witnesses do NOT prove the physical Rust B2/B4 connection itself.
+theorem sample_commit_success : controller.transaction.memo.commit_with
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    (givenReply (.ok (.Ok ()))) (some (sampleRaw (.Ok ()))) sampleCells () =
+      .ok (.Ok (), none, publishedCells) := by
+  exact Results.commit_success_abstract _ _ _ _ _ _ _ _ () rfl rfl rfl rfl
+
+theorem sample_commit_unknown : controller.transaction.memo.commit_with
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    (givenReply (.ok (.Err ⟨1⟩))) (some (sampleRaw (.Err ⟨1⟩))) sampleCells () =
+      .ok (.Err (.CommitUncertain ⟨1⟩), none, clearedCells) := by
+  exact Results.commit_unknown_abstract _ _ _ _ _ () ⟨1⟩ rfl rfl
+
+theorem sample_rollback_absent : controller.transaction.memo.rollback_if_live
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    (givenReply (.ok (.Ok ()))) none sampleCells () = .ok (none, sampleCells) := by
+  exact Results.rollback_absent_abstract _ _ _ ()
+
+theorem sample_rollback_success : controller.transaction.memo.rollback_if_live
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    (givenReply (.ok (.Ok ()))) (some (sampleRaw (.Ok ()))) sampleCells () =
+      .ok (none, sampleCells) := by
+  exact Results.rollback_success_abstract _ _ _ _ () rfl
+
+theorem sample_rollback_unknown : controller.transaction.memo.rollback_if_live
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+    (givenReply (.ok (.Err ⟨1⟩))) (some (sampleRaw (.Err ⟨1⟩))) sampleCells () =
+      .ok (none, clearedCells) := by
+  exact Results.rollback_unknown_abstract _ _ _ _ _ () ⟨1⟩ rfl rfl
+
+-- Concrete B4 observation instances, with correct target/source values.
+theorem sample_observe_clear : SurvivingCommittedObservation none clearedCells := rfl
+theorem sample_observe_published : SurvivingCommittedObservation (some sampleWorld) publishedCells := rfl
+theorem sample_reject_stale_observation : ¬ SurvivingCommittedObservation (some sampleWorld) clearedCells := by
+  intro impossible
+  change some sampleWorld = none at impossible
+  cases impossible
+
+-- A faulty primitive is judged against the SAME complete setter equation.
+-- This is a finite rejected implementation, not an alternative admitted API.
+def wrongSetCandidate (cells : Cells) (value : Option World) : Result Cells :=
+  .ok { cells with candidate := value }
+
+theorem sample_reject_wrong_setter :
+    wrongSetCandidate sampleCells none ≠
+      .ok (fromSlots { toSlots sampleCells with committed := none }) := by
+  intro impossible
+  have same := Result.ok_injective impossible
+  have committed := congrArg (fun cells : Cells => cells.committed) same
+  change some sampleWorld = none at committed
+  cases committed
+
+-- Arbitrary outer failure/non-return remains in givenReply; no normal
+-- postcondition or success is manufactured for it by these witnesses.
+end
+end SandproofTxFinishRust.FiniteCells

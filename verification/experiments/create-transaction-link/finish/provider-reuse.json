@@ -1,0 +1,28 @@
+{
+  "provider": "#766 exact current memo41 lines and original Results/Model",
+  "original_results_sha256": "9ad4cb6866982120af4f7628c44a63384f6e6938893f91e9a84d3f8d9b5e3816",
+  "materialized_results_sha256": "34987dc1eac540f28d37d22d71edb9d9affd5cdcd6046a718ba0db722f59db43",
+  "exact_replacements": [
+    [
+      "import SandproofSqlite.Funs",
+      "import SandproofTxFinish.Funs"
+    ],
+    [
+      "import SandproofSqlite.Model",
+      "import SandproofTxFinish.Model"
+    ],
+    [
+      "SandproofSqliteRust",
+      "SandproofTxFinishRust"
+    ]
+  ],
+  "Model_Slots": "Same SandproofSqliteRust.Model.Slots, original declaration moved byte-for-byte to SandproofSqlite.SlotData; old Model and new model import that single leaf.",
+  "new_slotOps": "Same two primitive expressions as original Model.slotOps, adapted to the nominal trait in the fresh raw Types; no second Slots or new state algorithm.",
+  "why_not_direct_old_theorem_application": "new actual JournalError/Cells are nominal types; old mathematics is transported by the existing finite namespace-view method and checked against new raw Funs, not assumed equal to old returned types",
+  "extra_datatype_provider": "only existing standard-read CaptureHandoff and MaintenanceState, never its World or raw T; unchanged Rust data inputs must be checked; all unknown external types refused",
+  "canonical_slot_data_sha256": "dd4ab4e4421049ce90bd365b6099d246cd415037ee8866f84eb339351771b08b",
+  "original_read_witness": "verification/experiments/create-transaction-link/FullWriteReadWitness.lean.in",
+  "original_read_witness_sha256": "dd8f0a0941c2e71a0dd93a595524b2adc48fc19e73a464dcde7870f7f10f80ee",
+  "read_data_view": "ReadWitnessData.lean.in preserves oldBytes/newBytes/oldDigest/newDigest/view/connection definitions; imports only existing Session.Data, provides the same Bytes=Slice U8 alias, and excludes RawTransaction/effects/theorems from the old generated universe.",
+  "read_data_view_sha256": "2f430de7f1958540887ed3ee0657e244137d1829aa873627936433a4e25b5fb7"
+}
