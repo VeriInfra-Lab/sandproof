@@ -221,18 +221,21 @@ pub(in crate::controller) fn native_snapshot(
         current_operation: record.current_operation,
         lifetime: admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
             .map_err(|_| JournalError::CorruptStore)?,
-        uncertain_actions: world
-            .effect_ids()
-            .iter()
-            .filter(|effect| {
-                effect.command().sandbox() == local.sandbox
+        uncertain_actions: {
+            let effects = world.effect_ids();
+            let mut uncertain_actions = Vec::new();
+            for effect in effects {
+                if effect.command().sandbox() == local.sandbox
                     && matches!(
                         world.effect_status(effect),
                         Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
                     )
-            })
-            .cloned()
-            .collect(),
+                {
+                    uncertain_actions.push(effect.clone());
+                }
+            }
+            uncertain_actions
+        },
     })
 }
 
