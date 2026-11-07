@@ -51,6 +51,8 @@ def view (bytes digest : Bytes) : SandproofSqliteSession.ReadView := {
       }) else .ok (.Err ⟨1⟩)
   }
   scans := fun _ _ => False
+  bindFirst := fun _ _ _ => .fail .panic
+  issueScan := fun _ _ _ => ⟨fun _ => .fail .panic⟩
 }
 
 def connection : SandproofSqliteSession.Connection := {
