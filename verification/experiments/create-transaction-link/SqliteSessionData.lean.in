@@ -1,0 +1,90 @@
+import SandproofLoadBlob.TypesExternal
+
+open Aeneas Aeneas.Std
+
+/-!
+Candidate interface only: not yet built, bound to actual Funs or admitted.
+The existing fixed row, statement, error and SQL-value carriers stay single.
+There is no RawTransaction/World definition or SQL interpreter here.
+-/
+namespace SandproofSqliteSession
+
+abbrev SqlError := SandproofLoadBlobRust.rusqlite.error.Error
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+abbrev Bytes := Slice U8
+abbrev Row := SandproofLoadBlobRust.RowObservation
+abbrev RowStatement := SandproofLoadBlobRust.ReadStatementObservation
+abbrev SingleReadView := SandproofLoadBlobRust.ConnectionReadObservation
+abbrev SqlReply (A : Type) := core.result.Result A SqlError
+
+/-- Exact original SQL and complete, ordered bound values. -/
+structure Query where
+  sql : Str
+  arguments : List SqlValue
+
+/-- Observations of one issued cursor, not one global stream for an SQL string.
+Both SQL errors and end-of-stream remain distinct from a present row. -/
+structure ScanTrace where
+  at : Nat → Result (SqlReply (Option Row))
+
+/-- Existing single-row observations plus the family of allowed cursor
+observations. A relation permits separate unordered scans to differ. Selecting
+and binding a particular trace to the actual library call is still required. -/
+structure ReadView where
+  single : SingleReadView
+  scans : Query → ScanTrace → Prop
+
+/-- The sole connection carrier planned for both consumers. The raw Rust
+Transaction remains its actual generated type. Normal library Err also returns
+a new view; neither Err nor a retained Rust handle implies an active SQL T. -/
+structure Connection where
+  current : ReadView
+  step : ReadView → Str → Bytes → Bytes → Result (SqlReply Usize × ReadView)
+
+/-- Logical transfer helper, not a proof of the actual external binding. -/
+def executeBlobs (connection : Connection) (sql : Str) (bytes digest : Bytes) :
+    Result (SqlReply Usize × Connection) := do
+  let (reply, after) ← connection.step connection.current sql bytes digest
+  .ok (reply, { connection with current := after })
+
+/-- Metadata of the original issued statement; it is not a second connection.
+The existing row/parameter statement is retained without losing its fields. -/
+structure Statement where
+  sql : Str
+  row : RowStatement
+
+def Statement.query (statement : Statement) : Query := {
+  sql := statement.sql
+  arguments := statement.row.canonical.arguments
+}
+
+/-- A cursor holds one actual query's observations. calls counts model
+observations, not row ids, physical positions or a live-transaction proof. -/
+structure Cursor where
+  query : Query
+  trace : ScanTrace
+  calls : Nat
+
+def cursorNext (cursor : Cursor) : Result (SqlReply (Option Row) × Cursor) := do
+  let reply ← cursor.trace.at cursor.calls
+  .ok (reply, { cursor with calls := cursor.calls + 1 })
+
+/-- Original callback state is retained, including a callback that returns Err. -/
+structure MappedCursor (F : Type) where
+  cursor : Cursor
+  callback : F
+
+/-- Logical library operation only. Actual callback dictionaries, call binding,
+row validity and successful read frames remain separate obligations. -/
+def mappedNext {F A : Type}
+    (call : F → Row → Result (SqlReply A × F)) (mapped : MappedCursor F) :
+    Result (Option (SqlReply A) × MappedCursor F) := do
+  let (reply, after) ← cursorNext mapped.cursor
+  match reply with
+  | .Err error => .ok (some (.Err error), { mapped with cursor := after })
+  | .Ok none => .ok (none, { mapped with cursor := after })
+  | .Ok (some row) =>
+    let (value, callback) ← call mapped.callback row
+    .ok (some value, { cursor := after, callback := callback })
+
+end SandproofSqliteSession
