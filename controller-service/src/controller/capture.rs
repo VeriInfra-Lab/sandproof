@@ -23,6 +23,83 @@ fn agree(
     }
 }
 
+fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
+    row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
+    world: &core::World,
+    namespace: &str,
+    current: &core::SandboxRecord,
+    binding: (core::SandboxId, core::VmId, &sandproof_protocol::SandboxId),
+    prepared: &mut Option<SourceProcessIdentity>,
+    activated: &mut Option<SourceProcessIdentity>,
+) -> Result<(), JournalError> {
+    let (sandbox, vm, public_sandbox) = binding;
+    let (action_bytes, receipt_bytes) = row?;
+    let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
+    let command = action.command.command();
+    let (is_prepare, generation, found_vm) = match command {
+        core::Command::PrepareVm {
+            sandbox: found,
+            generation,
+            vm,
+            ..
+        } if *found == sandbox => (true, *generation, *vm),
+        core::Command::ActivateVm {
+            sandbox: found,
+            generation,
+            vm,
+            ..
+        } if *found == sandbox => (false, *generation, *vm),
+        _ => return Ok(()),
+    };
+    if generation != current.generation || found_vm != vm {
+        return Ok(());
+    }
+    if !core::effect::effect_succeeded_check(world, command) {
+        return Ok(());
+    }
+    let logical = world
+        .logical_effect(&action.command.logical)
+        .ok_or(JournalError::CorruptStore)?;
+    if logical.current_attempt != action.command.attempt {
+        return Ok(());
+    }
+    let core::EffectOrigin::Operation(key) = logical.origin else {
+        return Err(JournalError::CorruptStore);
+    };
+    let plan = world
+        .operation_plan(key)
+        .ok_or(JournalError::CorruptStore)?;
+    if key.sandbox != sandbox
+        || (plan.vm != Some(vm)
+            && !core::capture::continuation::activation_belongs_to_continuation(plan, command))
+        || plan.generation != generation
+        || command.epoch() != Some(plan.epoch)
+        || action.identity.owner != identity::owner_id(current.owner)?
+        || &action.identity.sandbox != public_sandbox
+        || action.identity.operation != identity::operation_id(namespace, key)?
+        || action.identity.epoch != plan.epoch
+        || action.identity.attempt != action.command.attempt
+        || action.identity.generation != generation
+        || action.identity.resource != identity::resource(namespace, command)?
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
+    receipt.validate_for(&action)?;
+    let WorkOutcome::ObservedSuccess(evidence) = receipt.outcome else {
+        return Err(JournalError::UnresolvedAction);
+    };
+    if !evidence.validates(command) {
+        return Err(JournalError::InvalidHostEvidence);
+    }
+    let source = evidence
+        .source_process_identity(command, &action.identity.resource)
+        .ok_or(JournalError::UnresolvedAction)?;
+    let observed = if is_prepare { prepared } else { activated };
+    agree(observed, source)?;
+    Ok(())
+}
+
 /// Read only already committed original observations under the same SQL
 /// snapshot as the candidate. Admission will persist the resulting identity
 /// with its original capture work before any physical capture call.
@@ -57,75 +134,23 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
     })?;
     let mut prepared = None;
     let mut activated = None;
+    let mut row_error = None;
     for row in rows {
-        let (action_bytes, receipt_bytes) = row?;
-        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
-        let command = action.command.command();
-        let (is_prepare, generation, found_vm) = match command {
-            core::Command::PrepareVm {
-                sandbox: found,
-                generation,
-                vm,
-                ..
-            } if *found == sandbox => (true, *generation, *vm),
-            core::Command::ActivateVm {
-                sandbox: found,
-                generation,
-                vm,
-                ..
-            } if *found == sandbox => (false, *generation, *vm),
-            _ => continue,
-        };
-        if generation != current.generation || found_vm != vm {
-            continue;
+        if let Err(error) = accept_original_source_row::<E>(
+            row,
+            world,
+            namespace,
+            current,
+            (sandbox, vm, &public_sandbox),
+            &mut prepared,
+            &mut activated,
+        ) {
+            row_error = Some(error);
+            break;
         }
-        if !core::effect::effect_succeeded_check(world, command) {
-            continue;
-        }
-        let logical = world
-            .logical_effect(&action.command.logical)
-            .ok_or(JournalError::CorruptStore)?;
-        if logical.current_attempt != action.command.attempt {
-            continue;
-        }
-        let core::EffectOrigin::Operation(key) = logical.origin else {
-            return Err(JournalError::CorruptStore);
-        };
-        let plan = world
-            .operation_plan(key)
-            .ok_or(JournalError::CorruptStore)?;
-        if key.sandbox != sandbox
-            || (plan.vm != Some(vm)
-                && !core::capture::continuation::activation_belongs_to_continuation(plan, command))
-            || plan.generation != generation
-            || command.epoch() != Some(plan.epoch)
-            || action.identity.owner != identity::owner_id(current.owner)?
-            || action.identity.sandbox != public_sandbox
-            || action.identity.operation != identity::operation_id(namespace, key)?
-            || action.identity.epoch != plan.epoch
-            || action.identity.attempt != action.command.attempt
-            || action.identity.generation != generation
-            || action.identity.resource != identity::resource(namespace, command)?
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
-        receipt.validate_for(&action)?;
-        let WorkOutcome::ObservedSuccess(evidence) = receipt.outcome else {
-            return Err(JournalError::UnresolvedAction);
-        };
-        if !evidence.validates(command) {
-            return Err(JournalError::InvalidHostEvidence);
-        }
-        let source = evidence
-            .source_process_identity(command, &action.identity.resource)
-            .ok_or(JournalError::UnresolvedAction)?;
-        let observed = if is_prepare {
-            &mut prepared
-        } else {
-            &mut activated
-        };
-        agree(observed, source)?;
+    }
+    if let Some(error) = row_error {
+        return Err(error);
     }
     match (prepared, activated) {
         (Some(prepared), Some(activated)) if prepared == activated => Ok(prepared),
