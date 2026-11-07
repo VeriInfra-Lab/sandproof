@@ -31,10 +31,10 @@ fn agree(
     }
     match slot {
         Some(previous) => {
-            let result = if previous != observed {
-                Err(JournalError::UnresolvedAction)
-            } else {
+            let result = if previous == observed {
                 Ok(())
+            } else {
+                Err(JournalError::UnresolvedAction)
             };
             (result, Some(previous))
         }
@@ -81,9 +81,8 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     if !core::effect::effect_succeeded_check(world, command) {
         return (Ok(()), rows);
     }
-    let logical = match world.logical_effect(&action.command.logical) {
-        Some(value) => value,
-        None => return (Err(JournalError::CorruptStore), rows),
+    let Some(logical) = world.logical_effect(&action.command.logical) else {
+        return (Err(JournalError::CorruptStore), rows);
     };
     if logical.current_attempt != action.command.attempt {
         return (Ok(()), rows);
@@ -91,9 +90,8 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     let core::EffectOrigin::Operation(key) = logical.origin else {
         return (Err(JournalError::CorruptStore), rows);
     };
-    let plan = match world.operation_plan(key) {
-        Some(value) => value,
-        None => return (Err(JournalError::CorruptStore), rows),
+    let Some(plan) = world.operation_plan(key) else {
+        return (Err(JournalError::CorruptStore), rows);
     };
     if key.sandbox != sandbox
         || (plan.vm != Some(vm)
@@ -135,9 +133,8 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     if !evidence.validates(command) {
         return (Err(JournalError::InvalidHostEvidence), rows);
     }
-    let source = match evidence.source_process_identity(command, &action.identity.resource) {
-        Some(value) => value,
-        None => return (Err(JournalError::UnresolvedAction), rows),
+    let Some(source) = evidence.source_process_identity(command, &action.identity.resource) else {
+        return (Err(JournalError::UnresolvedAction), rows);
     };
     let result;
     if is_prepare {
