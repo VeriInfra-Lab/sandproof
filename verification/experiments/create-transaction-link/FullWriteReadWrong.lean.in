@@ -26,7 +26,7 @@ theorem actual_wrong_normal (seed : Record) :
   unfold controller.lifecycle_inbox.proof_record_read_then_update
   erw [actual_select_model (Witness.effects seed) Witness.raw rfl, before]
   simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
-  rw [actual_update_model (Witness.effects seed) Witness.raw updateSql
+  erw [actual_update_model (Witness.effects seed) Witness.raw updateSql
     Witness.newBytes Witness.newDigest rfl]
   simp [updateExpected, Witness.raw, Witness.connection]
 
