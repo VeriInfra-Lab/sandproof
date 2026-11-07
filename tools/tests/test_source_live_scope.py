@@ -36,7 +36,8 @@ class SourceLiveScopeTests(unittest.TestCase):
 
     def test_real_component_and_original_full_registration(self):
         root=Path(__file__).resolve().parents[2]
-        self.assertIn('source-live', proof_batch.MODULES)
+        self.assertNotIn('source-live', proof_batch.MODULES)
+        self.assertIn('stage1-protocol', proof_batch.MODULES)
         tree=ast.parse((root/'verification/experiments/stage1-protocol/registered.py').read_text())
         text=ast.unparse(tree)
         self.assertIn("'source-live', 'tools/check_source_live_components.py', False",text)

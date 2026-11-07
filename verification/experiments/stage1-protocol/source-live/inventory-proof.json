@@ -13,7 +13,7 @@
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
-    "tools/proof_batch.py": "9244aa95ae73001e293dcfcc1eb78328dcbba8c6d1f3007f5cc1d277f7e59930",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
@@ -36,7 +36,7 @@
     "Witnesses.lean.in": "c8f94d8539552f7d63a36c44465d7f8fcf88c158acc2a47e40230d23b1408a0a"
   },
   "drivers": {
-    "prepare.py": "15fc0b033c566f27ddb3abd63496f92d2e62132d82f1e88fb2b6faa72a17b44e",
+    "prepare.py": "268cb8ae77d789ad5361aa13f6eebb52ca0829419cfb68c4dc035a3a5e7e704b",
     "formal.py": "f4f51a353df456a35e5d0459aa16b53fba8c17a96c72651810ee6cb16b09574f",
     "capture.py": "8cab6a806c2e22de6984df4b8509a5c8fb86d18986a231674ee5ac5793d880ef",
     "support.py": "5168a8d04f525202395346f4707cc87de6ca199b6a37d4438c2c1507e2e97a9f",

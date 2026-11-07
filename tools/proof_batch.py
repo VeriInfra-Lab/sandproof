@@ -19,7 +19,7 @@ MODULES = ('json-request','tls-pin','json-identifiers','json-counter','task-cont
            'revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
            'first-chain-linux','first-chain','storage',
            'schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer',
-           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','pause-receipt','source-live','stage1-protocol')
+           'btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','pause-receipt','stage1-protocol')
 
 # SQLite emits its admitted kernel counterexamples as well as positive roots.
 # Include those actual audits in the complete inventory.

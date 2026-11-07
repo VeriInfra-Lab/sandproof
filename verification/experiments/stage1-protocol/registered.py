@@ -1708,7 +1708,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = (dict(cpu_affinity=slots[slot]) if 'create_package' in job
+                options = (dict(cpu_affinity=slots[slot]) if job['name'] == 'source-live' or 'create_package' in job
                            or profile_is_convergence_job(job) else {})
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute

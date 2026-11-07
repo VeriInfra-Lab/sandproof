@@ -33,6 +33,15 @@ def inventory(root):
             path = root / GEN / view / 'SandproofSourceLive' / name
             support.require(path.is_file() and not path.is_symlink() and support.sha(path) == wanted,
                             'actual generated view changed: ' + str(path))
+    for name in CORRECT:
+        path = root / PROOF / (name + '.lean')
+        support.require(path.is_file() and not path.is_symlink() and
+            path.read_bytes() == (HERE / (name + '.lean.in')).read_bytes(),
+            'public correct source-live proof differs: ' + name)
+    external = root / GEN / 'correct/SandproofSourceLive/FunsExternal.lean'
+    support.require(external.is_file() and not external.is_symlink() and
+        external.read_bytes() == (HERE / 'FunsExternal.lean.in').read_bytes(),
+        'public correct source-live library boundary differs')
     return data
 
 
