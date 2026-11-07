@@ -188,7 +188,9 @@ impl Drop for WorldTransaction<'_> {
             committed: &self.committed.value,
             candidate: &self.candidate,
         };
-        memo::rollback_if_live(&mut self.transaction, &mut cells, Transaction::rollback);
+        memo::rollback_if_live(&mut self.transaction, &mut cells, |transaction| {
+            transaction.rollback()
+        });
     }
 }
 
