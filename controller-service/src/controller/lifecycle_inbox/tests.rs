@@ -39,60 +39,60 @@ fn context() -> AuthenticatedCenterContext {
     config().context()
 }
 
+struct RecordCodecProbe {
+    connection: *const rusqlite::Connection,
+    calls: Vec<(&'static str, Vec<u8>)>,
+    token: u64,
+    fail_at: Option<usize>,
+}
+impl RecordCodecProbe {
+    fn observe(
+        &mut self,
+        connection: &rusqlite::Connection,
+        kind: &'static str,
+        bytes: &[u8],
+    ) -> serde_json::Result<()> {
+        assert!(std::ptr::eq(connection, self.connection));
+        self.calls.push((kind, bytes.to_vec()));
+        self.token += 7;
+        if self.fail_at == Some(self.calls.len()) {
+            Err(serde_json::Error::io(std::io::Error::other("codec fault")))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl recording::RecordCodec for RecordCodecProbe {
+    fn decode_maintenance(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<super::super::checkpoint::MaintenanceConfig> {
+        self.observe(connection, "maintenance", bytes)?;
+        serde_json::from_slice(bytes)
+    }
+    fn decode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<Inbox> {
+        self.observe(connection, "decode-inbox", bytes)?;
+        serde_json::from_slice(bytes)
+    }
+    fn encode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        inbox: &Inbox,
+    ) -> serde_json::Result<Vec<u8>> {
+        let bytes = serde_json::to_vec(inbox)?;
+        self.observe(connection, "encode", &bytes)?;
+        Ok(bytes)
+    }
+}
+
 #[test]
 fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection() {
-    use super::super::checkpoint::{MaintenanceConfig, ReadConfigEffects};
-
-    struct StatefulCodec {
-        connection: *const rusqlite::Connection,
-        calls: Vec<(&'static str, Vec<u8>)>,
-        token: u64,
-        fail_at: Option<usize>,
-    }
-    impl StatefulCodec {
-        fn observe(
-            &mut self,
-            connection: &rusqlite::Connection,
-            kind: &'static str,
-            bytes: &[u8],
-        ) -> serde_json::Result<()> {
-            assert!(std::ptr::eq(connection, self.connection));
-            self.calls.push((kind, bytes.to_vec()));
-            self.token += 7;
-            if self.fail_at == Some(self.calls.len()) {
-                Err(serde_json::Error::io(std::io::Error::other("codec fault")))
-            } else {
-                Ok(())
-            }
-        }
-    }
-    impl recording::RecordCodec for StatefulCodec {
-        fn decode_maintenance(
-            &mut self,
-            connection: &rusqlite::Connection,
-            bytes: &[u8],
-        ) -> serde_json::Result<MaintenanceConfig> {
-            self.observe(connection, "maintenance", bytes)?;
-            serde_json::from_slice(bytes)
-        }
-        fn decode_inbox(
-            &mut self,
-            connection: &rusqlite::Connection,
-            bytes: &[u8],
-        ) -> serde_json::Result<Inbox> {
-            self.observe(connection, "decode-inbox", bytes)?;
-            serde_json::from_slice(bytes)
-        }
-        fn encode_inbox(
-            &mut self,
-            connection: &rusqlite::Connection,
-            inbox: &Inbox,
-        ) -> serde_json::Result<Vec<u8>> {
-            let bytes = serde_json::to_vec(inbox)?;
-            self.observe(connection, "encode", &bytes)?;
-            Ok(bytes)
-        }
-    }
+    use super::super::checkpoint::ReadConfigEffects;
 
     for fail_at in [None, Some(1), Some(2), Some(3), Some(4)] {
         let dir = tempfile::tempdir().unwrap();
@@ -116,7 +116,7 @@ fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connecti
                 |row| row.get(0),
             )
             .unwrap();
-        let codec = StatefulCodec {
+        let codec = RecordCodecProbe {
             connection: std::ptr::from_ref(&journal.journal.connection),
             calls: Vec::new(),
             token: 41,
