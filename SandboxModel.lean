@@ -45,9 +45,6 @@ import SandboxModel.Lifecycle.PauseStop.Conditions
 import SandboxModel.Lifecycle.PauseDispatch.Conditions
 import SandboxModel.Lifecycle.PauseReceipt.Conditions
 
-import SandboxModel.Lifecycle.Protocol.SourceLive.Witnesses
-import SandboxModel.Lifecycle.Protocol.SourceLive.Counterexamples
-
 /-! Retained mathematical models and source-bound public foundations.
 The historical whole-controller Rust refinement is retired; importing this
 module does not establish a refinement of the current deployed controller. -/
