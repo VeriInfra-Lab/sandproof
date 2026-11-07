@@ -7,6 +7,7 @@ use sandbox_controller_core::World;
 use std::{cell::RefCell, ops::Deref};
 
 mod memo;
+mod sqlite_io;
 
 pub(super) struct CommittedWorld {
     value: RefCell<Option<World>>,
@@ -122,6 +123,20 @@ impl<'a> WorldTransaction<'a> {
     // projections/actions. Every input in a multi-input transaction advances.
     pub(super) fn advance(&self, world: World) {
         *self.candidate.borrow_mut() = Some(world);
+    }
+
+    pub(super) fn execute_inbox_update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        Ok(sqlite_io::execute_blobs(
+            self.transaction.as_mut().expect("live transaction"),
+            statement,
+            bytes,
+            digest,
+        )?)
     }
 
     pub(super) fn commit(self) -> Result<(), JournalError> {

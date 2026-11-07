@@ -236,10 +236,10 @@ impl ControllerJournal {
         context: &AuthenticatedCenterContext,
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
-        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let mut tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
         let outcome = {
             let mut effects = recording::StandardRecord {
-                tx: &tx,
+                tx: &mut tx,
                 namespace: &self.namespace,
             };
             recording::record_using::<

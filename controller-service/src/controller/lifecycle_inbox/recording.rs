@@ -84,7 +84,7 @@ fn attach_destroy<E: RecordEffects>(
 }
 
 pub(super) struct StandardRecord<'a, 'journal> {
-    pub(super) tx: &'a WorldTransaction<'journal>,
+    pub(super) tx: &'a mut WorldTransaction<'journal>,
     pub(super) namespace: &'a str,
 }
 
@@ -171,10 +171,7 @@ impl InboxSaveEffects for StandardRecord<'_, '_> {
         bytes: &[u8],
         digest: &[u8],
     ) -> Result<usize, JournalError> {
-        StandardInboxSave {
-            connection: self.tx,
-        }
-        .update(statement, bytes, digest)
+        self.tx.execute_inbox_update(statement, bytes, digest)
     }
 }
 

@@ -1,0 +1,16 @@
+// Extraction-only forwarding probe. It exercises the actual StandardRecord
+// methods and their returned owner; it is not the production recording chain.
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_record_update_then_read(
+    effects: &mut recording::StandardRecord<'_, '_>,
+    statement: &str,
+    bytes: &[u8],
+    digest: &[u8],
+) -> Result<(usize, (Vec<u8>, Vec<u8>)), JournalError> {
+    let count = codec::InboxSaveEffects::update(effects, statement, bytes, digest)?;
+    let pair = codec::InboxLoadEffects::query_bytes_pair(
+        effects,
+        "SELECT state_json,sha256 FROM controller_lifecycle_inbox WHERE id=1",
+    )?;
+    Ok((count, pair))
+}
