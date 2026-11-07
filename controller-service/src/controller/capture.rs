@@ -12,14 +12,28 @@ struct OriginalSourceRows {
     activated: Option<SourceProcessIdentity>,
 }
 
-fn decode_original_action(bytes: &[u8]) -> Result<WorkAction<core::EffectId>, serde_json::Error> {
-    serde_json::from_slice(bytes)
+trait OriginalRowCodec<E> {
+    fn decode_action(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<WorkAction<core::EffectId>, serde_json::Error>;
+
+    fn decode_receipt(&mut self, bytes: &[u8]) -> Result<WorkReceipt<E>, serde_json::Error>;
 }
 
-fn decode_original_receipt<E: DeserializeOwned>(
-    bytes: &[u8],
-) -> Result<WorkReceipt<E>, serde_json::Error> {
-    serde_json::from_slice(bytes)
+struct JsonOriginalRowCodec;
+
+impl<E: DeserializeOwned> OriginalRowCodec<E> for JsonOriginalRowCodec {
+    fn decode_action(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<WorkAction<core::EffectId>, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
+
+    fn decode_receipt(&mut self, bytes: &[u8]) -> Result<WorkReceipt<E>, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
 }
 
 fn agree(
@@ -42,20 +56,21 @@ fn agree(
     }
 }
 
-fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
+fn accept_original_source_row<E: HostEvidence, D: OriginalRowCodec<E>>(
     row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
     world: &core::World,
     namespace: &str,
     current: &core::SandboxRecord,
     binding: (core::SandboxId, core::VmId, &sandproof_protocol::SandboxId),
     mut rows: OriginalSourceRows,
+    codec: &mut D,
 ) -> (Result<(), JournalError>, OriginalSourceRows) {
     let (sandbox, vm, public_sandbox) = binding;
     let (action_bytes, receipt_bytes) = match row {
         Ok(value) => value,
         Err(error) => return (Err(error.into()), rows),
     };
-    let action = match decode_original_action(&action_bytes) {
+    let action = match codec.decode_action(&action_bytes) {
         Ok(value) => value,
         Err(error) => return (Err(error.into()), rows),
     };
@@ -120,7 +135,7 @@ fn accept_original_source_row<E: HostEvidence + DeserializeOwned>(
     {
         return (Err(JournalError::CorruptStore), rows);
     }
-    let receipt = match decode_original_receipt::<E>(&receipt_bytes) {
+    let receipt = match codec.decode_receipt(&receipt_bytes) {
         Ok(value) => value,
         Err(error) => return (Err(error.into()), rows),
     };
@@ -180,6 +195,16 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
     world: &core::World,
     sandbox: core::SandboxId,
 ) -> Result<SourceProcessIdentity, JournalError> {
+    original_source_using::<E, _>(transaction, namespace, world, sandbox, JsonOriginalRowCodec)
+}
+
+fn original_source_using<E: HostEvidence, D: OriginalRowCodec<E>>(
+    transaction: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    sandbox: core::SandboxId,
+    mut codec: D,
+) -> Result<SourceProcessIdentity, JournalError> {
     let current = world
         .sandbox_record(sandbox)
         .ok_or(JournalError::UnsupportedInput)?;
@@ -207,14 +232,10 @@ pub(super) fn original_source<E: HostEvidence + DeserializeOwned>(
         prepared: None,
         activated: None,
     };
-    let (result, source_rows) = accept_original_rows(rows, source_rows, |row, state| {
-        accept_original_source_row::<E>(
-            row,
-            world,
-            namespace,
-            current,
-            (sandbox, vm, &public_sandbox),
-            state,
+    let binding = (sandbox, vm, &public_sandbox);
+    let (result, source_rows) = accept_original_rows(rows, source_rows, move |row, state| {
+        accept_original_source_row::<E, _>(
+            row, world, namespace, current, binding, state, &mut codec,
         )
     });
     result?;

@@ -3,6 +3,45 @@ use crate::{NeverCrash, finish_admitted_create};
 use sandproof_protocol::{ResourceEvidence, ResourceRef};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, PartialEq, Eq)]
+enum DecodeCall {
+    Action(usize, Vec<u8>),
+    Receipt(usize, Vec<u8>),
+}
+
+struct TrackedRowCodec {
+    calls: std::rc::Rc<std::cell::RefCell<Vec<DecodeCall>>>,
+    dropped_after: std::rc::Rc<std::cell::Cell<usize>>,
+    next: usize,
+}
+
+impl OriginalRowCodec<Evidence> for TrackedRowCodec {
+    fn decode_action(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<WorkAction<core::EffectId>, serde_json::Error> {
+        self.calls
+            .borrow_mut()
+            .push(DecodeCall::Action(self.next, bytes.to_vec()));
+        self.next += 1;
+        serde_json::from_slice(bytes)
+    }
+
+    fn decode_receipt(&mut self, bytes: &[u8]) -> Result<WorkReceipt<Evidence>, serde_json::Error> {
+        self.calls
+            .borrow_mut()
+            .push(DecodeCall::Receipt(self.next, bytes.to_vec()));
+        self.next += 1;
+        serde_json::from_slice(bytes)
+    }
+}
+
+impl Drop for TrackedRowCodec {
+    fn drop(&mut self) {
+        self.dropped_after.set(self.next);
+    }
+}
+
 const NS: &str = "0123456789abcdef";
 const SID: core::SandboxId = core::SandboxId(1);
 
@@ -96,6 +135,104 @@ fn running(
     )
     .unwrap();
     journal
+}
+
+#[test]
+fn explicit_row_codec_keeps_full_bytes_state_short_circuit_and_standard_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let expected = source();
+    let journal = running(
+        &dir.path().join("controller.db"),
+        Some(&expected),
+        Some(&expected),
+    );
+    let world = journal.world().unwrap();
+    let transaction = journal.journal.connection.unchecked_transaction().unwrap();
+    let public = identity::sandbox_id(NS, SID).unwrap();
+    let input_rows: Vec<(i64, Vec<u8>, Vec<u8>)> = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id,action_json,receipt_json FROM outbox
+                 WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id",
+            )
+            .unwrap();
+        statement
+            .query_map([public.as_str()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let dropped_after = std::rc::Rc::new(std::cell::Cell::new(usize::MAX));
+    let actual = original_source_using::<Evidence, _>(
+        &transaction,
+        NS,
+        &world,
+        SID,
+        TrackedRowCodec {
+            calls: calls.clone(),
+            dropped_after: dropped_after.clone(),
+            next: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        original_source::<Evidence>(&transaction, NS, &world, SID).unwrap(),
+        actual
+    );
+    let mut expected_calls = Vec::new();
+    let mut receipt_count = 0;
+    for (_, action, receipt) in &input_rows {
+        expected_calls.push(DecodeCall::Action(expected_calls.len(), action.clone()));
+        let action: WorkAction<core::EffectId> = serde_json::from_slice(action).unwrap();
+        if matches!(
+            action.command.command(),
+            core::Command::PrepareVm { .. } | core::Command::ActivateVm { .. }
+        ) {
+            expected_calls.push(DecodeCall::Receipt(expected_calls.len(), receipt.clone()));
+            receipt_count += 1;
+        }
+    }
+    assert_eq!(receipt_count, 2);
+    assert!(input_rows.len() > receipt_count);
+    assert_eq!(*calls.borrow(), expected_calls);
+    assert_eq!(dropped_after.get(), expected_calls.len());
+
+    // First action EOF must stop before its receipt and the next row, while
+    // retaining the decoder mutation made before that error.
+    transaction
+        .execute(
+            "UPDATE outbox SET action_json=?1,receipt_json=?2 WHERE id=?3",
+            rusqlite::params![b"[".as_slice(), b"[]".as_slice(), input_rows[0].0],
+        )
+        .unwrap();
+    calls.borrow_mut().clear();
+    dropped_after.set(usize::MAX);
+    let result = original_source_using::<Evidence, _>(
+        &transaction,
+        NS,
+        &world,
+        SID,
+        TrackedRowCodec {
+            calls: calls.clone(),
+            dropped_after: dropped_after.clone(),
+            next: 0,
+        },
+    );
+    let Err(JournalError::Json(error)) = result else {
+        panic!("expected first action JSON error")
+    };
+    assert!(error.is_eof());
+    assert_eq!(*calls.borrow(), vec![DecodeCall::Action(0, b"[".to_vec())]);
+    assert_eq!(dropped_after.get(), 1);
+    let Err(JournalError::Json(error)) = original_source::<Evidence>(&transaction, NS, &world, SID)
+    else {
+        panic!("standard wrapper must retain the same first JSON error")
+    };
+    assert!(error.is_eof());
 }
 
 #[test]
