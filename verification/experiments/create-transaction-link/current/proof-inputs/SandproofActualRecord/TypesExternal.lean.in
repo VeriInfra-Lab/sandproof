@@ -1,0 +1,82 @@
+import SandproofParentCommit.Types
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofActualRecordRust
+
+abbrev rusqlite.Connection :=
+  SandproofStage1RequestRust.rusqlite.Connection
+abbrev sandbox_controller_core.ids.SandboxId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.SandboxId
+abbrev sandbox_controller_core.ids.OperationId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.OperationId
+abbrev sandbox_controller_core.ids.TenantId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.TenantId
+abbrev sandbox_controller_core.ids.VmId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.VmId
+abbrev sandbox_controller_core.ids.FsId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.FsId
+abbrev sandbox_controller_core.ids.NetSlotId :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.NetSlotId
+abbrev sandbox_controller_core.maintenance.slots.HostSlotId :=
+  SandproofStage1RequestRust.sandbox_controller_core.maintenance.slots.HostSlotId
+abbrev sandbox_controller_core.maintenance.MaintenanceState :=
+  SandproofStage1RequestRust.sandbox_controller_core.maintenance.MaintenanceState
+abbrev sandbox_controller_core.model.World :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.World
+abbrev sandbox_controller_core.model.Phase :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.Phase
+abbrev sandbox_controller_core.model.WorkspaceApiAccess :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.WorkspaceApiAccess
+abbrev sandbox_controller_core.model.FilePolicyRef :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.FilePolicyRef
+abbrev sandbox_controller_core.model.RestoreSource :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.RestoreSource
+abbrev sandbox_controller_core.model.NetworkPolicy :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.NetworkPolicy
+abbrev sandbox_controller_core.model.OperationKind :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.OperationKind
+abbrev sandbox_controller_core.model.OperationStatus :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.OperationStatus
+abbrev sandbox_controller_core.model.Authority :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.Authority
+abbrev sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev sandproof_protocol.lifecycle.digest.ContentDigest :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev sandproof_protocol.lifecycle.renewal.RenewalConfirmation :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.renewal.RenewalConfirmation
+abbrev sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation
+abbrev serde_json.error.Error :=
+  SandproofStage1RequestRust.serde_json.error.Error
+abbrev controller.checkpoint.config.MaintenanceConfig :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig
+abbrev JournalError :=
+  SandproofParentCommitRust.JournalError
+abbrev ParentOwner := SandproofParentCommitRust.controller.transaction.WorldTransaction
+abbrev SourceLocal := SandproofStage1RequestRust.sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding
+
+-- This extra observation is used only to totalize the translated dictionary.
+-- The Create and Replay conclusions must be independent of its value.
+abbrev TerminateObservation :=
+  ParentOwner → Str → SourceLocal → Result (core.result.Result Unit JournalError)
+
+structure CallerOwnerView where
+  parent : ParentOwner
+  terminate : TerminateObservation
+
+abbrev controller.transaction.WorldTransaction := CallerOwnerView
+abbrev controller.lifecycle_inbox.model.Inbox :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+abbrev controller.lifecycle_inbox.model.LifecycleWorkState :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleWorkState
+abbrev controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt
+abbrev controller.lifecycle_inbox.unload_resolution.UnloadResolution :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution
+
+end SandproofActualRecordRust

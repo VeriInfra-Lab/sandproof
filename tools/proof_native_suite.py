@@ -178,6 +178,9 @@ def run_locked_suite(output, *, scope='all'):
     if scope == 'stage1-source-live':
         run_source_live_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
+    if scope == 'stage1-v3-transaction-source':
+        run_v3_slice_native(work, scope=scope)
+        return publish_suite(output, work, initial, started, scope=scope, builds=builds)
     if scope == 'capture-caller':
         run_capture_caller_native(work, scope=scope)
         return publish_suite(output, work, initial, started, scope=scope, builds=builds)
@@ -330,6 +333,20 @@ def run_source_live_native(work, *, scope='all'):
         subprocess.run([sys.executable, 'tools/check_source_live_components.py',
                         'native', '--output', str(target)], cwd=ROOT, check=True)
     native_case('source-live', ROOT, target, original_component, scope=scope)
+
+
+def run_v3_slice_native(work, *, scope):
+    registered = load('stage1_registered_components',
+                      ROOT / 'verification/experiments/stage1-protocol/registered.py')
+    for label, driver, needs_archive in registered.V3_SLICE_NATIVE_DRIVERS:
+        if needs_archive:
+            raise ValueError('V3 native drivers capture their own reviewed source')
+        target = work / label
+
+        def original_component(driver=driver, target=target):
+            subprocess.run([sys.executable, driver, '--output', str(target)], cwd=ROOT, check=True)
+
+        native_case(label, ROOT, target, original_component, scope=scope)
 
 
 def run_stage1_native(work, *, scope='all'):

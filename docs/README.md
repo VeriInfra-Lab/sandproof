@@ -27,7 +27,7 @@
 |---|---|
 | 公共定义与外部条件 | [V0 公共基础](formal/00-foundations.md) · [依赖与可信链登记](formal/dependencies.md) |
 | 中心控制线 | [V1 中心纯决策](formal/01-center-core.md) · [V2 Redis持久协调](formal/02-center-store.md) |
-| 宿主本地控制线 | [V3 协议与持久收件](formal/03-protocol-inbox.md) · [V4 本地纯控制](formal/04-local-core.md) · [V5 SQLite与编排](formal/05-local-service.md) |
+| 宿主本地控制线 | [V3 协议与持久收件](formal/03-protocol-inbox.md) · [V3 事务和来源行的证明边界](formal/v3-transaction-source-boundaries.md) · [V4 本地纯控制](formal/04-local-core.md) · [V5 SQLite与编排](formal/05-local-service.md) |
 | 宿主执行线 | [V6 真实资源、围栏与清理](formal/06-host-execution.md) |
 | 公开接口与数据线 | [V7 鉴权、参数与查询](formal/07-public-api.md) · [V8 两端网关](formal/08-data-gateway.md) |
 | 系统连接 | [V9 生命周期组合与条件完成性](formal/09-system-composition.md) |

@@ -1,0 +1,19 @@
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofParentReadRust
+
+-- Same current content/counter view, not a new runtime cell or object ID.
+abbrev core.cell.RefCell := SandproofStage1RequestRust.CellBeforeBorrow
+structure LocalReadGuard (T : Type) where
+  value : T
+  activeBorrowCount : Int
+abbrev core.cell.Ref := LocalReadGuard
+
+abbrev sandbox_controller_core.model.World :=
+  SandproofStage1RequestRust.sandbox_controller_core.model.World
+abbrev rusqlite.Connection := SandproofStage1RequestRust.rusqlite.Connection
+abbrev rusqlite.transaction.DropBehavior :=
+  SandproofStage1RequestRust.rusqlite.transaction.DropBehavior
+
+end SandproofParentReadRust

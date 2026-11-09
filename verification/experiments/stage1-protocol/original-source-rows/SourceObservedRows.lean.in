@@ -1,0 +1,172 @@
+import SourceCompleteEvidence
+import SourceDriverPrefix
+import SandboxModel.ProofAuditCommand
+
+/-!
+History invariant. DriverPrefix records normal cont
+equations of the existing complete driver step, including I/Rows/F. It is not
+a second interpreter or a termination condition. Every recorded row has the
+original next call and the complete handler/decoder poststate in that step.
+-/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceObservedRows
+open SourceUsingSuccess SourceUsingRowInvariant
+open SourceRowEvidence
+
+def HasObservedEvidence {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput) (initial : DriverState I E D)
+    (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (slot : RowSlot) (installed : Source) : Prop :=
+  ∃ row before after codec afterCodec,
+    ObservedHandlerStep evidence ops iterator initial world ns current binding
+      row before after codec afterCodec ∧
+    Nonempty (InstalledRowEvidence evidence ops row world ns current binding
+      before after codec afterCodec slot installed)
+
+theorem actual_observed_row_preserves_evidence {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput) (initial : DriverState I E D)
+    (row : RowInput) (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (before after : Rows) (codec afterCodec : D)
+    (seen : ObservedHandlerStep evidence ops iterator initial world ns current binding
+      row before after codec afterCodec)
+    (valid : RowsSatisfy
+      (HasObservedEvidence evidence ops iterator initial world ns current binding .prepared)
+      (HasObservedEvidence evidence ops iterator initial world ns current binding .activated) before)
+    (returned : controller.capture.accept_original_source_row evidence ops row world ns current
+      binding before codec = .ok ((.Ok (), after), afterCodec)) :
+    RowsSatisfy
+      (HasObservedEvidence evidence ops iterator initial world ns current binding .prepared)
+      (HasObservedEvidence evidence ops iterator initial world ns current binding .activated) after := by
+  have retained := SourceRowSlots.actual_handler_never_overwrites_existing_source
+    evidence ops row world ns current binding before after codec afterCodec (.Ok ()) returned
+  constructor
+  · intro installed present
+    cases previous : before.prepared with
+    | none =>
+      exact ⟨row, before, after, codec, afterCodec, seen,
+        actual_new_slot_has_complete_row_evidence evidence ops row world ns current binding
+          before after codec afterCodec .prepared installed previous present returned⟩
+    | some source =>
+      have same := Option.some.inj ((retained.1 source previous).symm.trans present)
+      simpa only [same] using valid.1 source previous
+  · intro installed present
+    cases previous : before.activated with
+    | none =>
+      exact ⟨row, before, after, codec, afterCodec, seen,
+        actual_new_slot_has_complete_row_evidence evidence ops row world ns current binding
+          before after codec afterCodec .activated installed previous present returned⟩
+    | some source =>
+      have same := Option.some.inj ((retained.2 source previous).symm.trans present)
+      simpa only [same] using valid.2 source previous
+
+abbrev SourceIterator {E D : Type} (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E) :=
+  rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError (Mapper evidence ops)
+
+/-- The query and its updated statement are the original ones. Both source
+histories contain rows observed by this very cursor, not arbitrary possible
+rows supplied to the handler in some other execution. -/
+def ObservedSourceResult {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source) : Prop :=
+    ∃ (current : Current) (vm : sandbox_controller_core.ids.VmId)
+      (statement : rusqlite.statement.Statement) (publicSandbox : sandproof_protocol.SandboxId)
+      (parameter : Str) (cursor : rusqlite.row.MappedRows Unit)
+      (afterStatement : rusqlite.statement.Statement),
+      sandbox_controller_core.model.World.sandbox_record world sandbox = .ok (some current) ∧
+      current.phase = .Running ∧ current.terminal = false ∧ current.current_vm = some vm ∧
+      rusqlite.Connection.prepare transaction.conn sourceSql = .ok (.Ok statement) ∧
+      controller.identity.sandbox_id ns sandbox = .ok (.Ok publicSandbox) ∧
+      sandproof_protocol.SandboxId.as_str publicSandbox = .ok parameter ∧
+      rusqlite.statement.Statement.query_map
+        (ArrayT1.Insts.RusqliteParamsParams
+          (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+        (Mapper evidence ops) statement (Array.make 1#usize [parameter]) () =
+          .ok (.Ok cursor, afterStatement) ∧
+      HasObservedEvidence evidence ops (SourceIterator evidence ops)
+        (cursor, { prepared := none, activated := none },
+          (world, ns, current, (sandbox, vm, publicSandbox), codec)) world ns current
+        (sandbox, vm, publicSandbox) .prepared source ∧
+      HasObservedEvidence evidence ops (SourceIterator evidence ops)
+        (cursor, { prepared := none, activated := none },
+          (world, ns, current, (sandbox, vm, publicSandbox), codec)) world ns current
+        (sandbox, vm, publicSandbox) .activated source
+
+theorem actual_source_success_has_observed_evidence {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source)
+    (returned : controller.capture.original_source_using evidence ops transaction ns world
+      sandbox codec = .ok (.Ok source)) :
+    ObservedSourceResult evidence ops transaction ns world sandbox codec source := by
+  rcases actual_success_has_complete_path evidence ops transaction ns world sandbox codec
+    source returned with ⟨current, vm, physical, statement, publicSandbox,
+      parameter, cursor, afterStatement, rows, facts⟩
+  rcases facts with ⟨lookup, phase, terminal, presentVm, _physical, _owner, _sandbox,
+    _generation, _executing, prepared, publicCall, parameterCall, query, driver,
+    preparedPresent, activatedPresent⟩
+  let start : DriverState (rusqlite.row.MappedRows Unit) E D :=
+    (cursor, { prepared := none, activated := none },
+      (world, ns, current, (sandbox, vm, publicSandbox), codec))
+  let P := HasObservedEvidence evidence ops (SourceIterator evidence ops) start world ns current
+    (sandbox, vm, publicSandbox) .prepared
+  let Q := HasObservedEvidence evidence ops (SourceIterator evidence ops) start world ns current
+    (sandbox, vm, publicSandbox) .activated
+  have initial : RowsSatisfy P Q { prepared := none, activated := none } := by
+    simp [RowsSatisfy]
+  have checkedRows := actual_driver_preserves_observed_rows evidence ops
+    (SourceIterator evidence ops) world ns current (sandbox, vm, publicSandbox) P Q cursor
+    { prepared := none, activated := none } rows codec
+    (fun row before after state afterState seen valid accepted =>
+      actual_observed_row_preserves_evidence evidence ops (SourceIterator evidence ops) start
+        row world ns current (sandbox, vm, publicSandbox) before after state afterState
+        seen valid accepted)
+    initial driver
+  exact ⟨current, vm, statement, publicSandbox, parameter, cursor, afterStatement,
+    lookup, phase, terminal, presentVm, prepared, publicCall, parameterCall, query,
+    checkedRows.1 source preparedPresent, checkedRows.2 source activatedPresent⟩
+
+/-- One top-level contract retains all already checked physical-record
+guards, the original pid/nonempty rule, and the actual SQL/cursor evidence
+history under the same actual successful call. Physical liveness and source
+conformance of external libraries remain outside this conclusion. -/
+def CompleteSourceContract {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source) : Prop :=
+  SuccessfulPath evidence ops transaction ns world sandbox codec source ∧
+  SourceAgreement.ValidSource source ∧
+  ObservedSourceResult evidence ops transaction ns world sandbox codec source
+
+theorem actual_source_success_complete_contract {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source)
+    (returned : controller.capture.original_source_using evidence ops transaction ns world
+      sandbox codec = .ok (.Ok source)) :
+    CompleteSourceContract evidence ops transaction ns world sandbox codec source := by
+  exact ⟨actual_success_has_complete_path evidence ops transaction ns world sandbox codec source returned,
+    SourceCompleteEvidence.actual_source_success_has_valid_full_identity evidence ops transaction
+      ns world sandbox codec source returned,
+    actual_source_success_has_observed_evidence evidence ops transaction ns world sandbox codec
+      source returned⟩
+
+end SandproofOriginalSourceRowsRust.SourceObservedRows
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceObservedRows.actual_observed_row_preserves_evidence
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceObservedRows.actual_source_success_has_observed_evidence
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceObservedRows.actual_source_success_complete_contract

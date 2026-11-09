@@ -1,0 +1,80 @@
+import SandproofActualRecord.ScopeTransport
+import SandproofParentCommit.CurrentViews
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.IOOwnerTransport
+
+noncomputable section
+
+abbrev Holder := controller.lifecycle_inbox.recording.StandardRecord
+abbrev OldHolder :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord
+abbrev ParentRaw := SandproofParentCommitRust.CurrentViews.Raw
+abbrev SourceRaw := SandproofParentCommitRust.CurrentViews.SourceRaw
+abbrev SourceOwner := SandproofParentCommitRust.CurrentViews.SourceOwner
+
+def toSource {D : Type} (self : Holder D) : OldHolder D where
+  tx := SandproofParentCommitRust.CurrentViews.ownerToSource self.tx.parent
+  «namespace» := self.«namespace»
+  codec := self.codec
+
+def returnedRaw (before : ParentRaw) (after : SourceRaw) : ParentRaw where
+  conn := { before.conn with base := after.conn }
+  drop_behavior := after.drop_behavior
+
+theorem returnedRaw_toSource (before : ParentRaw) (after : SourceRaw) :
+    SandproofParentCommitRust.CurrentViews.rawToSource (returnedRaw before after) = after := by
+  cases after
+  rfl
+
+-- The source providers cannot create a raw slot starting from None. Their
+-- transfer proofs must establish that property before this view is used.
+def returnedOwner (before : CallerOwnerView) (after : SourceOwner) :
+    Result CallerOwnerView := do
+  let transaction ← match after.transaction, before.parent.transaction with
+    | none, _ => .ok none
+    | some source, some original => .ok (some (returnedRaw original source))
+    | some _, none => .fail .panic
+  .ok {
+    parent := {
+      transaction := transaction
+      committed := {
+        value := after.committed.value
+        data_version := after.committed.data_version
+      }
+      candidate := after.candidate
+      input_start := after.input_start
+    }
+    terminate := before.terminate
+  }
+
+def returnedHolder {D : Type} (before : Holder D) (after : OldHolder D) :
+    Result (Holder D) := do
+  let owner ← returnedOwner before.tx after.tx
+  .ok {tx := owner, «namespace» := after.«namespace», codec := after.codec}
+
+def liftReply {A D : Type} (before : Holder D)
+    (reply : Result (SandproofParentCommitRust.ErrorTransport.RequestRustResult A × OldHolder D)) :
+    Result (core.result.Result A JournalError × Holder D) := do
+  let (result, after) ← reply
+  let self ← returnedHolder before after
+  .ok (SandproofParentCommitRust.ErrorTransport.fromRequestRustResult result, self)
+
+def liftValue {A D : Type} (before : Holder D) (reply : Result (A × OldHolder D)) :
+    Result (A × Holder D) := do
+  let (value, after) ← reply
+  let self ← returnedHolder before after
+  .ok (value, self)
+
+def codecToSource {D : Type} (io : controller.lifecycle_inbox.recording.RecordCodec D) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.RecordCodec D where
+  decode_maintenance := io.decode_maintenance
+  decode_inbox := io.decode_inbox
+  encode_inbox := io.encode_inbox
+
+end
+
+end SandproofActualRecordRust.IOOwnerTransport

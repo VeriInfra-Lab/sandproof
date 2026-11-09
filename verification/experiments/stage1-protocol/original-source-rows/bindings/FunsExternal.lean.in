@@ -1,0 +1,47 @@
+import SandproofOriginalSourceRows.Types
+import SourceStdLibrary
+import SourceOptionResult
+import SourceIdentifierFormula
+import OriginalRowsDriver
+import OriginalSourceSqliteOps
+
+/- Unchecked integration candidate. The original generated bodies stay raw.
+Generic codec calls must be actual OriginalRowCodec fields from the new Rust
+capture, not JSON placeholders. Source/library bindings remain explicit A6/B4
+conditions; the identifier is separately linked to its existing checked proof.
+-/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust
+
+abbrev rusqlite.Connection.prepare :=
+  SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.prepare
+abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in :=
+  @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.bindArray1
+abbrev rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next :=
+  @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.mappedNext
+abbrev rusqlite.row.Row.get :=
+  @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.rowGet
+abbrev Usize.Insts.RusqliteRowRowIndex.idx :=
+  SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.index
+abbrev rusqlite.statement.Statement.query_map :=
+  @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.queryMap
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref :=
+  SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.transactionDeref
+abbrev alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result :=
+  SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.blobColumn
+abbrev Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql :=
+  @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.sharedToSql
+abbrev Str.Insts.RusqliteTypesTo_sqlToSql.to_sql :=
+  SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.strToSql
+
+abbrev sandproof_protocol.valid_identifier := SourceIdentifierFormula.check
+
+def controller.capture.accept_original_rows {I F Item : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × controller.capture.OriginalSourceRows)
+      (core.result.Result Unit JournalError × controller.capture.OriginalSourceRows)) :
+    I → controller.capture.OriginalSourceRows → F →
+      Result (core.result.Result Unit JournalError × controller.capture.OriginalSourceRows) :=
+  SandboxModel.Stage1Protocol.OriginalRowsDriver.run iteratorInst acceptInst
+
+end SandproofOriginalSourceRowsRust

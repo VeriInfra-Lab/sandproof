@@ -1,0 +1,24 @@
+{
+  "status": "prepared only, not applied, no capture",
+  "scope": "extraction-private view of exact951; no production/worktree change",
+  "source": "controller-service/src/lib.rs",
+  "original_sha256": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+  "view_sha256": "c523e1df529df66600a8ddaed7a863467b93b85a84adc6adafe1b896f49e3581",
+  "patch_sha256": "aa2a22917dfdc0b96857d2a31988b367cac391d9bd0f9e9cd6a5adf5736c12d4",
+  "exact_inverse_bytes_match_original": true,
+  "function_type_body_error_dispatch_change": false,
+  "new_opacity": false,
+  "root_scope_change": false,
+  "fixed_tool_precedent": "tests/src/rename_attribute.rs #[charon::rename(\"BoolImpl\")] impl BoolTrait for bool",
+  "fixed_tool_precedent_sha256": "3f81267d58fdb8a11e69bc0c8e293d5becb83b86d138c66e10125a44ca3dfac6",
+  "renames": [
+    {
+      "source_header": "impl From<SqliteError> for JournalError {",
+      "name": "JournalErrorFromSqlite"
+    },
+    {
+      "source_header": "impl From<serde_json::Error> for JournalError {",
+      "name": "JournalErrorFromJson"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+import SandproofFoundations.TypesExternal
+
+/- Candidate data aliases only; no old generated business types or functions. -/
+namespace SandproofOriginalSourceRowsRust
+abbrev F64 := SandproofFoundationsRust.F64
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.rt.Argument := SandproofFoundationsRust.core.fmt.rt.Argument
+abbrev core.fmt.Arguments := SandproofFoundationsRust.core.fmt.Arguments
+end SandproofOriginalSourceRowsRust

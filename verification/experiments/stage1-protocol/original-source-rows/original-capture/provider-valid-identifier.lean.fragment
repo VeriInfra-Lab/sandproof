@@ -1,0 +1,15 @@
+def sandproof_protocol.valid_identifier (value : Str) : Result Bool := do
+  let b ← core.str.Str.is_empty value
+  if b
+  then ok false
+  else
+    let i ← core.str.Str.len value
+    if i <= 128#usize
+    then
+      let b1 ← core.str.Str.bytes value
+      let (b2, _) ←
+        core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+          sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool
+          b1 ()
+      ok b2
+    else ok false

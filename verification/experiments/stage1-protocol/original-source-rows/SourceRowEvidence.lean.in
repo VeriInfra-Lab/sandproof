@@ -1,0 +1,1524 @@
+import SandproofOriginalSourceRows.Funs
+import SandboxModel.ProofAuditCommand
+
+/-!
+Observations of the actual raw26/10037 row handler. Witnesses retain original
+inputs, normal call equations, complete decoder states, checked identities and
+the final selected slot. The proof derives these from the imported generated
+body. SQL/JSON/Std source bindings and the mechanical driver keep their stated
+boundaries. These observations do not establish physical process liveness or
+permission to pause or stop a process.
+-/
+open Aeneas Aeneas.Std
+
+namespace SandproofOriginalSourceRowsRust.SourceRowEvidence
+
+abbrev Source := capture.SourceProcessIdentity
+abbrev Rows := controller.capture.OriginalSourceRows
+abbrev World := sandbox_controller_core.model.World
+abbrev Current := sandbox_controller_core.model.SandboxRecord
+abbrev Command := sandbox_controller_core.model.Command
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev RowInput := core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8)
+  rusqlite.error.Error
+abbrev Binding := sandbox_controller_core.ids.SandboxId ×
+  sandbox_controller_core.ids.VmId × sandproof_protocol.SandboxId
+
+inductive RowSlot where
+  | prepared
+  | activated
+
+def slotAt (slot : RowSlot) (rows : Rows) : Option Source :=
+  match slot with
+  | .prepared => rows.prepared
+  | .activated => rows.activated
+
+def otherSlot (slot : RowSlot) : RowSlot :=
+  match slot with
+  | .prepared => .activated
+  | .activated => .prepared
+
+/-- Only the actual command constructor and the fields checked by this row
+handler. Epoch is recorded separately through the original epoch call. -/
+def SourceCommand (slot : RowSlot) (command : Command) (binding : Binding)
+    (current : Current) : Prop :=
+  match slot, command with
+  | .prepared, .PrepareVm found _ generation vm _ _ =>
+    found = binding.1 ∧ generation = current.generation ∧ vm = binding.2.1
+  | .activated, .ActivateVm found _ generation vm =>
+    found = binding.1 ∧ generation = current.generation ∧ vm = binding.2.1
+  | _, _ => False
+
+/-- Complete witnesses for this row's actual successful installation. Every
+library/own call below records its complete original input and normal Result.
+No call is assumed total; no subsequent row is forced to reuse the input D. -/
+structure InstalledRowEvidence {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source) where
+  actionBytes : alloc.vec.Vec U8
+  receiptBytes : alloc.vec.Vec U8
+  afterAction : D
+  action : Action
+  command : Command
+  logical : sandbox_controller_core.model.LogicalEffectRecord
+  key : sandbox_controller_core.model.OperationKey
+  plan : sandbox_controller_core.model.OperationPlan
+  receipt : sandproof_protocol.WorkReceipt E
+  observedEvidence : E
+  source : Source
+  input : row = .Ok (actionBytes, receiptBytes)
+  decodedAction : ops.decode_action codec actionBytes.deref =
+    .ok (.Ok action, afterAction)
+  commandCall : sandbox_controller_core.model.EffectId.command action.command = .ok command
+  commandSelected : SourceCommand slot command binding current
+  effectSucceeded : sandbox_controller_core.effect.effect_succeeded_check world command = .ok true
+  logicalCall : sandbox_controller_core.model.World.logical_effect world action.command.logical =
+    .ok (some logical)
+  currentAttempt : logical.current_attempt = action.command.attempt
+  operationOrigin : logical.origin = .Operation key
+  planCall : sandbox_controller_core.model.World.operation_plan world key = .ok (some plan)
+  keySandbox : key.sandbox = binding.1
+  planVm : plan.vm = some binding.2.1 ∨
+    sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+      plan command = .ok true
+  planGeneration : plan.generation = current.generation
+  commandEpoch : sandbox_controller_core.model.Command.epoch command = .ok (some plan.epoch)
+  ownerCall : controller.identity.owner_id current.owner = .ok (.Ok action.identity.owner)
+  publicSandbox : action.identity.sandbox = binding.2.2
+  operationCall : controller.identity.operation_id ns key = .ok (.Ok action.identity.operation)
+  identityEpoch : action.identity.epoch = plan.epoch
+  identityAttempt : action.identity.attempt = action.command.attempt
+  identityGeneration : action.identity.generation = current.generation
+  resourceCall : controller.identity.resource ns command = .ok (.Ok action.identity.resource)
+  decodedReceipt : ops.decode_receipt afterAction receiptBytes.deref =
+    .ok (.Ok receipt, afterCodec)
+  receiptValidated : sandproof_protocol.WorkReceipt.validate_for
+    hostEvidence.sandproof_protocolResourceEvidenceInst receipt action = .ok (.Ok ())
+  observedSuccess : receipt.outcome = .ObservedSuccess observedEvidence
+  evidenceValidates : hostEvidence.validates observedEvidence command = .ok true
+  sourceCall : hostEvidence.source_process_identity observedEvidence command
+    action.identity.resource = .ok (some source)
+  agreement : controller.capture.agree none source = .ok (.Ok (), some installed)
+  sameInstalled : source = installed
+  otherSlotRetained : slotAt (otherSlot slot) nextRows = slotAt (otherSlot slot) rows
+
+/-- Exact theorem type; defining this Prop does not establish it. -/
+def NewSlotEvidenceStatement : Prop :=
+  ∀ {E D : Type} (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source),
+    slotAt slot rows = none →
+    slotAt slot nextRows = some installed →
+    controller.capture.accept_original_source_row hostEvidence ops row world ns current
+      binding rows codec = .ok ((.Ok (), nextRows), afterCodec) →
+    Nonempty (InstalledRowEvidence hostEvidence ops row world ns current binding
+      rows nextRows codec afterCodec slot installed)
+
+/-- Only a normal observation of the fixed Result bind is inverted. -/
+private theorem normal_bind {A B : Type} (action : Result A)
+    (next : A → Result B) (output : B)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ value, action = .ok value ∧ next value = .ok output := by
+  exact Result.cases
+    (motive := fun action =>
+      (do let value ← action; next value) = .ok output →
+        ∃ value, action = .ok value ∧ next value = .ok output)
+    action
+    (fun value returned => ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩)
+    (fun effect continuation returned => by
+      simp only [bind_tc_vis, vis_not_ok] at returned)
+    (fun returned => by simp only [bind_tc_div, div_not_ok] at returned)
+    returned
+
+/-- Only an actual Prod-typed bind result may be decomposed as a pair. -/
+private theorem normal_bind_pair {A B C : Type} (action : Result (A × B))
+    (next : (A × B) → Result C) (output : C)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ left right, action = .ok (left, right) ∧ next (left, right) = .ok output := by
+  obtain ⟨value, actualCall, tail⟩ := normal_bind action next output returned
+  rcases value with ⟨left, right⟩
+  exact ⟨left, right, actualCall, tail⟩
+
+/-- With an empty slot, actual agree can install only its actual observed
+source. Its successful normal-return premise suffices; no String domain is
+added, and no three-field comparison mathematics is repeated. -/
+private theorem normal_bind_result_pair {A Err B C : Type}
+    (action : Result (core.result.Result A Err × B))
+    (next : (core.result.Result A Err × B) → Result C) (output : C)
+    (returned : (do let value ← action; next value) = .ok output) :
+    (∃ value state, action = .ok (.Ok value, state) ∧
+      next (.Ok value, state) = .ok output) ∨
+    (∃ error state, action = .ok (.Err error, state) ∧
+      next (.Err error, state) = .ok output) := by
+  obtain ⟨reply, state, actualCall, tail⟩ := normal_bind_pair action next output returned
+  cases reply with
+  | Ok value => exact Or.inl ⟨value, state, actualCall, tail⟩
+  | Err error => exact Or.inr ⟨error, state, actualCall, tail⟩
+
+private theorem normal_if_iff {A : Type} (condition : Prop) [Decidable condition]
+    (yes no : Result A) (output : A) :
+    ((if condition then yes else no) = .ok output) ↔
+      ((condition ∧ yes = .ok output) ∨ (¬ condition ∧ no = .ok output)) := by
+  by_cases holds : condition <;> simp only [holds, if_true, if_false,
+    true_and, false_and, not_true_eq_false, not_false_eq_true, or_false, false_or]
+
+private theorem agree_empty_installs_observed (observed installed : Source)
+    (returned : controller.capture.agree none observed =
+      .ok (.Ok (), some installed)) : observed = installed := by
+  unfold controller.capture.agree at returned
+  split at returned
+  · have mismatch := congrArg Prod.fst (Result.ok_injective returned)
+    cases mismatch
+  · obtain ⟨empty, _emptyCall, returned⟩ := normal_bind _ _ _ returned
+    split at returned
+    · have mismatch := congrArg Prod.fst (Result.ok_injective returned)
+      cases mismatch
+    · have slot := congrArg Prod.snd (Result.ok_injective returned)
+      exact Option.some.inj slot
+
+/-- Turn only this generated ResourceRef comparison's false-ne observation
+into full record equality. This is not a new resource/identifier policy. -/
+private theorem resource_check_means_equal
+    (left right : sandproof_protocol.ResourceRef)
+    (checked : core.cmp.PartialEq.ne.trait_default
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef left right =
+        .ok false) : left = right := by
+  rcases left with ⟨leftKind, leftId⟩
+  rcases right with ⟨rightKind, rightId⟩
+  cases leftKind <;> cases rightKind <;>
+    simp_all [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+      sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+      sandproof_protocol.ResourceKind.read_discriminant,
+      sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+/-- A terminal normal result that retains Rows cannot create a new slot.
+Only the Rows projection is used; reply and the full codec are unrestricted. -/
+private theorem retained_rows_cannot_install {D : Type}
+    (rows nextRows : Rows) (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (reply : core.result.Result Unit JournalError) (codec afterCodec : D)
+    (returned : Result.ok ((reply, rows), codec) =
+      Result.ok ((.Ok (), nextRows), afterCodec)) : False := by
+  have same := Result.ok_injective returned
+  have rowsEq := congrArg (fun output => output.1.2) same
+  change rows = nextRows at rowsEq
+  have incompatible : (none : Option Source) = some installed :=
+    empty.symm.trans ((congrArg (slotAt slot) rowsEq).trans present)
+  cases incompatible
+
+/-- First actual handler stage: a new slot requires a successful action decode
+from this exact row and input codec. This does not assume decode totality,
+receipt success, or unchanged decoder state. -/
+theorem actual_new_slot_requires_decoded_action {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (returned : controller.capture.accept_original_source_row hostEvidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    Exists fun actionBytes : alloc.vec.Vec U8 =>
+      Exists fun receiptBytes : alloc.vec.Vec U8 =>
+        Exists fun action : Action => Exists fun afterAction : D =>
+          row = .Ok (actionBytes, receiptBytes) /\
+          ops.decode_action codec actionBytes.deref = .ok (.Ok action, afterAction) := by
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  cases row with
+  | Err failure =>
+    simp only [controller.capture.accept_original_source_row] at returned
+    obtain ⟨converted, conversionCall, tail⟩ := normal_bind _ _ _ returned
+    clear returned conversionCall
+    exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+      empty present _ _ _ tail)
+  | Ok bytes =>
+    rcases bytes with ⟨actionBytes, receiptBytes⟩
+    simp only [controller.capture.accept_original_source_row] at returned
+    obtain ⟨decodedReply, afterAction, decoded, tail⟩ := normal_bind_pair
+      (ops.decode_action codec actionBytes.deref) _ _ returned
+    clear returned
+    cases decodedReply with
+    | Ok action => exact ⟨actionBytes, receiptBytes, action, afterAction, rfl, decoded⟩
+    | Err failure =>
+      obtain ⟨converted, conversionCall, terminal⟩ := normal_bind _ _ _ tail
+      clear tail conversionCall
+      exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ terminal)
+
+/-- Substitute an observed value at one actual Result bind. The continuation
+is the generated function's original continuation, not a replacement flow. -/
+private theorem normal_bind_known {A B : Type} (action : Result A)
+    (next : A → Result B) (value : A) (output : B)
+    (actual : action = .ok value)
+    (returned : (do let item ← action; next item) = .ok output) :
+    next value = .ok output := by
+  simpa only [actual, bind_tc_ok] using returned
+
+/-- The next actual stage: command decoding and the three target-binding
+checks must succeed. This does not claim plan, receipt or source validation. -/
+theorem actual_new_slot_requires_bound_source_command {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (returned : controller.capture.accept_original_source_row hostEvidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    Exists fun actionBytes : alloc.vec.Vec U8 =>
+      Exists fun receiptBytes : alloc.vec.Vec U8 =>
+        Exists fun action : Action => Exists fun afterAction : D =>
+          Exists fun command : Command =>
+          row = .Ok (actionBytes, receiptBytes) /\
+          ops.decode_action codec actionBytes.deref = .ok (.Ok action, afterAction) /\
+          sandbox_controller_core.model.EffectId.command action.command = .ok command /\
+          (SourceCommand .prepared command binding current ∨
+            SourceCommand .activated command binding current) := by
+  obtain ⟨actionBytes, receiptBytes, action, afterAction, input, decoded⟩ :=
+    actual_new_slot_requires_decoded_action hostEvidence ops row world ns current
+      binding rows nextRows codec afterCodec slot installed empty present returned
+  subst row
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  simp only [controller.capture.accept_original_source_row] at returned
+  have afterDecode := normal_bind_known (ops.decode_action codec actionBytes.deref)
+    _ _ _ decoded returned
+  clear returned
+  obtain ⟨command, commandCall, commandTail⟩ := normal_bind
+    (sandbox_controller_core.model.EffectId.command action.command) _ _ afterDecode
+  clear afterDecode
+  refine ⟨actionBytes, receiptBytes, action, afterAction, command, rfl, decoded, commandCall, ?_⟩
+  cases command
+  case PrepareVm found epoch generation commandVm net restore =>
+    obtain ⟨matchesSandbox, sandboxCall, sandboxTail⟩ := normal_bind
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+        found sandbox) _ _ commandTail
+    clear commandTail
+    cases matchesSandbox with
+    | false => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ sandboxTail)
+    | true =>
+      have foundSame : found = sandbox :=
+        of_decide_eq_true (Result.ok_injective sandboxCall)
+      rw [if_pos (rfl : true = true)] at sandboxTail
+      rw [normal_if_iff (generation != current.generation)] at sandboxTail
+      rcases sandboxTail with ⟨generationRejected, terminal⟩ | ⟨generationAllowed, generationTail⟩
+      · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+          empty present _ _ _ terminal)
+      · have generationSame : generation = current.generation := by
+          exact UScalar.eq_of_val_eq (by simpa using generationAllowed)
+        obtain ⟨wrongVm, vmCall, vmTail⟩ := normal_bind
+          (core.cmp.PartialEq.ne.trait_default
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+          _ _ generationTail
+        clear generationTail
+        cases wrongVm with
+        | true => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ vmTail)
+        | false =>
+          have vmSame : commandVm = vm := by
+            simpa [core.cmp.PartialEq.ne.trait_default,
+              core.cmp.PartialEq.ne.default,
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq] using vmCall
+          exact Or.inl ⟨foundSame, generationSame, vmSame⟩
+  case ActivateVm found epoch generation commandVm =>
+    obtain ⟨matchesSandbox, sandboxCall, sandboxTail⟩ := normal_bind
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+        found sandbox) _ _ commandTail
+    clear commandTail
+    cases matchesSandbox with
+    | false => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ sandboxTail)
+    | true =>
+      have foundSame : found = sandbox :=
+        of_decide_eq_true (Result.ok_injective sandboxCall)
+      rw [if_pos (rfl : true = true)] at sandboxTail
+      rw [normal_if_iff (generation != current.generation)] at sandboxTail
+      rcases sandboxTail with ⟨generationRejected, terminal⟩ | ⟨generationAllowed, generationTail⟩
+      · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+          empty present _ _ _ terminal)
+      · have generationSame : generation = current.generation := by
+          exact UScalar.eq_of_val_eq (by simpa using generationAllowed)
+        obtain ⟨wrongVm, vmCall, vmTail⟩ := normal_bind
+          (core.cmp.PartialEq.ne.trait_default
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+          _ _ generationTail
+        clear generationTail
+        cases wrongVm with
+        | true => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ vmTail)
+        | false =>
+          have vmSame : commandVm = vm := by
+            simpa [core.cmp.PartialEq.ne.trait_default,
+              core.cmp.PartialEq.ne.default,
+              sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq] using vmCall
+          exact Or.inr ⟨foundSame, generationSame, vmSame⟩
+  all_goals exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+    empty present _ _ _ commandTail)
+
+/-- Observations of the actual action-to-plan prefix. No identity or receipt
+success is asserted here. Every call is derived from the original handler. -/
+structure DecodedPlanEvidence {E D : Type}
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (current : Current) (binding : Binding)
+    (codec : D) where
+  actionBytes : alloc.vec.Vec U8
+  receiptBytes : alloc.vec.Vec U8
+  afterAction : D
+  action : Action
+  command : Command
+  logical : sandbox_controller_core.model.LogicalEffectRecord
+  key : sandbox_controller_core.model.OperationKey
+  plan : sandbox_controller_core.model.OperationPlan
+  input : row = .Ok (actionBytes, receiptBytes)
+  decodedAction : ops.decode_action codec actionBytes.deref = .ok (.Ok action, afterAction)
+  commandCall : sandbox_controller_core.model.EffectId.command action.command = .ok command
+  commandBound : SourceCommand .prepared command binding current ∨
+    SourceCommand .activated command binding current
+  effectSucceeded : sandbox_controller_core.effect.effect_succeeded_check world command = .ok true
+  logicalCall : sandbox_controller_core.model.World.logical_effect world action.command.logical =
+    .ok (some logical)
+  currentAttempt : logical.current_attempt = action.command.attempt
+  operationOrigin : logical.origin = .Operation key
+  planCall : sandbox_controller_core.model.World.operation_plan world key = .ok (some plan)
+
+/-- Follow the real handler through effect status, logical attempt, operation
+origin and plan lookup. This is a prefix of complete row evidence. -/
+theorem actual_new_slot_requires_decoded_plan {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (returned : controller.capture.accept_original_source_row hostEvidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    Nonempty (DecodedPlanEvidence ops row world current binding codec) := by
+  obtain ⟨actionBytes, receiptBytes, action, afterAction, command, input, decoded,
+    commandCall, bound⟩ := actual_new_slot_requires_bound_source_command hostEvidence ops
+      row world ns current binding rows nextRows codec afterCodec slot installed
+      empty present returned
+  subst row
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  simp only [controller.capture.accept_original_source_row] at returned
+  have afterDecode := normal_bind_known (ops.decode_action codec actionBytes.deref)
+    _ _ _ decoded returned
+  clear returned
+  have afterCommand := normal_bind_known
+    (sandbox_controller_core.model.EffectId.command action.command) _ _ _ commandCall afterDecode
+  clear afterDecode
+  cases command
+  all_goals simp only [SourceCommand, false_or, or_false] at bound
+  case' PrepareVm found epoch generation commandVm net restore =>
+    let selectedCommand : Command := (.PrepareVm found epoch generation commandVm net restore)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inl bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  case' ActivateVm found epoch generation commandVm =>
+    let selectedCommand : Command := (.ActivateVm found epoch generation commandVm)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inr bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  all_goals
+    obtain ⟨succeeded, effectCall, effectTail⟩ := normal_bind
+      (sandbox_controller_core.effect.effect_succeeded_check world selectedCommand) _ _ afterVm
+    clear afterVm
+    cases succeeded with
+    | false => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ effectTail)
+    | true =>
+      rw [if_pos (rfl : true = true)] at effectTail
+      obtain ⟨logicalReply, logicalCall, logicalTail⟩ := normal_bind
+        (sandbox_controller_core.model.World.logical_effect world action.command.logical)
+        _ _ effectTail
+      clear effectTail
+      cases logicalReply with
+      | none => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+          empty present _ _ _ logicalTail)
+      | some logical =>
+        rcases (normal_if_iff (logical.current_attempt != action.command.attempt) _ _ _).mp
+          logicalTail with ⟨attemptRejected, terminal⟩ | ⟨attemptAllowed, attemptTail⟩
+        · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ terminal)
+        · clear logicalTail
+          have attemptSame : logical.current_attempt = action.command.attempt :=
+            UScalar.eq_of_val_eq (by simpa using attemptAllowed)
+          cases originCall : logical.origin with
+          | Maintenance operation =>
+            rw [originCall] at attemptTail
+            exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+              empty present _ _ _ attemptTail)
+          | Operation key =>
+            rw [originCall] at attemptTail
+            obtain ⟨planReply, planCall, planTail⟩ := normal_bind
+              (sandbox_controller_core.model.World.operation_plan world key) _ _ attemptTail
+            clear attemptTail
+            cases planReply with
+            | none => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+                empty present _ _ _ planTail)
+            | some plan =>
+              exact ⟨{
+                actionBytes := actionBytes
+                receiptBytes := receiptBytes
+                afterAction := afterAction
+                action := action
+                command := selectedCommand
+                logical := logical
+                key := key
+                plan := plan
+                input := rfl
+                decodedAction := decoded
+                commandCall := commandCall
+                commandBound := boundCommand
+                effectSucceeded := effectCall
+                logicalCall := logicalCall
+                currentAttempt := attemptSame
+                operationOrigin := originCall
+                planCall := planCall }⟩
+
+private theorem normal_if_known_false {A : Type} (condition : Prop) [Decidable condition]
+    (yes no : Result A) (output : A) (notHolds : ¬ condition)
+    (returned : (if condition then yes else no) = .ok output) : no = .ok output := by
+  simpa only [if_neg notHolds] using returned
+
+private theorem normal_ne_false_eq {A : Type} [DecidableEq A]
+    (dictionary : core.cmp.PartialEq A A) (left right : A)
+    (reflected : dictionary.eq left right = .ok (decide (left = right)))
+    (checked : core.cmp.PartialEq.ne.trait_default dictionary left right = .ok false) :
+    left = right := by
+  by_contra different
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    reflected, different] at checked
+
+structure CheckedPlanEvidence {E D : Type}
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (current : Current) (binding : Binding)
+    (codec : D) extends DecodedPlanEvidence ops row world current binding codec where
+  keySandbox : key.sandbox = binding.1
+  planVm : plan.vm = some binding.2.1 ∨
+    sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+      plan command = .ok true
+  planGeneration : plan.generation = current.generation
+  commandEpoch : sandbox_controller_core.model.Command.epoch command = .ok (some plan.epoch)
+
+theorem actual_new_slot_requires_checked_plan {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (returned : controller.capture.accept_original_source_row hostEvidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    Nonempty (CheckedPlanEvidence ops row world current binding codec) := by
+  obtain ⟨planEvidence⟩ := actual_new_slot_requires_decoded_plan hostEvidence ops row world ns
+    current binding rows nextRows codec afterCodec slot installed empty present returned
+  rcases planEvidence with ⟨actionBytes, receiptBytes, afterAction, action, command, logical, key,
+    plan, input, decoded, commandCall, bound, effectSucceeded, logicalCall,
+    currentAttempt, operationOrigin, planCall⟩
+  subst row
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  simp only [controller.capture.accept_original_source_row] at returned
+  have afterDecode := normal_bind_known (ops.decode_action codec actionBytes.deref)
+    _ _ _ decoded returned
+  clear returned
+  have afterCommand := normal_bind_known
+    (sandbox_controller_core.model.EffectId.command action.command) _ _ _ commandCall afterDecode
+  clear afterDecode
+  cases command
+  all_goals simp only [SourceCommand, false_or, or_false] at bound
+  case' PrepareVm found epoch generation commandVm net restore =>
+    let selectedCommand : Command := (.PrepareVm found epoch generation commandVm net restore)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inl bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  case' ActivateVm found epoch generation commandVm =>
+    let selectedCommand : Command := (.ActivateVm found epoch generation commandVm)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inr bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  all_goals
+    have afterEffect := normal_bind_known
+      (sandbox_controller_core.effect.effect_succeeded_check world selectedCommand)
+      _ _ _ effectSucceeded afterVm
+    clear afterVm
+    rw [if_pos (rfl : true = true)] at afterEffect
+    have afterLogical := normal_bind_known
+      (sandbox_controller_core.model.World.logical_effect world action.command.logical)
+      _ _ _ logicalCall afterEffect
+    clear afterEffect
+    have attemptAllowed : ¬ (logical.current_attempt != action.command.attempt) = true := by
+      simp [currentAttempt]
+    have afterAttempt := normal_if_known_false
+      ((logical.current_attempt != action.command.attempt) = true)
+      _ _ _ attemptAllowed afterLogical
+    clear afterLogical
+    rw [operationOrigin] at afterAttempt
+    have afterPlan := normal_bind_known
+      (sandbox_controller_core.model.World.operation_plan world key) _ _ _ planCall afterAttempt
+    clear afterAttempt
+    obtain ⟨wrongSandbox, keyCall, keyTail⟩ := normal_bind
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId key.sandbox sandbox)
+      _ _ afterPlan
+    clear afterPlan
+    cases wrongSandbox with
+    | true => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ keyTail)
+    | false =>
+      have keySame : key.sandbox = sandbox := normal_ne_false_eq _ _ _ (by rfl) keyCall
+      rw [if_neg (by decide : ¬ false = true)] at keyTail
+      obtain ⟨wrongPlanVm, planVmCall, planVmTail⟩ := normal_bind
+        (core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm))
+        _ _ keyTail
+      clear keyTail
+      cases wrongPlanVm with
+      | false =>
+        have matchedVm : plan.vm = some vm := normal_ne_false_eq _ _ _ (by
+          cases plan.vm <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq]) planVmCall
+        have acceptedVm : plan.vm = some vm ∨
+            sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+              plan selectedCommand = .ok true := Or.inl matchedVm
+        rw [if_neg (by decide : ¬ false = true)] at planVmTail
+        rcases (normal_if_iff (plan.generation != generation) _ _ _).mp planVmTail with
+          ⟨generationRejected, terminal⟩ | ⟨generationAllowed, generationTail⟩
+        · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ terminal)
+        · clear planVmTail
+          have planGeneration : plan.generation = current.generation :=
+            (UScalar.eq_of_val_eq (by simpa using generationAllowed)).trans generationSame
+          obtain ⟨epochReply, epochCall, epochTail⟩ := normal_bind
+            (sandbox_controller_core.model.Command.epoch selectedCommand) _ _ generationTail
+          clear generationTail
+          obtain ⟨wrongEpoch, epochCheck, epochCheckTail⟩ := normal_bind
+            (core.cmp.PartialEq.ne.trait_default
+              (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+              epochReply (some plan.epoch)) _ _ epochTail
+          clear epochTail
+          cases wrongEpoch with
+          | true => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+              empty present _ _ _ epochCheckTail)
+          | false =>
+            have epochSame : epochReply = some plan.epoch := normal_ne_false_eq _ _ _ (by
+              cases epochReply <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq]) epochCheck
+            have commandEpoch : sandbox_controller_core.model.Command.epoch selectedCommand =
+                .ok (some plan.epoch) := epochSame ▸ epochCall
+            exact ⟨{
+              toDecodedPlanEvidence := {
+                actionBytes := actionBytes
+                receiptBytes := receiptBytes
+                afterAction := afterAction
+                action := action
+                command := selectedCommand
+                logical := logical
+                key := key
+                plan := plan
+                input := rfl
+                decodedAction := decoded
+                commandCall := commandCall
+                commandBound := boundCommand
+                effectSucceeded := effectSucceeded
+                logicalCall := logicalCall
+                currentAttempt := currentAttempt
+                operationOrigin := operationOrigin
+                planCall := planCall }
+              keySandbox := keySame
+              planVm := acceptedVm
+              planGeneration := planGeneration
+              commandEpoch := commandEpoch }⟩
+      | true =>
+        rw [if_pos (rfl : true = true)] at planVmTail
+        obtain ⟨belongs, belongsCall, belongsTail⟩ := normal_bind
+          (sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+            plan selectedCommand) _ _ planVmTail
+        clear planVmTail
+        cases belongs with
+        | false => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ belongsTail)
+        | true =>
+          have acceptedVm : plan.vm = some vm ∨
+              sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+                plan selectedCommand = .ok true := Or.inr belongsCall
+          rw [if_pos (rfl : true = true)] at belongsTail
+          rcases (normal_if_iff (plan.generation != generation) _ _ _).mp belongsTail with
+            ⟨generationRejected, terminal⟩ | ⟨generationAllowed, generationTail⟩
+          · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+              empty present _ _ _ terminal)
+          · clear belongsTail
+            have planGeneration : plan.generation = current.generation :=
+              (UScalar.eq_of_val_eq (by simpa using generationAllowed)).trans generationSame
+            obtain ⟨epochReply, epochCall, epochTail⟩ := normal_bind
+              (sandbox_controller_core.model.Command.epoch selectedCommand) _ _ generationTail
+            clear generationTail
+            obtain ⟨wrongEpoch, epochCheck, epochCheckTail⟩ := normal_bind
+              (core.cmp.PartialEq.ne.trait_default
+                (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+                epochReply (some plan.epoch)) _ _ epochTail
+            clear epochTail
+            cases wrongEpoch with
+            | true => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+                empty present _ _ _ epochCheckTail)
+            | false =>
+              have epochSame : epochReply = some plan.epoch := normal_ne_false_eq _ _ _ (by
+                cases epochReply <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq]) epochCheck
+              have commandEpoch : sandbox_controller_core.model.Command.epoch selectedCommand =
+                  .ok (some plan.epoch) := epochSame ▸ epochCall
+              exact ⟨{
+                toDecodedPlanEvidence := {
+                  actionBytes := actionBytes
+                  receiptBytes := receiptBytes
+                  afterAction := afterAction
+                  action := action
+                  command := selectedCommand
+                  logical := logical
+                  key := key
+                  plan := plan
+                  input := rfl
+                  decodedAction := decoded
+                  commandCall := commandCall
+                  commandBound := boundCommand
+                  effectSucceeded := effectSucceeded
+                  logicalCall := logicalCall
+                  currentAttempt := currentAttempt
+                  operationOrigin := operationOrigin
+                  planCall := planCall }
+                keySandbox := keySame
+                planVm := acceptedVm
+                planGeneration := planGeneration
+                commandEpoch := commandEpoch }⟩
+
+private theorem normal_ne_reflects {A : Type} [DecidableEq A]
+    (dictionary : core.cmp.PartialEq A A) (left right : A)
+    (reflected : dictionary.eq left right = .ok (decide (left = right))) :
+    core.cmp.PartialEq.ne.trait_default dictionary left right = .ok (decide (left ≠ right)) := by
+  unfold core.cmp.PartialEq.ne.trait_default core.cmp.PartialEq.ne.default
+  rw [reflected, bind_tc_ok]
+  by_cases same : left = right <;> simp [same]
+
+private theorem bool_false_of_not_true (value : Bool) (notTrue : ¬ value = true) :
+    value = false := by
+  cases value with
+  | false => rfl
+  | true => exact False.elim (notTrue rfl)
+
+/-- A rejected guard cannot explain a new slot when its literal branch retains
+Rows. The other branch is the original generated continuation. -/
+private theorem normal_retained_guard_false {D : Type}
+    (rows nextRows : Rows) (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none) (present : slotAt slot nextRows = some installed)
+    (condition : Prop) [Decidable condition]
+    (reply : core.result.Result Unit JournalError) (codec afterCodec : D)
+    (no : Result ((core.result.Result Unit JournalError × Rows) × D))
+    (returned : (if condition then .ok ((reply, rows), codec) else no) =
+      .ok ((.Ok (), nextRows), afterCodec)) :
+    ¬ condition ∧ no = .ok ((.Ok (), nextRows), afterCodec) := by
+  rcases (normal_if_iff condition _ _ _).mp returned with ⟨_rejected, terminal⟩ | accepted
+  · exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+      empty present _ _ _ terminal)
+  · exact accepted
+
+structure CheckedActionEvidence {E D : Type}
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (codec : D) extends CheckedPlanEvidence ops row world current binding codec where
+  ownerCall : controller.identity.owner_id current.owner = .ok (.Ok action.identity.owner)
+  publicSandbox : action.identity.sandbox = binding.2.2
+  operationCall : controller.identity.operation_id ns key = .ok (.Ok action.identity.operation)
+  identityEpoch : action.identity.epoch = plan.epoch
+  identityAttempt : action.identity.attempt = action.command.attempt
+  identityGeneration : action.identity.generation = current.generation
+  resourceCall : controller.identity.resource ns command = .ok (.Ok action.identity.resource)
+
+theorem actual_new_slot_requires_checked_action {E D : Type}
+    (hostEvidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current)
+    (binding : Binding) (rows nextRows : Rows) (codec afterCodec : D)
+    (slot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none)
+    (present : slotAt slot nextRows = some installed)
+    (returned : controller.capture.accept_original_source_row hostEvidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    Nonempty (CheckedActionEvidence ops row world ns current binding codec) := by
+  obtain ⟨planEvidence⟩ := actual_new_slot_requires_checked_plan hostEvidence ops row world ns
+    current binding rows nextRows codec afterCodec slot installed empty present returned
+  rcases planEvidence with ⟨decodedPlan, keySame, planVmAllowed, planGeneration, commandEpoch⟩
+  rcases decodedPlan with ⟨actionBytes, receiptBytes, afterAction, action, command, logical, key,
+    plan, input, decoded, commandCall, bound, effectSucceeded, logicalCall,
+    currentAttempt, operationOrigin, planCall⟩
+  subst row
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  change key.sandbox = sandbox at keySame
+  change plan.vm = some vm ∨
+    sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+      plan command = .ok true at planVmAllowed
+  change plan.generation = current.generation at planGeneration
+  change sandbox_controller_core.model.Command.epoch command = .ok (some plan.epoch) at commandEpoch
+  simp only [controller.capture.accept_original_source_row] at returned
+  have afterDecode := normal_bind_known (ops.decode_action codec actionBytes.deref)
+    _ _ _ decoded returned
+  clear returned
+  have afterCommand := normal_bind_known
+    (sandbox_controller_core.model.EffectId.command action.command) _ _ _ commandCall afterDecode
+  clear afterDecode
+  cases command
+  all_goals simp only [SourceCommand, false_or, or_false] at bound
+  case' PrepareVm found epoch generation commandVm net restore =>
+    let selectedCommand : Command := (.PrepareVm found epoch generation commandVm net restore)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inl bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  case' ActivateVm found epoch generation commandVm =>
+    let selectedCommand : Command := (.ActivateVm found epoch generation commandVm)
+    have boundCommand : SourceCommand .prepared selectedCommand (sandbox, vm, publicSandbox) current ∨
+        SourceCommand .activated selectedCommand (sandbox, vm, publicSandbox) current := Or.inr bound
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  all_goals
+    have afterEffect := normal_bind_known
+      (sandbox_controller_core.effect.effect_succeeded_check world selectedCommand)
+      _ _ _ effectSucceeded afterVm
+    clear afterVm
+    rw [if_pos (rfl : true = true)] at afterEffect
+    have afterLogical := normal_bind_known
+      (sandbox_controller_core.model.World.logical_effect world action.command.logical)
+      _ _ _ logicalCall afterEffect
+    clear afterEffect
+    have attemptAllowed : ¬ (logical.current_attempt != action.command.attempt) = true := by
+      simp [currentAttempt]
+    have afterAttempt := normal_if_known_false
+      ((logical.current_attempt != action.command.attempt) = true) _ _ _ attemptAllowed afterLogical
+    clear afterLogical
+    rw [operationOrigin] at afterAttempt
+    have afterPlan := normal_bind_known
+      (sandbox_controller_core.model.World.operation_plan world key) _ _ _ planCall afterAttempt
+    clear afterAttempt
+    have keyChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId key.sandbox sandbox =
+          .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, keySame]
+    have afterKey := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId key.sandbox sandbox)
+      _ _ _ keyChecked afterPlan
+    clear afterPlan
+    rw [if_neg (by decide : ¬ false = true)] at afterKey
+    have vmModel :
+        (core.option.Option.Insts.CoreCmpPartialEqOption
+          sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId).eq plan.vm (some vm) =
+            .ok (decide (plan.vm = some vm)) := by
+      cases plan.vm <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+    have vmObservation := normal_ne_reflects _ _ _ vmModel
+    by_cases planVmSame : plan.vm = some vm
+    case' pos =>
+      have vmChecked : core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm) =
+              .ok false := by simpa [planVmSame] using vmObservation
+      have afterPlanVm := normal_bind_known
+        (core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm))
+        _ _ _ vmChecked afterKey
+      clear afterKey
+      rw [if_neg (by decide : ¬ false = true)] at afterPlanVm
+    case' neg =>
+      have vmChecked : core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm) =
+              .ok true := by simpa [planVmSame] using vmObservation
+      have afterVmMismatch := normal_bind_known
+        (core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm))
+        _ _ _ vmChecked afterKey
+      clear afterKey
+      rw [if_pos (rfl : true = true)] at afterVmMismatch
+      have continuationCall :
+          sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+            plan selectedCommand = .ok true := by
+        rcases planVmAllowed with direct | continuation
+        · exact False.elim (planVmSame direct)
+        · exact continuation
+      have afterPlanVm := normal_bind_known
+        (sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+          plan selectedCommand) _ _ _ continuationCall afterVmMismatch
+      clear afterVmMismatch
+      rw [if_pos (rfl : true = true)] at afterPlanVm
+  all_goals
+    have planGenerationSame : plan.generation = generation := planGeneration.trans generationSame.symm
+    have generationAllowed : ¬ (plan.generation != generation) = true := by
+      simp [planGenerationSame]
+    have afterGeneration := normal_if_known_false ((plan.generation != generation) = true)
+      _ _ _ generationAllowed afterPlanVm
+    clear afterPlanVm
+    have afterEpoch := normal_bind_known
+      (sandbox_controller_core.model.Command.epoch selectedCommand) _ _ _ commandEpoch afterGeneration
+    clear afterGeneration
+    have epochChecked : core.cmp.PartialEq.ne.trait_default
+        (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+        (some plan.epoch) (some plan.epoch) = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+    have identityTail := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+        (some plan.epoch) (some plan.epoch)) _ _ _ epochChecked afterEpoch
+    clear afterEpoch
+    rw [if_neg (by decide : ¬ false = true)] at identityTail
+    obtain ⟨ownerReply, ownerCall, ownerTail⟩ := normal_bind
+      (controller.identity.owner_id current.owner) _ _ identityTail
+    clear identityTail
+    cases ownerReply with
+    | Err failure => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ ownerTail)
+    | Ok convertedOwner =>
+      obtain ⟨wrongOwner, ownerCheck, ownerCheckTail⟩ := normal_bind
+        (core.cmp.PartialEq.ne.trait_default
+          sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId
+          action.identity.owner convertedOwner) _ _ ownerTail
+      clear ownerTail
+      obtain ⟨ownerAllowed, afterOwner⟩ := normal_retained_guard_false rows nextRows slot installed
+        empty present (wrongOwner = true) _ afterAction afterCodec _ ownerCheckTail
+      clear ownerCheckTail
+      have ownerCheckFalse := (bool_false_of_not_true wrongOwner ownerAllowed) ▸ ownerCheck
+      have ownerSame := normal_ne_false_eq
+        sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId _ _ (by rfl) ownerCheckFalse
+      subst convertedOwner
+      obtain ⟨wrongPublic, publicCheck, publicTail⟩ := normal_bind
+        (core.cmp.impls.PartialEqShared.ne
+          sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId
+          action.identity.sandbox publicSandbox) _ _ afterOwner
+      clear afterOwner
+      obtain ⟨publicAllowed, afterPublic⟩ := normal_retained_guard_false rows nextRows slot installed
+        empty present (wrongPublic = true) _ afterAction afterCodec _ publicTail
+      clear publicTail
+      have publicCheckFalse := (bool_false_of_not_true wrongPublic publicAllowed) ▸ publicCheck
+      have publicSame := normal_ne_false_eq
+        sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId _ _ (by rfl) publicCheckFalse
+      obtain ⟨operationReply, operationCall, operationTail⟩ := normal_bind
+        (controller.identity.operation_id ns key) _ _ afterPublic
+      clear afterPublic
+      cases operationReply with
+      | Err failure => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+          empty present _ _ _ operationTail)
+      | Ok convertedOperation =>
+        obtain ⟨wrongOperation, operationCheck, operationCheckTail⟩ := normal_bind
+          (core.cmp.PartialEq.ne.trait_default
+            sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId
+            action.identity.operation convertedOperation) _ _ operationTail
+        clear operationTail
+        obtain ⟨operationAllowed, afterOperation⟩ := normal_retained_guard_false rows nextRows slot installed
+          empty present (wrongOperation = true) _ afterAction afterCodec _ operationCheckTail
+        clear operationCheckTail
+        have operationCheckFalse := (bool_false_of_not_true wrongOperation operationAllowed) ▸ operationCheck
+        have operationSame := normal_ne_false_eq
+          sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId _ _ (by rfl) operationCheckFalse
+        subst convertedOperation
+        obtain ⟨epochAllowed, identityEpochTail⟩ := normal_retained_guard_false rows nextRows slot installed
+          empty present ((action.identity.epoch != plan.epoch) = true) _ afterAction afterCodec _ afterOperation
+        clear afterOperation
+        have identityEpochSame : action.identity.epoch = plan.epoch :=
+          UScalar.eq_of_val_eq (by simpa using epochAllowed)
+        obtain ⟨attemptAllowed, identityAttemptTail⟩ := normal_retained_guard_false rows nextRows slot installed
+          empty present ((action.identity.attempt != action.command.attempt) = true)
+          _ afterAction afterCodec _ identityEpochTail
+        clear identityEpochTail
+        have identityAttemptSame : action.identity.attempt = action.command.attempt :=
+          UScalar.eq_of_val_eq (by simpa using attemptAllowed)
+        obtain ⟨identityGenerationAllowed, identityGenerationTail⟩ := normal_retained_guard_false rows nextRows slot installed
+          empty present ((action.identity.generation != generation) = true)
+          _ afterAction afterCodec _ identityAttemptTail
+        clear identityAttemptTail
+        have identityGenerationSame : action.identity.generation = current.generation :=
+          (UScalar.eq_of_val_eq (by simpa using identityGenerationAllowed)).trans generationSame
+        obtain ⟨resourceReply, resourceCall, resourceTail⟩ := normal_bind
+          (controller.identity.resource ns selectedCommand) _ _ identityGenerationTail
+        clear identityGenerationTail
+        cases resourceReply with
+        | Err failure => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ resourceTail)
+        | Ok convertedResource =>
+          obtain ⟨wrongResource, resourceCheck, resourceCheckTail⟩ := normal_bind
+            (core.cmp.PartialEq.ne.trait_default
+              sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef
+              action.identity.resource convertedResource) _ _ resourceTail
+          clear resourceTail
+          obtain ⟨resourceAllowed, afterResource⟩ := normal_retained_guard_false rows nextRows slot installed
+            empty present (wrongResource = true) _ afterAction afterCodec _ resourceCheckTail
+          clear resourceCheckTail
+          have resourceCheckFalse := (bool_false_of_not_true wrongResource resourceAllowed) ▸ resourceCheck
+          have resourceSame := resource_check_means_equal _ _ resourceCheckFalse
+          subst convertedResource
+          exact ⟨{
+            toCheckedPlanEvidence := {
+              toDecodedPlanEvidence := {
+                actionBytes := actionBytes
+                receiptBytes := receiptBytes
+                afterAction := afterAction
+                action := action
+                command := selectedCommand
+                logical := logical
+                key := key
+                plan := plan
+                input := rfl
+                decodedAction := decoded
+                commandCall := commandCall
+                commandBound := boundCommand
+                effectSucceeded := effectSucceeded
+                logicalCall := logicalCall
+                currentAttempt := currentAttempt
+                operationOrigin := operationOrigin
+                planCall := planCall }
+              keySandbox := keySame
+              planVm := planVmAllowed
+              planGeneration := planGeneration
+              commandEpoch := commandEpoch }
+            ownerCall := ownerCall
+            publicSandbox := publicSame
+            operationCall := operationCall
+            identityEpoch := identityEpochSame
+            identityAttempt := identityAttemptSame
+            identityGeneration := identityGenerationSame
+            resourceCall := resourceCall }⟩
+
+private theorem normal_ne_self {A : Type} [DecidableEq A]
+    (dictionary : core.cmp.PartialEq A A) (value : A)
+    (reflected : dictionary.eq value value = .ok (decide (value = value))) :
+    core.cmp.PartialEq.ne.trait_default dictionary value value = .ok false := by
+  simpa using normal_ne_reflects dictionary value value reflected
+
+private theorem resource_ne_self (value : sandproof_protocol.ResourceRef) :
+    core.cmp.PartialEq.ne.trait_default
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef value value = .ok false := by
+  rcases value with ⟨kind, identifier⟩
+  cases kind <;> simp [core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default,
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+    sandproof_protocol.ResourceKind.read_discriminant,
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+private theorem new_slot_is_selected (rows nextRows : Rows)
+    (slot selectedSlot : RowSlot) (installed : Source)
+    (empty : slotAt slot rows = none) (present : slotAt slot nextRows = some installed)
+    (kept : slotAt (otherSlot selectedSlot) nextRows = slotAt (otherSlot selectedSlot) rows) :
+    slot = selectedSlot := by
+  cases slot <;> cases selectedSlot
+  · rfl
+  · have incompatible : (none : Option Source) = some installed :=
+      empty.symm.trans (kept.symm.trans present)
+    cases incompatible
+  · have incompatible : (none : Option Source) = some installed :=
+      empty.symm.trans (kept.symm.trans present)
+    cases incompatible
+  · rfl
+
+/-- Complete original statement: every field follows from the actual handler,
+including receipt/host/source checks, the selected actual slot, and full D. -/
+theorem actual_new_slot_has_complete_row_evidence : NewSlotEvidenceStatement := by
+  intro E D hostEvidence ops row world ns current binding rows nextRows codec afterCodec
+    slot installed empty present returned
+  obtain ⟨actionEvidence⟩ := actual_new_slot_requires_checked_action hostEvidence ops row world ns
+    current binding rows nextRows codec afterCodec slot installed empty present returned
+  rcases actionEvidence with ⟨checkedPlan, ownerCall, publicSame, operationCall,
+    identityEpochSame, identityAttemptSame, identityGenerationSame, resourceCall⟩
+  rcases checkedPlan with ⟨decodedPlan, keySame, planVmAllowed, planGeneration, commandEpoch⟩
+  rcases decodedPlan with ⟨actionBytes, receiptBytes, afterAction, action, command, logical, key,
+    plan, input, decoded, commandCall, bound, effectSucceeded, logicalCall,
+    currentAttempt, operationOrigin, planCall⟩
+  subst row
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  change key.sandbox = sandbox at keySame
+  change plan.vm = some vm ∨
+    sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+      plan command = .ok true at planVmAllowed
+  change plan.generation = current.generation at planGeneration
+  change sandbox_controller_core.model.Command.epoch command = .ok (some plan.epoch) at commandEpoch
+  change controller.identity.owner_id current.owner = .ok (.Ok action.identity.owner) at ownerCall
+  change action.identity.sandbox = publicSandbox at publicSame
+  change controller.identity.operation_id ns key = .ok (.Ok action.identity.operation) at operationCall
+  change action.identity.epoch = plan.epoch at identityEpochSame
+  change action.identity.attempt = action.command.attempt at identityAttemptSame
+  change action.identity.generation = current.generation at identityGenerationSame
+  change controller.identity.resource ns command = .ok (.Ok action.identity.resource) at resourceCall
+  simp only [controller.capture.accept_original_source_row] at returned
+  have afterDecode := normal_bind_known (ops.decode_action codec actionBytes.deref)
+    _ _ _ decoded returned
+  clear returned
+  have afterCommand := normal_bind_known
+    (sandbox_controller_core.model.EffectId.command action.command) _ _ _ commandCall afterDecode
+  clear afterDecode
+  cases command
+  all_goals simp only [SourceCommand, false_or, or_false] at bound
+  case' PrepareVm found epoch generation commandVm net restore =>
+    let selectedCommand : Command := (.PrepareVm found epoch generation commandVm net restore)
+    let selectedSlot : RowSlot := .prepared
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have chosenCommand : SourceCommand selectedSlot selectedCommand
+        (sandbox, vm, publicSandbox) current := ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  case' ActivateVm found epoch generation commandVm =>
+    let selectedCommand : Command := (.ActivateVm found epoch generation commandVm)
+    let selectedSlot : RowSlot := .activated
+    rcases bound with ⟨foundSame, generationSame, vmSame⟩
+    have chosenCommand : SourceCommand selectedSlot selectedCommand
+        (sandbox, vm, publicSandbox) current := ⟨foundSame, generationSame, vmSame⟩
+    have sandboxChecked :
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox =
+          .ok true := by
+      simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, foundSame]
+    have afterSandbox := normal_bind_known
+      (sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq found sandbox)
+      _ _ _ sandboxChecked afterCommand
+    clear afterCommand
+    have generationAllowed : ¬ (generation != current.generation) = true := by
+      simp [generationSame]
+    rw [if_pos (rfl : true = true), if_neg generationAllowed] at afterSandbox
+    have vmChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq, vmSame]
+    have afterVm := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId commandVm vm)
+      _ _ _ vmChecked afterSandbox
+    clear afterSandbox
+    rw [if_neg (by decide : ¬ false = true)] at afterVm
+  all_goals
+    have afterEffect := normal_bind_known
+      (sandbox_controller_core.effect.effect_succeeded_check world selectedCommand)
+      _ _ _ effectSucceeded afterVm
+    clear afterVm
+    rw [if_pos (rfl : true = true)] at afterEffect
+    have afterLogical := normal_bind_known
+      (sandbox_controller_core.model.World.logical_effect world action.command.logical)
+      _ _ _ logicalCall afterEffect
+    clear afterEffect
+    have attemptAllowed : ¬ (logical.current_attempt != action.command.attempt) = true := by
+      simp [currentAttempt]
+    have afterAttempt := normal_if_known_false
+      ((logical.current_attempt != action.command.attempt) = true) _ _ _ attemptAllowed afterLogical
+    clear afterLogical
+    rw [operationOrigin] at afterAttempt
+    have afterPlan := normal_bind_known
+      (sandbox_controller_core.model.World.operation_plan world key) _ _ _ planCall afterAttempt
+    clear afterAttempt
+    have keyChecked : core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId key.sandbox sandbox =
+          .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, keySame]
+    have afterKey := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId key.sandbox sandbox)
+      _ _ _ keyChecked afterPlan
+    clear afterPlan
+    rw [if_neg (by decide : ¬ false = true)] at afterKey
+    have vmModel :
+        (core.option.Option.Insts.CoreCmpPartialEqOption
+          sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId).eq plan.vm (some vm) =
+            .ok (decide (plan.vm = some vm)) := by
+      cases plan.vm <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+    have vmObservation := normal_ne_reflects _ _ _ vmModel
+    by_cases planVmSame : plan.vm = some vm
+    case' pos =>
+      have vmChecked : core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm) =
+              .ok false := by simpa [planVmSame] using vmObservation
+      have afterPlanVm := normal_bind_known
+        (core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm))
+        _ _ _ vmChecked afterKey
+      clear afterKey
+      rw [if_neg (by decide : ¬ false = true)] at afterPlanVm
+    case' neg =>
+      have vmChecked : core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm) =
+              .ok true := by simpa [planVmSame] using vmObservation
+      have afterVmMismatch := normal_bind_known
+        (core.cmp.PartialEq.ne.trait_default
+          (core.option.Option.Insts.CoreCmpPartialEqOption
+            sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId) plan.vm (some vm))
+        _ _ _ vmChecked afterKey
+      clear afterKey
+      rw [if_pos (rfl : true = true)] at afterVmMismatch
+      have continuationCall :
+          sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+            plan selectedCommand = .ok true := by
+        rcases planVmAllowed with direct | continuation
+        · exact False.elim (planVmSame direct)
+        · exact continuation
+      have afterPlanVm := normal_bind_known
+        (sandbox_controller_core.capture.continuation.activation_belongs_to_continuation
+          plan selectedCommand) _ _ _ continuationCall afterVmMismatch
+      clear afterVmMismatch
+      rw [if_pos (rfl : true = true)] at afterPlanVm
+  all_goals
+    have planGenerationSame : plan.generation = generation := planGeneration.trans generationSame.symm
+    have generationAllowed : ¬ (plan.generation != generation) = true := by
+      simp [planGenerationSame]
+    have afterGeneration := normal_if_known_false ((plan.generation != generation) = true)
+      _ _ _ generationAllowed afterPlanVm
+    clear afterPlanVm
+    have afterEpoch := normal_bind_known
+      (sandbox_controller_core.model.Command.epoch selectedCommand) _ _ _ commandEpoch afterGeneration
+    clear afterGeneration
+    have epochChecked : core.cmp.PartialEq.ne.trait_default
+        (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+        (some plan.epoch) (some plan.epoch) = .ok false := by
+      simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+        core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+    have identityTail := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default
+        (core.option.Option.Insts.CoreCmpPartialEqOption core.cmp.PartialEqU64)
+        (some plan.epoch) (some plan.epoch)) _ _ _ epochChecked afterEpoch
+    clear afterEpoch
+    rw [if_neg (by decide : ¬ false = true)] at identityTail
+    have afterOwner := normal_bind_known (controller.identity.owner_id current.owner)
+      _ _ _ ownerCall identityTail
+    clear identityTail
+    have ownerChecked := normal_ne_self
+      sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId action.identity.owner (by rfl)
+    have afterOwnerCheck := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId
+        action.identity.owner action.identity.owner) _ _ _ ownerChecked afterOwner
+    clear afterOwner
+    rw [if_neg (by decide : ¬ false = true)] at afterOwnerCheck
+    have publicChecked : core.cmp.impls.PartialEqShared.ne
+        sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        action.identity.sandbox publicSandbox = .ok false := by
+      change core.cmp.PartialEq.ne.trait_default
+        sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        action.identity.sandbox publicSandbox = .ok false
+      rw [publicSame]
+      exact normal_ne_self _ _ (by rfl)
+    have afterPublic := normal_bind_known
+      (core.cmp.impls.PartialEqShared.ne sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId
+        action.identity.sandbox publicSandbox) _ _ _ publicChecked afterOwnerCheck
+    clear afterOwnerCheck
+    rw [if_neg (by decide : ¬ false = true)] at afterPublic
+    have afterOperation := normal_bind_known (controller.identity.operation_id ns key)
+      _ _ _ operationCall afterPublic
+    clear afterPublic
+    have operationChecked := normal_ne_self
+      sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId action.identity.operation (by rfl)
+    have afterOperationCheck := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId
+        action.identity.operation action.identity.operation) _ _ _ operationChecked afterOperation
+    clear afterOperation
+    rw [if_neg (by decide : ¬ false = true)] at afterOperationCheck
+    have epochAllowed : ¬ (action.identity.epoch != plan.epoch) = true := by simp [identityEpochSame]
+    have afterIdentityEpoch := normal_if_known_false ((action.identity.epoch != plan.epoch) = true)
+      _ _ _ epochAllowed afterOperationCheck
+    clear afterOperationCheck
+    have attemptAllowed : ¬ (action.identity.attempt != action.command.attempt) = true := by
+      simp [identityAttemptSame]
+    have afterIdentityAttempt := normal_if_known_false
+      ((action.identity.attempt != action.command.attempt) = true) _ _ _ attemptAllowed afterIdentityEpoch
+    clear afterIdentityEpoch
+    have identityGenerationBound : action.identity.generation = generation :=
+      identityGenerationSame.trans generationSame.symm
+    have identityGenerationAllowed : ¬ (action.identity.generation != generation) = true := by
+      simp [identityGenerationBound]
+    have afterIdentityGeneration := normal_if_known_false
+      ((action.identity.generation != generation) = true) _ _ _ identityGenerationAllowed afterIdentityAttempt
+    clear afterIdentityAttempt
+    have afterResource := normal_bind_known (controller.identity.resource ns selectedCommand)
+      _ _ _ resourceCall afterIdentityGeneration
+    clear afterIdentityGeneration
+    have afterResourceCheck := normal_bind_known
+      (core.cmp.PartialEq.ne.trait_default sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef
+        action.identity.resource action.identity.resource) _ _ _ (resource_ne_self _) afterResource
+    clear afterResource
+    rw [if_neg (by decide : ¬ false = true)] at afterResourceCheck
+    obtain ⟨receiptReply, afterReceipt, decodedReceipt, receiptTail⟩ := normal_bind_pair
+      (ops.decode_receipt afterAction receiptBytes.deref) _ _ afterResourceCheck
+    clear afterResourceCheck
+    cases receiptReply with
+    | Err failure =>
+      obtain ⟨converted, conversionCall, terminal⟩ := normal_bind _ _ _ receiptTail
+      clear receiptTail conversionCall
+      exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+        empty present _ _ _ terminal)
+    | Ok receipt =>
+      obtain ⟨validationReply, receiptValidated, validationTail⟩ := normal_bind
+        (sandproof_protocol.WorkReceipt.validate_for
+          hostEvidence.sandproof_protocolResourceEvidenceInst receipt action) _ _ receiptTail
+      clear receiptTail
+      cases validationReply with
+      | Err failure =>
+        obtain ⟨converted, conversionCall, terminal⟩ := normal_bind _ _ _ validationTail
+        clear validationTail conversionCall
+        exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+          empty present _ _ _ terminal)
+      | Ok validationUnit =>
+        cases validationUnit
+        cases observedSuccess : receipt.outcome with
+        | DefinitiveFailure reason message retryable =>
+          rw [observedSuccess] at validationTail
+          exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ validationTail)
+        | Unknown reason message =>
+          rw [observedSuccess] at validationTail
+          exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+            empty present _ _ _ validationTail)
+        | ObservedSuccess observedEvidence =>
+          rw [observedSuccess] at validationTail
+          obtain ⟨validates, evidenceValidates, evidenceTail⟩ := normal_bind
+            (hostEvidence.validates observedEvidence selectedCommand) _ _ validationTail
+          clear validationTail
+          cases validates with
+          | false => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+              empty present _ _ _ evidenceTail)
+          | true =>
+            rw [if_pos (rfl : true = true)] at evidenceTail
+            obtain ⟨sourceReply, sourceCall, sourceTail⟩ := normal_bind
+              (hostEvidence.source_process_identity observedEvidence selectedCommand
+                action.identity.resource) _ _ evidenceTail
+            clear evidenceTail
+            cases sourceReply with
+            | none => exact False.elim (retained_rows_cannot_install rows nextRows slot installed
+                empty present _ _ _ sourceTail)
+            | some source =>
+              obtain ⟨reply, updatedSlot, agreeCall, terminal⟩ := normal_bind_pair
+                (controller.capture.agree (slotAt selectedSlot rows) source) _ _ sourceTail
+              clear sourceTail
+              have finalSame := Result.ok_injective terminal
+              clear terminal
+              have replySame := congrArg (fun output => output.1.1) finalSame
+              have rowsSame := congrArg (fun output => output.1.2) finalSame
+              have codecSame := congrArg Prod.snd finalSame
+              change reply = .Ok () at replySame
+              change _ = nextRows at rowsSame
+              change afterReceipt = afterCodec at codecSame
+              cases replySame
+              cases codecSame
+              have otherKept : slotAt (otherSlot selectedSlot) nextRows =
+                  slotAt (otherSlot selectedSlot) rows := by
+                rw [← rowsSame]
+                rfl
+              have selected : slot = selectedSlot := new_slot_is_selected
+                rows nextRows slot selectedSlot installed empty present otherKept
+              subst slot
+              have selectedValue : slotAt selectedSlot nextRows = updatedSlot := by
+                rw [← rowsSame]
+                rfl
+              have updated : updatedSlot = some installed := selectedValue.symm.trans present
+              rw [empty, updated] at agreeCall
+              have sameInstalled := agree_empty_installs_observed source installed agreeCall
+              exact ⟨{
+                actionBytes := actionBytes
+                receiptBytes := receiptBytes
+                afterAction := afterAction
+                action := action
+                command := selectedCommand
+                logical := logical
+                key := key
+                plan := plan
+                receipt := receipt
+                observedEvidence := observedEvidence
+                source := source
+                input := rfl
+                decodedAction := decoded
+                commandCall := commandCall
+                commandSelected := chosenCommand
+                effectSucceeded := effectSucceeded
+                logicalCall := logicalCall
+                currentAttempt := currentAttempt
+                operationOrigin := operationOrigin
+                planCall := planCall
+                keySandbox := keySame
+                planVm := planVmAllowed
+                planGeneration := planGeneration
+                commandEpoch := commandEpoch
+                ownerCall := ownerCall
+                publicSandbox := publicSame
+                operationCall := operationCall
+                identityEpoch := identityEpochSame
+                identityAttempt := identityAttemptSame
+                identityGeneration := identityGenerationSame
+                resourceCall := resourceCall
+                decodedReceipt := decodedReceipt
+                receiptValidated := receiptValidated
+                observedSuccess := observedSuccess
+                evidenceValidates := evidenceValidates
+                sourceCall := sourceCall
+                agreement := agreeCall
+                sameInstalled := sameInstalled
+                otherSlotRetained := otherKept }⟩
+
+end SandproofOriginalSourceRowsRust.SourceRowEvidence
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_decoded_action
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_bound_source_command
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_decoded_plan
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_checked_plan
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_checked_action
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_has_complete_row_evidence

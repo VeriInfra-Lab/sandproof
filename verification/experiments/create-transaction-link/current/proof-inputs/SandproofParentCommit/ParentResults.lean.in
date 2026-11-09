@@ -1,0 +1,96 @@
+import SandproofParentCommit.ParentOrder
+import SandproofParentCommit.PhysicalLink
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust.ParentResults
+noncomputable section
+
+open ActualCalls
+
+-- Normal returned observations, not proofs that the V5 business rules hold.
+-- Each occurrence retains the exact original value arguments of its raw call.
+structure ChecksReturnedOk (owner : Owner) (raw : Raw) (world : World) : Prop where
+  candidate : ErrorTransport.fromRequestResult
+    (raw.conn.v5.candidate raw.conn.base world) = .ok (.Ok ())
+  inbox : ErrorTransport.fromRequestResult
+    (raw.conn.v5.inbox raw.conn.base world) = .ok (.Ok ())
+  capacity : ErrorTransport.fromRequestResult
+    (raw.conn.v5.capacity raw.conn.base world) = .ok (.Ok ())
+  transaction : ErrorTransport.fromRequestResult
+    (raw.conn.v5.transaction (CurrentViews.ownerToSource owner)) = .ok (.Ok ())
+
+private theorem live_raw (owner : Owner) (raw : Raw) (live : owner.transaction = some raw) :
+    CurrentViews.liveRaw owner = .ok raw := by
+  simp only [CurrentViews.liveRaw, SandproofParentReadRust.core.option.Option.as_ref,
+    live, bind_tc_ok, core.option.Option.expect, Result.ofOption]
+
+theorem actual_commit_reaches_same_finisher
+    (owner : Owner) (raw : Raw) (world : World)
+    (live : owner.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (CurrentViews.ownerToRead owner) world)
+    (checks : ChecksReturnedOk owner raw world) :
+    controller.transaction.WorldTransaction.commit owner = ActualFinish.productionFinish owner := by
+  have rawReturned := live_raw owner raw live
+  have worldReturned := SandboxModel.InboxTransaction.CurrentWorldRead.world_from_same_candidate
+    (CurrentViews.ownerToRead owner) world present
+  have first : actualEffects.validate_candidate owner = .ok (.Ok (), owner) := by
+    simpa only [rawReturned, worldReturned, checks.candidate, bind_tc_ok] using candidate_complete_call owner
+  have second : actualEffects.validate_inbox owner = .ok (.Ok (), owner) := by
+    simpa only [rawReturned, worldReturned, checks.inbox, bind_tc_ok] using inbox_complete_call owner
+  have third : actualEffects.validate_capacity owner = .ok (.Ok (), owner) := by
+    simpa only [rawReturned, worldReturned, checks.capacity, bind_tc_ok] using capacity_complete_call owner
+  have fourth : actualEffects.validate_transaction owner = .ok (.Ok (), owner) := by
+    simpa only [rawReturned, checks.transaction, bind_tc_ok] using transaction_complete_original_owner owner
+  change controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects.validate_candidate
+    owner = _ at first
+  change controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects.validate_inbox
+    owner = _ at second
+  change controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects.validate_capacity
+    owner = _ at third
+  change controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects.validate_transaction
+    owner = _ at fourth
+  rw [ParentOrder.actual_complete_first_error_order]
+  simp [CommitOrder.orderView, CommitOrder.continueAfter, first, second, third, fourth]
+
+theorem actual_commit_success_and_original_observation
+    (owner : Owner) (raw : Raw) (world : World) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (CurrentViews.ownerToRead owner) world)
+    (checks : ChecksReturnedOk owner raw world)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : owner.candidate.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : PhysicalLink.LinkedCommitted actualObserved (ActualFinish.memoInvocation owner)
+      (fun output => output.2.2)) :
+    controller.transaction.WorldTransaction.commit owner = .ok (.Ok ()) ∧
+      actualObserved = owner.candidate.value := by
+  rw [actual_commit_reaches_same_finisher owner raw world live present checks]
+  exact PhysicalLink.actual_finish_success_with_physical_link owner raw actualObserved live
+    committedAvailable candidateAvailable returned physical
+
+theorem actual_commit_unknown_and_original_observation
+    (owner : Owner) (raw : Raw) (world : World) (error : rusqlite.error.Error)
+    (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (CurrentViews.ownerToRead owner) world)
+    (checks : ChecksReturnedOk owner raw world)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Err error))
+    (physical : PhysicalLink.LinkedCommitted actualObserved (ActualFinish.memoInvocation owner)
+      (fun output => output.2.2)) :
+    controller.transaction.WorldTransaction.commit owner = .ok (.Err (.CommitUncertain error)) ∧
+      actualObserved = none := by
+  rw [actual_commit_reaches_same_finisher owner raw world live present checks]
+  exact PhysicalLink.actual_finish_unknown_with_physical_link owner raw error actualObserved live
+    committedAvailable returned physical
+
+end
+end SandproofParentCommitRust.ParentResults
+
+#audit_controller_proof SandproofParentCommitRust.ParentResults.actual_commit_reaches_same_finisher
+#audit_controller_proof SandproofParentCommitRust.ParentResults.actual_commit_success_and_original_observation
+#audit_controller_proof SandproofParentCommitRust.ParentResults.actual_commit_unknown_and_original_observation

@@ -24,7 +24,7 @@ PROCESS_BATCH = str(os.getpid())+'-'+str(time.time_ns())
 NATIVE_SCHEMA = 2
 NATIVE_SCOPES = ('all', 'stage1-protocol', 'stage1-create-delivery',
                  'stage1-protocol-convergence', 'capture-caller', 'pause-publication', 'pause-stop',
-                 'pause-dispatch', 'pause-receipt', 'stage1-source-live')
+                 'pause-dispatch', 'pause-receipt', 'stage1-source-live', 'stage1-v3-transaction-source')
 CAPTURE_CALLER_LABELS = ('functional', 'capture-caller')
 PAUSE_PUBLICATION_LABELS = ('functional', 'pause-publication')
 PAUSE_STOP_LABELS = ('functional', 'pause-stop')
@@ -33,7 +33,8 @@ PAUSE_DISPATCH_LABELS = ('functional', *PAUSE_DISPATCH_CHILD_SCOPES, 'pause-disp
 PAUSE_RECEIPT_CHILD_SCOPES = (*PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
 PAUSE_RECEIPT_LABELS = ('functional', *PAUSE_RECEIPT_CHILD_SCOPES, 'pause-receipt')
 ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop',
-                         'pause-dispatch', 'pause-receipt', 'source-live')
+                         'pause-dispatch', 'pause-receipt', 'source-live', 'stage1-create-transaction-link',
+                         'stage1-original-source-rows')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -184,7 +185,7 @@ def stage1_native_labels(profile='full'):
     """Fixed full, Create or convergence scope; no caller-selected cases."""
     registered = stage1_registration()
     labels = tuple(registered.native_labels(profile))
-    counts = {'full': 75, 'create-delivery': 12, 'protocol-convergence': 22}
+    counts = {'full': 77, 'create-delivery': 12, 'protocol-convergence': 22}
     if profile not in counts:
         raise ValueError('unknown fixed native profile: ' + str(profile))
     count = counts[profile]
@@ -207,6 +208,8 @@ def scoped_native_labels(scope):
         return stage1_native_labels(profiles[scope])
     if scope == 'stage1-source-live':
         return ('functional', 'source-live')
+    if scope == 'stage1-v3-transaction-source':
+        return ('functional', 'stage1-create-transaction-link', 'stage1-original-source-rows')
     if scope == 'pause-dispatch':
         return PAUSE_DISPATCH_LABELS
     if scope == 'pause-receipt':
@@ -220,7 +223,8 @@ def check_native_components(keys, *, scope='all', allow_additional=False):
     if scope == 'all':
         return
     keys = tuple(keys)
-    if scope in ('pause-dispatch', 'pause-receipt', 'stage1-source-live') and not allow_additional and (
+    if scope in ('pause-dispatch', 'pause-receipt', 'stage1-source-live',
+                 'stage1-v3-transaction-source') and not allow_additional and (
             len(keys) != len(scoped_native_labels(scope))
             or any(key.get('command') != ['component-case'] for key in keys)):
         raise ValueError(scope+' requires exactly its fixed component-case records')

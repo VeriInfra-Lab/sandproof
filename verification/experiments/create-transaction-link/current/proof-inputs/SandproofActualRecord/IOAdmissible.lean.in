@@ -1,0 +1,202 @@
+import SandproofActualRecord.Funs
+import SandboxModel.InboxTransaction.IOTransfer
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.IOAdmissible
+
+noncomputable section
+
+open IOOwnerTransport
+open SandproofStage1RequestRust.sandproof_controller_service
+open SandboxModel.StandardRecordIO SandboxModel.StandardRecordCodec
+
+abbrev SourceCodec :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.RecordCodec
+abbrev SourceStandard :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord
+
+def RequiresLive {D A : Type} (before : OldHolder D) (call : Result (A × OldHolder D)) : Prop :=
+  ∀ output, call = .ok output → ∃ raw, before.tx.transaction = some raw
+
+private theorem live_of_none_panics {D A : Type} (before : OldHolder D)
+    (call : Result (A × OldHolder D))
+    (panics : before.tx.transaction = none → call = .fail .panic) :
+    RequiresLive before call := by
+  intro output returned
+  cases slot : before.tx.transaction with
+  | some raw => exact ⟨raw, rfl⟩
+  | none => exact False.elim (fail_not_ok ((panics slot).symm.trans returned))
+
+private theorem source_deref_none (before : SourceOwner) (empty : before.transaction = none) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref
+      before = .fail .panic := by
+  simp [SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    SandproofStage1RequestRust.core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption, empty]
+
+private theorem borrowed_requires_live {D X A R : Type}
+    (observe : SandproofStage1RequestRust.rusqlite.Connection → X → Result (A × R))
+    (before : OldHolder D) (input : X) :
+    RequiresLive before (borrowedView observe before input) := by
+  apply live_of_none_panics
+  intro empty
+  simp [borrowedView, source_deref_none before.tx empty]
+
+private theorem codec_requires_live {D X A : Type}
+    (call : D → SandproofStage1RequestRust.rusqlite.Connection → X → Result (JsonReply A × D))
+    (before : OldHolder D) (input : X) :
+    RequiresLive before (callView call before input) := by
+  apply live_of_none_panics
+  intro empty
+  simp [callView, source_deref_none before.tx empty]
+
+theorem update_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) (bytes digest : Slice U8) :
+    RequiresLive before
+      (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+        codec before statement bytes digest) := by
+  rw [actual_update_call_contract]
+  apply live_of_none_panics
+  intro empty
+  simp [updateView, SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction.execute_inbox_update,
+    empty]
+
+-- The result carrier is independent of whether the inner Rust result is Ok or Err.
+-- Both take the same transported state and preserve the whole original observer.
+theorem transfer_of_live {D : Type} (before : IOOwnerTransport.Holder D) (sourceAfter : OldHolder D)
+    (sourceLive : (toSource before).tx.transaction ≠ none) :
+    ∃ after, returnedHolder before sourceAfter = .ok after ∧
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+  cases slot : before.tx.parent.transaction with
+  | none => exact False.elim (sourceLive (by simp [toSource,
+      SandproofParentCommitRust.CurrentViews.ownerToSource, slot]))
+  | some raw =>
+    cases sourceAfter with
+    | mk afterTx namespaceName codec =>
+      cases afterTx with
+      | mk afterSlot committed candidate inputStart =>
+        cases committed
+        cases afterSlot <;>
+          simp [returnedHolder, returnedOwner, toSource, SandproofParentCommitRust.CurrentViews.ownerToSource,
+            slot, returnedRaw_toSource]
+
+theorem query_i64_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+      codec before statement) := by
+  rw [actual_query_i64_call_contract]
+  exact borrowed_requires_live _ before statement
+
+theorem query_bytes_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+      codec before statement) := by
+  rw [actual_query_bytes_call_contract]
+  exact borrowed_requires_live _ before statement
+
+theorem decode_maintenance_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (bytes : Slice U8) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance
+      codec before bytes) := by
+  rw [actual_decode_maintenance_call_contract]
+  exact codec_requires_live _ before bytes
+
+theorem query_bool_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+      codec before statement) := by
+  rw [actual_query_bool_call_contract]
+  exact borrowed_requires_live _ before statement
+
+theorem query_i64_pair_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+      codec before statement) := by
+  rw [actual_query_i64_pair_call_contract]
+  exact borrowed_requires_live _ before statement
+
+theorem query_bytes_pair_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (statement : Str) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+      codec before statement) := by
+  rw [actual_query_bytes_pair_call_contract]
+  exact borrowed_requires_live _ before statement
+
+theorem decode_inbox_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (bytes : Slice U8) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox
+      codec before bytes) := by
+  rw [actual_decode_inbox_call_contract]
+  exact codec_requires_live _ before bytes
+
+theorem encode_for_load_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (inbox : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox
+      codec before inbox) := by
+  rw [actual_encode_for_load_call_contract]
+  exact codec_requires_live _ before inbox
+
+theorem load_digest_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (bytes : Slice U8) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+      codec before bytes) := by
+  rw [actual_load_digest_call_contract]
+  exact borrowed_requires_live _ before bytes
+
+theorem save_digest_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (bytes : Slice U8) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+      codec before bytes) := by
+  rw [actual_save_digest_call_contract]
+  exact borrowed_requires_live _ before bytes
+
+theorem encode_for_save_requires_live {D : Type} (codec : SourceCodec D) (before : OldHolder D)
+    (inbox : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox) :
+    RequiresLive before (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode
+      codec before inbox) := by
+  rw [actual_encode_for_save_call_contract]
+  exact codec_requires_live _ before inbox
+
+theorem lift_reply_preserves_normal {D A : Type} (before : IOOwnerTransport.Holder D)
+    (call : Result (SandproofParentCommitRust.ErrorTransport.RequestRustResult A × OldHolder D))
+    (requires : RequiresLive (toSource before) call)
+    (reply : SandproofParentCommitRust.ErrorTransport.RequestRustResult A) (sourceAfter : OldHolder D)
+    (returned : call = .ok (reply, sourceAfter)) :
+    ∃ after, liftReply before call =
+      .ok (SandproofParentCommitRust.ErrorTransport.fromRequestRustResult reply, after) ∧
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+  obtain ⟨raw, live⟩ := requires (reply, sourceAfter) returned
+  obtain ⟨after, transfer, mapped, observed⟩ := transfer_of_live before sourceAfter (by simp [live])
+  exact ⟨after, by simp [liftReply, returned, transfer], mapped, observed⟩
+
+theorem lift_value_preserves_normal {D A : Type} (before : IOOwnerTransport.Holder D)
+    (call : Result (A × OldHolder D)) (requires : RequiresLive (toSource before) call)
+    (reply : A) (sourceAfter : OldHolder D) (returned : call = .ok (reply, sourceAfter)) :
+    ∃ after, liftValue before call = .ok (reply, after) ∧
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+  obtain ⟨raw, live⟩ := requires (reply, sourceAfter) returned
+  obtain ⟨after, transfer, mapped, observed⟩ := transfer_of_live before sourceAfter (by simp [live])
+  exact ⟨after, by simp [liftValue, returned, transfer], mapped, observed⟩
+
+end
+end SandproofActualRecordRust.IOAdmissible
+
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.update_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.transfer_of_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.query_i64_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.query_bytes_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.decode_maintenance_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.query_bool_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.query_i64_pair_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.query_bytes_pair_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.decode_inbox_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.encode_for_load_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.load_digest_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.save_digest_requires_live
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.encode_for_save_requires_live
+
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.lift_reply_preserves_normal
+#audit_controller_proof SandproofActualRecordRust.IOAdmissible.lift_value_preserves_normal

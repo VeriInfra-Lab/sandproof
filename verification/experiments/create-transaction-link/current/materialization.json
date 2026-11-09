@@ -1,0 +1,1240 @@
+{
+  "schema": 1,
+  "roots": [
+    "SandproofActualRecord.CreateRootLink",
+    "SandproofParentCommit.FinishAudit",
+    "SandboxModel.InboxTransaction.StandardLoadSave"
+  ],
+  "modules": {
+    "SandboxModel.Foundations.ByteArray": {
+      "path": "SandboxModel/Foundations/ByteArray.lean",
+      "sha256": "32c29657733cb72eb74e1657e816b00dc1e74f27f2926b94a1b1a788cda78bc9",
+      "source": "SandboxModel/Foundations/ByteArray.lean"
+    },
+    "SandboxModel.Foundations.Cloning": {
+      "path": "SandboxModel/Foundations/Cloning.lean",
+      "sha256": "506d1b9f1a2b487bfe821ba8075fbf39a69f9f4a472195f177f828fb90b42090",
+      "source": "SandboxModel/Foundations/Cloning.lean"
+    },
+    "SandboxModel.Foundations.Model": {
+      "path": "SandboxModel/Foundations/Model.lean",
+      "sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+      "source": "SandboxModel/Foundations/Model.lean"
+    },
+    "SandboxModel.InboxTransaction.CodecTransfer": {
+      "path": "SandboxModel/InboxTransaction/CodecTransfer.lean",
+      "sha256": "6116c2820aacc007d847a165d69c794bf15238c72e4a657641a033b452110799",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/CodecTransfer.lean.in"
+    },
+    "SandboxModel.InboxTransaction.IOTransfer": {
+      "path": "SandboxModel/InboxTransaction/IOTransfer.lean",
+      "sha256": "3809f2c6f1ec785399cee90110fff4eacf4e76e77e70bc60a053d14f664ed46a",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/IOTransfer.lean.in"
+    },
+    "SandboxModel.InboxTransaction.StandardLoadSave": {
+      "path": "SandboxModel/InboxTransaction/StandardLoadSave.lean",
+      "sha256": "df5b98ff2d752db40ae0b479cdd0812a32635a600546a98457af521b9b5ff439",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/StandardLoadSave.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.Accepted": {
+      "path": "SandboxModel/Lifecycle/Protocol/Accepted.lean",
+      "sha256": "a8dcb590fb3fbf54a2fe5d39a801abf35308ec0b96b38cf45a228537271c100b",
+      "source": "SandboxModel/Lifecycle/Protocol/Accepted.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.ComposedConfigHost": {
+      "path": "SandboxModel/Lifecycle/Protocol/ComposedConfigHost.lean",
+      "sha256": "7618567baa22841d57312782c5e21f3241f9c9beb93f160d333fa63893cd1a50",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigHost.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ComposedConfigLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/ComposedConfigLibrary.lean",
+      "sha256": "798cafe9eccc1637b2a14810886e29767d971f5e80aa536c23f26c31375722ed",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ComposedConfigProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/ComposedConfigProofs.lean",
+      "sha256": "478aff811f1389d25a439ad4c89fdc44bb95368d52126ea6f0afc03fe3b15f19",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/ComposedConfigProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ConfigBudgetModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/ConfigBudgetModel.lean",
+      "sha256": "3ff225e93c79269c769e63f5eaa1a4eec18a98e11ba5f27200166c151d20cdfb",
+      "source": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ConfigBudgetProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/ConfigBudgetProofs.lean",
+      "sha256": "e261cbc21354f68a1411f9036dc6674ca5db75eba5dd616852ff786938f74b43",
+      "source": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ConfigBudgetValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/ConfigBudgetValues.lean",
+      "sha256": "4097987bdb450ca2ed76d8f153730b70dd9076aaf99cbcebf90f8bcf602c0182",
+      "source": "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ConfigValidationModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/ConfigValidationModel.lean",
+      "sha256": "443c875f93d2946bc636f61f90673822f19c06f8b323b33d03726102096603b7",
+      "source": "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ConfigValidationValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/ConfigValidationValues.lean",
+      "sha256": "5e2a96defb363ea31b6e3c17181614ff24af85fbcb5ca7a1cbd61cc2505e103c",
+      "source": "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.DigestArray32Representation": {
+      "path": "SandboxModel/Lifecycle/Protocol/DigestArray32Representation.lean",
+      "sha256": "d2477cb582900ceb3356d451107586fa3f23f0de2127f808e20dcf22e4bddd7f",
+      "source": "verification/experiments/stage1-protocol/digest-uses/DigestArray32Representation.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.DigestByteBridge": {
+      "path": "SandboxModel/Lifecycle/Protocol/DigestByteBridge.lean",
+      "sha256": "33db23fa4534f074efbad50bb75f86035e8e6f8a3120dfef73640378fd77b14a",
+      "source": "verification/experiments/stage1-protocol/digest-uses/DigestByteBridge.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.EnvelopeValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean",
+      "sha256": "155420bb45cf8f01861d3c07479815124cbc28b64c9538a805c9a3076fffb20e",
+      "source": "SandboxModel/Lifecycle/Protocol/EnvelopeValues.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.GraphicProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/GraphicProofs.lean",
+      "sha256": "a598a86c0f625aa6651ae41ff513842a94727a178f076848559d8c5fa5aa2a5d",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/GraphicProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAdmission": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAdmission.lean",
+      "sha256": "5d28ecc0b032e74843174b5b19348bcd68f594864d4e74e96c62bca447b61044",
+      "source": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmission.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAdmissionModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAdmissionModel.lean",
+      "sha256": "d7dd3cb6ba4ff385786a0ab9d44f535e380294205653d77f7eccdbcd66d9d3bc",
+      "source": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAdmissionSupport": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAdmissionSupport.lean",
+      "sha256": "3dbe2459b7535af1a7254b21e81eb0553ee2100035f40e3307cb68479d53c15d",
+      "source": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionSupport.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAdmissionValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAdmissionValues.lean",
+      "sha256": "320735a200d3fb0b5239ace8f56c0575465ac2c989ec659ac634a306d7654c1e",
+      "source": "verification/experiments/stage1-protocol/inbox-admission/InboxAdmissionValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppend": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppend.lean",
+      "sha256": "2e3e9156e010269eeb115b87c683501f97b4fbd16f7aa394f1659202150570d9",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppend.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendArithmetic": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendArithmetic.lean",
+      "sha256": "31c33fcc1c61e0e9f944f29f9aec51a8e7d7afabc3c3438448d147169887c67a",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxAppendArithmetic.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendCallerModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendCallerModel.lean",
+      "sha256": "f95b35e4f855fa0a6b7f0502d3f275f52cfe267adaaf00ca74ffb72ba9e2c633",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendCallerModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendDestroy": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendDestroy.lean",
+      "sha256": "d6e76cabbfd02f830c3dff2ae8c2bbf9cee7d663351e7d531ef4cd500878efe3",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendDestroy.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendFrame": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendFrame.lean",
+      "sha256": "839972cd150c668f66e2d778e46a6a0196538a0c1aebef389da05516e5388257",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendFrame.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendModel.lean",
+      "sha256": "c98563723b5e2fdd5d61cbe406c936666843830433c488d8e11d2cf273f68aba",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendNonterminal": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendNonterminal.lean",
+      "sha256": "7350fa171454b28fb728adb396c69d74c603b4aefb976610dcdc51bffc6cce89",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendNonterminal.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendPredicates": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendPredicates.lean",
+      "sha256": "cdf36fe8da1f4638b4013f40eb18eefe90469054417383b3c83f543d5e2df9fe",
+      "source": "verification/experiments/stage1-protocol/inbox-record-validation/InboxAppendPredicates.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxAppendShape": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxAppendShape.lean",
+      "sha256": "5620edc26e660a716b07266d6d1aaf31b2f85ff6068fed090af2b359437e8ac7",
+      "source": "verification/experiments/stage1-protocol/inbox-append/InboxAppendShape.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxCompositionModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxCompositionModel.lean",
+      "sha256": "63c3fe4b4de4a8e6afa47e2cee7cdc41b7707ca2497a5ff5751f04896e1d26fb",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxCompositionProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxCompositionProofs.lean",
+      "sha256": "4bb33dee098e0e8c8b10848f1dec0ab6f30fd0cfa3bc195694a00ad6d7ca63d5",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxCompositionValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxCompositionValues.lean",
+      "sha256": "d0d0d93a4bde6c403065aa45e833c1551bd33b90aad6b5e7859c1321a8a53f0d",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxCounterRepresentation": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxCounterRepresentation.lean",
+      "sha256": "7502aa9c11ef741a59e17158c48c1577b833af91954383b42952eb5bc6d93fbd",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterRepresentation.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxCounterStep": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxCounterStep.lean",
+      "sha256": "8487922009630d9bf58c9484f6fd651ffb84fb3f04714ce2898f8f042ab4baed",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxCounterStep.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryArithmetic": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryArithmetic.lean",
+      "sha256": "3b3052e43355d0f7a48f25c73b32a18de565836c9002b86d4a06e3d71fdc8ba3",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryArithmetic.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryCount": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryCount.lean",
+      "sha256": "e5c6fc2296bff070247dce42df78a6836a7e1af107904a4a200cae8bde77b054",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCount.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryCountModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryCountModel.lean",
+      "sha256": "b576284071879f631c0f66f21b4ba3a729faa002005f912aa7bbb0ebf6cfcdc1",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryCountModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryLibrary.lean",
+      "sha256": "4a007ba99d0bd741d5c1ec55627006476c8e52c681234a7b4801ca22a417e9f7",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryModel.lean",
+      "sha256": "d5fd8e54910d609cbc0f4be76b7e4ab33bb03644801f1206e463f56f02923c45",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryOrderLoop": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryOrderLoop.lean",
+      "sha256": "605f0372de78eeea15cb7f4241275dc523d0b709b8f09de5f54c0da35873a8ee",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderLoop.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryOrderProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryOrderProofs.lean",
+      "sha256": "6f1f550d987359180c8753ff5b7dbc7507456edf1655f668bbc16aa2dde117ca",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryOrderStep": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryOrderStep.lean",
+      "sha256": "76d7b0727a54c3b1c317ff9621f4c85f083d512a23a93e33aebfdafb5fa4f152",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxEntryOrderStep.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxEntryProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxEntryProofs.lean",
+      "sha256": "033d802e87b476a873065a2802e175338bf4a31dacf30adbdb3ce58733004944",
+      "source": "verification/experiments/stage1-protocol/inbox-entry-validation/InboxEntryProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxHost": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxHost.lean",
+      "sha256": "770c32e5d8a65be74a23c84d9b52e1a3ceb592785ccd0cc5502b9f2418cc8318",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxHost.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLanesScan": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLanesScan.lean",
+      "sha256": "db81f157aafa578013dc7fb4936c3519d9dd8baaa5879bf45997af45fce55d7d",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxLanesScan.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLineage": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLineage.lean",
+      "sha256": "cc9a8a9579f614f460a51e13600c06f27f4313a75b4e7e28c6829d2465170b8d",
+      "source": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineage.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLineageLoop": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLineageLoop.lean",
+      "sha256": "d864daafa68b30dc2bbbccc6190c4495ec1bfeaba95fa569d77f342e68a4f387",
+      "source": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageLoop.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLineageModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLineageModel.lean",
+      "sha256": "1719ab7b6eb5e53d00cec69961ce736dfcd7b729a48bea9f9d9fb7beaffa90cb",
+      "source": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLineageStep": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLineageStep.lean",
+      "sha256": "9206544e55569be6f9d65444f6db573cc6860bc2034e5c59c39190831029a115",
+      "source": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageStep.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLineageSupport": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLineageSupport.lean",
+      "sha256": "53bc310cf60d96d9cf51446f01fe94c0c3d05816607d2416ac899cae7f7562f4",
+      "source": "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageSupport.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadCapacityBounds": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityBounds.lean",
+      "sha256": "a9e601d67f52e9926be1e451025cdec44b7181f03ba58238c416449c94ecae22",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityBounds.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadCapacityValidation": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadCapacityValidation.lean",
+      "sha256": "bcd588310545097bc0d5185d2b4a0372e06e4c9160b0f340a869d0339a7db250",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityValidation.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadCheckedArithmetic": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadCheckedArithmetic.lean",
+      "sha256": "af79dbb31d69bc987e74c06d2651d2d8eef0a7774a869768be9ca23951d28db3",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadCheckedArithmetic.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadComposition": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadComposition.lean",
+      "sha256": "10a8bf576c5cda3f431a81f591981ea8a3abe4dc6fceeb70a106230db5c71a18",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadComposition.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadConfigComposition": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadConfigComposition.lean",
+      "sha256": "314e46db3afa3ecd0e603a675c9d36665ee77786db046ab05044f57c6213039b",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigComposition.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadConfigRead": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadConfigRead.lean",
+      "sha256": "6269285f8ba7081a08353db5d7673b8b5c95cd0272fc3214ae1c360b8873067d",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigRead.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadContextual": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadContextual.lean",
+      "sha256": "b03b7ca7f97eb787bbddbd05ed15b1e4b372b50b17351efb7100eb53d4c9de41",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadContextual.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadControlFlow": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadControlFlow.lean",
+      "sha256": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadControlFlow.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadDigestLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadDigestLibrary.lean",
+      "sha256": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadEarlyErrors": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadEarlyErrors.lean",
+      "sha256": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadEarlyErrors.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadHeader": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadHeader.lean",
+      "sha256": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadLibrary.lean",
+      "sha256": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadLifecycleConfigValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadLifecycleConfigValues.lean",
+      "sha256": "54e82e929f3e6a611432ec809de4ec1d2cf63fbb8f8b831f7b61b326961c225a",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadLifecycleConfigValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadMaintenanceBounds": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadMaintenanceBounds.lean",
+      "sha256": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadMaintenanceBounds.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadModel.lean",
+      "sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadPositiveBodyValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveBodyValues.lean",
+      "sha256": "a12d616031051e18d902780dc52c6c346a58737b9fa3d43c332ffb21118b6853",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveBodyValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadPositiveFullValues.lean",
+      "sha256": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadRawCorrespondence": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadRawCorrespondence.lean",
+      "sha256": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadSuccess": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadSuccess.lean",
+      "sha256": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadValueLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadValueLibrary.lean",
+      "sha256": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadWitnessValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadWitnessValues.lean",
+      "sha256": "1f56c9ac588e61e65729de5dede4b75da04cdc527ea43f964bdf9d43b4167aac",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnessValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLoadWitnesses": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLoadWitnesses.lean",
+      "sha256": "6934921c2e09fdb9d54cbdc5e2df48b8bf7050e188a9ef1e84949546a11261f1",
+      "source": "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnesses.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLookup": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLookup.lean",
+      "sha256": "f6f6465db3047785dc1f6b0850c86f6b856b879164b229cdb192674c8bdb29c3",
+      "source": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookup.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLookupModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLookupModel.lean",
+      "sha256": "c4cdd47fbbf766429225befc2b93b02b3f36869bf16e1abdf47d2422131000d0",
+      "source": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLookupSupport": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLookupSupport.lean",
+      "sha256": "a5fe02daea8d672e5521d3aeb195540b3dbc0a30956153f5945952a55675ce34",
+      "source": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupSupport.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxLookupValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxLookupValues.lean",
+      "sha256": "a35ceca3238ef3fb36b84fb69b4b42392498d4cb36bc8c425ffd56c8bc0a1ec7",
+      "source": "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxOwnerQueries": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxOwnerQueries.lean",
+      "sha256": "dec64df4c241327ec97a6d4753de8319626c4c4b4e5eb04170f456123f43beaf",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxOwnerQueries.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxOwnerWitnesses": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxOwnerWitnesses.lean",
+      "sha256": "0a2a18be65d8c43deb70b5e69181a02016c209d1ff879cdae3e95ef0b031e821",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxOwnerWitnesses.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxOwners": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxOwners.lean",
+      "sha256": "c3c97d5d79cce057b537fdc75f098ceb5e94f421676e8dc228510d3ff886b508",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxOwners.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPosition": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPosition.lean",
+      "sha256": "c0b3b9e30d44fc3b785cb57c0980a550245ccd1e82b9d5616805685ce06ea49f",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPosition.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPositionAppend": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPositionAppend.lean",
+      "sha256": "58d2c5f453f216a4d695a9804555c9606c3ce4e9ef00c9b60c8f8936b464ede8",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPositionAppend.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPositionContract": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPositionContract.lean",
+      "sha256": "0914555c868cd0e4c6764aefae49a43acd567e8835cb515255be1b168c0bb650",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPositionContract.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPositionLookup": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPositionLookup.lean",
+      "sha256": "39ceb1aa5becb63d0613402cfb08aa10901d3c1393809ed325aec40ed443ac75",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPositionLookup.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPositionModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPositionModel.lean",
+      "sha256": "1040248336d57638ba1c61636dc333812a70b14ce1e274e99fe388f56b1e842c",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPositionModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxPositionPost": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxPositionPost.lean",
+      "sha256": "dde0eeddd86317d7e104261ca7bfb71267058fe64a1fc81460eb43cd20eca172",
+      "source": "verification/experiments/stage1-protocol/inbox-position/InboxPositionPost.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolAttach": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolAttach.lean",
+      "sha256": "6fe298384eaf5c06ba2d1eb8220a14f1178e3392f56a54b7262e1e56faa9dfc2",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolAttach.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolAttachConfig": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolAttachConfig.lean",
+      "sha256": "c9b1d73e5f51ff244e6975095db238599a49e29f14d27aaf0b7253dd9c266c2b",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolAttachConfig.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolAttachTotal": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolAttachTotal.lean",
+      "sha256": "99fba3f7927911b4277394101d4d44c53c7a587c96a2bed07c5243c272de454d",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolAttachTotal.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolGuard": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolGuard.lean",
+      "sha256": "839a39821e43718e83f104e1b530f44ae2dce0c95a6ba5a855412b3af70b82d4",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolGuard.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolRecord": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolRecord.lean",
+      "sha256": "3eecac2f67b896d3b560de918638d0eb6b98d08cd2f7edb34703d8aedecc4984",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolRecord.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxProtocolRecordModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxProtocolRecordModel.lean",
+      "sha256": "fe63edcb5074ba6e0c9715477c5e2481c7480cdff2f49bd79538d4be0a4cc2f0",
+      "source": "verification/experiments/stage1-protocol/protocol-record/InboxProtocolRecordModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordCloning": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordCloning.lean",
+      "sha256": "0026a0ee554a7e7eaba1786de874debb3d03a164832d83f1c56d13809b04f7af",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordCloning.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordConfigFrame": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordConfigFrame.lean",
+      "sha256": "76fff5e569b9d2c1aa9f8b25361ea0f65a02446c103af2a968f7c77e4cd201da",
+      "source": "verification/experiments/stage1-protocol/inbox-record-validation/InboxRecordConfigFrame.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordFresh": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordFresh.lean",
+      "sha256": "0daadf7d2950a86464ac09a59a253b0b282d4b810a50c9052a11ca8f515c0a8d",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordFresh.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordFreshModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordFreshModel.lean",
+      "sha256": "635ed06e26115e33d1e110becf43efcd590f413c4ac161c9067770bdbd240a5f",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordFreshModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordFreshSupport": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordFreshSupport.lean",
+      "sha256": "434e4cf480aa5ffff271526ff372d3d693f01dc29a47a9deb03c82994e2d4ba9",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordFreshSupport.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordNewSession": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordNewSession.lean",
+      "sha256": "99e98299bd829d62602e948d330069aceaeb2279ba50ac6b858d3a41a48b937c",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordNewSession.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordNewSessionModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordNewSessionModel.lean",
+      "sha256": "7deede496d5fffd413fe5529cd8d98eb36e94bf2f1aaade3b115038c638b3a3f",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordNewSessionModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordPredicates": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordPredicates.lean",
+      "sha256": "4230d72c833ca082ff47abf75f00e896b9ab3ae4e385b8024ec5f76c4040e5f5",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordPredicates.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordReplay": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordReplay.lean",
+      "sha256": "833c8521acfef8b71de558cf33a9f54eabef83f4ded67303505b174f94e6c6b1",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordReplay.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordSelection": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordSelection.lean",
+      "sha256": "5c4065e4e4af65555f7aff65d192c2a07bf70fb639ed2218b9b79bfbaf1b607d",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordSelection.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordTotal": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordTotal.lean",
+      "sha256": "93b6adece368d443bdf5fe6790b48816cebb1b9fbc1f0aa8075655d51a5f6b20",
+      "source": "verification/experiments/stage1-protocol/inbox-record-total/InboxRecordTotal.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordTotalModel.lean",
+      "sha256": "a7c3217c45cae831a8c089f2675af97141aa6a88fe45a19fcac24f1545d1b2e7",
+      "source": "verification/experiments/stage1-protocol/inbox-record-total/InboxRecordTotalModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordValues.lean",
+      "sha256": "2fdd5ddcdd347a37d79da4a65f0a21ac87a802c6eb17c3535f38e0066333b6bc",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRecordWindowComparison": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRecordWindowComparison.lean",
+      "sha256": "240697387a6226b47b80023dd50873af3c27c33ebaccc3dcaea2bb265e02083a",
+      "source": "verification/experiments/stage1-protocol/inbox-record/InboxRecordWindowComparison.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalCheckpoint": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalCheckpoint.lean",
+      "sha256": "f092b56116347865905291eefd0a4a41bc36130da30894e3ac07eda7473c9c92",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalCheckpoint.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalClassifier": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalClassifier.lean",
+      "sha256": "48cd214595d37d07ae8aab0bb099c8327aec2f0c6acb8e059749732fa4f052ea",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalClassifier.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalComposition": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalComposition.lean",
+      "sha256": "79b6cd8450342b104ca1d60db3ff07ef199f2c146c0bc643f76714f3db69734c",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/Lifecycle/Protocol/InboxRenewalComposition.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalContains": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalContains.lean",
+      "sha256": "74a93d08394a0ccf67668b1801ef502af70923dae6c3e70ce904f810598960bf",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalContains.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalModel.lean",
+      "sha256": "d9cc165aeae48d5260d7d0786cabd858a3e4ddcfce2aac044e026114f76b5c4c",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalReduction": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalReduction.lean",
+      "sha256": "cc28b52d4bfed1268ddacc80d10918fa4473310ddef4351dd5ffb6693aab7d5e",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalReduction.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRenewalUnapplied": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRenewalUnapplied.lean",
+      "sha256": "0d2cbe4751b038f7264b03bb1f6724a1288ae62550d753fff627d6d40ebcbce8",
+      "source": "verification/experiments/stage1-protocol/inbox-renewal-session/InboxRenewalUnapplied.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetained": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetained.lean",
+      "sha256": "0ce0b45c66195290ef338f039fc735c07b1645353404620d5cd8516de2dc7787",
+      "source": "verification/experiments/stage1-protocol/inbox-retained/InboxRetained.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetainedModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetainedModel.lean",
+      "sha256": "1e25e2161187534313d1d23042163220609d8c76e01065f225f23862970a8f2b",
+      "source": "verification/experiments/stage1-protocol/inbox-retained/InboxRetainedModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetiredModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetiredModel.lean",
+      "sha256": "9e4fe9686de63e8a1acae6b93fb06e96216a6bfc9f84b427e39ed95c51d81134",
+      "source": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetiredProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetiredProofs.lean",
+      "sha256": "64aaaca51306856c2947b1a5daf70738e96576d808232a74924135bc8bcb535a",
+      "source": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetiredScans": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetiredScans.lean",
+      "sha256": "a515f9d7e3c4ddcdcdf8e70da55afd49908171e7f0ec67af9f5cea47f9bea362",
+      "source": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredScans.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxRetiredSupport": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxRetiredSupport.lean",
+      "sha256": "eda8295444b08cacacc4652d06349b6b2213b2a6538c28aa80005bfc352da66e",
+      "source": "verification/experiments/stage1-protocol/inbox-retired-identities/InboxRetiredSupport.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSaveModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSaveModel.lean",
+      "sha256": "dc3ac4fe2b70f4d42fd5ad8c9a33273ee216b3b08c20d1fa2c019c80ae5655ad",
+      "source": "verification/experiments/stage1-protocol/inbox-save/InboxSaveModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSaveProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSaveProofs.lean",
+      "sha256": "1bf54cc02886dbdd3c50d389e6d8d13d374bd91090256310481d70d447dcf8c9",
+      "source": "verification/experiments/stage1-protocol/inbox-save/InboxSaveProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSaveRun": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSaveRun.lean",
+      "sha256": "855064a16f60567a9c5aba057e84611a6064a099b1dc66636aa2e2dc93b9ab15",
+      "source": "verification/experiments/stage1-protocol/inbox-save/InboxSaveRun.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSessionComposition": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSessionComposition.lean",
+      "sha256": "1e8685879f366d10489b379599269407eafc63e3ee8484d611c92b7b1f54ad4e",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionComposition.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSessionsScan": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSessionsScan.lean",
+      "sha256": "0aaad1d160b3460f3aa0736bb430f008e1cff5dfa0e169f2270c71531c169e91",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxSessionsScan.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxState": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxState.lean",
+      "sha256": "9d71d36e5e76c080d2a4ebf58d01e3bf14abd2188a1c873f4fdb915331141177",
+      "source": "verification/experiments/stage1-protocol/inbox-state/InboxState.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxStateModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxStateModel.lean",
+      "sha256": "41d327031459ebcea834c632e8c2f85471b6ef41b9eaa31a6e62bdbc23d0eb91",
+      "source": "verification/experiments/stage1-protocol/inbox-state/InboxStateModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSummaryQueries": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSummaryQueries.lean",
+      "sha256": "b9c5e951949a226447880a66daf7c4a97b37f4fa46432a94a3c7893425db37ed",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/InboxSummaryQueries.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.InboxSynchronous": {
+      "path": "SandboxModel/Lifecycle/Protocol/InboxSynchronous.lean",
+      "sha256": "64193ee0671f710ce29ca9514eb78579dd61e30dbbf7526b37489f6cedddfe08",
+      "source": "verification/experiments/stage1-protocol/inbox-record-validation/InboxSynchronous.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.LaneLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/LaneLibrary.lean",
+      "sha256": "178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1",
+      "source": "verification/experiments/stage1-protocol/retention-lane/LaneLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.LaneModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/LaneModel.lean",
+      "sha256": "b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d",
+      "source": "verification/experiments/stage1-protocol/retention-lane/LaneModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.LaneProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/LaneProofs.lean",
+      "sha256": "3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343",
+      "source": "verification/experiments/stage1-protocol/retention-lane/LaneProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.Library": {
+      "path": "SandboxModel/Lifecycle/Protocol/Library.lean",
+      "sha256": "6c92497ce8a8e2c9e7ae6f16b7a663394d3b7dcffb09155fe7b194435a374b1c",
+      "source": "SandboxModel/Lifecycle/Protocol/Library.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.Model": {
+      "path": "SandboxModel/Lifecycle/Protocol/Model.lean",
+      "sha256": "dfada1e9591aa7aea3d9298ecd34fb8ae2701a5f1b46c18267ab845ca4a16083",
+      "source": "SandboxModel/Lifecycle/Protocol/Model.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.PrimitiveResultProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/PrimitiveResultProofs.lean",
+      "sha256": "c720f9702b17a1983503c4c277ec66f3bcc63f8a3398dd2e45d34b64fb7abe32",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/PrimitiveResultProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalBindings": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalBindings.lean",
+      "sha256": "e4d6ce511ea9913fb757841da030a97a920f4d6e296c06d56efbef24e8fb2f99",
+      "source": "SandboxModel/Lifecycle/Protocol/RenewalBindings.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalEquality": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalEquality.lean",
+      "sha256": "eae6e25652eb2d01e49a19ef5e43505868b5e126d6e1e6138a252a309e3b0e6b",
+      "source": "SandboxModel/Lifecycle/Protocol/RenewalEquality.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalLibrary.lean",
+      "sha256": "930993cf6da23733f7b7d587dfab3dd38cda62047b59a90918f61e25103b9e72",
+      "source": "SandboxModel/Lifecycle/Protocol/RenewalLibrary.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalModel.lean",
+      "sha256": "5f09fa5ab06ff13c3d4b658ebac7848e4365b6606127c41e810461ee4fd2a109",
+      "source": "SandboxModel/Lifecycle/Protocol/RenewalModel.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalResultBindings": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalResultBindings.lean",
+      "sha256": "2565fc75178c3cf2492b7d0623b078c65ab0e2f980206f6e2f4f44b489562ce3",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/RenewalResultBindings.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.RenewalResultTag": {
+      "path": "SandboxModel/Lifecycle/Protocol/RenewalResultTag.lean",
+      "sha256": "8237a9b238eb4fc2ebc9ab358ec343f6238f981b1f62849e424f97131d7c0b15",
+      "source": "SandboxModel/Lifecycle/Protocol/RenewalResultTag.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.ReplayContract": {
+      "path": "SandboxModel/Lifecycle/Protocol/ReplayContract.lean",
+      "sha256": "15772aad141c0aa06ed2122ed7c569edbe7c7d67d9e905add843b7361f40c06f",
+      "source": "SandboxModel/Lifecycle/Protocol/ReplayContract.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.ReplayEquality": {
+      "path": "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean",
+      "sha256": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+      "source": "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.RequestValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/RequestValues.lean",
+      "sha256": "b92c5131933fe2e626157f9a7485f73544f13820a3cbec7b09457b0ea38b317a",
+      "source": "SandboxModel/Lifecycle/Protocol/RequestValues.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.SavedLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/SavedLibrary.lean",
+      "sha256": "3bb1905eb7ec93c22ae8e8d6a8602ccc7a68326c32bed8eff3833f71c183b247",
+      "source": "verification/experiments/stage1-protocol/native-retirement/SavedLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.SavedModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/SavedModel.lean",
+      "sha256": "4ab14c836eddb76e11b01fe8c3aad99c7aff827e7cb216ebccf00a499ae8977c",
+      "source": "verification/experiments/stage1-protocol/native-retirement/SavedModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.SavedProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/SavedProofs.lean",
+      "sha256": "a48bd9aa42a2db5076429a995d49b8c9340fff5b0865292569da9a3e848edd6b",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/Lifecycle/Protocol/SavedProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.SavedValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/SavedValues.lean",
+      "sha256": "105ae78b5682ed5ac0d339a41b32883d6bb6c6512d6bb05b20d41eedaa653831",
+      "source": "verification/experiments/stage1-protocol/native-retirement/SavedValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.Sha256Bytes": {
+      "path": "SandboxModel/Lifecycle/Protocol/Sha256Bytes.lean",
+      "sha256": "589116992a3802fd78f811d44f0dbe2f59255c9827701d8c7623659bc3b3642d",
+      "source": "verification/experiments/stage1-protocol/digest-uses/Sha256Bytes.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.Sha256BytesChecks": {
+      "path": "SandboxModel/Lifecycle/Protocol/Sha256BytesChecks.lean",
+      "sha256": "7aaf65dfa2f8e0f954d527554091c979ab0d140310051ecdb3a534fcb31b06ce",
+      "source": "verification/experiments/stage1-protocol/digest-uses/Sha256BytesChecks.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeAssembly": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeAssembly.lean",
+      "sha256": "859239e88ba50c2b1f5b7b36584fb9e4dc6b4168b9a5cce9ecae3c433f6e6215",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeAssembly.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeIteration": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeIteration.lean",
+      "sha256": "ff9ee6056dc8b0fe19d4c8e82ca80c110d9e444f10bc91015e64aea1b913d9e5",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeIteration.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeLane": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeLane.lean",
+      "sha256": "1fcad87616daabb44c3b3a3a7d2d70deeab1c1f9aff49f314b07cd3cf6c15f91",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeLane.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeLibrary.lean",
+      "sha256": "00d8decef5bf7a29b59b47166d148efc4ca9b20a330e46ad6cee4cda7c4562f9",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeModel.lean",
+      "sha256": "a1b6e1c0c01617f6e5978355f43ff57899fa179dc7fb1fb1757de7620cf10837",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapePrior": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapePrior.lean",
+      "sha256": "ee8ff7326353f3a41dbb61c18299f5dd6cd1e93556b53e160549363a933c2ba5",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapePrior.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeProofs.lean",
+      "sha256": "4c588d8c9588e1af31f18c6676c49dcd9ba7fdff74dc5101abe09bc43f3eaafd",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/Lifecycle/Protocol/ShapeProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeRefusal": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeRefusal.lean",
+      "sha256": "83175d4db45ff5b815af39c2f7430863bfaeb8c1a6012ddacdcbca26aa82d990",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeRefusal.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeTerminal": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeTerminal.lean",
+      "sha256": "1d3379dc13d24d5d658f8bc45f03ba55926d16eb903fe8f1bcf6835845b6b3c6",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/Lifecycle/Protocol/ShapeTerminal.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.ShapeValues": {
+      "path": "SandboxModel/Lifecycle/Protocol/ShapeValues.lean",
+      "sha256": "93f30e19230cfc791107f02239ea5bea1e86106891ba692b58fcf6e4fb7138ba",
+      "source": "verification/experiments/stage1-protocol/session-shape/ShapeValues.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.TerminalModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/TerminalModel.lean",
+      "sha256": "6981041caf19b6337b4f8d698f7c89fdc0a07001fc47d2f8d339d33809769a10",
+      "source": "verification/experiments/stage1-protocol/terminal-binding/TerminalModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.TerminalProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/TerminalProofs.lean",
+      "sha256": "4eab7a6b86efb3a29c0fb238123aa9076d831e6e7687191782f7ba62c38f2678",
+      "source": "verification/experiments/stage1-protocol/terminal-binding/TerminalProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.UnloadLibrary": {
+      "path": "SandboxModel/Lifecycle/Protocol/UnloadLibrary.lean",
+      "sha256": "6e63e219d7bdb8c60b191ea556fb5fe7057efab9191298b436991fe0adedbc41",
+      "source": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadLibrary.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.UnloadModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/UnloadModel.lean",
+      "sha256": "83efbd21b70020edc3505ce7f18ecf4937b54cd677ceb88f6b735fef36728a5f",
+      "source": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadModel.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.UnloadPhase": {
+      "path": "SandboxModel/Lifecycle/Protocol/UnloadPhase.lean",
+      "sha256": "7ce99e3b1ccade682ee49e8ba06a1f4efed1e4534fb081a412af58ded1e67c1d",
+      "source": "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadPhase.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.UnloadProofs": {
+      "path": "SandboxModel/Lifecycle/Protocol/UnloadProofs.lean",
+      "sha256": "b5eb740fb0e7e3f552833e9b118dd50c9dd562d568b8411673b9bad33921f425",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/Lifecycle/Protocol/UnloadProofs.lean.in"
+    },
+    "SandboxModel.Lifecycle.Protocol.Validation": {
+      "path": "SandboxModel/Lifecycle/Protocol/Validation.lean",
+      "sha256": "c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19",
+      "source": "SandboxModel/Lifecycle/Protocol/Validation.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.ValidationExamples": {
+      "path": "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean",
+      "sha256": "db7507109a9511d416ad1c519821b0ef28e73cc567acc323eb3392ff9f7bd488",
+      "source": "SandboxModel/Lifecycle/Protocol/ValidationExamples.lean"
+    },
+    "SandboxModel.Lifecycle.Protocol.ValidationModel": {
+      "path": "SandboxModel/Lifecycle/Protocol/ValidationModel.lean",
+      "sha256": "9f878bfb5515590ac1ab1cbfd9f15a0e763fccf59db7347f8b12dc09b201bb8d",
+      "source": "SandboxModel/Lifecycle/Protocol/ValidationModel.lean"
+    },
+    "SandboxModel.ProofAuditCommand": {
+      "path": "SandboxModel/ProofAuditCommand.lean",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+      "source": "SandboxModel/ProofAuditCommand.lean"
+    },
+    "SandproofActualRecord.ActualRootLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/ActualRootLink.lean",
+      "sha256": "45f86862a54f698aa8e75c427222d74004348583fe36a8a474cc7abe1e413d1e",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/ActualRootLink.lean.in"
+    },
+    "SandproofActualRecord.BranchScope": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/BranchScope.lean",
+      "sha256": "f31b6d74a863d163378289b6824c160de8968c4e22e6fa04e5b3f41bc2ccbc14",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/BranchScope.lean.in"
+    },
+    "SandproofActualRecord.CallerBranches": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/CallerBranches.lean",
+      "sha256": "eba2df619c0787a73e351dcf303492bee9a71d32bbe9ed32f4f4d23832da8801",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/CallerBranches.lean.in"
+    },
+    "SandproofActualRecord.CreateRootLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/CreateRootLink.lean",
+      "sha256": "fb9538e840b7e004ff91f34bdfd821b4f69782b76b1071ad5d2e094b5ce3fcab",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/CreateRootLink.lean.in"
+    },
+    "SandproofActualRecord.Funs": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/Funs.lean",
+      "sha256": "91d529de2c10f3fb43a8aa758d48fb916d7dfe6d8ca973193b79129aaa8e061c",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/Funs.lean.in"
+    },
+    "SandproofActualRecord.FunsExternal": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/FunsExternal.lean",
+      "sha256": "6ea53a00747d0a8d92063cc68c7f68da2e09f9bda110cd59b8967a6eb96c7065",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/FunsExternal.lean.in"
+    },
+    "SandproofActualRecord.IOAdmissible": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/IOAdmissible.lean",
+      "sha256": "e3f912bbaeb97b75af60bbf83985f0f76522db73d261c632bee0777cb373e3aa",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/IOAdmissible.lean.in"
+    },
+    "SandproofActualRecord.IOOwnerTransport": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/IOOwnerTransport.lean",
+      "sha256": "c4c87477c8ba67f9330ca5f956d0ad36b363f575acb1fb91debbb48e4ef000bc",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/IOOwnerTransport.lean.in"
+    },
+    "SandproofActualRecord.IOProviderLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/IOProviderLink.lean",
+      "sha256": "12984430c6b3311ae5957b7b07d2830c5cf2ef55092cb0aff0327b3986cfa4f7",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/IOProviderLink.lean.in"
+    },
+    "SandproofActualRecord.OwnerLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/OwnerLink.lean",
+      "sha256": "23bd420809fa9f6fbf169093670899b08cd9668a4cdb8f68c5a025fe979f36f1",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/OwnerLink.lean.in"
+    },
+    "SandproofActualRecord.ReadonlyLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/ReadonlyLink.lean",
+      "sha256": "9bfbf46bf3620fa602c83871dd0c4b626e89cc6b57490f3f8c3ffe72b6690208",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/ReadonlyLink.lean.in"
+    },
+    "SandproofActualRecord.RecordUsingLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/RecordUsingLink.lean",
+      "sha256": "63dac1cfd5b787633599727d60478346e77bb4fd6c90a25361d298d3563c74d6",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/RecordUsingLink.lean.in"
+    },
+    "SandproofActualRecord.ScopeTransport": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/ScopeTransport.lean",
+      "sha256": "abb2c0a03756e4afa56ec76010b71a60deb1be9625a596190d5a853a2d65f77e",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/ScopeTransport.lean.in"
+    },
+    "SandproofActualRecord.SourceFlowLink": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/SourceFlowLink.lean",
+      "sha256": "32aae48a3387912101145e94c6752139377570747a264b3e724b66b4d4f8e97b",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/SourceFlowLink.lean.in"
+    },
+    "SandproofActualRecord.Types": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/Types.lean",
+      "sha256": "de7d27ff0a940e37c3508fd2a408eb7b36432ea5d45c257d1ffbb4d946959eca",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/Types.lean.in"
+    },
+    "SandproofActualRecord.TypesExternal": {
+      "path": "verification/aeneas/actual-record/SandproofActualRecord/TypesExternal.lean",
+      "sha256": "1a77a876d5830247c032670fcb1bead3f3a926934f41b207c090f6a834f795fa",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/TypesExternal.lean.in"
+    },
+    "SandproofDigestArray32.Types": {
+      "path": "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean",
+      "sha256": "b1499342657eba6f5fd9053e506b35a6a4d08cd7caf362eb1bf5f36f8ad309d7",
+      "source": "verification/experiments/stage1-protocol/digest-uses/reuse/verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean"
+    },
+    "SandproofFoundations.IdentifierLibrary": {
+      "path": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+      "source": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean"
+    },
+    "SandproofFoundations.TypesExternal": {
+      "path": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+      "source": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean"
+    },
+    "SandproofLoadBlob.ReadValueData": {
+      "path": "verification/aeneas/create-transaction-link/SandproofLoadBlob/ReadValueData.lean",
+      "sha256": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9",
+      "source": "verification/experiments/stage1-protocol/standard-blob/external/ReadValueData.lean.in"
+    },
+    "SandproofLoadBlob.TypesExternal": {
+      "path": "verification/aeneas/create-transaction-link/SandproofLoadBlob/TypesExternal.lean",
+      "sha256": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a",
+      "source": "verification/experiments/stage1-protocol/standard-blob/external/TypesExternal.lean.in"
+    },
+    "SandproofParentCommit.ActualCalls": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/ActualCalls.lean",
+      "sha256": "c297ef1016a9998b1334000fd468305b860afc798094ff7bfd8a96364c74f320",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/ActualCalls.lean.in"
+    },
+    "SandproofParentCommit.ActualFinish": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/ActualFinish.lean",
+      "sha256": "e0463e9ce446c591afe5257151dae003a08ecd8a449cd9b64c4428a415fa15a6",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/ActualFinish.lean.in"
+    },
+    "SandproofParentCommit.Audit": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/Audit.lean",
+      "sha256": "e19e71dbf6beeb593ab8ce1b2d00df976889d127b1b77f3cd5fc3379b8b0b5fa",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/Audit.lean.in"
+    },
+    "SandproofParentCommit.CommitOrder": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/CommitOrder.lean",
+      "sha256": "5ab9eb3abc6e20df0a54faa2a331021f83a68aaee5af755ea6d64812d147735e",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/CommitOrder.lean.in"
+    },
+    "SandproofParentCommit.CommitOrderModel": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/CommitOrderModel.lean",
+      "sha256": "db3dfcd50ef2dbd83e71a82657c2b2a555e13aed449194056839044f52ab4f53",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/CommitOrderModel.lean.in"
+    },
+    "SandproofParentCommit.CurrentViews": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/CurrentViews.lean",
+      "sha256": "d3bf34659a07a04fb655a9281ebcd139dbc7e373b2e9b1cab5e4207390336e49",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/CurrentViews.lean.in"
+    },
+    "SandproofParentCommit.ErrorTransport": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/ErrorTransport.lean",
+      "sha256": "88d1ebe961a150049ab3d589107c22c5471d2af10365b7610036d52df0a99e5e",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/ErrorTransport.lean.in"
+    },
+    "SandproofParentCommit.FinishAudit": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/FinishAudit.lean",
+      "sha256": "eed5c4e2a85711972ac633bba1b4170d288fdd1bc33f12b6ef5e798be713e34d",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/FinishAudit.lean.in"
+    },
+    "SandproofParentCommit.Funs": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/Funs.lean",
+      "sha256": "af910817ff0368c2d556ed5ed1c60dacf65760c5956310533b35cd2ca1190ca6",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/Funs.lean.in"
+    },
+    "SandproofParentCommit.FunsExternal": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/FunsExternal.lean",
+      "sha256": "f32b22319b0d690c2c5ada4cac2957d3baa08475a7ed62b018f37ce887050a13",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/FunsExternal.lean.in"
+    },
+    "SandproofParentCommit.ParentOrder": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/ParentOrder.lean",
+      "sha256": "9aec1d607cd35c0cf4ab890757d8af47cafdb36a6b61d9a7161cfdd2f91272e1",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/ParentOrder.lean.in"
+    },
+    "SandproofParentCommit.ParentResults": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/ParentResults.lean",
+      "sha256": "34fba03684d388de0114d4fbbe988e1bb230b19832cff15c12d57e311fe40cfd",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/ParentResults.lean.in"
+    },
+    "SandproofParentCommit.PhysicalLink": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/PhysicalLink.lean",
+      "sha256": "9151c1865b3141280ecd920f4bc6cb797b4795522144d90cd5d625302ca2bf7b",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/PhysicalLink.lean.in"
+    },
+    "SandproofParentCommit.Types": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/Types.lean",
+      "sha256": "c6fef1934f9c12f49b481b28f73519345a39cb3925d74108961c4b0d8ecd5cec",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/Types.lean.in"
+    },
+    "SandproofParentCommit.TypesExternal": {
+      "path": "verification/aeneas/parent-commit/SandproofParentCommit/TypesExternal.lean",
+      "sha256": "5ff6c5b90d14ee63803f2dbe72e9d12037e88893e332c1e2c59a2fd2507d0a66",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentCommit/TypesExternal.lean.in"
+    },
+    "SandproofParentRead.Funs": {
+      "path": "verification/aeneas/parent-world-read/SandproofParentRead/Funs.lean",
+      "sha256": "ae4c04d851012bbb2f3f0e361a0df476adb243b0f424c81091bfa58ad03369b0",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentRead/Funs.lean.in"
+    },
+    "SandproofParentRead.FunsExternal": {
+      "path": "verification/aeneas/parent-world-read/SandproofParentRead/FunsExternal.lean",
+      "sha256": "280ff5b0b0d0b1295620b1cf420591628c4081f0f136e379d200676688d66c67",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentRead/FunsExternal.lean.in"
+    },
+    "SandproofParentRead.Types": {
+      "path": "verification/aeneas/parent-world-read/SandproofParentRead/Types.lean",
+      "sha256": "7829696166d6b65696c9b1e0d1749cfeca521a5219577bf296975de20dca256e",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentRead/Types.lean.in"
+    },
+    "SandproofParentRead.TypesExternal": {
+      "path": "verification/aeneas/parent-world-read/SandproofParentRead/TypesExternal.lean",
+      "sha256": "257b68d5a66b60fa2aa7b785902b12d2dd58d7079831aeb6516f4b93552eb949",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentRead/TypesExternal.lean.in"
+    },
+    "SandproofParentRead.WorldRead": {
+      "path": "verification/aeneas/parent-world-read/SandproofParentRead/WorldRead.lean",
+      "sha256": "00ed2605b64e7359898f616bde15bf61a3668003cc07eef9e3e041e3d3828460",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofParentRead/WorldRead.lean.in"
+    },
+    "SandproofSqlite.TypesExternal": {
+      "path": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+      "source": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean"
+    },
+    "SandproofSqliteSession.Data": {
+      "path": "verification/aeneas/create-transaction-link/SandproofSqliteSession/Data.lean",
+      "sha256": "6d2fbb26001dab59cf69f13c4e1065761c145cc0910d127afe6dd0dc98061a99",
+      "source": "verification/experiments/create-transaction-link/SqliteSessionData.lean.in"
+    },
+    "SandproofSqliteSession.ReadOps": {
+      "path": "verification/aeneas/create-transaction-link/SandproofSqliteSession/ReadOps.lean",
+      "sha256": "d53a906fa35ba6c3f195dcdc51b862d023016b1f9cca2833605994abb5812e4c",
+      "source": "verification/experiments/create-transaction-link/SqliteReadOps.lean.in"
+    },
+    "SandproofSqliteSession.RecordQueryProviders": {
+      "path": "verification/aeneas/create-transaction-link/SandproofSqliteSession/RecordQueryProviders.lean",
+      "sha256": "060b9bfa2c393b8ea553255a1c18c30916da3d56f38764f35229a874613878ea",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofSqliteSession/RecordQueryProviders.lean.in"
+    },
+    "SandproofSqliteStatements.TypesExternal": {
+      "path": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+      "source": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean"
+    },
+    "SandproofStage1Graphic.Funs": {
+      "path": "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/Funs.lean",
+      "sha256": "5c63d7730435a2345f308e3a6ec946c6b1c4317b07aafa287799718a077a9f43",
+      "source": "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Funs.lean"
+    },
+    "SandproofStage1Graphic.FunsExternal": {
+      "path": "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/FunsExternal.lean",
+      "sha256": "dc4caa959dae9b78680b1ba9981756601b212b26645d9cb1b4eb8156bc98ae85",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/GraphicFunsExternal.lean.in"
+    },
+    "SandproofStage1Graphic.Types": {
+      "path": "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/Types.lean",
+      "sha256": "ea140f926ac9f0ba9c45f0aa893826d3145dc23898b58265ef54278d495c19b6",
+      "source": "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Types.lean"
+    },
+    "SandproofStage1Graphic.TypesExternal": {
+      "path": "verification/aeneas/stage1-protocol/graphic/SandproofStage1Graphic/TypesExternal.lean",
+      "sha256": "110267d603515500f67dd86a0bed1493bb3260fd818355bc21ca0fa96304b666",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/GraphicTypesExternal.lean.in"
+    },
+    "SandproofStage1Request.Funs": {
+      "path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+      "sha256": "2f5a0d9e7de7deebd9237a0663cc3cadc25989f1b836d0b4087462227301b3f7",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/Funs.lean.in"
+    },
+    "SandproofStage1Request.FunsExternal": {
+      "path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+      "sha256": "aae807bbfb066e48335d72a4f32a8b088305c821ca18de6dc3613f5bf5fafe17",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/FunsExternal.lean.in"
+    },
+    "SandproofStage1Request.SharedValueBindings": {
+      "path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/SharedValueBindings.lean",
+      "sha256": "5d4a5fb3b7aedac5dacd24bbd2baa4a0c173c7fead72eafefd52e9ff154df65f",
+      "source": "verification/experiments/stage1-protocol/inbox-validation/SharedValueBindings.lean.in"
+    },
+    "SandproofStage1Request.Types": {
+      "path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+      "sha256": "930cceb0b57186a997215cf0a727bb03aac659d337dc8d0e7193966955048a21",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/Types.lean.in"
+    },
+    "SandproofStage1Request.TypesExternal": {
+      "path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean",
+      "sha256": "892327b854aa35e03016a309c5ad794d55a401fdbfe86741a3007e678e9c05e2",
+      "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/TypesExternal.lean.in"
+    },
+    "SandproofStandardRecord.Funs": {
+      "path": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean",
+      "sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472",
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean"
+    },
+    "SandproofStandardRecord.FunsExternal": {
+      "path": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/FunsExternal.lean",
+      "sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc",
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/FunsExternal.lean.in"
+    },
+    "SandproofStandardRecord.Types": {
+      "path": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean",
+      "sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f",
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean"
+    },
+    "SandproofStandardRecord.TypesExternal": {
+      "path": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/TypesExternal.lean",
+      "sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c",
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in"
+    },
+    "SandproofTxFinish.TypesExternal": {
+      "path": "verification/aeneas/transaction-finish/SandproofTxFinish/TypesExternal.lean",
+      "sha256": "08503caaa913f0c3a95e5e9ed29dae55935227c5ab310c07901b7ba70b79fc74",
+      "source": "verification/experiments/create-transaction-link/finish/TypesExternal.lean.in"
+    }
+  },
+  "external": [
+    "Aeneas",
+    "Init.Data.ByteArray.Lemmas",
+    "Lean.Elab.Command",
+    "Lean.Util.CollectAxioms",
+    "Std"
+  ],
+  "libraries": {
+    "SandboxModel": ".",
+    "SandproofFoundations": "verification/aeneas/foundations",
+    "SandproofSqliteStatements": "verification/aeneas/sqlite-statements",
+    "SandproofSqlite": "verification/aeneas/sqlite",
+    "SandproofStage1Request": "verification/aeneas/stage1-protocol/request",
+    "SandproofStage1Graphic": "verification/aeneas/stage1-protocol/graphic",
+    "SandproofDigestArray32": "verification/aeneas/stage1-protocol/digest-array32",
+    "SandproofTxFinish": "verification/aeneas/transaction-finish",
+    "SandproofStandardRecord": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated",
+    "SandproofSqliteSession": "verification/aeneas/create-transaction-link",
+    "SandproofLoadBlob": "verification/aeneas/create-transaction-link",
+    "SandproofParentRead": "verification/aeneas/parent-world-read",
+    "SandproofParentCommit": "verification/aeneas/parent-commit",
+    "SandproofActualRecord": "verification/aeneas/actual-record"
+  },
+  "checked_files": [
+    "SandboxModel/InboxTransaction/CodecTransfer.lean",
+    "SandboxModel/InboxTransaction/IOTransfer.lean",
+    "SandboxModel/InboxTransaction/StandardLoadSave.lean",
+    "SandboxModel/Lifecycle/Protocol/InboxRenewalComposition.lean",
+    "SandboxModel/Lifecycle/Protocol/SavedProofs.lean",
+    "SandboxModel/Lifecycle/Protocol/ShapeProofs.lean",
+    "SandboxModel/Lifecycle/Protocol/ShapeTerminal.lean",
+    "SandboxModel/Lifecycle/Protocol/UnloadProofs.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/ActualRootLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/BranchScope.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/CallerBranches.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/CreateRootLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/Funs.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/FunsExternal.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/IOAdmissible.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/IOOwnerTransport.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/IOProviderLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/OwnerLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/ReadonlyLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/RecordUsingLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/ScopeTransport.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/SourceFlowLink.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/Types.lean",
+    "verification/aeneas/actual-record/SandproofActualRecord/TypesExternal.lean",
+    "verification/aeneas/create-transaction-link/SandproofSqliteSession/RecordQueryProviders.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/ActualCalls.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/ActualFinish.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/Audit.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/CommitOrder.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/CommitOrderModel.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/CurrentViews.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/ErrorTransport.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/FinishAudit.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/Funs.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/FunsExternal.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/ParentOrder.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/ParentResults.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/PhysicalLink.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/Types.lean",
+    "verification/aeneas/parent-commit/SandproofParentCommit/TypesExternal.lean",
+    "verification/aeneas/parent-world-read/SandproofParentRead/Funs.lean",
+    "verification/aeneas/parent-world-read/SandproofParentRead/FunsExternal.lean",
+    "verification/aeneas/parent-world-read/SandproofParentRead/Types.lean",
+    "verification/aeneas/parent-world-read/SandproofParentRead/TypesExternal.lean",
+    "verification/aeneas/parent-world-read/SandproofParentRead/WorldRead.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean"
+  ],
+  "inherited_closure": "All listed imports are materialized under the original independent Lake view"
+}
