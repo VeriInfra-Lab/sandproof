@@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 165)
+            self.assertEqual(len(full), 166)
             self.assertEqual(len(registered.native_labels()), 77)
         jobs = self.plan()
         definition = registered.create_profile()

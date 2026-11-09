@@ -8,3 +8,5 @@
 - ning 端保留原 Codec 输入、调用顺序和 D 状态断言。交换原提交中两个单元格引用的隔离错误版须被同一个缓存一致性断言拒绝，随后恢复对照须通过。这个反例检验实际单元格接线。
 
 在 ning 的原 native 环境中，使用 `bash scripts/python-entry.sh tools/proof_native_suite.py run --scope stage1-v3-transaction-source --output <new-native-evidence>`。该固定范围包含完整普通功能检查、实际事务断言和实际来源行断言。按原证明机入口传入同一提交的 native seal 后，在 MSRA 运行 `bash scripts/verify-v3-transaction-source.sh <new-formal-evidence>`。普通测试和形式化检查分别在相应机器执行。原始 proof 运行和当前公共验收的执行身份分别保留。
+
+依赖接口的完整条件见 [V3 事务录入与来源行的边界](../../../../docs/formal/v3-transaction-source-boundaries.md)。

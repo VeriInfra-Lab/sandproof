@@ -225,8 +225,8 @@ class NativeScopeTests(unittest.TestCase):
 
     def test_limited_packet_admits_only_explicit_scope_and_never_executes_in_formal_role(self):
         seal = self.packet()
-        self.assertEqual(len(seal['commands']), 77)
-        self.assertEqual(len(set(self.labels)), 77)
+        self.assertEqual(len(seal['commands']), 79)
+        self.assertEqual(len(set(self.labels)), 79)
         self.assertLessEqual({'stage1-'+name for name in (
             'inbox-entry-validation', 'inbox-retired-identities', 'inbox-origin-selection',
             'inbox-config', 'inbox-config-validation', 'terminal-binding', 'retention-lane',
@@ -265,12 +265,12 @@ class NativeScopeTests(unittest.TestCase):
         missing['case_names'] = list(self.labels)
         missing['commands'].pop(next(iter(missing['commands'])))
         receipts.write_json(self.cache/'complete.json', missing)
-        with self.assertRaisesRegex(ValueError, '77 complete components'):
+        with self.assertRaisesRegex(ValueError, '79 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_additional_component_in_limited_packet_is_rejected(self):
         self.packet(extra=True)
-        with self.assertRaisesRegex(ValueError, '77 complete components'):
+        with self.assertRaisesRegex(ValueError, '79 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_two_different_receipts_for_one_component_are_not_two_required_components(self):
@@ -282,7 +282,7 @@ class NativeScopeTests(unittest.TestCase):
         entry = self.cache/'commands'/receipts.digest(receipt['key'])
         seal['commands'][entry.name] = receipts.sha(entry/'receipt.json')
         receipts.write_json(self.cache/'complete.json', seal)
-        with self.assertRaisesRegex(ValueError, '77 complete components'):
+        with self.assertRaisesRegex(ValueError, '79 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
     def test_corrupt_or_missing_raw_evidence_prevents_any_scoped_admission(self):
@@ -385,8 +385,8 @@ class NativeScopeTests(unittest.TestCase):
                 mock.patch.object(suite, 'command', side_effect=AssertionError('global command in limited run')):
             suite.run_suite(self.cache, scope='stage1-protocol')
         seal = receipts.validate_native(self.cache, scope='stage1-protocol')
-        self.assertEqual(len(seal['commands']), 77)
-        self.assertEqual(len(seal['uses']), 78)
+        self.assertEqual(len(seal['commands']), 79)
+        self.assertEqual(len(seal['uses']), 80)
         self.assertEqual(sum(row['reused'] for row in seal['uses']), 1)
         self.assertTrue(seal['scope_complete'])
         self.assertFalse(seal['full_native_suite_complete'])
