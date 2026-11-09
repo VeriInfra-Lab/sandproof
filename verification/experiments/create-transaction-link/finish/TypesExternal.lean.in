@@ -1,0 +1,36 @@
+import Aeneas
+import SandproofSqlite.TypesExternal
+import SandproofStandardRecord.Types
+import SandproofSqliteSession.Data
+
+open Aeneas Aeneas.Std
+namespace SandproofTxFinishRust
+
+/- Review-only finite view. RefCell T below denotes the CONTENT observation
+at this boundary, not a physical object, pointer, borrow counter or heap.
+Only the two opaque TransactionCells transfers may use it. There are NO
+borrow_mut/deref_mut definitions and it cannot model arbitrary RefCell code. -/
+abbrev core.cell.RefCell (T : Type) := T
+
+-- Exact existing error carriers; no new equality/classification/default Err.
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+
+-- Existing data-only chunks, not their World/RawTransaction/cell models.
+-- Actual new generated Types defines the sole World used by this view.
+abbrev sandbox_controller_core.capture.CaptureHandoff :=
+  SandproofStandardRecordRust.sandbox_controller_core.capture.CaptureHandoff
+abbrev sandbox_controller_core.maintenance.MaintenanceState :=
+  SandproofStandardRecordRust.sandbox_controller_core.maintenance.MaintenanceState
+
+/-- One admitted call's library observation, preserving the existing read
+carrier through a projection. No SQL evaluator or shared mutable connection.
+rollbackReply describes the WHOLE actual Transaction::rollback API, including
+its finish/finalization. It is not a single ROLLBACK SQL query model. -/
+structure RollbackCallView where
+  reads : SandproofSqliteSession.Connection
+  rollbackReply : Result (core.result.Result Unit rusqlite.error.Error)
+
+abbrev rusqlite.Connection := RollbackCallView
+end SandproofTxFinishRust

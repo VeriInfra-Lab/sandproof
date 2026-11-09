@@ -7,6 +7,7 @@ use sandbox_controller_core::World;
 use std::{cell::RefCell, ops::Deref};
 
 mod memo;
+mod sqlite_io;
 
 pub(super) struct CommittedWorld {
     value: RefCell<Option<World>>,
@@ -17,7 +18,7 @@ pub(super) struct CommittedWorld {
 }
 
 fn data_version(connection: &Connection) -> Result<i64, JournalError> {
-    Ok(connection.query_row("PRAGMA data_version", [], |row| row.get(0))?)
+    Ok(connection.query_row("PRAGMA data_version", (), |row| row.get(0))?)
 }
 
 impl CommittedWorld {
@@ -90,6 +91,26 @@ impl memo::Cells<World> for TransactionCells<'_> {
     }
 }
 
+// The owner stays the same across the existing read-only validations. This
+// interface exposes their first-error order, not a replacement validator model.
+pub(super) trait CommitEffects {
+    fn validate_candidate(&mut self) -> Result<(), JournalError>;
+    fn validate_inbox(&mut self) -> Result<(), JournalError>;
+    fn validate_capacity(&mut self) -> Result<(), JournalError>;
+    fn validate_transaction(&mut self) -> Result<(), JournalError>;
+    fn finish_commit(self) -> Result<(), JournalError>;
+}
+
+pub(super) fn validate_then_commit_using<E: CommitEffects>(
+    mut transaction: E,
+) -> Result<(), JournalError> {
+    transaction.validate_candidate()?;
+    transaction.validate_inbox()?;
+    transaction.validate_capacity()?;
+    transaction.validate_transaction()?;
+    transaction.finish_commit()
+}
+
 impl<'a> WorldTransaction<'a> {
     pub(super) fn begin(
         connection: &'a mut Connection,
@@ -99,6 +120,15 @@ impl<'a> WorldTransaction<'a> {
         super::checkpoint::prepare_write(connection, &world, committed)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let input_start = super::allocators::input_high_water(&transaction)?;
+        Self::from_started_transaction(transaction, committed, input_start, world)
+    }
+
+    pub(super) fn from_started_transaction(
+        transaction: Transaction<'a>,
+        committed: &'a CommittedWorld,
+        input_start: u64,
+        world: World,
+    ) -> Result<Self, JournalError> {
         let guard = Self {
             input_start,
             transaction: Some(transaction),
@@ -124,23 +154,25 @@ impl<'a> WorldTransaction<'a> {
         *self.candidate.borrow_mut() = Some(world);
     }
 
+    pub(super) fn execute_inbox_update(
+        &mut self,
+        statement: &str,
+        bytes: &[u8],
+        digest: &[u8],
+    ) -> Result<usize, JournalError> {
+        let Some(transaction) = &mut self.transaction else {
+            panic!("live transaction");
+        };
+        Ok(sqlite_io::execute_blobs(
+            transaction,
+            statement,
+            bytes,
+            digest,
+        )?)
+    }
+
     pub(super) fn commit(self) -> Result<(), JournalError> {
-        super::checkpoint::validate_candidate(&self, &self.world())?;
-        super::lifecycle_inbox::validate(&self, &self.world())?;
-        super::capacity::validate(&self, &self.world())?;
-        super::checkpoint::validate_transaction(&self)?;
-        #[cfg(test)]
-        if let Some(durable) = COMMIT_FAILURE.with(std::cell::Cell::take) {
-            return self.commit_with(|transaction| {
-                if durable {
-                    transaction.commit()?;
-                } else {
-                    transaction.rollback()?;
-                }
-                Err(rusqlite::Error::InvalidQuery)
-            });
-        }
-        self.commit_with(Transaction::commit)
+        validate_then_commit_using(self)
     }
 
     fn commit_with(
@@ -152,6 +184,39 @@ impl<'a> WorldTransaction<'a> {
             candidate: &self.candidate,
         };
         memo::commit_with(&mut self.transaction, &mut cells, commit)
+    }
+}
+
+impl<'a> CommitEffects for WorldTransaction<'a> {
+    fn validate_candidate(&mut self) -> Result<(), JournalError> {
+        super::checkpoint::validate_candidate(self, &self.world())
+    }
+
+    fn validate_inbox(&mut self) -> Result<(), JournalError> {
+        super::lifecycle_inbox::validate(self, &self.world())
+    }
+
+    fn validate_capacity(&mut self) -> Result<(), JournalError> {
+        super::capacity::validate(self, &self.world())
+    }
+
+    fn validate_transaction(&mut self) -> Result<(), JournalError> {
+        super::checkpoint::validate_transaction(self)
+    }
+
+    fn finish_commit(self) -> Result<(), JournalError> {
+        #[cfg(test)]
+        if let Some(durable) = COMMIT_FAILURE.with(std::cell::Cell::take) {
+            return self.commit_with(|transaction| {
+                if durable {
+                    transaction.commit()?;
+                } else {
+                    transaction.rollback()?;
+                }
+                Err(rusqlite::Error::InvalidQuery)
+            });
+        }
+        self.commit_with(|transaction: Transaction<'a>| transaction.commit())
     }
 }
 
@@ -169,7 +234,9 @@ impl Drop for WorldTransaction<'_> {
             committed: &self.committed.value,
             candidate: &self.candidate,
         };
-        memo::rollback_if_live(&mut self.transaction, &mut cells, Transaction::rollback);
+        memo::rollback_if_live(&mut self.transaction, &mut cells, |transaction| {
+            transaction.rollback()
+        });
     }
 }
 

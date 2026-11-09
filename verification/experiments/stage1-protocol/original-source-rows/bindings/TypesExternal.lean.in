@@ -1,0 +1,15 @@
+import SourceStdTypes
+import SandproofSqliteSession.Data
+
+/- Candidate aliases for the actual external carrier names; shared providers
+remain A's single data module. Error identities are used for propagation only,
+not text/category equivalence or a transaction-success assumption. -/
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteSession.SqlError
+abbrev rusqlite.Connection := SandproofSqliteSession.Connection
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.Statement
+abbrev rusqlite.row.MappedRows (F : Type) := SandproofSqliteSession.IssuedMappedCursor F
+abbrev rusqlite.row.Row := SandproofSqliteSession.IssuedRow
+abbrev rusqlite.types.from_sql.FromSqlError :=
+  SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError

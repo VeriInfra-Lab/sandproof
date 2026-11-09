@@ -1,0 +1,15 @@
+
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+  (c : sandproof_protocol.valid_identifier.closure) (tupled_args : Std.U8) :
+  Result (Bool × sandproof_protocol.valid_identifier.closure)
+  := do
+  let b ← core.num.U8.is_ascii_alphanumeric tupled_args
+  if b
+  then ok (true, c)
+  else
+    match tupled_args with
+    | 45#uscalar => ok (true, c)
+    | 95#uscalar => ok (true, c)
+    | 46#uscalar => ok (true, c)
+    | _ => ok (false, c)

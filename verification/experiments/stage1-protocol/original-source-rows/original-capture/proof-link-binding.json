@@ -1,0 +1,70 @@
+{
+  "rust_name": "sandproof_protocol::valid_identifier",
+  "role": "separately-verified owned callee; NOT trusted-owned cut",
+  "current_head": "10037e47c3f78f258eba4683c5b8db2eeab7e7e6",
+  "actual_rust_signature": "fn valid_identifier(value: &str) -> bool",
+  "actual_Lean_signature": "(value : Aeneas.Std.Str) -> Aeneas.Std.Result Bool",
+  "existing_provider": "SandproofFoundationsRust.sandproof_protocol.valid_identifier",
+  "provider_theorem": "SandboxModel.Foundations.identifier_validator_refines",
+  "provider_statement": "forall value : Str, provider value = .ok (decide (opaqueBytesValid value.val))",
+  "source_identity": {
+    "frozen_provider_source_path": "sandbox-protocol/src/lib.rs",
+    "frozen_provider_full_file_sha256": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
+    "provider_git_blob": "8ae18369ed603901cad591a077e9118f6fac1a1e",
+    "current_whole_file_sha256": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "whole_files_equal": false,
+    "actual_function_full_text_equal": true,
+    "function_sha256": "9d64bd343a0cfeebf55f36aa2b53f641d18ef43e127be1ca488e78b30e44c669",
+    "note": "Unrelated protocol source changes are not relabeled as full-file identity; exact function is frozen-provider source plus original closure/library dependency audit."
+  },
+  "provider_inputs": {
+    "SandboxModel/Foundations/Identifiers.lean": "f0880da1f78aa6ae0dd8aaf5eed7ca6c77d22c580442c296cffb3f3973cd1786",
+    "SandboxModel/Foundations/IdentifierModel.lean": "1e40b772c61a27026285f68bd54eff1243f995634a091e13e743202357e89bef",
+    "SandboxModel/Foundations/Audit.lean": "25279d71b5c5b9301ddc2ddf62d9a650541ac9454ee6508e9f5bcdf461433328",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/llbc/sandproof_foundations.llbc": "47c88a04b10e54870520620eb2b2f94ad1ef7b7b69f0df717ce3fb403cb0ea22",
+    "verification/aeneas/foundations/translation.json": "e9f46a65d9b03fbd7c1fa72250a64b1f5fc332b2e2df26da499c9ad1898b9ce6",
+    "verification/aeneas/foundations/SandproofFoundations/Funs.lean": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "verification/foundations-inputs.sha256": "0fbad67622499b25b152e36bff2e0ff2d6ed79619a31215fb9dc1682a988a41e",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264"
+  },
+  "proof_consumption": "provider/SourceIdentifierProvider.lean imports actual existing theorem and produces actual_provider_refines_formula; new private bridge not kernel-checked in C yet, must enter independent provider kernel/service/audit before any final proof acceptance",
+  "light_formula": "leaf/SourceIdentifierFormula.lean",
+  "leaf_sha256": "e4aad414ec5f8e25000f345271217cc8d54bd964a5e18b952856468d6307483a",
+  "provider_bridge_sha256": "5394005a9eafc80a3173a00b3c533991cd31186f641f2d62ab41be6009778f97",
+  "no_consumer_import_of_Foundation_Funs": true,
+  "row14_generated_body_and_closure_identity": {
+    "valid_identifier": "bdfba39b44b9cbcce09f0e979797b2010ba2f19712afc31d62cacf5c2d60f20e",
+    "FnMut_call_mut": "1a717fab5286092c66399c6bf42e0b28a2bc71e4298d11172ba7f32e09f24ecd",
+    "FnOnce_call_once": "4b6e4df3ea96a441a9266d92f7cd0af9f854878f5035c06a0d961af07fed5a55",
+    "all_three_exact_equal": true
+  },
+  "semantic_options_equal": [
+    "preset",
+    "skip_borrowck",
+    "no_typecheck",
+    "monomorphize",
+    "lift_associated_types",
+    "unsized_strings",
+    "precise_drops",
+    "remove_unused_clauses",
+    "remove_unused_self_clauses",
+    "hide_marker_traits",
+    "translate_all_methods"
+  ],
+  "target": "x86_64-unknown-linux-gnu",
+  "scope": "Only exact leaf full function plus ASCII predicate closure/library dependencies; unrelated whole protocol source file differs explicitly. No reinterpretation of new controller/business types.",
+  "bridge_revision_reason": "Audit command requires theorem; audit accepts_iff and existing actual bridge, not the formula definition directly.",
+  "independent_bridge_evidence": {
+    "handoff": "artifacts/stage1-goal-coordination/v3-closeout-20261107/unload/provider-kernel-20/handoff.json",
+    "original_pack_sha256": "f5c4848c1ddc50b2ec101c4c9c9ffbf3f61d3d4871ab59519a057be33dd842f7",
+    "reuse": "independent formula/provider inputs unchanged; no rerun",
+    "result_sha256": "9ba08bb5c9c9f4c4f33a1b2f5ae6319c23f4ae30ad1beacb92e05e1c4f726ea5",
+    "service_log_sha256": "902c28c60e485c42dcaa84c828f5f00edb97a508d16d04ac1f6028175fdccaab"
+  }
+}

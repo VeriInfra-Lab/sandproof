@@ -1,0 +1,119 @@
+import SandproofParentCommit.Funs
+import SandproofParentRead.WorldRead
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust.ActualCalls
+
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev Raw := rusqlite.transaction.Transaction
+abbrev actualEffects := controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects
+abbrev checkedGetter := SandproofParentReadRust.controller.transaction.WorldTransaction.world
+
+theorem actual_deref_is_original_prefix (owner : Owner) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref owner =
+      CurrentViews.liveRaw owner := by rfl
+
+-- Both functions are original generated bodies. Only their exact mechanical
+-- bindings and the unused owner fields differ; World/candidate are identical.
+theorem actual_world_uses_checked_getter (owner : Owner) :
+    controller.transaction.WorldTransaction.world owner =
+      checkedGetter (CurrentViews.ownerToRead owner) := by rfl
+
+theorem actual_world_from_same_candidate (owner : Owner) (world : World)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (CurrentViews.ownerToRead owner) world) :
+    controller.transaction.WorldTransaction.world owner = .ok world := by
+  rw [actual_world_uses_checked_getter]
+  exact SandboxModel.InboxTransaction.CurrentWorldRead.world_from_same_candidate _ world present
+
+theorem candidate_complete_call (owner : Owner) :
+    actualEffects.validate_candidate owner = (do
+      let raw ← CurrentViews.liveRaw owner
+      let world ← checkedGetter (CurrentViews.ownerToRead owner)
+      let reply ← ErrorTransport.fromRequestResult (raw.conn.v5.candidate raw.conn.base world)
+      .ok (reply, owner)) := by
+  change (do
+    let raw ← CurrentViews.liveRaw owner
+    let connection ← (.ok raw.conn : Result rusqlite.Connection)
+    let world ← checkedGetter (CurrentViews.ownerToRead owner)
+    let reply ← ErrorTransport.fromRequestResult (connection.v5.candidate connection.base world)
+    .ok (reply, owner)) = _
+  simp only [bind_tc_ok]
+
+theorem inbox_complete_call (owner : Owner) :
+    actualEffects.validate_inbox owner = (do
+      let raw ← CurrentViews.liveRaw owner
+      let world ← checkedGetter (CurrentViews.ownerToRead owner)
+      let reply ← ErrorTransport.fromRequestResult (raw.conn.v5.inbox raw.conn.base world)
+      .ok (reply, owner)) := by
+  change (do
+    let raw ← CurrentViews.liveRaw owner
+    let connection ← (.ok raw.conn : Result rusqlite.Connection)
+    let world ← checkedGetter (CurrentViews.ownerToRead owner)
+    let reply ← ErrorTransport.fromRequestResult (connection.v5.inbox connection.base world)
+    .ok (reply, owner)) = _
+  simp only [bind_tc_ok]
+
+theorem capacity_complete_call (owner : Owner) :
+    actualEffects.validate_capacity owner = (do
+      let raw ← CurrentViews.liveRaw owner
+      let world ← checkedGetter (CurrentViews.ownerToRead owner)
+      let reply ← ErrorTransport.fromRequestResult (raw.conn.v5.capacity raw.conn.base world)
+      .ok (reply, owner)) := by
+  change (do
+    let raw ← CurrentViews.liveRaw owner
+    let connection ← (.ok raw.conn : Result rusqlite.Connection)
+    let world ← checkedGetter (CurrentViews.ownerToRead owner)
+    let reply ← ErrorTransport.fromRequestResult (connection.v5.capacity connection.base world)
+    .ok (reply, owner)) = _
+  simp only [bind_tc_ok]
+
+theorem transaction_complete_original_owner (owner : Owner) :
+    actualEffects.validate_transaction owner = (do
+      let raw ← CurrentViews.liveRaw owner
+      let reply ← ErrorTransport.fromRequestResult
+        (raw.conn.v5.transaction (CurrentViews.ownerToSource owner))
+      .ok (reply, owner)) := by
+  change (do
+    let reply ← (do
+      let raw ← CurrentViews.liveRaw owner
+      ErrorTransport.fromRequestResult
+        (raw.conn.v5.transaction (CurrentViews.ownerToSource owner)))
+    .ok (reply, owner)) = _
+  simp only [bind_assoc_eq]
+
+theorem complete_source_fields (owner : Owner) :
+    (CurrentViews.ownerToSource owner).candidate = owner.candidate ∧
+    (CurrentViews.ownerToSource owner).committed.value = owner.committed.value ∧
+    (CurrentViews.ownerToSource owner).committed.data_version = owner.committed.data_version ∧
+    (CurrentViews.ownerToSource owner).input_start = owner.input_start := ⟨rfl, rfl, rfl, rfl⟩
+
+theorem complete_original_raw (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw) :
+    (CurrentViews.ownerToSource owner).transaction = some (CurrentViews.rawToSource raw) ∧
+      (CurrentViews.rawToSource raw).conn = raw.conn.base ∧
+      (CurrentViews.rawToSource raw).drop_behavior = raw.drop_behavior := by
+  exact ⟨by simp [CurrentViews.ownerToSource, live], rfl, rfl⟩
+
+theorem actual_commit_uses_concrete_dictionary (owner : Owner) :
+    controller.transaction.WorldTransaction.commit owner =
+      controller.transaction.validate_then_commit_using actualEffects owner := by rfl
+
+theorem actual_anchor_uses_original_commit (owner : Owner) :
+    controller.transaction.proof_parent_commit owner =
+      controller.transaction.WorldTransaction.commit owner := by rfl
+
+end SandproofParentCommitRust.ActualCalls
+
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.actual_deref_is_original_prefix
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.actual_world_uses_checked_getter
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.actual_world_from_same_candidate
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.candidate_complete_call
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.inbox_complete_call
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.capacity_complete_call
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.transaction_complete_original_owner
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.complete_source_fields
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.complete_original_raw
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.actual_commit_uses_concrete_dictionary
+#audit_controller_proof SandproofParentCommitRust.ActualCalls.actual_anchor_uses_original_commit

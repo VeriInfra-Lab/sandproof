@@ -237,28 +237,20 @@ impl ControllerJournal {
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        let outcome = {
-            let mut effects = recording::StandardRecord {
-                tx: &tx,
-                namespace: &self.namespace,
-            };
-            recording::record_using::<
-                native_retirement::StandardRetirementEncoding,
-                model::StandardTerminalEncoding,
-                renewal_confirmation::StandardRenewalEncoding,
-                unload_resolution::StandardUnloadEncoding,
-                crate::capture::StandardGraphicBytes,
-                _,
-            >(&mut effects, intent, context)?
+        let transaction = recording::StandardRecord {
+            tx,
+            namespace: &self.namespace,
+            codec: recording::StandardRecordCodec,
         };
-        let state = match outcome {
-            recording::RecordOutcome::Replay(state) => return Ok(state),
-            recording::RecordOutcome::Recorded(state) => state,
-        };
-        crashes.hit(CrashPoint::BeforeCommit)?;
-        tx.commit()?;
-        crashes.hit(CrashPoint::AfterCommit)?;
-        Ok(state)
+        recording::record_transaction_using::<
+            native_retirement::StandardRetirementEncoding,
+            model::StandardTerminalEncoding,
+            renewal_confirmation::StandardRenewalEncoding,
+            unload_resolution::StandardUnloadEncoding,
+            crate::capture::StandardGraphicBytes,
+            _,
+            _,
+        >(transaction, intent, context, crashes)
     }
 
     /// Exact original canonical request and current order. Returned local IDs

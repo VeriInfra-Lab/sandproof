@@ -1,0 +1,103 @@
+import SandproofActualRecord.Types
+import SandproofParentCommit.ErrorTransport
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.ScopeTransport
+
+open controller.lifecycle_inbox
+
+abbrev ReadEffects := controller.checkpoint.config.ReadConfigEffects
+abbrev OldReadEffects :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.ReadConfigEffects
+abbrev OldLoadEffects :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.InboxLoadEffects
+abbrev OldSaveEffects :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.InboxSaveEffects
+abbrev OldRecordEffects :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.RecordEffects
+abbrev OldOutcome :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.RecordOutcome
+abbrev OldCrashPoint := SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+abbrev ActualLocal := controller.internal_inbox.model.InternalLocalBinding
+
+open SandproofParentCommitRust.ErrorTransport in
+def readEffects {E : Type} (io : ReadEffects E) : OldReadEffects E where
+  query_i64 e statement := toRequestStateResult (io.query_i64 e statement)
+  query_bytes e statement := toRequestStateResult (io.query_bytes e statement)
+  decode_maintenance e bytes := toRequestStateResult (io.decode_maintenance e bytes)
+
+open SandproofParentCommitRust.ErrorTransport in
+def loadEffects {E : Type} (io : codec.InboxLoadEffects E) : OldLoadEffects E where
+  checkpointconfigReadConfigEffectsInst := readEffects io.checkpointconfigReadConfigEffectsInst
+  query_bool e statement := toRequestStateResult (io.query_bool e statement)
+  query_i64_pair e statement := toRequestStateResult (io.query_i64_pair e statement)
+  query_bytes_pair e statement := toRequestStateResult (io.query_bytes_pair e statement)
+  decode_inbox e bytes := toRequestStateResult (io.decode_inbox e bytes)
+  encode_inbox e inbox := toRequestStateResult (io.encode_inbox e inbox)
+  digest := io.digest
+
+open SandproofParentCommitRust.ErrorTransport in
+def saveEffects {E : Type} (io : codec.InboxSaveEffects E) : OldSaveEffects E where
+  encode e inbox := toRequestStateResult (io.encode e inbox)
+  digest := io.digest
+  update e statement bytes digest := toRequestStateResult (io.update e statement bytes digest)
+
+def toSourceLocal (binding : ActualLocal) : SourceLocal :=
+  ⟨binding.sandbox, binding.owner, binding.operation⟩
+
+def fromSourceLocal (binding : SourceLocal) : ActualLocal :=
+  ⟨binding.sandbox, binding.owner, binding.operation⟩
+
+theorem sourceLocal_roundtrip (binding : SourceLocal) :
+    toSourceLocal (fromSourceLocal binding) = binding := by
+  cases binding
+  rfl
+
+theorem actualLocal_roundtrip (binding : ActualLocal) :
+    fromSourceLocal (toSourceLocal binding) = binding := by
+  cases binding
+  rfl
+
+open SandproofParentCommitRust.ErrorTransport in
+def recordEffects {E : Type} (io : recording.RecordEffects E) : OldRecordEffects E where
+  codecInboxLoadEffectsInst := loadEffects io.codecInboxLoadEffectsInst
+  codecInboxSaveEffectsInst := saveEffects io.codecInboxSaveEffectsInst
+  releasing e binding := io.releasing e (fromSourceLocal binding)
+  terminate_local e binding := toRequestStateResult (io.terminate_local e (fromSourceLocal binding))
+  current_operation := io.current_operation
+
+def outcomeFromSource : OldOutcome → recording.RecordOutcome
+  | .Replay state => .Replay state
+  | .Recorded state => .Recorded state
+
+def outcomeToSource : recording.RecordOutcome → OldOutcome
+  | .Replay state => .Replay state
+  | .Recorded state => .Recorded state
+
+theorem outcome_roundtrip (outcome : OldOutcome) :
+    outcomeToSource (outcomeFromSource outcome) = outcome := by
+  cases outcome <;> rfl
+
+def crashToSource : CrashPoint → OldCrashPoint
+  | .BeforeCommit => .BeforeCommit
+  | .AfterCommit => .AfterCommit
+  | .BeforeDispatchClaim => .BeforeDispatchClaim
+  | .AfterDispatchClaim => .AfterDispatchClaim
+  | .AfterWorkerCall => .AfterWorkerCall
+  | .AfterRetirementDelete => .AfterRetirementDelete
+
+def crashFromSource : OldCrashPoint → CrashPoint
+  | .BeforeCommit => .BeforeCommit
+  | .AfterCommit => .AfterCommit
+  | .BeforeDispatchClaim => .BeforeDispatchClaim
+  | .AfterDispatchClaim => .AfterDispatchClaim
+  | .AfterWorkerCall => .AfterWorkerCall
+  | .AfterRetirementDelete => .AfterRetirementDelete
+
+theorem crash_roundtrip (point : CrashPoint) :
+    crashFromSource (crashToSource point) = point := by
+  cases point <;> rfl
+
+end SandproofActualRecordRust.ScopeTransport

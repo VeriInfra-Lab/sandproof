@@ -1,0 +1,55 @@
+import SandproofParentCommit.ActualFinish
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust.PhysicalLink
+noncomputable section
+
+open ActualFinish
+
+-- The existing A08 B2/B4 observation condition in this current cell view.
+-- It says what was ACTUALLY read from the same original surviving committed
+-- cell after THIS invocation; ordinary returnedSelf equality cannot supply it.
+def LinkedCommitted {R : Type} (actualObserved : Option World)
+    (invocation : Result R) (cellsOf : R → Cells) : Prop :=
+  ∀ output, invocation = .ok output →
+    actualObserved = (cellsOf output).committed.value
+
+theorem actual_finish_success_with_physical_link
+    (owner : Owner) (raw : Raw) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : owner.candidate.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : LinkedCommitted actualObserved (memoInvocation owner) (fun output => output.2.2)) :
+    productionFinish owner = .ok (.Ok ()) ∧ actualObserved = owner.candidate.value := by
+  constructor
+  · exact actual_finish_success owner raw live committedAvailable candidateAvailable returned
+  · have sameInvocation : memoInvocation owner =
+        .ok (.Ok (), none, publishedCells (ownerCells owner)) := by
+      unfold memoInvocation
+      rw [live]
+      exact actual_memo_success (ownerCells owner) raw committedAvailable candidateAvailable returned
+    exact physical _ sameInvocation
+
+theorem actual_finish_unknown_with_physical_link
+    (owner : Owner) (raw : Raw) (error : rusqlite.error.Error) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Err error))
+    (physical : LinkedCommitted actualObserved (memoInvocation owner) (fun output => output.2.2)) :
+    productionFinish owner = .ok (.Err (.CommitUncertain error)) ∧ actualObserved = none := by
+  constructor
+  · exact actual_finish_unknown owner raw error live committedAvailable returned
+  · have sameInvocation : memoInvocation owner =
+        .ok (.Err (.CommitUncertain error), none, clearedCells (ownerCells owner)) := by
+      unfold memoInvocation
+      rw [live]
+      exact actual_memo_unknown (ownerCells owner) raw error committedAvailable returned
+    exact physical _ sameInvocation
+
+end
+end SandproofParentCommitRust.PhysicalLink
+
+#audit_controller_proof SandproofParentCommitRust.PhysicalLink.actual_finish_success_with_physical_link
+#audit_controller_proof SandproofParentCommitRust.PhysicalLink.actual_finish_unknown_with_physical_link

@@ -335,6 +335,11 @@ INBOX_CASES = {
     'inbox-record-validation': ('correct', 'wrong-validation', 'wrong-budget', 'wrong-zero-row', 'wrong-hash'),
     'inbox-load': ('correct', 'wrong-digest', 'wrong-canonical', 'wrong-validation', 'wrong-policy'),
 }
+V3_SLICE_NATIVE_DRIVERS = (
+    ('stage1-create-transaction-link', str(HERE.parent/'create-transaction-link/native.py'), False),
+    ('stage1-original-source-rows', str(HERE/'original-source-rows/native.py'), False),
+)
+
 NATIVE_DRIVERS = (
     ('stage1-protocol-manifest', 'verification/experiments/stage1-manifest/native.py', True),
     *((('stage1-protocol-' + name), str(HERE/name/'native.py'), True) for name in TYPE_CASES),
@@ -343,14 +348,15 @@ NATIVE_DRIVERS = (
     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
       if name != 'inbox-record-total'),
     ('source-live', 'tools/check_source_live_components.py', False),
+    *V3_SLICE_NATIVE_DRIVERS,
     *CREATE_NATIVE_DRIVERS,
     *(row for row in CONVERGENCE.NATIVE_DRIVERS if row[0] not in {v[0] for v in CREATE_NATIVE_DRIVERS}),
 )
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 596
-AUDIT_DECLARATION_COUNT = 2591
+AUDIT_TEMPLATE_COUNT = 606
+AUDIT_DECLARATION_COUNT = 2626
 
 
 def native_labels(profile='full'):
@@ -604,7 +610,7 @@ def validate_registration(root=ROOT, *, profile='full'):
     """Fail before execution if a required native case or Rust mutant was lost."""
     check_profile(profile)
     create_profile(root)
-    if len(NATIVE_CASES) != 75 or len(set(NATIVE_CASES)) != 75:
+    if len(NATIVE_CASES) != 77 or len(set(NATIVE_CASES)) != 77:
         raise ValueError('duplicate native registration')
     if profile == 'full':
         for name, variants in INBOX_CASES.items():
@@ -875,6 +881,10 @@ def formal_plan(output, *, root=ROOT, profile='full'):
     add('source-live', Path('tools/check_source_live_components.py'),
         ['formal', '--scope', 'stage1-protocol'], native=('source-live',),
         cases=('correct', 'skip-version', 'allow-expired', 'ignore-startup'))
+    add('v3-transaction-source', HERE/'v3-transaction-source.py',
+        ['--scope', 'stage1-protocol'],
+        native=('stage1-create-transaction-link', 'stage1-original-source-rows'),
+        cases=('transaction', 'source-rows'))
     CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
     _append_create_jobs(jobs, output, root, profile)
     return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
@@ -1511,7 +1521,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if job['name'] == 'source-live' or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job or profile_is_convergence_job(job):
         admission = log.parent/'cpu-admission.json'
         _check_cpu_admission(admission)
         evidence[str(admission.resolve())] = _sha(admission)
@@ -1591,7 +1601,7 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if job['name'] == 'source-live' or 'create_package' in job or profile_is_convergence_job(job):
+        if job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job or profile_is_convergence_job(job):
             admission = Path(receipt['command_log']).parent/'cpu-admission.json'
             if (previous.get('cpu_admission') != _check_cpu_admission(admission)
                     or previous.get('cpu_admission_path') != str(admission)
@@ -1633,7 +1643,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     if retained:
         fd, _ = inherited_lock()
         pass_fds = (fd,)
-    elif (job['name'] == 'source-live' or 'create_package' in job
+    elif (job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job
             or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
         fd, lock = inherited_lock()
         pass_fds = (fd,)
@@ -1647,13 +1657,13 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if job['name'] == 'source-live' or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job or profile_is_convergence_job(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
     argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if job['name'] == 'source-live' or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job or profile_is_convergence_job(job):
         admission = directory/'cpu-admission.json'
         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
@@ -1708,7 +1718,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = (dict(cpu_affinity=slots[slot]) if job['name'] == 'source-live' or 'create_package' in job
+                options = (dict(cpu_affinity=slots[slot]) if job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job
                            or profile_is_convergence_job(job) else {})
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute

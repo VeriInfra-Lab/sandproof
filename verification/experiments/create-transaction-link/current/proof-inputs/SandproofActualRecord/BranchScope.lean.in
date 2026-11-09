@@ -1,0 +1,66 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecord
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open model recording native_retirement
+open sandproof_protocol.lifecycle.authority
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+noncomputable section
+
+theorem loaded_replay_from_authenticated_full_find {R T E : Type}
+    (retirement : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (state : E)
+    (session entry : Usize) (replay : LifecycleWorkState)
+    (authenticatedReply : authenticated inbox intent context = .ok (.Ok ()))
+    (foundReply : inbox.find intent = .ok (.Ok (some (session, entry))))
+    (stateReply : inbox.state session entry = .ok replay) :
+    loadedView retirement terminal renewal unload io inbox intent context state =
+      .ok (.Ok (.Replay replay), state) := by
+  simp [loadedView, authenticatedReply, foundReply, stateReply]
+
+theorem create_guard_and_attachment_skip_destroy_hooks {E : Type}
+    (io : RecordEffects E) (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (state : E) (session entry : Usize)
+    (binding : sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation) :
+    guardView io inbox intent state = .ok (.Ok (), state) ∧
+      attachView io inbox intent session entry state = .ok (.Ok (), state, inbox) := by
+  constructor
+  · simp [guardView, destroy, create]
+  · simp [attachView, destroy, create]
+
+theorem loaded_create_uses_original_append_and_save {R T E : Type}
+    (retirement : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (state : E)
+    (binding : sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation)
+    (authenticatedReply : authenticated inbox intent context = .ok (.Ok ()))
+    (foundReply : inbox.find intent = .ok (.Ok none)) :
+    loadedView retirement terminal renewal unload io inbox intent context state =
+      (do
+        let (recorded, appended) ← inbox.record intent
+        match recorded with
+        | .Err error => .ok (.Err error, state)
+        | .Ok (session, entry) =>
+          saveThenState retirement terminal renewal unload io appended session entry state) := by
+  simp [loadedView, authenticatedReply, foundReply, guardView, attachView, destroy,
+    create, recordThenSave]
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.loaded_replay_from_authenticated_full_find
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.create_guard_and_attachment_skip_destroy_hooks
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.loaded_create_uses_original_append_and_save

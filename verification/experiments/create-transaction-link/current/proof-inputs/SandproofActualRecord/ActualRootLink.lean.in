@@ -1,0 +1,124 @@
+import SandproofActualRecord.SourceFlowLink
+import SandproofActualRecord.CallerBranches
+import SandproofActualRecord.IOAdmissible
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.ActualRootLink
+noncomputable section
+
+open controller.lifecycle_inbox recording
+open SourceFlowLink CallerBranches
+
+section
+variable {R T N U B D C : Type}
+variable (retirement : native_retirement.RetirementEncoding R)
+  (terminal : model.TerminalEncoding T)
+  (renewal : renewal_confirmation.RenewalEncoding N)
+  (unload : unload_resolution.UnloadEncoding U)
+  (graphic : capture.GraphicBytes B) (codecEffects : RecordCodec D)
+variable (crash : CrashInjector C) (intent : CallerBranches.Intent)
+  (context : CallerBranches.Context)
+
+theorem actual_root_replays_full_authenticated_request
+    (graphicLaw : SandboxModel.Stage1Protocol.ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : SandboxModel.Stage1Protocol.InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxLoadEffectsInst)
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (crashes : C) (afterLoad : StandardRecord D)
+    (inbox : model.Inbox) (session entry : Usize) (replay : model.LifecycleWorkState)
+    (loaded : loadPrefix retirement terminal renewal unload (actualEffects codecEffects).RecordEffectsInst
+      ⟨owner, namespaceName, codec⟩ = .ok (.Ok (some inbox), afterLoad))
+    (accepted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (found : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find
+      inbox intent = .ok (.Ok (some (session, entry))))
+    (returned : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state
+      inbox session entry = .ok replay) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Ok replay, crashes) := by
+  rw [extraction_root_uses_real_constructor_and_dictionary]
+  have recorded := actual_record_using_replay retirement terminal renewal unload graphic
+    (actualEffects codecEffects).RecordEffectsInst graphicLaw represented
+    ⟨owner, namespaceName, codec⟩ afterLoad intent context inbox session entry replay
+    loaded accepted found returned
+  exact actual_replay_return retirement terminal renewal unload graphic (actualEffects codecEffects)
+    crash ⟨owner, namespaceName, codec⟩ afterLoad intent context crashes replay recorded
+
+theorem actual_root_saved_owner_commits
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
+    (crashes afterBefore afterAfter : C)
+    (recorded : record_using retirement terminal renewal unload graphic
+      (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
+      .ok (.Ok (.Recorded value), afterSave))
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (afterCommit : crash.hit afterBefore .AfterCommit = .ok (.Ok (), afterAfter))
+    (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
+    (actualObserved : Option SandproofParentCommitRust.World)
+    (live : afterSave.tx.parent.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead afterSave.tx.parent) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk afterSave.tx.parent raw world)
+    (committedAvailable : afterSave.tx.parent.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : afterSave.tx.parent.candidate.beforeBorrowCount = 0)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted actualObserved
+      (SandproofParentCommitRust.ActualFinish.memoInvocation afterSave.tx.parent) (fun output => output.2.2)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Ok value, afterAfter) ∧
+      actualObserved = afterSave.tx.parent.candidate.value := by
+  have result := SandproofParentCommitRust.ParentResults.actual_commit_success_and_original_observation
+    afterSave.tx.parent raw world actualObserved live present checks committedAvailable candidateAvailable
+    returned physical
+  constructor
+  · rw [extraction_root_uses_real_constructor_and_dictionary]
+    have commits : (actualEffects codecEffects).commit afterSave = .ok (.Ok ()) :=
+      (actual_standard_record_uses_original_commit codecEffects afterSave).trans result.1
+    exact actual_recorded_success retirement terminal renewal unload graphic (actualEffects codecEffects)
+      crash ⟨owner, namespaceName, codec⟩ afterSave intent context crashes afterBefore afterAfter
+      value recorded beforeCommit commits afterCommit
+  · exact result.2
+
+theorem actual_root_saved_owner_commit_uncertain
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
+    (crashes afterBefore : C)
+    (recorded : record_using retirement terminal renewal unload graphic
+      (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
+      .ok (.Ok (.Recorded value), afterSave))
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
+    (error : SandproofParentCommitRust.rusqlite.error.Error)
+    (actualObserved : Option SandproofParentCommitRust.World)
+    (live : afterSave.tx.parent.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead afterSave.tx.parent) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk afterSave.tx.parent raw world)
+    (committedAvailable : afterSave.tx.parent.committed.value.beforeBorrowCount = 0)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Err error))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted actualObserved
+      (SandproofParentCommitRust.ActualFinish.memoInvocation afterSave.tx.parent) (fun output => output.2.2)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Err (.CommitUncertain error), afterBefore) ∧
+      actualObserved = none := by
+  have result := SandproofParentCommitRust.ParentResults.actual_commit_unknown_and_original_observation
+    afterSave.tx.parent raw world error actualObserved live present checks committedAvailable returned physical
+  constructor
+  · rw [extraction_root_uses_real_constructor_and_dictionary]
+    have commits : (actualEffects codecEffects).commit afterSave = .ok (.Err (.CommitUncertain error)) :=
+      (actual_standard_record_uses_original_commit codecEffects afterSave).trans result.1
+    exact actual_recorded_commit_error retirement terminal renewal unload graphic (actualEffects codecEffects)
+      crash ⟨owner, namespaceName, codec⟩ afterSave intent context crashes afterBefore value
+      (.CommitUncertain error) recorded beforeCommit commits
+  · exact result.2
+
+end
+end
+end SandproofActualRecordRust.ActualRootLink
+
+#audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_replays_full_authenticated_request
+#audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_saved_owner_commits
+#audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_saved_owner_commit_uncertain

@@ -1,0 +1,239 @@
+import SandproofParentCommit.Funs
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+set_option maxHeartbeats 200000
+
+/-!
+Offline candidate for the actual Parent production finisher. This imports no
+old RecordFinish Types or Results. Complete ordinary cell views are retained;
+physical shared-cell publication and runtime Drop dispatch remain separate
+B2/B4 conditions. A runs the combined kernel/service check, not this window.
+-/
+namespace SandproofParentCommitRust.ActualFinish
+noncomputable section
+
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev Raw := rusqlite.transaction.Transaction
+abbrev Cells := controller.transaction.TransactionCells
+abbrev Reply := core.result.Result Unit JournalError
+abbrev MemoOutput := Reply × Option Raw × Cells
+
+abbrev cellOps :=
+  controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld
+abbrev productionCommit :=
+  controller.transaction.CommitEffectsWorldTransaction.finish_commit.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError
+abbrev productionFinish :=
+  controller.transaction.WorldTransaction.Insts.Sandproof_controller_serviceControllerTransactionCommitEffects.finish_commit
+
+def ownerCells (owner : Owner) : Cells := {
+  committed := owner.committed.value
+  candidate := owner.candidate
+}
+
+def clearedCells (cells : Cells) : Cells :=
+  { cells with committed := { cells.committed with value := none } }
+
+def takenCells (cells : Cells) : Cells :=
+  { cells with
+    committed := { cells.committed with value := none }
+    candidate := { cells.candidate with value := none } }
+
+def publishedCells (cells : Cells) : Cells :=
+  { cells with
+    committed := { cells.committed with value := cells.candidate.value }
+    candidate := { cells.candidate with value := none } }
+
+def memoInvocation (owner : Owner) : Result MemoOutput :=
+  controller.transaction.memo.commit_with cellOps productionCommit
+    owner.transaction (ownerCells owner) ()
+
+theorem actual_production_callback (raw : Raw) :
+    productionCommit.call_once () raw = rusqlite.transaction.Transaction.commit raw := by
+  rfl
+
+theorem actual_library_reply (raw : Raw) :
+    rusqlite.transaction.Transaction.commit raw = raw.conn.commitReply := by
+  rfl
+
+theorem actual_finish_projects_original_memo (owner : Owner) :
+    productionFinish owner =
+      (do let (reply, _, _) ← memoInvocation owner; .ok reply) := by
+  rfl
+
+-- Original B2 normal mutable transfer requires exactly zero borrows.
+theorem actual_set_committed_normal (cells : Cells) (value : Option World)
+    (available : cells.committed.beforeBorrowCount = 0) :
+    cellOps.set_committed cells value =
+      .ok { cells with committed := { cells.committed with value := value } } := by
+  change (if cells.committed.beforeBorrowCount = 0 then
+    Result.ok { cells with committed := { cells.committed with value := value } }
+    else Result.fail .panic) = _
+  exact if_pos available
+
+theorem actual_take_candidate_normal (cells : Cells)
+    (available : cells.candidate.beforeBorrowCount = 0) :
+    cellOps.take_candidate cells =
+      .ok (cells.candidate.value,
+        { cells with candidate := { cells.candidate with value := none } }) := by
+  change (if cells.candidate.beforeBorrowCount = 0 then
+    Result.ok (cells.candidate.value,
+      { cells with candidate := { cells.candidate with value := none } })
+    else Result.fail .panic) = _
+  exact if_pos available
+
+-- The two generic equations are the old memo argument, specialized only by
+-- this actual Parent JournalError/Cells dictionary, without importing old ADTs.
+theorem memo_success_of_transfers {W T S F : Type}
+    (ops : controller.transaction.memo.Cells S W)
+    (initial cleared taken published : S) (raw : T) (value : Option W)
+    (api : core.ops.function.FnOnce F T (core.result.Result Unit rusqlite.error.Error))
+    (commit : F)
+    (clear : ops.set_committed initial none = .ok cleared)
+    (take : ops.take_candidate cleared = .ok (value, taken))
+    (publish : ops.set_committed taken value = .ok published)
+    (returned : api.call_once commit raw = .ok (.Ok ())) :
+    controller.transaction.memo.commit_with ops api (some raw) initial commit =
+      .ok (.Ok (), none, published) := by
+  simp [controller.transaction.memo.commit_with, clear, take, publish, returned,
+    core.option.Option.take, core.option.Option.expect, Result.ofOption,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem memo_unknown_of_clear {W T S F : Type}
+    (ops : controller.transaction.memo.Cells S W) (initial cleared : S) (raw : T)
+    (api : core.ops.function.FnOnce F T (core.result.Result Unit rusqlite.error.Error))
+    (commit : F) (error : rusqlite.error.Error)
+    (clear : ops.set_committed initial none = .ok cleared)
+    (returned : api.call_once commit raw = .ok (.Err error)) :
+    controller.transaction.memo.commit_with ops api (some raw) initial commit =
+      .ok (.Err (.CommitUncertain error), none, cleared) := by
+  simp [controller.transaction.memo.commit_with, clear, returned,
+    core.option.Option.take, core.option.Option.expect, Result.ofOption,
+    P.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError,
+    P.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError.call_once,
+    JournalError.CommitUncertain.constructor,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_memo_success (cells : Cells) (raw : Raw)
+    (committedAvailable : cells.committed.beforeBorrowCount = 0)
+    (candidateAvailable : cells.candidate.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Ok ())) :
+    controller.transaction.memo.commit_with cellOps productionCommit (some raw) cells () =
+      .ok (.Ok (), none, publishedCells cells) := by
+  apply memo_success_of_transfers cellOps cells (clearedCells cells) (takenCells cells)
+    (publishedCells cells) raw cells.candidate.value productionCommit ()
+  · exact actual_set_committed_normal cells none committedAvailable
+  · exact actual_take_candidate_normal (clearedCells cells) candidateAvailable
+  · exact actual_set_committed_normal (takenCells cells) cells.candidate.value committedAvailable
+  · exact (actual_production_callback raw).trans returned
+
+theorem actual_memo_unknown (cells : Cells) (raw : Raw) (error : rusqlite.error.Error)
+    (committedAvailable : cells.committed.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Err error)) :
+    controller.transaction.memo.commit_with cellOps productionCommit (some raw) cells () =
+      .ok (.Err (.CommitUncertain error), none, clearedCells cells) := by
+  apply memo_unknown_of_clear cellOps cells (clearedCells cells) raw productionCommit () error
+  · exact actual_set_committed_normal cells none committedAvailable
+  · exact (actual_production_callback raw).trans returned
+
+-- Both complete counters survive. The Err branch retains the entire candidate
+-- view, not only its optional value. No additional runtime frame follows.
+theorem published_counters (cells : Cells) :
+    (publishedCells cells).committed.beforeBorrowCount = cells.committed.beforeBorrowCount ∧
+    (publishedCells cells).candidate.beforeBorrowCount = cells.candidate.beforeBorrowCount :=
+  ⟨rfl, rfl⟩
+
+theorem unknown_retains_candidate_and_counter (cells : Cells) :
+    (clearedCells cells).candidate = cells.candidate ∧
+    (clearedCells cells).committed.beforeBorrowCount = cells.committed.beforeBorrowCount :=
+  ⟨rfl, rfl⟩
+
+theorem actual_finish_success (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : owner.candidate.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Ok ())) :
+    productionFinish owner = .ok (.Ok ()) := by
+  rw [actual_finish_projects_original_memo]
+  unfold memoInvocation
+  rw [live, actual_memo_success (ownerCells owner) raw committedAvailable candidateAvailable returned]
+  simp only [bind_tc_ok]
+  rfl
+
+theorem actual_finish_unknown (owner : Owner) (raw : Raw) (error : rusqlite.error.Error)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Err error)) :
+    productionFinish owner = .ok (.Err (.CommitUncertain error)) := by
+  rw [actual_finish_projects_original_memo]
+  unfold memoInvocation
+  rw [live, actual_memo_unknown (ownerCells owner) raw error committedAvailable returned]
+  simp only [bind_tc_ok]
+  rfl
+
+-- Abort/divergence are preserved, with no post-cleanup or physical publication
+-- claim. In particular, no candidate borrow is needed to reach these outcomes.
+theorem actual_memo_fail (cells : Cells) (raw : Raw) (failure : Aeneas.Std.Error)
+    (committedAvailable : cells.committed.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .fail failure) :
+    controller.transaction.memo.commit_with cellOps productionCommit (some raw) cells () =
+      .fail failure := by
+  have clear : cellOps.set_committed cells none = .ok (clearedCells cells) :=
+    actual_set_committed_normal cells none committedAvailable
+  have called : productionCommit.call_once () raw = .fail failure :=
+    (actual_production_callback raw).trans returned
+  change controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    cells none = .ok (clearedCells cells) at clear
+  change controller.transaction.CommitEffectsWorldTransaction.finish_commit.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once
+    () raw = .fail failure at called
+  unfold controller.transaction.memo.commit_with
+  dsimp only [cellOps,
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld,
+    productionCommit,
+    controller.transaction.CommitEffectsWorldTransaction.finish_commit.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError]
+  simp [core.option.Option.take, core.option.Option.expect, Result.ofOption]
+  simp only [clear, bind_tc_ok, called, bind_tc_fail]
+
+theorem actual_memo_div (cells : Cells) (raw : Raw)
+    (committedAvailable : cells.committed.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .div) :
+    controller.transaction.memo.commit_with cellOps productionCommit (some raw) cells () = .div := by
+  have clear : cellOps.set_committed cells none = .ok (clearedCells cells) :=
+    actual_set_committed_normal cells none committedAvailable
+  have called : productionCommit.call_once () raw = .div :=
+    (actual_production_callback raw).trans returned
+  change controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    cells none = .ok (clearedCells cells) at clear
+  change controller.transaction.CommitEffectsWorldTransaction.finish_commit.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once
+    () raw = .div at called
+  unfold controller.transaction.memo.commit_with
+  dsimp only [cellOps,
+    controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld,
+    productionCommit,
+    controller.transaction.CommitEffectsWorldTransaction.finish_commit.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError]
+  simp [core.option.Option.take, core.option.Option.expect, Result.ofOption]
+  simp only [clear, bind_tc_ok, called, bind_tc_div]
+
+theorem actual_finish_fail (owner : Owner) (raw : Raw) (failure : Aeneas.Std.Error)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .fail failure) :
+    productionFinish owner = .fail failure := by
+  rw [actual_finish_projects_original_memo]
+  unfold memoInvocation
+  rw [live, actual_memo_fail (ownerCells owner) raw failure committedAvailable returned]
+  simp only [bind_tc_fail]
+
+theorem actual_finish_div (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .div) :
+    productionFinish owner = .div := by
+  rw [actual_finish_projects_original_memo]
+  unfold memoInvocation
+  rw [live, actual_memo_div (ownerCells owner) raw committedAvailable returned]
+  simp only [bind_tc_div]
+
+end
+end SandproofParentCommitRust.ActualFinish

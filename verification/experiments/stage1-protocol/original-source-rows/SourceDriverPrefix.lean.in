@@ -1,0 +1,113 @@
+import SourceUsingRowInvariant
+import SandboxModel.ProofAuditCommand
+
+/-!
+Unchecked full-state history rule for the existing driver. Every edge is an
+actual OriginalRowsDriver.step normal-cont equation, including I/Rows/F.
+This adds neither an executable flow nor termination/fairness assumptions.
+-/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceObservedRows
+open SourceUsingSuccess SourceUsingRowInvariant
+
+abbrev Source := capture.SourceProcessIdentity
+abbrev Rows := controller.capture.OriginalSourceRows
+abbrev World := sandbox_controller_core.model.World
+abbrev Current := sandbox_controller_core.model.SandboxRecord
+abbrev Binding := sandbox_controller_core.ids.SandboxId ×
+  sandbox_controller_core.ids.VmId × sandproof_protocol.SandboxId
+abbrev RowInput := core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8)
+  rusqlite.error.Error
+
+abbrev DriverState (I E D : Type) :=
+  I × Rows × controller.capture.original_source_using.closure_1 E D
+
+inductive DriverPrefix {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput)
+    (initial : DriverState I E D) : DriverState I E D → Prop where
+  | initial : DriverPrefix evidence ops iterator initial initial
+  | step {before after : DriverState I E D} :
+      DriverPrefix evidence ops iterator initial before →
+      SandboxModel.Stage1Protocol.OriginalRowsDriver.step iterator (Acceptor evidence ops)
+        before = .ok (.cont after) →
+      DriverPrefix evidence ops iterator initial after
+
+def ObservedHandlerStep {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput)
+    (initial : DriverState I E D)
+    (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (row : RowInput) (before after : Rows) (codec afterCodec : D) : Prop :=
+  ∃ position nextPosition,
+    DriverPrefix evidence ops iterator initial
+      (position, before, (world, ns, current, binding, codec)) ∧
+    iterator.next position = .ok (some row, nextPosition) ∧
+    SandboxModel.Stage1Protocol.OriginalRowsDriver.step iterator (Acceptor evidence ops)
+      (position, before, (world, ns, current, binding, codec)) =
+      .ok (.cont (nextPosition, after, (world, ns, current, binding, afterCodec)))
+
+theorem actual_driver_preserves_observed_rows {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput)
+    (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (prepared activated : Source → Prop) (iter : I)
+    (before after : Rows) (codec : D)
+    (rowRule : ∀ row rows nextRows state afterState,
+      ObservedHandlerStep evidence ops iterator
+        (iter, before, (world, ns, current, binding, codec))
+        world ns current binding row rows nextRows state afterState →
+      RowsSatisfy prepared activated rows →
+      controller.capture.accept_original_source_row evidence ops row world ns current
+        binding rows state = .ok ((.Ok (), nextRows), afterState) →
+      RowsSatisfy prepared activated nextRows)
+    (initial : RowsSatisfy prepared activated before)
+    (returned : controller.capture.accept_original_rows iterator (Acceptor evidence ops)
+      iter before (world, ns, current, binding, codec) = .ok (.Ok (), after)) :
+    RowsSatisfy prepared activated after := by
+  let Inv : I → Rows → controller.capture.original_source_using.closure_1 E D → Prop :=
+    fun position rows captured => ∃ state,
+      captured = (world, ns, current, binding, state) ∧
+      DriverPrefix evidence ops iterator
+        (iter, before, (world, ns, current, binding, codec)) (position, rows, captured) ∧
+      RowsSatisfy prepared activated rows
+  let Post : (core.result.Result Unit JournalError × Rows) → Prop := fun result =>
+    match result.1 with
+    | .Ok _ => RowsSatisfy prepared activated result.2
+    | .Err _ => True
+  change SandboxModel.Stage1Protocol.OriginalRowsDriver.run iterator (Acceptor evidence ops)
+    iter before (world, ns, current, binding, codec) = .ok (.Ok (), after) at returned
+  apply SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return_of_calls
+    iterator (Acceptor evidence ops) Inv Post ?_ ?_ ?_
+    iter before (world, ns, current, binding, codec) ?_ (.Ok (), after) returned
+  · rintro _ rows captured _ ⟨state, _captured, _prefix, valid⟩ _next
+    exact valid
+  · intro position rows captured nextPosition row nextRows nextCapture valid observedNext called
+    rcases valid with ⟨state, rfl, history, rowsValid⟩
+    obtain ⟨afterCodec, afterCapture, handler⟩ :=
+      actual_callback_normal_success_projects_complete_handler_poststate
+        evidence ops world ns current binding row rows nextRows state nextCapture called
+    change controller.capture.original_source_using.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorOriginalSourceRowsPairResultTupleJournalErrorOriginalSourceRows.call_mut
+      evidence ops (world, ns, current, binding, state) (row, rows) =
+      .ok ((.Ok (), nextRows), nextCapture) at called
+    have advanced : SandboxModel.Stage1Protocol.OriginalRowsDriver.step iterator
+        (Acceptor evidence ops) (position, rows, (world, ns, current, binding, state)) =
+        .ok (.cont (nextPosition, nextRows, nextCapture)) := by
+      simp [SandboxModel.Stage1Protocol.OriginalRowsDriver.step, observedNext, called]
+    have canonical : SandboxModel.Stage1Protocol.OriginalRowsDriver.step iterator
+        (Acceptor evidence ops) (position, rows, (world, ns, current, binding, state)) =
+        .ok (.cont (nextPosition, nextRows, (world, ns, current, binding, afterCodec))) := by
+      simpa only [afterCapture] using advanced
+    exact ⟨afterCodec, afterCapture, DriverPrefix.step history advanced,
+      rowRule row rows nextRows state afterCodec ⟨position, nextPosition, history, observedNext, canonical⟩
+        rowsValid handler⟩
+  · intros
+    trivial
+  · exact ⟨codec, rfl, DriverPrefix.initial, initial⟩
+
+end SandproofOriginalSourceRowsRust.SourceObservedRows
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceObservedRows.actual_driver_preserves_observed_rows
