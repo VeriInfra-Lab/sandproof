@@ -5,7 +5,7 @@
     "controller-service/src/controller/capture.rs": "5cf280bc3f564db53fc9a4f94c7cc9a0a06703a7abd7b15a1e8d637c0354a92e",
     "controller-service/src/controller/capture/tests.rs": "4b33de74c5ba8720f652b06f44ebe2fd85272a520d9867164db4508753d982e7",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
-    "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": "072fd1304317567dd8b50e24665b9110b1c375a4f6ce9a28ba9e716e1e7e2fd2",
+    "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": "aa886d2cb586fa1e142bf3f6875f671634bd3b2de136e4bc2a3e89cf2c3bb288",
     "controller-service/src/controller/checkpoint/retirement.rs": "9c50e1c664e866010d359b53f42c41868dced3a7c01031e98e0c779a034fa951"
   },
   "fixtures": [

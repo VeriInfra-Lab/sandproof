@@ -1,0 +1,107 @@
+import ActualStartupOutput
+import ParentSuccess
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [ParentCalls]
+variable [SandproofUnloadStartupJoint.Representations] [SandproofUnloadStartupJoint.Operations]
+
+abbrev StartupWorkAction := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+
+/-- Type identifications from one choice of shared carriers. Transport neither
+opens another transaction nor changes the World containing the record and plan. -/
+structure StartupCarriers where
+  tx : rusqlite.transaction.Transaction = SandproofUnloadStartupJoint.rusqlite.transaction.Transaction
+  world : sandbox_controller_core.model.World = UnloadFirstActualStartup.World
+  localSandbox : sandbox_controller_core.ids.SandboxId = SandproofUnloadStartupJoint.sandbox_controller_core.ids.SandboxId
+  localOwner : sandbox_controller_core.ids.TenantId = SandproofUnloadStartupJoint.sandbox_controller_core.ids.TenantId
+  localOperation : sandbox_controller_core.ids.OperationId = SandproofUnloadStartupJoint.sandbox_controller_core.ids.OperationId
+  effect : SandproofUnloadStartupJoint.sandbox_controller_core.model.EffectId = sandbox_controller_core.model.EffectId
+  owner : SandproofUnloadStartupJoint.sandproof_protocol.TenantId = sandproof_protocol.TenantId
+  sandbox : SandproofUnloadStartupJoint.sandproof_protocol.SandboxId = sandproof_protocol.SandboxId
+  operation : SandproofUnloadStartupJoint.sandproof_protocol.OperationId = sandproof_protocol.OperationId
+  logicalAction : SandproofUnloadStartupJoint.sandproof_protocol.LogicalActionId = sandproof_protocol.LogicalActionId
+  resource : SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef = sandproof_protocol.ResourceRef
+
+def StartupCarriers.localView (carriers : StartupCarriers) (binding : Local) :
+    UnloadFirstActualStartup.Local :=
+  { sandbox := cast carriers.localSandbox binding.sandbox
+    owner := cast carriers.localOwner binding.owner
+    operation := cast carriers.localOperation binding.operation }
+
+def StartupCarriers.actionView (carriers : StartupCarriers) (action : UnloadFirstActualStartup.Action) :
+    StartupWorkAction :=
+  { identity :=
+      { protocol_version := action.identity.protocol_version
+        owner := cast carriers.owner action.identity.owner
+        sandbox := cast carriers.sandbox action.identity.sandbox
+        operation := cast carriers.operation action.identity.operation
+        epoch := action.identity.epoch
+        generation := action.identity.generation
+        logical_action := cast carriers.logicalAction action.identity.logical_action
+        attempt := action.identity.attempt
+        resource := cast carriers.resource action.identity.resource }
+    command := cast carriers.effect action.command }
+
+def transportStartupActions (carriers : StartupCarriers)
+    (actions : alloc.vec.Vec UnloadFirstActualStartup.Action) : Actions :=
+  alloc.vec.Vec.from (actions.val.map carriers.actionView)
+    (by simpa only [List.length_map] using actions.property)
+
+def ParentStartupLinked {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (startupHost : SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (startupSerde : SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World) (localValue : Local)
+    (carriers : StartupCarriers) (fromError : SandproofUnloadStartupJoint.JournalError → JournalError) : Prop :=
+  ParentCalls.readOriginalStartupRecords host serde tx ns world localValue =
+    (do
+      let reply ← SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records
+        startupHost startupSerde (cast carriers.tx tx) ns (cast carriers.world world)
+        (carriers.localView localValue)
+      match reply with
+      | .Ok (actions, receipts) => .ok (.Ok (transportStartupActions carriers actions, receipts))
+      | .Err error => .ok (.Err (fromError error)))
+
+/-- The two extraction views use the same Rust input and the same E. Byte
+vectors are already shared. The supplied correspondence is between the actual
+parent call and the actual generated startup call, including its Err. -/
+theorem actual_startup_supplies_parent_read {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (startupHost : SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (startupSerde : SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World) (localValue : Local)
+    (carriers : StartupCarriers)
+    (fromError : SandproofUnloadStartupJoint.JournalError → JournalError)
+    (calls : UnloadFirstActualStartup.Opened startupHost startupSerde
+      (cast carriers.tx tx) ns (cast carriers.world world) (carriers.localView localValue))
+    (output : UnloadFirstActualStartup.Output)
+    (linked : ParentStartupLinked host serde startupHost startupSerde tx ns world localValue
+      carriers fromError)
+    (returned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records
+      startupHost startupSerde (cast carriers.tx tx) ns (cast carriers.world world) (carriers.localView localValue) =
+        .ok (.Ok output)) :
+    ParentCalls.readOriginalStartupRecords host serde tx ns world localValue =
+      .ok (.Ok (transportStartupActions carriers output.1, output.2)) ∧
+    ∃ slots rows,
+      calls.drive = .ok (.Ok (), slots) ∧
+      UnloadFirstActualStartup.OrderedOutput slots output rows ∧
+      (transportStartupActions carriers output.1).val =
+        (rows.map (fun row => (carriers.actionView row.1, row.2))).map Prod.fst ∧
+      output.2.val = (rows.map (fun row => (carriers.actionView row.1, row.2))).map Prod.snd := by
+  rcases output with ⟨actions, receipts⟩
+  obtain ⟨slots, rows, drove, ordered⟩ := UnloadFirstActualStartup.actual_startup_has_ordered_pairs
+    startupHost startupSerde (cast carriers.tx tx) ns (cast carriers.world world) (carriers.localView localValue)
+    calls (actions, receipts) returned
+  refine ⟨?_, slots, rows, drove, ordered, ?_, ?_⟩
+  · unfold ParentStartupLinked at linked
+    simp only [linked, returned, bind_tc_ok]
+  · simp [transportStartupActions, ordered.2.1, List.map_map, Function.comp_def]
+  · simpa [List.map_map, Function.comp_def] using ordered.2.2.1
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_startup_supplies_parent_read

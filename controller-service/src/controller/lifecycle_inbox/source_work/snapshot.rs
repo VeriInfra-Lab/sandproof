@@ -10,7 +10,10 @@ use crate::capture::HostEpochObservation;
 use crate::controller::{admission, capture, checkpoint, data_credentials};
 use rusqlite::{Connection, Transaction};
 use sandbox_controller_core::{self as core, source_observation::SourceObservationGuard};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
+use sandproof_protocol::{
+    ActionIdentity, WorkAction,
+    lifecycle::{AcceptedLifecycleIntent, ContentDigest, LifecycleOperation},
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct CurrentSource<'a> {
@@ -55,6 +58,10 @@ fn live_native(
             .is_some_and(|started| started <= now_ms && started <= lifetime.startup_deadline_ms)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "keep the audited startup read and validation order together with the generated proof target"
+)]
 pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     tx: &Transaction<'_>,
     namespace: &str,
@@ -71,12 +78,12 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
     let session = &inbox.sessions[s];
     let state = inbox.state(s, e);
-    if !state.current
-        || state.terminal
-        || session.entries[e].unload_resolution.is_some()
-        || !matches!(intent.request.operation, LifecycleOperation::Unload { .. })
-    {
+    if !state.current || state.terminal || session.entries[e].unload_resolution.is_some() {
         return Err(JournalError::Conflict);
+    }
+    match intent.request.operation {
+        LifecycleOperation::Unload { .. } => {}
+        _ => return Err(JournalError::Conflict),
     }
     let bootstrap = inbox
         .host_epoch_observation
@@ -105,9 +112,13 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     } else {
         super::full::continued_ready_records::<E>(tx, world, namespace, local, &native)?
     };
-    if (!native.has_completed_original_execution(local) && continued.is_none())
-        || view.historical_result != Some(core::OperationResult::Running(native.generation))
-    {
+    if !native.has_completed_original_execution(local) {
+        match &continued {
+            Some(_) => {}
+            None => return Err(JournalError::UnresolvedAction),
+        }
+    }
+    if view.historical_result != Some(core::OperationResult::Running(native.generation)) {
         return Err(JournalError::UnresolvedAction);
     }
     if !live_native(
@@ -130,11 +141,14 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         return Err(JournalError::InvalidHostEvidence);
     }
     let (mut actions, mut receipts) = startup_records::<E>(tx, namespace, world, local)?;
-    let continued_from = continued.map(|(work, action, receipt)| {
-        actions.push(action);
-        receipts.push(receipt);
-        work.identity()
-    });
+    let continued_from = match continued {
+        Some((work, action, receipt)) => {
+            actions.push(action);
+            receipts.push(receipt);
+            Some(work.identity())
+        }
+        None => None,
+    };
     let options = admission::read_create_options(tx, namespace, local.sandbox)
         .map_err(|_| JournalError::CorruptStore)?;
     let credential = data_credentials::snapshot(tx, world, namespace, local.sandbox, true)?
@@ -151,20 +165,48 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         node: inbox.config.node.clone(),
         host_bootstrap: bootstrap.registration.clone(),
         source: source.clone(),
-        options_sha256: digest(&serde_json::to_vec(&options)?),
+        options_sha256: digest(&encode_source_options(&options)?),
         credential,
-        original_actions: actions.iter().map(|a| a.identity.clone()).collect(),
-        original_receipts: receipts.iter().map(|r| digest(r)).collect(),
+        original_actions: original_action_identities(&actions),
+        original_receipts: original_receipt_digests(&receipts),
     };
     question(anchor, limits)
+}
+
+fn original_action_identities(actions: &[WorkAction<core::EffectId>]) -> Vec<ActionIdentity> {
+    let mut identities = Vec::new();
+    let mut index = 0;
+    while index < actions.len() {
+        identities.push(actions[index].identity.clone());
+        index += 1;
+    }
+    identities
+}
+
+fn original_receipt_digests(receipts: &[Vec<u8>]) -> Vec<ContentDigest> {
+    let mut digests = Vec::new();
+    let mut index = 0;
+    while index < receipts.len() {
+        digests.push(digest(&receipts[index]));
+        index += 1;
+    }
+    digests
 }
 
 fn question(
     anchor: SourceAnchor,
     limits: &SourceObservationConfig,
 ) -> Result<SourceWork, JournalError> {
-    let work_binding = digest(&serde_json::to_vec(&anchor)?);
+    let work_binding = digest(&encode_source_anchor(&anchor)?);
     Ok(question_from_binding(anchor, limits, work_binding))
+}
+
+fn encode_source_options(options: &admission::CreateOptions) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(options)
+}
+
+fn encode_source_anchor(anchor: &SourceAnchor) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(anchor)
 }
 
 fn question_from_binding(

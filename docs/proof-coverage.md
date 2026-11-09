@@ -2,6 +2,26 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V3 首次卸载的原启动回执
+
+Refs #635。基线是 #770 合入的 `9b82954c68c85bb9c95831865fed7a278d455cb5`。本切片对实际
+`source_work::snapshot::current` 和 `readiness::snapshot::startup_records` 给出条件组合定理
+`actual_first_work_uses_sqlite_startup`。正常成功时，第二槽来自同一事务游标实际处理的原 SQL 行，
+动作是同一原 Create 计划的完整 `PrepareVm`，资源来自原身份检查。父输出在同一位置保留动作标识和
+该行原始回执字节的 SHA-256。原字节有独立见证。父调用符号、原 `tx`、namespace、World、已选
+local 和 `E` 的来源核对过 Rust、LLBC 和生成调用。已装配的生成代码组合通过 Lean 内核检查与依赖审计。
+
+| 复用或接线 | 结论及条件 |
+|---|---|
+| #768 存活条件、#770 来源行与机械迭代 | 分别供应存活和来源读取相关事实。B4 沿用按序读行、传递完整状态和首错停止；实际新驱动的对应由源码及 LLBC 对照提供 |
+| 同一 SQLite 读取与原 Serde/Host 实例 | 复用逐操作合同。物理事务快照、SQL 实际结果、完整解码和 HostEvidence/ResourceEvidence 的含义是具名条件 |
+| 其余 `FirstRead` | 仍要求 `base_snapshot` 与父已选 local 的同源、原记录和封存计划、选项和凭据等实际观察。本批不采用另一个 `base_snapshot` 重构的证明 |
+
+ning 的最终 Rust 候选通过独立取原行的定向断言和严格 Clippy，另外复用四项受影响回归的通过记录。
+旧 #768/#770 的原执行记录保持。其独立入口的当前文件准入通过逐函数和原夹具比对更新，
+没有把旧执行记作新版本的完整执行。原 V3 成功的附加条件、独立验证入口和精确源码绑定见
+[复现说明](../verification/experiments/stage1-protocol/unload-startup-source/README.md)。全局历史冻结仍按原版本处理。
+
 ## V3 真实录入事务与来源行
 
 Refs #635、#637。当前组合从 integration `3c1f9b8f9f998430135d78c4e810e0529a702366` 装配。
