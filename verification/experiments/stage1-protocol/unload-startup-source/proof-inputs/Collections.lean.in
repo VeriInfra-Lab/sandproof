@@ -1,0 +1,93 @@
+import SandproofUnloadFirstCollections.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std Result ControlFlow
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections
+open SandproofUnloadFirstCollections
+open SandboxModel.Stage1Protocol.DigestByteBridge
+
+private def mapStep (apply : α → Result β) (values : Slice α)
+    (state : alloc.vec.Vec β × Usize) :
+    Result (ControlFlow (alloc.vec.Vec β × Usize) (alloc.vec.Vec β)) := do
+  if state.2 < Slice.len values then
+    let value ← Slice.index_usize values state.2
+    let projected ← apply value
+    let pushed ← alloc.vec.Vec.push state.1 projected
+    let next ← state.2 + 1#usize
+    ok (.cont (pushed, next))
+  else ok (.done state.1)
+
+private theorem mapStep_refines (apply : α → Result β) (project : α → β)
+    (values : Slice α) (exactApply : ∀ value ∈ values.val, apply value = .ok (project value)) :
+    loop (mapStep apply values) (alloc.vec.Vec.new β, 0#usize)
+      ⦃ result => result.val = values.val.map project ⦄ := by
+  apply Aeneas.Std.loop.spec_decr_nat
+    (fun state : alloc.vec.Vec β × Usize => values.val.length - state.2.val)
+    (fun state : alloc.vec.Vec β × Usize =>
+      state.2.val ≤ values.val.length ∧
+      state.1.val = (values.val.take state.2.val).map project)
+    (fun result : alloc.vec.Vec β => result.val = values.val.map project)
+  · intro state invariant
+    rcases state with ⟨current, index⟩
+    rcases invariant with ⟨indexBound, currentEq⟩
+    dsimp only [Prod.fst, Prod.snd] at indexBound currentEq
+    unfold mapStep
+    dsimp only
+    split
+    · rename_i inBounds
+      have strict : index.val < values.val.length := by simpa using inBounds
+      step as ⟨value, valuePost⟩
+      have membership : value ∈ values.val := by rw [valuePost]; exact List.getElem_mem ..
+      rw [exactApply value membership]
+      have room : current.val.length < Usize.max := by
+        rw [currentEq, List.length_map, List.length_take, Nat.min_eq_left indexBound]
+        have := values.length_ineq
+        omega
+      step as ⟨pushed, pushedPost⟩
+      step as ⟨nextIndex, nextIndexPost⟩
+      have takeStep : values.val.take (index.val + 1) =
+          values.val.take index.val ++ [value] := by
+        rw [List.take_succ_eq_append_getElem strict, ← valuePost]
+      constructor
+      · scalar_tac
+      · constructor
+        · rw [nextIndexPost, pushedPost, currentEq, takeStep, List.map_append]
+          rfl
+        · rw [nextIndexPost]
+          omega
+    · rename_i outside
+      simp only [WP.spec_ok]
+      have lower : values.val.length ≤ index.val := by simpa using outside
+      have same : index.val = values.val.length := by omega
+      simpa [same] using currentEq
+  · exact ⟨by simp, by simp⟩
+
+theorem original_action_identities_complete
+    (values : Slice (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) :
+    controller.lifecycle_inbox.source_work.snapshot.original_action_identities values
+      ⦃ result => result.val = values.val.map (·.identity) ⦄ := by
+  change loop
+    (mapStep (fun value => sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone
+      value.identity) values)
+    (alloc.vec.Vec.new _, 0#usize) ⦃ result => result.val = values.val.map (·.identity) ⦄
+  exact mapStep_refines _ _ _ (fun _ _ => rfl)
+
+theorem original_receipt_digests_complete (values : Slice (alloc.vec.Vec U8))
+    (normal : ∀ receipt ∈ values.val, (alloc.vec.Vec.deref receipt).val.length < 2^61) :
+    controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests values
+      ⦃ result => result.val = values.val.map (fun receipt =>
+        referenceOutput (alloc.vec.Vec.deref receipt)) ⦄ := by
+  change loop (mapStep (fun receipt =>
+    controller.lifecycle_inbox.source_work.digest (alloc.vec.Vec.deref receipt)) values)
+    (alloc.vec.Vec.new _, 0#usize)
+    ⦃ result => result.val = values.val.map (fun receipt =>
+      referenceOutput (alloc.vec.Vec.deref receipt)) ⦄
+  apply mapStep_refines
+  intro receipt member
+  unfold controller.lifecycle_inbox.source_work.digest
+  exact if_pos (normal receipt member)
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_action_identities_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_receipt_digests_complete

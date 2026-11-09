@@ -1,0 +1,222 @@
+
+struct ExpectedStartupPrepare {
+    action: sandproof_protocol::WorkAction<core::EffectId>,
+    raw: Vec<u8>,
+    resource: sandproof_protocol::ResourceRef,
+    digest: sandproof_protocol::lifecycle::ContentDigest,
+}
+
+fn expected_original_startup_prepare(
+    tx: &rusqlite::Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: crate::controller::internal_inbox::InternalLocalBinding,
+    record: &core::SandboxRecord,
+    origin: &AcceptedLifecycleIntent,
+) -> ExpectedStartupPrepare {
+    use sha2::Digest as _;
+
+    // Build the expected command from the original execution state, independently
+    // of the startup collector and of the returned SourceWork.
+    assert!(matches!(
+        &origin.request.operation,
+        LifecycleOperation::Create { .. }
+    ));
+    let plan = world
+        .operation_plan(core::OperationKey {
+            sandbox: local.sandbox,
+            operation: local.operation,
+        })
+        .unwrap();
+    let vm = record.current_vm.unwrap();
+    let expected_prepare = core::Command::PrepareVm {
+        sandbox: local.sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        slot: record.net_slot.unwrap(),
+        source: plan.restore_from,
+    };
+    let public_sandbox = format!("sb-{namespace}-{}", local.sandbox.0);
+    let (action, raw) = {
+        let mut statement = tx
+            .prepare(
+                "SELECT action_json,receipt_json FROM outbox \
+                 WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id",
+            )
+            .unwrap();
+        let mut matching = statement
+            .query_map([public_sandbox.as_str()], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .unwrap()
+            .map(|row| {
+                let (action_bytes, receipt_bytes) = row.unwrap();
+                let action: sandproof_protocol::WorkAction<core::EffectId> =
+                    serde_json::from_slice(&action_bytes).unwrap();
+                (action, receipt_bytes)
+            })
+            .filter(|(action, _)| action.command.command() == &expected_prepare);
+        let row = matching.next().expect("missing original PrepareVm row");
+        assert!(
+            matching.next().is_none(),
+            "duplicate original PrepareVm row"
+        );
+        row
+    };
+    let resource = sandproof_protocol::ResourceRef {
+        kind: sandproof_protocol::ResourceKind::Vm,
+        id: sandproof_protocol::ResourceId::try_from(format!("vm-{namespace}-{}", vm.0)).unwrap(),
+    };
+    let digest = sandproof_protocol::lifecycle::ContentDigest::from_sha256(
+        sha2::Sha256::digest(&raw).into(),
+    );
+    ExpectedStartupPrepare {
+        action,
+        raw,
+        resource,
+        digest,
+    }
+}
+
+fn check_original_startup_slot(
+    tx: &rusqlite::Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: crate::controller::internal_inbox::InternalLocalBinding,
+    prepare: &ExpectedStartupPrepare,
+) -> (
+    Vec<sandproof_protocol::ActionIdentity>,
+    Vec<sandproof_protocol::lifecycle::ContentDigest>,
+) {
+    let (startup_actions, startup_receipts) =
+        crate::controller::lifecycle_inbox::readiness::snapshot::startup_records::<Evidence>(
+            tx, namespace, world, local,
+        )
+        .unwrap();
+    assert_eq!(
+        (startup_actions.get(1), startup_receipts.get(1)),
+        (Some(&prepare.action), Some(&prepare.raw)),
+        "second startup slot must retain the complete PrepareVm action and its original row bytes"
+    );
+    let expected_actions: Vec<_> = startup_actions
+        .into_iter()
+        .map(|action| action.identity)
+        .collect();
+    let expected_receipts: Vec<_> = startup_receipts
+        .iter()
+        .map(|receipt| super::digest(receipt))
+        .collect();
+    (expected_actions, expected_receipts)
+}
+
+fn assert_original_prepare_question(work: &SourceWork, prepare: &ExpectedStartupPrepare) {
+    assert_eq!(
+        (
+            work.anchor.original_actions.get(1),
+            work.anchor.original_receipts.get(1),
+            &work.requirement.resource,
+        ),
+        (
+            Some(&prepare.action.identity),
+            Some(&prepare.digest),
+            &prepare.resource,
+        ),
+        "parent must publish the second PrepareVm resource and hash that row's original bytes"
+    );
+}
+
+#[test]
+fn proof_source_flow_original_request_reaches_same_source_question() {
+    use crate::controller::lifecycle_inbox::readiness::snapshot::native_snapshot;
+
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, state) = ready(&directory.path().join("source-flow.db"));
+    let request = unload();
+    let namespace = journal.namespace.clone();
+    let active = journal.active_host_epoch.clone();
+    let expected_source = state.lock().unwrap().source.clone().unwrap();
+    let tx = transaction::WorldTransaction::begin(
+        &mut journal.journal.connection,
+        &journal.committed_world,
+    )
+    .unwrap();
+    let inbox = crate::controller::lifecycle_inbox::codec::load(&tx)
+        .unwrap()
+        .unwrap();
+    let sources = super::codec::load(&tx).unwrap().unwrap();
+    let world = tx.world();
+    let (session_index, entry_index) = inbox.find(&request).unwrap().unwrap();
+    let selected = &inbox.sessions[session_index];
+    let selected_state = inbox.state(session_index, entry_index);
+    let local = selected_state.local.unwrap();
+    let origin = selected.current_execution_origin().unwrap().intent.clone();
+    let record = world.sandbox_record(local.sandbox).unwrap();
+    let expected_native = native_snapshot(&tx, &namespace, &world, local, record).unwrap();
+    let expected_options =
+        crate::controller::admission::read_create_options(&tx, &namespace, local.sandbox).unwrap();
+    let expected_credential =
+        crate::controller::data_credentials::snapshot(&tx, &world, &namespace, local.sandbox, true)
+            .unwrap()
+            .unwrap();
+    let prepare =
+        expected_original_startup_prepare(&tx, &namespace, &world, local, record, &origin);
+    let (expected_actions, expected_receipts) =
+        check_original_startup_slot(&tx, &namespace, &world, local, &prepare);
+    let work = super::snapshot::current::<Evidence>(
+        &tx,
+        &namespace,
+        &request,
+        10,
+        super::snapshot::CurrentSource {
+            world: &world,
+            inbox: &inbox,
+            limits: &sources.config,
+            active: active.as_ref(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        work.anchor.request, request,
+        "question must retain original full Unload"
+    );
+    assert_eq!(work.anchor.execution_origin, origin);
+    assert_eq!(work.anchor.local, local);
+    assert_eq!(work.anchor.native, expected_native);
+    assert_eq!(work.anchor.native.current_vm, record.current_vm);
+    assert_eq!(work.anchor.native.generation, record.generation);
+    assert_eq!(work.anchor.continued_from, None);
+    assert_eq!(work.anchor.source, expected_source);
+    assert_eq!(work.anchor.node, inbox.config.node);
+    assert_eq!(
+        work.anchor.host_bootstrap,
+        inbox.host_epoch_observation.as_ref().unwrap().registration
+    );
+    assert_eq!(
+        work.anchor.options_sha256,
+        super::digest(&serde_json::to_vec(&expected_options).unwrap())
+    );
+    assert_eq!(work.anchor.credential, expected_credential);
+    assert_eq!(work.anchor.credential.0, work.anchor.native.generation);
+    assert_eq!(work.anchor.original_actions.len(), 5);
+    assert_eq!(work.anchor.original_receipts.len(), 5);
+    assert_eq!(work.anchor.original_actions, expected_actions);
+    assert_eq!(work.anchor.original_receipts, expected_receipts);
+    assert_original_prepare_question(&work, &prepare);
+    assert_eq!(
+        work.requirement,
+        SourceObservationRequirement {
+            work_binding: super::digest(&serde_json::to_vec(&work.anchor).unwrap()),
+            node: inbox.config.node.clone(),
+            host_bootstrap: inbox
+                .host_epoch_observation
+                .as_ref()
+                .unwrap()
+                .registration
+                .clone(),
+            resource: expected_actions[1].resource.clone(),
+            source: expected_source,
+            limits: sources.config,
+        }
+    );
+}

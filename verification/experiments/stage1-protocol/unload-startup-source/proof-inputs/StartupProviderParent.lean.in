@@ -1,0 +1,22 @@
+import StartupParentBound
+import StartupSqliteLink
+import StartupEvidenceLink
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+private abbrev propositionOf {P : Prop} (_ : P) : Prop := P
+
+/-- Instantiate the already-audited parent theorem with the concrete SQLite
+    operation definitions. All original caller premises remain in its type. -/
+theorem actual_first_work_uses_sqlite_startup
+    [SandproofUnloadFirstObservation.Representations]
+    (base : SandproofUnloadStartupJoint.Representations)
+    (ops : @SandproofUnloadStartupJoint.Operations (StartupSqliteLink.sqliteRepresentations base)) :
+    propositionOf (@actual_first_work_uses_bound_startup _ (StartupSqliteLink.sqliteRepresentations base)
+      (StartupSqliteLink.bindSqlite base ops)) :=
+  @actual_first_work_uses_bound_startup _ (StartupSqliteLink.sqliteRepresentations base)
+    (StartupSqliteLink.bindSqlite base ops)
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_work_uses_sqlite_startup

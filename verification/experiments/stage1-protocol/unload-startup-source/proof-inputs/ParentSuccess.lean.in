@@ -1,0 +1,158 @@
+import ParentProof
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [ParentCalls]
+
+abbrev SourceSnapshot := controller.lifecycle_inbox.source_work.snapshot.CurrentSource
+abbrev Session := controller.lifecycle_inbox.model.Session
+abbrev Entry := controller.lifecycle_inbox.model.Entry
+abbrev WorkState := controller.lifecycle_inbox.model.LifecycleWorkState
+abbrev Local := controller.internal_inbox.model.InternalLocalBinding
+abbrev Ready := controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate
+abbrev Native := controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev HostEpoch := capture.HostEpochObservation
+abbrev Process := capture.SourceProcessIdentity
+abbrev Actions := alloc.vec.Vec (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)
+abbrev Receipts := alloc.vec.Vec (alloc.vec.Vec U8)
+abbrev Credential := U64 × Aeneas.Std.Array U8 32#usize
+
+def anchorFor (intent executionOrigin : Intent) (localValue : Local) (native : Native)
+    (inbox : controller.lifecycle_inbox.model.Inbox) (host : HostEpoch) (source : Process)
+    (optionsDigest : Binding) (credential : Credential)
+    (actions : alloc.vec.Vec Action) (receipts : alloc.vec.Vec Binding) : Anchor :=
+  { request := intent
+    execution_origin := executionOrigin
+    «local» := localValue
+    native := native
+    continued_from := none
+    node := inbox.config.node
+    host_bootstrap := host.registration
+    source := source
+    options_sha256 := optionsDigest
+    credential := credential
+    original_actions := actions
+    original_receipts := receipts }
+
+/-- Results of exactly the original read calls in the first-execution branch.
+    The complete lookup, read provenance, codec and helper obligations must be
+    provided separately before an instance applies to production. -/
+structure FirstRead {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (namespaceId : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) where
+  sessionIndex : Usize
+  entryIndex : Usize
+  session : Session
+  entry : Entry
+  state : WorkState
+  localValue : Local
+  originEntry : Entry
+  sourceIncarnation : sandproof_protocol.lifecycle.identity.IncarnationId
+  captureId : sandproof_protocol.lifecycle.identity.CaptureId
+  boot : HostEpoch
+  context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+  base : Ready
+  native : Native
+  source : Process
+  originalActions : Actions
+  originalReceipts : Receipts
+  connection : rusqlite.Connection
+  options : host_contract.CreateOptions
+  optionBytes : alloc.vec.Vec U8
+  optionsDigest : Binding
+  credential : Credential
+  actionIdentities : alloc.vec.Vec Action
+  receiptDigests : alloc.vec.Vec Binding
+  find : ParentCalls.inboxFindCompleteRequest input.inbox intent =
+    .ok (.Ok (some (sessionIndex, entryIndex)))
+  getSession : input.inbox.sessions.val[sessionIndex.val]? = some session
+  getEntry : session.entries.val[entryIndex.val]? = some entry
+  stateRead : ParentCalls.inboxState input.inbox sessionIndex entryIndex = .ok state
+  isCurrent : state.current = true
+  nonterminal : state.terminal = false
+  noResolution : entry.unload_resolution = none
+  unload : intent.request.operation = .Unload sourceIncarnation captureId
+  bootObservation : input.inbox.host_epoch_observation = some boot
+  activeObservation : input.active = some boot
+  bootMatch : ParentCalls.equalHostObservation boot boot = .ok true
+  localBinding : state.«local» = some localValue
+  originRead : ParentCalls.sessionExecutionOrigin session = .ok (some originEntry)
+  cloneOrigin : ParentCalls.cloneCompleteIntent originEntry.intent = .ok originEntry.intent
+  cloneUnload : ParentCalls.cloneCompleteIntent intent = .ok intent
+  contextRead : ParentCalls.inboxContext input.inbox.config = .ok context
+  baseRead : ParentCalls.readBaseSnapshot tx namespaceId input.world originEntry.intent context =
+    .ok (.Ok base)
+  nativePresent : base.view.native = some native
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok true
+  historicalRunning : base.view.historical_result =
+    some (.Running native.generation)
+  historicalMatch : ParentCalls.equalOperationResult
+    (.Running native.generation) (.Running native.generation) = .ok true
+  live : ParentCalls.checkLiveNative native localValue intent.accepted_version session.current_version
+    now = .ok true
+  sourceRead : ParentCalls.readOriginalSource host serde tx namespaceId input.world localValue.sandbox =
+    .ok (.Ok source)
+  sameBoot : source.boot_id = boot.registration.boot_id
+  sameBootText : ParentCalls.equalBootText source.boot_id boot.registration.boot_id = .ok true
+  nonzeroPid : source.pid ≠ 0#u32
+  nonzeroTicks : source.start_time_ticks ≠ 0#u64
+  startupRead : ParentCalls.readOriginalStartupRecords host serde tx namespaceId input.world localValue =
+    .ok (.Ok (originalActions, originalReceipts))
+  sameTransaction : ParentCalls.transactionConnection tx = .ok connection
+  optionsRead : ParentCalls.readCreateOptions connection namespaceId localValue.sandbox =
+    .ok (.Ok options)
+  credentialRead : ParentCalls.readCredential connection input.world namespaceId localValue.sandbox true =
+    .ok (.Ok (some credential))
+  sameGeneration : credential.1 = native.generation
+  cloneNode : ParentCalls.cloneNode input.inbox.config.node = .ok input.inbox.config.node
+  cloneRegistration : ParentCalls.cloneHostRegistration boot.registration = .ok boot.registration
+  cloneSource : ParentCalls.cloneProcessIdentity source = .ok source
+  encodeOptions : ParentCalls.encodeCreateOptions options = .ok (.Ok optionBytes)
+  digestOptions : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref optionBytes) =
+    .ok optionsDigest
+  collectActions : ParentCalls.originalActionIdentities (alloc.vec.Vec.deref originalActions) =
+    .ok actionIdentities
+  collectReceipts : ParentCalls.originalReceiptDigests (alloc.vec.Vec.deref originalReceipts) =
+    .ok receiptDigests
+  actionsFull : actionIdentities.val = originalActions.val.map (·.identity)
+
+def FirstRead.expected {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {namespaceId : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx namespaceId intent now input) : Anchor :=
+  anchorFor intent reads.originEntry.intent reads.localValue reads.native input.inbox reads.boot
+    reads.source reads.optionsDigest reads.credential reads.actionIdentities reads.receiptDigests
+
+theorem actual_current_reaches_exact_question {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {namespaceId : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx namespaceId intent now input) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx namespaceId intent now
+      input = question reads.expected input.limits := by
+  simp [controller.lifecycle_inbox.source_work.snapshot.current, FirstRead.expected, anchorFor,
+    reads.find, reads.getSession, reads.getEntry, reads.stateRead, reads.isCurrent,
+    reads.nonterminal, reads.noResolution, reads.unload, reads.bootObservation,
+    reads.activeObservation, reads.bootMatch, reads.localBinding, reads.originRead,
+    reads.cloneOrigin, reads.cloneUnload, reads.contextRead, reads.baseRead, reads.nativePresent,
+    reads.completedOriginal, reads.historicalRunning, reads.historicalMatch, reads.live,
+    reads.sourceRead, reads.sameBootText, reads.nonzeroPid, reads.nonzeroTicks, reads.startupRead,
+    reads.sameTransaction, reads.optionsRead, reads.credentialRead,
+    reads.cloneNode, reads.cloneRegistration, reads.cloneSource, reads.encodeOptions,
+    reads.digestOptions, reads.collectActions, reads.collectReceipts,
+    core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.map_err,
+    core.option.Option.ok_or, core.option.Option.as_ref, core.option.Option.is_some,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.cmp.impls.PartialEqShared.eq,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize]
+  have generationEq := reads.sameGeneration
+  generalize reads.credential = credential at generationEq ⊢
+  rcases credential with ⟨generation, digest⟩
+  have sameValue : generation.val = reads.native.generation.val :=
+    congrArg (fun value : U64 => value.val) generationEq
+  simp [sameValue, question]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_current_reaches_exact_question

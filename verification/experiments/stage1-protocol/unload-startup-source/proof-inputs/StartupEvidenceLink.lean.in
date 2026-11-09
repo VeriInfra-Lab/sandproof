@@ -1,0 +1,72 @@
+import SandproofUnloadStartupJoint.Provider
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+open SandproofUnloadStartupJoint
+
+namespace StartupEvidenceLink
+
+variable [Representations] [Operations]
+
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Receipt (E : Type) := sandproof_protocol.WorkReceipt E
+
+/-- The two actual Serde call observations. Each call consumes the full
+    original Rust byte slice and returns the original Result, including
+    normal Json Err and outer failure/non-return. -/
+structure ExactSerde {E : Type} (serde : serde_core.de.DeserializeOwned E) where
+  action : Slice U8 → Result (core.result.Result Action serde_json.error.Error)
+  receipt : Slice U8 → Result (core.result.Result (Receipt E) serde_json.error.Error)
+  actionBound : ∀ bytes,
+    serde_json.de.from_slice
+      (sandproof_protocol.WorkAction.Insts.Serde_coreDeDeserialize
+        sandbox_controller_core.model.EffectId.Insts.Serde_coreDeDeserialize)
+      bytes = action bytes
+  receiptBound : ∀ bytes,
+    serde_json.de.from_slice
+      (sandproof_protocol.WorkReceipt.Insts.Serde_coreDeDeserialize serde.DeserializeInst)
+      bytes = receipt bytes
+
+/-- The two methods used by this startup path, from the same original E
+    implementation. The receipt contract retains the exact outcome and
+    actual ResourceEvidence dictionary, with its original result and errors. -/
+structure ExactHost {E : Type} (host : host_contract.HostEvidence E) where
+  resource : E → Result sandproof_protocol.ResourceRef
+  validates : E → sandbox_controller_core.model.Command → Result Bool
+  resourceBound : ∀ evidence,
+    host.sandproof_protocolResourceEvidenceInst.resource evidence = resource evidence
+  validatesBound : ∀ evidence command, host.validates evidence command = validates evidence command
+
+/-- Equality of the actual generated dictionaries is a sufficient, strong
+    transport for any two caller representations already sharing these types.
+    Same E alone does not imply it. -/
+theorem same_receipt_call_of_dictionary_eq {E : Type}
+    (left right : serde_core.de.DeserializeOwned E) (same : left = right)
+    (bytes : alloc.vec.Vec U8) : rowReceipt left bytes = rowReceipt right bytes := by
+  cases same
+  rfl
+
+theorem exact_full_byte_calls {E : Type} (serde : serde_core.de.DeserializeOwned E)
+    (codec : ExactSerde serde) (actionBytes receiptBytes : alloc.vec.Vec U8) :
+    rowAction actionBytes = codec.action actionBytes.deref ∧
+      rowReceipt serde receiptBytes = codec.receipt receiptBytes.deref := by
+  exact ⟨codec.actionBound _, codec.receiptBound _⟩
+
+/-- Use the actual WorkReceipt::validate_for call with the very dictionary
+    which was carried into accept_startup_row. No replacement Bool is used. -/
+theorem accepted_receipt_retains_resource_call {E : Type}
+    (host : host_contract.HostEvidence E) (hostBinding : ExactHost host)
+    (receipt : Receipt E) (action : Action) (evidence : E)
+    (validated : sandproof_protocol.WorkReceipt.validate_for
+      host.sandproof_protocolResourceEvidenceInst receipt action = .ok (.Ok ()))
+    (accepted : host.validates evidence (action.command.logical.command) = .ok true) :
+    sandproof_protocol.WorkReceipt.validate_for
+      host.sandproof_protocolResourceEvidenceInst receipt action = .ok (.Ok ()) ∧
+      hostBinding.validates evidence (action.command.logical.command) = .ok true := by
+  exact ⟨validated, (hostBinding.validatesBound _ _).symm.trans accepted⟩
+
+end StartupEvidenceLink
+
+#audit_controller_proof StartupEvidenceLink.same_receipt_call_of_dictionary_eq
+#audit_controller_proof StartupEvidenceLink.exact_full_byte_calls
+#audit_controller_proof StartupEvidenceLink.accepted_receipt_retains_resource_call
