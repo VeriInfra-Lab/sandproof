@@ -1,9 +1,8 @@
 # 原始来源查询：限定支持范围与复现
 
-本包对应 Rust 提交 `10037e47c3f78f258eba4683c5b8db2eeab7e7e6`，源码树
-`e1da4ed15500da0b4d6e37aa1deba84b233f1d4c`。已通过的是实际 Rust
-`original_source_using` 经原 Charon/Aeneas 抽取后的**成功返回合同**。
-本目录仍是交付候选；公共入口、共享测试登记和统一批次验收尚未完成。
+初次独立验证使用 Rust 提交 `10037e47c3f78f258eba4683c5b8db2eeab7e7e6`。
+当前入口在固定组合上重新抽取 `original_source_using` 和实际行处理器。
+本范围验证正常成功返回时的完整来源条件。
 
 ## 已证明什么
 
@@ -38,7 +37,7 @@
 
 | 部分 | 本包如何处理 | 使用方仍需保证什么 |
 | --- | --- | --- |
-| `accept_original_source_row`、`original_source_using` 和业务判断 | 原工具透明抽取；Types/Funs 与原生成物字节一致 | 使用相同源码、工具、cfg 和绑定；改动后重新判断适用性 |
+| `accept_original_source_row`、`original_source_using` 和业务判断 | 原工具透明抽取，当前 Types/Funs 由实际代码重新生成 | 使用相同源码、工具、cfg 和绑定；改动后重新判断适用性 |
 | `valid_identifier` | 链接已有单独证明的实现与定理 | 维持精确源码和提供方绑定，不把它记作未证明业务桩 |
 | `accept_original_rows` 机械循环 | 原 Rust 的顺序驱动被设为不透明；Lean 中的完整驱动与循环性质已证明，原 Rust 对应关系由审查和原生测试支持 | 按原顺序取行；每行交给真实回调；完整传递 I/Rows/F 状态；遇首错停止；不额外调用回调或覆盖状态。这段 Rust 与模型的对应关系仍是可信适配条件 |
 | SQLite/rusqlite | 保留原 SQL、绑定参数、prepare/query_map/游标调用及可失败结果；使用共享接口解释 | 同一事务/连接的结果确实来自该查询；原字节、顺序、游标和错误语义与接口解释一致。数据库实现及崩溃恢复未在本包证明 |
@@ -67,54 +66,13 @@ TLS、Tokio、SQLite/Serde 实现，也不覆盖原 Unload HTTP、完整 V3 或�
 原件包保留它们的结果和服务记录。不能只取最终 3 个文件的结果而丢掉这条复用依据。
 本包没有另行执行错误 Rust 变体；9 个原生用例中的拒绝路径不能改称形式化变体验收。
 
-## 文件布局与装配
+## 当前入口
 
-- 本目录 15 个根模块 `.lean.in` 和 `bindings/` 的 4 个模板，分别复制为
-  `dependency-inventory.json` 中 `materialized` 指定的原路径。保持 import、命名空间和文件
-  内容不变。Types/Funs 是冻结的实际生成物，不能人工修改函数体、绑定器或前缀。
-- `dependency-inventory.json` 位于交付包顶层，列出 10 个共享提供方、29 个 Rust 来源和工具/
-  依赖指纹。共享定义只引用，不在本包再造或覆盖。虚拟来源文件的 SHA 来自干净的原提交
-  检出，不谎称 LLBC 保存了这些文件的正文。
-  LoadBlob 两项已经定位到相同字节的公共 `.lean.in`；SQLite Session 的 Data/ReadOps
-  已定位到 A 提交 `14493ee37094da6b1220d6d22d23c7310f3edb0c` 的
-  `verification/experiments/create-transaction-link/SqliteSessionData.lean.in` 和
-  `SqliteReadOps.lean.in`，与原物理字节一致，待统一装配。不能因此声称旧 `10037` 根已有
-  这些公共模板，也不能把原物理生成目录当作受版本管理的源码位置。
-- 原证明使用的私有 Lake 配置随原件保存。公共 Lake/root/coverage/冻结登记由统一集成者
-  维护；本包不自行改动这些文件。公共配置变化时由集成者决定需要补的受影响验收，不能
-  把原私有配置的成功改称新公共配置已通过。
-- `original-capture/` 和 `original-native/` 保存原执行脚本/输入，供审阅和复现。
-  其中有原机器路径、前置提交、锁、资源预算和提供方快照要求，不是可在任意工作目录
-  直接运行的公共驱动。未经调度不能直接执行，也不能删掉其前置检查来运行。
+`execution-inputs.json` 固定独立 Lake 视图、当前需要物化的 27 份输入、两份原外部接口模板和实际文件审计库存。当前 Types 与 Funs 由 `formal.py` 从实际 Rust 生成。它使用固定有序抽取配置及可逆名称标注，在私有源码副本恢复 `lib.rs`，并检查已证标识符提供方的原文件与服务记录。该提供方证据由 `SANDPROOF_SOURCE_ROWS_PROVIDER_ROOT` 指向原正式机挂载的只读目录。
 
-## 原件回读的登记候选
+`native-plan.json` 固定原 9 项精确断言。`native-admission.json` 固定当前源码和两个隔离测试片段的来源。它们由唯一 `stage1-original-source-rows` 组件进入普通验收。与事务部分共用以下入口。
 
-交付包顶层提供 `fixed-originals.merge-fragment.json`、
-`original-readback-compatibility.candidate.patch`、`formal-plan.candidate.json`。
-这些是供统一集成者审查的候选，**未应用、未执行，不是验收通过记录**。
+- ning：`bash scripts/python-entry.sh tools/proof_native_suite.py run --scope stage1-v3-transaction-source --output <new-native-evidence>`
+- MSRA：沿原正式机锁及工具环境，使用同一提交的当前 native seal 执行 `bash scripts/verify-v3-transaction-source.sh <new-formal-evidence>`。
 
-1. 合并固定原件选择中的 additive 字段，处理当前全局指纹与文件冲突；不得覆盖其它包。
-2. 兼容补丁只允许本 job、`actual` 分支、精确原结果 SHA 和完成标记的组合读取
-   `actual_files`。仅当这份精确历史记录缺少 `property_rejected` 字段时，把局部变量
-   `rejection` 归一化为 `False`，随后仍与原式 `case not in ('correct', 'actual')` 严格比较。
-   不添加跳过比较的分支；其它 job 仍使用原字段值，原内核/服务检查逻辑不变。
-   这是历史字段格式归一化，不表示做过新的错误版本验收。不改写原 JSON，也不引入
-   宽泛的“缺字段就算成功”。
-3. 两个 evidence-bundle 压缩包一起使用：final01 是原 61 成员包的原始字节；补充包只包含
-   原日志和后来只读计算的原项目源码指纹索引，不包含新证明结果。662 项完整原项目
-   指纹与原 3 条诊断 revision 一致。新索引不是新证明或当前源码已验证的凭证。
-4. 用已有 `original_readback.py prepare --bundle … --output …` 准备原件；设置
-   `SANDPROOF_V3_ORIGINAL_EVIDENCE` 后，登记的命令是
-   `original_readback.py run --job original-source-rows --output …`。这是未来集成步骤，
-   本次打包没有执行它。它只能声明复用原结果，不能创建新的证明执行时间或机器身份。
-5. `native-plan.json` 中的 9 项精确过滤器和原生产者供共享 native 登记者使用。
-   **尚缺共享 native 登记结果**；不能把旧私有结果伪装成现有公共签章。由集成者沿用既有
-   receipt 机制完成准入，再把 native label 接到 formal job。统一候选稳定后，首次公共
-   native 准入由 A 使用既有入口运行一次。这里没有新增签章生成器、解释器或自建检查器，
-   本窗口也没有重跑原 9 项和基础 26 文件。
-
-原 capture26 和 native9 两份压缩包另外随包保留。它们用于审阅抽取和原生测试的来源，
-不参与上述两个 formal 回读包的日志选择，也不是新执行的结果。
-
-依赖与工具未变时复用原证据；任一消费输入变化时，明确审查其适用范围或重新执行受影响
-检查。不得仅凭新提交其它测试变绿，把这份限定成功扩大到未连接的父入口。
+两份历史原件保留自己的版本和审计范围。当前入口使用独立视图，不覆盖旧全局固定原件，也不把旧私有成功算作当前执行。

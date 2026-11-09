@@ -2,6 +2,29 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V3 真实录入事务与来源行
+
+Refs #635、#637。当前组合从 integration `3c1f9b8f9f998430135d78c4e810e0529a702366` 装配。
+事务部分保留隔离 Rust `14493ee37094da6b1220d6d22d23c7310f3edb0c` 的录入、事务与 Codec，
+并对实际消费的 Rust 文件核对原字节。来源行部分采用 `10037e47c3f78f258eba4683c5b8db2eeab7e7e6`
+的实际捕获与测试文件。以下通过结果属于各自隔离执行。当前组合的公共执行结果以交付 PR 的精确提交和回执为准。
+
+| 入口及原记录 | 已检查的性质 | 仍需履行 |
+|---|---|---|
+| 真实 `WorldTransaction.commit`，Parent finish07 | 四个真实校验方法的先后顺序、成功和提交不确定时的原缓存观察。32 个实际文件中 4 RUN、28 严格复用，新增 22 项审计 | 同一事务和缓存的物理观察条件，四个 V5 检查的业务实现与正常 Ok、Err 的后态 |
+| 真实 `StandardRecord<D>`，A10 与 capture04/provider04/branch04–06 | 12 个真实 IO 方法、完整 D 与 owner 后态、从完整认证和请求匹配到 Replay 提前返回，以及从新 Create 的追加和保存到同一后继 owner 的真实提交。Create 不调用三个 Destroy 方法 | 真实 BEGIN 成功产出同一事务的连接、Serde 和生产字典的接口条件、正常自动 Drop 与回滚、外层服务调用 |
+| 真实 `original_source_using`，C source final01 | 正常成功返回的原 SQL、完整参数、同一游标的实际行证据与两个来源槽位。29 文件中 3 RUN、26 严格复用，新增 13 项审计 | A4/A6/B4 库与机械驱动的对应、真实 HostEvidence/ResourceEvidence。数据库记录不保证 VM 仍存活，也不授予暂停或 Stop 权限 |
+
+[逐接口条件](formal/v3-transaction-source-boundaries.md)沿用原依赖登记。
+`validate_candidate`、`lifecycle_inbox::codec::validate`、`capacity::validate` 和
+`validate_transaction` 保持内部未履行合同。当前有限入口不完成整个 V3。
+
+[真实事务录入](../verification/experiments/create-transaction-link/current/README.md)与
+[来源行](../verification/experiments/stage1-protocol/original-source-rows/README.md)
+共用 `stage1-v3-transaction-source`。ning 侧固定为完整普通检查、事务原断言与单元格错接的
+拒绝/恢复、来源行 9 项。MSRA 侧检查当前实际抽取、各自 Lean 视图与原文件服务。旧全局
+固定原件及先前 SourceLive 的执行身份继续单独保存。
+
 ## V4 暂停回执：共享回执入口的有限证明范围
 
 Refs #636。Rust 起点为 `9af6dd0cda1c786fff096147fc557eda0f9de05a`，承接
