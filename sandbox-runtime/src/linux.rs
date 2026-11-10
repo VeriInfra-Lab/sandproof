@@ -2197,6 +2197,7 @@ mod tests {
     #[test]
     fn cold_disk_clones_keep_template_and_sibling_writes_independent() {
         use std::io::{Seek, SeekFrom};
+        use std::os::unix::fs::FileExt;
 
         let directory = tempfile::tempdir().unwrap();
         let template = directory.path().join("template");
@@ -2236,10 +2237,17 @@ mod tests {
             private.seek(SeekFrom::Start(offset)).unwrap();
             private.write_all(bytes).unwrap();
         }
-        let written_bytes = |path: &Path| fs::read(path).unwrap()[offset as usize..][..8].to_vec();
-        assert_eq!(written_bytes(&paths[0]), b"first VM");
-        assert_eq!(written_bytes(&paths[1]), b"secondVM");
-        assert_eq!(written_bytes(&template), b"original");
+        let written_bytes = |path: &Path| {
+            let mut bytes = [0; 8];
+            File::open(path)
+                .unwrap()
+                .read_exact_at(&mut bytes, offset)
+                .unwrap();
+            bytes
+        };
+        assert_eq!(written_bytes(&paths[0]), *b"first VM");
+        assert_eq!(written_bytes(&paths[1]), *b"secondVM");
+        assert_eq!(written_bytes(&template), *b"original");
         assert_eq!(template.metadata().unwrap().mode() & 0o7777, 0o400);
     }
 
