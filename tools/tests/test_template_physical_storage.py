@@ -84,6 +84,14 @@ class PhysicalProfileTests(unittest.TestCase):
         self.assertTrue(plan['volume_check_pending'])
         self.assertFalse(plan['fits'])
 
+    def test_reflink_query_calls_the_fixed_mounted_filesystem_tool(self):
+        tool = Path('/usr/sbin/xfs_spaceman')
+        with (patch.object(single_host_storage, 'trusted_path', return_value=tool) as trust,
+              patch.object(single_host_storage, 'run', return_value='reflink=1\n') as run):
+            self.assertTrue(single_host_storage.reflink_enabled({'target': str(self.root)}))
+        trust.assert_called_once_with(tool)
+        run.assert_called_once_with([str(tool), '-c', 'info', str(self.root)])
+
     def test_reopen_rejects_wrong_mounted_backing_without_mounting_or_adjusting_quota(self):
         data = self.root / 'data'
         data.mkdir(mode=0o700)
