@@ -49,6 +49,8 @@ async def prepare_selected(args, lock):
         inputs = json.loads(args.ci_build_inputs.read_text())
         destination = args.prepare_ci_fixtures
         source_kind = 'prepared-ci'
+    ci_timeout = None if original else validate_preparation_timeout(
+        getattr(args, 'preparation_timeout_secs', None))
     if (not isinstance(inputs, dict) or set(inputs) != selected or
             any(type(value) is not str or re.fullmatch(r'sha256:[0-9a-f]{64}', value) is None
                 for value in inputs.values())):
@@ -63,8 +65,7 @@ async def prepare_selected(args, lock):
         paths = TrialPaths(args.output / entry['name'])
         paths.trial_dir.mkdir(mode=0o700)
         original_timeout = entry['requirements']['build_timeout_sec']
-        timeout = (original_timeout if original else
-                   validate_preparation_timeout(getattr(args, 'preparation_timeout_secs', None)))
+        timeout = original_timeout if original else ci_timeout
         source = ({'pinned_oci_digest': inputs[entry['name']]} if original else
                   {'context_archiver': partial(archive_ci_context, uv_path=args.ci_uv,
                                                 base_digest=inputs[entry['name']])})
