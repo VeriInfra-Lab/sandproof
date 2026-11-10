@@ -1,4 +1,5 @@
 //! The next public Unload observes the actual resumed origin in the original Redis CAS.
+//! These cases control Host replies and use the Redis fixture directly.
 use super::*;
 
 fn next_request() -> PublicUnloadRequest {
@@ -35,9 +36,8 @@ fn accept_next(
 #[test]
 fn next_unload_after_resumed_continuation_accepts_only_fresh_resume_and_preserves_history() {
     let fixture = Engine::new();
-    let proxy = reply_loss::ReplyLoss::new(fixture.address);
     // Five nonterminal inputs still reserve a sixth position for Destroy.
-    let authority = lifecycle_public::setup_with_operation_limit(&fixture, &proxy, 6);
+    let authority = lifecycle_public::setup_with_operation_limit(&fixture, fixture.address, 6);
     let (app, host, _) = application(&authority);
     let (session, ready, _) = complete_resumed_continued(&app, &host);
     // The original Create belongs to an older execution, as on the real Host.
@@ -87,7 +87,7 @@ fn next_unload_after_resumed_continuation_accepts_only_fresh_resume_and_preserve
     drop(app);
     drop(authority);
     let (ledger, _) = super::super::super::RedisLedger::open(
-        super::super::super::engine::endpoint(proxy.address),
+        super::super::super::engine::endpoint(fixture.address),
         Engine::config(limit),
         fixture.lease(),
     )
@@ -106,8 +106,7 @@ fn next_unload_after_resumed_continuation_accepts_only_fresh_resume_and_preserve
 fn next_unload_after_resumed_continuation_rejects_unknown_changed_and_destroy_races_without_acceptance()
  {
     let fixture = Engine::new();
-    let proxy = reply_loss::ReplyLoss::new(fixture.address);
-    let authority = lifecycle_public::setup_with_operation_limit(&fixture, &proxy, 6);
+    let authority = lifecycle_public::setup_with_operation_limit(&fixture, fixture.address, 6);
     let (app, host, _) = application(&authority);
     let (session, ready, _) = complete_resumed_continued(&app, &host);
     host.create_superseded.store(true, Ordering::SeqCst);
