@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tools.single_host_storage import volume_plan
+from tools import single_host_storage
 from tools.template_physical_storage import envelope, validate_configuration, PhysicalProfileLease
 
 
@@ -78,11 +78,33 @@ class PhysicalProfileTests(unittest.TestCase):
         required = 2 * envelope(profile)[0]
         free = SimpleNamespace(f_bavail=required + 63, f_frsize=1, f_favail=100)
         with patch('tools.single_host_storage.os.statvfs', return_value=free):
-            plan = volume_plan(profile, self.root, image_bytes=required, host_reserve_bytes=64)
+            plan = single_host_storage.volume_plan(profile, self.root, image_bytes=required, host_reserve_bytes=64)
         self.assertEqual(plan['missing_host_bytes'], 1)
         self.assertEqual(plan['activation']['required_bytes'], required)
         self.assertTrue(plan['volume_check_pending'])
         self.assertFalse(plan['fits'])
+
+    def test_reopen_rejects_wrong_mounted_backing_without_mounting_or_adjusting_quota(self):
+        data = self.root / 'data'
+        data.mkdir(mode=0o700)
+        image = dict(backing_uuid='backing', inode=12, size_bytes=1024**3)
+        project = dict(project_id=20, hard_bytes=1024**3, hard_inodes=1000)
+        receipt = self.root / 'storage.json'
+        receipt.write_text(json.dumps(dict(version=1, data_inode=data.stat().st_ino,
+                                           uuid='original', image=image, project=project)))
+        receipt.chmod(0o600)
+        mounted = dict(target=str(data), source='/dev/loop7', uuid='original')
+        observed = dict(loopdevices=[{'back-file': str(self.root / 'other'), 'offset': 0, 'sizelimit': 0}])
+        with (patch.object(single_host_storage, 'trusted_path'),
+              patch.object(single_host_storage, 'image_identity', return_value=image),
+              patch.object(single_host_storage, 'mount_info', return_value=mounted),
+              patch.object(single_host_storage, 'run', return_value=json.dumps(observed)),
+              patch.object(single_host_storage, 'mount_image') as mount,
+              patch.object(single_host_storage, 'quota_limits') as quota,
+              self.assertRaisesRegex(ValueError, 'whole original image')):
+            single_host_storage.reopen(self.root, project, remount=True)
+        mount.assert_not_called()
+        quota.assert_not_called()
 
     def test_absent_null_or_partial_profiles_always_refuse(self):
         for missing in ('absent', 'null', 'one_pool', 'capacity'):

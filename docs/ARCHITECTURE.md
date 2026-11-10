@@ -81,6 +81,12 @@ snapshot 布局、捕获预算与当前存储格式已有实现；部署者仍�
 
 中心与 Redis 使用独立非 root 账号/目录，宿主与私有辅助工具按实际权限运行，jailer 将 VM 降到精确非特权身份。证书、配置、可执行文件和目录身份由可信部署固定。可信时钟、Linux/KVM、文件/网络原语、存储引擎和管理员是明确外部前提，不是本批 Lean 结论。
 
+### 单机存储制备
+
+[单机存储工具](../tools/single_host_storage.py)使用完整的单运行池物理配置，先用 `plan` 列出外层空闲、镜像所需空间和卷内启动预算。在管理员指定的 root 私有目录中，`install` 接入已有合格 XFS，或在目录内预分配并首次格式化 `volume.xfs`，将受管数据放在 `data` 下。已有 XFS 的项目配额须事先批准并满足精确读回。新文件卷在制备时设置配额，并用同一读回规则核对。镜像和受管路径已有内容时保留现场并拒绝首次安装。
+
+`remount` 根据原存储收据重挂文件卷，`check` 核对已挂卷和项目配额。两者都检查原文件系统 UUID、数据目录身份和原镜像对应关系。重启先核对存储再启动服务。存储制备不初始化产品账本或启动虚拟机。
+
 ### 单机三角色部署样例
 
 [部署样例目录](../deploy)包含[中心配置](../deploy/center.example.json)、[宿主配置](../deploy/host.example.json)、[Redis 配置](../deploy/redis.example.conf)与对应的[中心](../deploy/sandproof-center.service)、[宿主](../deploy/sandproof-host.service)、[Redis](../deploy/sandproof-redis.service)服务单元。它们使用上述唯一产品入口，没有自动安装或初始化脚本。JSON 由原 Rust 配置解析与校验测试检查，不维护另一份配置规则；该检查不代表单元已经在 Linux/KVM 部署通过。
