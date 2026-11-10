@@ -100,6 +100,15 @@ bundle/manifest 的数据字段不因文件系统块共享而改变，不增加�
 
 新观察器及调用链的整体 Rust 对应证明仍须补齐；既有 `snapshot_policy::accepts` 定理只覆盖其中原 Metadata 守卫，不能代替目录/FD、全字节读取、JSON、完整工作或事务连接。普通回归和真实错误版的复现见[组件说明](../../verification/experiments/capture-observation/README.md)，实际版本及验收状态仅在 #638/PR 与覆盖记录维护。
 
+### 普通创建的私有盘
+
+普通创建由 `PrepareVm` 进入 `Runtime::launch_verified`，通过 `clone_private_disk`
+使用捕获和恢复已采用的整文件克隆原语。Node 将已经核对过模板摘要的文件身份与
+实际打开的源 FD 比较。Runtime 在建立 VM claim 前核对源和 jail 的 XFS 挂载，
+克隆后、启动来宾前再核原 FD 的身份。目标在原 jail 目录 FD 下独占创建，使用
+该实例的 UID/GID 和 0600 模式，并同步文件和目录。原逻辑磁盘上界保持有效。
+克隆和同步失败都保留原 claim 及可能留下的文件，由原清理流程处理。
+
 ### 原进程来源字段
 
 新的 VM claim 在原 launch gate 开放前持久保存 `ProcessRecord.boot_id`，它来自同一被记录 PID/启动 ticks 的宿主 kernel boot identity。新 Prepared/Activated 回执经原 claim、PID/ticks、jail/cgroup 检查后保留该字段；不是从 manifest、guest 或恢复时的全局 boot 值补造旧身份。`HostEvidence::source_process_identity(command, expected_resource)` 同时核原 command 和调用者从原 action 独立取得的完整 resource，再原样投影来源，不能传自己的 resource 自比。owner/operation/原工作与多份回执来源一致仍由 V5 的原持久事务建立；动作前仍须重核原进程，getter 不保证未来存活。

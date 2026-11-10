@@ -4,6 +4,7 @@ use super::{
     LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, TemplateArtifact, TemplateBinding,
     artifact_file_digest, check_trusted_path, core, fs, hash_token, launch_observation,
 };
+use sandbox_runtime::RuntimeError;
 
 pub(super) fn secret_file_name(
     namespace: &str,
@@ -232,6 +233,24 @@ impl LinuxWorker {
 
     pub(super) fn validate_artifact(&self, artifact: &TemplateArtifact) -> NodeResult<()> {
         self.validate_artifact_with(artifact, artifact_file_digest)
+    }
+
+    pub(super) fn verify_cold_rootfs(
+        &self,
+        artifact: &TemplateArtifact,
+        disk: &File,
+    ) -> Result<(), RuntimeError> {
+        let stamp = ArtifactStamp::from_metadata(artifact, &disk.metadata()?)
+            .map_err(|_| RuntimeError::IdentityMismatch("cold template type or size"))?;
+        let verified = self.validated_artifacts.lock().map_err(|_| {
+            RuntimeError::IdentityMismatch("cold template verification unavailable")
+        })?;
+        if verified.get(&artifact.path) != Some(&stamp) {
+            return Err(RuntimeError::IdentityMismatch(
+                "cold template verification changed",
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn validate_artifact_with(

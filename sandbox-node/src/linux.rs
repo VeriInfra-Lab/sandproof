@@ -312,6 +312,10 @@ impl ArtifactStamp {
     fn read(artifact: &TemplateArtifact) -> NodeResult<Self> {
         check_trusted_path(&artifact.path)?;
         let metadata = fs::symlink_metadata(&artifact.path)?;
+        Self::from_metadata(artifact, &metadata)
+    }
+
+    fn from_metadata(artifact: &TemplateArtifact, metadata: &fs::Metadata) -> NodeResult<Self> {
         if !metadata.is_file() || metadata.len() != artifact.size_bytes {
             return Err("template artifact type or size mismatch".into());
         }
