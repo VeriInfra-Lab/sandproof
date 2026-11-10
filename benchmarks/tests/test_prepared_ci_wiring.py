@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks import run_generic, run_local
-from benchmarks.prepared_ci_environment import PreparedCiEnvironment
+from benchmarks.prepared_template_environment import PreparedTemplateEnvironment
 from benchmarks.ci_verifier import manifest_path, MODE, REQUIREMENTS_SHA256
 from tools.benchmark_tasks import InvalidInput
 
@@ -115,7 +115,7 @@ class PreparedCiWiringTests(unittest.TestCase):
                 self.assertIs(environment_factory(recipe={}), env)
                 result_row.update(status='failed', oracle='not_run', verifier='not_run')
                 return result_row
-            with (patch('benchmarks.prepared_ci_environment.PreparedCiEnvironment', return_value=env),
+            with (patch('benchmarks.prepared_template_environment.PreparedTemplateEnvironment', return_value=env),
                   patch.object(run_generic, 'run_task', side_effect=unknown_create),
                   patch.object(run_generic, 'load_runtime_intent', return_value=intent) as recover,
                   contextlib.redirect_stdout(io.StringIO())):
@@ -125,6 +125,33 @@ class PreparedCiWiringTests(unittest.TestCase):
             row = json.loads((root / 'full-set.json').read_text())['tasks'][0]
             self.assertEqual(row['runtime_intent'], intent)
             self.assertEqual(row['exact_cleanup'], 'passed')
+
+    def test_original_prebuilt_keeps_the_original_scoring_and_recovery_authority(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = {'name': 'sample', 'dataset': 'terminal-bench@2.1'}
+            lock = {'dataset': entry['dataset'], 'tasks': [entry], 'source': {'commit': 'a'*40}}
+            fixture = object()
+            args = SimpleNamespace(all=False, task=['sample'], source_kind='prepared-original',
+                original_fixtures={'sample': fixture}, output=root, source=root,
+                build_url='http://127.0.0.1:1', completion_audit=lambda row: {'exact_cleanup': 'passed'})
+            env = SimpleNamespace(create_dispatched=True, sandbox_id=None, kill_confirmed=False,
+                kill_dispatched=False, build_dispatched=False, build_id='b'*32, build_result=None,
+                template={'templateId': 'prebuilt-' + 'b'*32}, runtime_attempt='e'*32)
+
+            async def trial(args, entry, recipe, *, environment_factory, result_row):
+                self.assertIs(environment_factory(recipe={}), env)
+                self.assertIsNone(getattr(args, 'verifier_task_factory', None))
+                return result_row
+
+            with (patch('benchmarks.prepared_template_environment.PreparedTemplateEnvironment',
+                        return_value=env) as environment,
+                  patch.object(run_generic, 'run_task', side_effect=trial),
+                  patch.object(run_generic, 'load_runtime_intent', return_value={}) as recover):
+                asyncio.run(run_generic.run_selected(args, lock))
+            self.assertIs(environment.call_args.kwargs['fixture'], fixture)
+            self.assertEqual(recover.call_args.kwargs['benchmark'], entry['dataset'])
+            self.assertTrue(recover.call_args.kwargs['prepared_original'])
 
     def test_prepared_build_service_is_neither_validated_nor_started(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -253,7 +280,7 @@ class PreparedCiWiringTests(unittest.TestCase):
         self.assertEqual(network_transport_evidence(proxy), {'mode': 'proxy'})
 
     def test_guest_preflight_success_updates_checkpoint_after_real_result(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         env.fixture = SimpleNamespace(guest_preflight_command=Mock(return_value='clean-boundary'),
             evidence=Mock(return_value={'guest_preflight': 'required_not_run', 'mode': 'prepared-ci'}))
         env.checkpoint = Mock()
@@ -271,7 +298,7 @@ class PreparedCiWiringTests(unittest.TestCase):
     def test_failed_or_unknown_preflight_never_records_passed_checkpoint(self):
         for outcome in (SimpleNamespace(return_code=1), TimeoutError('unknown command'), asyncio.CancelledError()):
             with self.subTest(outcome=type(outcome).__name__):
-                env = object.__new__(PreparedCiEnvironment)
+                env = object.__new__(PreparedTemplateEnvironment)
                 env.fixture = SimpleNamespace(guest_preflight_command=Mock(return_value='clean-boundary'))
                 env.checkpoint = Mock()
                 env.exec = AsyncMock(return_value=outcome) if not isinstance(outcome, BaseException) else AsyncMock(side_effect=outcome)
@@ -282,7 +309,7 @@ class PreparedCiWiringTests(unittest.TestCase):
                 env.checkpoint.assert_not_called()
 
     def test_create_failure_leaves_preflight_not_run(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         env.exec = AsyncMock()
         with patch('benchmarks.generic_environment.GenericEnvironment.start', AsyncMock(side_effect=TimeoutError())):
             with self.assertRaises(TimeoutError):

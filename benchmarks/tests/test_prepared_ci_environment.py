@@ -6,12 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from benchmarks.prepared_ci_environment import PreparedCiEnvironment
+from benchmarks.prepared_template_environment import PreparedTemplateEnvironment
 
 
 def prepared_fixture():
     return SimpleNamespace(
-        verify_artifacts=Mock(), evidence=Mock(return_value={'mode': 'prepared-ci'}),
+        evidence=Mock(return_value={'mode': 'prepared-ci'}),
         guest_preflight_command=Mock(return_value='test -x /opt/sandproof-ci-verifier/bin/python'),
         startup={'workdir': '/app', 'user': 'root', 'env_vars': {}, 'argv': []},
         template_descriptor=Mock(return_value={
@@ -21,9 +21,9 @@ def prepared_fixture():
                           'host_memory_bytes': 2304 * 1024**2}}))
 
 
-class PreparedCiEnvironmentTests(unittest.TestCase):
+class PreparedTemplateEnvironmentTests(unittest.TestCase):
     def test_prepare_never_calls_build_api_and_pins_reconciliation_binding(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         env.fixture, env.checkpoint = prepared_fixture(), Mock()
         env.client, env.build_dispatched = Mock(), False
         asyncio.run(env.prepare_template())
@@ -31,12 +31,12 @@ class PreparedCiEnvironmentTests(unittest.TestCase):
         self.assertFalse(env.build_dispatched)
         self.assertEqual(env.build_id, 'b' * 32)
         self.assertEqual(env.template['templateId'], 'ci-' + env.build_id)
-        env.fixture.verify_artifacts.assert_called_once()
+        env.fixture.template_descriptor.assert_called_once()
 
     def test_publication_or_unbound_static_prefix_is_rejected_before_create(self):
         for identity in ('tpl-' + 'b' * 32, 'ci-' + 'b' * 31, 'other-' + 'b' * 32):
             with self.subTest(identity=identity):
-                env = object.__new__(PreparedCiEnvironment)
+                env = object.__new__(PreparedTemplateEnvironment)
                 env.fixture, env.checkpoint = prepared_fixture(), Mock()
                 env.fixture.template_descriptor.return_value['template_id'] = identity
                 env.build_dispatched = False
@@ -48,9 +48,9 @@ class PreparedCiEnvironmentTests(unittest.TestCase):
                 env.checkpoint.assert_not_called()
 
     def test_changed_fixture_rejects_before_any_create(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         env.fixture, env.checkpoint = prepared_fixture(), Mock()
-        env.fixture.verify_artifacts.side_effect = ValueError('changed pinned fixture')
+        env.fixture.template_descriptor.side_effect = ValueError('changed pinned fixture')
         with self.assertRaises(ValueError), patch('benchmarks.generic_environment.AsyncSandbox.create') as create:
             asyncio.run(env.prepare_template())
         create.assert_not_called()
@@ -58,7 +58,7 @@ class PreparedCiEnvironmentTests(unittest.TestCase):
     def test_create_is_network_disabled_and_lost_reply_is_not_retried(self):
         from harbor.models.task.config import NetworkMode
         with tempfile.TemporaryDirectory() as temporary:
-            env = object.__new__(PreparedCiEnvironment)
+            env = object.__new__(PreparedTemplateEnvironment)
             env._network_policy = SimpleNamespace(network_mode=NetworkMode.PUBLIC)
             env.fixture, env.client = prepared_fixture(), Mock()
             env.entry = {'requirements': {'build_timeout_sec': 600}, 'dataset': 'terminal-bench-2.0'}
@@ -77,12 +77,12 @@ class PreparedCiEnvironmentTests(unittest.TestCase):
             env.client.request.assert_not_called()
 
     def test_force_build_cannot_make_prepared_fixture_online(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         with self.assertRaises(ValueError):
             asyncio.run(env.start(force_build=True))
 
     def test_guest_preflight_failure_does_not_fake_success(self):
-        env = object.__new__(PreparedCiEnvironment)
+        env = object.__new__(PreparedTemplateEnvironment)
         env.fixture = prepared_fixture()
         env.exec = AsyncMock(return_value=SimpleNamespace(return_code=1))
         with patch('benchmarks.generic_environment.GenericEnvironment.start', AsyncMock()) as start:
