@@ -1,4 +1,4 @@
-"""One-time preparation using the existing guest-only builder and exact audit.
+"""One-time template preparation with the existing guest-only builder and audit.
 
 No oracle or test runs here. A Ready build is not a passing benchmark result.
 The completed manifest is published only after every original build is reclaimed.
@@ -7,6 +7,7 @@ import asyncio
 from functools import partial
 import json
 import os
+import re
 from pathlib import Path
 
 from harbor.models.task.task import Task
@@ -15,7 +16,7 @@ from harbor.models.trial.paths import TrialPaths
 from benchmarks.ci_fixtures import ci_task_names
 from benchmarks.generic_environment import GenericEnvironment
 from benchmarks.prepare_ci_fixtures import (
-    archive_ci_context, make_ci_fixture_manifest, publish_ready_fixture,
+    archive_ci_context, make_prepared_manifest, publish_ready_fixture,
 )
 from tools.benchmark_tasks import InvalidInput
 
@@ -32,15 +33,26 @@ async def prepare_selected(args, lock):
     if type(owner_uid) is not int or not 0 <= owner_uid <= 2**32 - 2:
         raise InvalidInput('explicit approved Ready registry owner required')
     selected = set(args.task)
-    if (lock['dataset'] != 'terminal-bench@2.0' or args.all
-            or selected != set(ci_task_names(lock))
-            or args.source_kind != 'dockerfile' or args.oracle_mode != 'original'):
-        raise InvalidInput('one-time CI preparation requires exactly its two original tasks')
-    timeout = validate_preparation_timeout(getattr(args, 'preparation_timeout_secs', None))
-    inputs = json.loads(args.ci_build_inputs.read_text())
-    if not isinstance(inputs, dict) or set(inputs) != selected:
-        raise InvalidInput('explicit original OCI digest required for both CI fixtures')
-    destination = args.prepare_ci_fixtures
+    original = getattr(args, 'prepare_original_fixtures', None) is not None
+    if args.all or args.oracle_mode != 'original':
+        raise InvalidInput('one-time preparation requires explicit original tasks')
+    if original:
+        if lock['dataset'] != 'terminal-bench@2.1' or len(selected) != 1 or args.source_kind != 'oci':
+            raise InvalidInput('prepare one original 2.1 OCI template per deployment')
+        inputs = {next(iter(selected)): args.original_oci_digest}
+        destination = args.prepare_original_fixtures
+        source_kind = 'prepared-original'
+    else:
+        if (lock['dataset'] != 'terminal-bench@2.0' or selected != set(ci_task_names(lock))
+                or args.source_kind != 'dockerfile'):
+            raise InvalidInput('one-time CI preparation requires exactly its two original tasks')
+        inputs = json.loads(args.ci_build_inputs.read_text())
+        destination = args.prepare_ci_fixtures
+        source_kind = 'prepared-ci'
+    if (not isinstance(inputs, dict) or set(inputs) != selected or
+            any(type(value) is not str or re.fullmatch(r'sha256:[0-9a-f]{64}', value) is None
+                for value in inputs.values())):
+        raise InvalidInput('an immutable OCI digest is required for every prepared task')
     if (not destination.is_absolute() or destination.resolve() != destination
             or destination.exists() or destination.is_symlink()):
         raise InvalidInput('fresh canonical private fixture destination required')
@@ -50,20 +62,24 @@ async def prepare_selected(args, lock):
         task = Task(args.source / entry['source_path'])
         paths = TrialPaths(args.output / entry['name'])
         paths.trial_dir.mkdir(mode=0o700)
+        original_timeout = entry['requirements']['build_timeout_sec']
+        timeout = (original_timeout if original else
+                   validate_preparation_timeout(getattr(args, 'preparation_timeout_secs', None)))
+        source = ({'pinned_oci_digest': inputs[entry['name']]} if original else
+                  {'context_archiver': partial(archive_ci_context, uv_path=args.ci_uv,
+                                                base_digest=inputs[entry['name']])})
         row = dict(name=entry['name'], status='failed', stage='fixture_preparation',
                    oracle='not_run', verifier='not_run', original_environment=False,
-                   environment_source_kind='ci-preparation', exact_cleanup='unknown',
+                   environment_source_kind=source_kind+'-preparation', exact_cleanup='unknown',
                    create_dispatched=False, preparation_timeout_secs=timeout,
                    original_build_timeout_secs=entry['requirements']['build_timeout_sec'],
-                   original_build_deadline_applied=False)
+                   original_build_deadline_applied=original)
         preparation_entry = entry | {'requirements': entry['requirements'] | {'build_timeout_sec': timeout}}
-        env = GenericEnvironment(entry=preparation_entry, source=args.source, source_kind='dockerfile',
+        env = GenericEnvironment(entry=preparation_entry, source=args.source, source_kind=args.source_kind,
             build_url=args.build_url, sdk_options=dict(api_key=os.environ['SANDPROOF_TEST_API_KEY']),
             environment_dir=task.paths.environment_dir, environment_name=entry['name'],
             session_id=entry['name'], trial_paths=paths, task_env_config=task.config.environment,
-            artifact_limits=args.artifact_limits,
-            context_archiver=partial(archive_ci_context, uv_path=args.ci_uv,
-                                     base_digest=inputs[entry['name']]))
+            artifact_limits=args.artifact_limits, **source)
         item = None
         try:
             await env.prepare_template()
@@ -94,7 +110,7 @@ async def prepare_selected(args, lock):
             (paths.trial_dir / 'result.json').write_text(json.dumps(row, indent=2) + '\n')
             (args.output / 'full-set.json').write_text(json.dumps({
                 'dataset': lock['dataset'], 'tasks': rows, 'scope': 'fixture preparation only',
-                'preparation_timeout_secs': timeout, 'original_build_deadline_applied': False,
+                'preparation_timeout_secs': timeout, 'original_build_deadline_applied': original,
                 'benchmark_passed': False, 'original_oracle': False, 'original_verifier': False,
                 'original_environment': False}, indent=2) + '\n')
             if cancelled:
@@ -103,7 +119,7 @@ async def prepare_selected(args, lock):
             break
         items.append(item)
     if len(items) == len(selected):
-        manifest = make_ci_fixture_manifest(items, lock)
+        manifest = make_prepared_manifest(items, lock, source_kind=source_kind)
         path = destination / 'manifest.json'
         # The fresh private directory is not an active fixture. Publishing its
         # final manifest is the commit point, after all cleanup has succeeded.

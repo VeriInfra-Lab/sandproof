@@ -232,12 +232,21 @@ def exercise(args):
     commit = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
     lock_path = getattr(args, 'lock', None) or checkout / 'benchmarks/terminal-bench-2.0.lock.json'
     lock = verify(json.loads(lock_path.read_text()), args.registry, args.source)
-    if lock['dataset'] == 'terminal-bench@2.1' and (args.oracle_mode != 'original' or args.source_kind == PRUNED_SOURCE):
-        raise ValueError('2.0 local repairs cannot be applied to 2.1')
+    preparing_original = getattr(args, 'prepare_original_fixtures', None) is not None
+    if lock['dataset'] == 'terminal-bench@2.1':
+        if args.oracle_mode != 'original' or args.source_kind == PRUNED_SOURCE:
+            raise ValueError('2.0 local repairs cannot be applied to 2.1')
+        if not (prepared_original or preparing_original):
+            raise ValueError('prepare the original template separately before running 2.1')
     runtimes = check_runtime()
     check_tasks(lock, args.source)
     selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
     preparing_ci = getattr(args, 'prepare_ci_fixtures', None) is not None
+    preparing = preparing_original or preparing_ci
+    if preparing_original and (lock['dataset'] != 'terminal-bench@2.1' or len(selected) != 1 or args.all
+            or args.source_kind != 'oci' or args.repetitions != 1 or args.resource_pressure
+            or args.capacity_scope != 'selected'):
+        raise ValueError('prepare one original 2.1 OCI task per independent builder deployment')
     preparation_timeout = ci_preparation_timeout(args)
     if preparing_ci:
         from benchmarks.ci_fixtures import ci_task_names
@@ -637,7 +646,7 @@ def exercise(args):
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'capacity_basis': capacity_basis,
                 'oracle_mode': oracle_mode,
-                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing_ci,
+                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
                 'network_transport': network_transport_evidence(transport, prepared=prepared_ci),
@@ -647,10 +656,14 @@ def exercise(args):
                 api_url=urls[0], build_url=urls[2], build_mode=build_mode, source_kind=args.source_kind,
                 failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
-            if preparing_ci:
-                run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
-                run_args.preparation_timeout_secs = preparation_timeout
-                run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
+            if preparing:
+                if preparing_ci:
+                    run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
+                    run_args.preparation_timeout_secs = preparation_timeout
+                    run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
+                else:
+                    run_args.prepare_original_fixtures = args.prepare_original_fixtures
+                    run_args.original_oci_digest = args.original_oci_digest
                 run_args.ready_artifacts_root, run_args.kernel = registry_root / 'artifacts', args.kernel
                 run_args.ready_artifacts_owner_uid = services.layout['center_identity'][0]
             if prepared_original:
@@ -668,7 +681,7 @@ def exercise(args):
                 text_out = io.TextIOWrapper(out, write_through=True)
                 try:
                     with contextlib.redirect_stdout(text_out), contextlib.redirect_stderr(text_out):
-                        if preparing_ci:
+                        if preparing:
                             from benchmarks.run_ci_prepare import prepare_selected
                             asyncio.run(prepare_selected(run_args, lock))
                         else:
@@ -750,7 +763,7 @@ def exercise(args):
                 outcome.update(original_verifier=False, original_oracle_verifier=False,
                                original_oracle=True, original_test_assertions=True,
                                fixture_sha256=fixture_sha256)
-            if preparing_ci:
+            if preparing:
                 outcome.update(execution_passed=False, original_verifier=False,
                                original_oracle_verifier=False, preparation_only=True,
                                fixture_preparation_passed=(len(current) == len(selected)
@@ -771,7 +784,7 @@ def exercise(args):
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': lock['task_count'],
                 'dataset': lock['dataset'], 'task_source': lock['source'],
                 'capacity_basis': capacity_basis,
-                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing_ci,
+                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing,
                 'docker_hub_mirror': args.docker_hub_mirror,
                 'network_transport': network_transport_evidence(transport, prepared=prepared_ci),
                 'failure_diagnostics': args.failure_diagnostics,
@@ -874,6 +887,9 @@ def parser():
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
                         help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
+    parser.add_argument('--prepare-original-fixtures', type=Path,
+                        help='fresh destination for one approved original 2.1 OCI template')
+    parser.add_argument('--original-oci-digest', help='immutable original OCI digest for preparation')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,
@@ -910,6 +926,13 @@ def parser():
 def main(argv=None):
     arguments = parser()
     args = arguments.parse_args(argv)
+    if args.prepare_original_fixtures is not None:
+        if (not re.fullmatch(r'sha256:[0-9a-f]{64}', args.original_oci_digest or '')
+                or args.source_kind != 'oci' or args.ci_fixtures is not None
+                or args.prepare_ci_fixtures is not None or args.original_fixtures is not None):
+            arguments.error('prepare original requires an explicit OCI digest and a fresh export destination')
+    elif args.original_oci_digest is not None:
+        arguments.error('the original OCI digest belongs to template preparation only')
     if args.original_fixtures is not None:
         if (args.source_kind != 'prepared-original' or args.ci_fixtures is not None
                 or not re.fullmatch(r'[0-9a-f]{64}', args.original_fixtures_sha256 or '')

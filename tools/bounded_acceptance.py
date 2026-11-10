@@ -232,6 +232,8 @@ def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace=No
         raise ValueError("absolute canonical non-symlink acceptance root required")
     profile = _acceptance_profile(policy)
     roles = ('runtime',) if profile['public_build'] is None else ('runtime', 'builder')
+    if len(roles) == 2 and build_namespace is None:
+        raise ValueError('bounded acceptance requires an explicit run root and both namespaces')
     namespaces = [namespace] if len(roles) == 1 else [namespace, build_namespace]
     if (any(type(value) is not str or re.fullmatch(r"[0-9a-f]{16}", value) is None for value in namespaces)
             or len({value[:6] for value in namespaces}) != len(roles)
