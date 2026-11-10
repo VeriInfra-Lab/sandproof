@@ -1,0 +1,94 @@
+{
+  "baseline": "9ce0d22bb69d2dcae9d0033a1beb873051a2a7ae",
+  "root": "ContinuedDriverCaller",
+  "tool_inputs": {
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264"
+  },
+  "modules": {
+    "SandproofFoundations.TypesExternal": {
+      "repository": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8"
+    },
+    "SourceStdTypes": {
+      "repository": "verification/experiments/stage1-protocol/original-source-rows/SourceStdTypes.lean.in",
+      "sha256": "688a66dd0eaa3fc3dc224438c41126d33238d1989ff9056e168459b1f483c56d"
+    },
+    "SandproofSqlite.TypesExternal": {
+      "repository": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673"
+    },
+    "SandproofSqliteStatements.TypesExternal": {
+      "repository": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab"
+    },
+    "SandproofLoadBlob.ReadValueData": {
+      "repository": "verification/experiments/stage1-protocol/standard-blob/external/ReadValueData.lean.in",
+      "sha256": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9"
+    },
+    "SandproofLoadBlob.TypesExternal": {
+      "repository": "verification/experiments/stage1-protocol/standard-blob/external/TypesExternal.lean.in",
+      "sha256": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a"
+    },
+    "SandproofSqliteSession.Data": {
+      "repository": "verification/experiments/create-transaction-link/SqliteSessionData.lean.in",
+      "sha256": "6d2fbb26001dab59cf69f13c4e1065761c145cc0910d127afe6dd0dc98061a99"
+    },
+    "SandproofOriginalSourceRows.TypesExternal": {
+      "repository": "verification/experiments/stage1-protocol/original-source-rows/bindings/TypesExternal.lean.in",
+      "sha256": "2141a24fa3521d921fbc975902334c0f731be7e4bffb15ecdc6cd5339e12db7a"
+    },
+    "SandproofOriginalSourceRows.Types": {
+      "repository": "verification/experiments/stage1-protocol/unload-startup-source/proof-inputs/SandproofOriginalSourceRows/Types.lean.in",
+      "sha256": "a8afbfc69adda27f6014cc0921ac4b86ceb36e1ca52cccdb8bb0194172bec8e9"
+    },
+    "SandproofSqliteSession.ReadOps": {
+      "repository": "verification/experiments/create-transaction-link/SqliteReadOps.lean.in",
+      "sha256": "d53a906fa35ba6c3f195dcdc51b862d023016b1f9cca2833605994abb5812e4c"
+    },
+    "SandproofFoundations.IdentifierLibrary": {
+      "repository": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c"
+    },
+    "OriginalSourceSqliteOps": {
+      "repository": "verification/experiments/stage1-protocol/original-source-rows/OriginalSourceSqliteOps.lean.in",
+      "sha256": "5af4944a966165875673ec9d60cb133b82a1182491991fac729e81e45d2e9966"
+    },
+    "SandproofUnloadContinuedReady.TypesExternal": {
+      "package": "proof-inputs/SandproofUnloadContinuedReady/TypesExternal.lean.in",
+      "sha256": "37bf12c2180ee79c319c0d916e008b8a4f1dce8758058ad1819dbc7f688f806d"
+    },
+    "SandproofUnloadContinuedReady.Types": {
+      "package": "proof-inputs/SandproofUnloadContinuedReady/Types.lean.in",
+      "sha256": "91110b65cd743add677e8ec61e7f6362083c268c5ee57aa6cf303fe440c8f5eb"
+    },
+    "OriginalRowsDriver": {
+      "repository": "verification/experiments/stage1-protocol/original-source-rows/OriginalRowsDriver.lean.in",
+      "sha256": "bcee60ec240c508a4e99217e9f6baf4dd2cb5143525212546609718d84aa52c9"
+    },
+    "SandproofUnloadContinuedReady.FunsExternal": {
+      "package": "proof-inputs/SandproofUnloadContinuedReady/FunsExternal.lean.in",
+      "sha256": "3e6e6b3a0da73df21478a41759378b976dbc29ebc3f15c2aaead34d0c4afb8a3"
+    },
+    "ContinuedDriverActual": {
+      "package": "proof-inputs/ContinuedDriverActual.lean.in",
+      "sha256": "aaaecc5b8925c324be70220a440a52376aad445b9dcda0c7364079be01f54546"
+    },
+    "SandproofUnloadContinuedReady.Funs": {
+      "package": "proof-inputs/SandproofUnloadContinuedReady/Funs.lean.in",
+      "sha256": "eb47b128e84d29480430d4d4b655d014aae407d69ef41c6733c363f2ea7f5774"
+    },
+    "SandboxModel.ProofAuditCommand": {
+      "repository": "SandboxModel/ProofAuditCommand.lean",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188"
+    },
+    "ContinuedDriverAgreement": {
+      "package": "proof-inputs/ContinuedDriverAgreement.lean.in",
+      "sha256": "a1dd87c3c7b8c736e4d9244c4b362bb3d5b3ffae40161e90ad23680a029d82bd"
+    },
+    "ContinuedDriverCaller": {
+      "package": "proof-inputs/ContinuedDriverCaller.lean.in",
+      "sha256": "b07322caf5d558c8f273b25c862593669f09dc3eb2be694334cac05ea2c9dd12"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "transparent_driver_def_id": 37,
+  "transparent_ready_def_id": 11,
+  "same_v5_v6_declarations_excluding_driver_and_continuation_source_line_comments": {
+    "TypesExternal_Template.lean": "ed03eaeb231613e7d8bfa53b776f71bd42ba7dabfec3449f173f43ceaa6fd15b",
+    "Types.lean": "eaaa15a159dfaa089bb92e9ea36a54d6af6605afbd7e50d2c2cd749fc899bbfb",
+    "FunsExternal_Template.lean": "10eb7349284b962092aaed8fe0f421cf5a06ed3b2ee7faf8c57a263c034d2bbd",
+    "Funs.lean": "f9267e59f8c06748e7bae33eace2072c23b376ee56f9f570007b094c00adcd72"
+  },
+  "exact_generated_driver_sha256": "a73174d5873c05c5e4e0f7f784247c4388a743df8413c9be85aefe1bf18417f5"
+}
