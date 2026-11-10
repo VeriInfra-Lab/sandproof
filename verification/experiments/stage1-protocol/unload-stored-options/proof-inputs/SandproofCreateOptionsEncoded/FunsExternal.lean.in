@@ -1,0 +1,50 @@
+import SandproofCreateOptionsEncoded.Types
+import SandproofFoundations.IdentifierLibrary
+
+open Aeneas Aeneas.Std
+open SandproofFoundationsRust.IdentifierLibrary (stringBytes StringRepresentable)
+namespace SandproofCreateOptionsEncoded
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) : Option T → F → Result Bool
+  | none, _ => .ok false
+  | some item, state => callback.call_once state item
+
+def alloc.collections.btree.map.Iter.Insts.CoreIterTraitsIteratorIteratorPairSharedAKSharedAV.next
+    {K V : Type} : alloc.collections.btree.map.Iter K V →
+      Result (Option (K × V) × alloc.collections.btree.map.Iter K V)
+  | [] => .ok (none, [])
+  | pair :: tail => .ok (some pair, tail)
+
+def alloc.collections.btree.map.BTreeMap.iter {K V A : Type} (_ : core.clone.Clone A)
+    (map : alloc.collections.btree.map.BTreeMap K V A) :
+    Result (alloc.collections.btree.map.Iter K V) :=
+  .ok map
+
+def alloc.string.String.as_bytes (value : String) : Result (Slice U8) :=
+  if h : StringRepresentable value then .ok (.from (stringBytes value) h)
+  else .fail .maximumSizeExceeded
+
+def alloc.string.String.is_empty (value : String) : Result Bool :=
+  .ok (decide (stringBytes value = []))
+
+-- From the captured, fixed literal 64 * 1024 in the original declaration.
+def host_contract.CreateOptions.MAX_ENCODED_BYTES : Result Usize :=
+  .ok 65536#usize
+
+class Operations [Representations] where
+  -- Same complete TemplateBinding. The project proof of this separate
+  -- template validator stays with its original provider.
+  templateValid : templates.TemplateBinding → Result Bool
+  -- Exact single-call serde_json::to_vec on the original complete options.
+  render : host_contract.CreateOptions →
+    Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+
+variable [Representations] [ops : Operations]
+abbrev templates.TemplateBinding.is_valid := @ops.templateValid
+abbrev host_contract.serialize_create_options := @ops.render
+
+end SandproofCreateOptionsEncoded

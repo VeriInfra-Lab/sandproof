@@ -1,0 +1,57 @@
+import SandproofUnloadOptionsRead.Types
+open Aeneas Aeneas.Std
+namespace SandproofUnloadOptionsRead
+
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+variable [Representations] in
+def host_contract.AdmissionError.Insts.CoreConvertFromError.from
+  (error : rusqlite.error.Error) : Result host_contract.AdmissionError := .ok (.Journal (.Sqlite error))
+
+variable [Representations] in
+def host_contract.AdmissionError.Insts.CoreConvertFromJournalError.from
+  (error : JournalError) : Result host_contract.AdmissionError := .ok (.Journal error)
+
+class Operations [Representations] where
+  isQueryReturnedNoRows : rusqlite.error.Error → Bool
+  queryRow {T : Type} {P : Type} {F : Type} (paramsParamsInst : rusqlite.params.Params P) (coreopsfunctionFnOnceFTupleShared0RowResultTErrorInst : core.ops.function.FnOnce F rusqlite.row.Row (core.result.Result T rusqlite.error.Error)) : rusqlite.Connection → Str → P → F → Result (core.result.Result T rusqlite.error.Error)
+  bindSingleParameter {T : Type} (typesto_sqlToSqlInst : rusqlite.types.to_sql.ToSql T) : Array T 1#usize → rusqlite.statement.Statement → Result ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement)
+  readColumn {I : Type} {T : Type} (RowIndexInst : rusqlite.row.RowIndex I) (typesfrom_sqlFromSqlInst : rusqlite.types.from_sql.FromSql T) : rusqlite.row.Row → I → Result (core.result.Result T rusqlite.error.Error)
+  columnIndex : Std.Usize → rusqlite.statement.Statement → Result (core.result.Result Std.Usize rusqlite.error.Error)
+  integerColumn : rusqlite.types.value_ref.ValueRef → Result (core.result.Result Std.I64 rusqlite.types.from_sql.FromSqlError)
+  blobColumn : rusqlite.types.value_ref.ValueRef → Result (core.result.Result (alloc.vec.Vec Std.U8) rusqlite.types.from_sql.FromSqlError)
+  borrowedParam {T : Type} (ToSqlInst : rusqlite.types.to_sql.ToSql T) : T → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  textParam : Str → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  sandboxText : sandproof_protocol.SandboxId → Result Str
+  decodeJson {T : Type} (serde_coredeDeserializeInst : serde_core.de.Deserialize T) : Slice Std.U8 → Result (core.result.Result T serde_json.error.Error)
+  checkedCanonicalOptions : host_contract.CreateOptions → Result (core.result.Result (alloc.vec.Vec Std.U8) host_contract.AdmissionError)
+  deserializeCreateOptions {__D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst : serde_core.de.Deserializer __D Clause0_Error) : __D → Result (core.result.Result host_contract.CreateOptions Clause0_Error)
+  defaultCreateOptions : Result host_contract.CreateOptions
+  sandboxId : Str → sandbox_controller_core.ids.SandboxId → Result (core.result.Result sandproof_protocol.SandboxId JournalError)
+
+variable [Representations] [ops : Operations]
+
+def core.result.ResultTError.Insts.RusqliteOptionalExtension.optional {T : Type} :
+    core.result.Result T rusqlite.error.Error → Result (core.result.Result (Option T) rusqlite.error.Error)
+  | .Ok item => .ok (.Ok (some item))
+  | .Err error =>
+    if ops.isQueryReturnedNoRows error then .ok (.Ok none) else .ok (.Err error)
+
+abbrev rusqlite.Connection.query_row := @ops.queryRow
+abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @ops.bindSingleParameter
+abbrev rusqlite.row.Row.get := @ops.readColumn
+abbrev Usize.Insts.RusqliteRowRowIndex.idx := @ops.columnIndex
+abbrev I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result := @ops.integerColumn
+abbrev alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result := @ops.blobColumn
+abbrev Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql := @ops.borrowedParam
+abbrev Str.Insts.RusqliteTypesTo_sqlToSql.to_sql := @ops.textParam
+abbrev sandproof_protocol.SandboxId.as_str := @ops.sandboxText
+abbrev serde_json.de.from_slice := @ops.decodeJson
+abbrev host_contract.CreateOptions.encoded := @ops.checkedCanonicalOptions
+abbrev host_contract.CreateOptions.Insts.Serde_coreDeDeserialize.deserialize := @ops.deserializeCreateOptions
+abbrev host_contract.CreateOptions.Insts.CoreDefaultDefault.default := @ops.defaultCreateOptions
+abbrev controller.identity.sandbox_id := @ops.sandboxId
+end SandproofUnloadOptionsRead

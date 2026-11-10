@@ -2,6 +2,20 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V3 卸载观察读取原 Create 选项
+
+Refs #635。基线为 #773 合入的 `97fc4a2984e12928ce59222f6d8cc5a1ec13ed95`。
+实际 `CreateOptions::encoded` 的模板检查、env 和 metadata 循环、完整序列化结果
+以及 65536 字节上限接到真实 `admission::read_create_options` 的原 BLOB 比较。
+同一原键、原行和解码条件成立时，实际读函数只在完整重编码等于原 BLOB 时接受。
+模板调用结果保留具名项目提供方，SQLite、Serde、字符串及原有序 map 实例条件继续适用。
+
+ning 上原版和候选各过同一两项定向回归，候选通过格式与严格 Clippy；隔离错误版真实编译，
+被同一非法环境键断言拒绝。msra 的公共投影 119 个输入模块逐字节匹配已检查原件，
+复用三个原根结果。实际编码及读回连接的九条定理均已通过内核、严格依赖审计和 Lean
+服务诊断。后续仍须把实际选项结果与同一观察父调用及持久登记组合。
+[复现入口](../verification/experiments/stage1-protocol/unload-stored-options/README.md)。
+
 ## V3 继续卸载的原回执读取
 
 Refs #635。基线为 #772 合入的 `9ce0d22bb69d2dcae9d0033a1beb873051a2a7ae`。

@@ -3,7 +3,10 @@
 use super::*;
 use sandproof_center_service::LifecyclePolicy;
 use sandproof_protocol::lifecycle::{CreateParameters, PublicCreateRequest, PublicSessionPhase};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    net::SocketAddrV4,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 fn policy() -> LifecyclePolicy {
     LifecyclePolicy {
@@ -41,14 +44,14 @@ pub(super) fn request() -> PublicCreateRequest {
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
     setup_with_operation_limit(
         fixture,
-        proxy,
+        proxy.address,
         envelope().center.bounds().operations_per_sandbox,
     )
 }
 
 pub(super) fn setup_with_operation_limit(
     fixture: &Engine,
-    proxy: &reply_loss::ReplyLoss,
+    address: SocketAddrV4,
     operations_per_sandbox: u16,
 ) -> SharedBusinessAuthority {
     let mut state = envelope();
@@ -78,7 +81,7 @@ pub(super) fn setup_with_operation_limit(
     )
     .unwrap();
     let (ledger, _) = RedisLedger::initialize(
-        engine::endpoint(proxy.address),
+        engine::endpoint(address),
         Engine::config(state.required_block_bytes()),
         fixture.lease(),
         &state,
