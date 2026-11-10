@@ -191,10 +191,6 @@ def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_
         raise InvalidInput('ready CI publication failed: ' + type(error).__name__) from error
 
 
-def make_ci_fixture_manifest(items, lock):
-    return make_prepared_manifest(items, lock, source_kind='prepared-ci')
-
-
 def make_prepared_manifest(items, lock, *, source_kind):
     """Return the strict private envelope; the harness owns atomic publication."""
     original = source_kind == 'prepared-original'
