@@ -97,7 +97,9 @@ class PhysicalProfileTests(unittest.TestCase):
         data.mkdir(mode=0o700)
         image = dict(backing_uuid='backing', inode=12, size_bytes=1024**3)
         project = dict(project_id=20, hard_bytes=1024**3, hard_inodes=1000)
-        receipt = self.root / 'storage.json'
+        control = self.root / 'control'
+        control.mkdir(mode=0o700)
+        receipt = control / 'storage.json'
         receipt.write_text(json.dumps(dict(version=1, data_inode=data.stat().st_ino,
                                            uuid='original', image=image, project=project)))
         receipt.chmod(0o600)

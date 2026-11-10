@@ -18,6 +18,7 @@ from tools.xfs_project_quota import ENV, capture, project_hard_limit
 GIB = 1024**3
 RECEIPT = 'storage.json'
 IMAGE = 'volume.xfs'
+CONTROL = 'control'
 DATA = 'data'
 
 
@@ -50,6 +51,16 @@ def volume_plan(profile, directory, *, image_bytes, host_reserve_bytes):
 def run(argv, *, pass_fds=()):
     return subprocess.run(argv, capture_output=True, text=True, check=True,
                           env=ENV, pass_fds=pass_fds, timeout=60).stdout
+
+
+def deployment_directory(path):
+    directory = trusted_path(path)
+    if (directory.resolve(strict=True) != directory
+            or stat.S_IMODE(directory.stat().st_mode) != 0o711
+            or any(not parent.is_dir() or not parent.stat().st_mode & stat.S_IXOTH
+                   for parent in (directory, *directory.parents))):
+        raise ValueError('storage requires a root-owned 0711 directory and traversable parents')
+    return directory
 
 
 def mount_info(path):
@@ -164,9 +175,11 @@ def require_capacity(profile, data):
 
 def provision(directory, profile, project, *, image_bytes, host_reserve_bytes):
     data = directory / DATA
-    image = directory / IMAGE
-    if any(os.path.lexists(path) for path in (directory / RECEIPT, data, image)):
+    control = directory / CONTROL
+    if any(os.path.lexists(path) for path in (control, data)):
         raise ValueError('first installation requires fresh reserved storage paths')
+    control.mkdir(mode=0o700)
+    image = control / IMAGE
     if image_bytes:
         flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         with os.fdopen(os.open(image, flags, 0o600), 'r+b') as stream:
@@ -195,16 +208,26 @@ def provision(directory, profile, project, *, image_bytes, host_reserve_bytes):
     quota_limits(entry, project, configure=identity is not None)
     if identity is not None and image_identity(image) != identity:
         raise ValueError('original image changed during installation')
+    # Roles can reach their own 0700 children. The original image and receipt
+    # are still behind a separate root-only directory.
+    data.chmod(0o711)
     receipt = dict(version=1, data_inode=data.stat().st_ino, uuid=entry['uuid'],
                    image=identity, project=project)
-    write_once(directory / RECEIPT, receipt)
+    for path in (data, directory):
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    write_once(control / RECEIPT, receipt)
     return dict(receipt=receipt, capacity=capacity)
 
 
 def reopen(directory, project, *, remount=False):
     data = directory / DATA
-    image = directory / IMAGE
-    receipt = json_file(private_path(directory / RECEIPT))
+    control = private_path(directory / CONTROL, directory=True)
+    image = control / IMAGE
+    receipt = json_file(private_path(control / RECEIPT))
     if receipt.get('version') != 1 or receipt.get('project') != project:
         raise ValueError('storage receipt does not bind the original project')
     trusted_path(data)
@@ -223,7 +246,7 @@ def reopen(directory, project, *, remount=False):
     if identity is not None:
         check_loop(entry, data, image)
     if (entry['uuid'] != receipt['uuid'] or data.stat().st_ino != receipt['data_inode']
-            or stat.S_IMODE(data.stat().st_mode) != 0o700):
+            or stat.S_IMODE(data.stat().st_mode) != 0o711):
         raise ValueError('storage filesystem or data-root identity changed')
     quota_limits(entry, project)
     return receipt
@@ -233,14 +256,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('plan', 'install', 'remount', 'check'))
     parser.add_argument('--profile', type=Path, required=True, help='complete bound physical profile')
-    parser.add_argument('--directory', type=Path, required=True, help='designated private storage directory')
+    parser.add_argument('--directory', type=Path, required=True,
+                        help='designated root-owned 0711 storage directory')
     parser.add_argument('--capture-settings', type=Path, help='approved single-host capture settings')
     parser.add_argument('--image-bytes', type=int, help='override proposed image including format overhead')
     parser.add_argument('--host-reserve-bytes', type=int, default=GIB)
     args = parser.parse_args(argv)
     try:
         profile = json_file(private_path(args.profile))
-        directory = private_path(args.directory, directory=True)
+        directory = deployment_directory(args.directory)
         if args.action == 'plan':
             report = plan(profile, directory, image_bytes=args.image_bytes,
                           host_reserve_bytes=args.host_reserve_bytes)
@@ -248,7 +272,6 @@ def main(argv=None):
             return 0 if report['fits'] else 1
         if os.geteuid() != 0 or args.capture_settings is None:
             raise ValueError('authorized root and approved capture settings required')
-        trusted_path(directory)
         activation_budget(profile)
         settings = json_file(private_path(args.capture_settings), limit=65536)
         project = original_project(profile, settings, directory / DATA)
