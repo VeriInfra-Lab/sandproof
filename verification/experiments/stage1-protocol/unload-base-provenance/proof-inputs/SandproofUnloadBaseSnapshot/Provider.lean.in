@@ -1,0 +1,152 @@
+import SandproofUnloadBaseSnapshot.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std Result
+
+namespace SandproofUnloadBaseSnapshot
+
+variable [Representations] [ops : Operations]
+
+open controller.lifecycle_inbox.model (Inbox Session Entry)
+open controller.internal_inbox.model (InternalLocalBinding)
+open controller.lifecycle_inbox.readiness (NativeCreateSnapshot CreateReadiness)
+open controller.lifecycle_inbox.readiness.snapshot (ReadyCandidate base_snapshot first_entry_at_version)
+open sandproof_protocol.lifecycle.authority (AcceptedLifecycleIntent AuthenticatedCenterContext)
+open sandproof_protocol.lifecycle.request (LifecycleOperation)
+open sandbox_controller_core.model (World SandboxRecord OperationResult)
+
+def finishRead
+    (connection : rusqlite.Connection) (intent current : AcceptedLifecycleIntent)
+    (localBinding : InternalLocalBinding) (native : NativeCreateSnapshot)
+    (history : Option OperationResult) (ready : CreateReadiness) :
+    Result (core.result.Result ReadyCandidate JournalError) := do
+  let high ← ops.inputHighWater connection
+  match high with
+  | .Err error => .ok (.Err error)
+  | .Ok value => .ok (.Ok {
+      view := {
+        request := intent
+        current_request := current
+        «local» := some localBinding
+        historical_result := history
+        native_input_high_water := value
+        native := some native
+        readiness := ready
+      }
+      actions := alloc.vec.Vec.new _
+      continuation := none
+      receipts := alloc.vec.Vec.new _
+      source := none
+      credential := none
+      options := none
+      ready_fact := none
+    })
+
+theorem originalExecutionRead
+    (tx : rusqlite.transaction.Transaction) (connection : rusqlite.Connection)
+    (ns : Str) (world : World) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (inbox : Inbox) (session : Session)
+    (entry : Entry) (localBinding : InternalLocalBinding) (record : SandboxRecord)
+    (native : NativeCreateSnapshot) (history : Option OperationResult)
+    (ready : CreateReadiness) (s e : Usize)
+    (createOrResume :
+      (∃ binding incarnation, intent.request.operation = .Create binding incarnation) ∨
+      (∃ source capture target digest, intent.request.operation = .Resume source capture target digest))
+    (derefOk : ops.deref tx = .ok connection)
+    (loaded : ops.loadInbox connection = .ok (.Ok (some inbox)))
+    (authOk : ops.authenticate inbox intent context = .ok (.Ok ()))
+    (found : ops.findIntent inbox intent = .ok (.Ok (some (s, e))))
+    (indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+        inbox.sessions s = .ok session)
+    (entryFound : first_entry_at_version (alloc.vec.Vec.deref session.entries) session.current_version
+        = .ok (some entry))
+    (localEq : session.«local» = some localBinding)
+    (cloneOk : ops.cloneIntent entry.intent = .ok entry.intent)
+    (recordFound : ops.sandboxRecord world localBinding.sandbox = .ok (some record))
+    (nativeOk : ops.nativeSnapshot tx ns world localBinding record = .ok (.Ok native))
+    (historyOk : ops.originalResult world localBinding = .ok (.Ok history))
+    (readyOk : ops.readiness intent entry.intent entry session (some native) = .ok ready)
+    (requestCloneOk : ops.cloneIntent intent = .ok intent) :
+    base_snapshot tx ns world intent context =
+      finishRead connection intent entry.intent localBinding native history ready := by
+  rcases createOrResume with ⟨binding, incarnation, operation⟩ | ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp_all [base_snapshot, finishRead, core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once]
+  all_goals
+    apply congrArg (fun (next : core.result.Result U64 JournalError →
+      Result (core.result.Result ReadyCandidate JournalError)) =>
+        ops.inputHighWater connection >>= next)
+    funext high
+    cases high <;> simp only [bind_tc_ok]
+
+theorem secondLoadError
+    (tx : rusqlite.transaction.Transaction) (connection : rusqlite.Connection)
+    (ns : Str) (world : World) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (error : JournalError)
+    (derefOk : ops.deref tx = .ok connection)
+    (loaded : ops.loadInbox connection = .ok (.Err error)) :
+    base_snapshot tx ns world intent context = .ok (.Err error) := by
+  simp only [base_snapshot, bind_tc_ok, derefOk, loaded,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  rfl
+
+theorem highWaterError
+    (connection : rusqlite.Connection) (intent current : AcceptedLifecycleIntent)
+    (localBinding : InternalLocalBinding) (native : NativeCreateSnapshot)
+    (history : Option OperationResult) (ready : CreateReadiness) (error : JournalError)
+    (high : ops.inputHighWater connection = .ok (.Err error)) :
+    finishRead connection intent current localBinding native history ready = .ok (.Err error) := by
+  simp only [finishRead, high, bind_tc_ok]
+
+open controller.lifecycle_inbox.readiness.snapshot (first_entry_at_version_loop)
+
+def firstMatching (version : U64) : List Entry → Option Entry
+  | [] => none
+  | entry :: rest => if entry.intent.accepted_version = version then some entry
+      else firstMatching version rest
+
+private def cursor (entries : Slice Entry) (index : Nat) :
+    core.slice.iter.Iter Entry := ⟨entries, index⟩
+
+private theorem loopAt (entries : Slice Entry) (index : Nat) (version : U64) :
+    first_entry_at_version_loop (cursor entries index) version =
+      .ok (firstMatching version (entries.val.drop index)) := by
+  induction remaining : entries.val.length - index using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    by_cases inside : index < entries.val.length
+    · have step := ih (entries.val.length - (index + 1)) (by omega) (index + 1) rfl
+      have next : core.slice.iter.IteratorSliceIter.next (cursor entries index) =
+          .ok (some entries.val[index], cursor entries (index + 1)) := by
+        simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, inside]
+      unfold first_entry_at_version_loop at *
+      conv_lhs => rw [loop]
+      rw [List.drop_eq_getElem_cons inside]
+      by_cases matched : entries.val[index].intent.accepted_version = version
+      · simp [first_entry_at_version_loop.body, next, firstMatching, matched]
+      · simpa [first_entry_at_version_loop.body, next, firstMatching, matched] using step
+    · have outside : entries.val.length ≤ index := by omega
+      have next : core.slice.iter.IteratorSliceIter.next (cursor entries index) =
+          .ok (none, cursor entries index) := by
+        simp [core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr outside]
+      unfold first_entry_at_version_loop
+      rw [loop]
+      simp [first_entry_at_version_loop.body, next, firstMatching, List.drop_eq_nil_of_le outside]
+
+theorem firstEntryOrdered (entries : Slice Entry) (version : U64) :
+    first_entry_at_version entries version = .ok (firstMatching version entries.val) := by
+  simpa [first_entry_at_version,
+    SharedSlice.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter, cursor] using
+    loopAt entries 0 version
+
+end SandproofUnloadBaseSnapshot
+
+#audit_controller_proof SandproofUnloadBaseSnapshot.originalExecutionRead
+#audit_controller_proof SandproofUnloadBaseSnapshot.secondLoadError
+#audit_controller_proof SandproofUnloadBaseSnapshot.highWaterError
+#audit_controller_proof SandproofUnloadBaseSnapshot.firstEntryOrdered

@@ -1,0 +1,99 @@
+import InboxParentCarriers
+import InboxOriginActual
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+open InboxLoad
+
+variable [SandproofUnloadFirstObservation.Representations]
+
+/-- Supply the actual generated find/state/origin at the three #771 fields.
+    Leave the other parent operations in their already installed dictionaries. -/
+@[reducible] def bindInboxReads (parent : SandproofUnloadFirstObservation.ParentCalls)
+    (c : Carriers) : SandproofUnloadFirstObservation.ParentCalls :=
+  { parent with
+    inboxFindCompleteRequest := fun inbox intent => do
+      let found ← (toInbox c inbox).find (toIntent c intent)
+      match found with
+      | .Ok position => .ok (.Ok position)
+      | .Err error => .ok (.Err (fromError c error))
+    inboxState := fun inbox s e => do
+      let state ← (toInbox c inbox).state s e
+      .ok (fromState c state)
+    sessionExecutionOrigin := fun session => do
+      let origin ← (toSession c session).current_execution_origin
+      .ok (origin.map (fromEntry c)) }
+
+private theorem fromInbox_at (c : Carriers) (inbox : Inbox) (session : Session) (s : Usize)
+    (here : inbox.sessions.val[s.val]? = some session) :
+    (fromInbox c inbox).sessions.val[s.val]? = some (fromSession c session) := by
+  simp [fromInbox, mapVec, here]
+
+/-- Match the two real reads and the selected origin through the parent
+    dictionary. The exact local used by base is the local read by the parent. -/
+theorem parent_origin_refinds_same_local {R T N U B E : Type}
+    (parent : SandproofUnloadFirstObservation.ParentCalls) (c : Carriers)
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io) (first second after₁ after₂ : E) (left right : Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁))
+    (read₂ : load_using saved terminal renewal unload graphic io second = .ok (.Ok (some right), after₂))
+    (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : left.find intent = .ok (.Ok (some (s, e)))) :
+    letI : SandproofUnloadFirstObservation.ParentCalls := bindInboxReads parent c
+    ∃ session state,
+      (fromInbox c left).sessions.val[s.val]? = some session ∧
+      SandproofUnloadFirstObservation.ParentCalls.inboxFindCompleteRequest
+        (fromInbox c left) (fromIntent c intent) = .ok (.Ok (some (s, e))) ∧
+      SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state ∧
+      ∀ origin,
+        SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin) →
+        ∃ position, right.find (toIntent c origin.intent) = .ok (.Ok (some (s, position))) ∧
+          (fromInbox c right).sessions.val[s.val]? = some session ∧ state.«local» = session.«local» := by
+  letI : SandproofUnloadFirstObservation.ParentCalls := bindInboxReads parent c
+  obtain ⟨session, state, sessionAt, stateAt, refind⟩ :=
+    actual_two_loads_refind_selected_origin saved terminal renewal unload graphic graphicLaw
+      io represented snapshot first second after₁ after₂ left right read₁ read₂ intent s e found
+      Session.current_execution_origin actual_origin_is_stored
+  refine ⟨fromSession c session, fromState c state, fromInbox_at c left session s sessionAt, ?_, ?_, ?_⟩
+  · change (do
+      let result ← (toInbox c (fromInbox c left)).find (toIntent c (fromIntent c intent))
+      match result with
+      | .Ok pos => Result.ok (core.result.Result.Ok pos)
+      | .Err error => Result.ok (core.result.Result.Err (fromError c error))) = _
+    simp only [to_from_Inbox, to_from_Intent, found, bind_tc_ok]
+  · change (do
+      let result ← (toInbox c (fromInbox c left)).state s e
+      Result.ok (fromState c result)) = _
+    simp only [to_from_Inbox, stateAt, bind_tc_ok]
+  · intro origin selected
+    change (do
+      let picked ← (toSession c (fromSession c session)).current_execution_origin
+      Result.ok (picked.map (fromEntry c))) = .ok (some origin) at selected
+    rw [to_from_Session] at selected
+    obtain ⟨picked, pickedAt, mapped⟩ := bind_success_value _ _ _ selected
+    cases picked with
+    | none => simp at mapped
+    | some original =>
+      have asParent : fromEntry c original = origin := by
+        simpa using Result.ok_injective mapped
+      subst origin
+      obtain ⟨position, baseFind, baseAt, sameLocal⟩ := refind original pickedAt
+      refine ⟨position, ?_, fromInbox_at c right session s baseAt, ?_⟩
+      · change right.find (toIntent c (fromIntent c original.intent)) = _
+        simpa only [to_from_Intent] using baseFind
+      · exact congrArg (Option.map (fromLocal c)) sameLocal
+
+end SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge.parent_origin_refinds_same_local

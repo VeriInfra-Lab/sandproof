@@ -1,0 +1,58 @@
+import InboxOriginLoad
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding
+noncomputable section
+open InboxLoad
+
+/-- The one selector law consumed by the refind proof. Supply it for the
+actual extracted method, in the same Session/Entry representation. -/
+def SuccessfulOriginIsStored (select : Session → Result (Option Entry)) : Prop :=
+  ∀ session origin, select session = .ok (some origin) → origin ∈ session.entries.val
+
+/-- The registered reverse-search contract for current_execution_origin
+supplies the narrower member law, whatever predicate the search uses. -/
+theorem successful_origin_is_stored_of_reverse_find (select : Session → Result (Option Entry))
+    (isOrigin : Entry → Bool)
+    (bound : ∀ session, select session = .ok (session.entries.val.reverse.find? isOrigin)) :
+    SuccessfulOriginIsStored select := by
+  intro session origin returned
+  have found : session.entries.val.reverse.find? isOrigin = some origin :=
+    Result.ok_injective ((bound session).symm.trans returned)
+  exact List.mem_reverse.mp (List.mem_of_find?_eq_some found)
+
+theorem actual_two_loads_refind_selected_origin {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io) (first second after₁ after₂ : E) (left right : Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁))
+    (read₂ : load_using saved terminal renewal unload graphic io second = .ok (.Ok (some right), after₂))
+    (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : left.find intent = .ok (.Ok (some (s, e))))
+    (select : Session → Result (Option Entry)) (originIsStored : SuccessfulOriginIsStored select) :
+    ∃ session state,
+      left.sessions.val[s.val]? = some session ∧ left.state s e = .ok state ∧
+      ∀ origin, select session = .ok (some origin) → ∃ position,
+        right.find origin.intent = .ok (.Ok (some (s, position))) ∧
+        right.sessions.val[s.val]? = some session ∧ state.«local» = session.local := by
+  obtain ⟨session, state, atSession, atState, refind⟩ :=
+    actual_two_loads_refind_origin saved terminal renewal unload graphic graphicLaw io represented
+      snapshot first second after₁ after₂ left right read₁ read₂ intent s e found
+  exact ⟨session, state, atSession, atState, fun origin returned =>
+    refind origin (originIsStored session origin returned)⟩
+
+end
+end SandboxModel.Stage1Protocol.InboxOriginBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.successful_origin_is_stored_of_reverse_find
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.actual_two_loads_refind_selected_origin

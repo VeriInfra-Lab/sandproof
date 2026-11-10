@@ -1,0 +1,269 @@
+import BaseSnapshotLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView
+
+variable [SandproofUnloadFirstObservation.Representations]
+variable (recordType readyType : Type)
+
+abbrev Reps := BaseSnapshotLink.baseRepresentations recordType readyType
+abbrev BaseOperations := @SandproofUnloadBaseSnapshot.Operations (Reps recordType readyType)
+
+private def mapVec (f : α → β) (xs : alloc.vec.Vec α) : alloc.vec.Vec β :=
+  alloc.vec.Vec.from (xs.val.map f) (by simpa only [List.length_map] using xs.property)
+
+omit [SandproofUnloadFirstObservation.Representations] in
+private theorem mapVec_roundtrip (f : α → β) (g : β → α)
+    (inverse : ∀ a, g (f a) = a) (xs : alloc.vec.Vec α) :
+    mapVec g (mapVec f xs) = xs := by
+  apply alloc.vec.Vec.ext
+  simp [mapVec, List.map_map, Function.comp_def, inverse]
+abbrev PLocal := SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding
+abbrev BLocal := @SandproofUnloadBaseSnapshot.controller.internal_inbox.model.InternalLocalBinding (Reps recordType readyType)
+abbrev PEntry := SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Entry
+abbrev BEntry := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Entry (Reps recordType readyType)
+abbrev PSession := SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Session
+abbrev BSession := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Session (Reps recordType readyType)
+abbrev PConfig := SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleInboxConfig
+abbrev BConfig := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.LifecycleInboxConfig (Reps recordType readyType)
+abbrev PInbox := SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Inbox
+abbrev BInbox := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Inbox (Reps recordType readyType)
+
+def toBaseLocal (value : PLocal) : BLocal recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { sandbox := value.sandbox
+    owner := value.owner
+    operation := value.operation }
+
+def toBaseEntry (value : PEntry) : BEntry recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { intent := BaseSnapshotLink.toBaseIntent recordType readyType value.intent
+    local_operation := value.local_operation
+    applied_deadline := value.applied_deadline
+    previous_effective_end_at_ms := value.previous_effective_end_at_ms
+    unload_resolution := value.unload_resolution }
+
+def toBaseSession (value : PSession) : BSession recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { id := value.id
+    retention := value.retention
+    owner := value.owner
+    current_version := value.current_version
+    terminal := value.terminal
+    refusal := value.refusal
+    incarnation := value.incarnation
+    «local» := Option.map (toBaseLocal recordType readyType) value.«local»
+    entries := mapVec (toBaseEntry recordType readyType) value.entries
+    confirmed_terminal := value.confirmed_terminal
+    confirmed_renewal := value.confirmed_renewal
+    compacted_sdk_through := value.compacted_sdk_through
+    native_retirement := value.native_retirement }
+
+def toBaseConfig (value : PConfig) : BConfig recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { center := value.center
+    node := value.node
+    host_epoch := value.host_epoch
+    max_sessions := value.max_sessions
+    max_operations_per_session := value.max_operations_per_session
+    max_options_bytes := value.max_options_bytes
+    max_profile_bytes := value.max_profile_bytes
+    max_manifest_bytes := value.max_manifest_bytes }
+
+def toBaseInbox (value : PInbox) : BInbox recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { config := toBaseConfig recordType readyType value.config
+    host_epoch_observation := value.host_epoch_observation
+    owner_high_water := value.owner_high_water
+    owners := value.owners
+    sessions := mapVec (toBaseSession recordType readyType) value.sessions
+    lanes := value.lanes }
+
+def toBaseError : BaseSnapshotLink.PError → BaseSnapshotLink.BError recordType readyType :=
+  fun err =>
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  match err with
+  | .Io detail => .Io detail
+  | .Sqlite detail => .Sqlite detail
+  | .CommitUncertain detail => .CommitUncertain detail
+  | .Json detail => .Json detail
+  | .Contract detail => .Contract detail
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash detail => .InjectedCrash detail
+  | .ControllerRejected detail => .ControllerRejected detail
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+def fromBaseLocal (value : BLocal recordType readyType) : PLocal :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { sandbox := value.sandbox
+    owner := value.owner
+    operation := value.operation }
+
+def fromBaseEntry (value : BEntry recordType readyType) : PEntry :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { intent := BaseSnapshotLink.fromBaseIntent recordType readyType value.intent
+    local_operation := value.local_operation
+    applied_deadline := value.applied_deadline
+    previous_effective_end_at_ms := value.previous_effective_end_at_ms
+    unload_resolution := value.unload_resolution }
+
+def fromBaseSession (value : BSession recordType readyType) : PSession :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { id := value.id
+    retention := value.retention
+    owner := value.owner
+    current_version := value.current_version
+    terminal := value.terminal
+    refusal := value.refusal
+    incarnation := value.incarnation
+    «local» := Option.map (fromBaseLocal recordType readyType) value.«local»
+    entries := mapVec (fromBaseEntry recordType readyType) value.entries
+    confirmed_terminal := value.confirmed_terminal
+    confirmed_renewal := value.confirmed_renewal
+    compacted_sdk_through := value.compacted_sdk_through
+    native_retirement := value.native_retirement }
+
+def fromBaseConfig (value : BConfig recordType readyType) : PConfig :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { center := value.center
+    node := value.node
+    host_epoch := value.host_epoch
+    max_sessions := value.max_sessions
+    max_operations_per_session := value.max_operations_per_session
+    max_options_bytes := value.max_options_bytes
+    max_profile_bytes := value.max_profile_bytes
+    max_manifest_bytes := value.max_manifest_bytes }
+
+def fromBaseInbox (value : BInbox recordType readyType) : PInbox :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { config := fromBaseConfig recordType readyType value.config
+    host_epoch_observation := value.host_epoch_observation
+    owner_high_water := value.owner_high_water
+    owners := value.owners
+    sessions := mapVec (fromBaseSession recordType readyType) value.sessions
+    lanes := value.lanes }
+
+@[simp] theorem localRoundtrip (value : PLocal) :
+    fromBaseLocal recordType readyType (toBaseLocal recordType readyType value) = value := by
+  cases value
+  simp [fromBaseLocal, toBaseLocal]
+
+@[simp] theorem entryRoundtrip (value : PEntry) :
+    fromBaseEntry recordType readyType (toBaseEntry recordType readyType value) = value := by
+  cases value
+  simp [fromBaseEntry, toBaseEntry, BaseSnapshotLink.intentRoundtrip]
+
+@[simp] theorem sessionRoundtrip (value : PSession) :
+    fromBaseSession recordType readyType (toBaseSession recordType readyType value) = value := by
+  cases value
+  simp [fromBaseSession, toBaseSession, Function.comp_def, mapVec_roundtrip _ _ (entryRoundtrip recordType readyType)]
+
+@[simp] theorem configRoundtrip (value : PConfig) :
+    fromBaseConfig recordType readyType (toBaseConfig recordType readyType value) = value := by
+  cases value
+  simp [fromBaseConfig, toBaseConfig]
+
+@[simp] theorem inboxRoundtrip (value : PInbox) :
+    fromBaseInbox recordType readyType (toBaseInbox recordType readyType value) = value := by
+  cases value
+  simp [fromBaseInbox, toBaseInbox, mapVec_roundtrip _ _ (sessionRoundtrip recordType readyType)]
+
+theorem inbox_index (inbox : PInbox) (session : PSession) (s : Usize)
+    (selected : inbox.sessions.val[s.val]? = some session) :
+    letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+    (toBaseInbox recordType readyType inbox).sessions.val[s.val]? =
+      some (toBaseSession recordType readyType session) := by
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  simp [toBaseInbox, mapVec, selected]
+
+theorem local_at_index (inbox : PInbox) (session : PSession) (s : Usize)
+    (selected : inbox.sessions.val[s.val]? = some session)
+    (binding : PLocal) (sourceLocal : session.«local» = some binding) :
+    letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+    ∃ baseSession : BSession recordType readyType,
+      (toBaseInbox recordType readyType inbox).sessions.val[s.val]? = some baseSession ∧
+      baseSession.«local» = some (toBaseLocal recordType readyType binding) := by
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  refine ⟨toBaseSession recordType readyType session, inbox_index recordType readyType inbox session s selected, ?_⟩
+  simp [toBaseSession, sourceLocal]
+
+/-- Supply the selected second Inbox and the full-intent lookup at the actual
+    base call fields. The caller chooses the established codec implementation. -/
+@[reducible] def bindInbox (ops : BaseOperations recordType readyType)
+    (load : SandproofUnloadFirstObservation.rusqlite.Connection →
+      Result (core.result.Result (Option PInbox) BaseSnapshotLink.PError))
+    (find : PInbox → BaseSnapshotLink.PIntent →
+      Result (core.result.Result (Option (Usize × Usize)) BaseSnapshotLink.PError)) :
+    BaseOperations recordType readyType :=
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  { ops with
+    loadInbox := fun connection => do
+      let loaded ← load connection
+      match loaded with
+      | .Ok inbox => .ok (.Ok (inbox.map (toBaseInbox recordType readyType)))
+      | .Err error => .ok (.Err (toBaseError recordType readyType error))
+    findIntent := fun inbox intent => do
+      let found ← find (fromBaseInbox recordType readyType inbox)
+        (BaseSnapshotLink.fromBaseIntent recordType readyType intent)
+      match found with
+      | .Ok position => .ok (.Ok position)
+      | .Err error => .ok (.Err (toBaseError recordType readyType error)) }
+
+theorem bindInbox_load_ok (ops : BaseOperations recordType readyType)
+    (load : SandproofUnloadFirstObservation.rusqlite.Connection →
+      Result (core.result.Result (Option PInbox) BaseSnapshotLink.PError))
+    (find : PInbox → BaseSnapshotLink.PIntent →
+      Result (core.result.Result (Option (Usize × Usize)) BaseSnapshotLink.PError))
+    (connection : SandproofUnloadFirstObservation.rusqlite.Connection) (inbox : PInbox)
+    (loaded : load connection = .ok (.Ok (some inbox))) :
+    @SandproofUnloadBaseSnapshot.Operations.loadInbox (Reps recordType readyType)
+      (bindInbox recordType readyType ops load find) connection =
+      .ok (.Ok (some (toBaseInbox recordType readyType inbox))) := by
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  change (do
+    let raw ← load connection
+    match raw with
+    | .Ok inbox => Result.ok (core.result.Result.Ok (inbox.map (toBaseInbox recordType readyType)))
+    | .Err err => Result.ok (core.result.Result.Err (toBaseError recordType readyType err))) = _
+  simp [loaded, bind_tc_ok]
+
+theorem bindInbox_find_ok (ops : BaseOperations recordType readyType)
+    (load : SandproofUnloadFirstObservation.rusqlite.Connection →
+      Result (core.result.Result (Option PInbox) BaseSnapshotLink.PError))
+    (find : PInbox → BaseSnapshotLink.PIntent →
+      Result (core.result.Result (Option (Usize × Usize)) BaseSnapshotLink.PError))
+    (inbox : PInbox) (intent : BaseSnapshotLink.PIntent) (s e : Usize)
+    (found : find inbox intent = .ok (.Ok (some (s, e)))) :
+    @SandproofUnloadBaseSnapshot.Operations.findIntent (Reps recordType readyType)
+      (bindInbox recordType readyType ops load find)
+      (toBaseInbox recordType readyType inbox) (BaseSnapshotLink.toBaseIntent recordType readyType intent) =
+      .ok (.Ok (some (s, e))) := by
+  letI : SandproofUnloadBaseSnapshot.Representations := Reps recordType readyType
+  change (do
+    let raw ← find (fromBaseInbox recordType readyType (toBaseInbox recordType readyType inbox))
+      (BaseSnapshotLink.fromBaseIntent recordType readyType (BaseSnapshotLink.toBaseIntent recordType readyType intent))
+    match raw with
+    | .Ok position => Result.ok (core.result.Result.Ok position)
+    | .Err err => Result.ok (core.result.Result.Err (toBaseError recordType readyType err))) = _
+  simp [BaseSnapshotLink.intentRoundtrip, found, bind_tc_ok]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView.inboxRoundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView.local_at_index
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView.bindInbox_load_ok
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseInboxView.bindInbox_find_ok

@@ -1,0 +1,56 @@
+import SandproofUnloadOriginalLedger.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofUnloadOriginalLedger
+open SandproofUnloadOriginalLedger.sandbox_controller_core.model
+open SandproofUnloadOriginalLedger.sandbox_controller_core.request
+open SandproofUnloadOriginalLedger.controller.lifecycle_inbox.readiness.snapshot
+open SandproofUnloadOriginalLedger.controller.internal_inbox.model (InternalLocalBinding)
+
+namespace OriginalLedgerResult
+
+variable [Representations] [Calls]
+
+def localKey (binding : InternalLocalBinding) : OperationKey :=
+  { sandbox := binding.sandbox, operation := binding.operation }
+
+def localQuery (binding : InternalLocalBinding) : QueryRequest :=
+  { actor := .Tenant binding.owner, sandbox := binding.sandbox, operation := binding.operation }
+
+/-- In the generated Rust body, an existing detailed row returns its exact
+    result, including `none`. The query fallback is absent on this branch. -/
+theorem detailed_row_returns_exact_result (world : World) (binding : InternalLocalBinding)
+    (ledger : OperationLedgerRecord)
+    (read : World.operation_record world (localKey binding) = .ok (some ledger)) :
+    original_result world binding = .ok (.Ok ledger.result) := by
+  simp only [localKey] at read
+  simp only [original_result, read, bind_tc_ok]
+
+/-- If the parent observed `Running generation` on the detailed-row path,
+    it is the result field of the actual ledger row at the original key. -/
+theorem running_comes_from_detailed_row (world : World) (binding : InternalLocalBinding)
+    (ledger : OperationLedgerRecord) (generation : U64)
+    (read : World.operation_record world (localKey binding) = .ok (some ledger))
+    (returned : original_result world binding = .ok (.Ok (some (.Running generation)))) :
+    ledger.result = some (.Running generation) :=
+  core.result.Result.Ok.inj
+    (Result.ok_injective ((detailed_row_returns_exact_result world binding ledger read).symm.trans returned))
+
+/-- A missing detailed row uses the original tenant, sandbox and operation
+    together. The fallback must supply the original QueryOperation event. -/
+theorem query_event_returns_its_result (world : World) (binding : InternalLocalBinding)
+    (decision : Decision) (actor : Actor) (sandbox : sandbox_controller_core.ids.SandboxId)
+    (operation : sandbox_controller_core.ids.OperationId) (status : OperationStatus)
+    (value : Option OperationResult)
+    (read : World.operation_record world (localKey binding) = .ok none)
+    (query : handle_query world (localQuery binding) = .ok (.Ok decision))
+    (event : decision.event = .QueryOperation actor sandbox operation status value) :
+    original_result world binding = .ok (.Ok value) := by
+  simp only [localKey, localQuery] at read query
+  simp only [original_result, read, query, bind_tc_ok, event]
+
+end OriginalLedgerResult
+
+#audit_controller_proof OriginalLedgerResult.detailed_row_returns_exact_result
+#audit_controller_proof OriginalLedgerResult.running_comes_from_detailed_row
+#audit_controller_proof OriginalLedgerResult.query_event_returns_its_result

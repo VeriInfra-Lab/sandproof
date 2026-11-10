@@ -1,0 +1,54 @@
+import Aeneas
+
+namespace SandproofUnloadNativeSnapshot
+
+class Representations where
+  ty0 : Type
+  ty1 : Type
+  ty2 : Type
+  ty3 : Type
+  ty4 : Type
+  ty5 : Type
+  ty6 : Type
+  ty7 : Type
+  ty8 : Type
+  ty9 : Type
+  ty10 : Type
+  ty11 : Type
+  ty12 : Type
+  ty13 : Type
+  ty14 : Type
+  ty15 : Type
+  ty16 : Type
+  ty17 : Type
+  ty18 : Type
+  ty19 : Type
+  ty20 : Type
+  ty21 : Type
+  ty22 : Type
+
+abbrev core.io.error.Error [r : Representations] := r.ty0
+abbrev rusqlite.error.Error [r : Representations] := r.ty1
+abbrev rusqlite.Connection [r : Representations] := r.ty2
+abbrev rusqlite.transaction.Transaction [r : Representations] := r.ty3
+abbrev sandbox_controller_core.controller.ControllerReject [r : Representations] := r.ty4
+abbrev sandbox_controller_core.ids.TenantId [r : Representations] := r.ty5
+abbrev sandbox_controller_core.ids.VmId [r : Representations] := r.ty6
+abbrev sandbox_controller_core.ids.SandboxId [r : Representations] := r.ty7
+abbrev sandbox_controller_core.ids.OperationId [r : Representations] := r.ty8
+abbrev sandbox_controller_core.ids.FsId [r : Representations] := r.ty9
+abbrev sandbox_controller_core.ids.NetSlotId [r : Representations] := r.ty10
+abbrev sandbox_controller_core.model.WorkspaceApiAccess [r : Representations] := r.ty11
+abbrev sandbox_controller_core.model.FilePolicyRef [r : Representations] := r.ty12
+abbrev sandbox_controller_core.model.RestoreSource [r : Representations] := r.ty13
+abbrev sandbox_controller_core.model.NetworkPolicy [r : Representations] := r.ty14
+abbrev sandbox_controller_core.model.FailureKind [r : Representations] := r.ty15
+abbrev sandbox_controller_core.model.Authority [r : Representations] := r.ty16
+abbrev sandbox_controller_core.model.LogicalEffectId [r : Representations] := r.ty17
+abbrev sandbox_controller_core.model.World [r : Representations] := r.ty18
+abbrev sandproof_protocol.ContractError [r : Representations] := r.ty19
+abbrev serde_json.error.Error [r : Representations] := r.ty20
+abbrev host_contract.AdmissionError [r : Representations] := r.ty21
+abbrev CrashPoint [r : Representations] := r.ty22
+
+end SandproofUnloadNativeSnapshot

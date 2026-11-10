@@ -1,0 +1,162 @@
+import InboxOriginValidated
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+import SandboxModel.Lifecycle.Protocol.InboxState
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding
+noncomputable section
+open scoped Classical
+
+private theorem found_entry (intent : AcceptedLifecycleIntent) (entries : List Entry)
+    (start atIndex : Nat) (found : InboxLookup.entrySpec intent entries start = .found atIndex) :
+    ∃ index entry, atIndex = start + index ∧ entries[index]? = some entry ∧ entry.intent = intent := by
+  induction entries generalizing start with
+  | nil => simp [InboxLookup.entrySpec] at found
+  | cons head tail ih =>
+    by_cases key : head.intent.request.binding.key = intent.request.binding.key
+    · by_cases full : head.intent = intent
+      · have same : start = atIndex := by simpa [InboxLookup.entrySpec, key, full] using found
+        exact ⟨0, head, by simp [same], by simp, full⟩
+      · simp [InboxLookup.entrySpec, key, full] at found
+    · have later : InboxLookup.entrySpec intent tail (start + 1) = .found atIndex := by
+        simpa [InboxLookup.entrySpec, key] using found
+      obtain ⟨index, entry, same, here, full⟩ := ih (start + 1) later
+      exact ⟨index + 1, entry, by omega, by simpa using here, full⟩
+
+private theorem found_session (intent : AcceptedLifecycleIntent) (sessions : List Session)
+    (start atSession atEntry : Nat)
+    (found : InboxLookup.inboxSpec intent sessions start = .found atSession atEntry) :
+    ∃ index session entry, atSession = start + index ∧
+      sessions[index]? = some session ∧ session.entries.val[atEntry]? = some entry ∧ entry.intent = intent := by
+  induction sessions generalizing start with
+  | nil => simp [InboxLookup.inboxSpec] at found
+  | cons head tail ih =>
+    cases hit : InboxLookup.entrySpec intent head.entries.val 0 with
+    | absent =>
+      have later : InboxLookup.inboxSpec intent tail (start + 1) = .found atSession atEntry := by
+        simpa [InboxLookup.inboxSpec, hit] using found
+      obtain ⟨index, session, entry, same, here, stored, full⟩ := ih (start + 1) later
+      exact ⟨index + 1, session, entry, by omega, by simpa using here, stored, full⟩
+    | found atHead =>
+      have same : start = atSession ∧ atHead = atEntry := by
+        simpa [InboxLookup.inboxSpec, hit] using found
+      obtain ⟨index, entry, location, stored, full⟩ := found_entry intent head.entries.val 0 atHead hit
+      have eqIndex : index = atEntry := by omega
+      exact ⟨0, head, entry, by simp [same.1], by simp, by simpa [eqIndex] using stored, full⟩
+    | conflict => simp [InboxLookup.inboxSpec, hit] at found
+
+theorem found_position (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : inbox.find intent = .ok (.Ok (some (s, e)))) :
+    ∃ session entry,
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent := by
+  obtain ⟨actual, returned, observed⟩ := WP.spec_imp_exists (InboxLookup.find_spec inbox intent)
+  have same : actual = .Ok (some (s, e)) := Result.ok_injective (returned.symm.trans found)
+  have spec : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found s.val e.val := by
+    simpa [same, InboxLookup.observeInbox] using observed.symm
+  obtain ⟨index, session, entry, atIndex, here, stored, full⟩ :=
+    found_session intent inbox.sessions.val 0 s.val e.val spec
+  have sameIndex : index = s.val := by omega
+  exact ⟨session, entry, by simpa [sameIndex] using here, stored, full⟩
+
+private theorem count_entries_append (key : OperationKey) (before after : List Entry) :
+    InboxEntry.countEntries key (before ++ after) =
+      InboxEntry.countEntries key before + InboxEntry.countEntries key after := by
+  simp [InboxEntry.countEntries, List.filter_append]
+
+private theorem count_sessions_append (key : OperationKey) (before after : List Session) :
+    InboxEntry.countSessions key (before ++ after) =
+      InboxEntry.countSessions key before + InboxEntry.countSessions key after := by
+  simp [InboxEntry.countSessions, List.sum_append]
+
+private theorem count_entry_positive (key : OperationKey) (entries : List Entry)
+    (entry : Entry) (member : entry ∈ entries) (sameKey : entry.intent.request.binding.key = key) :
+    0 < InboxEntry.countEntries key entries := by
+  have hit : entry ∈ entries.filter (fun value => decide (value.intent.request.binding.key = key)) :=
+    List.mem_filter.mpr ⟨member, by simp [sameKey]⟩
+  simpa [InboxEntry.countEntries] using List.length_pos_of_mem hit
+
+private theorem zero_sessions_clear (intent : AcceptedLifecycleIntent) (sessions : List Session)
+    (zero : InboxEntry.countSessions intent.request.binding.key sessions = 0) :
+    ∀ session ∈ sessions, InboxLookup.NoKey intent session.entries.val := by
+  induction sessions with
+  | nil => simp
+  | cons head tail ih =>
+    change InboxEntry.countEntries intent.request.binding.key head.entries.val +
+      InboxEntry.countSessions intent.request.binding.key tail = 0 at zero
+    intro session member
+    rcases List.mem_cons.mp member with rfl | rest
+    · intro entry stored sameKey
+      have positive := count_entry_positive intent.request.binding.key session.entries.val entry stored sameKey
+      omega
+    · exact ih (by omega) session rest
+
+/-- Every stored origin of the validated session is found by a complete-request
+replay at the same session position. A separate origin selection proof supplies
+membership for the returned Create/Resume entry. -/
+theorem validated_origin_refinds_session {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (passed : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ()))
+    (found : inbox.find intent = .ok (.Ok (some (s, e)))) :
+    ∃ session state,
+      inbox.sessions.val[s.val]? = some session ∧
+      inbox.state s e = .ok state ∧ state.«local» = session.local ∧
+      ∀ origin ∈ session.entries.val,
+        ∃ position, inbox.find origin.intent = .ok (.Ok (some (s, position))) := by
+  obtain ⟨session, entry, sessionAt, entryAt, _⟩ := found_position inbox intent s e found
+  obtain ⟨sessionBound, sessionSame⟩ := List.getElem?_eq_some_iff.mp sessionAt
+  have entryAt' :
+      (inbox.sessions.val[s.val]'sessionBound).entries.val[e.val]? = some entry := by
+    simpa only [sessionSame] using entryAt
+  obtain ⟨entryBound, _⟩ := List.getElem?_eq_some_iff.mp entryAt'
+  obtain ⟨_, entrySame⟩ := List.getElem?_eq_some_iff.mp entryAt
+  refine ⟨session, InboxState.workState session entry, sessionAt, ?_, rfl, ?_⟩
+  · simpa only [sessionSame, entrySame] using InboxState.state_contract inbox s e sessionBound entryBound
+  · intro origin originMember
+    obtain ⟨earlier, later, entries⟩ := List.append_of_mem originMember
+    let before := inbox.sessions.val.take s.val
+    let after := inbox.sessions.val.drop (s.val + 1)
+    have sessions : inbox.sessions.val = before ++ session :: after := by
+      have split := List.take_append_drop s.val inbox.sessions.val
+      rw [List.drop_eq_getElem_cons sessionBound, sessionSame] at split
+      exact split.symm
+    have member : session ∈ inbox.sessions.val := by rw [sessions]; simp
+    have one := validated_entries_unique saved terminal renewal unload inbox passed
+      session member origin originMember
+    let key := origin.intent.request.binding.key
+    have single : InboxEntry.countEntries key (origin :: later) =
+        1 + InboxEntry.countEntries key later := by
+      simp [InboxEntry.countEntries, key, Nat.add_comm]
+    have allCounts : InboxEntry.countSessions key before +
+        (InboxEntry.countEntries key earlier + (1 + InboxEntry.countEntries key later)) +
+        InboxEntry.countSessions key after = 1 := by
+      change InboxEntry.countSessions key inbox.sessions.val = 1 at one
+      rw [sessions, count_sessions_append] at one
+      change InboxEntry.countSessions key before +
+        (InboxEntry.countEntries key session.entries.val + InboxEntry.countSessions key after) = 1 at one
+      rw [entries, count_entries_append, single] at one
+      omega
+    have zeroBefore : InboxEntry.countSessions key before = 0 := by omega
+    have beforeClear := zero_sessions_clear origin.intent before zeroBefore
+    have earlierClear : InboxLookup.NoKey origin.intent earlier := by
+      intro other stored sameKey
+      have positive := count_entry_positive key earlier other stored sameKey
+      omega
+    obtain ⟨si, ei, sameIndex, _, returned⟩ := (InboxLookup.find_first_key inbox origin.intent
+      before after session earlier later origin sessions beforeClear earlierClear entries rfl).1 rfl
+    have lengthBefore : before.length = s.val := by simp [before, Nat.min_eq_left (by omega : s.val ≤ inbox.sessions.val.length)]
+    have sameS : si = s := by
+      simpa only [UScalar.eq_equiv] using sameIndex.trans lengthBefore
+    exact ⟨ei, sameS ▸ returned⟩
+
+end
+end SandboxModel.Stage1Protocol.InboxOriginBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.found_position
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.validated_origin_refinds_session

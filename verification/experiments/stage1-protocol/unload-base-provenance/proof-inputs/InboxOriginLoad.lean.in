@@ -1,0 +1,101 @@
+import InboxOriginRefind
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding
+noncomputable section
+open InboxLoad
+
+/-- An actual successful load followed by actual find, state and origin lookup
+supplies the same session to the full-intent lookup used by the base reader. -/
+theorem actual_load_refinds_origin {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (initial after : E) (inbox : Inbox)
+    (loaded : load_using saved terminal renewal unload graphic io initial = .ok (.Ok (some inbox), after))
+    (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : inbox.find intent = .ok (.Ok (some (s, e)))) :
+    ∃ session state,
+      inbox.sessions.val[s.val]? = some session ∧
+      inbox.state s e = .ok state ∧ state.«local» = session.local ∧
+      ∀ origin ∈ session.entries.val,
+        ∃ position, inbox.find origin.intent = .ok (.Ok (some (s, position))) := by
+  have passed := successful_load_requires_validation saved terminal renewal unload
+    graphic graphicLaw io represented inbox initial after loaded
+  exact validated_origin_refinds_session saved terminal renewal.encode unload.encode inbox intent s e passed found
+
+/-- State values may contain traces that differ. The normal SQLite/Serde
+providers for the same transaction agree on the stored row and its decoding. -/
+structure SameInboxSnapshot {E : Type} (io : InboxLoadEffects E) : Prop where
+  stableBody : ∀ first second (row₁ row₂ : alloc.vec.Vec U8 × alloc.vec.Vec U8) after₁ after₂,
+    io.query_bytes_pair first bodyStatement = .ok (.Ok row₁, after₁) →
+    io.query_bytes_pair second bodyStatement = .ok (.Ok row₂, after₂) → row₁ = row₂
+  deterministicDecode : ∀ first second bytes (left right : Inbox) after₁ after₂,
+    io.decode_inbox first (alloc.vec.Vec.deref bytes) = .ok (.Ok left, after₁) →
+    io.decode_inbox second (alloc.vec.Vec.deref bytes) = .ok (.Ok right, after₂) → left = right
+
+theorem successful_loads_read_same_inbox {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io) (first second after₁ after₂ : E) (left right : Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁))
+    (read₂ : load_using saved terminal renewal unload graphic io second = .ok (.Ok (some right), after₂)) :
+    left = right := by
+  obtain ⟨_, body₁, evidence₁⟩ :=
+    full_load_success_body saved terminal renewal unload graphic graphicLaw io represented left first after₁ read₁
+  obtain ⟨_, body₂, evidence₂⟩ :=
+    full_load_success_body saved terminal renewal unload graphic graphicLaw io represented right second after₂ read₂
+  rcases evidence₁ with ⟨bytes₁, sha₁, atBytes₁, atDecode₁, _, _, raw₁, decoded₁, _, _, _, _, _⟩
+  rcases evidence₂ with ⟨bytes₂, sha₂, atBytes₂, atDecode₂, _, _, raw₂, decoded₂, _, _, _, _, _⟩
+  have sameBytes : bytes₁ = bytes₂ := congrArg Prod.fst
+    (snapshot.stableBody body₁ body₂ (bytes₁, sha₁) (bytes₂, sha₂) atBytes₁ atBytes₂ raw₁ raw₂)
+  subst bytes₂
+  exact snapshot.deterministicDecode atBytes₁ atBytes₂ bytes₁ left right atDecode₁ atDecode₂
+    decoded₁ decoded₂
+
+/-- Both real successful loads are consumed. The second search starts with the
+entire original intent and reads the same session/local; none of these three
+equalities is required from the caller. -/
+theorem actual_two_loads_refind_origin {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io) (first second after₁ after₂ : E) (left right : Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁))
+    (read₂ : load_using saved terminal renewal unload graphic io second = .ok (.Ok (some right), after₂))
+    (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : left.find intent = .ok (.Ok (some (s, e)))) :
+    ∃ session state,
+      left.sessions.val[s.val]? = some session ∧ left.state s e = .ok state ∧
+      ∀ origin ∈ session.entries.val, ∃ position,
+        right.find origin.intent = .ok (.Ok (some (s, position))) ∧
+        right.sessions.val[s.val]? = some session ∧ state.«local» = session.local := by
+  have same := successful_loads_read_same_inbox saved terminal renewal unload graphic graphicLaw
+    io represented snapshot first second after₁ after₂ left right read₁ read₂
+  subst right
+  obtain ⟨session, state, atSession, atState, localEq, refind⟩ :=
+    actual_load_refinds_origin saved terminal renewal unload graphic graphicLaw io represented
+      first after₁ left read₁ intent s e found
+  refine ⟨session, state, atSession, atState, ?_⟩
+  intro origin member
+  obtain ⟨position, returned⟩ := refind origin member
+  exact ⟨position, returned, atSession, localEq⟩
+
+end
+end SandboxModel.Stage1Protocol.InboxOriginBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.actual_load_refinds_origin
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.successful_loads_read_same_inbox
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.actual_two_loads_refind_origin

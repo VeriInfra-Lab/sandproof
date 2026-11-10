@@ -3,7 +3,10 @@ use super::{
     LifecycleCreateObservation, LifecycleReadyBasis, LifecycleReadyObservation,
     NativeCreateSnapshot, SourceProcessIdentity, core,
 };
-use crate::controller::lifecycle_inbox::{authenticated, codec};
+use crate::controller::lifecycle_inbox::{
+    authenticated, codec,
+    model::{Entry, Session},
+};
 use crate::controller::{
     admission, allocators, capture, data_credentials, identity, internal_inbox, storage,
 };
@@ -281,6 +284,24 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     ))
 }
 
+fn native_uncertain_actions(
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Vec<core::EffectId> {
+    world
+        .effect_ids()
+        .iter()
+        .filter(|effect| {
+            effect.command().sandbox() == local.sandbox
+                && matches!(
+                    world.effect_status(effect),
+                    Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
+                )
+        })
+        .cloned()
+        .collect()
+}
+
 pub(in crate::controller) fn native_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
@@ -301,18 +322,7 @@ pub(in crate::controller) fn native_snapshot(
         current_operation: record.current_operation,
         lifetime: admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
             .map_err(|_| JournalError::CorruptStore)?,
-        uncertain_actions: world
-            .effect_ids()
-            .iter()
-            .filter(|effect| {
-                effect.command().sandbox() == local.sandbox
-                    && matches!(
-                        world.effect_status(effect),
-                        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
-                    )
-            })
-            .cloned()
-            .collect(),
+        uncertain_actions: native_uncertain_actions(world, local),
     })
 }
 
@@ -350,42 +360,30 @@ fn original_result(
     }
 }
 
-pub(in crate::controller) fn base_snapshot(
-    tx: &Transaction<'_>,
-    namespace: &str,
-    world: &core::World,
-    intent: &AcceptedLifecycleIntent,
-    context: &AuthenticatedCenterContext,
-) -> Result<ReadyCandidate, JournalError> {
-    let inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
-    authenticated(&inbox, intent, context)?;
-    let (s, _) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
-    if !matches!(
-        intent.request.operation,
-        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
-    ) {
-        return Err(JournalError::UnsupportedInput);
+#[expect(
+    clippy::manual_find,
+    reason = "fixed Aeneas does not support slice find HRTB; preserve ordered borrowed lookup"
+)]
+fn first_entry_at_version(entries: &[Entry], version: u64) -> Option<&Entry> {
+    for entry in entries {
+        if entry.intent.accepted_version == version {
+            return Some(entry);
+        }
     }
-    let session = &inbox.sessions[s];
-    let current_entry = session
-        .entries
-        .iter()
-        .find(|entry| entry.intent.accepted_version == session.current_version)
-        .ok_or(JournalError::CorruptStore)?;
-    let current_request = current_entry.intent.clone();
-    let local = session.local;
-    let native = local
-        .and_then(|local| {
-            world
-                .sandbox_record(local.sandbox)
-                .map(|record| (local, record))
-        })
-        .map(|(local, record)| native_snapshot(tx, namespace, world, local, record))
-        .transpose()?;
-    let historical_result = local
-        .map(|local| original_result(world, local))
-        .transpose()?
-        .flatten();
+    None
+}
+
+#[expect(
+    clippy::ref_option,
+    reason = "keep the shared Option borrow used by the fixed Aeneas extraction"
+)]
+fn base_snapshot_readiness(
+    intent: &AcceptedLifecycleIntent,
+    current_request: &AcceptedLifecycleIntent,
+    current_entry: &Entry,
+    session: &Session,
+    native: &Option<NativeCreateSnapshot>,
+) -> CreateReadiness {
     let applied_renewal = match (
         &intent.request.operation,
         &current_request.request.operation,
@@ -408,9 +406,9 @@ pub(in crate::controller) fn base_snapshot(
         }
         _ => false,
     };
-    let readiness = if let Some(reason) = session.refusal {
+    if let Some(reason) = session.refusal {
         CreateReadiness::Refused { reason }
-    } else if current_request == *intent
+    } else if *current_request == *intent
         || applied_renewal
         || (current_entry.unload_resolution.is_some()
             && session
@@ -420,7 +418,41 @@ pub(in crate::controller) fn base_snapshot(
         CreateReadiness::Pending(CreateReadinessPending::NoLocalMapping)
     } else {
         CreateReadiness::NotCurrent
+    }
+}
+
+pub(in crate::controller) fn base_snapshot(
+    tx: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<ReadyCandidate, JournalError> {
+    let inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
+    authenticated(&inbox, intent, context)?;
+    let (s, _) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
+    match intent.request.operation {
+        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. } => {}
+        _ => return Err(JournalError::UnsupportedInput),
+    }
+    let session = &inbox.sessions[s];
+    let current_entry = first_entry_at_version(&session.entries, session.current_version)
+        .ok_or(JournalError::CorruptStore)?;
+    let current_request = current_entry.intent.clone();
+    let local = session.local;
+    let native = match local {
+        Some(local) => match world.sandbox_record(local.sandbox) {
+            Some(record) => Some(native_snapshot(tx, namespace, world, local, record)?),
+            None => None,
+        },
+        None => None,
     };
+    let historical_result = local
+        .map(|local| original_result(world, local))
+        .transpose()?
+        .flatten();
+    let readiness =
+        base_snapshot_readiness(intent, &current_request, current_entry, session, &native);
     Ok(ReadyCandidate {
         view: LifecycleCreateObservation {
             request: intent.clone(),
