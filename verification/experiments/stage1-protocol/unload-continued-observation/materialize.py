@@ -1,4 +1,4 @@
-"""Assemble the frozen continued-unload proof and its original #770 imports."""
+"""Assemble an unload proof package and its frozen Lean imports."""
 
 import argparse
 import hashlib
@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
-REPOSITORY = PACKAGE.parents[3]
 
 
 def checked(root, relative, expected):
@@ -19,20 +18,21 @@ def checked(root, relative, expected):
     return data
 
 
-def materialize(output):
-    inventory = json.loads((PACKAGE / "sources.json").read_bytes())
+def materialize(output, package=PACKAGE):
+    repository = package.parents[3]
+    inventory = json.loads((package / "sources.json").read_bytes())
     files = {
-        name: checked(REPOSITORY, name, expected)
+        name: checked(repository, name, expected)
         for name, expected in inventory["tool_inputs"].items()
     }
     for module, entry in inventory["modules"].items():
         parts = module.split(".")
         if not all(part.isidentifier() for part in parts):
             raise ValueError(f"invalid Lean module name: {module}")
-        root = PACKAGE if "package" in entry else REPOSITORY
-        name = entry["package"] if root == PACKAGE else entry["repository"]
+        root = package if "package" in entry else repository
+        name = entry["package"] if root == package else entry["repository"]
         files[Path(*parts).with_suffix(".lean")] = checked(root, name, entry["sha256"])
-    files["lakefile.toml"] = (PACKAGE / "lakefile.toml.in").read_bytes()
+    files["lakefile.toml"] = (package / "lakefile.toml.in").read_bytes()
     files["build-order.txt"] = "".join(
         module.replace(".", "/") + "\n" for module in inventory["modules"]
     ).encode()
@@ -48,4 +48,6 @@ def materialize(output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="new directory for the isolated Lean project")
-    materialize(parser.parse_args().output)
+    parser.add_argument("--package", type=Path, default=PACKAGE, help="unload proof package")
+    args = parser.parse_args()
+    materialize(args.output, args.package.resolve())
