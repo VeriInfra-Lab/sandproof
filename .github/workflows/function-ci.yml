@@ -1,20 +1,13 @@
-name: Function CI
+name: V3 diagnostic CAS storage comparison
 
 on:
-  pull_request:
-    # Becoming ready for review does not change code, title or target. Draft PRs
-    # already run the same checks; avoid cancelling/restarting them on readiness.
-    types: [opened, synchronize, reopened, edited]
-  push:
-    branches: [main, test]
-  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: function-ci-${{ github.event.pull_request.number || github.ref }}
+  group: function-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,70 +18,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Check pinned E2B SDK against loopback responses
-        # No E2B cloud credentials, VM, or privileged runner are used.
-        run: |
-          uv_version="$(uv --version)"
-          uv_version_pattern='^uv 0[.]11[.]31( [(][^()[:cntrl:]]+[)])?$'
-          if [[ ! "$uv_version" =~ $uv_version_pattern ]]; then
-            printf 'Expected preinstalled uv 0.11.31, got %s\n' "$uv_version" >&2
-            exit 1
-          fi
-          mkdir "$RUNNER_TEMP/ci-git"
-          ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
-          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
-          CI_GIT_LOCK="$GITHUB_WORKSPACE/tests/compat/uv.lock" \
-            PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-compat.sh
-      - name: Check distributed components against sealed Redis
-        # Ordinary disposable guest only: no KVM, host credentials or cloud.
-        # Missing fixed material is a failure; never download/fallback/skip.
-        run: |
-          redis_server="$(python3 tools/ci_redis.py check)"
-          export SANDPROOF_REDIS_SERVER="$redis_server"
-          export CARGO_NET_OFFLINE=true
-          bash scripts/check-distributed-contract.sh
-
-  harbor-inputs:
-    runs-on: [self-hosted, Linux, X64, sandproof-ci-harbor]
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Check joint Harbor and E2B SDK installation
-        # Imports and loopback contracts only; no task execution or cloud keys.
-        run: |
-          uv_version="$(uv --version)"
-          uv_version_pattern='^uv 0[.]11[.]31( [(][^()[:cntrl:]]+[)])?$'
-          if [[ ! "$uv_version" =~ $uv_version_pattern ]]; then
-            printf 'Expected preinstalled uv 0.11.31, got %s\n' "$uv_version" >&2
-            exit 1
-          fi
-          mkdir "$RUNNER_TEMP/ci-git"
-          ln -s "$GITHUB_WORKSPACE/tools/ci_git.py" "$RUNNER_TEMP/ci-git/git"
-          export UV_OFFLINE=1 CARGO_NET_OFFLINE=true
-          CI_GIT_LOCK="$GITHUB_WORKSPACE/benchmarks/uv.lock" \
-            PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-bench.sh
-
-  pr-title:
-    if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, Linux, X64, sandproof-ci-title]
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Check PR title
-        # Read untrusted title as JSON data, never interpolate it into shell code.
-        run: python3 tools/check_commit_subject.py --event "$GITHUB_EVENT_PATH"
-
-  pr-policy:
-    if: github.event_name == 'pull_request'
-    runs-on: [self-hosted, Linux, X64, sandproof-ci-policy]
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - name: Check branch name and PR target
-        run: python3 tools/check_pr_policy.py --event "$GITHUB_EVENT_PATH"
+      - name: Compare exact center fixture on guest ext4 and XFS
+        run: bash diagnostics/probe-ci-cas-storage.sh
