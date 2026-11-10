@@ -52,6 +52,7 @@ from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.benchmark_proxy import BenchmarkProxy
+from tools.service_storage_observation import observe_volume_storage
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
 from tools.system_acceptance import write_once,json_file
@@ -219,6 +220,11 @@ def select_cohort(args, tasks):
 
 
 def exercise(args):
+    with contextlib.ExitStack() as evidence:
+        return exercise_with_evidence(args, evidence)
+
+
+def exercise_with_evidence(args, evidence):
     prepared_original = getattr(args, 'original_fixtures', None) is not None
     bounded_policy = (protected_json(args.bounded_policy) if prepared_original else
                       acceptance_build_policy(getattr(args, "bounded_policy", None)))
@@ -367,6 +373,8 @@ def exercise(args):
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
 )
     root.mkdir(mode=0o700)
+    if prepared_original:
+        evidence.enter_context(observe_volume_storage(root, commit=commit))
     provision_acceptance_coordination(bounded_policy, run_root=root,
         namespace=namespaces[0], build_namespace=args.build_namespace)
     print(f'root={root} commit={commit}', flush=True)
