@@ -29,10 +29,17 @@ def positive(value):
 
 
 def envelope(profile):
+    parts, inodes = envelope_breakdown(profile)
+    return sum(item["bytes"] for item in parts), inodes
+
+
+def envelope_breakdown(profile):
+    """Validate the original profile and explain every byte in its envelope."""
     if (type(profile) is not dict or set(profile) != PROFILE_FIELDS or type(profile["version"]) is not int or profile["version"] != 1
             or type(profile["pools"]) is not list or not 1 <= len(profile["pools"]) <= 2):
         raise ValueError("invalid fixed physical profile")
-    peak, inodes = positive(profile["filesystem_overhead_bytes"]), 1
+    parts = [{"kind": "filesystem_overhead", "bytes": positive(profile["filesystem_overhead_bytes"])}]
+    inodes = 1
     roots, namespaces, roles = [profile["coordination_file"]], set(), []
     for pool in profile["pools"]:
         if type(pool) is not dict or set(pool) != POOL_FIELDS:
@@ -48,7 +55,12 @@ def envelope(profile):
         if pool["jail_inodes_per_slot"] < 4 or pool["host_metadata_bytes"] > pool["cleanup_reserve_bytes"]:
             raise ValueError("physical pool metadata bound is insufficient")
         roots.extend(pool[field] for field in ("database", "node_state_dir", "chroot_base"))
-        peak += pool["rootfs_budget_bytes"] + pool["max_host_slots"] * (pool["kernel_copy_bytes"] + pool["runtime_copy_bytes"]) + pool["cleanup_reserve_bytes"]
+        parts.extend((
+            {"kind": "working_disks", "role": pool["role"], "bytes": pool["rootfs_budget_bytes"]},
+            {"kind": "runtime_copies", "role": pool["role"],
+             "bytes": pool["max_host_slots"] * (pool["kernel_copy_bytes"] + pool["runtime_copy_bytes"])},
+            {"kind": "cleanup", "role": pool["role"], "bytes": pool["cleanup_reserve_bytes"]},
+        ))
         inodes += pool["host_metadata_inodes"] + pool["max_host_slots"] * pool["jail_inodes_per_slot"] + 7
     public = profile["public_build"]
     if sorted(roles) != (["runtime"] if public is None else ["builder", "runtime"]):
@@ -59,7 +71,10 @@ def envelope(profile):
         if any(type(public[name]) is not int or not 0 <= public[name] <= 2**32-1
                 for name in ('workspace_owner_uid','registry_owner_uid')):
             raise ValueError('explicit representable public build owner required')
-        peak += positive(public["workspace_bytes"]) + positive(public["registry_bytes"])
+        parts.extend((
+            {"kind": "build_workspace", "bytes": positive(public["workspace_bytes"])},
+            {"kind": "build_registry", "bytes": positive(public["registry_bytes"])},
+        ))
         inodes += positive(public["inode_budget"])
         if public["inode_budget"] < 8 + 19 * positive(public["max_jobs"]) + 5 * positive(public["max_templates"]):
             raise ValueError("physical public inode provision is insufficient")
@@ -83,7 +98,10 @@ def envelope(profile):
                 or cache['metadata_bytes'] < 4096 + cache['max_entries'] * 2 * (64 * 1024 + 4096)
                 or cache['inode_budget'] < 4 + 5 * cache['max_entries'] + 5 * cache['max_downloads']):
             raise ValueError('host template cache omits retained, unknown-download or metadata provision')
-        peak += cache['artifact_bytes'] + cache['temporary_bytes'] + cache['metadata_bytes']
+        parts.extend(
+            {"kind": "host_template_cache_" + field, "root": cache["root"], "bytes": cache[field + "_bytes"]}
+            for field in ("artifact", "temporary", "metadata")
+        )
         inodes += cache['inode_budget']
         roots.append(cache['root'])
     services = profile['service_data']
@@ -93,7 +111,7 @@ def envelope(profile):
         if (type(service) is not dict or set(service) != SERVICE_FIELDS
                 or type(service['owner_uid']) is not int or not 0 <= service['owner_uid'] <= 2**32-1):
             raise ValueError('invalid fixed physical service data owner or fields')
-        peak += positive(service['peak_bytes'])
+        parts.append({"kind": "service_data", "root": service["root"], "bytes": positive(service["peak_bytes"])})
         inodes += positive(service['inode_budget'])
         roots.append(service['root'])
     paths = []
@@ -104,9 +122,25 @@ def envelope(profile):
         if path == Path("/") or any(path == other or path in other.parents or other in path.parents for other in paths):
             raise ValueError("physical allocation roots overlap")
         paths.append(path)
+    peak = sum(item["bytes"] for item in parts)
     if 2 * peak > MAXIMUM or 2 * positive(profile["filesystem_overhead_inodes"]) > MAXIMUM or profile["filesystem_overhead_inodes"] < inodes:
         raise ValueError("physical envelope overflow or insufficient inode provision")
-    return peak, profile["filesystem_overhead_inodes"]
+    return parts, profile["filesystem_overhead_inodes"]
+
+
+def activation_capacity(profile, filesystem):
+    """Read the complete activation budget and available space, without admitting work."""
+    parts, inodes = envelope_breakdown(profile)
+    peak = sum(item["bytes"] for item in parts)
+    free = os.statvfs(filesystem)
+    available_bytes = free.f_bavail * free.f_frsize
+    available_inodes = free.f_favail
+    required_bytes, required_inodes = 2 * peak, 2 * inodes
+    return dict(parts=parts, peak_bytes=peak,
+                required_bytes=required_bytes, required_inodes=required_inodes,
+                available_bytes=available_bytes, available_inodes=available_inodes,
+                missing_bytes=max(0, required_bytes - available_bytes),
+                missing_inodes=max(0, required_inodes - available_inodes))
 
 
 def validate_configuration(runtime, builder, build, *, file_size=None):

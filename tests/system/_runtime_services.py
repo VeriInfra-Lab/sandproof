@@ -38,7 +38,7 @@ from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_capacity
 from tools.capture_acceptance import instantiate_copy_limits, require_capacity, validate_settings
 from tools.runtime_acceptance_budget import profile_declaration as _profile_declaration, service_declarations
 
@@ -134,10 +134,10 @@ def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks,
     profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
         service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,
         physical_inodes=physical_inodes)
-    peak,inodes=envelope(profile)
-    free=os.statvfs(layout['hosts'][0])
-    if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
-        raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed')
+    capacity=activation_capacity(profile,layout['hosts'][0])
+    if capacity['missing_bytes'] or capacity['missing_inodes']:
+        raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed: '
+                           + json.dumps(capacity,sort_keys=True))
     for native in native_pools:
         native['bounded_host']['physical_storage']=copy.deepcopy(profile)
     return profile

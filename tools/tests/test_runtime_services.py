@@ -17,6 +17,7 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
+from tools.template_physical_storage import envelope
 
 
 class CaptureProvisionTests(unittest.TestCase):
@@ -592,11 +593,11 @@ class RuntimeServicesTests(unittest.TestCase):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
                 generic_profile=bind(2,None)
-            self.assertLessEqual(2*services.envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertLessEqual(2*envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(profile['pools'],original)
             # General template/build probes keep their own original approved
             # envelope and actual free-space check, not the two-task CI ceiling.
-            self.assertGreater(2*services.envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertGreater(2*envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(generic_profile['pools'],original)
 
     def test_explicit_capture_bytes_and_inodes_still_require_the_full_double_envelope(self):
@@ -624,13 +625,19 @@ class RuntimeServicesTests(unittest.TestCase):
                                     activation_ceiling_bytes=200*gib,**copy.deepcopy(kwargs))
             expected=profile_declaration([native],[catalog],layout,physical_inodes=131072,
                                         activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
-            needed,inodes=services.envelope(expected)
+            needed,inodes=envelope(expected)
             for free,files in ((2*needed-1,2*inodes),(2*needed,2*inodes-1)):
                 with self.subTest(free=free,files=files),patch.object(services.os,'statvfs',
                         return_value=SimpleNamespace(f_bavail=free,f_frsize=1,f_favail=files)), \
-                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes'):
+                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes') as error:
                     services._bind_profile([native],[catalog],layout,physical_inodes=131072,
                         activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+                report = json.loads(str(error.exception).split(': ', 1)[1])
+                self.assertEqual((report['missing_bytes'], report['missing_inodes']),
+                                 (2*needed-free, 2*inodes-files))
+                self.assertEqual(sum(item['bytes'] for item in report['parts']), needed)
+                self.assertIn(dict(kind='service_data', root=str(root/'p/s'), bytes=88*gib),
+                              report['parts'])
             with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
                     f_bavail=2*needed,f_frsize=1,f_favail=2*inodes)):
                 actual=services._bind_profile([native],[catalog],layout,physical_inodes=131072,
