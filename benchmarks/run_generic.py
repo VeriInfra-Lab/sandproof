@@ -119,6 +119,8 @@ async def run_selected(args, lock):
                 row.setdefault('build_id', environment.build_id)
                 row.setdefault('build', environment.build_result)
                 row.setdefault('template', environment.template)
+                if timing := getattr(environment, 'startup_timing', None):
+                    row['startup_timing'] = timing.copy()
                 if not row.get('runtime_intent'):
                     try:
                         row['runtime_intent'] = load_runtime_intent(
