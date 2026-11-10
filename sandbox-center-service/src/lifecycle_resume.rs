@@ -65,7 +65,9 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let policy = self
             .lifecycle_observation_policy
             .ok_or(CurrentObservationError::Shared(PortError::Busy))?;
+        let diagnostic_start = Instant::now();
         let state = self.snapshot().map_err(CurrentObservationError::Shared)?;
+        let after_snapshot = Instant::now();
         let record = state
             .lifecycle_session(
                 &intent.request.binding.key.owner,
@@ -84,12 +86,37 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Err(superseded());
         }
         let before = self.now().map_err(CurrentObservationError::Shared)?;
+        if std::thread::current()
+            .name()
+            .is_some_and(|name| name.contains("continued_reunload"))
+        {
+            eprintln!(
+                "v3_timing stage=resume_before_host snapshot_us={} left_us={}",
+                after_snapshot.duration_since(diagnostic_start).as_micros(),
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_micros()
+            );
+        }
         let budget = time_left(deadline).map_err(|_| observation_deadline())?;
+        let host_start = Instant::now();
         let view = self
             .hosts
             .observe_lifecycle_resume(origin, budget)
             .map_err(CurrentObservationError::Host)?;
         let after = self.now().map_err(CurrentObservationError::Shared)?;
+        if std::thread::current()
+            .name()
+            .is_some_and(|name| name.contains("continued_reunload"))
+        {
+            eprintln!(
+                "v3_timing stage=resume_after_host host_us={} left_us={}",
+                host_start.elapsed().as_micros(),
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_micros()
+            );
+        }
         if after < before {
             diagnostics::emit(
                 diagnostics::Stage::ResumeObservationTimeRejected,

@@ -140,11 +140,27 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         request: &PublicUnloadRequest,
         deadline: Instant,
     ) -> Result<AcceptedLifecycleIntent, CurrentObservationError> {
+        let diagnostic_start = Instant::now();
         let (current, phase) = self.current_lifecycle_intent(owner, session)?;
+        let after_current = Instant::now();
         if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
             return Err(PortError::Conflict.into());
         }
-        if self.is_resumed_execution(&current)? {
+        let resumed = self.is_resumed_execution(&current)?;
+        if resumed {
+            if std::thread::current()
+                .name()
+                .is_some_and(|name| name.contains("continued_reunload"))
+            {
+                eprintln!(
+                    "v3_timing stage=unload_pre_snapshot current_us={} classify_us={} left_us={}",
+                    after_current.duration_since(diagnostic_start).as_micros(),
+                    after_current.elapsed().as_micros(),
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .as_micros()
+                );
+            }
             let observation = self.current_resume_observation_before(&current, deadline)?;
             let intent = self
                 .authority

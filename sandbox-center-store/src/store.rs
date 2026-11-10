@@ -324,8 +324,21 @@ impl<T: ControlState> RedisLedger<T> {
             .revision
             .checked_next()
             .map_err(|_| StoreError::RevisionExhausted)?;
+        let diagnostic_start = Instant::now();
         self.check_health(deadline)?;
-        self.write(Some(expected), encoded, next, deadline)
+        let after_health = Instant::now();
+        let result = self.write(Some(expected), encoded, next, deadline);
+        if std::thread::current()
+            .name()
+            .is_some_and(|name| name.contains("continued_reunload"))
+        {
+            eprintln!(
+                "v3_timing stage=ledger_replace pre_health_us={} write_us={}",
+                after_health.duration_since(diagnostic_start).as_micros(),
+                after_health.elapsed().as_micros()
+            );
+        }
+        result
     }
 
     fn write(
@@ -335,7 +348,9 @@ impl<T: ControlState> RedisLedger<T> {
         revision: Revision,
         deadline: Instant,
     ) -> Result<Committed<T>, StoreError> {
+        let diagnostic_start = Instant::now();
         let state = codec::decode(&encoded, self.config.max_block_bytes)?;
+        let after_decode = Instant::now();
         let prior = expected.map_or_else(String::new, |value| value.revision.get().to_string());
         let mut command = redis::cmd("EVAL");
         command
@@ -349,6 +364,7 @@ impl<T: ControlState> RedisLedger<T> {
             .arg(&encoded)
             .arg(self.config.max_block_bytes)
             .arg(expected.map_or(&[][..], |value| value.encoded.as_slice()));
+        let cas_start = Instant::now();
         let result: i64 = match self.query(&mut command, deadline, Phase::Cas) {
             Ok(value) => value,
             Err(_) => return self.fence_unknown(),
@@ -361,8 +377,20 @@ impl<T: ControlState> RedisLedger<T> {
             4 => return Err(StoreError::Conflict),
             _ => return self.fence_unknown(),
         }
+        let after_cas = Instant::now();
         if self.check_health(deadline).is_err() {
             return self.fence_unknown();
+        }
+        if std::thread::current()
+            .name()
+            .is_some_and(|name| name.contains("continued_reunload"))
+        {
+            eprintln!(
+                "v3_timing stage=ledger_write decode_us={} cas_us={} post_health_us={}",
+                after_decode.duration_since(diagnostic_start).as_micros(),
+                after_cas.duration_since(cas_start).as_micros(),
+                after_cas.elapsed().as_micros()
+            );
         }
         self.write_fenced = false;
         Ok(Committed(Observed {
