@@ -443,6 +443,15 @@ impl Runtime {
         id: &str,
         owner: u32,
     ) -> Result<JailObservation, RuntimeError> {
+        self.inspect_jail(id, owner)
+            .map(|(observation, _)| observation)
+    }
+
+    fn inspect_jail(
+        &self,
+        id: &str,
+        owner: u32,
+    ) -> Result<(JailObservation, Option<File>), RuntimeError> {
         validate_id(id)?;
         let record = self.read_jail_record(id, owner)?;
         let jail = self.jail_path(id);
@@ -456,10 +465,10 @@ impl Runtime {
             }
         }
         let Some(current) = metadata(&jail)? else {
-            return Ok(JailObservation::Absent);
+            return Ok((JailObservation::Absent, None));
         };
         let Some(record) = record else {
-            return Ok(JailObservation::Unregistered);
+            return Ok((JailObservation::Unregistered, None));
         };
         let parent = owned_directory(jail.parent().ok_or(RuntimeError::InvalidId)?, owner, false)?;
         let directory = owned_directory(&jail, owner, true)?;
@@ -472,32 +481,35 @@ impl Runtime {
                 "jail directory identity changed",
             ));
         }
-        if let Some(root) = directory_at(&directory, c"root")? {
+        let root = directory_at(&directory, c"root")?;
+        if let Some(root) = &root {
             let value = root.metadata()?;
             if (value.uid() != owner && value.uid() != self.config.vm_uid)
                 || value.mode() & 0o077 != 0
-                || !record.root.matches(&root)?
+                || !record.root.matches(root)?
             {
                 return Err(RuntimeError::IdentityMismatch("jail root identity changed"));
             }
         }
-        Ok(JailObservation::Registered {
-            device: directory.metadata()?.dev(),
-            inode: directory.metadata()?.ino(),
-        })
+        Ok((
+            JailObservation::Registered {
+                device: directory.metadata()?.dev(),
+                inode: directory.metadata()?.ino(),
+            },
+            root,
+        ))
+    }
+
+    pub(super) fn launch_jail_root(&self, id: &str, owner: u32) -> Result<File, RuntimeError> {
+        self.inspect_jail(id, owner)?
+            .1
+            .ok_or(RuntimeError::IdentityMismatch(
+                "launch jail witness missing",
+            ))
     }
 
     pub(super) fn require_launch_jail(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
-        if !matches!(
-            self.observe_jail_for_owner(id, owner)?,
-            JailObservation::Registered { .. }
-        ) || metadata(&self.jail_path(id).join("root"))?.is_none()
-        {
-            return Err(RuntimeError::IdentityMismatch(
-                "launch jail witness missing",
-            ));
-        }
-        Ok(())
+        self.launch_jail_root(id, owner).map(drop)
     }
 
     pub(super) fn cleanup_jail(
@@ -680,12 +692,22 @@ mod tests {
             } else {
                 runtime.jail_path(ID)
             };
+            let verified_root = runtime.launch_jail_root(ID, owner).unwrap();
             fs::rename(&target, temp.path().join("original")).unwrap();
             fs::DirBuilder::new().mode(0o700).create(&target).unwrap();
             let canary = target.join("foreign-canary");
             fs::write(&canary, b"must remain").unwrap();
             assert!(runtime.cleanup_jail(ID, owner, false).is_err());
-            assert!(runtime.require_launch_jail(ID, owner).is_err());
+            assert!(runtime.launch_jail_root(ID, owner).is_err());
+            let original_root = if replace_root {
+                temp.path().join("original")
+            } else {
+                temp.path().join("original/root")
+            };
+            assert_eq!(
+                verified_root.metadata().unwrap().ino(),
+                original_root.metadata().unwrap().ino()
+            );
             assert_eq!(fs::read(canary).unwrap(), b"must remain");
         }
     }

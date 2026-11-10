@@ -594,8 +594,7 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         self.require_launch_jail(id, 0)?;
         self.wait_api_socket(id, pid)?;
-        let root = self.root_path(id);
-        self.stage_cold_images(&root, disk)?;
+        self.stage_cold_images(id, disk)?;
         if &FileStamp::from_metadata(&disk.metadata()?) != source_stamp {
             return Err(RuntimeError::IdentityMismatch(
                 "original cold template changed",
@@ -625,21 +624,14 @@ impl Runtime {
         Ok(())
     }
 
-    fn stage_cold_images(&self, root: &Path, disk: &File) -> Result<(), RuntimeError> {
+    fn stage_cold_images(&self, id: &str, disk: &File) -> Result<(), RuntimeError> {
+        let directory = self.launch_jail_root(id, 0)?;
         copy_private_kernel(
             &self.config.kernel,
-            &root.join("vmlinux"),
+            &self.root_path(id).join("vmlinux"),
             self.config.vm_uid,
             self.config.vm_gid,
         )?;
-        let directory = File::from(
-            open(
-                root,
-                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-                Mode::empty(),
-            )
-            .map_err(errno_to_io)?,
-        );
         clone_private_disk(
             disk,
             &directory,
