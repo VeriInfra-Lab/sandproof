@@ -8,14 +8,18 @@ use sandproof_center_store::authority::AuthorityError;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentResumeReadiness, LifecycleOperation, ResumeObservation,
 };
-use std::time::{Duration, Instant};
+use std::{
+    io::Write as _,
+    time::{Duration, Instant},
+};
 
 fn trace_resume_stage(stage: &str, elapsed: Duration, deadline: Instant) {
     if std::thread::current()
         .name()
         .is_some_and(|name| name.contains("continued_reunload"))
     {
-        eprintln!(
+        let _ = writeln!(
+            std::io::stderr().lock(),
             "v3_timing stage={stage} elapsed_us={} left_us={}",
             elapsed.as_micros(),
             deadline

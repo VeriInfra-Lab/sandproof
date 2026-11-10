@@ -17,7 +17,7 @@ use sandproof_protocol::lifecycle::{
     PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
     PublicSessionView, PublicUnloadRequest, SessionId,
 };
-use std::time::Instant;
+use std::{io::Write as _, time::Instant};
 
 fn query_lock_error(stage: DiagnosticStage) -> PortError {
     diagnostics::emit(stage, DiagnosticFailure::Port(PortError::OutcomeUnknown));
@@ -152,7 +152,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 .name()
                 .is_some_and(|name| name.contains("continued_reunload"))
             {
-                eprintln!(
+                let _ = writeln!(
+                    std::io::stderr().lock(),
                     "v3_timing stage=unload_pre_snapshot current_us={} classify_us={} left_us={}",
                     after_current.duration_since(diagnostic_start).as_micros(),
                     after_current.elapsed().as_micros(),

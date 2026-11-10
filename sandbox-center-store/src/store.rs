@@ -3,6 +3,7 @@ use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo}
 use sandproof_protocol::DeploymentId;
 use std::{
     collections::BTreeMap,
+    io::Write as _,
     net::SocketAddrV4,
     time::{Duration, Instant},
 };
@@ -332,7 +333,8 @@ impl<T: ControlState> RedisLedger<T> {
             .name()
             .is_some_and(|name| name.contains("continued_reunload"))
         {
-            eprintln!(
+            let _ = writeln!(
+                std::io::stderr().lock(),
                 "v3_timing stage=ledger_replace pre_health_us={} write_us={}",
                 after_health.duration_since(diagnostic_start).as_micros(),
                 after_health.elapsed().as_micros()
@@ -385,7 +387,8 @@ impl<T: ControlState> RedisLedger<T> {
             .name()
             .is_some_and(|name| name.contains("continued_reunload"))
         {
-            eprintln!(
+            let _ = writeln!(
+                std::io::stderr().lock(),
                 "v3_timing stage=ledger_write decode_us={} cas_us={} post_health_us={}",
                 after_decode.duration_since(diagnostic_start).as_micros(),
                 after_cas.duration_since(cas_start).as_micros(),
