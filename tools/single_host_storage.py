@@ -68,7 +68,10 @@ def quota_mount(entry):
 
 
 def reflink_enabled(entry):
-    info = run(['/usr/sbin/xfs_info', entry['target']])
+    # xfs_info is a shell wrapper that looks up xfs_spaceman on PATH.
+    # Query the mounted filesystem directly in the same restricted environment.
+    tool = trusted_path(Path('/usr/sbin/xfs_spaceman'))
+    info = run([str(tool), '-c', 'info', entry['target']])
     return re.search(r'\breflink=1(?:\s|$)', info) is not None
 
 
