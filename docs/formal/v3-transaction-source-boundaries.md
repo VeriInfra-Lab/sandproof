@@ -62,3 +62,12 @@
 [`identity`](../../controller-service/src/controller/identity.rs) 在本来源切片只采用原四种格式：`{prefix}-{namespace}-{number}`、`tenant-{number}`、`op-{namespace}-{sandbox}-{operation}`、`sb-{namespace}-{sandbox}`。原 `Arguments::new`、Display 引用转调、str/有界整数 Display 和 `alloc::fmt::format` 按固定 A6 来源接线，保持全部原参数、分隔符、十进制输出、回调顺序和 formatter 后态；前项失败不调用后项，保留库的错误、失败和非返回。只覆盖这些实际有限程序，不推广任意 format/Display，也不承诺分配成功或称标准库源码已机器证明。选用哪个前缀、完整身份如何构造和是否合规则仍是自有业务。
 
 `sandproof_protocol::valid_identifier` 是[已有真实函数对应](../../SandboxModel/Foundations/Identifiers.lean)及[原源码](../../sandbox-protocol/src/lib.rs)的模块复用，不新增“标识符总合法”的可信条件；本次调用仍须核对原函数、闭包和完整输入的实际链接。纯 `Option::ok_or` 仅按原标签作 Some→Ok、None→给定 Err 的有限值适配，不选择业务错误或假设 Some；本处只涉及三处实际普通无载荷错误值，错误参数按原调用顺序求值，资源型泛型 E 须另行登记。精确对齐采用 `lift(pure ok_or) = fixed Std ok_or` 的一般等式，不新增 Some 前提。已有模块链接、有限适配符合性和整个实际来源业务证明分别记录，适用版本、结果及剩余连接统一见[覆盖记录](../proof-coverage.md)、[#635](https://github.com/VeriInfra-Lab/sandproof/issues/635)与[#637](https://github.com/VeriInfra-Lab/sandproof/issues/637)。
+
+### A6/B4 原 Create 选项编码的单句转调
+
+[`host_contract::serialize_create_options`](../../controller-service/src/host_contract.rs)
+接收调用方交给它的同一个完整 `CreateOptions`，调用一次固定
+`serde_json::to_vec`，原样返回全部字节或原错误。这里只采用已有 A6 的具体派生
+和 B4 的参数与结果转交。模板、环境变量和 metadata 的顺序、编码错误映射、
+65536 字节上限及存储 BLOB 完整比较均由实际调用方证明。
+模板有效性仍由 `TemplateBinding::is_valid` 的项目提供方承担。

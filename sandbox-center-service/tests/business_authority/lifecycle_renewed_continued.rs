@@ -23,7 +23,7 @@ impl Case {
     fn with_timeouts(source_timeout_ms: u64, renewal_seconds: i64) -> Self {
         let engine = Engine::new();
         let proxy = reply_loss::ReplyLoss::new(engine.address);
-        let authority = lifecycle_public::setup_with_operation_limit(&engine, &proxy, 8);
+        let authority = lifecycle_public::setup_with_operation_limit(&engine, proxy.address, 8);
         let (app, host, clock) = application(&authority);
         let mut create = lifecycle_public::request();
         create.parameters.timeout_ms = source_timeout_ms;

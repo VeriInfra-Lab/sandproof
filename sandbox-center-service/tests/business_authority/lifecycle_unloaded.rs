@@ -757,7 +757,7 @@ fn resumed_continued_loss_is_durable_and_old_ready_cannot_revive_it() {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     // Four original intents plus the mandatory reserved Destroy position.
-    let authority = lifecycle_public::setup_with_operation_limit(&fixture, &proxy, 5);
+    let authority = lifecycle_public::setup_with_operation_limit(&fixture, proxy.address, 5);
     let (app, host, _) = application(&authority);
     let (session, ready, request) = complete_resumed_continued(&app, &host);
     let before = app.query_lifecycle("8", &session).unwrap();
@@ -805,7 +805,7 @@ fn destroy_during_resumed_continued_loss_observation_wins_the_original_redis_cas
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     // Four original intents plus the mandatory reserved Destroy position.
-    let authority = lifecycle_public::setup_with_operation_limit(&fixture, &proxy, 5);
+    let authority = lifecycle_public::setup_with_operation_limit(&fixture, proxy.address, 5);
     let (app, host, _) = application(&authority);
     let (session, mut lost, _) = complete_resumed_continued(&app, &host);
     lost.readiness = CurrentResumeReadiness::StateLost;

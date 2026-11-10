@@ -1,0 +1,72 @@
+import SandproofUnloadOptionsRead.Funs
+import SandboxModel.Lifecycle.Protocol.InboxLoadLibrary
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.SourceOptionsRead
+open SandproofUnloadOptionsRead
+variable [Representations] [ops : Operations]
+
+abbrev Bytes := alloc.vec.Vec U8
+
+def storedOptions (connection : rusqlite.Connection) (text : Str) :
+    Result (core.result.Result Bytes rusqlite.error.Error) :=
+  rusqlite.Connection.query_row
+    (ArrayT1.Insts.RusqliteParamsParams (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+    controller.admission.read_create_options.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultVecU8Error
+    connection (SandproofUnloadOptionsRead.toStr "SELECT options_json FROM sandbox_create_options WHERE sandbox_id=?1")
+    (Array.make 1#usize [text]) ()
+
+def admittedCount (connection : rusqlite.Connection) (text : Str) :
+    Result (core.result.Result I64 rusqlite.error.Error) :=
+  rusqlite.Connection.query_row
+    (ArrayT1.Insts.RusqliteParamsParams (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+    controller.admission.read_create_options.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+    connection (SandproofUnloadOptionsRead.toStr "SELECT count(*) FROM sandbox_lifetimes WHERE sandbox_id=?1")
+    (Array.make 1#usize [text]) ()
+
+structure Identified (namespaceId : Str) (sandbox : sandbox_controller_core.ids.SandboxId) where
+  publicId : sandproof_protocol.SandboxId
+  text : Str
+  identified : controller.identity.sandbox_id namespaceId sandbox = .ok (.Ok publicId)
+  projected : sandproof_protocol.SandboxId.as_str publicId = .ok text
+
+/-- The actual stored-row branch accepts exactly when the independently
+checked re-encoding reproduces the entire original SQLite BLOB. -/
+theorem actual_read_compares_complete_options (connection : rusqlite.Connection) (ns : Str)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (id : Identified ns sandbox)
+    (bytes encoded : Bytes) (options : host_contract.CreateOptions)
+    (row : storedOptions connection id.text = .ok (.Ok bytes))
+    (decode : serde_json.de.from_slice host_contract.CreateOptions.Insts.Serde_coreDeDeserialize
+      (alloc.vec.Vec.deref bytes) = .ok (.Ok options))
+    (checked : host_contract.CreateOptions.encoded options = .ok (.Ok encoded)) :
+    controller.admission.read_create_options connection ns sandbox =
+      .ok (if encoded = bytes then .Ok options else .Err .InvalidCreateOptions) := by
+  unfold storedOptions at row
+  simp [controller.admission.read_create_options, id.identified, id.projected, row,
+    core.result.ResultTError.Insts.RusqliteOptionalExtension.optional,
+    core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.map_err, decode, checked,
+    InboxLoadLibrary.vec_ne]
+  split <;> simp_all
+
+/-- Absence of an option BLOB is accepted only for zero admitted rows. -/
+theorem actual_missing_options_checks_admission (connection : rusqlite.Connection) (ns : Str)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (id : Identified ns sandbox)
+    (error : rusqlite.error.Error) (count : I64) (defaultOptions : host_contract.CreateOptions)
+    (row : storedOptions connection id.text = .ok (.Err error))
+    (missing : ops.isQueryReturnedNoRows error = true)
+    (admitted : admittedCount connection id.text = .ok (.Ok count))
+    (fallback : host_contract.CreateOptions.Insts.CoreDefaultDefault.default = .ok defaultOptions) :
+    controller.admission.read_create_options connection ns sandbox =
+      .ok (if count = 0#i64 then .Ok defaultOptions else .Err .MissingCreateOptions) := by
+  unfold storedOptions at row
+  unfold admittedCount at admitted
+  simp [controller.admission.read_create_options, id.identified, id.projected, row,
+    core.result.ResultTError.Insts.RusqliteOptionalExtension.optional, missing,
+    core.result.Result.Insts.CoreOpsTry.branch, admitted, fallback]
+  split <;> simp_all [IScalar.eq_equiv]
+
+end SandboxModel.Stage1Protocol.SourceOptionsRead
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsRead.actual_read_compares_complete_options
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsRead.actual_missing_options_checks_admission
