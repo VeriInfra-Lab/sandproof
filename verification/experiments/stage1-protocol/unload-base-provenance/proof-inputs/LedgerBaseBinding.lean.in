@@ -1,0 +1,131 @@
+import NativeBaseBinding
+import OriginalLedgerResult
+import SandproofUnloadStartupJoint.Provider
+
+open Aeneas Aeneas.Std
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+variable [SandproofUnloadStartupJoint.Operations]
+
+abbrev StartupLedger := SandproofUnloadStartupJoint.sandbox_controller_core.model.OperationLedgerRecord
+abbrev StartupResult := SandproofUnloadStartupJoint.sandbox_controller_core.model.OperationResult
+
+@[reducible] def ledgerReps (base : SandproofUnloadOriginalLedger.Representations) :
+    SandproofUnloadOriginalLedger.Representations :=
+  { base with
+    ty3 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.SandboxId
+    ty4 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.OperationId
+    ty5 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.TenantId
+    ty14 := SandproofUnloadStartupJoint.sandbox_controller_core.model.OperationInput
+    ty15 := SandproofUnloadStartupJoint.sandbox_controller_core.model.FailureKind
+    ty18 := UnloadFirstActualStartup.World }
+
+abbrev LedgerOps (base : SandproofUnloadOriginalLedger.Representations) :=
+  @SandproofUnloadOriginalLedger.Calls (ledgerReps base)
+abbrev LedgerRow (base : SandproofUnloadOriginalLedger.Representations) :=
+  @SandproofUnloadOriginalLedger.sandbox_controller_core.model.OperationLedgerRecord (ledgerReps base)
+abbrev LedgerResult (base : SandproofUnloadOriginalLedger.Representations) :=
+  @SandproofUnloadOriginalLedger.sandbox_controller_core.model.OperationResult (ledgerReps base)
+
+structure LedgerLeafViews (base : SandproofUnloadOriginalLedger.Representations) (ready : Type) where
+  resultFromStartup : StartupResult → LedgerResult base
+  resultToParent : LedgerResult base → sandbox_controller_core.model.OperationResult
+  errorToBase : @SandproofUnloadOriginalLedger.JournalError (ledgerReps base) →
+    BaseSnapshotLink.BError Record ready
+
+def rowToLedger {base : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (view : LedgerLeafViews base ready) (row : StartupLedger) : LedgerRow base :=
+  letI : SandproofUnloadOriginalLedger.Representations := ledgerReps base
+  { sandbox := row.sandbox
+    operation := {
+      id := row.operation.id
+      epoch := row.operation.epoch
+      kind := match row.operation.kind with
+        | .Create => .Create
+        | .Pause => .Pause
+        | .Resume => .Resume
+        | .Kill => .Kill
+      status := match row.operation.status with
+        | .Pending => .Pending
+        | .OutcomeUnknown => .OutcomeUnknown
+        | .Compensating reason => .Compensating reason
+        | .Succeeded => .Succeeded
+        | .Failed reason => .Failed reason }
+    input := row.input
+    result := row.result.map view.resultFromStartup }
+
+@[reducible] def installLedgerGetter {base : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (view : LedgerLeafViews base ready) (ops : LedgerOps base) : LedgerOps base :=
+  letI : SandproofUnloadOriginalLedger.Representations := ledgerReps base
+  { ops with record := fun world key => do
+      let found ← SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_record
+        world { sandbox := key.sandbox, operation := key.operation }
+      .ok (found.map (rowToLedger view)) }
+
+def actualLedgerRead {base : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (carriers : StartupCarriers) (view : LedgerLeafViews base ready) (ops : LedgerOps base)
+    (world : sandbox_controller_core.model.World) (binding : BaseLocal ready) :
+    Result (core.result.Result (Option sandbox_controller_core.model.OperationResult)
+      (BaseSnapshotLink.BError Record ready)) :=
+  letI : SandproofUnloadOriginalLedger.Representations := ledgerReps base
+  letI : SandproofUnloadOriginalLedger.Calls := installLedgerGetter view ops
+  let localValue := carriers.localView (BaseSnapshotLink.fromBaseLocal Record ready binding)
+  do
+    let reply ← SandproofUnloadOriginalLedger.controller.lifecycle_inbox.readiness.snapshot.original_result
+      (cast carriers.world world)
+      { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+    match reply with
+    | .Ok result => .ok (.Ok (result.map view.resultToParent))
+    | .Err error => .ok (.Err (view.errorToBase error))
+
+theorem actual_ledger_reads_selected_row {base : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (carriers : StartupCarriers) (view : LedgerLeafViews base ready) (ops : LedgerOps base)
+    (world : sandbox_controller_core.model.World) (binding : Local)
+    (row : StartupLedger)
+    (read : SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_record
+      (cast carriers.world world) (SandproofUnloadStartupJoint.startupKey (carriers.localView binding)) =
+        .ok (some row)) :
+    actualLedgerRead carriers view ops world (baseLocalFromParent ready binding) =
+      .ok (.Ok ((row.result.map view.resultFromStartup).map view.resultToParent)) := by
+  letI : SandproofUnloadOriginalLedger.Representations := ledgerReps base
+  letI : SandproofUnloadOriginalLedger.Calls := installLedgerGetter view ops
+  let localValue := carriers.localView binding
+  let ledgerBinding : SandproofUnloadOriginalLedger.controller.internal_inbox.model.InternalLocalBinding :=
+    { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+  have selected : SandproofUnloadOriginalLedger.sandbox_controller_core.model.World.operation_record
+      (cast carriers.world world) (OriginalLedgerResult.localKey ledgerBinding) =
+        .ok (some (rowToLedger view row)) := by
+    change (do
+      let found ← SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_record
+        (cast carriers.world world) (SandproofUnloadStartupJoint.startupKey (carriers.localView binding))
+      .ok (found.map (rowToLedger view))) = _
+    simp only [read, bind_tc_ok, Option.map_some]
+  have returned := OriginalLedgerResult.detailed_row_returns_exact_result
+    (cast carriers.world world) ledgerBinding (rowToLedger view row) selected
+  unfold actualLedgerRead
+  simp only [base_local_roundtrip]
+  change ((do
+    let reply ← SandproofUnloadOriginalLedger.controller.lifecycle_inbox.readiness.snapshot.original_result
+      (cast carriers.world world) ledgerBinding
+    match reply with
+    | .Ok result => .ok (.Ok (result.map view.resultToParent))
+    | .Err error => .ok (.Err (view.errorToBase error))) :
+      Result (core.result.Result (Option sandbox_controller_core.model.OperationResult)
+        (BaseSnapshotLink.BError Record ready))) = _
+  simp only [returned, bind_tc_ok, rowToLedger]
+
+@[reducible] def installBaseReads
+    {nativeBase : SandproofUnloadNativeSnapshot.Representations}
+    {ledgerBase : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (carriers : StartupCarriers) (nv : NativeLeafViews nativeBase ready) (native : NativeOps nativeBase)
+    (lv : LedgerLeafViews ledgerBase ready) (ledger : LedgerOps ledgerBase)
+    (ops : BaseOps ready) : BaseOps ready :=
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  { installNativeAndWorld carriers nv native ops with
+    originalResult := actualLedgerRead carriers lv ledger }
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_ledger_reads_selected_row

@@ -1,0 +1,50 @@
+import InboxParentLink
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open SandboxModel.Stage1Protocol.InboxLoad
+open SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseCodecLoad
+
+variable [SandproofUnloadFirstObservation.Representations]
+
+abbrev ParentConnection := SandproofUnloadFirstObservation.rusqlite.Connection
+abbrev ParentInbox := SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Inbox
+abbrev ParentError := SandproofUnloadFirstObservation.JournalError
+
+/-- Observe the real codec result for the input connection. SQLite supplies
+    the effect state for that connection and its active read transaction. -/
+def readParentInbox {R T N U B E : Type} (carriers : Carriers)
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+    (stateForConnection : ParentConnection → E) (connection : ParentConnection) :
+    Result (core.result.Result (Option ParentInbox) ParentError) := do
+  let (reply, _) ← load_using saved terminal renewal unload graphic io (stateForConnection connection)
+  match reply with
+  | .Ok inbox => .ok (.Ok (inbox.map (fromInbox carriers)))
+  | .Err err => .ok (.Err (fromError carriers err))
+
+/-- The actual second SQLite/Serde codec read supplies the base load result
+    under the existing read contract. This uses no Inbox-equality premise. -/
+theorem second_conn_load_uses_actual_codec {R T N U B E : Type} (carriers : Carriers)
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+    (stateForConnection : ParentConnection → E) (connection : ParentConnection)
+    (inbox : Inbox) (after : E)
+    (returned : load_using saved terminal renewal unload graphic io (stateForConnection connection) =
+      .ok (.Ok (some inbox), after)) :
+    readParentInbox carriers saved terminal renewal unload graphic io stateForConnection connection =
+      .ok (.Ok (some (fromInbox carriers inbox))) := by
+  simp [readParentInbox, returned, bind_tc_ok]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseCodecLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseCodecLoad.second_conn_load_uses_actual_codec

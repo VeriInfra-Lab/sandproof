@@ -1,0 +1,57 @@
+import SandproofUnloadNativeSnapshot.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofUnloadNativeSnapshot
+open SandproofUnloadNativeSnapshot.sandbox_controller_core.model (World SandboxRecord EffectId)
+open SandproofUnloadNativeSnapshot.controller.internal_inbox.model (InternalLocalBinding)
+open SandproofUnloadNativeSnapshot.controller.lifecycle_inbox.readiness (NativeCreateSnapshot)
+open SandproofUnloadNativeSnapshot.controller.lifecycle_inbox.readiness.snapshot
+  (native_snapshot native_uncertain_actions)
+
+namespace NativeSnapshotFields
+
+variable [Representations] [Calls]
+
+def projected (record : SandboxRecord) (lifetime : Option controller.admission.Lifetime)
+    (effects : alloc.vec.Vec EffectId) : NativeCreateSnapshot :=
+  { owner := record.owner
+    phase := record.phase
+    terminal := record.terminal
+    epoch := record.epoch
+    generation := record.generation
+    current_vm := record.current_vm
+    current_operation := record.current_operation
+    lifetime := lifetime
+    uncertain_actions := effects }
+
+/-- Exact execution of the generated snapshot root. In particular, the
+    effect helper is observed, and no assertion about its values is used. -/
+theorem actual_native_after_reads (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (binding : InternalLocalBinding) (record : SandboxRecord)
+    (connection : rusqlite.Connection) (lifetime : Option controller.admission.Lifetime)
+    (effects : alloc.vec.Vec EffectId)
+    (owner : sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+      record.owner binding.owner = .ok true)
+    (deref : rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref tx = .ok connection)
+    (lifetimeRead : controller.admission.read_lifetime connection ns binding.sandbox binding.owner =
+      .ok (.Ok lifetime))
+    (effectRead : native_uncertain_actions world binding = .ok effects) :
+    native_snapshot tx ns world binding record = .ok (.Ok (projected record lifetime effects)) := by
+  simp [native_snapshot, projected, core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default, sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId,
+    owner, deref, lifetimeRead, effectRead, core.result.Result.map_err,
+    core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+
+/-- The original owner rejection occurs before dereferencing the transaction. -/
+theorem actual_native_rejects_wrong_owner (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (binding : InternalLocalBinding) (record : SandboxRecord)
+    (owner : sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq
+      record.owner binding.owner = .ok false) :
+    native_snapshot tx ns world binding record = .ok (.Err .CorruptStore) := by
+  simp [native_snapshot, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId, owner, bind_tc_ok]
+
+end NativeSnapshotFields
+
+#audit_controller_proof NativeSnapshotFields.actual_native_after_reads
+#audit_controller_proof NativeSnapshotFields.actual_native_rejects_wrong_owner

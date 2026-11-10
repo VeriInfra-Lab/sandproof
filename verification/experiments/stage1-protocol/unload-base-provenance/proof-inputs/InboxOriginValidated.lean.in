@@ -1,0 +1,144 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding
+noncomputable section
+open scoped Classical
+
+private theorem checked_entry_count (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (context : AuthenticatedCenterContext)
+    (entry : Entry) (kind : Usize)
+    (checked : InboxEntry.entryView unload inbox session entry context = .ok (.Ok kind)) :
+    InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val = 1 := by
+  have branch :
+      (do
+        let value ← UnloadResolution.validateView unload entry
+        match value with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok _ =>
+          if InboxEntry.prefixInvalid session entry context then .ok InboxEntry.corrupt
+          else do
+            let count ← InboxEntry.countResult
+              (InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val)
+            if count ≠ 1#usize then .ok InboxEntry.corrupt
+            else .ok (InboxEntry.operationResult inbox session entry)) = .ok (.Ok kind) := checked
+  obtain ⟨value, unloaded, continued⟩ := InboxLoad.bind_success_value _ _ _ branch
+  cases value with
+  | Err error => simp at continued
+  | Ok value =>
+    cases value
+    have actual : InboxEntry.run unload inbox session entry context = .ok (.Ok kind) := by
+      rw [InboxEntry.full_contract]
+      exact checked
+    exact ((InboxEntry.accepted_after_unload_iff unload inbox session entry context kind unloaded).mp actual).2.1
+
+private theorem accepted_entryScan_checks (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (context : AuthenticatedCenterContext)
+    (entries : List Entry) (initial final : InboxValidation.EntrySummary)
+    (passed : InboxValidation.entryScan unload inbox session context entries initial = .ok (.Ok final)) :
+    ∀ entry ∈ entries,
+      InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val = 1 := by
+  induction entries generalizing initial with
+  | nil => simp
+  | cons head tail ih =>
+    simp only [InboxValidation.entryScan] at passed
+    split at passed
+    · simp at passed
+    split at passed
+    · simp at passed
+    obtain ⟨kind, checked, afterCheck⟩ := InboxLoad.bind_success_value _ _ _ passed
+    cases kind with
+    | Err error => simp at afterCheck
+    | Ok kind =>
+      obtain ⟨next, _, tailPassed⟩ := InboxLoad.bind_success_value _ _ _ afterCheck
+      cases next with
+      | Err error => simp at tailPassed
+      | Ok next =>
+        intro entry member
+        rcases List.mem_cons.mp member with rfl | rest
+        · exact checked_entry_count unload inbox session context entry kind checked
+        · exact ih next tailPassed entry rest
+
+private theorem accepted_session_checks {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (index : Usize) (session : Session)
+    (passed : InboxValidation.sessionView saved terminal renewal unload inbox index session context = .ok (.Ok ())) :
+    ∀ entry ∈ session.entries.val,
+      InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val = 1 := by
+  unfold InboxValidation.sessionView at passed
+  obtain ⟨shaped, _, afterShape⟩ := InboxLoad.bind_success_value _ _ _ passed
+  cases shaped with
+  | Err error => simp at afterShape
+  | Ok shaped =>
+    cases shaped
+    obtain ⟨renewed, _, afterRenewal⟩ := InboxLoad.bind_success_value _ _ _ afterShape
+    cases renewed with
+    | Err error => simp at afterRenewal
+    | Ok renewed =>
+      cases renewed
+      obtain ⟨summary, ordered, afterOrder⟩ := InboxLoad.bind_success_value _ _ _ afterRenewal
+      cases summary with
+      | Err error => simp at afterOrder
+      | Ok summary =>
+        exact accepted_entryScan_checks unload inbox session context session.entries.val
+          InboxValidation.initialSummary summary ordered
+
+private theorem accepted_sessions_check {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (inbox : Inbox) (context : AuthenticatedCenterContext) (sessions : List Session) (index : Usize)
+    (passed : InboxValidation.sessionsView saved terminal renewal unload inbox context sessions index = .ok (.Ok ())) :
+    ∀ session ∈ sessions, ∀ entry ∈ session.entries.val,
+      InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val = 1 := by
+  induction sessions generalizing index with
+  | nil => simp
+  | cons head tail ih =>
+    simp only [InboxValidation.sessionsView] at passed
+    obtain ⟨next, _, afterAdvance⟩ := InboxLoad.bind_success_value _ _ _ passed
+    obtain ⟨shaped, headPassed, afterHead⟩ := InboxLoad.bind_success_value _ _ _ afterAdvance
+    cases shaped with
+    | Err error => simp at afterHead
+    | Ok shaped =>
+      cases shaped
+      intro session member
+      rcases List.mem_cons.mp member with rfl | rest
+      · exact accepted_session_checks saved terminal renewal unload inbox context index session headPassed
+      · exact ih next afterHead session rest
+
+/-- Validation implies the actual global full-key guard for every stored entry. -/
+theorem validated_entries_unique {R T : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (passed : InboxValidation.inboxView saved terminal renewal unload inbox = .ok (.Ok ())) :
+    ∀ session ∈ inbox.sessions.val, ∀ entry ∈ session.entries.val,
+      InboxEntry.countSessions entry.intent.request.binding.key inbox.sessions.val = 1 := by
+  unfold InboxValidation.inboxView at passed
+  split at passed
+  · simp [InboxValidation.rejected] at passed
+  split at passed
+  · simp [InboxValidation.rejected] at passed
+  split at passed
+  · simp [InboxValidation.rejected] at passed
+  split at passed
+  · simp [InboxValidation.rejected] at passed
+  obtain ⟨lanes, _, afterLanes⟩ := InboxLoad.bind_success_value _ _ _ passed
+  split at afterLanes
+  · simp [InboxValidation.rejected] at afterLanes
+  split at afterLanes
+  · simp at afterLanes
+  split at afterLanes
+  · simp [InboxValidation.rejected] at afterLanes
+  split at afterLanes
+  · simp [InboxValidation.rejected] at afterLanes
+  exact accepted_sessions_check saved terminal renewal unload inbox
+    (InboxValidation.decodedContext inbox.config) inbox.sessions.val 0#usize afterLanes
+
+end
+end SandboxModel.Stage1Protocol.InboxOriginBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.validated_entries_unique

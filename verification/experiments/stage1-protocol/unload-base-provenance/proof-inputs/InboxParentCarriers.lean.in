@@ -1,0 +1,438 @@
+import InboxOriginSelected
+import SandproofUnloadFirstObservation.FunsExternal
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+variable [SandproofUnloadFirstObservation.Representations]
+
+/-- Shared exact Rust leaf types. Aggregate transport below is structural. -/
+structure Carriers where
+  sandbox : SandproofUnloadFirstObservation.sandbox_controller_core.ids.SandboxId =
+    SandproofStage1RequestRust.sandbox_controller_core.ids.SandboxId
+  owner : SandproofUnloadFirstObservation.sandbox_controller_core.ids.TenantId =
+    SandproofStage1RequestRust.sandbox_controller_core.ids.TenantId
+  operation : SandproofUnloadFirstObservation.sandbox_controller_core.ids.OperationId =
+    SandproofStage1RequestRust.sandbox_controller_core.ids.OperationId
+  operationBinding : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.identity.OperationBinding =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding
+  center : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.CenterIdentity =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity
+  retention : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.identity.RetentionBinding =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding
+  unloadResolution : SandproofUnloadFirstObservation.controller.lifecycle_inbox.unload_resolution.UnloadResolution =
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution
+  sessionId : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.identity.SessionId =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId
+  tenant : SandproofUnloadFirstObservation.sandproof_protocol.TenantId =
+    SandproofStage1RequestRust.sandproof_protocol.TenantId
+  refusal : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.observation.CreateRefusalReason =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.observation.CreateRefusalReason
+  incarnation : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.identity.IncarnationId =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId
+  capture : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.identity.CaptureId =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId
+  terminal : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation
+  renewal : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.renewal.RenewalConfirmation =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.renewal.RenewalConfirmation
+  retirement : SandproofUnloadFirstObservation.controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt =
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt
+  digest : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.digest.ContentDigest =
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest
+  node : SandproofUnloadFirstObservation.sandproof_protocol.internal.NodeIdentity =
+    SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity
+  create : SandproofUnloadFirstObservation.sandproof_protocol.internal.lifecycle.CreateBinding =
+    SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding
+  inboxOwner : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Owner =
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Owner
+  lane : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleRetentionLane =
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleRetentionLane
+  io : SandproofUnloadFirstObservation.core.io.error.Error =
+    SandproofStage1RequestRust.core.io.error.Error
+  sqlite : SandproofUnloadFirstObservation.rusqlite.error.Error =
+    SandproofStage1RequestRust.rusqlite.error.Error
+  json : SandproofUnloadFirstObservation.serde_json.error.Error =
+    SandproofStage1RequestRust.serde_json.error.Error
+  contract : SandproofUnloadFirstObservation.sandproof_protocol.ContractError =
+    SandproofStage1RequestRust.sandproof_protocol.ContractError
+  crash : SandproofUnloadFirstObservation.CrashPoint =
+    SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+  reject : SandproofUnloadFirstObservation.sandbox_controller_core.controller.ControllerReject =
+    SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject
+
+def mapVec (f : α → β) (xs : alloc.vec.Vec α) : alloc.vec.Vec β :=
+  alloc.vec.Vec.from (xs.val.map f) (by simpa only [List.length_map] using xs.property)
+
+def toOperation (c : Carriers) :
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleOperation →
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation
+  | .Create a0 a1 => .Create (cast c.create a0) (cast c.incarnation a1)
+  | .Unload a0 a1 => .Unload (cast c.incarnation a0) (cast c.capture a1)
+  | .Resume a0 a1 a2 a3 => .Resume (cast c.incarnation a0) (cast c.capture a1) (cast c.incarnation a2) (cast c.digest a3)
+  | .Renew a0 a1 a2 => .Renew (cast c.incarnation a0) a1 a2
+  | .Destroy => .Destroy
+
+def toLocal (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding :=
+  fun value =>
+    { sandbox := cast c.sandbox value.sandbox
+      owner := cast c.owner value.owner
+      operation := cast c.operation value.operation }
+
+def toRequest (c : Carriers) :
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleRequest →
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest :=
+  fun value =>
+    { binding := cast c.operationBinding value.binding
+      operation := toOperation c value.operation }
+
+def toIntent (c : Carriers) :
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  fun value =>
+    { request := toRequest c value.request
+      accepted_version := value.accepted_version
+      center := cast c.center value.center
+      retention := cast c.retention value.retention }
+
+def toEntry (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Entry →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Entry :=
+  fun value =>
+    { intent := toIntent c value.intent
+      local_operation := Option.map (fun item => cast c.operation item) value.local_operation
+      applied_deadline := value.applied_deadline
+      previous_effective_end_at_ms := value.previous_effective_end_at_ms
+      unload_resolution := Option.map (fun item => cast c.unloadResolution item) value.unload_resolution }
+
+def toSession (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Session →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session :=
+  fun value =>
+    { id := cast c.sessionId value.id
+      retention := cast c.retention value.retention
+      owner := cast c.tenant value.owner
+      current_version := value.current_version
+      terminal := value.terminal
+      refusal := Option.map (fun item => cast c.refusal item) value.refusal
+      incarnation := Option.map (fun item => cast c.incarnation item) value.incarnation
+      «local» := Option.map (fun item => toLocal c item) value.«local»
+      entries := mapVec (fun item => toEntry c item) value.entries
+      confirmed_terminal := Option.map (fun item => cast c.terminal item) value.confirmed_terminal
+      confirmed_renewal := Option.map (fun item => cast c.renewal item) value.confirmed_renewal
+      compacted_sdk_through := value.compacted_sdk_through
+      native_retirement := Option.map (fun item => cast c.retirement item) value.native_retirement }
+
+def toRegistration (c : Carriers) :
+    SandproofUnloadFirstObservation.capture.HostEpochRegistration →
+    SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochRegistration :=
+  fun value =>
+    { version := value.version
+      boot_id := value.boot_id
+      policy := cast c.digest value.policy }
+
+def toObservation (c : Carriers) :
+    SandproofUnloadFirstObservation.capture.HostEpochObservation →
+    SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochObservation :=
+  fun value =>
+    { node := cast c.node value.node
+      registration := toRegistration c value.registration }
+
+def toConfig (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleInboxConfig →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig :=
+  fun value =>
+    { center := cast c.center value.center
+      node := cast c.node value.node
+      host_epoch := Option.map (fun item => toRegistration c item) value.host_epoch
+      max_sessions := value.max_sessions
+      max_operations_per_session := value.max_operations_per_session
+      max_options_bytes := value.max_options_bytes
+      max_profile_bytes := value.max_profile_bytes
+      max_manifest_bytes := value.max_manifest_bytes }
+
+def toInbox (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Inbox →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox :=
+  fun value =>
+    { config := toConfig c value.config
+      host_epoch_observation := Option.map (fun item => toObservation c item) value.host_epoch_observation
+      owner_high_water := value.owner_high_water
+      owners := mapVec (fun item => cast c.inboxOwner item) value.owners
+      sessions := mapVec (fun item => toSession c item) value.sessions
+      lanes := mapVec (fun item => cast c.lane item) value.lanes }
+
+def toState (c : Carriers) :
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleWorkState →
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleWorkState :=
+  fun value =>
+    { intent := toIntent c value.intent
+      current_session_version := value.current_session_version
+      current := value.current
+      terminal := value.terminal
+      refusal := Option.map (fun item => cast c.refusal item) value.refusal
+      «local» := Option.map (fun item => toLocal c item) value.«local»
+      local_operation := Option.map (fun item => cast c.operation item) value.local_operation }
+
+def fromOperation (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation →
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleOperation
+  | .Create a0 a1 => .Create (cast c.create.symm a0) (cast c.incarnation.symm a1)
+  | .Unload a0 a1 => .Unload (cast c.incarnation.symm a0) (cast c.capture.symm a1)
+  | .Resume a0 a1 a2 a3 => .Resume (cast c.incarnation.symm a0) (cast c.capture.symm a1) (cast c.incarnation.symm a2) (cast c.digest.symm a3)
+  | .Renew a0 a1 a2 => .Renew (cast c.incarnation.symm a0) a1 a2
+  | .Destroy => .Destroy
+
+def fromLocal (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding →
+    SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding :=
+  fun value =>
+    { sandbox := cast c.sandbox.symm value.sandbox
+      owner := cast c.owner.symm value.owner
+      operation := cast c.operation.symm value.operation }
+
+def fromRequest (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest →
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleRequest :=
+  fun value =>
+    { binding := cast c.operationBinding.symm value.binding
+      operation := fromOperation c value.operation }
+
+def fromIntent (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  fun value =>
+    { request := fromRequest c value.request
+      accepted_version := value.accepted_version
+      center := cast c.center.symm value.center
+      retention := cast c.retention.symm value.retention }
+
+def fromEntry (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Entry →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Entry :=
+  fun value =>
+    { intent := fromIntent c value.intent
+      local_operation := Option.map (fun item => cast c.operation.symm item) value.local_operation
+      applied_deadline := value.applied_deadline
+      previous_effective_end_at_ms := value.previous_effective_end_at_ms
+      unload_resolution := Option.map (fun item => cast c.unloadResolution.symm item) value.unload_resolution }
+
+def fromSession (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Session :=
+  fun value =>
+    { id := cast c.sessionId.symm value.id
+      retention := cast c.retention.symm value.retention
+      owner := cast c.tenant.symm value.owner
+      current_version := value.current_version
+      terminal := value.terminal
+      refusal := Option.map (fun item => cast c.refusal.symm item) value.refusal
+      incarnation := Option.map (fun item => cast c.incarnation.symm item) value.incarnation
+      «local» := Option.map (fun item => fromLocal c item) value.«local»
+      entries := mapVec (fun item => fromEntry c item) value.entries
+      confirmed_terminal := Option.map (fun item => cast c.terminal.symm item) value.confirmed_terminal
+      confirmed_renewal := Option.map (fun item => cast c.renewal.symm item) value.confirmed_renewal
+      compacted_sdk_through := value.compacted_sdk_through
+      native_retirement := Option.map (fun item => cast c.retirement.symm item) value.native_retirement }
+
+def fromRegistration (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochRegistration →
+    SandproofUnloadFirstObservation.capture.HostEpochRegistration :=
+  fun value =>
+    { version := value.version
+      boot_id := value.boot_id
+      policy := cast c.digest.symm value.policy }
+
+def fromObservation (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochObservation →
+    SandproofUnloadFirstObservation.capture.HostEpochObservation :=
+  fun value =>
+    { node := cast c.node.symm value.node
+      registration := fromRegistration c value.registration }
+
+def fromConfig (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleInboxConfig :=
+  fun value =>
+    { center := cast c.center.symm value.center
+      node := cast c.node.symm value.node
+      host_epoch := Option.map (fun item => fromRegistration c item) value.host_epoch
+      max_sessions := value.max_sessions
+      max_operations_per_session := value.max_operations_per_session
+      max_options_bytes := value.max_options_bytes
+      max_profile_bytes := value.max_profile_bytes
+      max_manifest_bytes := value.max_manifest_bytes }
+
+def fromInbox (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Inbox :=
+  fun value =>
+    { config := fromConfig c value.config
+      host_epoch_observation := Option.map (fun item => fromObservation c item) value.host_epoch_observation
+      owner_high_water := value.owner_high_water
+      owners := mapVec (fun item => cast c.inboxOwner.symm item) value.owners
+      sessions := mapVec (fun item => fromSession c item) value.sessions
+      lanes := mapVec (fun item => cast c.lane.symm item) value.lanes }
+
+def fromState (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleWorkState →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleWorkState :=
+  fun value =>
+    { intent := fromIntent c value.intent
+      current_session_version := value.current_session_version
+      current := value.current
+      terminal := value.terminal
+      refusal := Option.map (fun item => cast c.refusal.symm item) value.refusal
+      «local» := Option.map (fun item => fromLocal c item) value.«local»
+      local_operation := Option.map (fun item => cast c.operation.symm item) value.local_operation }
+
+def fromError (c : Carriers) :
+    SandproofStage1RequestRust.sandproof_controller_service.JournalError →
+    SandproofUnloadFirstObservation.JournalError
+  | .Io error => .Io (cast c.io.symm error)
+  | .Sqlite error => .Sqlite (cast c.sqlite.symm error)
+  | .CommitUncertain error => .CommitUncertain (cast c.sqlite.symm error)
+  | .Json error => .Json (cast c.json.symm error)
+  | .Contract error => .Contract (cast c.contract.symm error)
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash error => .InjectedCrash (cast c.crash.symm error)
+  | .ControllerRejected error => .ControllerRejected (cast c.reject.symm error)
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+@[simp] private theorem mapVec_cancel (f : α → β) (g : β → α)
+    (inverse : ∀ a, g (f a) = a) (xs : alloc.vec.Vec α) :
+    mapVec g (mapVec f xs) = xs := by
+  apply alloc.vec.Vec.ext
+  simp [mapVec, List.map_map, Function.comp_def, inverse]
+
+@[simp] private theorem mapVec_cast_cancel (h : α = β) (xs : alloc.vec.Vec α) :
+    mapVec (fun x => cast h.symm x) (mapVec (fun x => cast h x) xs) = xs :=
+  mapVec_cancel _ _ (fun x => by simp) xs
+
+@[simp] theorem from_to_Operation (c : Carriers)
+    (value : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleOperation) :
+    fromOperation c (toOperation c value) = value := by
+  cases value <;> simp [toOperation, fromOperation, Function.comp_def]
+
+@[simp] theorem from_to_Local (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding) :
+    fromLocal c (toLocal c value) = value := by
+  cases value <;> simp [toLocal, fromLocal, Function.comp_def]
+
+@[simp] theorem from_to_Request (c : Carriers)
+    (value : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleRequest) :
+    fromRequest c (toRequest c value) = value := by
+  cases value <;> simp [toRequest, fromRequest, Function.comp_def]
+
+@[simp] theorem from_to_Intent (c : Carriers)
+    (value : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+    fromIntent c (toIntent c value) = value := by
+  cases value <;> simp [toIntent, fromIntent, Function.comp_def]
+
+@[simp] theorem from_to_Entry (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Entry) :
+    fromEntry c (toEntry c value) = value := by
+  cases value <;> simp [toEntry, fromEntry, Function.comp_def]
+
+@[simp] theorem from_to_Session (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Session) :
+    fromSession c (toSession c value) = value := by
+  cases value <;> simp [toSession, fromSession, Function.comp_def, mapVec_cancel _ _ (from_to_Entry c)]
+
+@[simp] theorem from_to_Registration (c : Carriers)
+    (value : SandproofUnloadFirstObservation.capture.HostEpochRegistration) :
+    fromRegistration c (toRegistration c value) = value := by
+  cases value <;> simp [toRegistration, fromRegistration, Function.comp_def]
+
+@[simp] theorem from_to_Observation (c : Carriers)
+    (value : SandproofUnloadFirstObservation.capture.HostEpochObservation) :
+    fromObservation c (toObservation c value) = value := by
+  cases value <;> simp [toObservation, fromObservation, Function.comp_def]
+
+@[simp] theorem from_to_Config (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleInboxConfig) :
+    fromConfig c (toConfig c value) = value := by
+  cases value <;> simp [toConfig, fromConfig, Function.comp_def]
+
+@[simp] theorem from_to_Inbox (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.Inbox) :
+    fromInbox c (toInbox c value) = value := by
+  cases value <;> simp [toInbox, fromInbox, Function.comp_def, mapVec_cancel _ _ (from_to_Session c)]
+
+@[simp] theorem from_to_State (c : Carriers)
+    (value : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleWorkState) :
+    fromState c (toState c value) = value := by
+  cases value <;> simp [toState, fromState, Function.comp_def]
+
+@[simp] theorem to_from_Operation (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation) :
+    toOperation c (fromOperation c value) = value := by
+  cases value <;> simp [fromOperation, toOperation, Function.comp_def]
+
+@[simp] theorem to_from_Local (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding) :
+    toLocal c (fromLocal c value) = value := by
+  cases value <;> simp [fromLocal, toLocal, Function.comp_def]
+
+@[simp] theorem to_from_Request (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleRequest) :
+    toRequest c (fromRequest c value) = value := by
+  cases value <;> simp [fromRequest, toRequest, Function.comp_def]
+
+@[simp] theorem to_from_Intent (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+    toIntent c (fromIntent c value) = value := by
+  cases value <;> simp [fromIntent, toIntent, Function.comp_def]
+
+@[simp] theorem to_from_Entry (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Entry) :
+    toEntry c (fromEntry c value) = value := by
+  cases value <;> simp [fromEntry, toEntry, Function.comp_def]
+
+@[simp] theorem to_from_Session (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Session) :
+    toSession c (fromSession c value) = value := by
+  cases value <;> simp [fromSession, toSession, Function.comp_def, mapVec_cancel _ _ (to_from_Entry c)]
+
+@[simp] theorem to_from_Registration (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochRegistration) :
+    toRegistration c (fromRegistration c value) = value := by
+  cases value <;> simp [fromRegistration, toRegistration, Function.comp_def]
+
+@[simp] theorem to_from_Observation (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochObservation) :
+    toObservation c (fromObservation c value) = value := by
+  cases value <;> simp [fromObservation, toObservation, Function.comp_def]
+
+@[simp] theorem to_from_Config (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig) :
+    toConfig c (fromConfig c value) = value := by
+  cases value <;> simp [fromConfig, toConfig, Function.comp_def]
+
+@[simp] theorem to_from_Inbox (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox) :
+    toInbox c (fromInbox c value) = value := by
+  cases value <;> simp [fromInbox, toInbox, Function.comp_def, mapVec_cancel _ _ (to_from_Session c)]
+
+@[simp] theorem to_from_State (c : Carriers)
+    (value : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleWorkState) :
+    toState c (fromState c value) = value := by
+  cases value <;> simp [fromState, toState, Function.comp_def]
+
+end SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge

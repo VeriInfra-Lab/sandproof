@@ -1,0 +1,27 @@
+import SandproofUnloadNativeSnapshot.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadNativeSnapshot
+
+class Calls [Representations] where
+  deref :
+    rusqlite.transaction.Transaction → Result rusqlite.Connection
+  ownerEq :
+    sandbox_controller_core.ids.TenantId → sandbox_controller_core.ids.TenantId
+        → Result Bool
+  readLifetime :
+    rusqlite.Connection → Str → sandbox_controller_core.ids.SandboxId →
+        sandbox_controller_core.ids.TenantId → Result (core.result.Result (Option
+        controller.admission.Lifetime) host_contract.AdmissionError)
+  uncertainActions :
+    sandbox_controller_core.model.World →
+        controller.internal_inbox.model.InternalLocalBinding → Result
+        (alloc.vec.Vec sandbox_controller_core.model.EffectId)
+
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref := @Calls.deref
+abbrev sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq := @Calls.ownerEq
+abbrev controller.admission.read_lifetime := @Calls.readLifetime
+abbrev controller.lifecycle_inbox.readiness.snapshot.native_uncertain_actions := @Calls.uncertainActions
+
+end SandproofUnloadNativeSnapshot

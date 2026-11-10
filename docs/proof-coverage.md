@@ -2,6 +2,24 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V3 首次卸载使用同一条原执行记录
+
+Refs #635。基线为 #771 合入的 `4d5c1db07c8f1b91504c2c7eb9efe5183b0f2421`。在原 Create 后首次卸载的
+正常读取路径，`actual_first_work_uses_refound_world_record_and_sealed_plan` 通过实际收件读取和查找，
+推出 `base_snapshot` 重查到父调用所选的同一个本地身份。两侧使用同一个 World 的同一条沙箱记录
+及同一键下的详细操作账本。原启动命令校验与后续回执读取使用同一份已封存计划，父输出保留原
+本地身份和由该记录构造的观察值。
+
+定理沿用同一活动读快照、SQLite 操作与 Serde 解码、原 HostEvidence、回执字节和摘要条件。
+它还依赖已选中的正常 `FirstRead` 分支、详细账本存在，以及寿命、选项、凭据、运行来源和其余
+观察对应。后续仍需连接实际观察调用和 #637 的持久登记事务。继续卸载、恢复、终局及真实暂停
+或物理回收分别验收。
+
+实际 Rust 只做有序借用查找、显式 Option 分支和私有 helper 拆分。原启动选槽、原账本查找和
+父 `source_work::snapshot::current` 保持；先前证据沿用其原适用版本。源码、依赖、审计和
+[复现说明](../verification/experiments/stage1-protocol/unload-base-provenance/README.md)
+记录本切片的对应范围。历史全局冻结继续单列。
+
 ## V3 首次卸载的原启动回执
 
 Refs #635。基线是 #770 合入的 `9b82954c68c85bb9c95831865fed7a278d455cb5`。本切片对实际
@@ -15,7 +33,7 @@ local 和 `E` 的来源核对过 Rust、LLBC 和生成调用。已装配的生�
 |---|---|
 | #768 存活条件、#770 来源行与机械迭代 | 分别供应存活和来源读取相关事实。B4 沿用按序读行、传递完整状态和首错停止；实际新驱动的对应由源码及 LLBC 对照提供 |
 | 同一 SQLite 读取与原 Serde/Host 实例 | 复用逐操作合同。物理事务快照、SQL 实际结果、完整解码和 HostEvidence/ResourceEvidence 的含义是具名条件 |
-| 其余 `FirstRead` | 仍要求 `base_snapshot` 与父已选 local 的同源、原记录和封存计划、选项和凭据等实际观察。本批不采用另一个 `base_snapshot` 重构的证明 |
+| 其余 `FirstRead` | 本批原定理要求 `base_snapshot` 与父已选 local 同源。上一节补齐本地身份、原记录和封存计划，选项、凭据等实际观察仍待连接 |
 
 ning 的最终 Rust 候选通过独立取原行的定向断言和严格 Clippy，另外复用四项受影响回归的通过记录。
 旧 #768/#770 的原执行记录保持。其独立入口的当前文件准入通过逐函数和原夹具比对更新，

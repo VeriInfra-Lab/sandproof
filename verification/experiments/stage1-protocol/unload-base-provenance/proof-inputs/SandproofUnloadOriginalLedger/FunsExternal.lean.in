@@ -1,0 +1,21 @@
+import SandproofUnloadOriginalLedger.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadOriginalLedger
+
+class Calls [Representations] where
+  record :
+    sandbox_controller_core.model.World →
+        sandbox_controller_core.model.OperationKey → Result (Option
+        sandbox_controller_core.model.OperationLedgerRecord)
+  query :
+    sandbox_controller_core.model.World →
+        sandbox_controller_core.request.QueryRequest → Result (core.result.Result
+        sandbox_controller_core.request.Decision
+        sandbox_controller_core.request.Reject)
+
+abbrev sandbox_controller_core.model.World.operation_record := @Calls.record
+abbrev sandbox_controller_core.request.handle_query := @Calls.query
+
+end SandproofUnloadOriginalLedger

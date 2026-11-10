@@ -1,0 +1,15 @@
+import InboxOriginSelected
+import CapturedOriginProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+
+namespace SandboxModel.Stage1Protocol.InboxOriginBinding
+
+theorem actual_origin_is_stored : SuccessfulOriginIsStored Session.current_execution_origin :=
+  successful_origin_is_stored_of_reverse_find Session.current_execution_origin OriginSelection.origin
+    OriginSelection.candidate_full_contract
+
+end SandboxModel.Stage1Protocol.InboxOriginBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxOriginBinding.actual_origin_is_stored
