@@ -128,19 +128,22 @@ def envelope_breakdown(profile):
     return parts, profile["filesystem_overhead_inodes"]
 
 
-def activation_capacity(profile, filesystem):
-    """Read the complete activation budget and available space, without admitting work."""
+def activation_budget(profile):
+    """The complete activation budget, before observing any filesystem."""
     parts, inodes = envelope_breakdown(profile)
     peak = sum(item["bytes"] for item in parts)
+    return dict(parts=parts, peak_bytes=peak, required_bytes=2 * peak, required_inodes=2 * inodes)
+
+
+def activation_capacity(profile, filesystem):
+    """Compare the activation budget with the actual available bytes and inodes."""
+    budget = activation_budget(profile)
     free = os.statvfs(filesystem)
     available_bytes = free.f_bavail * free.f_frsize
     available_inodes = free.f_favail
-    required_bytes, required_inodes = 2 * peak, 2 * inodes
-    return dict(parts=parts, peak_bytes=peak,
-                required_bytes=required_bytes, required_inodes=required_inodes,
-                available_bytes=available_bytes, available_inodes=available_inodes,
-                missing_bytes=max(0, required_bytes - available_bytes),
-                missing_inodes=max(0, required_inodes - available_inodes))
+    return dict(budget, available_bytes=available_bytes, available_inodes=available_inodes,
+                missing_bytes=max(0, budget['required_bytes'] - available_bytes),
+                missing_inodes=max(0, budget['required_inodes'] - available_inodes))
 
 
 def validate_configuration(runtime, builder, build, *, file_size=None):

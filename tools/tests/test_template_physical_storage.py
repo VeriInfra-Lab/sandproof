@@ -4,7 +4,10 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
+from tools.single_host_storage import volume_plan
 from tools.template_physical_storage import envelope, validate_configuration, PhysicalProfileLease
 
 
@@ -69,6 +72,17 @@ class PhysicalProfileTests(unittest.TestCase):
 
     def validate(self):
         return validate_configuration(self.runtime, self.builder, self.public, file_size=lambda _: 100)
+
+    def test_file_volume_plan_counts_backing_reserve_before_volume_exists(self):
+        profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
+        required = 2 * envelope(profile)[0]
+        free = SimpleNamespace(f_bavail=required + 63, f_frsize=1, f_favail=100)
+        with patch('tools.single_host_storage.os.statvfs', return_value=free):
+            plan = volume_plan(profile, self.root, image_bytes=required, host_reserve_bytes=64)
+        self.assertEqual(plan['missing_host_bytes'], 1)
+        self.assertEqual(plan['activation']['required_bytes'], required)
+        self.assertTrue(plan['volume_check_pending'])
+        self.assertFalse(plan['fits'])
 
     def test_absent_null_or_partial_profiles_always_refuse(self):
         for missing in ('absent', 'null', 'one_pool', 'capacity'):
