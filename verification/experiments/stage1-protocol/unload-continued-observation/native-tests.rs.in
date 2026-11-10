@@ -1,0 +1,144 @@
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one SQLite cursor history with competing first errors and exact receipt bytes"
+)]
+fn real_continued_cursor_keeps_receipt_bytes_and_stops_at_first_error() {
+    use crate::controller::{identity, lifecycle_inbox::readiness::snapshot::native_snapshot};
+    use rusqlite::{Error as SqlError, params, types::Type};
+    use sandproof_protocol::WorkAction;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, resume) = material_quota::resumed_with_scene_budget(&dir.path().join("db"));
+    let failed = material_quota::next_unload(&resume, 2);
+    let continued = material_quota::continue_explicit_no_request(&mut journal, &failed);
+    let key = continued.identity().key;
+    let world = journal.world().unwrap();
+    let local = journal
+        .lifecycle_capture_record(key.sandbox)
+        .unwrap()
+        .unwrap()
+        .work
+        .anchor
+        .local;
+    let operation = identity::operation_id(&journal.namespace, key).unwrap();
+    let tx = journal.journal.connection.unchecked_transaction().unwrap();
+    let native = native_snapshot(
+        &tx,
+        &journal.namespace,
+        &world,
+        local,
+        world.sandbox_record(key.sandbox).unwrap(),
+    )
+    .unwrap();
+    let read = || {
+        full::continued_ready_records::<Evidence>(&tx, &world, &journal.namespace, local, &native)
+    };
+
+    let rows: Vec<(i64, Vec<u8>, Vec<u8>)> = {
+        let mut statement = tx
+            .prepare(
+                "SELECT id,action_json,receipt_json FROM outbox
+                 WHERE operation_id=?1 AND dispatch_state='receipted' ORDER BY id",
+            )
+            .unwrap();
+        statement
+            .query_map([operation.as_str()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let activation = continued.identity().activation_command();
+    let (id, expected_action, mut exact_receipt) = rows
+        .iter()
+        .find_map(|(id, action, receipt)| {
+            let action: WorkAction<core::EffectId> = serde_json::from_slice(action).unwrap();
+            (*action.command.command() == activation).then(|| (*id, action, receipt.clone()))
+        })
+        .unwrap();
+    exact_receipt.extend_from_slice(b" \n\t");
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET receipt_json=?1 WHERE id=?2",
+            params![exact_receipt, id],
+        )
+        .unwrap(),
+        1
+    );
+    let (work, action, bytes) = read().unwrap().unwrap();
+    assert_eq!(work, continued);
+    assert_eq!(action, expected_action);
+    assert_eq!(bytes, exact_receipt);
+
+    let (first_id, _, _) = rows.first().unwrap();
+    let (last_id, _, _) = rows.last().unwrap();
+    assert!(first_id < last_id);
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET action_json=?1 WHERE id=?2",
+            params![b"not-json".as_slice(), first_id],
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET receipt_json=?1 WHERE id=?2",
+            params!["not-a-blob", last_id],
+        )
+        .unwrap(),
+        1
+    );
+    assert!(matches!(read(), Err(JournalError::Json(_))));
+
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET action_json=?1 WHERE id=?2",
+            params!["not-a-blob", first_id],
+        )
+        .unwrap(),
+        1
+    );
+    assert!(matches!(
+        read(),
+        Err(JournalError::Sqlite(SqlError::InvalidColumnType(0, _, Type::Text)))
+    ));
+    let (_, original_first_action, _) = rows.first().unwrap();
+    let (_, _, original_last_receipt) = rows.last().unwrap();
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET action_json=?1 WHERE id=?2",
+            params![original_first_action, first_id],
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        tx.execute(
+            "UPDATE outbox SET receipt_json=?1 WHERE id=?2",
+            params![original_last_receipt, last_id],
+        )
+        .unwrap(),
+        1
+    );
+    assert!(read().unwrap().is_some());
+    for (logical, invalid_column) in [("cursor-test-duplicate", false), ("cursor-test-later", true)] {
+        assert_eq!(
+            tx.execute(
+                "INSERT INTO outbox (sandbox_id,owner_id,operation_id,logical_action_id,
+                 attempt,action_json,dispatch_state,receipt_json)
+                 SELECT sandbox_id,owner_id,operation_id,?1,attempt,action_json,
+                 dispatch_state,CASE WHEN ?2 THEN 'not-a-blob' ELSE receipt_json END
+                 FROM outbox WHERE id=?3",
+                params![logical, invalid_column, id],
+            )
+            .unwrap(),
+            1
+        );
+    }
+    assert!(matches!(read(), Err(JournalError::CorruptStore)));
+    tx.rollback().unwrap();
+}

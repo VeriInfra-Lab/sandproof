@@ -2,6 +2,26 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## V3 继续卸载的原回执读取
+
+Refs #635。基线为 #772 合入的 `9ce0d22bb69d2dcae9d0033a1beb873051a2a7ae`。
+`ready_records` 通过原 SQL、原 operation_id 绑定和同一 query_map 游标读取回执。
+实际 Rust 循环已由原工具透明抽取。五条定理将实际循环体和完整循环接到 #770 的逐行
+驱动，覆盖读完保留当前状态、成功更新游标与回调状态，以及首错停止。实际入口调用
+该循环，返回原错误、无匹配的 UnresolvedAction 或完整匹配结果。
+
+ning 上原版和候选通过同一实际 SQLite 对照用例，保留完整工作、动作和原回执字节，
+并核对 JSON／列首错及重复回执拒绝。最终候选另过格式、严格 Clippy 和四项
+continued-exit 回归。忽略首错的隔离错误版编译成功，被同一 JSON 首错断言拒绝。
+msra 使用公开复现源码投影核对 21 个模块，执行 20 个并复用原
+逐行驱动。六条严格审计各只含三个标准逻辑依赖。最终候选仅格式调整，实际重抽后的
+四份 Lean 与已检查的原始输入仅差源码位置注释。
+
+结论仍以原 SQLite、Serde、HostEvidence 条件和实际历史身份、记录定位与动作／回执
+读取条件为前提。它补齐这一入口的循环对应，后续仍需把来源判断接到完整观察请求，
+再与 #637 的登记事务组合。原 #770 Rust 驱动维持自己的旧覆盖。
+[可复现证明与调用边界](../verification/experiments/stage1-protocol/unload-continued-observation/README.md)。
+
 ## V3 首次卸载使用同一条原执行记录
 
 Refs #635。基线为 #771 合入的 `4d5c1db07c8f1b91504c2c7eb9efe5183b0f2421`。在原 Create 后首次卸载的

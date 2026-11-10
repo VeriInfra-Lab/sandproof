@@ -1,0 +1,90 @@
+import OriginalSourceSqliteOps
+open Aeneas Aeneas.Std
+namespace SandproofUnloadContinuedReady
+class Representations where
+  CrashPoint : Type
+  capture_HostEpochRegistration : Type
+  capture_source_RawSourceObservation : Type
+  capture_source_SourceObservationConfig : Type
+  capture_work_PauseWorkRequest : Type
+  controller_lifecycle_inbox_readiness_NativeCreateSnapshot : Type
+  controller_lifecycle_inbox_source_work_full_CaptureWork : Type
+  controller_lifecycle_inbox_source_work_restore_RestoreClaim : Type
+  controller_lifecycle_inbox_source_work_retirement_MaterialReleaseFacts : Type
+  controller_lifecycle_inbox_source_work_retirement_MaterialRetirementState : Type
+  sandbox_controller_core_capture_continuation_CaptureWorkEndReceipt : Type
+  sandbox_controller_core_controller_ControllerReject : Type
+  sandbox_controller_core_ids_OperationId : Type
+  sandbox_controller_core_ids_SandboxId : Type
+  sandbox_controller_core_ids_TenantId : Type
+  sandbox_controller_core_ids_VmId : Type
+  sandbox_controller_core_model_Command : Type
+  sandbox_controller_core_model_EffectOrigin : Type
+  sandbox_controller_core_model_FilePolicyRef : Type
+  sandbox_controller_core_model_LogicalEffectResult : Type
+  sandbox_controller_core_model_NetworkPolicy : Type
+  sandbox_controller_core_model_OperationKey : Type
+  sandbox_controller_core_model_World : Type
+  sandproof_protocol_ContractError : Type
+  sandproof_protocol_FailureCode : Type
+  sandproof_protocol_LogicalActionId : Type
+  sandproof_protocol_OperationId : Type
+  sandproof_protocol_ResourceId : Type
+  sandproof_protocol_SandboxId : Type
+  sandproof_protocol_TenantId : Type
+  sandproof_protocol_UnknownReason : Type
+  sandproof_protocol_internal_NodeIdentity : Type
+  sandproof_protocol_lifecycle_authority_AcceptedLifecycleIntent : Type
+  sandproof_protocol_lifecycle_digest_ContentDigest : Type
+  sandproof_protocol_lifecycle_manifest_VmCompatibility : Type
+abbrev core.io.error.Error := _root_.core.io.error.Error
+abbrev serde_json.error.Error := _root_.serde_json.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteSession.SqlError
+abbrev rusqlite.Connection := SandproofSqliteSession.Connection
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.Statement
+abbrev rusqlite.row.MappedRows := SandproofSqliteSession.IssuedMappedCursor
+abbrev rusqlite.row.Row := SandproofSqliteSession.IssuedRow
+abbrev rusqlite.types.from_sql.FromSqlError := SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+abbrev rusqlite.types.value_ref.ValueRef := SandproofOriginalSourceRowsRust.rusqlite.types.value_ref.ValueRef
+abbrev rusqlite.types.to_sql.ToSqlOutput := SandproofOriginalSourceRowsRust.rusqlite.types.to_sql.ToSqlOutput
+abbrev CrashPoint [r : Representations] := r.CrashPoint
+abbrev capture.HostEpochRegistration [r : Representations] := r.capture_HostEpochRegistration
+abbrev capture.source.RawSourceObservation [r : Representations] := r.capture_source_RawSourceObservation
+abbrev capture.source.SourceObservationConfig [r : Representations] := r.capture_source_SourceObservationConfig
+abbrev capture.work.PauseWorkRequest [r : Representations] := r.capture_work_PauseWorkRequest
+abbrev controller.lifecycle_inbox.readiness.NativeCreateSnapshot [r : Representations] := r.controller_lifecycle_inbox_readiness_NativeCreateSnapshot
+abbrev controller.lifecycle_inbox.source_work.full.CaptureWork [r : Representations] := r.controller_lifecycle_inbox_source_work_full_CaptureWork
+abbrev controller.lifecycle_inbox.source_work.restore.RestoreClaim [r : Representations] := r.controller_lifecycle_inbox_source_work_restore_RestoreClaim
+abbrev controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts [r : Representations] := r.controller_lifecycle_inbox_source_work_retirement_MaterialReleaseFacts
+abbrev controller.lifecycle_inbox.source_work.retirement.MaterialRetirementState [r : Representations] := r.controller_lifecycle_inbox_source_work_retirement_MaterialRetirementState
+abbrev sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt [r : Representations] := r.sandbox_controller_core_capture_continuation_CaptureWorkEndReceipt
+abbrev sandbox_controller_core.controller.ControllerReject [r : Representations] := r.sandbox_controller_core_controller_ControllerReject
+abbrev sandbox_controller_core.ids.OperationId [r : Representations] := r.sandbox_controller_core_ids_OperationId
+abbrev sandbox_controller_core.ids.SandboxId [r : Representations] := r.sandbox_controller_core_ids_SandboxId
+abbrev sandbox_controller_core.ids.TenantId [r : Representations] := r.sandbox_controller_core_ids_TenantId
+abbrev sandbox_controller_core.ids.VmId [r : Representations] := r.sandbox_controller_core_ids_VmId
+abbrev sandbox_controller_core.model.Command [r : Representations] := r.sandbox_controller_core_model_Command
+abbrev sandbox_controller_core.model.EffectOrigin [r : Representations] := r.sandbox_controller_core_model_EffectOrigin
+abbrev sandbox_controller_core.model.FilePolicyRef [r : Representations] := r.sandbox_controller_core_model_FilePolicyRef
+abbrev sandbox_controller_core.model.LogicalEffectResult [r : Representations] := r.sandbox_controller_core_model_LogicalEffectResult
+abbrev sandbox_controller_core.model.NetworkPolicy [r : Representations] := r.sandbox_controller_core_model_NetworkPolicy
+abbrev sandbox_controller_core.model.OperationKey [r : Representations] := r.sandbox_controller_core_model_OperationKey
+abbrev sandbox_controller_core.model.World [r : Representations] := r.sandbox_controller_core_model_World
+abbrev sandproof_protocol.ContractError [r : Representations] := r.sandproof_protocol_ContractError
+abbrev sandproof_protocol.FailureCode [r : Representations] := r.sandproof_protocol_FailureCode
+abbrev sandproof_protocol.LogicalActionId [r : Representations] := r.sandproof_protocol_LogicalActionId
+abbrev sandproof_protocol.OperationId [r : Representations] := r.sandproof_protocol_OperationId
+abbrev sandproof_protocol.ResourceId [r : Representations] := r.sandproof_protocol_ResourceId
+abbrev sandproof_protocol.SandboxId [r : Representations] := r.sandproof_protocol_SandboxId
+abbrev sandproof_protocol.TenantId [r : Representations] := r.sandproof_protocol_TenantId
+abbrev sandproof_protocol.UnknownReason [r : Representations] := r.sandproof_protocol_UnknownReason
+abbrev sandproof_protocol.internal.NodeIdentity [r : Representations] := r.sandproof_protocol_internal_NodeIdentity
+abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent [r : Representations] := r.sandproof_protocol_lifecycle_authority_AcceptedLifecycleIntent
+abbrev sandproof_protocol.lifecycle.digest.ContentDigest [r : Representations] := r.sandproof_protocol_lifecycle_digest_ContentDigest
+abbrev sandproof_protocol.lifecycle.manifest.VmCompatibility [r : Representations] := r.sandproof_protocol_lifecycle_manifest_VmCompatibility
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Debug := SandproofFoundationsRust.core.fmt.Debug
+end SandproofUnloadContinuedReady

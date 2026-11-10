@@ -69,48 +69,104 @@ pub(in crate::controller) fn ready_records<E: HostEvidence + DeserializeOwned>(
         return Ok(None);
     };
     let sources = codec::load(connection)?.ok_or(JournalError::CorruptStore)?;
+    let mut record_index = 0;
+    while record_index < sources.records.len() {
+        if key(&sources.records[record_index]) == Some(identity.key) {
+            break;
+        }
+        record_index += 1;
+    }
     let record = sources
         .records
-        .iter()
-        .find(|r| key(r) == Some(identity.key))
+        .get(record_index)
         .ok_or(JournalError::CorruptStore)?;
     if record.work.anchor.local != local {
         return Err(JournalError::CorruptStore);
     }
     let question = work(record, world)?.ok_or(JournalError::CorruptStore)?;
     let mut statement=connection.prepare("SELECT action_json,receipt_json FROM outbox WHERE operation_id=?1 AND dispatch_state='receipted' ORDER BY id")?;
-    let mut found = None;
-    for row in statement.query_map(
+    let rows = statement.query_map(
         [identity::operation_id(namespace, identity.key)?.as_str()],
         |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?)),
-    )? {
-        let (action, bytes) = row?;
-        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action)?;
-        if *action.command.command() != identity.activation_command() {
-            continue;
+    )?;
+    let (result, found) = scan_continued_rows(rows, None, move |row, found| {
+        match continued_row::<E>(
+            row,
+            identity,
+            &sources,
+            world,
+            namespace,
+            &question,
+            found.is_some(),
+        ) {
+            Ok(Some(evidence)) => (Ok(()), Some(evidence)),
+            Ok(None) => (Ok(()), found),
+            Err(error) => (Err(error), found),
         }
-        if world
-            .logical_effect(&action.command.logical)
-            .is_none_or(|l| l.current_attempt != action.command.attempt)
-        {
-            continue;
-        }
-        action_record(&sources, world, namespace, &action)?.ok_or(JournalError::CorruptStore)?;
-        let receipt: WorkReceipt<E> = serde_json::from_slice(&bytes)?;
-        receipt.validate_for(&action)?;
-        let WorkOutcome::ObservedSuccess(ref evidence) = receipt.outcome else {
-            return Err(JournalError::CorruptStore);
-        };
-        if !evidence.validates(action.command.command())
-            || evidence.source_process_identity(action.command.command(), &action.identity.resource)
-                != Some(question.source().source.clone())
-            || found.is_some()
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        found = Some((question.clone(), action, bytes));
-    }
+    });
+    result?;
     found.map(Some).ok_or(JournalError::UnresolvedAction)
+}
+
+// Keep the generic iterator outside the statement's concrete borrow type.
+// Like the original-source scan, this consumes one row at a time and stops on
+// the first handler error, retaining the cursor order and accumulator.
+fn scan_continued_rows<I, F, S>(
+    mut rows: I,
+    mut state: S,
+    mut accept: F,
+) -> (Result<(), JournalError>, S)
+where
+    I: Iterator,
+    F: FnMut(I::Item, S) -> (Result<(), JournalError>, S),
+{
+    loop {
+        let Some(row) = rows.next() else {
+            break (Ok(()), state);
+        };
+        let (reply, next_state) = accept(row, state);
+        match reply {
+            Ok(()) => state = next_state,
+            Err(error) => break (Err(error), next_state),
+        }
+    }
+}
+
+fn continued_row<E: HostEvidence + DeserializeOwned>(
+    row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
+    identity: core::capture::OriginalContinueIdentity,
+    sources: &codec::Sources,
+    world: &core::World,
+    namespace: &str,
+    question: &OriginalContinueWorkRequest,
+    already_found: bool,
+) -> Result<Option<ContinuedEvidence>, JournalError> {
+    let (action, bytes) = row?;
+    let action: WorkAction<core::EffectId> =
+        serde_json::from_slice(&action).map_err(JournalError::Json)?;
+    if *action.command.command() != identity.activation_command() {
+        return Ok(None);
+    }
+    if world
+        .logical_effect(&action.command.logical)
+        .is_none_or(|l| l.current_attempt != action.command.attempt)
+    {
+        return Ok(None);
+    }
+    action_record(sources, world, namespace, &action)?.ok_or(JournalError::CorruptStore)?;
+    let receipt: WorkReceipt<E> = serde_json::from_slice(&bytes).map_err(JournalError::Json)?;
+    receipt.validate_for(&action)?;
+    let WorkOutcome::ObservedSuccess(ref evidence) = receipt.outcome else {
+        return Err(JournalError::CorruptStore);
+    };
+    if !evidence.validates(action.command.command())
+        || evidence.source_process_identity(action.command.command(), &action.identity.resource)
+            != Some(question.source().source.clone())
+        || already_found
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    Ok(Some((question.clone(), action, bytes)))
 }
 
 pub(in crate::controller) fn work(

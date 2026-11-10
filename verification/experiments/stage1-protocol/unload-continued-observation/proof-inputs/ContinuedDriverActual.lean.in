@@ -1,0 +1,67 @@
+import SandproofUnloadContinuedReady.Types
+open Aeneas Aeneas.Std Result ControlFlow Error
+noncomputable section
+namespace SandproofUnloadContinuedReady
+variable [Representations]
+
+/-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::scan_continued_rows]: loop body 0:
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/full/continuation.rs', lines 123:4-132:5 -/
+@[rust_loop_body]
+def
+  controller.lifecycle_inbox.source_work.full.continuation.scan_continued_rows_loop.body
+  {I : Type} {F : Type} {S : Type} {Clause0_Item : Type}
+  (coreitertraitsiteratorIteratorInst : core.iter.traits.iterator.Iterator I
+  Clause0_Item) (coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst :
+  core.ops.function.FnMut F (Clause0_Item × S) ((core.result.Result Unit
+  JournalError) × S)) (rows : I) (state : S) (accept : F) :
+  Result (ControlFlow (I × S × F) ((core.result.Result Unit JournalError) ×
+    S))
+  := do
+  let (o, rows1) ← coreitertraitsiteratorIteratorInst.next rows
+  match o with
+  | none => ok (done (core.result.Result.Ok (), state))
+  | some row =>
+    let ((reply, next_state), accept1) ←
+      coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst.call_mut accept
+        (row, state)
+    match reply with
+    | core.result.Result.Ok _ => ok (cont (rows1, next_state, accept1))
+    | core.result.Result.Err _ => ok (done (reply, next_state))
+
+/-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::scan_continued_rows]: loop 0:
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/full/continuation.rs', lines 123:4-132:5 -/
+@[rust_loop]
+def
+  controller.lifecycle_inbox.source_work.full.continuation.scan_continued_rows_loop
+  {I : Type} {F : Type} {S : Type} {Clause0_Item : Type}
+  (coreitertraitsiteratorIteratorInst : core.iter.traits.iterator.Iterator I
+  Clause0_Item) (coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst :
+  core.ops.function.FnMut F (Clause0_Item × S) ((core.result.Result Unit
+  JournalError) × S)) (rows : I) (state : S) (accept : F) :
+  Result ((core.result.Result Unit JournalError) × S)
+  := do
+  loop
+    (fun (rows1, state1, accept1) =>
+      controller.lifecycle_inbox.source_work.full.continuation.scan_continued_rows_loop.body
+      coreitertraitsiteratorIteratorInst
+      coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst rows1 state1
+      accept1)
+    (rows, state, accept)
+
+/-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::scan_continued_rows]:
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/full/continuation.rs', lines 114:0-133:1 -/
+@[reducible]
+def
+  controller.lifecycle_inbox.source_work.full.continuation.scan_continued_rows
+  {I : Type} {F : Type} {S : Type} {Clause0_Item : Type}
+  (coreitertraitsiteratorIteratorInst : core.iter.traits.iterator.Iterator I
+  Clause0_Item) (coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst :
+  core.ops.function.FnMut F (Clause0_Item × S) ((core.result.Result Unit
+  JournalError) × S)) (rows : I) (state : S) (accept : F) :
+  Result ((core.result.Result Unit JournalError) × S)
+  := do
+  controller.lifecycle_inbox.source_work.full.continuation.scan_continued_rows_loop
+    coreitertraitsiteratorIteratorInst
+    coreopsfunctionFnMutFPairPairResultTupleJournalErrorSInst rows state accept
+
+end SandproofUnloadContinuedReady
