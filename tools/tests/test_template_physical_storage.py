@@ -274,6 +274,16 @@ class PhysicalProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'private'):
             PhysicalProfileLease(self.profile)
 
+    def test_single_runtime_snapshot_quota_is_not_a_startup_allocation(self):
+        profile = dict(self.profile, public_build=None)
+        profile['pools'] = [dict(profile['pools'][0], chroot_base='/sandbox-material/v')]
+        fixed_bytes, inodes = envelope(profile)
+        service = dict(root='/sandbox-material/s', owner_uid=0, peak_bytes=29 * 1024**3,
+                       inode_budget=8, on_demand_capture=True)
+        self.assertEqual(envelope(dict(profile, service_data=[service])), (fixed_bytes, inodes))
+        with self.assertRaises(ValueError):
+            envelope(dict(profile, service_data=[dict(service, root='/unexpected')]))
+
     def test_service_data_has_explicit_roots_owners_and_separate_peak_not_hidden_overhead(self):
         baseline, _ = envelope(self.profile)
         for name in ('center-material','redis-data'):

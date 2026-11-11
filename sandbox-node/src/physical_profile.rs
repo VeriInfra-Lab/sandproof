@@ -441,6 +441,26 @@ impl PhysicalProfileLease {
         })
     }
 
+    pub(crate) fn capture_space(
+        &self,
+        profile: &PhysicalStorageProfile,
+        pool: &PhysicalPool,
+    ) -> Result<sandproof_controller_service::physical_storage::CaptureSpace, Box<dyn Error>> {
+        self.validate_admission(profile, pool)?;
+        let space = crate::disk_space(&self.path)?;
+        if space.device != self.device
+            || space.available_inodes < profile.filesystem_overhead_inodes
+        {
+            return Err("snapshot volume identity or inode reserve unavailable".into());
+        }
+        Ok(
+            sandproof_controller_service::physical_storage::CaptureSpace {
+                usable_bytes: space.usable_bytes,
+                available_bytes: space.available_bytes,
+            },
+        )
+    }
+
     pub(crate) fn validate_admission(
         &self,
         profile: &PhysicalStorageProfile,
@@ -740,6 +760,7 @@ mod physical_tests {
         fs::write(&file, b"bytes").unwrap();
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
         fixture.profile.service_data = vec![PhysicalServiceData {
+            on_demand_capture: false,
             root: root.clone(),
             owner_uid: fixture.owner,
             peak_bytes: 5,

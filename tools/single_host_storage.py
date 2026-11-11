@@ -108,7 +108,8 @@ def original_project(profile, settings, data):
     if (parent / 'v' != Path(pool['chroot_base']) or project['hard_bytes'] % 1024
             or not any(item['root'] == str(parent / 's') and item['owner_uid'] == 0
                        and item['peak_bytes'] == project['hard_bytes']
-                       and item['inode_budget'] == project['hard_inodes'] for item in profile['service_data'])):
+                       and item['inode_budget'] == project['hard_inodes']
+                       and item.get('on_demand_capture') is True for item in profile['service_data'])):
         raise ValueError('capture layout and project must match the full physical budget')
     roots = [profile['coordination_file'], pool['database'], pool['node_state_dir'], pool['chroot_base'],
              *(item['root'] for item in profile['host_template_caches']),

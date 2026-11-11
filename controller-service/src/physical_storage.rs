@@ -141,7 +141,11 @@ pub struct PhysicalServiceData {
     pub owner_uid: u32,
     pub peak_bytes: u64,
     pub inode_budget: u64,
+    /// A single runtime's protected snapshot project has a separate hard quota.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand_capture: bool,
 }
+
 impl PhysicalServiceData {
     fn validate(&self) -> Result<(), JournalError> {
         if !absolute(&self.root)
@@ -153,6 +157,69 @@ impl PhysicalServiceData {
             return Err(JournalError::UnsupportedStore);
         }
         Ok(())
+    }
+}
+
+/// One observation of the leased filesystem, shared by its single runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureSpace {
+    pub usable_bytes: u64,
+    pub available_bytes: u64,
+}
+
+/// A pause holds both its new files and the disk blocks that an older snapshot
+/// can pin while a restored or new instance writes to its own working disk.
+#[cfg(feature = "durable")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CapturePhysicalBytes {
+    pub(crate) capture: u64,
+    pub(crate) restore: u64,
+}
+
+#[cfg(feature = "durable")]
+impl CapturePhysicalBytes {
+    pub(crate) fn for_capture(
+        full: &crate::capture::FullCaptureWorkRequest,
+    ) -> Result<Self, JournalError> {
+        // Only the VMM's Full RAM/state are newly written. Seal and Load use
+        // same-XFS reflinks. Their extent/CoW metadata has its own profile budget.
+        Ok(Self {
+            capture: add(
+                add(full.memory_bytes, full.state_bytes)?,
+                2 * 262_144 + 65_536,
+            )?,
+            restore: full.disk_bytes,
+        })
+    }
+
+    pub(crate) fn checked_add(self, other: Self) -> Result<Self, JournalError> {
+        Ok(Self {
+            capture: add(self.capture, other.capture)?,
+            restore: add(self.restore, other.restore)?,
+        })
+    }
+}
+
+#[cfg(feature = "durable")]
+pub(crate) struct CaptureAdmission {
+    pub(crate) space: CaptureSpace,
+    pub(crate) fixed_bytes: u64,
+    pub(crate) cleanup_and_fs_bytes: u64,
+}
+
+#[cfg(feature = "durable")]
+impl CaptureAdmission {
+    pub(crate) fn fits(
+        &self,
+        held: CapturePhysicalBytes,
+        next: CapturePhysicalBytes,
+    ) -> Result<bool, JournalError> {
+        let total = held.checked_add(next)?;
+        // Already allocated bytes remain included in the durable upper bound,
+        // but must not also be deducted from the current free-space sample.
+        let required = add(self.fixed_bytes, add(total.capture, total.restore)?)?;
+        let needed_now = add(self.cleanup_and_fs_bytes, next.capture)?;
+        Ok(self.space.usable_bytes >= required && self.space.available_bytes >= needed_now)
     }
 }
 
@@ -349,6 +416,14 @@ impl PhysicalStorageProfile {
         }
         for service in &self.service_data {
             service.validate()?;
+            if service.on_demand_capture
+                && (self.pools.len() != 1
+                    || service.owner_uid != 0
+                    || !self.pools[0].chroot_base.ends_with("v")
+                    || self.pools[0].chroot_base.with_file_name("s") != service.root)
+            {
+                return Err(JournalError::UnsupportedStore);
+            }
             roots.push(service.root.as_path());
         }
         for (index, path) in roots.iter().enumerate() {
@@ -411,7 +486,9 @@ impl PhysicalStorageProfile {
             peak = add(peak, cache.peak_bytes()?)?;
         }
         for service in &self.service_data {
-            peak = add(peak, service.peak_bytes)?;
+            if !service.on_demand_capture {
+                peak = add(peak, service.peak_bytes)?;
+            }
         }
         Ok(peak)
     }
@@ -648,6 +725,7 @@ mod tests {
     fn service_material_has_explicit_peak_and_inodes_not_filesystem_overhead_credit() {
         let mut profile = profile();
         profile.service_data = vec![PhysicalServiceData {
+            on_demand_capture: false,
             root: "/host/center-service".into(),
             owner_uid: 64001,
             peak_bytes: 4096,

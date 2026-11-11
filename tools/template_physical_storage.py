@@ -110,10 +110,18 @@ def envelope_breakdown(profile):
     if type(services) is not list or len(services) > 8:
         raise ValueError('explicit finite physical service data required')
     for service in services:
-        if (type(service) is not dict or set(service) != SERVICE_FIELDS
+        if (type(service) is not dict or set(service) not in (SERVICE_FIELDS, SERVICE_FIELDS | {'on_demand_capture'})
                 or type(service['owner_uid']) is not int or not 0 <= service['owner_uid'] <= 2**32-1):
             raise ValueError('invalid fixed physical service data owner or fields')
-        parts.append({"kind": "service_data", "root": service["root"], "bytes": positive(service["peak_bytes"])})
+        size = positive(service['peak_bytes'])
+        if 'on_demand_capture' in service:
+            jail = Path(profile['pools'][0]['chroot_base'])
+            if (service['on_demand_capture'] is not True or len(profile['pools']) != 1
+                    or service['owner_uid'] != 0 or jail.name != 'v'
+                    or service['root'] != str(jail.with_name('s'))):
+                raise ValueError('on-demand capture requires the single runtime snapshot root')
+        else:
+            parts.append({"kind": "service_data", "root": service["root"], "bytes": size})
         inodes += positive(service['inode_budget'])
         roots.append(service['root'])
     paths = []

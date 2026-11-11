@@ -88,6 +88,9 @@ def service_declarations(layout, ids, paths, asset_bytes, redis_receipt, private
         service_peaks.append(dict(root=str(layout['build_control']),owner_uid=0,peak_bytes=8*MIB,inode_budget=32))
     for capture in captures:
         material=capture['material_project']
-        service_peaks.append(dict(root=str(Path(capture['layout_parent'])/'s'),owner_uid=0,
-            peak_bytes=material['hard_bytes'],inode_budget=material['hard_inodes']))
+        service = dict(root=str(Path(capture['layout_parent'])/'s'), owner_uid=0,
+                       peak_bytes=material['hard_bytes'], inode_budget=material['hard_inodes'])
+        if len(captures) == 1:
+            service['on_demand_capture'] = True
+        service_peaks.append(service)
     return service_peaks

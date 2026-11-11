@@ -338,7 +338,9 @@ class RuntimeServices:
             hosts=[dict(binary=binary,config=path,uid=0,gid=0) for binary,path in zip(host_bins,host_paths)],
             redis=dict(binary=redis_bin,config=redis_path,uid=ids['redis'][0],gid=ids['redis'][1]),
             record=record,logs=layout['logs'])
-        value.service_storage=ServiceStoragePeaks(profile['service_data'])
+        value.service_storage=ServiceStoragePeaks([
+            {key: row[key] for key in ('root', 'owner_uid', 'peak_bytes', 'inode_budget')}
+            for row in profile['service_data']])
         return value
 
     def start(self, *, host_envs=None):

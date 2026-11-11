@@ -907,6 +907,23 @@ impl HostCapacity for NodeHost {
         })
     }
 
+    fn lifecycle_capture_space(
+        &self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<sandproof_controller_service::physical_storage::CaptureSpace, ApplicationError>
+    {
+        self.physical_storage
+            .capture_space(profile, pool)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PhysicalStorage,
+                    FaultContext::default(),
+                )
+            })
+    }
+
     fn validate_physical_storage(
         &self,
         profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,

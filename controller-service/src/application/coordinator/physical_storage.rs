@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     ControllerJournal,
-    physical_storage::{PhysicalStorageProfile, PoolRole},
+    physical_storage::{CaptureAdmission, PhysicalStorageProfile, PoolRole},
     template_registry::RegistryConfig,
 };
 
@@ -52,6 +52,37 @@ pub(super) fn validate_builder_configuration(
 }
 
 impl<H: ControllerHost> ControllerApplication<H> {
+    pub(super) fn lifecycle_capture_admission(
+        inner: &Inner<H>,
+    ) -> Result<Option<CaptureAdmission>, ApplicationError> {
+        let Some(profile) = inner
+            .journal
+            .bounded_host_config()
+            .map_err(map_journal)?
+            .and_then(|config| config.physical_storage)
+            .filter(|profile| {
+                profile
+                    .service_data
+                    .iter()
+                    .any(|service| service.on_demand_capture)
+            })
+        else {
+            return Ok(None);
+        };
+        let pool = profile
+            .pool(inner.journal.deployment_namespace())
+            .map_err(map_journal)?;
+        let cleanup_and_fs_bytes = pool
+            .cleanup_reserve_bytes
+            .checked_add(profile.filesystem_overhead_bytes)
+            .ok_or(ApplicationError::Busy)?;
+        Ok(Some(CaptureAdmission {
+            space: inner.host.lifecycle_capture_space(&profile, pool)?,
+            fixed_bytes: profile.peak_bytes().map_err(map_journal)?,
+            cleanup_and_fs_bytes,
+        }))
+    }
+
     pub(super) fn validate_publication_admission(
         &self,
         inner: &Inner<H>,
