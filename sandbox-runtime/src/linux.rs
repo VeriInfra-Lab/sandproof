@@ -26,7 +26,9 @@ mod cgroup;
 #[path = "cpu_domain.rs"]
 mod cpu_domain;
 use crate::child_process;
-use crate::snapshot_store::{FileStamp, clone_template_file, matches_entry, require_same_xfs_mount};
+use crate::snapshot_store::{
+    FileStamp, clone_template_file, matches_entry, require_same_xfs_mount,
+};
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
 #[path = "jail.rs"]

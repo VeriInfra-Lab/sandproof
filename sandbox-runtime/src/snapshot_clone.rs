@@ -62,7 +62,11 @@ pub(crate) fn clone_template_file(source: &File, destination: &File) -> Result<(
     clone_file(source, destination, 0o022)
 }
 
-fn clone_file(source: &File, destination: &File, forbidden_source_mode: u32) -> Result<(), RuntimeError> {
+fn clone_file(
+    source: &File,
+    destination: &File,
+    forbidden_source_mode: u32,
+) -> Result<(), RuntimeError> {
     let before = source.metadata()?;
     let target = destination.metadata()?;
     if !before.is_file()
