@@ -449,6 +449,9 @@ def exercise_with_evidence(args, evidence):
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
                 'max_lifetime_secs','startup_timeout_secs')})
     registry = {'root': str(root / 'registry'), **deployment['registry']}
+    # Host capture/bootstrap provisioning already uses this leaf and receipt.
+    service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
+                           **deployment['service_cgroup'])
     services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
         key,public_address,record=service_record,
         retained_sessions=1 if prepared_original else capacity['jobs'] + sum(pool['max_active_global'] for pool in settings),
@@ -637,8 +640,6 @@ def exercise_with_evidence(args, evidence):
     try:
         if transport is not None:
             transport.start()
-        service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
-                               **deployment['service_cgroup'])
         services.start()
         services.wait_ready()
         supervisor, log = launch_build_service(checkout, root, service_prefix,
