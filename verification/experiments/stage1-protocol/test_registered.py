@@ -60,8 +60,8 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 166)
-            self.assertEqual(len(registered.native_labels()), 77)
+            self.assertEqual(len(full), 167)
+            self.assertEqual(len(registered.native_labels()), 78)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -520,8 +520,8 @@ class Registration(OriginalReadPlanFixture):
                 registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
 
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 77)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 77)
+        self.assertEqual(len(registered.NATIVE_CASES), 78)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 78)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -553,7 +553,7 @@ class Registration(OriginalReadPlanFixture):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 166)
+        self.assertEqual(len(jobs), 167)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -815,6 +815,49 @@ class Registration(OriginalReadPlanFixture):
                              'InboxStateWrongCurrent.lean.in', 'EnvelopeWriterWrong.lean.in',
                              'InboxLoadHostFormatValues.lean.in'}, names)
         self.assertTrue(all(audits for audits in templates.values()))
+
+    def test_full_unload_driver_requires_all_four_original_packages(self):
+        unload = registered.UNLOAD
+        jobs = registered.formal_plan(Path('/unused'))
+        job, = [job for job in jobs if job['name'] == unload.LABEL]
+        self.assertEqual(job['native'], [unload.LABEL])
+        self.assertEqual(job['cases'], list(unload.PACKAGES))
+        self.assertIn(unload.LABEL, registered.native_labels())
+        for profile in ('create-delivery', registered.CONVERGENCE.PROFILE):
+            self.assertNotIn(unload.LABEL, registered.native_labels(profile))
+        templates = registered.audit_templates()
+        for package in unload.PACKAGES:
+            files = unload.package_audits(templates, package)
+            without_one = dict(templates)
+            without_one.pop(next(iter(files)))
+            with self.assertRaisesRegex(ValueError, 'fixed unload audit'):
+                unload.package_audits(without_one, package)
+        with patch.object(unload, 'frozen_inputs', return_value={}):
+            with self.assertRaisesRegex(ValueError, 'original unload package'):
+                registered._check_actual(dict(complete=True, kind=unload.KIND, cases={},
+                    frozen_inputs={}, native_result_sha256='a'*64), job)
+
+    def test_full_unload_dispatch_uses_its_driver_and_passes_the_existing_lock(self):
+        unload = registered.UNLOAD
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            job, = [row for row in registered.formal_plan(root) if row['name'] == unload.LABEL]
+            execution = root/'execution'
+            cpus = (8, 9, 10, 11)
+
+            def invoke(source, driver, args, env, *, log, pass_fds, cpu_affinity, cpu_admission):
+                self.assertEqual(driver, unload.DRIVER)
+                self.assertEqual(args, ['formal', '--output', job['output']])
+                self.assertEqual(pass_fds, (9,))
+                self.assertEqual(cpu_affinity, cpus)
+                self.assertEqual(cpu_admission, execution/'cpu-admission.json')
+                cpu_admission.write_text(json.dumps(dict(kind='stage1-create-four-cpu-admission',
+                    pid=123, requested=cpus, actual=cpus, parent_allowed=cpus)))
+                return ['python', str(driver), *args]
+
+            with patch.object(registered, 'inherited_lock', return_value=(9, {})), \
+                    patch.object(registered, '_invoke', side_effect=invoke):
+                registered._launch_job(registered.ROOT, job, execution, {}, cpu_affinity=cpus)
 
     def test_missing_or_empty_audit_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
