@@ -180,15 +180,20 @@ class RuntimeServicesTests(unittest.TestCase):
         events=[]
         instance.service_storage=Mock()
         instance.service_storage.start.side_effect=lambda:events.append('sample-start')
-        instance.native_pools=[{}]
+        instance.native_pools=[{},{}]
         instance.center_config=dict(redis={})
+        instance.layout=dict(center_identity=(1001,1001))
+        source,target=Path('/pinned/source'),Path('/center/asset')
+        instance.pending_assets=[(source,target,'fixture-hash')]
         instance.processes=Mock(children={'redis':Mock()})
         instance.processes.start.side_effect=lambda role,**_:events.append('start-'+role)
         instance.processes.initialize.side_effect=lambda role:events.append('initialize-'+role)
-        with patch.object(services,'_wait_redis'):
+        with patch.object(services,'_wait_redis'), \
+                patch.object(services,'_copy',side_effect=lambda *_,**__:events.append('copy-assets')) as copy_asset:
             instance.start()
         self.assertEqual(events,['sample-start','start-redis','initialize-host-0',
-            'start-host-0','initialize-center','start-center'])
+            'initialize-host-1','copy-assets','start-host-0','start-host-1','initialize-center','start-center'])
+        copy_asset.assert_called_once_with(source,target,identity=(1001,1001),expected='fixture-hash')
         instance.service_storage.start.assert_called_once()
 
     def test_storage_sampler_is_drained_even_when_an_original_role_exit_is_unknown(self):
