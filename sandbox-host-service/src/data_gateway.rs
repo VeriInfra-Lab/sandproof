@@ -29,11 +29,15 @@ use tokio::{
 
 mod admission;
 mod drain;
+mod gate_wait;
 #[cfg(all(target_os = "linux", debug_assertions))]
 pub(crate) use drain::test_unload_busy;
 #[cfg(target_os = "linux")]
 mod relay_stdio;
 pub use admission::Gateway;
+#[cfg(test)]
+use gate_wait::launch_data_route;
+use gate_wait::{GateWait, authorize_data, launch_authorized};
 use sandproof_data_transport::{
     BodyWorkOwner, WriteIdle, access_token, control_request, forward_request, hold_response,
     prepare_body, request_kind, response, until_revoked,
@@ -150,20 +154,32 @@ async fn handle_prepared<P: DataAccessPort>(
     gateway: Option<Arc<Gateway>>,
     mut request: Request<Body>,
     (kind, file_request): (DataKind, bool),
-    authorize: impl FnOnce(DataKind) -> Result<(P::Permit, Option<String>), PortError> + Send + 'static,
+    authorize: impl Fn(DataKind) -> Result<(P::Permit, Option<String>), PortError>
+    + Send
+    + Sync
+    + 'static,
 ) -> Response<Body> {
     let control = control_request(&request);
     let request_lease = match admit_request(gateway.as_deref(), control) {
         Ok(lease) => lease,
         Err(status) => return response(status),
     };
-    let (mut permit, guest_credential) =
-        match authorize_data(Arc::clone(&request_lease), kind, authorize).await {
-            Ok(permit) => permit,
-            Err(status) => return response(status),
-        };
-    if let Some(secret) = guest_credential
-        && replace_guest_credential(&mut request, &secret).is_err()
+    let limits = gateway.as_ref().map(|gateway| &gateway.limits);
+    let gate_idle = limits.map(|limits| Duration::from_secs(limits.request_idle_seconds));
+    let authorize = Arc::new(authorize);
+    let (mut permit, guest_credential) = match authorize_data(
+        &request_lease,
+        kind,
+        &authorize,
+        &mut GateWait::new(gate_idle),
+    )
+    .await
+    {
+        Ok(grant) => grant,
+        Err(status) => return response(status),
+    };
+    if let Some(secret) = &guest_credential
+        && replace_guest_credential(&mut request, secret).is_err()
     {
         return response(StatusCode::UNAUTHORIZED);
     }
@@ -176,7 +192,6 @@ async fn handle_prepared<P: DataAccessPort>(
         },
         None => None,
     };
-    let limits = gateway.as_ref().map(|gateway| &gateway.limits);
     request
         .extensions_mut()
         .insert(BodyWorkOwner::new((lease.clone(), request_lease.clone())));
@@ -190,12 +205,19 @@ async fn handle_prepared<P: DataAccessPort>(
         Some(Err(rejection)) => return rejection,
         None => return response(StatusCode::UNAUTHORIZED),
     };
-    let (returned_permit, mut child) =
-        match launch_data_route(Arc::clone(&port), permit, control, request_lease).await {
-            Ok(value) => value,
-            Err(status) => return response(status),
-        };
-    permit = returned_permit;
+    let (mut permit, mut child) = match launch_authorized(
+        &port,
+        permit,
+        (kind, control, guest_credential.as_deref()),
+        &request_lease,
+        &authorize,
+        GateWait::new(gate_idle),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(status) => return response(status),
+    };
     let mut relay_exit = drain::RelayExit::new(permit.drain().clone());
     let Ok((read, write)) = child.take_pipes() else {
         return response(StatusCode::BAD_GATEWAY);
@@ -274,61 +296,6 @@ fn admit_request(
     requests
         .try_acquire(class)
         .ok_or(StatusCode::TOO_MANY_REQUESTS)
-}
-
-async fn authorize_data<P: DataAuthorization>(
-    lease: Arc<RequestLease>,
-    kind: DataKind,
-    authorize: impl FnOnce(DataKind) -> Result<(P, Option<String>), PortError> + Send + 'static,
-) -> Result<(P, Option<String>), StatusCode> {
-    match tokio::task::spawn_blocking(move || {
-        let _lease = lease;
-        authorize(kind)
-    })
-    .await
-    {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(PortError::NotFound | PortError::Invalid)) => Err(StatusCode::UNAUTHORIZED),
-        Ok(Err(error)) => {
-            FaultRecord::application(
-                FaultStage::HostDataAuthorization,
-                &error,
-                FaultContext::default(),
-            )
-            .emit();
-            Err(StatusCode::SERVICE_UNAVAILABLE)
-        }
-        Err(_) => {
-            FaultRecord::application(FaultStage::Join, &PortError::Busy, FaultContext::default())
-                .emit();
-            Err(StatusCode::SERVICE_UNAVAILABLE)
-        }
-    }
-}
-
-async fn launch_data_route<P: DataAccessPort>(
-    port: Arc<P>,
-    permit: P::Permit,
-    control: bool,
-    request_lease: Arc<RequestLease>,
-) -> Result<(P::Permit, drain::RelayProcess), StatusCode> {
-    let (permit, launched) = tokio::task::spawn_blocking(move || {
-        let _lease = request_lease;
-        let result = port.spawn_data_relay(&permit, control);
-        (permit, result)
-    })
-    .await
-    .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let child = match launched {
-        Ok(child) => drain::RelayProcess::new(child),
-        Err(PortError::NotFound | PortError::Invalid) => return Err(StatusCode::UNAUTHORIZED),
-        Err(PortError::QuotaExceeded) => return Err(StatusCode::TOO_MANY_REQUESTS),
-        Err(error) => {
-            FaultRecord::application(FaultStage::Relay, &error, FaultContext::default()).emit();
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-    };
-    Ok((permit, child))
 }
 
 /// One process per trusted, namespace-selected data connection. It transports

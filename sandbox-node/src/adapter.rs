@@ -801,15 +801,24 @@ impl DataRelay for NodeHost {
             .acquire_data_gate(sandbox, vm, generation)
             .map(Some)
             .map_err(|error| {
-                busy(
-                    error.as_ref(),
+                project(
                     FaultStage::DataGate,
                     FaultContext {
                         vm: Some(vm.0),
                         generation: Some(generation),
                         ..FaultContext::instance(sandbox, None)
                     },
+                    error.as_ref(),
                 )
+                .emit();
+                if matches!(
+                    error.downcast_ref::<sandbox_runtime::RuntimeError>(),
+                    Some(sandbox_runtime::RuntimeError::HelperGateBusy)
+                ) {
+                    ApplicationError::DataGateBusy
+                } else {
+                    ApplicationError::Busy
+                }
             })
     }
 
@@ -838,6 +847,11 @@ impl DataRelay for NodeHost {
                     .is_some()
                 {
                     ApplicationError::QuotaExceeded
+                } else if matches!(
+                    error.downcast_ref::<sandbox_runtime::RuntimeError>(),
+                    Some(sandbox_runtime::RuntimeError::HelperGateBusy)
+                ) {
+                    ApplicationError::DataGateBusy
                 } else {
                     ApplicationError::Busy
                 }

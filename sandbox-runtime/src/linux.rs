@@ -85,6 +85,7 @@ pub enum RuntimeError {
     KvmUnavailable(io::Error),
     Json(serde_json::Error),
     InvalidConfiguration(&'static str),
+    HelperGateBusy,
     InvalidId,
     AlreadyClaimed,
     MissingRecord,
@@ -110,6 +111,7 @@ impl Display for RuntimeError {
             Self::InvalidConfiguration(reason) => {
                 write!(f, "invalid runtime configuration: {reason}")
             }
+            Self::HelperGateBusy => f.write_str("the host helper gate is busy"),
             Self::InvalidId => f.write_str("invalid jailer resource ID"),
             Self::AlreadyClaimed => {
                 f.write_str("resource ID is already claimed; observe before retrying")

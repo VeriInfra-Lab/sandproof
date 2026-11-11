@@ -554,7 +554,7 @@ fn validate_worker_configuration(config: &NodeConfig) -> NodeResult<()> {
 fn helper_observation_pending(result: Result<(), RuntimeError>) -> NodeResult<bool> {
     match result {
         Ok(()) => Ok(false),
-        Err(RuntimeError::InvalidConfiguration(_)) => Ok(true),
+        Err(RuntimeError::InvalidConfiguration(_) | RuntimeError::HelperGateBusy) => Ok(true),
         Err(error) => Err(error.into()),
     }
 }

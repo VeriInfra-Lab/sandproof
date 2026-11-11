@@ -1182,6 +1182,12 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 
 释放先提交核心 Releasing，再调用宿主。管理器持锁核对旧工作、构建/发布引用和已撤销数据通道；响应 body 与 relay 都持有 RAII pin，发送撤销信号不代表已排空。每个同步宿主 helper 有独立固定 marker，每个并行 relay 占用一个固定 route cell；子进程在 stdin 启动门后阻塞，精确 PID、启动 ticks、boot 身份、位置 incarnation 与命令摘要同步落盘后才准许同 PID exec。控制器或监督进程退出、子进程关闭继承 FD 都不能抹除未决证据；匹配的 zombie 仍占位，只有确切 reaping/进程消失才可重用。原动作执行资格在 relay 真正派发前再次核对。relay 取消与早期错误由预先建立的精确子进程 reaper 接管，不能丢弃 std Child 并累积 zombie；迟到完成不得按 cell 编号清除后来者。route marker 持久记录可信网关现有 RPC 分类给出的 control/ordinary；新普通请求按全部 live/unknown cells 的全局/逐位置数量检查 max-minus-reserve，control 请求受完整额度限制。重启不会把旧未决连接从这些计数中抹去；确切持久额度满返回 429，身份/观察异常仍保持未知而不是伪装成满额。宿主还须独立观察精确旧物理资源、持久 helper/route marker 与进程/namespace 持有者，不能靠服务重启把内存 pin 清空就放行。helper gate 的永久 inode 在初始化时登记；已知仍活着的旧 helper 只阻塞所属位置，身份/配置损坏才拒绝整个启动。位置表、启动数据及凭证使用精确的有界 staging，Initializing 可恢复本部署的合法中断；Ready 后不得重造缺失位置。有界 inventory 可核对/回收精确完成的 helper 记账，但不凭盘点执行生命周期资源清理。宿主根的持久独占租约在任何初始化/恢复写入前取得，第二个控制器不得先碰 staged 数据再等待数据库锁。宿主在删除旧 claim、secret、fence、startup 或日志之前，先持久化精确 inode/内容绑定的清理清单与所需运行配置，删除中断可按同一清单恢复；任何外来 inode 或未知观察保留 Releasing。公网地址复用还需精确旧连接跟踪清除/缺席核对，不能只删 veth/nft 表。宿主确认 Free 后服务才记录 ConfirmRelease；丢失确认保持 Releasing，空闲记录保留最后永久 VM 身份。未结算的私有 buildID 锚点或模板验证引用继续阻止释放；仅按下述窗口结算/验证证据迁移解除逻辑引用后，才允许独立的更强物理释放检查。
 
+宿主数据入口遇到明确发生在中继启动前的 helper 锁争用时，可以在原
+`request_idle_seconds` 预算内等待下一次尝试。每次尝试走原授权，应用全局锁在等待时释放。
+准备好请求后若中继准入遇到争用，先释放原共享锁和许可，再用原身份重新授权，并核对目标和
+来宾凭据。原撤销信号继续有效，请求体只准备一次。身份不符、容量满、未知的启动结果
+及已经启动的中继仍走各自的原处理路径；超出争用等待预算返回暂不可用。
+
 生产维护协调入口位于控制服务的应用模块，为 `ControllerApplication::maintain`，只由可信服务启动/周期扫描调用，不接收 HTTP 证书或客户端四项布尔值。它与创建、宿主派发、启动凭证写入和撤销共用原管理互斥锁；仅接受精确 `ConfirmRelease` 的持久见证及已排空的本地 body/relay 记录，并让纯核心再次核对终态、回收回执、未决动作和依赖。旧位置已被后来实例复用时，核对原见证而不对后来绑定执行旧资源观察或清理。一个老的活跃/未知实例不形成按历史编号清理的屏障，其他已满足条件的对象可以独立退休。未迁移/未结算的私有 buildID 与活动模板验证引用继续保留阻塞语义，不能因检查点或服务重启解除。成功退休后删除该对象的进程内撤销/排空登记；任何仍有持有者或未知 relay 的记录都不得靠清空内存变成成功证据。
 
 顶层 `maintenance` 与 `bounded_host` 均为正式部署必需字段，全部字段显式必填且为可表示正整数：`retention_ms`、`max_checkpoint_bytes`、`max_records`、`max_references`、`max_tail_inputs`、`max_tail_bytes`、`max_input_bytes`、`prune_batch_rows`；单输入字节额度不得超过尾日志字节额度。它与 `bounded_host.maintenance` 的纯核心位置/结果/窗口参数是不同层次，均无生产默认。控制库只提供 `open_complete` 和只读 `preflight_complete`；旧开库、升级及全历史恢复接口已删除。

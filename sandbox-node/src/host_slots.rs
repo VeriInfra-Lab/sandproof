@@ -1356,7 +1356,7 @@ impl LinuxWorker {
         let expected = self.runtime_host_slot(context.position, context.binding.vm)?;
         match expected.helper_gate.try_acquire(Some(&expected)) {
             Ok(_guard) => Ok(true),
-            Err(RuntimeError::InvalidConfiguration(_)) => Ok(false),
+            Err(RuntimeError::InvalidConfiguration(_) | RuntimeError::HelperGateBusy) => Ok(false),
             Err(error) => Err(error.into()),
         }
     }
