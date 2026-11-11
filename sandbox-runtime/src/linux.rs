@@ -429,12 +429,12 @@ impl Runtime {
         let source = disk.metadata()?;
         if !source.is_file()
             || source.uid() != 0
-            || source.mode() & 0o077 != 0
+            || source.mode() & 0o022 != 0
             || source.nlink() != 1
             || source.len() == 0
         {
             return Err(RuntimeError::InvalidConfiguration(
-                "cold template must be an original private root-owned file",
+                "cold template must be an original protected root-owned file",
             ));
         }
         let chroot = File::from(
