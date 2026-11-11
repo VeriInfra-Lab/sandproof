@@ -1692,7 +1692,7 @@ mod tests {
         );
         assert!(matches!(
             acquire(&context, false),
-            Err(RuntimeError::HelperGateBusy)
+            Err(RuntimeError::InvalidConfiguration(_))
         ));
         assert!(child.wait().unwrap().success());
         assert!(!identity.is_alive().unwrap());
