@@ -55,8 +55,8 @@ pub struct PhysicalBuildStorage {
     pub inode_budget: u64,
 }
 
-/// Bounded immutable copies and incomplete downloads, charged separately from
-/// the center's build registry and each VM's private writable disk.
+/// Bounded immutable copies and incomplete downloads. Both use one payload
+/// limit, separate from the center registry and each VM's writable disk.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhysicalTemplateCache {
@@ -66,7 +66,9 @@ pub struct PhysicalTemplateCache {
     pub max_entries: u64,
     pub max_downloads: u64,
     pub max_entry_bytes: u64,
+    /// Combined bytes reserved for ready entries and pending downloads.
     pub artifact_bytes: u64,
+    /// Sublimit for incomplete payloads, including recovery observations.
     pub temporary_bytes: u64,
     pub metadata_bytes: u64,
     pub inode_budget: u64,
@@ -121,13 +123,12 @@ impl PhysicalTemplateCache {
         self.peak_bytes()?;
         Ok(())
     }
+    /// The cache charges ready and pending descriptors to the same total and
+    /// publishes by renaming the original directory. Only metadata is additional.
     /// # Errors
-    /// Complete and unknown temporary copies both retain their full provision.
+    /// The combined provision must be representable in bytes.
     pub fn peak_bytes(&self) -> Result<u64, JournalError> {
-        add(
-            add(self.artifact_bytes, self.temporary_bytes)?,
-            self.metadata_bytes,
-        )
+        add(self.artifact_bytes, self.metadata_bytes)
     }
 }
 
@@ -598,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_copies_unknown_downloads_and_metadata_extend_the_original_peak() {
+    fn cache_shares_its_payload_peak_and_retains_temporary_and_metadata_checks() {
         let mut profile = profile();
         let cache = PhysicalTemplateCache {
             namespace: "0123456789abcdef".into(),
@@ -613,6 +614,7 @@ mod tests {
         };
         cache.validate().unwrap();
         let extra = cache.peak_bytes().unwrap();
+        assert_eq!(extra, 2000 + cache.metadata_bytes);
         profile.filesystem_overhead_inodes += cache.inode_budget;
         profile.host_template_caches = vec![cache.clone()];
         profile.validate().unwrap();

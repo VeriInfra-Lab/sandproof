@@ -313,6 +313,11 @@ def exercise_with_evidence(args, evidence):
             raise ValueError('prepared original requires one approved runtime position')
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
                          profile=budget_profile, build_required=not runtime_only)
+    if prepared_original:
+        # The prebuilt catalog is served from the separately budgeted assets.
+        # This fresh run has no build/publication listener. The registry still
+        # needs a positive bound, but one byte cannot admit a kernel and rootfs.
+        deployment['registry'].update(max_artifact_bytes_global=1, max_artifact_bytes_per_tenant=1)
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
     if prepared_profile is not None:
         from tools.template_physical_storage import envelope
