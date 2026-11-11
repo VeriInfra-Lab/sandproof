@@ -94,7 +94,15 @@ where
     let destination = permit.target();
     let mut original_revocation = permit.revocation().clone();
     loop {
-        match try_launch(Arc::clone(port), permit, control, Arc::clone(lease)).await {
+        match try_launch(
+            Arc::clone(port),
+            permit,
+            control,
+            Arc::clone(lease),
+            wait.deadline,
+        )
+        .await
+        {
             Ok(launched) => return Ok(launched),
             Err(LaunchFailure::Status(status)) => return Err(status),
             Err(LaunchFailure::GateBusy) => {}
@@ -131,15 +139,19 @@ async fn try_launch<P: DataAccessPort>(
     permit: P::Permit,
     control: bool,
     request_lease: Arc<RequestLease>,
+    deadline: Option<Instant>,
 ) -> Result<(P::Permit, drain::RelayProcess), LaunchFailure> {
     use LaunchFailure::Status;
     let (permit, launched) = tokio::task::spawn_blocking(move || {
         let _lease = request_lease;
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Err(Status(StatusCode::SERVICE_UNAVAILABLE));
+        }
         let result = port.spawn_data_relay(&permit, control);
-        (permit, result)
+        Ok((permit, result))
     })
     .await
-    .map_err(|_| Status(StatusCode::BAD_GATEWAY))?;
+    .map_err(|_| Status(StatusCode::BAD_GATEWAY))??;
     match launched {
         Ok(child) => Ok((permit, drain::RelayProcess::new(child))),
         Err(PortError::DataGateBusy) => Err(LaunchFailure::GateBusy),
@@ -159,7 +171,7 @@ pub(super) async fn launch_data_route<P: DataAccessPort>(
     control: bool,
     lease: Arc<RequestLease>,
 ) -> Result<(P::Permit, drain::RelayProcess), StatusCode> {
-    try_launch(port, permit, control, lease)
+    try_launch(port, permit, control, lease, None)
         .await
         .map_err(|error| match error {
             LaunchFailure::GateBusy => StatusCode::SERVICE_UNAVAILABLE,

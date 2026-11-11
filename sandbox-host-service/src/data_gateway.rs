@@ -205,7 +205,7 @@ async fn handle_prepared<P: DataAccessPort>(
         Some(Err(rejection)) => return rejection,
         None => return response(StatusCode::UNAUTHORIZED),
     };
-    let (mut permit, mut child) = match launch_authorized(
+    let (permit, child) = match launch_authorized(
         &port,
         permit,
         (kind, control, guest_credential.as_deref()),
@@ -218,6 +218,16 @@ async fn handle_prepared<P: DataAccessPort>(
         Ok(value) => value,
         Err(status) => return response(status),
     };
+    forward_via_relay(permit, child, request, limits, lease).await
+}
+
+async fn forward_via_relay(
+    mut permit: impl DataAuthorization,
+    mut child: drain::RelayProcess,
+    request: Request<Body>,
+    limits: Option<&TransferLimits>,
+    lease: Option<Arc<admission::Lease>>,
+) -> Response<Body> {
     let mut relay_exit = drain::RelayExit::new(permit.drain().clone());
     let Ok((read, write)) = child.take_pipes() else {
         return response(StatusCode::BAD_GATEWAY);
