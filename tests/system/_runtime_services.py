@@ -355,7 +355,7 @@ class RuntimeServices:
             # The sampler must see each file only after its owner, mode and
             # digest are final. Stage the same bytes on the original volume.
             with tempfile.TemporaryDirectory(prefix='.static-assets-',
-                                             dir=self.layout['center']) as stage:
+                                             dir=self.layout['common']) as stage:
                 for source,target,checksum in self.pending_assets:
                     incoming = Path(stage)/target.name
                     _copy(source,incoming,identity=self.layout['center_identity'],expected=checksum)

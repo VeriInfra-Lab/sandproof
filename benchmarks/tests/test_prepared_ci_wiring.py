@@ -31,6 +31,30 @@ finally:
 
 
 class PreparedCiWiringTests(unittest.TestCase):
+    def test_startup_audit_reads_the_slot_generation_credential(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            namespace = 'a' * 16
+            native_id = f'sb-{namespace}-7'
+            name = f'vm-{namespace}-4'
+            slots, secrets = root/'state/slots', root/'state/secrets'
+            chroot = root/'p/v'
+            claim = chroot/'.claims'/name
+            for directory in (slots, secrets, claim):
+                directory.mkdir(parents=True)
+            (slots/f'slot-{namespace}-1.json').write_text(json.dumps(dict(sandbox=7, generation=3, vm=4)))
+            (secrets/native_id).write_text(json.dumps(dict(generation=1)))
+            (secrets/f'{native_id}-2').write_text(json.dumps(dict(generation=2)))
+            current = secrets/f'{native_id}-3'
+            current.write_text(json.dumps(dict(generation=3)))
+            (claim/'record.json').write_text(json.dumps(dict(resource_id=name)))
+            with patch('server_templates.original_chroot', return_value=chroot):
+                self.assertEqual(chain.record_for(root, native_id=native_id),
+                                 ({'generation': 3}, name, {'resource_id': name}))
+                current.write_text(json.dumps(dict(generation=2)))
+                with self.assertRaisesRegex(ValueError, 'original native generation'):
+                    chain.record_for(root, native_id=native_id)
+
     def test_private_builder_gateway_waits_for_readiness_and_keeps_one_deadline(self):
         for statuses, timeout, failure in (([502, 502, 404], 30, None),
                                            ([503, 503, 404], 1, 'did not become ready'),
