@@ -30,7 +30,7 @@ use std::{
 mod bundle;
 #[path = "snapshot_clone.rs"]
 mod file_clone;
-pub(crate) use file_clone::{clone_whole_file, require_same_xfs_mount};
+pub(crate) use file_clone::{clone_template_file, clone_whole_file, require_same_xfs_mount};
 #[path = "snapshot_completion.rs"]
 mod completion;
 pub(crate) use completion::MAX_COMPLETION_BYTES;

@@ -26,7 +26,7 @@ mod cgroup;
 #[path = "cpu_domain.rs"]
 mod cpu_domain;
 use crate::child_process;
-use crate::snapshot_store::{FileStamp, clone_whole_file, matches_entry, require_same_xfs_mount};
+use crate::snapshot_store::{FileStamp, clone_template_file, matches_entry, require_same_xfs_mount};
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
 #[path = "jail.rs"]
@@ -1576,7 +1576,7 @@ fn clone_private_disk(
         .map_err(errno_to_io)?,
     );
     output.set_permissions(fs::Permissions::from_mode(0o600))?;
-    clone_whole_file(source, &output)?;
+    clone_template_file(source, &output)?;
     rustix::fs::fchown(&output, Some(uid), Some(gid)).map_err(errno_to_io)?;
     output.sync_all()?;
     matches_entry(directory, name, &output)?;
@@ -2200,7 +2200,7 @@ mod tests {
         file.set_len(2 * 1024 * 1024 + 13).unwrap();
         file.sync_all().unwrap();
         drop(file);
-        fs::set_permissions(&template, fs::Permissions::from_mode(0o400)).unwrap();
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o444)).unwrap();
 
         let source = File::open(&template).unwrap();
         let original = source.metadata().unwrap();
@@ -2240,7 +2240,7 @@ mod tests {
         assert_eq!(written_bytes(&paths[0]), *b"first VM");
         assert_eq!(written_bytes(&paths[1]), *b"secondVM");
         assert_eq!(written_bytes(&template), *b"original");
-        assert_eq!(template.metadata().unwrap().mode() & 0o7777, 0o400);
+        assert_eq!(template.metadata().unwrap().mode() & 0o7777, 0o444);
     }
 
     #[test]
@@ -2248,13 +2248,16 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = File::open(directory.path()).unwrap();
         let template = directory.path().join("template");
-        File::create(&template).unwrap();
-        fs::set_permissions(&template, fs::Permissions::from_mode(0o400)).unwrap();
+        fs::write(&template, b"group-writable source").unwrap();
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o660)).unwrap();
         let source = File::open(&template).unwrap();
         let target = directory.path().join("rootfs.ext4");
         let uid = rustix::process::geteuid();
         let gid = rustix::process::getegid();
-        assert!(clone_private_disk(&source, &root, uid, gid).is_err());
+        assert!(matches!(
+            clone_private_disk(&source, &root, uid, gid),
+            Err(RuntimeError::IdentityMismatch(_))
+        ));
         let partial = target.metadata().unwrap();
         assert_eq!(partial.len(), 0);
         assert!(matches!(
@@ -2270,7 +2273,7 @@ mod tests {
             Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::AlreadyExists
         ));
         assert!(target.symlink_metadata().unwrap().is_symlink());
-        assert_eq!(source.metadata().unwrap().len(), 0);
+        assert_eq!(fs::read(template).unwrap(), b"group-writable source");
     }
 }
 
