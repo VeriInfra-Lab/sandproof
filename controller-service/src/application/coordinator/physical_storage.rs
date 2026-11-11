@@ -57,15 +57,8 @@ impl<H: ControllerHost> ControllerApplication<H> {
     ) -> Result<Option<CaptureAdmission>, ApplicationError> {
         let Some(profile) = inner
             .journal
-            .bounded_host_config()
+            .lifecycle_capture_profile()
             .map_err(map_journal)?
-            .and_then(|config| config.physical_storage)
-            .filter(|profile| {
-                profile
-                    .service_data
-                    .iter()
-                    .any(|service| service.on_demand_capture)
-            })
         else {
             return Ok(None);
         };

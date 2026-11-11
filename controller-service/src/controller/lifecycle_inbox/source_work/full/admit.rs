@@ -5,16 +5,30 @@ use super::{
 };
 use crate::{
     CrashInjector, CrashPoint, HostEvidence,
-    physical_storage::{CaptureAdmission, CapturePhysicalBytes},
+    physical_storage::{CaptureAdmission, CapturePhysicalBytes, PhysicalStorageProfile},
 };
 use sandproof_protocol::lifecycle::AuthenticatedCenterContext;
 use serde::de::DeserializeOwned;
 
 impl ControllerJournal {
+    pub(crate) fn lifecycle_capture_profile(
+        &self,
+    ) -> Result<Option<PhysicalStorageProfile>, JournalError> {
+        Ok(self
+            .bounded_host_config()?
+            .and_then(|config| config.physical_storage)
+            .filter(|profile| {
+                profile
+                    .service_data
+                    .iter()
+                    .any(|service| service.on_demand_capture)
+            }))
+    }
+
     /// Accept the original Pause and fixed Full responsibility in one transaction.
     /// # Errors
     /// Changed source, request, deadline, profile or bounded capacity refuses.
-    #[cfg(test)]
+    /// On-demand deployments require the application’s leased volume observation.
     pub fn admit_lifecycle_full_capture<E: HostEvidence + DeserializeOwned>(
         &mut self,
         work: &SourceWork,
@@ -41,6 +55,7 @@ impl ControllerJournal {
         crashes: &mut impl CrashInjector,
     ) -> Result<SourceWorkRecord, JournalError> {
         let (full, physical) = proposal;
+        let observation_missing = physical.is_none() && self.lifecycle_capture_profile()?.is_some();
         let local = work.anchor.local;
         let operation = self.next_operation_id(local.sandbox);
         let active = self.active_host_epoch.clone();
@@ -69,6 +84,9 @@ impl ControllerJournal {
                 return Err(JournalError::Conflict);
             }
             return Ok(sources.records[i].clone());
+        }
+        if observation_missing {
+            return Err(JournalError::ControllerBusy);
         }
         let current = snapshot::current::<E>(
             &tx,
