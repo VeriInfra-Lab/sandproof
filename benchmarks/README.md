@@ -32,7 +32,7 @@ uv run --locked --project benchmarks python -m benchmarks.check_harbor \
 
 实机单批入口通过 `--lock` 指定独立版本；自动监督的 `dataset` 选择 2.0 兼容或 2.1 原题，入口与私有配置见[CI 运行环境](../docs/ci.md)。当前默认示例为 2.0 兼容，2.1 保留但不阻塞本次功能交付；转入 2.1 后须逐项复核并移除不再需要的补丁，不自动叠加 2.0 修补。**输入检查、组件通过、KVM 通过与自动 CI 成功/失败实测必须分别记录。** 下文旧固定 base 配方只供诊断，不用旧成绩背书任何新候选或 2.1。
 
-2.1 的实机入口将模板制备与评分分开。制备使用 `--source-kind oci --prepare-original-fixtures <新私有目录> --original-oci-digest sha256:<固定摘要>`，在原有构建入口生成一份可登记的模板及 `manifest.json`。制备阶段不运行解答或评分。评分使用 `--source-kind prepared-original --original-fixtures <清单> --original-fixtures-sha256 <批准摘要>`，每次选择一个锁定任务，只运行中心、Redis 和一个运行宿主。运行盘来自清单，不传构建盘、构建工具目录、构建 cgroup 或构建命名空间。物理策略只含一个运行池，初版只配置一个运行位置和一个保留会话。原任务网络、标准解答和评分器均沿用原定义，独立记录精确清理结果。2.0 晋升用的预装评分仍走原来的 CI 入口。
+2.1 的实机入口将模板制备与评分分开。制备使用 `--source-kind oci --prepare-original-fixtures <新私有目录> --original-oci-digest sha256:<固定摘要>`，在原有构建入口生成一份可登记的模板及 `manifest.json`。制备阶段不运行解答或评分。评分使用 `--source-kind prepared-original --original-fixtures <清单> --original-fixtures-sha256 <批准摘要> --storage-directory <已安装存储目录>`，每次选择一个锁定任务，只运行中心、Redis 和一个运行宿主。运行盘来自清单，不传构建盘、构建工具目录、构建 cgroup 或构建命名空间。物理策略只含一个运行池，初版只配置一个运行位置和一个保留会话。启动前读回原卷身份和硬配额，并核对运行目录与服务目录都在该卷上。原任务网络、标准解答和评分器均沿用原定义，独立记录精确清理结果。2.0 晋升用的预装评分仍走原来的 CI 入口。
 
 
 

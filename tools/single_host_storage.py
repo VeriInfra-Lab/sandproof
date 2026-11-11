@@ -114,6 +114,10 @@ def original_project(profile, settings, data):
              *(item['root'] for item in profile['service_data'])]
     if any(Path(path) == data or not Path(path).is_relative_to(data) for path in roots):
         raise ValueError('all managed profile paths must be children of the designated storage root')
+    return project_limits(project)
+
+
+def project_limits(project):
     return {key: project[key] for key in ('project_id', 'hard_bytes', 'hard_inodes')}
 
 
@@ -249,6 +253,23 @@ def reopen(directory, project, *, remount=False):
             or stat.S_IMODE(data.stat().st_mode) != 0o711):
         raise ValueError('storage filesystem or data-root identity changed')
     quota_limits(entry, project)
+    return receipt
+
+
+def check_acceptance_volume(directory, settings, scratch, staging):
+    """Use the installed volume and its quota before a prepared runtime run."""
+    directory = deployment_directory(directory)
+    data = directory / DATA
+    scratch, staging = (trusted_path(path) for path in (scratch, staging))
+    capture = validate_settings(settings, 1)[0]
+    parent = Path(capture['layout_parent'])
+    if (any(path == data or not path.is_relative_to(data) for path in (scratch, staging))
+            or not parent.is_relative_to(scratch)):
+        raise ValueError('prepared runtime roots must belong to the original installed data directory')
+    receipt = reopen(directory, project_limits(capture['material_project']))
+    target = mount_info(data)['target']
+    if any(mount_info(path)['target'] != target for path in (scratch, staging)):
+        raise ValueError('prepared runtime roots must use the same original XFS mount')
     return receipt
 
 

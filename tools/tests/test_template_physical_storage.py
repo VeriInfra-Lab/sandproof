@@ -116,6 +116,28 @@ class PhysicalProfileTests(unittest.TestCase):
         mount.assert_not_called()
         quota.assert_not_called()
 
+    def test_prepared_runtime_rechecks_the_installed_quota_and_both_role_mounts(self):
+        data = self.root / 'data'
+        scratch, staging = data / 'scratch', data / 'services'
+        project = dict(project_id=20, hard_bytes=1024**3, hard_inodes=1000)
+        tool = dict(path='/usr/bin/chattr', sha256=[1] * 32)
+        capture = dict(layout_parent=str(scratch / 'run' / '0' / 'p'), layout_binding=[1] * 32,
+                       state_copy_bytes=1024, memory_copy_bytes=1024, disk_copy_bytes=1024,
+                       api_timeout_ms=1000, worker_timeout_ms=1000,
+                       material_project=dict(project, chattr=tool, lsattr=tool))
+        receipt = dict(uuid='original', project=project)
+        targets = {data: str(data), scratch: str(data), staging: str(data)}
+        with (patch.object(single_host_storage, 'deployment_directory', return_value=self.root),
+              patch.object(single_host_storage, 'trusted_path', side_effect=lambda path: path),
+              patch.object(single_host_storage, 'reopen', return_value=receipt) as reopen,
+              patch.object(single_host_storage, 'mount_info', side_effect=lambda path: {'target': targets[path]})):
+            self.assertEqual(single_host_storage.check_acceptance_volume(
+                self.root, [capture], scratch, staging), receipt)
+            reopen.assert_called_once_with(self.root, project)
+            targets[staging] = str(staging)
+            with self.assertRaisesRegex(ValueError, 'same original XFS mount'):
+                single_host_storage.check_acceptance_volume(self.root, [capture], scratch, staging)
+
     def test_absent_null_or_partial_profiles_always_refuse(self):
         for missing in ('absent', 'null', 'one_pool', 'capacity'):
             runtime, builder = copy.deepcopy((self.runtime, self.builder))
