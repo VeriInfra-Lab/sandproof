@@ -104,33 +104,7 @@ impl ControllerJournal {
             return Err(JournalError::UnresolvedAction);
         }
         validate::full_binding(&sources.records[i], full)?;
-        let reserved_material_bytes = reservation(full)?;
-        let mut held_physical = CapturePhysicalBytes::default();
-        let held = sources.records.iter().try_fold(0_u64, |sum, r| {
-            let charge = super::super::retirement::material_charge(r)?;
-            if physical.is_some() && charge != 0 {
-                let prior = r.full_capture().ok_or(JournalError::CorruptStore)?;
-                held_physical =
-                    held_physical.checked_add(CapturePhysicalBytes::for_capture(prior)?)?;
-            }
-            sum.checked_add(charge)
-                .ok_or(JournalError::MaintenanceCapacity)
-        })?;
-        let total = held
-            .checked_add(reserved_material_bytes)
-            .ok_or(JournalError::MaintenanceCapacity)?;
-        if total > sources.config.max_material_bytes {
-            // Only this same-transaction, definite material refusal carries
-            // the pre-admission guarantee. Overflow and later storage/commit
-            // failures retain their original classification.
-            return Err(JournalError::CaptureMaterialQuotaExceeded);
-        }
-
-        if let Some(admission) = physical
-            && !admission.fits(held_physical, CapturePhysicalBytes::for_capture(full)?)?
-        {
-            return Err(JournalError::CaptureMaterialQuotaExceeded);
-        }
+        let reserved_material_bytes = reserve_material(&sources, full, physical)?;
 
         let operation = operation?;
         let (s, e) = inbox.find(work.request())?.ok_or(JournalError::Conflict)?;
@@ -161,4 +135,39 @@ impl ControllerJournal {
         crashes.hit(CrashPoint::AfterCommit)?;
         Ok(sources.records[i].clone())
     }
+}
+
+fn reserve_material(
+    sources: &codec::Sources,
+    full: &FullCaptureWorkRequest,
+    physical: Option<CaptureAdmission>,
+) -> Result<u64, JournalError> {
+    let reserved_material_bytes = reservation(full)?;
+    let mut held_physical = CapturePhysicalBytes::default();
+    let held = sources.records.iter().try_fold(0_u64, |sum, r| {
+        let charge = super::super::retirement::material_charge(r)?;
+        if physical.is_some() && charge != 0 {
+            let prior = r.full_capture().ok_or(JournalError::CorruptStore)?;
+            held_physical = held_physical.checked_add(CapturePhysicalBytes::for_capture(prior)?)?;
+        }
+        sum.checked_add(charge)
+            .ok_or(JournalError::MaintenanceCapacity)
+    })?;
+    let total = held
+        .checked_add(reserved_material_bytes)
+        .ok_or(JournalError::MaintenanceCapacity)?;
+    if total > sources.config.max_material_bytes {
+        // Only this same-transaction, definite material refusal carries
+        // the pre-admission guarantee. Overflow and later storage/commit
+        // failures retain their original classification.
+        return Err(JournalError::CaptureMaterialQuotaExceeded);
+    }
+
+    if let Some(admission) = physical
+        && !admission.fits(held_physical, CapturePhysicalBytes::for_capture(full)?)?
+    {
+        return Err(JournalError::CaptureMaterialQuotaExceeded);
+    }
+
+    Ok(reserved_material_bytes)
 }
