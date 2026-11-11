@@ -266,10 +266,8 @@ class RuntimeServices:
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
                               activation_ceiling_bytes=activation_ceiling_bytes,
                               physical_inodes=getattr(args,'physical_inodes',None))
-        # Complete original byte/inode activation is checked BEFORE any large
-        # disk copy. Rust checks the same final profile independently at init.
-        for source,target,checksum in pending_copies:
-            _copy(source,target,identity=ids['center'],expected=checksum)
+        # Keep the static assets empty until the original Rust activation check.
+        # Only the already-budgeted control material is staged here.
         _copy(paths['center'],center_bin,identity=ids['center'],executable=True,
               expected=manifest['artifacts']['center']['sha256'])
         for binary in host_bins:
@@ -326,6 +324,7 @@ class RuntimeServices:
         value=cls()
         value.native_pools,value.host_configs,value.center_config=pools,host_configs,center
         value.layout,value.key,value.sdk_url=layout,key,'http://'+public_address
+        value.pending_assets=pending_copies
         value.manifest,value.redis_receipt,value.tls_receipt=manifest,redis_receipt,tls_receipt
         value.manifest_sha256=digest(args.candidate_manifest)
         value.staging_identity={name:(layout[name].stat().st_dev,layout[name].stat().st_ino)
@@ -348,8 +347,13 @@ class RuntimeServices:
         # generated key. Center initialize then independently checks AOF/health.
         _wait_redis(self.center_config['redis'],self.processes.children['redis'])
         for index in range(len(self.native_pools)):
+            self.processes.initialize('host-'+str(index))
+        # Host initialization checks the full envelope, which already includes
+        # these immutable assets. Populate them before either service can serve.
+        for source,target,checksum in self.pending_assets:
+            _copy(source,target,identity=self.layout['center_identity'],expected=checksum)
+        for index in range(len(self.native_pools)):
             name='host-'+str(index)
-            self.processes.initialize(name)
             self.processes.start(name,env=(host_envs or {}).get(name))
         self.processes.initialize('center')
         self.processes.start('center')
