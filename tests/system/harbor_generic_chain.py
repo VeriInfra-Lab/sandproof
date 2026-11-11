@@ -53,9 +53,10 @@ from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.benchmark_proxy import BenchmarkProxy
 from tools.service_storage_observation import observe_volume_storage
+from tools.single_host_storage import check_acceptance_volume
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
-from tools.system_acceptance import write_once,json_file
+from tools.system_acceptance import write_once,json_file,private_path
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected, validate_oracle_mode
@@ -375,6 +376,11 @@ def exercise_with_evidence(args, evidence):
         build_namespace=args.build_namespace)
     if root.parent != args.scratch_parent.resolve(strict=True):
         raise ValueError('bounded run root must be directly inside the approved scratch parent')
+    storage_receipt = None
+    if prepared_original:
+        captures = json_file(private_path(args.capture_settings), limit=65536)
+        storage_receipt = check_acceptance_volume(args.storage_directory, captures,
+                                                   args.scratch_parent, args.service_staging_parent)
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
 )
     root.mkdir(mode=0o700)
@@ -811,6 +817,8 @@ def exercise_with_evidence(args, evidence):
                 'service_storage': services.storage_peaks(),
                 'no_process_network_cgroup_jail_residue': True,
                 **outcome, 'paid_model_used': False}
+            if prepared_original:
+                service_report['storage_installation'] = storage_receipt
             (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')
             passed = outcome.get('fixture_preparation_passed', outcome['execution_passed'])
             all_passed = all_passed and passed
@@ -897,6 +905,8 @@ def parser():
     parser.add_argument('--original-fixtures', type=Path,
                         help='operator-approved 2.1 original template manifest, one selected task per run')
     parser.add_argument('--original-fixtures-sha256', help='independently approved original manifest SHA-256')
+    parser.add_argument('--storage-directory', type=Path,
+                        help='installed storage directory for a prepared original run')
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
@@ -950,11 +960,13 @@ def main(argv=None):
     if args.original_fixtures is not None:
         if (args.source_kind != 'prepared-original' or args.ci_fixtures is not None
                 or not re.fullmatch(r'[0-9a-f]{64}', args.original_fixtures_sha256 or '')
+                or args.storage_directory is None
                 or any(value is not None for value in (args.rootfs, args.tools, args.build_cgroup_parent,
                                                        args.build_namespace, args.docker_hub_mirror))
                 or args.igzip):
-            arguments.error('prepared original requires a pinned manifest and runtime-only inputs')
+            arguments.error('prepared original requires a pinned manifest, installed storage and runtime-only inputs')
     elif (args.source_kind == 'prepared-original' or args.original_fixtures_sha256 is not None
+          or args.storage_directory is not None
           or any(value is None for value in (args.rootfs, args.tools, args.build_cgroup_parent))):
         arguments.error('use an explicit original manifest or supply the existing build/CI inputs')
     if args.check_arguments:
