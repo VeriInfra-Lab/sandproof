@@ -98,9 +98,11 @@ def envelope_breakdown(profile):
                 or cache['metadata_bytes'] < 4096 + cache['max_entries'] * 2 * (64 * 1024 + 4096)
                 or cache['inode_budget'] < 4 + 5 * cache['max_entries'] + 5 * cache['max_downloads']):
             raise ValueError('host template cache omits retained, unknown-download or metadata provision')
+        # Ready and pending payloads share artifact_bytes. The temporary
+        # sublimit above still bounds downloads, including interrupted ones.
         parts.extend(
             {"kind": "host_template_cache_" + field, "root": cache["root"], "bytes": cache[field + "_bytes"]}
-            for field in ("artifact", "temporary", "metadata")
+            for field in ("artifact", "metadata")
         )
         inodes += cache['inode_budget']
         roots.append(cache['root'])

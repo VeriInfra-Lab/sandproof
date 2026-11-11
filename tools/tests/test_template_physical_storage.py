@@ -147,15 +147,14 @@ class PhysicalProfileTests(unittest.TestCase):
         self.assertFalse(lease.admit(peak - 1))
         lease.close()
 
-    def test_cache_copies_unknown_downloads_and_metadata_are_charged_without_sparse_credit(self):
+    def test_cache_shares_payload_peak_and_retains_temporary_and_metadata_checks(self):
         baseline, _ = envelope(self.profile)
         cache = dict(namespace=self.runtime['namespace'], root=str(self.root / 'cache'), max_entries=2, max_downloads=1,
             max_entry_bytes=1000, artifact_bytes=2000, temporary_bytes=1000,
             metadata_bytes=4096 + 2 * 2 * (64 * 1024 + 4096), inode_budget=19)
         self.profile['host_template_caches'] = [cache]
         peak, _ = envelope(self.profile)
-        self.assertEqual(peak - baseline, sum(cache[name] for name in
-            ('artifact_bytes', 'temporary_bytes', 'metadata_bytes')))
+        self.assertEqual(peak - baseline, cache['artifact_bytes'] + cache['metadata_bytes'])
         for name, value in (('temporary_bytes', 999), ('metadata_bytes', cache['metadata_bytes'] - 1),
                             ('inode_budget', 18), ('max_downloads', 3),
                             ('max_entry_bytes', 2001), ('artifact_bytes', True)):
@@ -187,8 +186,7 @@ class PhysicalProfileTests(unittest.TestCase):
             for role, settings in (('runtime', self.runtime), ('builder', self.builder))]
         self.profile['host_template_caches'] = caches
         peak, _ = envelope(self.profile)
-        self.assertEqual(peak - baseline, sum(c[name] for c in caches for name in
-            ('artifact_bytes', 'temporary_bytes', 'metadata_bytes')))
+        self.assertEqual(peak - baseline, sum(c['artifact_bytes'] + c['metadata_bytes'] for c in caches))
         for invalid in (None, caches * 2, [caches[0], caches[0]],
                         [dict(caches[0], namespace='f' * 16)],
                         [caches[0], dict(caches[1], root=caches[0]['root'])]):
