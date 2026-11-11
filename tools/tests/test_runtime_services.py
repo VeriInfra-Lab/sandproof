@@ -182,18 +182,31 @@ class RuntimeServicesTests(unittest.TestCase):
         instance.service_storage.start.side_effect=lambda:events.append('sample-start')
         instance.native_pools=[{},{}]
         instance.center_config=dict(redis={})
-        instance.layout=dict(center_identity=(1001,1001))
-        source,target=Path('/pinned/source'),Path('/center/asset')
-        instance.pending_assets=[(source,target,'fixture-hash')]
         instance.processes=Mock(children={'redis':Mock()})
         instance.processes.start.side_effect=lambda role,**_:events.append('start-'+role)
         instance.processes.initialize.side_effect=lambda role:events.append('initialize-'+role)
-        with patch.object(services,'_wait_redis'), \
-                patch.object(services,'_copy',side_effect=lambda *_,**__:events.append('copy-assets')) as copy_asset:
-            instance.start()
+        with tempfile.TemporaryDirectory() as temporary:
+            common=Path(temporary)
+            assets=common/'center/assets'
+            assets.mkdir(parents=True)
+            source,target=Path('/pinned/source'),assets/'asset'
+            instance.layout=dict(common=common,center_identity=(1001,1001))
+            instance.pending_assets=[(source,target,'fixture-hash')]
+
+            def copy_asset(original, staged, *, identity, expected):
+                self.assertEqual((original,identity,expected),(source,(1001,1001),'fixture-hash'))
+                self.assertEqual(staged.parent.parent,common)
+                self.assertEqual(list(assets.iterdir()),[])
+                staged.write_bytes(b'complete asset')
+                events.append('copy-assets')
+
+            with (patch.object(services,'_wait_redis'),
+                  patch.object(services,'_copy',side_effect=copy_asset)):
+                instance.start()
+            self.assertEqual(target.read_bytes(),b'complete asset')
+            self.assertEqual(list(common.iterdir()),[common/'center'])
         self.assertEqual(events,['sample-start','start-redis','initialize-host-0',
             'initialize-host-1','copy-assets','start-host-0','start-host-1','initialize-center','start-center'])
-        copy_asset.assert_called_once_with(source,target,identity=(1001,1001),expected='fixture-hash')
         instance.service_storage.start.assert_called_once()
 
     def test_storage_sampler_is_drained_even_when_an_original_role_exit_is_unknown(self):

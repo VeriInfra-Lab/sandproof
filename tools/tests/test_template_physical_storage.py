@@ -84,6 +84,20 @@ class PhysicalProfileTests(unittest.TestCase):
         self.assertTrue(plan['volume_check_pending'])
         self.assertFalse(plan['fits'])
 
+    def test_automatic_file_volume_leaves_room_for_formatting_and_staging(self):
+        profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
+        required = 2 * envelope(profile)[0]
+        outer_available = required + 3 * 1024**3
+        free = SimpleNamespace(f_bavail=outer_available, f_frsize=1, f_favail=100)
+        with (patch.object(single_host_storage, 'mount_info', return_value={'fstype': 'ext4', 'options': 'rw'}),
+              patch.object(single_host_storage.os, 'statvfs', return_value=free)):
+            result = single_host_storage.plan(profile, self.root, image_bytes=None,
+                                              host_reserve_bytes=1024**3)
+        self.assertEqual(result['image_bytes'], required + 2 * 1024**3)
+        self.assertEqual(result['activation']['required_bytes'], required)
+        self.assertTrue(result['volume_check_pending'])
+        self.assertTrue(result['fits'])
+
     def test_reflink_query_calls_the_fixed_mounted_filesystem_tool(self):
         tool = Path('/usr/sbin/xfs_spaceman')
         with (patch.object(single_host_storage, 'trusted_path', return_value=tool) as trust,

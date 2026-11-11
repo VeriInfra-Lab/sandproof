@@ -16,6 +16,7 @@ from tools.xfs_project_quota import ENV, capture, project_hard_limit
 
 
 GIB = 1024**3
+FILE_VOLUME_SETUP_BYTES = 2 * GIB
 RECEIPT = 'storage.json'
 IMAGE = 'volume.xfs'
 CONTROL = 'control'
@@ -90,7 +91,7 @@ def plan(profile, directory, *, image_bytes, host_reserve_bytes):
     outer = mount_info(directory)
     if image_bytes is None:
         image_bytes = 0 if quota_mount(outer) and reflink_enabled(outer) else (
-            activation_budget(profile)['required_bytes'] + GIB)
+            activation_budget(profile)['required_bytes'] + FILE_VOLUME_SETUP_BYTES)
     if not image_bytes and (not quota_mount(outer) or not reflink_enabled(outer)):
         raise ValueError('existing filesystem lacks writable XFS project quotas or reflink')
     return volume_plan(profile, directory, image_bytes=image_bytes,

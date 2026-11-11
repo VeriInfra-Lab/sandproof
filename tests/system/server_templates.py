@@ -68,12 +68,17 @@ def record_for(root, *, native_id):
     matched = re.fullmatch(r"sb-([0-9a-f]{16})-([1-9][0-9]*)", native_id)
     if matched is None or int(matched[2]) >= 2**64:
         raise ValueError("exact native identity from host audit required")
-    secret = json.loads((root / "state/secrets" / native_id).read_text())
     slots = [json.loads(path.read_text()) for path in (root / "state/slots").glob("*.json")]
     matches = [value for value in slots if value["sandbox"] == int(matched[2])]
     if len(matches) != 1:
         raise ValueError("original native physical binding is missing or ambiguous")
     slot = matches[0]
+    generation = slot['generation']
+    if type(generation) is not int or not 0 < generation < 2**64:
+        raise ValueError("original native generation is invalid")
+    secret = json.loads((root / "state/secrets" / f"{native_id}-{generation}").read_text())
+    if secret['generation'] != generation:
+        raise ValueError("credential differs from the original native generation")
     name = f"vm-{matched[1]}-{slot['vm']}"
     claim = json.loads((original_chroot(root) / '.claims' / name / "record.json").read_text())
     return secret, name, claim

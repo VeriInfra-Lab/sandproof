@@ -844,6 +844,9 @@ def exercise_with_evidence(args, evidence):
             log.close()
         try:
             services.stop_all()
+            if not complete:
+                (root / 'service-storage-diagnostics.json').write_text(
+                    json.dumps(services.storage_diagnostics(), indent=2) + '\n')
             if service_report is not None:
                 service_report['service_storage'] = services.storage_peaks()
                 (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')

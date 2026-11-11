@@ -23,6 +23,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -350,8 +351,17 @@ class RuntimeServices:
             self.processes.initialize('host-'+str(index))
         # Host initialization checks the full envelope, which already includes
         # these immutable assets. Populate them before either service can serve.
-        for source,target,checksum in self.pending_assets:
-            _copy(source,target,identity=self.layout['center_identity'],expected=checksum)
+        if self.pending_assets:
+            # The sampler must see each file only after its owner, mode and
+            # digest are final. Stage the same bytes on the original volume.
+            with tempfile.TemporaryDirectory(prefix='.static-assets-',
+                                             dir=self.layout['common']) as stage:
+                for source,target,checksum in self.pending_assets:
+                    incoming = Path(stage)/target.name
+                    _copy(source,incoming,identity=self.layout['center_identity'],expected=checksum)
+                    if target.exists() or target.is_symlink():
+                        raise ValueError('original static asset target already exists')
+                    incoming.rename(target)
         for index in range(len(self.native_pools)):
             name='host-'+str(index)
             self.processes.start(name,env=(host_envs or {}).get(name))
