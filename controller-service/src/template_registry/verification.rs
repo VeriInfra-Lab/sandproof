@@ -53,6 +53,28 @@ impl ArtifactIdentity {
 }
 
 impl VerifiedArtifact {
+    fn recheck_at(
+        &self,
+        store: &CandidateStore,
+        artifact: &TemplateArtifact,
+    ) -> Result<Option<Self>, JournalError> {
+        if self.descriptor.size_bytes != artifact.size_bytes
+            || self.descriptor.sha256 != artifact.sha256
+        {
+            return Ok(None);
+        }
+        // Renaming the containing directory preserves this actual inode. A
+        // different inode, even with the same advertised digest, needs a read.
+        let file = store.readonly_file(&artifact.path, artifact.size_bytes)?;
+        let relocated = Self {
+            descriptor: artifact.clone(),
+            identity: self.identity.clone(),
+        };
+        Ok((ArtifactIdentity::read(&file.metadata()?) == self.identity
+            && relocated.matches(artifact))
+        .then_some(relocated))
+    }
+
     fn check(store: &CandidateStore, artifact: &TemplateArtifact) -> Result<Self, JournalError> {
         Self::check_with(store, artifact, hash_file)
     }
@@ -115,23 +137,16 @@ impl CandidateVerification {
         &self,
         store: &CandidateStore,
         binding: &TemplateBinding,
-    ) -> Result<bool, JournalError> {
-        for (verified, artifact) in self
-            .artifacts
-            .iter()
-            .zip([&binding.kernel, &binding.rootfs])
-        {
-            if verified.descriptor != *artifact {
-                return Ok(false);
-            }
-            let file = store.readonly_file(&artifact.path, artifact.size_bytes)?;
-            if ArtifactIdentity::read(&file.metadata()?) != verified.identity
-                || !verified.matches(artifact)
-            {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+    ) -> Result<Option<Self>, JournalError> {
+        let Some(kernel) = self.artifacts[0].recheck_at(store, &binding.kernel)? else {
+            return Ok(None);
+        };
+        let Some(rootfs) = self.artifacts[1].recheck_at(store, &binding.rootfs)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            artifacts: [kernel, rootfs],
+        }))
     }
 
     pub(super) fn check(
@@ -173,6 +188,52 @@ mod tests {
         io::{Seek, SeekFrom, Write},
         os::unix::fs::{MetadataExt, PermissionsExt},
     };
+
+    #[test]
+    fn directory_rename_reuses_only_the_original_readonly_inode() {
+        let directory = tempfile::tempdir().unwrap();
+        let staging = directory.path().join("staging");
+        let sealed = directory.path().join("sealed");
+        fs::create_dir(&staging).unwrap();
+        fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = staging.join("artifact");
+        fs::write(&path, b"original").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
+        let mut artifact = TemplateArtifact {
+            path: path.clone(),
+            size_bytes: 8,
+            sha256: format!("{:x}", Sha256::digest(b"original")),
+        };
+        let store = CandidateStore {
+            config: RegistryConfig {
+                root: directory.path().into(),
+                max_templates_global: 1,
+                max_templates_per_tenant: 1,
+                max_artifact_bytes_global: 1024,
+                max_artifact_bytes_per_tenant: 1024,
+                validation_timeout_secs: 60,
+            },
+            trusted_uid: fs::metadata(&path).unwrap().uid(),
+            verified_binding: std::sync::Mutex::default(),
+        };
+        let checked = VerifiedArtifact::check(&store, &artifact).unwrap();
+        fs::rename(staging, &sealed).unwrap();
+        artifact.path = sealed.join("artifact");
+        assert!(checked.recheck_at(&store, &artifact).unwrap().is_some());
+        let mut wrong = artifact.clone();
+        wrong.sha256 = "0".repeat(64);
+        assert!(checked.recheck_at(&store, &wrong).unwrap().is_none());
+        fs::set_permissions(&artifact.path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(checked.recheck_at(&store, &artifact).is_err());
+        fs::set_permissions(&artifact.path, fs::Permissions::from_mode(0o400)).unwrap();
+        let checked = VerifiedArtifact::check(&store, &artifact).unwrap();
+        let replacement = sealed.join("replacement");
+        fs::write(&replacement, b"modified").unwrap();
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(0o400)).unwrap();
+        fs::rename(replacement, &artifact.path).unwrap();
+        assert!(checked.recheck_at(&store, &artifact).unwrap().is_none());
+        assert!(VerifiedArtifact::check(&store, &artifact).is_err());
+    }
 
     #[test]
     fn observable_identity_change_after_hash_cannot_issue_verification() {

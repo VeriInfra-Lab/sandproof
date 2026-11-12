@@ -67,9 +67,13 @@ impl CandidateStore {
             .lock()
             .map_err(|_| JournalError::Conflict)?
             .clone();
-        let evidence = match previous {
-            Some(evidence) if evidence.recheck(self, binding)? => evidence,
-            _ => CandidateVerification::check(self, binding)?,
+        let evidence = match previous
+            .map(|evidence| evidence.recheck(self, binding))
+            .transpose()?
+            .flatten()
+        {
+            Some(evidence) => evidence,
+            None => CandidateVerification::check(self, binding)?,
         };
         let mut rootfs = self.readonly_file(&binding.rootfs.path, binding.rootfs.size_bytes)?;
         let free = ext4_free_bytes(&mut rootfs, binding.resources.disk_bytes)?;
