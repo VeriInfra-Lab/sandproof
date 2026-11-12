@@ -57,14 +57,14 @@ mod tests {
 
     #[test]
     fn malformed_and_failed_reads_remain_errors() {
-        for input in [b"".as_slice(), b"{", b"{\"x\":}", b"{}false"] {
-            assert!(from_reader::<_, serde_json::Value>(input).is_err());
-        }
         struct Failed;
         impl Read for Failed {
             fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
                 Err(io::ErrorKind::PermissionDenied.into())
             }
+        }
+        for input in [b"".as_slice(), b"{", b"{\"x\":}", b"{}false"] {
+            assert!(from_reader::<_, serde_json::Value>(input).is_err());
         }
         let error = from_reader::<_, serde_json::Value>(Failed).unwrap_err();
         assert_eq!(error.io_error_kind(), Some(io::ErrorKind::PermissionDenied));

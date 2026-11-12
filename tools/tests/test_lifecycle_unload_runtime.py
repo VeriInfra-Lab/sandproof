@@ -472,6 +472,56 @@ class DeploymentMeasurementTests(unittest.TestCase):
                 state.measurement_identity()
 
 
+class PeerProbeTests(unittest.TestCase):
+    def test_distinct_create_key_is_preserved_and_invalid_sequence_never_sends(self):
+        client=scene.PublicUnloadScenario('http://127.0.0.1:12345','key','other','deployment',time.monotonic()+60)
+        sent=[]
+        def respond(_method,path,**options):
+            if path.endswith('request-window'):return {'window':1}
+            sent.append(options['body'])
+            return dict(session='sandbox-2',key=client.key(2),accepted_version=1)
+        client.read_json=respond
+        client.create({},sequence=2)
+        self.assertEqual(sent[0]['sequence'],2)
+        self.assertEqual(client.sequence,2)
+        for bad in (0,True,2**64):
+            fresh=scene.PublicUnloadScenario('http://127.0.0.1:12345','key','other','deployment',time.monotonic()+60)
+            fresh.read_json=Mock(side_effect=AssertionError('no request permitted'))
+            with self.subTest(sequence=bad),self.assertRaises(AssertionError):fresh.create({},sequence=bad)
+            fresh.read_json.assert_not_called()
+
+    def test_failed_command_is_recorded_once_without_retry_or_secret_text(self):
+        from lifecycle_peer_probe import PeerProbe
+        with tempfile.TemporaryDirectory() as root:
+            sdk=SimpleNamespace(commands=Mock(),files=Mock())
+            client=Mock();client.query.return_value={'phase':'running'}
+            probe=PeerProbe(client,sdk,Path(root)/'requests.jsonl','a'*16)
+            def command(*_args,**_kwargs):
+                probe.stop_event.set()
+                raise RuntimeError('503: PRIVATE_RESPONSE_SECRET')
+            sdk.commands.run.side_effect=command
+            probe.label='pause';probe.start();probe.stop_event.wait(5);probe.stop()
+            sdk.commands.run.assert_called_once()
+            sdk.files.read.assert_not_called()
+            self.assertEqual(probe.summary()['pause/command']['failures'],1)
+            self.assertEqual(probe.rows[-1]['status'],503)
+            self.assertNotIn('PRIVATE_RESPONSE_SECRET',(Path(root)/'requests.jsonl').read_text())
+
+    def test_acknowledged_marker_mismatch_is_a_failed_read(self):
+        from lifecycle_peer_probe import PeerProbe
+        with tempfile.TemporaryDirectory() as root:
+            sdk=SimpleNamespace(commands=Mock(),files=Mock())
+            client=Mock();client.query.return_value={'phase':'running'}
+            probe=PeerProbe(client,sdk,Path(root)/'requests.jsonl','b'*16)
+            def command(*_args,**_kwargs):
+                probe.stop_event.set()
+                return SimpleNamespace(exit_code=0,stdout='b'*16+':1')
+            sdk.commands.run.side_effect=command;sdk.files.read.return_value='wrong'
+            probe.label='resume';probe.start();probe.stop_event.wait(5);probe.stop()
+            self.assertEqual(probe.summary()['resume/file-read']['failures'],1)
+            self.assertEqual(probe.summary()['resume/command']['failures'],0)
+
+
 class ScenarioDiagnosticsTests(unittest.TestCase):
     def client(self):
         import time
