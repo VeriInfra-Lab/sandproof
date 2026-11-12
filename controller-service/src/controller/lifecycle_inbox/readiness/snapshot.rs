@@ -24,6 +24,9 @@ pub(crate) struct ReadyCandidate {
     pub view: LifecycleCreateObservation,
     pub actions: Vec<WorkAction<core::EffectId>>,
     pub continuation: Option<crate::capture::OriginalContinueWorkRequest>,
+    // Existing SQL revision advances for every native write to this sandbox.
+    // Unlike the global input cursor, unrelated sandboxes do not change it.
+    native_revision: Option<u64>,
     receipts: Vec<Vec<u8>>,
     source: Option<SourceProcessIdentity>,
     credential: Option<(core::Generation, [u8; 32])>,
@@ -34,6 +37,7 @@ impl ReadyCandidate {
     pub(crate) fn can_probe(&self) -> bool {
         (self.actions.len() == if self.continuation.is_some() { 1 } else { 5 })
             && self.source.is_some()
+            && self.native_revision.is_some()
             && self.credential.is_some()
             && self.view.readiness
                 == CreateReadiness::Pending(CreateReadinessPending::HostUnobserved)
@@ -453,6 +457,16 @@ pub(in crate::controller) fn base_snapshot(
         .flatten();
     let readiness =
         base_snapshot_readiness(intent, &current_request, current_entry, session, &native);
+    let native_revision = if let Some(local) = local.filter(|_| native.is_some()) {
+        let revision: i64 = tx.query_row(
+            "SELECT revision FROM sandboxes WHERE sandbox_id=?1",
+            [identity::sandbox_id(namespace, local.sandbox)?.as_str()],
+            |row| row.get(0),
+        )?;
+        Some(u64::try_from(revision).map_err(|_| JournalError::CorruptStore)?)
+    } else {
+        None
+    };
     Ok(ReadyCandidate {
         view: LifecycleCreateObservation {
             request: intent.clone(),
@@ -465,6 +479,7 @@ pub(in crate::controller) fn base_snapshot(
         },
         actions: vec![],
         continuation: None,
+        native_revision,
         receipts: vec![],
         source: None,
         credential: None,
@@ -641,7 +656,14 @@ impl ControllerJournal {
         if !after.can_probe() {
             return Ok(after.view);
         }
-        if after != *before {
+        // Keep all target fields, receipts and its monotonic SQL revision in
+        // the comparison. The global cursor also counts other sandboxes; it
+        // stays in the returned audit basis but is not this target's version.
+        let mut comparable = after.clone();
+        comparable.view.native_input_high_water = before.view.native_input_high_water;
+        if after.view.native_input_high_water < before.view.native_input_high_water
+            || comparable != *before
+        {
             after.view.readiness =
                 CreateReadiness::Pending(CreateReadinessPending::SnapshotChanged);
             return Ok(after.view);
