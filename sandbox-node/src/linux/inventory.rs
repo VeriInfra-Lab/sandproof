@@ -84,7 +84,7 @@ impl LinuxWorker {
             if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
                 return Err("untrusted slot record".into());
             }
-            let binding: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+            let binding: SlotBinding = crate::json_file::from_reader(File::open(&path)?)?;
             if binding.slot.0 != number {
                 return Err("slot filename or VM identity mismatch".into());
             }

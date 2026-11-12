@@ -96,7 +96,7 @@ impl LinuxWorker {
     pub(super) fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
         let path = self.slot_path(slot);
         check_trusted_path(&path)?;
-        let value: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+        let value: SlotBinding = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("slot parent")?)?.sync_all()?;
         if value.slot != slot {
             return Err("slot mapping identity mismatch".into());
@@ -112,7 +112,7 @@ impl LinuxWorker {
         let mut found = None;
         for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
             let entry = entry?;
-            let binding: SlotBinding = serde_json::from_reader(File::open(entry.path())?)?;
+            let binding: SlotBinding = crate::json_file::from_reader(File::open(entry.path())?)?;
             if binding.sandbox == sandbox && binding.generation == generation {
                 if found.is_some() {
                     return Err("ambiguous VM for workspace".into());
@@ -134,7 +134,7 @@ impl LinuxWorker {
     pub(super) fn fence(&self, sandbox: core::SandboxId) -> NodeResult<Fence> {
         let path = self.fence_path(sandbox);
         check_trusted_path(&path)?;
-        let value = serde_json::from_reader(File::open(&path)?)?;
+        let value = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("fence parent")?)?.sync_all()?;
         Ok(value)
     }

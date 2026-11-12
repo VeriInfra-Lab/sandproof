@@ -317,7 +317,7 @@ impl LinuxWorker {
     ) -> NodeResult<GuestSecret> {
         let path = self.secret_path(sandbox, generation);
         check_trusted_path(&path)?;
-        let value: GuestSecret = serde_json::from_reader(File::open(&path)?)?;
+        let value: GuestSecret = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("secret parent")?)?.sync_all()?;
         if generation == 0
             || value.generation != generation

@@ -167,7 +167,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> NodeResult<T> {
     {
         return Err("host position record is not private or exceeds its byte bound".into());
     }
-    let value = serde_json::from_reader(File::open(path)?)?;
+    let value = crate::json_file::from_reader(File::open(path)?)?;
     File::open(path.parent().ok_or("host record parent")?)?.sync_all()?;
     Ok(value)
 }
@@ -265,7 +265,7 @@ pub(super) fn stored_lease_identity(
         return Err("untrusted host mapping".into());
     }
     Ok(Some(
-        serde_json::from_reader::<_, StoredMapping>(File::open(path)?)?.lease,
+        crate::json_file::from_reader::<_, StoredMapping>(File::open(path)?)?.lease,
     ))
 }
 

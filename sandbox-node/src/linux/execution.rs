@@ -362,7 +362,7 @@ impl LinuxWorker {
                 check_trusted_path(&path)?;
                 self.sync_node_record(&path)?;
                 let stored: crate::startup::StartupRecord =
-                    serde_json::from_reader(File::open(&path)?)?;
+                    crate::json_file::from_reader(File::open(&path)?)?;
                 return stored.confirmed_for(&expected);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

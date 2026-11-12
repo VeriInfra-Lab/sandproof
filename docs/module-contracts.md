@@ -1202,6 +1202,8 @@ SQLite 提交本身若报告结果不确定，调用方必须按操作编号重�
 
 单输入、尾日志、检查点、SQL 行与字节、文件页及后续收尾额度均在完整模式下检查；详细组合和部署前提以下节为准，不再维护无预留检查点路径。删除行不会自行缩小 DB 文件，也不表示不受管外部写者的磁盘占用已受约束。
 
+节点的原位置登记、网络槽位、围栏、来宾凭据和启动记录使用固定 8 KiB 缓冲读取，再由原 Serde JSON 类型解析完整文档。每次仍打开实际文件，不缓存反序列化状态；调用方原路径、属主、权限、长度、身份和同步检查保持。缓冲只减少逐字节 read 系统调用，不改变超时、健康窗口、业务状态或成功条件；尾随非空数据、坏 JSON 和读取失败仍报错。
+
 ### 完整容量、请求结算与物理部署前提
 
 `maintenance.capacity` 是显式收尾预留策略；生产服务启用顶层 `maintenance` 时必须提供，在缺少预留时拒绝打开数据库或接单。库级无预留维护接口已删除，组件测试同样使用完整配置。它的正整数参数为 `max_live_sandboxes`、`max_sql_rows`、`max_sql_bytes`、`max_sql_value_bytes`、`max_receipt_bytes`、`max_transaction_inputs`、`max_transaction_bytes`、`max_database_bytes`、`max_wal_bytes`、`max_shm_bytes`、`checkpoint_scratch_bytes`、`max_online_storage_bytes`。`max_transaction_bytes` 限制一次事务新增的控制输入批次，不冒充所有 SQL 修改的字节数；SQL、页与 WAL 另有整体上限。最大原子批次必须能放入尾部，单条输入、未来命令/回执包装、完整标量宽度和检查点替换空间也必须可表示；配置不足或溢出明确拒绝。新完整模式只在受支持的空控制状态启用，不自动为旧的无预留在途工作补造额度。
