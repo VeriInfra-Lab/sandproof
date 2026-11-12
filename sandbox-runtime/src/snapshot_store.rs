@@ -24,6 +24,7 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Component, Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 #[path = "snapshot_bundle.rs"]
@@ -38,6 +39,7 @@ pub(crate) use completion::MAX_COMPLETION_BYTES;
 pub(crate) mod material_retirement;
 #[path = "snapshot_retirement.rs"]
 mod retirement;
+pub(crate) use bundle::BundleMeasurements;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
 pub use material_retirement::CaptureStoreRetirement;
 
@@ -128,6 +130,7 @@ pub struct SnapshotStore {
     path: PathBuf,
     directory: File,
     owner: u32,
+    pub(crate) verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
 }
 
 /// A unique original directory; interrupted stages are deliberately retained.
@@ -291,11 +294,17 @@ fn key_name(prefix: &str, key: &[u8; 32]) -> String {
 }
 
 impl SnapshotStore {
-    pub(crate) fn from_layout(path: PathBuf, directory: File, owner: u32) -> Self {
+    pub(crate) fn from_layout(
+        path: PathBuf,
+        directory: File,
+        owner: u32,
+        verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
+    ) -> Self {
         Self {
             path,
             directory,
             owner,
+            verified_bundle,
         }
     }
     /// Open a root-owned protected store through checked ancestor descriptors.
@@ -313,6 +322,7 @@ impl SnapshotStore {
             path: path.to_owned(),
             directory: open_store(path, owner)?,
             owner,
+            verified_bundle: Arc::default(),
         })
     }
 

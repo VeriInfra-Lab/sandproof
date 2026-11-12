@@ -29,6 +29,27 @@ pub(super) struct OriginalFile {
     pub(super) measurement: SnapshotFileMeasurement,
 }
 
+/// One recently verified bundle per protected store. No file descriptors or
+/// durable authority are retained. Reopening the deployment starts empty.
+#[derive(Clone)]
+pub(crate) struct BundleMeasurements {
+    pub(super) directory_key: [u8; 32],
+    files: Vec<(FileStamp, SnapshotFileMeasurement)>,
+}
+
+impl BundleMeasurements {
+    fn find(
+        &self,
+        artifact: SnapshotArtifact,
+        stamp: &FileStamp,
+    ) -> Option<SnapshotFileMeasurement> {
+        self.files
+            .iter()
+            .find(|(previous, measurement)| previous == stamp && measurement.artifact == artifact)
+            .map(|(_, measurement)| measurement.clone())
+    }
+}
+
 /// Existing bytes checked through retained original descriptors. This value
 /// does not prove capture provenance, database registration, pin or stop rights.
 pub struct SnapshotBundle {
@@ -128,6 +149,26 @@ impl SnapshotStore {
         directory_key: [u8; 32],
         limits: BundleReadLimits,
     ) -> Result<SnapshotBundle, RuntimeError> {
+        self.open_bundle_measuring(directory_key, limits, measure)
+    }
+
+    fn open_bundle_measuring(
+        &self,
+        directory_key: [u8; 32],
+        limits: BundleReadLimits,
+        mut measure_file: impl FnMut(
+            &mut File,
+            SnapshotArtifact,
+        )
+            -> Result<(SnapshotFileMeasurement, FileStamp), RuntimeError>,
+    ) -> Result<SnapshotBundle, RuntimeError> {
+        let cached = self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))?
+            .as_ref()
+            .filter(|cached| cached.directory_key == directory_key)
+            .cloned();
         let name = key_name("capture-", &directory_key);
         let directory = File::from(
             fs::openat(
@@ -170,7 +211,12 @@ impl SnapshotStore {
             (SnapshotArtifact::Disk(0), limits.disk_bytes),
         ] {
             let mut file = original_file(&directory, &artifact.relative_path(), self.owner, limit)?;
-            let (measurement, stamp) = measure(&mut file, artifact)?;
+            let stamp = FileStamp::from_metadata(&file.metadata()?);
+            let (measurement, stamp) = match cached.as_ref().and_then(|c| c.find(artifact, &stamp))
+            {
+                Some(measurement) => (measurement, stamp),
+                None => measure_file(&mut file, artifact)?,
+            };
             files.push(OriginalFile {
                 file,
                 stamp,
@@ -188,6 +234,18 @@ impl SnapshotStore {
             files,
         };
         opened.verify_unchanged()?;
+        *self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))? =
+            Some(BundleMeasurements {
+                directory_key,
+                files: opened
+                    .files
+                    .iter()
+                    .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
+                    .collect(),
+            });
         Ok(opened)
     }
 }
