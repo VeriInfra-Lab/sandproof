@@ -172,6 +172,28 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> NodeResult<T> {
     Ok(value)
 }
 
+// Only called after the marker name, fixed position and initialized mapping
+// have been checked. Optional route/helper markers can disappear normally
+// between readdir and stat; their absence is not a release/drain certificate.
+fn optional_gate_marker_leaf(path: &Path, owner: u32) -> NodeResult<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.is_file() || metadata.uid() != owner || metadata.mode() & 0o077 != 0 {
+        return Err("untrusted optional helper marker".into());
+    }
+    Ok(())
+}
+
+fn check_optional_gate_marker(path: &Path) -> NodeResult<()> {
+    // The trusted parent remains mandatory. Checking the leaf once avoids
+    // treating another completed helper's unlink as corrupt node identity.
+    check_trusted_path(path.parent().ok_or("helper marker parent")?)?;
+    optional_gate_marker_leaf(path, 0)
+}
+
 fn stamp(path: &Path) -> NodeResult<Option<FileStamp>> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -659,11 +681,7 @@ impl LinuxWorker {
                 if cell.value.is_none() {
                     return Err("route marker on never-used position".into());
                 }
-                check_trusted_path(&entry.path())?;
-                let metadata = fs::symlink_metadata(entry.path())?;
-                if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
-                    return Err("untrusted route marker".into());
-                }
+                check_optional_gate_marker(&entry.path())?;
                 continue;
             }
             let (number, staged, inflight) = if let Some(number) = name
@@ -702,11 +720,7 @@ impl LinuxWorker {
                 if cell.value.is_none() {
                     return Err("helper marker on never-used position".into());
                 }
-                check_trusted_path(&entry.path())?;
-                let metadata = fs::symlink_metadata(entry.path())?;
-                if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
-                    return Err("untrusted helper marker".into());
-                }
+                check_optional_gate_marker(&entry.path())?;
                 // Runtime validates exact PID/start/boot/context before any
                 // gate admission; inventory never deletes a live marker.
             }
