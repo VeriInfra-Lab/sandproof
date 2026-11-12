@@ -278,9 +278,23 @@ fn capture_action_receipt(
                 error.as_ref(),
             )
             .emit();
-            sandproof_protocol::WorkOutcome::Unknown {
-                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
-                last_observation: None,
+            if matches!(action.command.command(), core::Command::FreezeVm { .. })
+                && error
+                    .downcast_ref::<crate::linux::PauseNotStarted>()
+                    .is_some()
+            {
+                // Only this live invocation's pre-request failure supplies this
+                // fact. Lost replies and post-request errors remain Unknown.
+                sandproof_protocol::WorkOutcome::DefinitiveFailure {
+                    code: sandproof_protocol::FailureCode::ResourceUnavailable,
+                    retryable: true,
+                    partial: None,
+                }
+            } else {
+                sandproof_protocol::WorkOutcome::Unknown {
+                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                }
             }
         }
     };

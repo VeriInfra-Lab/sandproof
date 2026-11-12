@@ -106,3 +106,51 @@ fn capture_receipt_cuts_only_the_selected_success_before_journal_storage() {
         }
     }
 }
+
+#[test]
+fn missing_preparation_file_is_not_an_unknown_pause_but_request_errors_are() {
+    use std::cell::Cell;
+    let temporary = tempfile::tempdir().unwrap();
+    let missing = temporary.path().join("missing-original-record");
+    let called = Cell::new(false);
+    let result = crate::linux::before_pause_request(
+        || Ok(std::fs::File::open(&missing)?),
+        |_| {
+            called.set(true);
+            Err("unexpected request".into())
+        },
+    );
+    assert!(!called.get());
+    let receipt = capture_action_receipt(&action("freeze_vm"), result).unwrap();
+    assert!(matches!(
+        receipt.outcome,
+        sandproof_protocol::WorkOutcome::DefinitiveFailure {
+            code: sandproof_protocol::FailureCode::ResourceUnavailable,
+            retryable: true,
+            partial: None,
+        }
+    ));
+    let result = crate::linux::before_pause_request(
+        || Ok(()),
+        |()| {
+            called.set(true);
+            // The same OS error after entering the request is not NoEffect.
+            std::fs::write(temporary.path().join("request-entered"), b"sent")?;
+            std::fs::File::open(&missing)
+                .map(|_| unreachable!())
+                .map_err(Into::into)
+        },
+    );
+    assert!(called.get());
+    let receipt = capture_action_receipt(&action("freeze_vm"), result).unwrap();
+    assert!(matches!(
+        receipt.outcome,
+        sandproof_protocol::WorkOutcome::Unknown { .. }
+    ));
+    let unclassified =
+        capture_action_receipt(&action("freeze_vm"), Err("reply lost".into())).unwrap();
+    assert!(matches!(
+        unclassified.outcome,
+        sandproof_protocol::WorkOutcome::Unknown { .. }
+    ));
+}

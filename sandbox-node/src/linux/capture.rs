@@ -7,6 +7,30 @@ use crate::ProtectedHostEpochSource;
 use sandbox_runtime::{OriginalPauseObservation, PausedOriginalVm, RuntimeProcessIdentity};
 use sandproof_controller_service::capture::{PauseWorkRequest, SourceObservationRequirement};
 
+/// Constructed only when the read-only preparation failed before invoking the
+/// Pause operation. It is not a timeout/recovery observation or a wire flag.
+#[derive(Debug)]
+pub(crate) struct PauseNotStarted(Box<dyn std::error::Error>);
+impl std::fmt::Display for PauseNotStarted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pause request not started: {}", self.0)
+    }
+}
+impl std::error::Error for PauseNotStarted {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
+
+pub(crate) fn before_pause_request<P, T>(
+    prepare: impl FnOnce() -> NodeResult<P>,
+    request: impl FnOnce(P) -> NodeResult<T>,
+) -> NodeResult<T> {
+    let prepared = prepare()
+        .map_err(|error| Box::new(PauseNotStarted(error)) as Box<dyn std::error::Error>)?;
+    request(prepared)
+}
+
 impl LinuxWorker {
     pub(crate) fn pause_original(
         &self,
@@ -57,57 +81,68 @@ impl LinuxWorker {
             &RuntimeProcessIdentity,
         ) -> Result<PausedOriginalVm, RuntimeError>,
     ) -> NodeResult<HostObservation> {
-        self.validate_action(action)?;
-        require_source_binding(request, original_source)?;
-        let core::Command::FreezeVm {
-            sandbox,
-            epoch,
-            generation,
-            vm,
-        } = action.command.command()
-        else {
-            return Err("original Pause requires its FreezeVm action".into());
-        };
-        if action.identity.resource != request.source_resource {
-            return Err("Pause action resource differs from original source work".into());
-        }
-        let context = self.original_source_context(&request.source_resource)?;
-        if context.binding.sandbox != *sandbox
-            || context.binding.generation != *generation
-            || context.binding.vm != *vm
-        {
-            return Err("Pause action differs from original occupied source".into());
-        }
-        let slot = self.runtime_host_slot(context.position, *vm)?;
-        let _guard = slot.helper_gate.try_acquire(Some(&slot))?;
-        self.require_fence(*sandbox, *epoch, false)?;
-        if self.original_source_context(&request.source_resource)? != context {
-            return Err("Pause source context changed before execution".into());
-        }
-        let before = crate::source_observation::observe(self, Some(protected), original_source)?;
-        let runtime = self.runtime(*sandbox, *vm)?;
-        let expected = crate::source_observation::expected_source(original_source)?;
-        let paused = operation(&runtime, request.source_resource.id.as_str(), &expected)?;
-        if paused.resource_id() != request.source_resource.id.as_str()
-            || paused.source() != &expected
-        {
-            return Err("Pause observation differs from original source".into());
-        }
-        let after = crate::source_observation::observe(self, Some(protected), original_source)?;
-        if before != after || self.original_source_context(&request.source_resource)? != context {
-            return Err("original Pause configuration or context changed".into());
-        }
-        runtime.confirm_original_paused(&paused)?;
-        self.require_fence(*sandbox, *epoch, false)?;
-        Ok(HostObservation {
-            resource: request.source_resource.clone(),
-            command: action.command.command().clone(),
-            result: ObservedResult::Frozen {
-                pid: paused.source().pid,
-                start_ticks: paused.source().start_time_ticks,
-                boot_id: paused.source().boot_id.clone(),
+        before_pause_request(
+            || {
+                self.validate_action(action)?;
+                require_source_binding(request, original_source)?;
+                let core::Command::FreezeVm {
+                    sandbox,
+                    epoch,
+                    generation,
+                    vm,
+                } = action.command.command()
+                else {
+                    return Err("original Pause requires its FreezeVm action".into());
+                };
+                if action.identity.resource != request.source_resource {
+                    return Err("Pause action resource differs from original source work".into());
+                }
+                let context = self.original_source_context(&request.source_resource)?;
+                if context.binding.sandbox != *sandbox
+                    || context.binding.generation != *generation
+                    || context.binding.vm != *vm
+                {
+                    return Err("Pause action differs from original occupied source".into());
+                }
+                let slot = self.runtime_host_slot(context.position, *vm)?;
+                let _guard = slot.helper_gate.try_acquire(Some(&slot))?;
+                self.require_fence(*sandbox, *epoch, false)?;
+                if self.original_source_context(&request.source_resource)? != context {
+                    return Err("Pause source context changed before execution".into());
+                }
+                let before =
+                    crate::source_observation::observe(self, Some(protected), original_source)?;
+                let runtime = self.runtime(*sandbox, *vm)?;
+                let expected = crate::source_observation::expected_source(original_source)?;
+                Ok((context, _guard, before, runtime, expected, sandbox, epoch))
             },
-        })
+            |(context, _guard, before, runtime, expected, sandbox, epoch)| {
+                let paused = operation(&runtime, request.source_resource.id.as_str(), &expected)?;
+                if paused.resource_id() != request.source_resource.id.as_str()
+                    || paused.source() != &expected
+                {
+                    return Err("Pause observation differs from original source".into());
+                }
+                let after =
+                    crate::source_observation::observe(self, Some(protected), original_source)?;
+                if before != after
+                    || self.original_source_context(&request.source_resource)? != context
+                {
+                    return Err("original Pause configuration or context changed".into());
+                }
+                runtime.confirm_original_paused(&paused)?;
+                self.require_fence(*sandbox, *epoch, false)?;
+                Ok(HostObservation {
+                    resource: request.source_resource.clone(),
+                    command: action.command.command().clone(),
+                    result: ObservedResult::Frozen {
+                        pid: paused.source().pid,
+                        start_ticks: paused.source().start_time_ticks,
+                        boot_id: paused.source().boot_id.clone(),
+                    },
+                })
+            },
+        )
     }
 }
 

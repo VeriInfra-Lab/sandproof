@@ -30,6 +30,9 @@ use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
+pub(crate) use capture::PauseNotStarted;
+#[cfg(test)]
+pub(crate) use capture::before_pause_request;
 mod capture_cleanup;
 mod capture_profile;
 mod capture_stop;
