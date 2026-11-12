@@ -30,7 +30,7 @@ class InterruptedRunTests(unittest.TestCase):
         self.assertEqual(env.events[0]["error_type"], "TimeoutError")
         self.assertIsNone(env.events[0]["return_code"])
 
-    def assert_failed_stage(self, stage, logs_available=False, completed_reward=None):
+    def assert_failed_stage(self, stage, logs_available=False, completed_reward=None, source_kind="fixed-base"):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             task = SimpleNamespace(
@@ -48,6 +48,7 @@ class InterruptedRunTests(unittest.TestCase):
 
             env = SimpleNamespace(
                 sandbox_id="sb-fixture", create_dispatched=True, kill_confirmed=False,
+                source_kind=source_kind,
                 events=[], start=AsyncMock(side_effect=(
                     TimeoutError("initialization deadline") if stage == "initialization" else None)),
                 download_file=AsyncMock(side_effect=download),
@@ -78,6 +79,8 @@ class InterruptedRunTests(unittest.TestCase):
                 row = asyncio.run(runner.run_task(args, {"name": "sample"}, {}))
             self.assertEqual(row["status"], "timeout" if completed_reward is None else "failed")
             self.assertEqual(row["stage"], stage)
+            self.assertEqual(row["environment_source_kind"], source_kind)
+            self.assertEqual(row["original_environment"], source_kind == "prepared-original")
             self.assertTrue(row["kill_confirmed"])
             self.assertEqual(row["sandbox_id"], "sb-fixture")
             if logs_available:
@@ -104,6 +107,9 @@ class InterruptedRunTests(unittest.TestCase):
             else:
                 self.assertEqual(row["oracle"], "passed")
                 self.assertEqual(row["verifier"], "timeout" if completed_reward is None else "failed")
+
+    def test_original_prebuilt_scoring_timeout_preserves_source_but_has_no_reward(self):
+        self.assert_failed_stage("verifier", logs_available=True, source_kind="prepared-original")
 
     def test_oracle_timeout_still_cleans_up_when_log_downloads_fail(self):
         self.assert_failed_stage("oracle")

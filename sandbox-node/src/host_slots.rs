@@ -167,9 +167,31 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> NodeResult<T> {
     {
         return Err("host position record is not private or exceeds its byte bound".into());
     }
-    let value = serde_json::from_reader(File::open(path)?)?;
+    let value = crate::json_file::from_reader(File::open(path)?)?;
     File::open(path.parent().ok_or("host record parent")?)?.sync_all()?;
     Ok(value)
+}
+
+// Only called after the marker name, fixed position and initialized mapping
+// have been checked. Optional route/helper markers can disappear normally
+// between readdir and stat; their absence is not a release/drain certificate.
+fn optional_gate_marker_leaf(path: &Path, owner: u32) -> NodeResult<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.is_file() || metadata.uid() != owner || metadata.mode() & 0o077 != 0 {
+        return Err("untrusted optional helper marker".into());
+    }
+    Ok(())
+}
+
+fn check_optional_gate_marker(path: &Path) -> NodeResult<()> {
+    // The trusted parent remains mandatory. Checking the leaf once avoids
+    // treating another completed helper's unlink as corrupt node identity.
+    check_trusted_path(path.parent().ok_or("helper marker parent")?)?;
+    optional_gate_marker_leaf(path, 0)
 }
 
 fn stamp(path: &Path) -> NodeResult<Option<FileStamp>> {
@@ -265,7 +287,7 @@ pub(super) fn stored_lease_identity(
         return Err("untrusted host mapping".into());
     }
     Ok(Some(
-        serde_json::from_reader::<_, StoredMapping>(File::open(path)?)?.lease,
+        crate::json_file::from_reader::<_, StoredMapping>(File::open(path)?)?.lease,
     ))
 }
 
@@ -659,11 +681,7 @@ impl LinuxWorker {
                 if cell.value.is_none() {
                     return Err("route marker on never-used position".into());
                 }
-                check_trusted_path(&entry.path())?;
-                let metadata = fs::symlink_metadata(entry.path())?;
-                if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
-                    return Err("untrusted route marker".into());
-                }
+                check_optional_gate_marker(&entry.path())?;
                 continue;
             }
             let (number, staged, inflight) = if let Some(number) = name
@@ -702,11 +720,7 @@ impl LinuxWorker {
                 if cell.value.is_none() {
                     return Err("helper marker on never-used position".into());
                 }
-                check_trusted_path(&entry.path())?;
-                let metadata = fs::symlink_metadata(entry.path())?;
-                if !metadata.is_file() || metadata.mode() & 0o077 != 0 {
-                    return Err("untrusted helper marker".into());
-                }
+                check_optional_gate_marker(&entry.path())?;
                 // Runtime validates exact PID/start/boot/context before any
                 // gate admission; inventory never deletes a live marker.
             }
@@ -1356,7 +1370,7 @@ impl LinuxWorker {
         let expected = self.runtime_host_slot(context.position, context.binding.vm)?;
         match expected.helper_gate.try_acquire(Some(&expected)) {
             Ok(_guard) => Ok(true),
-            Err(RuntimeError::InvalidConfiguration(_)) => Ok(false),
+            Err(RuntimeError::InvalidConfiguration(_) | RuntimeError::HelperGateBusy) => Ok(false),
             Err(error) => Err(error.into()),
         }
     }
@@ -1388,6 +1402,18 @@ impl LinuxWorker {
             resource,
             &self.read_host_positions()?,
         )
+    }
+
+    pub(super) fn workspace_slot_binding(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<SlotBinding> {
+        // Keep the complete protected table, unknown-entry and stage checks.
+        // This lookup grants no occupied/release authority on its own.
+        resolve_workspace_binding(&self.read_host_positions()?, sandbox, generation, |slot| {
+            self.slot(slot)
+        })
     }
 
     pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<HostSlotId> {
@@ -1455,6 +1481,28 @@ fn select_original_source_context(
     }
     row.require_occupied(row.context.binding)?;
     Ok(row.context)
+}
+
+fn resolve_workspace_binding(
+    rows: &[HostPosition],
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+    mut read_slot: impl FnMut(core::NetSlotId) -> NodeResult<SlotBinding>,
+) -> NodeResult<SlotBinding> {
+    let mut matches = rows.iter().filter(|row| {
+        row.context.binding.sandbox == sandbox && row.context.binding.generation == generation
+    });
+    let expected = matches
+        .next()
+        .ok_or("no host position for workspace")?
+        .context
+        .binding;
+    if matches.next().is_some() {
+        return Err("ambiguous host position for workspace".into());
+    }
+    let binding = read_slot(expected.network)?;
+    require_slot_binding(&binding, expected)?;
+    Ok(binding)
 }
 
 #[cfg(test)]

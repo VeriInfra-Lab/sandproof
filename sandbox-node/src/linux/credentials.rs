@@ -4,6 +4,7 @@ use super::{
     LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, TemplateArtifact, TemplateBinding,
     artifact_file_digest, check_trusted_path, core, fs, hash_token, launch_observation,
 };
+use sandbox_runtime::RuntimeError;
 
 pub(super) fn secret_file_name(
     namespace: &str,
@@ -234,6 +235,24 @@ impl LinuxWorker {
         self.validate_artifact_with(artifact, artifact_file_digest)
     }
 
+    pub(super) fn verify_cold_rootfs(
+        &self,
+        artifact: &TemplateArtifact,
+        disk: &File,
+    ) -> Result<(), RuntimeError> {
+        let stamp = ArtifactStamp::from_metadata(artifact, &disk.metadata()?)
+            .map_err(|_| RuntimeError::IdentityMismatch("cold template type or size"))?;
+        let verified = self.validated_artifacts.lock().map_err(|_| {
+            RuntimeError::IdentityMismatch("cold template verification unavailable")
+        })?;
+        if verified.get(&artifact.path) != Some(&stamp) {
+            return Err(RuntimeError::IdentityMismatch(
+                "cold template verification changed",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn validate_artifact_with(
         &self,
         artifact: &TemplateArtifact,
@@ -298,7 +317,7 @@ impl LinuxWorker {
     ) -> NodeResult<GuestSecret> {
         let path = self.secret_path(sandbox, generation);
         check_trusted_path(&path)?;
-        let value: GuestSecret = serde_json::from_reader(File::open(&path)?)?;
+        let value: GuestSecret = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("secret parent")?)?.sync_all()?;
         if generation == 0
             || value.generation != generation

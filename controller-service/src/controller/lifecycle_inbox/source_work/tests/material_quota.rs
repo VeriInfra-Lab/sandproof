@@ -390,3 +390,51 @@ fn three_original_full_charges_refuse_fourth_before_pause_and_keep_prior_continu
         qualified
     );
 }
+
+#[test]
+fn physical_pause_refusal_leaves_the_restored_original_and_its_holds_intact() {
+    use crate::physical_storage::{CaptureAdmission, CaptureSpace};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, resume) = resumed_with_scene_budget(&dir.path().join("db"));
+    let intent = next_unload(&resume, 2);
+    let source = observe_source(&mut journal, &intent);
+    let full = scene_full(&source);
+    let world = journal.world().unwrap();
+    let available = |usable_bytes, available_bytes| CaptureAdmission {
+        fixed_bytes: 10 * GIB,
+        cleanup_and_fs_bytes: GIB,
+        space: CaptureSpace {
+            usable_bytes,
+            available_bytes,
+        },
+    };
+    let try_admit = |journal: &mut ControllerJournal, usable, free| {
+        journal.admit_lifecycle_full_capture_with_space::<Evidence>(
+            &source.work,
+            &v3::context(),
+            (&full, Some(available(usable, free))),
+            10,
+            &mut NeverCrash,
+        )
+    };
+
+    // New capture bytes fit, but the retained source and both restore
+    // obligations would exceed the volume's complete managed envelope.
+    assert!(matches!(
+        try_admit(&mut journal, 15 * GIB, 5 * GIB),
+        Err(JournalError::CaptureMaterialQuotaExceeded)
+    ));
+    // Total envelope fits, but the immediate write and cleanup space do not.
+    assert!(matches!(
+        try_admit(&mut journal, 18 * GIB, 3 * GIB),
+        Err(JournalError::CaptureMaterialQuotaExceeded)
+    ));
+    assert_eq!(journal.world().unwrap(), world);
+    assert_charges(&journal, 1);
+
+    assert!(try_admit(&mut journal, 18 * GIB, 4 * GIB).is_ok());
+    // The original durable admission is replayed even after free space falls.
+    assert!(try_admit(&mut journal, 18 * GIB, 0).is_ok());
+    assert_charges(&journal, 2);
+}

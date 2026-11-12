@@ -13,10 +13,10 @@ from unittest.mock import patch
 
 from benchmarks import ci_fixtures
 from benchmarks.ci_fixtures import (
-    FORBIDDEN_PATHS, MAX_MANIFEST_BYTES, MIB, guest_preflight_command, load_ci_fixtures,
+    FORBIDDEN_PATHS, MAX_MANIFEST_BYTES, MIB, guest_preflight_command, load_ci_fixtures, load_prepared_fixtures,
 )
 from benchmarks.ci_verifier import PYTHON, REQUIREMENTS_SHA256
-from tools.benchmark_tasks import InvalidInput, PIN, canonical
+from tools.benchmark_tasks import InvalidInput, PIN, PIN21, canonical
 
 
 def sha(data):
@@ -158,6 +158,20 @@ class CIFixtureTests(unittest.TestCase):
         self.path.write_bytes(data)
         self.path.chmod(0o600)
         return sha(data)
+
+    def test_original_template_pins_task_bytes_and_uses_no_ci_verifier(self):
+        lock = dict(self.lock, dataset='terminal-bench@2.1',
+                    source=dict(repository=PIN21.repository, commit=PIN21.commit))
+        manifest = dict(schema_version=1, dataset=lock['dataset'], source_commit=PIN21.commit,
+                        verifier='original', fixtures=self.manifest['fixtures'])
+        pin = self.save(manifest)
+        fixture = load_prepared_fixtures(self.path, pin, lock, self.names[:1],
+                                         source_kind='prepared-original')[self.names[0]]
+        self.assertTrue(fixture.template_descriptor()['template_id'].startswith('prebuilt-'))
+        self.assertNotIn(PYTHON, fixture.guest_preflight_command())
+        self.assertTrue(fixture.evidence()['original_verifier'])
+        with self.assertRaises(InvalidInput):
+            load_ci_fixtures(self.path, pin, lock, self.names[:1])
 
     def load(self, *, names=None, lock=None, digest=None):
         return load_ci_fixtures(self.path, self.save() if digest is None else digest,

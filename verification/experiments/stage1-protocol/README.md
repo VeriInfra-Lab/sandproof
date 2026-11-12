@@ -84,7 +84,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope stage1-protocol --output /private/v3-native-evidence
 ```
 
-本范围包含完整 Linux `functional`、原 `stage1-protocol` 和全部 53 个已登记 V3 case。
+本范围包含完整 Linux `functional`、原 `stage1-protocol` 和 `registered.py` 中登记的全部 V3 case。
 任何一项失败、证据缺失或输入改变都不能完成本范围记录；只检查正确版也不能封口。
 原两包全部测试、显式 integration 发现、Clippy、格式、
 文档及四种真实错误版/恢复检查均保留。逐项名称由 `native.py` 登记，计数由同一清单导出；
@@ -96,6 +96,10 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 同步收件切片的原入口。普通检查仍调用各包原命令和同性质错误版；证明入口消费对应的
 完整范围回执。裸开发 `result.json` 不能充当范围回执，未运行的源码/LLBC 来源检查也不能
 由其它包一次构建补齐。没有原生断言的透明抽取 crate 只记编译/静态检查，不计为测试覆盖。
+
+完整 V3 另登记 `stage1-unload-audits`。它覆盖首次卸载的启动回执、原执行记录、继续卸载的回执扫描和原 Create 选项编码。普通机按原夹具验证四个断言、两个已编译的错误版本及恢复后的同一断言；首次卸载的两个证明包共用同一个原生夹具。形式端分别重建各包的原 Lean 工程，并检查全部 44 份带审计命令的文件和 103 条审计声明。
+
+运行完整入口前，`SANDPROOF_UNLOAD_CAPTURE_EVIDENCE` 指向原 LLBC 目录。目录按四个包名分组，文件名是各包 `capture_hashes` 中的键加 `.llbc`。原摘要来自各包已有的 `evidence.json` 或 `capture-profile.json`，输入和原输出都按现有冻结清单核对。公共结果绑定与当前输入匹配的原生回执、Lean 文件、内核日志和服务诊断。单独的证明包仍可按各自说明复现。
 
 仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
 准入后，登记这一次包含关系，省去该父入口的重复执行；原 append 原生错误版照常保留。

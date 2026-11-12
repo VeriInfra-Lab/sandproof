@@ -272,6 +272,54 @@ fn restarted_application_does_not_recover_dispatched_startup_before_fresh_epoch(
 }
 
 #[test]
+fn health_and_real_create_use_the_same_operation_headroom_boundary() {
+    for fits in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let host = fixture::complete_fixture::host(
+            &path,
+            "0123456789abcdef",
+            64,
+            2 * 1024 * 1024,
+            v3::CLEANUP_BYTES + 1000,
+        );
+        let profile = host.physical_storage.as_ref().unwrap();
+        let pool = &profile.pools[0];
+        let disk = fixture::template().local.resources.disk_bytes;
+        // Independent arithmetic for the original single-pool fixture. The
+        // rest of its disk/cache growth is still in the unchanged global quota.
+        let required = profile.filesystem_overhead_bytes
+            + pool.cleanup_reserve_bytes
+            + pool.kernel_copy_bytes
+            + pool.runtime_copy_bytes
+            + disk;
+        assert!(required < profile.peak_bytes().unwrap());
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            disk_available: Some(required - u64::from(!fits)),
+            ..State::default()
+        }));
+        let app =
+            v3::application_with_host_configuration(&path, state.clone(), true, v3::config(), host);
+        app.record_lifecycle_intent(&request(), &context()).unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        let (_, free) = app
+            .internal_free_resources(&v3::config().node, fixture::compute())
+            .unwrap();
+        assert_eq!(free.disk_bytes, disk - u64::from(!fits));
+        let outcome = advance(&app).unwrap();
+        if fits {
+            assert!(outcome.local.is_some());
+            assert!(outcome.refusal.is_none());
+        } else {
+            assert!(outcome.local.is_none());
+            assert_eq!(outcome.refusal, Some(CreateRefusalReason::Capacity));
+            assert!(state.lock().unwrap().actions.is_empty());
+        }
+    }
+}
+
+#[test]
 fn original_application_capacity_and_template_veto_never_allocate_or_launch() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");

@@ -24,13 +24,14 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Component, Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 #[path = "snapshot_bundle.rs"]
 mod bundle;
 #[path = "snapshot_clone.rs"]
 mod file_clone;
-pub(crate) use file_clone::{clone_whole_file, require_same_xfs_mount};
+pub(crate) use file_clone::{clone_template_file, clone_whole_file, require_same_xfs_mount};
 #[path = "snapshot_completion.rs"]
 mod completion;
 pub(crate) use completion::MAX_COMPLETION_BYTES;
@@ -38,6 +39,7 @@ pub(crate) use completion::MAX_COMPLETION_BYTES;
 pub(crate) mod material_retirement;
 #[path = "snapshot_retirement.rs"]
 mod retirement;
+pub(crate) use bundle::BundleMeasurements;
 pub use bundle::{BundleReadLimits, SnapshotBundle};
 pub use material_retirement::CaptureStoreRetirement;
 
@@ -128,6 +130,7 @@ pub struct SnapshotStore {
     path: PathBuf,
     directory: File,
     owner: u32,
+    pub(crate) verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
 }
 
 /// A unique original directory; interrupted stages are deliberately retained.
@@ -138,6 +141,7 @@ pub struct SnapshotStage {
     stage_name: String,
     owner: u32,
     copied: Vec<CopiedFile>,
+    verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
 }
 
 /// Physical file and sync facts only. This does not permit stopping the source
@@ -291,11 +295,17 @@ fn key_name(prefix: &str, key: &[u8; 32]) -> String {
 }
 
 impl SnapshotStore {
-    pub(crate) fn from_layout(path: PathBuf, directory: File, owner: u32) -> Self {
+    pub(crate) fn from_layout(
+        path: PathBuf,
+        directory: File,
+        owner: u32,
+        verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
+    ) -> Self {
         Self {
             path,
             directory,
             owner,
+            verified_bundle,
         }
     }
     /// Open a root-owned protected store through checked ancestor descriptors.
@@ -313,6 +323,7 @@ impl SnapshotStore {
             path: path.to_owned(),
             directory: open_store(path, owner)?,
             owner,
+            verified_bundle: Arc::default(),
         })
     }
 
@@ -368,6 +379,7 @@ impl SnapshotStore {
             stage_name,
             owner: self.owner,
             copied: Vec::new(),
+            verified_bundle: Arc::clone(&self.verified_bundle),
         })
     }
 }
@@ -550,6 +562,26 @@ impl SnapshotStage {
         .map_err(os_error)?;
         self.parent.sync_all()?;
         matches_entry(&self.parent, OsStr::new(&final_name), &self.directory)?;
+        *self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))? =
+            Some(bundle::BundleMeasurements {
+                directory_key: self.directory_key,
+                files: self
+                    .copied
+                    .iter()
+                    .filter(|entry| {
+                        matches!(
+                            entry.measurement.artifact,
+                            SnapshotArtifact::State
+                                | SnapshotArtifact::Memory
+                                | SnapshotArtifact::Disk(0)
+                        )
+                    })
+                    .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
+                    .collect(),
+            });
         Ok(PublishedSnapshotFiles {
             directory_key: self.directory_key,
             files: expected.to_vec(),

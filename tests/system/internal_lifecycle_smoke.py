@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 from tools.check_kvm_host import trusted_path, source_revision, device
 from tools.system_acceptance import digest, json_file, write_once
-from _complete_runtime import complete_runtime, provision_runtime, _envelope
+from _complete_runtime import activation_budget, complete_runtime, provision_runtime, _envelope
 from _resource_evidence import record_resource_identity
 from sdk_c02_acceptance import assert_no_exact_resources, processes_in_uid_range
 
@@ -95,7 +95,7 @@ def prepare(args, installed, root, shared):
         "cleanup_reserve_bytes": disk, "file_policy_digest": 1,
     }, slots=1, inbox_sessions=1)
     peak, _ = _envelope(settings["bounded_host"]["physical_storage"])
-    if peak * 2 > 200 * 1024**3:
+    if activation_budget(settings['bounded_host']['physical_storage'])['required_bytes'] > 200 * 1024**3:
         raise RuntimeError("minimum smoke exceeds approved total 200 GiB free-space ceiling")
     provision_runtime(settings)
     bounded = {**settings["bounded_host"], "max_data_routes_per_slot": 4,

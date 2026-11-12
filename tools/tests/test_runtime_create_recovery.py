@@ -527,6 +527,22 @@ class RuntimeCreateRecoveryTests(unittest.TestCase):
             with self.subTest(benchmark=benchmark), self.assertRaises(ValueError):
                 self.recover(Mock(), benchmark=benchmark)
 
+    def test_prebuilt_original_recovery_requires_its_explicit_authority(self):
+        benchmark = 'terminal-bench@2.1'
+        self.intent['metadata']['benchmark'] = benchmark
+        self.template['templateId'] = 'prebuilt-' + 'a'*32
+        checkpoint = self.root/'runtime-intent.json'
+        checkpoint.write_text(json.dumps(self.intent))
+        checkpoint.chmod(0o600)
+        self.assertEqual(load_runtime_intent(self.root, task='sample', runtime_attempt='e'*32,
+            build_id='a'*32, template=self.template, benchmark=benchmark, prepared_original=True), self.intent)
+        self.insert(terminal=True)
+        delete = Mock()
+        self.assertEqual(self.recover(delete, benchmark=benchmark, prepared_original=True)['status'], 'destroyed')
+        with self.assertRaises(ValueError):
+            self.recover(delete, benchmark=benchmark)
+        delete.assert_not_called()
+
     def test_checkpoint_requires_exact_task_attempt_build_revision_and_fingerprint(self):
         checkpoint = self.root/'runtime-intent.json'
         checkpoint.write_text(json.dumps(self.intent))

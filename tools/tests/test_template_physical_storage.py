@@ -4,8 +4,11 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from tools.template_physical_storage import envelope, validate_configuration, PhysicalProfileLease
+from tools import single_host_storage
+from tools.template_physical_storage import activation_budget, publication_headroom, envelope, validate_configuration, PhysicalProfileLease
 
 
 def configuration(root):
@@ -70,6 +73,85 @@ class PhysicalProfileTests(unittest.TestCase):
     def validate(self):
         return validate_configuration(self.runtime, self.builder, self.public, file_size=lambda _: 100)
 
+    def test_file_volume_plan_counts_backing_reserve_before_volume_exists(self):
+        profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
+        required = activation_budget(profile)['required_bytes']
+        free = SimpleNamespace(f_bavail=required + 63, f_frsize=1, f_favail=100)
+        with patch('tools.single_host_storage.os.statvfs', return_value=free):
+            plan = single_host_storage.volume_plan(profile, self.root, image_bytes=required, host_reserve_bytes=64)
+        self.assertEqual(plan['missing_host_bytes'], 1)
+        self.assertEqual(plan['activation']['required_bytes'], required)
+        self.assertTrue(plan['volume_check_pending'])
+        self.assertFalse(plan['fits'])
+
+    def test_automatic_file_volume_leaves_room_for_formatting_and_staging(self):
+        profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
+        required = activation_budget(profile)['required_bytes']
+        outer_available = required + 3 * 1024**3
+        free = SimpleNamespace(f_bavail=outer_available, f_frsize=1, f_favail=100)
+        with (patch.object(single_host_storage, 'mount_info', return_value={'fstype': 'ext4', 'options': 'rw'}),
+              patch.object(single_host_storage.os, 'statvfs', return_value=free)):
+            result = single_host_storage.plan(profile, self.root, image_bytes=None,
+                                              host_reserve_bytes=1024**3)
+        self.assertEqual(result['image_bytes'], required + 2 * 1024**3)
+        self.assertEqual(result['activation']['required_bytes'], required)
+        self.assertTrue(result['volume_check_pending'])
+        self.assertTrue(result['fits'])
+
+    def test_reflink_query_calls_the_fixed_mounted_filesystem_tool(self):
+        tool = Path('/usr/sbin/xfs_spaceman')
+        with (patch.object(single_host_storage, 'trusted_path', return_value=tool) as trust,
+              patch.object(single_host_storage, 'run', return_value='reflink=1\n') as run):
+            self.assertTrue(single_host_storage.reflink_enabled({'target': str(self.root)}))
+        trust.assert_called_once_with(tool)
+        run.assert_called_once_with([str(tool), '-c', 'info', str(self.root)])
+
+    def test_reopen_rejects_wrong_mounted_backing_without_mounting_or_adjusting_quota(self):
+        data = self.root / 'data'
+        data.mkdir(mode=0o700)
+        image = dict(backing_uuid='backing', inode=12, size_bytes=1024**3)
+        project = dict(project_id=20, hard_bytes=1024**3, hard_inodes=1000)
+        control = self.root / 'control'
+        control.mkdir(mode=0o700)
+        receipt = control / 'storage.json'
+        receipt.write_text(json.dumps(dict(version=1, data_inode=data.stat().st_ino,
+                                           uuid='original', image=image, project=project)))
+        receipt.chmod(0o600)
+        mounted = dict(target=str(data), source='/dev/loop7', uuid='original')
+        observed = dict(loopdevices=[{'back-file': str(self.root / 'other'), 'offset': 0, 'sizelimit': 0}])
+        with (patch.object(single_host_storage, 'trusted_path'),
+              patch.object(single_host_storage, 'image_identity', return_value=image),
+              patch.object(single_host_storage, 'mount_info', return_value=mounted),
+              patch.object(single_host_storage, 'run', return_value=json.dumps(observed)),
+              patch.object(single_host_storage, 'mount_image') as mount,
+              patch.object(single_host_storage, 'quota_limits') as quota,
+              self.assertRaisesRegex(ValueError, 'whole original image')):
+            single_host_storage.reopen(self.root, project, remount=True)
+        mount.assert_not_called()
+        quota.assert_not_called()
+
+    def test_prepared_runtime_rechecks_the_installed_quota_and_both_role_mounts(self):
+        data = self.root / 'data'
+        scratch, staging = data / 'scratch', data / 'services'
+        project = dict(project_id=20, hard_bytes=1024**3, hard_inodes=1000)
+        tool = dict(path='/usr/bin/chattr', sha256=[1] * 32)
+        capture = dict(layout_parent=str(scratch / 'run' / '0' / 'p'), layout_binding=[1] * 32,
+                       state_copy_bytes=1024, memory_copy_bytes=1024, disk_copy_bytes=1024,
+                       api_timeout_ms=1000, worker_timeout_ms=1000,
+                       material_project=dict(project, chattr=tool, lsattr=tool))
+        receipt = dict(uuid='original', project=project)
+        targets = {data: str(data), scratch: str(data), staging: str(data)}
+        with (patch.object(single_host_storage, 'deployment_directory', return_value=self.root),
+              patch.object(single_host_storage, 'trusted_path', side_effect=lambda path: path),
+              patch.object(single_host_storage, 'reopen', return_value=receipt) as reopen,
+              patch.object(single_host_storage, 'mount_info', side_effect=lambda path: {'target': targets[path]})):
+            self.assertEqual(single_host_storage.check_acceptance_volume(
+                self.root, [capture], scratch, staging), receipt)
+            reopen.assert_called_once_with(self.root, project)
+            targets[staging] = str(staging)
+            with self.assertRaisesRegex(ValueError, 'same original XFS mount'):
+                single_host_storage.check_acceptance_volume(self.root, [capture], scratch, staging)
+
     def test_absent_null_or_partial_profiles_always_refuse(self):
         for missing in ('absent', 'null', 'one_pool', 'capacity'):
             runtime, builder = copy.deepcopy((self.runtime, self.builder))
@@ -95,21 +177,20 @@ class PhysicalProfileTests(unittest.TestCase):
         activate_for_test(self.profile)
         lease = PhysicalProfileLease(self.profile)
         # Rootfs allocation is not inferred from current sparse block count.
-        # Activation reserves 2*peak, so full self-warmup leaves >=peak free.
+        # Full growth leaves the largest operation headroom, including cleanup.
         for allocated in (0, 1, peak // 2, peak):
-            self.assertTrue(lease.admit(2 * peak - allocated))
-        self.assertFalse(lease.admit(peak - 1))
+            self.assertTrue(lease.admit(activation_budget(self.profile)['required_bytes'] - allocated))
+        self.assertFalse(lease.admit(publication_headroom(self.profile) - 1))
         lease.close()
 
-    def test_cache_copies_unknown_downloads_and_metadata_are_charged_without_sparse_credit(self):
+    def test_cache_shares_payload_peak_and_retains_temporary_and_metadata_checks(self):
         baseline, _ = envelope(self.profile)
         cache = dict(namespace=self.runtime['namespace'], root=str(self.root / 'cache'), max_entries=2, max_downloads=1,
             max_entry_bytes=1000, artifact_bytes=2000, temporary_bytes=1000,
             metadata_bytes=4096 + 2 * 2 * (64 * 1024 + 4096), inode_budget=19)
         self.profile['host_template_caches'] = [cache]
         peak, _ = envelope(self.profile)
-        self.assertEqual(peak - baseline, sum(cache[name] for name in
-            ('artifact_bytes', 'temporary_bytes', 'metadata_bytes')))
+        self.assertEqual(peak - baseline, cache['artifact_bytes'] + cache['metadata_bytes'])
         for name, value in (('temporary_bytes', 999), ('metadata_bytes', cache['metadata_bytes'] - 1),
                             ('inode_budget', 18), ('max_downloads', 3),
                             ('max_entry_bytes', 2001), ('artifact_bytes', True)):
@@ -141,8 +222,7 @@ class PhysicalProfileTests(unittest.TestCase):
             for role, settings in (('runtime', self.runtime), ('builder', self.builder))]
         self.profile['host_template_caches'] = caches
         peak, _ = envelope(self.profile)
-        self.assertEqual(peak - baseline, sum(c[name] for c in caches for name in
-            ('artifact_bytes', 'temporary_bytes', 'metadata_bytes')))
+        self.assertEqual(peak - baseline, sum(c['artifact_bytes'] + c['metadata_bytes'] for c in caches))
         for invalid in (None, caches * 2, [caches[0], caches[0]],
                         [dict(caches[0], namespace='f' * 16)],
                         [caches[0], dict(caches[1], root=caches[0]['root'])]):
@@ -193,6 +273,16 @@ class PhysicalProfileTests(unittest.TestCase):
         activate_for_test(self.profile)
         with self.assertRaisesRegex(ValueError, 'private'):
             PhysicalProfileLease(self.profile)
+
+    def test_single_runtime_snapshot_quota_is_not_a_startup_allocation(self):
+        profile = dict(self.profile, public_build=None)
+        profile['pools'] = [dict(profile['pools'][0], chroot_base='/sandbox-material/v')]
+        fixed_bytes, inodes = envelope(profile)
+        service = dict(root='/sandbox-material/s', owner_uid=0, peak_bytes=29 * 1024**3,
+                       inode_budget=8, on_demand_capture=True)
+        self.assertEqual(envelope(dict(profile, service_data=[service])), (fixed_bytes, inodes))
+        with self.assertRaises(ValueError):
+            envelope(dict(profile, service_data=[dict(service, root='/unexpected')]))
 
     def test_service_data_has_explicit_roots_owners_and_separate_peak_not_hidden_overhead(self):
         baseline, _ = envelope(self.profile)

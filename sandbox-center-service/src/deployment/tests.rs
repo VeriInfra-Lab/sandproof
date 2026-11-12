@@ -235,6 +235,22 @@ fn documented_center_example_loads_with_operator_material_through_the_original_v
 }
 
 #[test]
+fn registered_static_template_loads_with_no_capacity_for_build_artifacts() {
+    let fixture = Fixture::new();
+    let mut config = fixture.config.clone();
+    config["template_registry"]["max_templates_global"] = json!(1);
+    config["template_registry"]["max_templates_per_tenant"] = json!(1);
+    config["template_registry"]["max_artifact_bytes_global"] = json!(1);
+    config["template_registry"]["max_artifact_bytes_per_tenant"] = json!(1);
+    let loaded = fixture.load(&config).unwrap();
+    assert!(loaded.private_build_boundary.is_none());
+    assert!(loaded.provisioning.metadata.registry().records().is_empty());
+    let registered = loaded.provisioning.metadata.static_artifacts().unwrap();
+    assert_eq!(registered.len(), 1);
+    assert_eq!(registered[0].1.rootfs.size_bytes, 1024 * 1024 * 1024);
+}
+
+#[test]
 fn private_build_capability_is_explicit_role_bound_and_uses_the_registered_digest() {
     let fixture = Fixture::new();
     let config = fixture.with_private_builds();

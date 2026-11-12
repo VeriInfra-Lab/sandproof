@@ -23,6 +23,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -38,7 +39,7 @@ from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.system_acceptance import digest, json_file, private_path
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_capacity
 from tools.capture_acceptance import instantiate_copy_limits, require_capacity, validate_settings
 from tools.runtime_acceptance_budget import profile_declaration as _profile_declaration, service_declarations
 
@@ -134,10 +135,10 @@ def _bind_profile(native_pools, catalogs, layout, *, registry, service_peaks,
     profile=_profile_declaration(native_pools,catalogs,layout,registry=registry,
         service_peaks=service_peaks,activation_ceiling_bytes=activation_ceiling_bytes,
         physical_inodes=physical_inodes)
-    peak,inodes=envelope(profile)
-    free=os.statvfs(layout['hosts'][0])
-    if free.f_bavail*free.f_frsize<2*peak or free.f_favail<2*inodes:
-        raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed')
+    capacity=activation_capacity(profile,layout['hosts'][0])
+    if capacity['missing_bytes'] or capacity['missing_inodes']:
+        raise RuntimeError('insufficient complete physical bytes/inodes; system probe not executed: '
+                           + json.dumps(capacity,sort_keys=True))
     for native in native_pools:
         native['bounded_host']['physical_storage']=copy.deepcopy(profile)
     return profile
@@ -266,10 +267,8 @@ class RuntimeServices:
         profile=_bind_profile(pools,catalogs,layout,registry=registry,service_peaks=service_peaks,
                               activation_ceiling_bytes=activation_ceiling_bytes,
                               physical_inodes=getattr(args,'physical_inodes',None))
-        # Complete original byte/inode activation is checked BEFORE any large
-        # disk copy. Rust checks the same final profile independently at init.
-        for source,target,checksum in pending_copies:
-            _copy(source,target,identity=ids['center'],expected=checksum)
+        # Keep the static assets empty until the original Rust activation check.
+        # Only the already-budgeted control material is staged here.
         _copy(paths['center'],center_bin,identity=ids['center'],executable=True,
               expected=manifest['artifacts']['center']['sha256'])
         for binary in host_bins:
@@ -326,6 +325,7 @@ class RuntimeServices:
         value=cls()
         value.native_pools,value.host_configs,value.center_config=pools,host_configs,center
         value.layout,value.key,value.sdk_url=layout,key,'http://'+public_address
+        value.pending_assets=pending_copies
         value.manifest,value.redis_receipt,value.tls_receipt=manifest,redis_receipt,tls_receipt
         value.manifest_sha256=digest(args.candidate_manifest)
         value.staging_identity={name:(layout[name].stat().st_dev,layout[name].stat().st_ino)
@@ -338,7 +338,9 @@ class RuntimeServices:
             hosts=[dict(binary=binary,config=path,uid=0,gid=0) for binary,path in zip(host_bins,host_paths)],
             redis=dict(binary=redis_bin,config=redis_path,uid=ids['redis'][0],gid=ids['redis'][1]),
             record=record,logs=layout['logs'])
-        value.service_storage=ServiceStoragePeaks(profile['service_data'])
+        value.service_storage=ServiceStoragePeaks([
+            {key: row[key] for key in ('root', 'owner_uid', 'peak_bytes', 'inode_budget')}
+            for row in profile['service_data']])
         return value
 
     def start(self, *, host_envs=None):
@@ -348,8 +350,22 @@ class RuntimeServices:
         # generated key. Center initialize then independently checks AOF/health.
         _wait_redis(self.center_config['redis'],self.processes.children['redis'])
         for index in range(len(self.native_pools)):
+            self.processes.initialize('host-'+str(index))
+        # Host initialization checks the full envelope, which already includes
+        # these immutable assets. Populate them before either service can serve.
+        if self.pending_assets:
+            # The sampler must see each file only after its owner, mode and
+            # digest are final. Stage the same bytes on the original volume.
+            with tempfile.TemporaryDirectory(prefix='.static-assets-',
+                                             dir=self.layout['common']) as stage:
+                for source,target,checksum in self.pending_assets:
+                    incoming = Path(stage)/target.name
+                    _copy(source,incoming,identity=self.layout['center_identity'],expected=checksum)
+                    if target.exists() or target.is_symlink():
+                        raise ValueError('original static asset target already exists')
+                    incoming.rename(target)
+        for index in range(len(self.native_pools)):
             name='host-'+str(index)
-            self.processes.initialize(name)
             self.processes.start(name,env=(host_envs or {}).get(name))
         self.processes.initialize('center')
         self.processes.start('center')

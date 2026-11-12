@@ -83,6 +83,136 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
+    let fixture = Fixture::new();
+    let limits = BundleReadLimits {
+        state_bytes: 17,
+        memory_bytes: 17,
+        disk_bytes: 17,
+    };
+    let original = fixture
+        .store
+        .open_bundle_measuring(fixture.key, limits, |_, _| {
+            panic!("successful publication lost its verified measurements")
+        })
+        .unwrap()
+        .measurements();
+    let cached = fixture
+        .store
+        .open_bundle_measuring(fixture.key, limits, |_, _| {
+            panic!("unchanged sealed files were rehashed")
+        })
+        .unwrap();
+    assert_eq!(cached.measurements(), original);
+    assert!(
+        fixture
+            .store
+            .open_bundle_measuring(
+                fixture.key,
+                BundleReadLimits {
+                    memory_bytes: 16,
+                    ..limits
+                },
+                measure
+            )
+            .is_err()
+    );
+    let reopened = SnapshotStore::open_for_owner(&fixture.store.path, fixture.store.owner).unwrap();
+    let mut reads = 0;
+    let fresh = reopened
+        .open_bundle_measuring(fixture.key, limits, |file, role| {
+            reads += 1;
+            measure(file, role)
+        })
+        .unwrap();
+    assert_eq!(reads, 3);
+    assert_eq!(fresh.measurements(), original);
+}
+
+#[test]
+fn failed_bundle_check_requires_fresh_measurements_on_the_next_open() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap().measurements();
+    // The file has not changed, so this refusal cannot rely on timestamp
+    // granularity to invalidate a previously successful verification.
+    assert!(
+        fixture
+            .store
+            .open_bundle(
+                fixture.key,
+                BundleReadLimits {
+                    state_bytes: 17,
+                    memory_bytes: 17,
+                    disk_bytes: 16,
+                }
+            )
+            .is_err()
+    );
+    let mut measured = Vec::new();
+    let reopened = fixture
+        .store
+        .open_bundle_measuring(
+            fixture.key,
+            BundleReadLimits {
+                state_bytes: 17,
+                memory_bytes: 17,
+                disk_bytes: 17,
+            },
+            |file, artifact| {
+                measured.push(artifact);
+                measure(file, artifact)
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        measured,
+        [
+            SnapshotArtifact::State,
+            SnapshotArtifact::Memory,
+            SnapshotArtifact::Disk(0)
+        ]
+    );
+    assert_eq!(reopened.measurements(), original);
+}
+
+#[test]
+fn cached_measurement_rechecks_changed_bytes_and_replaced_inodes() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap().measurements();
+    let disk = fixture.bundle_path().join("disk-0.img");
+    fixture.writable_directory();
+    fs::remove_file(&disk).unwrap();
+    fs::write(&disk, [9u8; 17]).unwrap();
+    fs::set_permissions(&disk, fs::Permissions::from_mode(0o400)).unwrap();
+    fixture.seal_directory();
+    let mut reads = 0;
+    let fresh = fixture
+        .store
+        .open_bundle_measuring(
+            fixture.key,
+            BundleReadLimits {
+                state_bytes: 17,
+                memory_bytes: 17,
+                disk_bytes: 17,
+            },
+            |file, role| {
+                reads += 1;
+                measure(file, role)
+            },
+        )
+        .unwrap();
+    assert_eq!(reads, 1);
+    assert_eq!(fresh.measurements()[..2], original[..2]);
+    assert_ne!(fresh.measurements()[2], original[2]);
+    fs::set_permissions(&disk, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(fixture.open().is_err());
+    fs::write(&disk, [8u8; 17]).unwrap();
+    fs::set_permissions(&disk, fs::Permissions::from_mode(0o400)).unwrap();
+    let changed = fixture.open().unwrap();
+    assert_ne!(changed.measurements()[2], fresh.measurements()[2]);
+}
+
+#[test]
 fn reopens_original_bytes_and_hashes_without_republishing_or_changing_modes() {
     let fixture = Fixture::new();
     let bundle = fixture.open().unwrap();

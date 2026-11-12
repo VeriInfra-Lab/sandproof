@@ -9,7 +9,7 @@ use sandproof_protocol::internal::lifecycle::Resources;
 use sandproof_protocol::numeric::available_resource;
 
 impl<H: ControllerHost> ControllerApplication<H> {
-    /// Original profile/lease and complete peak check before managed cache I/O.
+    /// Original profile/lease and one download's headroom before managed cache I/O.
     /// # Errors
     /// Unregistered cache, corrupt authority or low physical reserve refuses.
     pub fn validate_internal_cache_storage(
@@ -43,7 +43,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         }
         let pool = profile.pool(&namespace).map_err(map_journal)?;
         host.validate_physical_storage(profile, pool)?;
-        if host.available_disk_bytes()? < profile.peak_bytes().map_err(map_journal)? {
+        if host.available_disk_bytes()?
+            < profile.cache_headroom_bytes(cache).map_err(map_journal)?
+        {
             return Err(ApplicationError::QuotaExceeded);
         }
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
@@ -96,9 +98,11 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .ok_or(ApplicationError::Busy)?;
         let pool = profile.pool(&namespace).map_err(map_journal)?;
         host.validate_physical_storage(profile, pool)?;
-        let disk = host
-            .available_disk_bytes()?
-            .saturating_sub(profile.peak_bytes().map_err(map_journal)?);
+        let disk = host.available_disk_bytes()?.saturating_sub(
+            profile
+                .create_headroom_bytes(pool, 0)
+                .map_err(map_journal)?,
+        );
         let (cpu, memory) = host.available_compute()?;
         let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
         let slots =

@@ -278,9 +278,23 @@ fn capture_action_receipt(
                 error.as_ref(),
             )
             .emit();
-            sandproof_protocol::WorkOutcome::Unknown {
-                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
-                last_observation: None,
+            if matches!(action.command.command(), core::Command::FreezeVm { .. })
+                && error
+                    .downcast_ref::<crate::linux::PauseNotStarted>()
+                    .is_some()
+            {
+                // Only this live invocation's pre-request failure supplies this
+                // fact. Lost replies and post-request errors remain Unknown.
+                sandproof_protocol::WorkOutcome::DefinitiveFailure {
+                    code: sandproof_protocol::FailureCode::ResourceUnavailable,
+                    retryable: true,
+                    partial: None,
+                }
+            } else {
+                sandproof_protocol::WorkOutcome::Unknown {
+                    reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                    last_observation: None,
+                }
             }
         }
     };
@@ -801,15 +815,24 @@ impl DataRelay for NodeHost {
             .acquire_data_gate(sandbox, vm, generation)
             .map(Some)
             .map_err(|error| {
-                busy(
-                    error.as_ref(),
+                project(
                     FaultStage::DataGate,
                     FaultContext {
                         vm: Some(vm.0),
                         generation: Some(generation),
                         ..FaultContext::instance(sandbox, None)
                     },
+                    error.as_ref(),
                 )
+                .emit();
+                if matches!(
+                    error.downcast_ref::<sandbox_runtime::RuntimeError>(),
+                    Some(sandbox_runtime::RuntimeError::HelperGateBusy)
+                ) {
+                    ApplicationError::DataGateBusy
+                } else {
+                    ApplicationError::Busy
+                }
             })
     }
 
@@ -838,6 +861,11 @@ impl DataRelay for NodeHost {
                     .is_some()
                 {
                     ApplicationError::QuotaExceeded
+                } else if matches!(
+                    error.downcast_ref::<sandbox_runtime::RuntimeError>(),
+                    Some(sandbox_runtime::RuntimeError::HelperGateBusy)
+                ) {
+                    ApplicationError::DataGateBusy
                 } else {
                     ApplicationError::Busy
                 }
@@ -905,6 +933,23 @@ impl HostCapacity for NodeHost {
                 FaultContext::default(),
             )
         })
+    }
+
+    fn lifecycle_capture_space(
+        &self,
+        profile: &sandproof_controller_service::physical_storage::PhysicalStorageProfile,
+        pool: &sandproof_controller_service::physical_storage::PhysicalPool,
+    ) -> Result<sandproof_controller_service::physical_storage::CaptureSpace, ApplicationError>
+    {
+        self.physical_storage
+            .capture_space(profile, pool)
+            .map_err(|error| {
+                busy(
+                    error.as_ref(),
+                    FaultStage::PhysicalStorage,
+                    FaultContext::default(),
+                )
+            })
     }
 
     fn validate_physical_storage(

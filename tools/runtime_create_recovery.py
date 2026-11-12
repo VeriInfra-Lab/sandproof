@@ -27,24 +27,28 @@ CENTER_OPERATION_FIELDS = frozenset(('binding', 'center', 'retention',
 BENCHMARKS = frozenset(('terminal-bench-2.0', 'terminal-bench@2.1'))
 
 
-def _template_prefix(benchmark, prepared_ci):
+def _template_prefix(benchmark, prepared_ci, prepared_original):
     # This authority is supplied by the trusted harness, never inferred from
     # a request/checkpoint. The ordinary publication path stays tpl- only.
-    if (type(prepared_ci) is not bool or benchmark not in BENCHMARKS
-            or (prepared_ci and benchmark != 'terminal-bench-2.0')):
+    if (type(prepared_ci) is not bool or type(prepared_original) is not bool
+            or benchmark not in BENCHMARKS
+            or (prepared_ci and benchmark != 'terminal-bench-2.0')
+            or (prepared_original and benchmark != 'terminal-bench@2.1')):
         raise ValueError('invalid explicit runtime recovery mode')
+    if prepared_original:
+        return 'prebuilt-'
     return 'ci-' if prepared_ci else 'tpl-'
 
 
 def load_runtime_intent(directory, *, task, runtime_attempt, build_id, template,
-                        benchmark='terminal-bench-2.0', prepared_ci: bool = False):
+                        benchmark='terminal-bench-2.0', prepared_ci=False, prepared_original=False):
     """Read only this live trial's checkpoint, never discover a previous attempt.
 
     The expected correlation and template come from the supervisor's live
     environment, not from the file. The controller match still checks its own
     namespace, owner and immutable binding before any DELETE can be sent.
     """
-    prefix = _template_prefix(benchmark, prepared_ci)
+    prefix = _template_prefix(benchmark, prepared_ci, prepared_original)
     if (not isinstance(runtime_attempt, str)
             or not re.fullmatch(r'[0-9a-f]{32}', runtime_attempt)
             or not isinstance(build_id, str) or not re.fullmatch(r'[0-9a-f]{32}', build_id)
@@ -324,7 +328,7 @@ def terminal_result(center, host, create_identity):
 def recover_runtime_create(intent, *, read_center, read_host, deployment, owner, delete,
                            deadline, sandbox_id=None, create_identity=None,
                            delete_dispatched=False, benchmark='terminal-bench-2.0',
-                           prepared_ci=False, before_delete=None,
+                           prepared_ci=False, prepared_original=False, before_delete=None,
                            monotonic=time.monotonic, sleep=time.sleep):
     """Observe original audits and dispatch at most ONE authorized known-ID delete.
 
@@ -334,7 +338,7 @@ def recover_runtime_create(intent, *, read_center, read_host, deployment, owner,
     caller's separate physical audit are still required. Exceptions retain the
     original trial and identity. This tool contains no lifecycle transition.
     """
-    prefix = _template_prefix(benchmark, prepared_ci)
+    prefix = _template_prefix(benchmark, prepared_ci, prepared_original)
     metadata, template = intent['metadata'], intent['template']
     if (type(owner) is not int or not 0 < owner < 2**64
             or type(delete_dispatched) is not bool
