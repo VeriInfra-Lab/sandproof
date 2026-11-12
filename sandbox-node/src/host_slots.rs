@@ -1390,6 +1390,18 @@ impl LinuxWorker {
         )
     }
 
+    pub(super) fn workspace_slot_binding(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<SlotBinding> {
+        // Keep the complete protected table, unknown-entry and stage checks.
+        // This lookup grants no occupied/release authority on its own.
+        resolve_workspace_binding(&self.read_host_positions()?, sandbox, generation, |slot| {
+            self.slot(slot)
+        })
+    }
+
     pub(super) fn physical_slot_for_vm(&self, vm: core::VmId) -> NodeResult<HostSlotId> {
         let row = self
             .read_host_positions()?
@@ -1455,6 +1467,28 @@ fn select_original_source_context(
     }
     row.require_occupied(row.context.binding)?;
     Ok(row.context)
+}
+
+fn resolve_workspace_binding(
+    rows: &[HostPosition],
+    sandbox: core::SandboxId,
+    generation: core::Generation,
+    mut read_slot: impl FnMut(core::NetSlotId) -> NodeResult<SlotBinding>,
+) -> NodeResult<SlotBinding> {
+    let mut matches = rows.iter().filter(|row| {
+        row.context.binding.sandbox == sandbox && row.context.binding.generation == generation
+    });
+    let expected = matches
+        .next()
+        .ok_or("no host position for workspace")?
+        .context
+        .binding;
+    if matches.next().is_some() {
+        return Err("ambiguous host position for workspace".into());
+    }
+    let binding = read_slot(expected.network)?;
+    require_slot_binding(&binding, expected)?;
+    Ok(binding)
 }
 
 #[cfg(test)]
