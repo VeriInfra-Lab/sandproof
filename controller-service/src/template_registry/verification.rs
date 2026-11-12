@@ -11,16 +11,18 @@ use std::{fs, io::Read};
 /// All writable handles must be closed before candidate handoff; the trusted
 /// operator must keep staged and sealed artifacts immutable thereafter. The
 /// observed file identity, including ctime, is not proof of immutability.
+#[derive(Clone)]
 pub struct CandidateVerification {
     artifacts: [VerifiedArtifact; 2],
 }
 
+#[derive(Clone)]
 struct VerifiedArtifact {
     descriptor: TemplateArtifact,
     identity: ArtifactIdentity,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct ArtifactIdentity {
     size: u64,
     modified: Option<std::time::SystemTime>,
@@ -109,6 +111,29 @@ fn hash_file(file: &mut fs::File) -> Result<String, JournalError> {
 }
 
 impl CandidateVerification {
+    pub(super) fn recheck(
+        &self,
+        store: &CandidateStore,
+        binding: &TemplateBinding,
+    ) -> Result<bool, JournalError> {
+        for (verified, artifact) in self
+            .artifacts
+            .iter()
+            .zip([&binding.kernel, &binding.rootfs])
+        {
+            if verified.descriptor != *artifact {
+                return Ok(false);
+            }
+            let file = store.readonly_file(&artifact.path, artifact.size_bytes)?;
+            if ArtifactIdentity::read(&file.metadata()?) != verified.identity
+                || !verified.matches(artifact)
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn check(
         store: &CandidateStore,
         binding: &TemplateBinding,
@@ -171,6 +196,7 @@ mod tests {
                     validation_timeout_secs: 60,
                 },
                 trusted_uid: fs::metadata(&path).unwrap().uid(),
+                verified_binding: std::sync::Mutex::default(),
             };
             let result = VerifiedArtifact::check_with(&store, &artifact, |file| {
                 let digest = hash_file(file)?;

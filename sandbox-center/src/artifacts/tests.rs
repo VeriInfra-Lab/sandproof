@@ -592,6 +592,8 @@ async fn corrupt_static_material_does_not_block_a_later_healthy_revision() {
     store.verify_binding(&first).unwrap();
     store.verify_binding(&healthy).unwrap();
     let authority = authority_with_catalog(&fixture, &store, &[first.clone(), healthy.clone()]);
+    // Keep A as the cached check: corruption must invalidate that actual record.
+    store.verify_binding(&first).unwrap();
     // Corrupt A only AFTER the protected descriptors were durably registered.
     // It retains its readonly shape, so the original actual digest check fails.
     fs::set_permissions(&first.kernel.path, fs::Permissions::from_mode(0o600)).unwrap();
