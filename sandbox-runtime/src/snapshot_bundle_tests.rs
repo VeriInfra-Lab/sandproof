@@ -130,6 +130,52 @@ fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
 }
 
 #[test]
+fn failed_bundle_check_requires_fresh_measurements_on_the_next_open() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap().measurements();
+    // The file has not changed, so this refusal cannot rely on timestamp
+    // granularity to invalidate a previously successful verification.
+    assert!(
+        fixture
+            .store
+            .open_bundle(
+                fixture.key,
+                BundleReadLimits {
+                    state_bytes: 17,
+                    memory_bytes: 17,
+                    disk_bytes: 16,
+                }
+            )
+            .is_err()
+    );
+    let mut measured = Vec::new();
+    let reopened = fixture
+        .store
+        .open_bundle_measuring(
+            fixture.key,
+            BundleReadLimits {
+                state_bytes: 17,
+                memory_bytes: 17,
+                disk_bytes: 17,
+            },
+            |file, artifact| {
+                measured.push(artifact);
+                measure(file, artifact)
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        measured,
+        [
+            SnapshotArtifact::State,
+            SnapshotArtifact::Memory,
+            SnapshotArtifact::Disk(0)
+        ]
+    );
+    assert_eq!(reopened.measurements(), original);
+}
+
+#[test]
 fn cached_measurement_rechecks_changed_bytes_and_replaced_inodes() {
     let fixture = Fixture::new();
     let original = fixture.open().unwrap().measurements();
