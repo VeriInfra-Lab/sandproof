@@ -1,0 +1,52 @@
+import ParentErrors
+import ContinuedParentSuccess
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+variable [Representations] [calls : ParentCalls]
+
+/-- After the second JSON encoder fails, an arbitrary digest callback cannot
+change the result. This is about question itself: the earlier options digest
+in current may already have run. -/
+theorem anchor_json_error_skips_digest (anchor : Anchor) (limits : Limits)
+    (error : SandproofUnloadFirstObservation.serde_json.error.Error) (journal : JournalError)
+    (failed : ParentCalls.encodeCompleteSourceAnchor anchor = .ok (.Err error))
+    (converted : ParentCalls.journalFromJsonError error = .ok journal) :
+    ∀ digest,
+      letI : ParentCalls := { calls with digestCompleteBytes := digest }
+      question anchor limits = .ok (.Err journal) := by
+  intro digest
+  letI : ParentCalls := { calls with digestCompleteBytes := digest }
+  exact question_encoding_first_error anchor limits error journal failed converted
+
+theorem actual_first_anchor_json_error {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+    {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input)
+    (error : SandproofUnloadFirstObservation.serde_json.error.Error) (journal : JournalError)
+    (failed : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Err error))
+    (converted : ParentCalls.journalFromJsonError error = .ok journal) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+      .ok (.Err journal) := by
+  rw [actual_current_reaches_exact_question reads]
+  exact question_encoding_first_error reads.expected input.limits error journal failed converted
+
+theorem actual_continued_anchor_json_error {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+    {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : Continuation.ContinuedRead host serde tx ns intent now input)
+    (error : SandproofUnloadFirstObservation.serde_json.error.Error) (journal : JournalError)
+    (failed : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Err error))
+    (converted : ParentCalls.journalFromJsonError error = .ok journal) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+      .ok (.Err journal) := by
+  rw [Continuation.actual_continued_reaches_exact_question reads]
+  exact question_encoding_first_error reads.expected input.limits error journal failed converted
+
+end SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.anchor_json_error_skips_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.actual_first_anchor_json_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.actual_continued_anchor_json_error

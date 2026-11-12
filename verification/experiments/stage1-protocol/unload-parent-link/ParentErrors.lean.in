@@ -1,0 +1,912 @@
+import ParentSuccess
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+variable [Representations] [calls : ParentCalls]
+
+/-- Changing the final complete-anchor encoder arbitrarily cannot change this
+first error. In particular the encoder may diverge; the actual parent still
+returns the error, so the question's first call is not evaluated. -/
+def NoQuestion {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) (error : JournalError) : Prop :=
+  ∀ encode,
+    letI : ParentCalls := { calls with encodeCompleteSourceAnchor := encode }
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input = .ok (.Err error)
+
+structure Selected {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) where
+  sessionIndex : Usize
+  entryIndex : Usize
+  session : Session
+  entry : Entry
+  state : WorkState
+  localValue : Local
+  originEntry : Entry
+  sourceIncarnation : sandproof_protocol.lifecycle.identity.IncarnationId
+  captureId : sandproof_protocol.lifecycle.identity.CaptureId
+  boot : HostEpoch
+  context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+  find : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Ok (some (sessionIndex, entryIndex)))
+  getSession : input.inbox.sessions.val[sessionIndex.val]? = some session
+  getEntry : session.entries.val[entryIndex.val]? = some entry
+  stateRead : ParentCalls.inboxState input.inbox sessionIndex entryIndex = .ok state
+  isCurrent : state.current = true
+  nonterminal : state.terminal = false
+  noResolution : entry.unload_resolution = none
+  unload : intent.request.operation = .Unload sourceIncarnation captureId
+  bootObservation : input.inbox.host_epoch_observation = some boot
+  activeObservation : input.active = some boot
+  bootMatch : ParentCalls.equalHostObservation boot boot = .ok true
+  localBinding : state.«local» = some localValue
+  originRead : ParentCalls.sessionExecutionOrigin session = .ok (some originEntry)
+  cloneOrigin : ParentCalls.cloneCompleteIntent originEntry.intent = .ok originEntry.intent
+  contextRead : ParentCalls.inboxContext input.inbox.config = .ok context
+
+structure FirstBase {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends Selected host serde tx ns intent now input where
+  base : Ready
+  native : Native
+  baseRead : ParentCalls.readBaseSnapshot tx ns input.world originEntry.intent context = .ok (.Ok base)
+  nativePresent : base.view.native = some native
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok true
+  historicalRunning : base.view.historical_result = some (.Running native.generation)
+  historicalMatch : ParentCalls.equalOperationResult (.Running native.generation) (.Running native.generation) = .ok true
+  live : ParentCalls.checkLiveNative native localValue intent.accepted_version session.current_version now = .ok true
+
+structure FirstSource {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends FirstBase host serde tx ns intent now input where
+  source : Process
+  sourceRead : ParentCalls.readOriginalSource host serde tx ns input.world localValue.sandbox = .ok (.Ok source)
+  sameBootText : ParentCalls.equalBootText source.boot_id boot.registration.boot_id = .ok true
+  nonzeroPid : source.pid ≠ 0#u32
+  nonzeroTicks : source.start_time_ticks ≠ 0#u64
+
+structure Startup {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends FirstSource host serde tx ns intent now input where
+  actions : Actions
+  receipts : Receipts
+  connection : rusqlite.Connection
+  startupRead : ParentCalls.readOriginalStartupRecords host serde tx ns input.world localValue = .ok (.Ok (actions, receipts))
+  connectionRead : ParentCalls.transactionConnection tx = .ok connection
+
+structure Options {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends Startup host serde tx ns intent now input where
+  options : host_contract.CreateOptions
+  optionsRead : ParentCalls.readCreateOptions connection ns localValue.sandbox = .ok (.Ok options)
+
+structure Found {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) where
+  s : Usize
+  e : Usize
+  session : Session
+  state : WorkState
+  find : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Ok (some (s, e)))
+  getSession : input.inbox.sessions.val[s.val]? = some session
+  stateRead : ParentCalls.inboxState input.inbox s e = .ok state
+
+structure NativeRead {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends Selected host serde tx ns intent now input where
+  base : Ready
+  native : Native
+  baseRead : ParentCalls.readBaseSnapshot tx ns input.world originEntry.intent context = .ok (.Ok base)
+  nativePresent : base.view.native = some native
+
+structure BeforeLive {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends NativeRead host serde tx ns intent now input where
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok true
+  historicalRunning : base.view.historical_result = some (.Running native.generation)
+  historicalMatch : ParentCalls.equalOperationResult (.Running native.generation) (.Running native.generation) = .ok true
+
+structure Continued {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends NativeRead host serde tx ns intent now input where
+  connection : rusqlite.Connection
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok false
+  connectionRead : ParentCalls.transactionConnection tx = .ok connection
+
+structure EntryReady {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends Found host serde tx ns intent now input where
+  entry : Entry
+  sourceIncarnation : sandproof_protocol.lifecycle.identity.IncarnationId
+  captureId : sandproof_protocol.lifecycle.identity.CaptureId
+  getEntry : session.entries.val[e.val]? = some entry
+  isCurrent : state.current = true
+  nonterminal : state.terminal = false
+  noResolution : entry.unload_resolution = none
+  unload : intent.request.operation = .Unload sourceIncarnation captureId
+
+structure BootReady {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends EntryReady host serde tx ns intent now input where
+  boot : HostEpoch
+  bootObservation : input.inbox.host_epoch_observation = some boot
+  activeObservation : input.active = some boot
+  bootMatch : ParentCalls.equalHostObservation boot boot = .ok true
+
+structure BeforeEncoding {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (intent : Intent) (now : I64) (input : SourceSnapshot)
+    extends Options host serde tx ns intent now input where
+  credential : Credential
+  credentialRead : ParentCalls.readCredential connection input.world ns localValue.sandbox true = .ok (.Ok (some credential))
+  sameGeneration : credential.1 = native.generation
+  cloneUnload : ParentCalls.cloneCompleteIntent intent = .ok intent
+  cloneNode : ParentCalls.cloneNode input.inbox.config.node = .ok input.inbox.config.node
+  cloneRegistration : ParentCalls.cloneHostRegistration boot.registration = .ok boot.registration
+  cloneSource : ParentCalls.cloneProcessIdentity source = .ok source
+
+variable {E : Type} {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
+variable {tx : rusqlite.transaction.Transaction} {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+
+theorem base_error_skips_question (reads : Selected host serde tx ns intent now input)
+    (error : JournalError) (failed : ParentCalls.readBaseSnapshot tx ns input.world reads.originEntry.intent reads.context = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input error := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, failed,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.base_error_skips_question
+
+theorem source_error_skips_question (reads : FirstBase host serde tx ns intent now input)
+    (error : JournalError) (failed : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input error := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, failed, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch, reads.live,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_error_skips_question
+
+theorem startup_error_skips_question (reads : FirstSource host serde tx ns intent now input)
+    (error : JournalError) (failed : ParentCalls.readOriginalStartupRecords host serde tx ns input.world reads.localValue = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input error := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.sourceRead, failed, reads.sameBootText, reads.nonzeroPid,
+    reads.nonzeroTicks, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead, reads.nativePresent,
+    reads.historicalRunning, reads.completedOriginal, reads.historicalMatch, reads.live, reads.noResolution,
+    Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.startup_error_skips_question
+
+theorem options_error_maps_to_corrupt_and_skips_question (reads : Startup host serde tx ns intent now input)
+    (error : host_contract.AdmissionError) (failed : ParentCalls.readCreateOptions reads.connection ns reads.localValue.sandbox = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.sourceRead, reads.startupRead, failed, reads.sameBootText,
+    reads.nonzeroPid, reads.nonzeroTicks, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch, reads.live,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.options_error_maps_to_corrupt_and_skips_question
+
+theorem credential_error_skips_question (reads : Options host serde tx ns intent now input)
+    (error : JournalError) (failed : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input error := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.sourceRead, reads.startupRead, reads.optionsRead, failed,
+    reads.sameBootText, reads.nonzeroPid, reads.nonzeroTicks, reads.getEntry, reads.originRead, reads.cloneOrigin,
+    reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch,
+    reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_error_skips_question
+
+theorem lookup_error_skips_question (error : JournalError) (failed : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input (error) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, failed, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, core.option.Option.as_ref,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.lookup_error_skips_question
+
+theorem lookup_absent_skips_question (missing : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Ok none)) :
+    NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, missing, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, core.option.Option.as_ref,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.lookup_absent_skips_question
+
+theorem noncurrent_skips_question (reads : Found host serde tx ns intent now input) (notCurrent : reads.state.current = false) :
+    NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, core.option.Option.as_ref,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, uncurry_apply_pair, reads.getSession,
+    reads.stateRead, notCurrent, Bool.false_eq_true, ↓reduceIte]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.noncurrent_skips_question
+
+theorem terminal_skips_question (reads : Found host serde tx ns intent now input) (current : reads.state.current = true) (terminal : reads.state.terminal = true) :
+    NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, core.option.Option.as_ref,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, uncurry_apply_pair, reads.getSession,
+    reads.stateRead, current, ↓reduceIte, terminal]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.terminal_skips_question
+
+theorem missing_native_skips_question (reads : Selected host serde tx ns intent now input) (ready : Ready) (base : ParentCalls.readBaseSnapshot tx ns input.world reads.originEntry.intent reads.context = .ok (.Ok ready)) (missing : ready.view.native = none) :
+    NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, base, missing,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.missing_native_skips_question
+
+theorem missing_history_skips_question (reads : NativeRead host serde tx ns intent now input) (completed : ParentCalls.hasCompletedOriginalExecution reads.native reads.localValue = .ok true) (missing : reads.base.view.historical_result = none) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, missing, ite_self, completed, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.missing_history_skips_question
+
+theorem live_rejection_skips_question (reads : BeforeLive host serde tx ns intent now input) (rejected : ParentCalls.checkLiveNative reads.native reads.localValue intent.accepted_version reads.session.current_version now = .ok false) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch, rejected, ite_self,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.live_rejection_skips_question
+
+theorem continued_error_skips_question (reads : Continued host serde tx ns intent now input) (error : JournalError) (failed : ParentCalls.readContinuedRecords host serde reads.connection input.world ns reads.localValue reads.native = .ok (.Err error)) :
+    NoQuestion host serde tx ns intent now input (error) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, reads.completedOriginal, failed, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.continued_error_skips_question
+
+theorem continued_absent_skips_question (reads : Continued host serde tx ns intent now input) (missing : ParentCalls.readContinuedRecords host serde reads.connection input.world ns reads.localValue reads.native = .ok (.Ok none)) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, reads.completedOriginal, missing, ite_self, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.continued_absent_skips_question
+
+theorem source_boot_mismatch_skips_question (reads : FirstBase host serde tx ns intent now input) (source : Process) (loaded : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source)) (different : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok false) :
+    NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, loaded, different, reads.getEntry, reads.originRead, reads.cloneOrigin,
+    reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch,
+    reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_boot_mismatch_skips_question
+
+theorem source_zero_pid_skips_question (reads : FirstBase host serde tx ns intent now input) (source : Process) (loaded : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source)) (sameBoot : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok true) (zero : source.pid = 0#u32) :
+    NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, loaded, sameBoot, zero, ite_self, reads.getEntry, reads.originRead,
+    reads.cloneOrigin, reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal,
+    reads.historicalMatch, reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_zero_pid_skips_question
+
+theorem source_zero_ticks_skips_question (reads : FirstBase host serde tx ns intent now input) (source : Process) (loaded : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source)) (sameBoot : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok true) (pid : source.pid ≠ 0#u32) (zero : source.start_time_ticks = 0#u64) :
+    NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, loaded, sameBoot, pid, zero, ite_self, reads.getEntry, reads.originRead,
+    reads.cloneOrigin, reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal,
+    reads.historicalMatch, reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_zero_ticks_skips_question
+
+theorem credential_absent_skips_question (reads : Options host serde tx ns intent now input) (missing : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Ok none)) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.sourceRead, reads.startupRead, reads.optionsRead, missing,
+    reads.sameBootText, reads.nonzeroPid, reads.nonzeroTicks, ite_self, reads.getEntry, reads.originRead,
+    reads.cloneOrigin, reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal,
+    reads.historicalMatch, reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_absent_skips_question
+
+theorem credential_generation_mismatch_skips_question (reads : Options host serde tx ns intent now input) (credential : Credential) (loaded : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Ok (some credential))) (different : credential.1 ≠ reads.native.generation) :
+    NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  rcases credential with ⟨generation, secret⟩
+  have differentValues : generation.val ≠ reads.native.generation.val :=
+    fun same => different (UScalar.eq_of_val_eq same)
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.sourceRead, reads.startupRead, reads.optionsRead, loaded,
+    reads.sameBootText, reads.nonzeroPid, reads.nonzeroTicks, reads.getEntry, reads.originRead, reads.cloneOrigin,
+    reads.baseRead, reads.nativePresent, reads.historicalRunning, reads.completedOriginal, reads.historicalMatch,
+    reads.live, differentValues, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_generation_mismatch_skips_question
+
+theorem resolved_entry_skips_question (reads : Found host serde tx ns intent now input) (entry : Entry) (current : reads.state.current = true) (nonterminal : reads.state.terminal = false) (indexed : reads.session.entries.val[reads.e.val]? = some entry) (resolved : entry.unload_resolution.isSome = true) :
+    NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, core.option.Option.as_ref,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_tc_ok, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, uncurry_apply_pair,
+    reads.getSession, reads.stateRead, current, ↓reduceIte, nonterminal, Bool.false_eq_true, indexed, resolved]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.resolved_entry_skips_question
+
+theorem bootstrap_absent_skips_question (reads : EntryReady host serde tx ns intent now input) (missing : input.inbox.host_epoch_observation = none) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    missing, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reduceCtorEq, imp_self, implies_true,
+    core.cmp.impls.PartialEqShared.eq, capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq,
+    Bool.not_eq_true, Bool.decide_eq_false, controller.lifecycle_inbox.model.Session.current_execution_origin,
+    bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_tc_ok, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, uncurry_apply_pair,
+    reads.getSession, reads.stateRead, reads.isCurrent, ↓reduceIte, reads.nonterminal, Bool.false_eq_true,
+    reads.getEntry, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.bootstrap_absent_skips_question
+
+theorem active_absent_skips_question (reads : EntryReady host serde tx ns intent now input) (boot : HostEpoch) (observed : input.inbox.host_epoch_observation = some boot) (missing : input.active = none) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    observed, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, missing, Bool.not_eq_true, Bool.decide_eq_false, bind_tc_ok,
+    Bool.not_false, controller.lifecycle_inbox.model.Session.current_execution_origin, reduceCtorEq, imp_self,
+    implies_true, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, ↓reduceIte, uncurry_apply_pair,
+    reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal, Bool.false_eq_true, reads.getEntry,
+    reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.active_absent_skips_question
+
+theorem active_mismatch_skips_question (reads : EntryReady host serde tx ns intent now input) (boot active : HostEpoch) (observed : input.inbox.host_epoch_observation = some boot) (present : input.active = some active) (different : ParentCalls.equalHostObservation active boot = .ok false) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    observed, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, present, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin, reduceCtorEq, imp_self, implies_true, bne_iff_ne,
+    ne_eq, UScalar.neq_to_neq_val, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    ite_not, core.convert.FromSame.from, bind_tc_ok, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, different,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.getEntry, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.active_mismatch_skips_question
+
+theorem local_absent_skips_question (reads : BootReady host serde tx ns intent now input) (missing : reads.state.«local» = none) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin, reduceCtorEq, imp_self, implies_true, bne_iff_ne,
+    ne_eq, UScalar.neq_to_neq_val, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    ite_not, core.convert.FromSame.from, bind_tc_ok, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch,
+    Bool.true_eq_false, ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent,
+    reads.nonterminal, Bool.false_eq_true, missing, reads.getEntry, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.local_absent_skips_question
+
+theorem execution_origin_absent_skips_question (reads : BootReady host serde tx ns intent now input) (localValue : Local) (localPresent : reads.state.«local» = some localValue) (missing : ParentCalls.sessionExecutionOrigin reads.session = .ok none) :
+    NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin, reduceCtorEq, imp_self, implies_true, bne_iff_ne,
+    ne_eq, UScalar.neq_to_neq_val, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    ite_not, core.convert.FromSame.from, bind_tc_ok, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch,
+    Bool.true_eq_false, ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent,
+    reads.nonterminal, Bool.false_eq_true, localPresent, reads.getEntry, missing, reads.noResolution,
+    Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.execution_origin_absent_skips_question
+
+theorem option_json_error_skips_question (reads : BeforeEncoding host serde tx ns intent now input)
+    (error : serde_json.error.Error) (journal : JournalError)
+    (failed : ParentCalls.encodeCreateOptions reads.options = .ok (.Err error))
+    (converted : ParentCalls.journalFromJsonError error = .ok journal) :
+    NoQuestion host serde tx ns intent now input journal := by
+  cases hc : reads.credential with
+  | mk generation secret =>
+    have same : generation.val = reads.native.generation.val := by
+      simpa [hc] using congrArg (fun value : U64 => value.val) reads.sameGeneration
+    intro encode
+    simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, reads.connectionRead,
+    controller.admission.read_create_options, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val, reads.cloneUnload,
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone, reads.cloneNode,
+    capture.HostEpochRegistration.Insts.CoreCloneClone.clone, capture.SourceProcessIdentity.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.source_work.snapshot.encode_source_options,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from, ite_not, core.convert.FromSame.from, bind_assoc,
+    Bool.not_eq_eq_eq_not, Bool.not_true, reads.bootMatch, reads.cloneRegistration, Bool.true_eq_false, ↓reduceIte,
+    uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal, Bool.false_eq_true,
+    reads.localBinding, reads.sourceRead, reads.startupRead, reads.optionsRead, reads.credentialRead, hc, same, failed,
+    converted, reads.sameBootText, reads.nonzeroPid, reads.nonzeroTicks, reads.cloneSource, reads.getEntry,
+    reads.originRead, reads.cloneOrigin, reads.baseRead, reads.nativePresent, reads.historicalRunning,
+    reads.completedOriginal, reads.historicalMatch, reads.live, reads.noResolution, Option.isSome_none]
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.option_json_error_skips_question
+
+end SandboxModel.Stage1Protocol.UnloadParentLink.Errors

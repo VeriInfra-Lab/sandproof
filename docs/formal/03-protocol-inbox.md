@@ -222,3 +222,11 @@ World 的普通共享借用／克隆表示复用已有标准 Create 提供方，
 每次读取的候选来自哪个事务、终止后下一次读到哪个候选，仍须由真实调用顺序及 V5
 责任连接。将小段机械委托按既有 B4 条件核对时，覆盖记录必须列出具体转调语句和
 尚未抽取的外壳，不称整个 trait、数据库或端点已由机器证明。
+
+卸载来源的父调用连接使用[独立连接包](../../verification/experiments/stage1-protocol/unload-parent-link/README.md)
+复用原完整请求、来源行、原 Create 选项及启动/继续回执规格。共享的生成 transaction
+和完整 World 直接传递，原 connection 来自该 transaction；独立生成的错误类型须
+保持全部构造器与 payload。正常请求连接与首错/短路分别证明：选项编码失败不调用
+最终 question，anchor 编码失败不调用最终摘要，均不抹去已发生的前缀读取。
+句柄同一不证明物理 BEGIN/提交、options 首次 INSERT 的历史或真实资源存在；
+这些责任仍由 V5/V6 及原逐符号接口提供，不能从本连接推出持久收件或完整 V3。

@@ -1,0 +1,109 @@
+import OptionsParentLink
+import StartupCallBinding
+import StartupSqliteLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+open SandproofOriginalSourceRowsRust
+
+/-- Both provider views use the original generated transaction and World.
+The other types remain owned by their existing providers. -/
+@[reducible] def startupRepresentations (base : SandproofUnloadStartupJoint.Representations) :
+    SandproofUnloadStartupJoint.Representations :=
+  { base with
+    ty0 := core.io.error.Error
+    ty2 := rusqlite.error.Error
+    ty3 := rusqlite.Connection
+    ty4 := rusqlite.statement.Statement
+    ty5 := rusqlite.types.to_sql.ToSqlOutput
+    ty6 := rusqlite.row.MappedRows
+    ty7 := rusqlite.row.Row
+    ty8 := rusqlite.types.value_ref.ValueRef
+    ty9 := rusqlite.types.from_sql.FromSqlError
+    ty10 := rusqlite.transaction.Transaction
+    ty11 := sandbox_controller_core.ids.OperationId
+    ty20 := sandbox_controller_core.controller.ControllerReject
+    ty21 := sandbox_controller_core.model.World
+    ty22 := sandbox_controller_core.ids.TenantId
+    ty30 := sandproof_protocol.TenantId
+    ty31 := sandproof_protocol.SandboxId
+    ty32 := sandproof_protocol.OperationId
+    ty33 := sandproof_protocol.LogicalActionId
+    ty37 := serde_json.error.Error
+    ty39 := CrashPoint }
+
+@[reducible] def startupParentBase (base : SandproofUnloadFirstObservation.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    SandproofUnloadFirstObservation.Representations :=
+  { base with
+    sandbox_controller_core_model_EffectId :=
+      @SandproofUnloadStartupJoint.sandbox_controller_core.model.EffectId (startupRepresentations startup)
+    sandproof_protocol_ResourceRef := SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef }
+
+def sharedStartupCarriers (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.StartupCarriers :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  { tx := rfl, world := rfl, localSandbox := rfl, localOwner := rfl,
+    localOperation := rfl, effect := rfl, owner := rfl, sandbox := rfl,
+    operation := rfl, logicalAction := rfl, resource := rfl }
+
+def sharedStartupErrors (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.StartupErrorCarriers :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  { io := rfl, sqlite := rfl, json := rfl, contract := rfl, crash := rfl, reject := rfl }
+
+theorem startup_and_source_share_transaction
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ tx : rusqlite.transaction.Transaction,
+    cast (sharedStartupCarriers encoding base options startup).tx tx = tx := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intro tx
+  rfl
+
+theorem startup_and_source_share_world
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ world : sandbox_controller_core.model.World,
+    cast (sharedStartupCarriers encoding base options startup).world world = world := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase base startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intro world
+  rfl
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.startup_and_source_share_transaction
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.startup_and_source_share_world

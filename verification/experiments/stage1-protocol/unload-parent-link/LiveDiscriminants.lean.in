@@ -1,0 +1,16 @@
+import SandproofSourceLive.Types
+
+-- Reuse the fixed backend's exact discriminator definition. Its automatically
+-- named instance collides with the other extraction views; name that instance
+-- explicitly. No generated type, function body or discriminator value changes.
+run_cmd do
+  let commands ← Lean.Elab.Command.liftTermElabM
+    (Aeneas.Discriminant.generateReadDiscriminantCmds
+      ``SandproofSourceLiveRust.sandbox_controller_core.model.Phase .Isize none)
+  match commands with
+  | definition :: _ => Lean.Elab.Command.elabCommand definition
+  | [] => throwError "fixed discriminator helper did not generate its definition"
+
+instance SandproofSourceLiveRust.phaseDiscriminant :
+    Aeneas.Std.Discriminant SandproofSourceLiveRust.sandbox_controller_core.model.Phase Aeneas.Std.Isize where
+  read_discriminant := SandproofSourceLiveRust.sandbox_controller_core.model.Phase.read_discriminant
