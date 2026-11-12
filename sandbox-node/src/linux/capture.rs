@@ -105,7 +105,7 @@ impl LinuxWorker {
                     return Err("Pause action differs from original occupied source".into());
                 }
                 let slot = self.runtime_host_slot(context.position, *vm)?;
-                let _guard = slot.helper_gate.try_acquire(Some(&slot))?;
+                let guard = slot.helper_gate.try_acquire(Some(&slot))?;
                 self.require_fence(*sandbox, *epoch, false)?;
                 if self.original_source_context(&request.source_resource)? != context {
                     return Err("Pause source context changed before execution".into());
@@ -114,7 +114,7 @@ impl LinuxWorker {
                     crate::source_observation::observe(self, Some(protected), original_source)?;
                 let runtime = self.runtime(*sandbox, *vm)?;
                 let expected = crate::source_observation::expected_source(original_source)?;
-                Ok((context, _guard, before, runtime, expected, sandbox, epoch))
+                Ok((context, guard, before, runtime, expected, sandbox, epoch))
             },
             |(context, _guard, before, runtime, expected, sandbox, epoch)| {
                 let paused = operation(&runtime, request.source_resource.id.as_str(), &expected)?;
