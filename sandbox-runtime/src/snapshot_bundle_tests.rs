@@ -85,12 +85,18 @@ impl Drop for Fixture {
 #[test]
 fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
     let fixture = Fixture::new();
-    let original = fixture.open().unwrap().measurements();
     let limits = BundleReadLimits {
         state_bytes: 17,
         memory_bytes: 17,
         disk_bytes: 17,
     };
+    let original = fixture
+        .store
+        .open_bundle_measuring(fixture.key, limits, |_, _| {
+            panic!("successful publication lost its verified measurements")
+        })
+        .unwrap()
+        .measurements();
     let cached = fixture
         .store
         .open_bundle_measuring(fixture.key, limits, |_, _| {

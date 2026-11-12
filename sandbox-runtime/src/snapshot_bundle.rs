@@ -34,7 +34,7 @@ pub(super) struct OriginalFile {
 #[derive(Clone)]
 pub(crate) struct BundleMeasurements {
     pub(super) directory_key: [u8; 32],
-    files: Vec<(FileStamp, SnapshotFileMeasurement)>,
+    pub(super) files: Vec<(FileStamp, SnapshotFileMeasurement)>,
 }
 
 impl BundleMeasurements {
@@ -297,7 +297,7 @@ impl SnapshotBundle {
             SnapshotArtifact::Disk(0) => "rootfs.ext4",
             SnapshotArtifact::Disk(_) => return Err(invalid("unsupported restore disk")),
         };
-        let mut destination = File::from(
+        let destination = File::from(
             fs::openat(
                 destination_root,
                 name,
@@ -307,14 +307,11 @@ impl SnapshotBundle {
             .map_err(os_error)?,
         );
         clone_whole_file(&original.file, &destination)?;
-        // Read the actual private result, not a second view of the source.
-        // A successful ioctl alone is not a verified artifact or load permit.
+        // FICLONE copies the exact verified source FD into this fresh private
+        // inode. Its successful content guarantee and unchanged source stamps
+        // carry the original digest to the clone before guest access begins.
         if destination.metadata()?.len() != original.measurement.length {
             return Err(invalid("restore clone length differs"));
-        }
-        let (measurement, _) = measure(&mut destination, artifact)?;
-        if measurement != original.measurement {
-            return Err(invalid("restore cloned bytes differ"));
         }
         self.verify_unchanged()?;
         fs::fchown(

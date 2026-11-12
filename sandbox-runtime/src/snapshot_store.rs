@@ -141,6 +141,7 @@ pub struct SnapshotStage {
     stage_name: String,
     owner: u32,
     copied: Vec<CopiedFile>,
+    verified_bundle: Arc<Mutex<Option<bundle::BundleMeasurements>>>,
 }
 
 /// Physical file and sync facts only. This does not permit stopping the source
@@ -378,6 +379,7 @@ impl SnapshotStore {
             stage_name,
             owner: self.owner,
             copied: Vec::new(),
+            verified_bundle: Arc::clone(&self.verified_bundle),
         })
     }
 }
@@ -560,6 +562,26 @@ impl SnapshotStage {
         .map_err(os_error)?;
         self.parent.sync_all()?;
         matches_entry(&self.parent, OsStr::new(&final_name), &self.directory)?;
+        *self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))? =
+            Some(bundle::BundleMeasurements {
+                directory_key: self.directory_key,
+                files: self
+                    .copied
+                    .iter()
+                    .filter(|entry| {
+                        matches!(
+                            entry.measurement.artifact,
+                            SnapshotArtifact::State
+                                | SnapshotArtifact::Memory
+                                | SnapshotArtifact::Disk(0)
+                        )
+                    })
+                    .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
+                    .collect(),
+            });
         Ok(PublishedSnapshotFiles {
             directory_key: self.directory_key,
             files: expected.to_vec(),

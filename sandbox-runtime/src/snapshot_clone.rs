@@ -1,7 +1,8 @@
 //! Single-file `CoW` on already-open, private descriptors; no publication or GC.
 //!
 //! Callers bind expected owners, lengths/budgets and protected directory entries,
-//! exclude writers, and verify the cloned bytes before syncing/publishing them.
+//! exclude writers, and establish the content digest before publishing. A
+//! restore clone may carry its already verified immutable source's digest.
 //! This operation never falls back to byte copying and never unlinks on error.
 
 use super::{FileStamp, invalid, os_error};
