@@ -162,13 +162,17 @@ impl SnapshotStore {
         )
             -> Result<(SnapshotFileMeasurement, FileStamp), RuntimeError>,
     ) -> Result<SnapshotBundle, RuntimeError> {
-        let cached = self
+        // One verification owns the cache until all checks finish. Consume the
+        // previous entry first: every error leaves it invalid, and an older
+        // concurrent open cannot reinstall a result after another open failed.
+        // This store-local lock is never the controller's application lock.
+        let mut cache = self
             .verified_bundle
             .lock()
-            .map_err(|_| invalid("bundle verification cache unavailable"))?
-            .as_ref()
-            .filter(|cached| cached.directory_key == directory_key)
-            .cloned();
+            .map_err(|_| invalid("bundle verification cache unavailable"))?;
+        let cached = cache
+            .take()
+            .filter(|cached| cached.directory_key == directory_key);
         let name = key_name("capture-", &directory_key);
         let directory = File::from(
             fs::openat(
@@ -234,18 +238,14 @@ impl SnapshotStore {
             files,
         };
         opened.verify_unchanged()?;
-        *self
-            .verified_bundle
-            .lock()
-            .map_err(|_| invalid("bundle verification cache unavailable"))? =
-            Some(BundleMeasurements {
-                directory_key,
-                files: opened
-                    .files
-                    .iter()
-                    .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
-                    .collect(),
-            });
+        *cache = Some(BundleMeasurements {
+            directory_key,
+            files: opened
+                .files
+                .iter()
+                .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
+                .collect(),
+        });
         Ok(opened)
     }
 }
