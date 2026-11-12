@@ -22,9 +22,11 @@ import sqlite3
 import stat
 
 MIB = 1024 * 1024
-_envelope = _runpy.run_path(
+_physical_storage = _runpy.run_path(
     str(Path(__file__).resolve().parents[2] / "tools/template_physical_storage.py")
-)["envelope"]
+)
+_envelope = _physical_storage["envelope"]
+activation_budget = _physical_storage["activation_budget"]
 
 
 def maintenance_profile(*,slots,inbox_sessions,checkpoint_tail_inputs):
@@ -197,7 +199,8 @@ def provision_runtime(settings):
     if len(devices) != 1:
         raise ValueError("test physical profile requires one filesystem")
     free = os.statvfs(coordination.parent)
-    if free.f_bavail * free.f_frsize < 2 * peak_bytes or free.f_favail < 2 * peak_inodes:
+    budget = activation_budget(profile)
+    if free.f_bavail * free.f_frsize < budget['required_bytes'] or free.f_favail < budget['required_inodes']:
         raise RuntimeError("insufficient bytes/inodes for complete KVM profile; test not executed")
     descriptor = os.open(coordination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "wb") as output:

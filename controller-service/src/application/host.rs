@@ -392,6 +392,16 @@ pub trait HostCapacity {
     /// Rejects an unavailable physical disk observation.
     fn available_disk_bytes(&self) -> Result<u64, ApplicationError>;
 
+    /// # Errors
+    /// Refuses an unreadable, mismatched or inactive snapshot volume.
+    fn lifecycle_capture_space(
+        &self,
+        _profile: &crate::physical_storage::PhysicalStorageProfile,
+        _pool: &crate::physical_storage::PhysicalPool,
+    ) -> Result<crate::physical_storage::CaptureSpace, ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
     /// Fresh trusted host CPU and available memory observation. Diagnostic
     /// adapters without this capability explicitly refuse node-health reports.
     /// # Errors

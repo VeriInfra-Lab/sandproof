@@ -154,6 +154,15 @@ fn sealed_registry_hash_is_reused_but_restart_and_mutation_force_revalidation() 
     let reused = bytes_read() - before;
     assert!(reused < 64 * 1024, "reused hash read {reused} bytes");
 
+    let original = File::open(&binding.rootfs.path).unwrap();
+    node.verify_cold_rootfs(&binding.rootfs, &original).unwrap();
+    let replacement = directory.path().join("different-rootfs-inode");
+    fs::copy(&binding.rootfs.path, &replacement).unwrap();
+    assert!(matches!(
+        node.verify_cold_rootfs(&binding.rootfs, &File::open(&replacement).unwrap()),
+        Err(sandbox_runtime::RuntimeError::IdentityMismatch(_))
+    ));
+
     let restarted = worker(directory.path());
     let before = bytes_read();
     restarted.validate_artifact(&binding.rootfs).unwrap();
@@ -173,6 +182,7 @@ fn sealed_registry_hash_is_reused_but_restart_and_mutation_force_revalidation() 
     file.set_modified(metadata.modified().unwrap()).unwrap();
     node.cache_candidate_verification(binding, &verification);
     assert!(node.validate_artifact(&binding.rootfs).is_err());
+    assert!(node.verify_cold_rootfs(&binding.rootfs, &original).is_err());
     let fresh = worker(directory.path());
     fresh.cache_candidate_verification(binding, &verification);
     assert!(fresh.validate_artifact(&binding.rootfs).is_err());

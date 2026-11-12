@@ -17,6 +17,7 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
+from tools.template_physical_storage import activation_budget, envelope
 
 
 class CaptureProvisionTests(unittest.TestCase):
@@ -179,15 +180,33 @@ class RuntimeServicesTests(unittest.TestCase):
         events=[]
         instance.service_storage=Mock()
         instance.service_storage.start.side_effect=lambda:events.append('sample-start')
-        instance.native_pools=[{}]
+        instance.native_pools=[{},{}]
         instance.center_config=dict(redis={})
         instance.processes=Mock(children={'redis':Mock()})
         instance.processes.start.side_effect=lambda role,**_:events.append('start-'+role)
         instance.processes.initialize.side_effect=lambda role:events.append('initialize-'+role)
-        with patch.object(services,'_wait_redis'):
-            instance.start()
+        with tempfile.TemporaryDirectory() as temporary:
+            common=Path(temporary)
+            assets=common/'center/assets'
+            assets.mkdir(parents=True)
+            source,target=Path('/pinned/source'),assets/'asset'
+            instance.layout=dict(common=common,center_identity=(1001,1001))
+            instance.pending_assets=[(source,target,'fixture-hash')]
+
+            def copy_asset(original, staged, *, identity, expected):
+                self.assertEqual((original,identity,expected),(source,(1001,1001),'fixture-hash'))
+                self.assertEqual(staged.parent.parent,common)
+                self.assertEqual(list(assets.iterdir()),[])
+                staged.write_bytes(b'complete asset')
+                events.append('copy-assets')
+
+            with (patch.object(services,'_wait_redis'),
+                  patch.object(services,'_copy',side_effect=copy_asset)):
+                instance.start()
+            self.assertEqual(target.read_bytes(),b'complete asset')
+            self.assertEqual(list(common.iterdir()),[common/'center'])
         self.assertEqual(events,['sample-start','start-redis','initialize-host-0',
-            'start-host-0','initialize-center','start-center'])
+            'initialize-host-1','copy-assets','start-host-0','start-host-1','initialize-center','start-center'])
         instance.service_storage.start.assert_called_once()
 
     def test_storage_sampler_is_drained_even_when_an_original_role_exit_is_unknown(self):
@@ -581,7 +600,7 @@ class RuntimeServicesTests(unittest.TestCase):
             with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
                     f_bavail=10**12,f_frsize=4096,f_favail=10**9)):
                 with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling; no quota is reduced'):
-                    bind(2)
+                    bind(4)
                 self.assertEqual(native['bounded_host']['physical_storage']['pools'],original)
                 self.assertEqual(native['bounded_host']['physical_storage']['host_template_caches'],[])
                 profile=bind(1)
@@ -591,15 +610,15 @@ class RuntimeServicesTests(unittest.TestCase):
                 for invalid in (0,True,PREPARED_CI_MAX_ACTIVATION_BYTES+1):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
-                generic_profile=bind(2,None)
-            self.assertLessEqual(2*services.envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
+                generic_profile=bind(4,None)
+            self.assertLessEqual(activation_budget(profile)['required_bytes'],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(profile['pools'],original)
             # General template/build probes keep their own original approved
             # envelope and actual free-space check, not the two-task CI ceiling.
-            self.assertGreater(2*services.envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertGreater(activation_budget(generic_profile)['required_bytes'],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(generic_profile['pools'],original)
 
-    def test_explicit_capture_bytes_and_inodes_still_require_the_full_double_envelope(self):
+    def test_explicit_capture_bytes_and_inodes_keep_growth_and_precise_activation_boundary(self):
         from tools.runtime_acceptance_budget import profile_declaration
         gib=1024**3
         with tempfile.TemporaryDirectory(dir=Path('/tmp').resolve(),prefix='rs-') as directory:
@@ -619,20 +638,31 @@ class RuntimeServicesTests(unittest.TestCase):
             for value in (True,0,native['bounded_host']['physical_storage']['filesystem_overhead_inodes']-1):
                 with self.subTest(inodes=value),self.assertRaisesRegex(ValueError,'inode provision'):
                     profile_declaration([native],[catalog],layout,physical_inodes=value,**copy.deepcopy(kwargs))
-            with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling'):
-                profile_declaration([native],[catalog],layout,physical_inodes=131072,
-                                    activation_ceiling_bytes=200*gib,**copy.deepcopy(kwargs))
             expected=profile_declaration([native],[catalog],layout,physical_inodes=131072,
                                         activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
-            needed,inodes=services.envelope(expected)
-            for free,files in ((2*needed-1,2*inodes),(2*needed,2*inodes-1)):
+            needed,inodes=envelope(expected)
+            budget=activation_budget(expected)
+            required=budget['required_bytes']
+            self.assertLess(required, 2*needed)
+            with self.assertRaisesRegex(ValueError,'exceeds prepared CI ceiling'):
+                profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                    activation_ceiling_bytes=required-1,**copy.deepcopy(kwargs))
+            self.assertEqual(profile_declaration([native],[catalog],layout,physical_inodes=131072,
+                                    activation_ceiling_bytes=required,**copy.deepcopy(kwargs)), expected)
+            for free,files in ((required-1,2*inodes),(required,2*inodes-1)):
                 with self.subTest(free=free,files=files),patch.object(services.os,'statvfs',
                         return_value=SimpleNamespace(f_bavail=free,f_frsize=1,f_favail=files)), \
-                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes'):
+                        self.assertRaisesRegex(RuntimeError,'complete physical bytes/inodes') as error:
                     services._bind_profile([native],[catalog],layout,physical_inodes=131072,
                         activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
+                report = json.loads(str(error.exception).split(': ', 1)[1])
+                self.assertEqual((report['missing_bytes'], report['missing_inodes']),
+                                 (required-free, 2*inodes-files))
+                self.assertEqual(sum(item['bytes'] for item in report['parts']), needed)
+                self.assertIn(dict(kind='service_data', root=str(root/'p/s'), bytes=88*gib),
+                              report['parts'])
             with patch.object(services.os,'statvfs',return_value=SimpleNamespace(
-                    f_bavail=2*needed,f_frsize=1,f_favail=2*inodes)):
+                    f_bavail=required,f_frsize=1,f_favail=2*inodes)):
                 actual=services._bind_profile([native],[catalog],layout,physical_inodes=131072,
                     activation_ceiling_bytes=384*gib,**copy.deepcopy(kwargs))
             self.assertEqual(actual,expected)

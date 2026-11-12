@@ -38,7 +38,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import check_kvm_host as host
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 from tools.bounded_acceptance import require_bounded_host_tools
 
 
@@ -127,7 +127,7 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
     for name in host.ARTIFACTS:
         if host_config['artifacts'][name]['path'] != settings[name]:
             raise ValueError('preflight artifact differs from runtime: ' + name)
-    if host_config['min_free_disk_bytes'] < 2 * peak:
+    if host_config['min_free_disk_bytes'] < activation_budget(settings['bounded_host']['physical_storage'])['required_bytes']:
         raise ValueError('preflight omits the complete fresh physical activation peak')
     return pool, peak, inodes
 

@@ -348,21 +348,22 @@ class PublicUnloadScenario:
             assert value['session'] == self.session
         return value
 
-    def create(self, parameters):
+    def create(self, parameters, *, sequence=1):
+        assert uint(sequence, positive=True), 'explicit original request sequence required'
         assert self.create_request is None, 'one original create only'
         self.step('request-window', 200)
         window = self.read_json('GET', PREFIX + '/request-window', key=self.owner_key)
         assert set(window) == {'window'} and uint(window['window'], positive=True)
         self.window = window['window']
-        self.create_request = dict(window=self.window, sequence=1, parameters=copy.deepcopy(parameters))
+        self.create_request = dict(window=self.window, sequence=sequence, parameters=copy.deepcopy(parameters))
         self.step('create-acceptance', 202)
         self.operation_sent('create')
         result = self.read_json('POST', PREFIX + '/create', key=self.owner_key,
                                 body=self.create_request, status=202)
-        self.create_acceptance = self.acceptance(result, sequence=1, version=1)
+        self.create_acceptance = self.acceptance(result, sequence=sequence, version=1)
         self.session = result['session']
         self.current_acceptance = self.create_acceptance
-        self.sequence = 1
+        self.sequence = sequence
         self.operation_accepted()
         return copy.deepcopy(result)
 

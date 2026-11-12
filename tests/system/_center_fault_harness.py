@@ -34,7 +34,7 @@ from server_process_crash import fetch, free_loopback_port, prepare_fault_servic
 from server_unready_abort import wait_for
 from server_vm_id_capacity import check_no_resources
 from server_bounded_churn import assert_budget, database_snapshot, tree_records
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 
 MIB = 1024**2
 CASE_BYTES = 512 * 1024
@@ -212,7 +212,7 @@ class Harness:
         self.evidence_budget=services[0]
         peak, inodes = envelope(profile)
         ceiling=getattr(args,'activation_ceiling_bytes',MAX_ACTIVATION_BYTES)
-        assert 2*peak <= ceiling <= PREPARED_CI_MAX_ACTIVATION_BYTES
+        assert activation_budget(profile)['required_bytes'] <= ceiling <= PREPARED_CI_MAX_ACTIVATION_BYTES
         self.policy = dict(schema_version=1,rounds=args.rounds,case_wait_seconds=args.wait_seconds,
             checkpoint_tail_inputs=args.checkpoint_tail_inputs,
             controlled_test_debug_assertions=True,
@@ -221,7 +221,7 @@ class Harness:
             native_config_sha256=hashlib.sha256(json.dumps(self.native,sort_keys=True).encode()).hexdigest(),
             producer_sha256=digest(Path(__file__).with_name('center_host_faults.py')),
             stale_probe_sha256=args.stale_probe_sha256,
-            physical_activation_bytes=2*peak,physical_activation_inodes=2*inodes)
+            physical_activation_bytes=activation_budget(profile)['required_bytes'],physical_activation_inodes=2*inodes)
         write_once(self.root/'dk-policy.json',self.policy)
         backend = tuple_address(self.services.host_configs[0]['internal']['bind'])
         relay_address = ('127.0.0.1',free_loopback_port())

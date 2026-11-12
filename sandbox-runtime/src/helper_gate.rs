@@ -411,7 +411,7 @@ fn lock(file: &File, shared: bool) -> Result<(), RuntimeError> {
     )
     .map_err(|error| {
         if error == rustix::io::Errno::WOULDBLOCK {
-            RuntimeError::InvalidConfiguration("previous physical-slot lease is still active")
+            RuntimeError::HelperGateBusy
         } else {
             RuntimeError::Io(io::Error::from(error))
         }
@@ -620,9 +620,7 @@ impl RuntimeHelperGuard {
         self.validate_context(context)?;
         let (singleton, singleton_stage) = self.gate.inflight_paths()?;
         if self.read_cell(&singleton, None)?.is_some() || super::path_present(&singleton_stage)? {
-            return Err(RuntimeError::InvalidConfiguration(
-                "singleton helper publication is pending",
-            ));
+            return Err(RuntimeError::HelperGateBusy);
         }
         for index in 0..self.gate.max_data_routes_per_slot {
             if !self.route_idle(index)? {
@@ -878,9 +876,7 @@ impl RuntimeHelperGuard {
         if let Some(previous) = &previous
             && previous.record.process.is_alive()?
         {
-            return Err(RuntimeError::InvalidConfiguration(
-                "previous tracked helper is still alive",
-            ));
+            return Err(RuntimeError::HelperGateBusy);
         }
         let mut route_stage_dirty = false;
         for index in 0..self.gate.max_data_routes_per_slot {
@@ -1366,12 +1362,7 @@ mod tests {
         });
         started.recv().unwrap();
         drop(guard);
-        let refused = matches!(
-            acquire(&context, false),
-            Err(RuntimeError::InvalidConfiguration(
-                "previous physical-slot lease is still active"
-            ))
-        );
+        let refused = matches!(acquire(&context, false), Err(RuntimeError::HelperGateBusy));
         release.send(()).unwrap();
         owner.join().unwrap();
         assert!(refused);
@@ -1406,17 +1397,35 @@ mod tests {
         drop(untracked_lock);
         assert!(matches!(
             acquire(&context, false),
-            Err(RuntimeError::InvalidConfiguration(_))
+            Err(RuntimeError::HelperGateBusy)
         ));
         assert!(matches!(
             acquire(&context, true),
-            Err(RuntimeError::InvalidConfiguration(_))
+            Err(RuntimeError::HelperGateBusy)
         ));
         finish(child);
         if let Err(error) = acquire(&context, false) {
             panic!("completed child did not drain: {error:?}");
         }
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn helper_published_after_data_admission_refuses_relay_before_creating_a_route() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_temp, context) = fixture(1);
+        let data = acquire(&context, true).unwrap();
+        let probe = acquire(&context, true).unwrap();
+        let child = paused(&probe, &context, false);
+        assert!(matches!(
+            data.spawn_route(&context, false, "/bin/true", &[]),
+            Err(RuntimeError::HelperGateBusy)
+        ));
+        let (route, staged) = context.helper_gate.route_paths(0).unwrap();
+        assert!(!route.exists() && !staged.exists());
+        finish(child);
+        probe.finish_tracked().unwrap();
+        assert!(data.route_idle(0).unwrap());
     }
 
     #[test]

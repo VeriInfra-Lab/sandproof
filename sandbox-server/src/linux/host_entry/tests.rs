@@ -33,7 +33,7 @@ fn host_settings() -> Value {
     native["bounded_host"]["physical_storage"]["pools"][0]["chroot_base"] =
         native["chroot_base"].clone();
     native["bounded_host"]["physical_storage"]["service_data"] = json!([
-        {"root":"/fixture/capture/s", "owner_uid":0,"peak_bytes":1_073_741_824,"inode_budget":32}
+        {"root":"/fixture/capture/s", "owner_uid":0,"peak_bytes":1_073_741_824,"inode_budget":32,"on_demand_capture":true}
     ]);
     native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"] = json!(4096);
     let mut value = json!({
@@ -284,6 +284,10 @@ fn capture_requires_same_original_layout_and_reserved_material_project() {
     assert!(check(host_settings()));
     for (pointer, replacement) in [
         ("/capture/layout_parent", json!("/foreign/layout")),
+        (
+            "/native/bounded_host/physical_storage/service_data/0/on_demand_capture",
+            json!(false),
+        ),
         ("/capture/material_project/project_id", json!(0)),
         (
             "/capture/material_project/hard_bytes",

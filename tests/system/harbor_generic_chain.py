@@ -12,7 +12,7 @@ _require_assertions = _runpy.run_path(
 )["require_assertions"]
 _require_assertions()
 
-from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy
+from tools.template_build_config import acceptance_build_policy, apply_acceptance_build_policy, protected_json
 from tools.bounded_acceptance import (
     acceptance_disk_budgets, bounded_acceptance_layout, completion_build_observation,
     provision_acceptance_coordination, require_bounded_host_tools, validate_acceptance_socket_paths,
@@ -52,9 +52,11 @@ from template_build import IGZIP_HASHES
 from tools.benchmark_tasks import verify
 from tools.generic_capacity import EXPANDED_BYTES, INPUT_BYTES, plan
 from tools.benchmark_proxy import BenchmarkProxy
+from tools.service_storage_observation import observe_volume_storage
+from tools.single_host_storage import check_acceptance_volume
 from tools.template_acceptance import budgets, check_headroom, load, PROFILE
 from tools import service_cgroup
-from tools.system_acceptance import write_once,json_file
+from tools.system_acceptance import write_once,json_file,private_path
 from benchmarks.artifact_budget import add_artifact_arguments, artifact_limits_from_args
 from benchmarks.check_harbor import check_runtime, check_tasks
 from benchmarks.run_generic import run_selected, validate_oracle_mode
@@ -183,6 +185,11 @@ def select_cohort(args, tasks):
     if getattr(args, 'ci_fixtures', None) is not None:
         if args.source_kind != 'prepared-ci' or oracle_mode != 'original':
             raise ValueError('prepared CI requires original oracle and explicit source mode')
+    elif getattr(args, 'original_fixtures', None) is not None:
+        if (args.source_kind != 'prepared-original' or oracle_mode != 'original' or args.all
+                or len(selected) != 1 or args.repetitions != 1 or args.resource_pressure
+                or args.capacity_scope != 'selected'):
+            raise ValueError('prepared original runs one selected task per deployment')
     else:
         validate_source_kind(args.source_kind, selected_entries)
     if args.capacity_scope not in ('selected', 'all'):
@@ -214,7 +221,16 @@ def select_cohort(args, tasks):
 
 
 def exercise(args):
-    bounded_policy = acceptance_build_policy(getattr(args, "bounded_policy", None))
+    with contextlib.ExitStack() as evidence:
+        return exercise_with_evidence(args, evidence)
+
+
+def exercise_with_evidence(args, evidence):
+    prepared_original = getattr(args, 'original_fixtures', None) is not None
+    bounded_policy = (protected_json(args.bounded_policy) if prepared_original else
+                      acceptance_build_policy(getattr(args, "bounded_policy", None)))
+    if prepared_original and (type(bounded_policy) is not dict or set(bounded_policy) != {'runtime'}):
+        raise ValueError('prepared original requires a policy for exactly one runtime pool')
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('exclusive root Linux/KVM required')
     checkout = Path(__file__).resolve().parents[2]
@@ -223,12 +239,21 @@ def exercise(args):
     commit = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'], text=True).strip()
     lock_path = getattr(args, 'lock', None) or checkout / 'benchmarks/terminal-bench-2.0.lock.json'
     lock = verify(json.loads(lock_path.read_text()), args.registry, args.source)
-    if lock['dataset'] == 'terminal-bench@2.1' and (args.oracle_mode != 'original' or args.source_kind == PRUNED_SOURCE):
-        raise ValueError('2.0 local repairs cannot be applied to 2.1')
+    preparing_original = getattr(args, 'prepare_original_fixtures', None) is not None
+    if lock['dataset'] == 'terminal-bench@2.1':
+        if args.oracle_mode != 'original' or args.source_kind == PRUNED_SOURCE:
+            raise ValueError('2.0 local repairs cannot be applied to 2.1')
+        if not (prepared_original or preparing_original):
+            raise ValueError('prepare the original template separately before running 2.1')
     runtimes = check_runtime()
     check_tasks(lock, args.source)
     selected, oracle_mode, selected_entries, capacity_entries = select_cohort(args, lock['tasks'])
     preparing_ci = getattr(args, 'prepare_ci_fixtures', None) is not None
+    preparing = preparing_original or preparing_ci
+    if preparing_original and (lock['dataset'] != 'terminal-bench@2.1' or len(selected) != 1 or args.all
+            or args.source_kind != 'oci' or args.repetitions != 1 or args.resource_pressure
+            or args.capacity_scope != 'selected'):
+        raise ValueError('prepare one original 2.1 OCI task per independent builder deployment')
     preparation_timeout = ci_preparation_timeout(args)
     if preparing_ci:
         from benchmarks.ci_fixtures import ci_task_names
@@ -239,25 +264,34 @@ def exercise(args):
             raise ValueError('explicit two-task one-time CI preparation inputs required')
     elif getattr(args, 'ci_build_inputs', None) or getattr(args, 'ci_uv', None):
         raise ValueError('CI build inputs are only for one-time fixture preparation')
-    ci_fixtures = None
+    ci_fixture_path = getattr(args, 'ci_fixtures', None)
+    fixture_path = args.original_fixtures if prepared_original else ci_fixture_path
+    fixtures = None
     fixture_sha256 = None
-    if getattr(args, 'ci_fixtures', None) is not None:
-        from benchmarks.ci_fixtures import load_ci_fixtures
-        fixture_sha256 = sha256_file(args.ci_fixtures)
-        ci_fixtures = load_ci_fixtures(args.ci_fixtures, fixture_sha256, lock, sorted(selected))
-        if lock['dataset'] != 'terminal-bench@2.0' or args.resource_pressure:
-            raise ValueError('prepared CI is separate from original full-suite or pressure acceptance')
-        if args.proxy_binary is not None or args.temporarily_forward:
-            raise ValueError('prepared CI neither enables an outbound proxy nor global forwarding')
-        for fixture in ci_fixtures.values():
-            if fixture.kernel_sha256 != sha256_file(args.kernel):
-                raise ValueError('prepared fixture kernel differs from the approved host kernel')
+    if fixture_path is not None:
+        from benchmarks.ci_fixtures import load_prepared_fixtures
+        if not prepared_original and (args.resource_pressure or args.proxy_binary is not None
+                                      or args.temporarily_forward):
+            raise ValueError('prepared CI runs without resource pressure or public network')
+        fixture_sha256 = (args.original_fixtures_sha256 if prepared_original else sha256_file(fixture_path))
+        fixtures = load_prepared_fixtures(fixture_path, fixture_sha256, lock, sorted(selected),
+                                          source_kind=args.source_kind)
+        kernel_sha256 = sha256_file(args.kernel)
+        if any(fixture.kernel_sha256 != kernel_sha256 for fixture in fixtures.values()):
+            raise ValueError('prepared fixture kernel differs from the approved host kernel')
+        if prepared_original:
+            args.rootfs = next(iter(fixtures.values())).rootfs
+    runtime_only = fixtures is not None
+    prepared_ci = ci_fixture_path is not None
+    recovery_source = ({'prepared_original': True} if prepared_original else
+                       {'prepared_ci': prepared_ci})
+    benchmark = lock['dataset'] if lock['dataset'] == 'terminal-bench@2.1' else 'terminal-bench-2.0'
     disk_ceiling = getattr(args, 'prepared_ci_disk_budget_bytes', None)
-    if ci_fixtures is None and disk_ceiling is not None:
+    if not runtime_only and disk_ceiling is not None:
         raise ValueError('prepared CI disk ceiling is not a template-build acceptance budget')
     prepared_profile = (prepared_ci_physical_profile(bounded_policy,
         kernel_bytes=args.kernel.stat().st_size, runtime_bytes=args.firecracker.stat().st_size,
-        disk_budget_bytes=disk_ceiling) if ci_fixtures is not None else None)
+        disk_budget_bytes=disk_ceiling) if runtime_only else None)
     capacity_basis = {'scope': args.capacity_scope, 'selected_tasks': sorted(selected),
                       'planning_tasks': [t['name'] for t in capacity_entries],
                       'repetitions': args.repetitions}
@@ -271,12 +305,24 @@ def exercise(args):
                     artifact_bytes=args.artifact_limits['max_bytes'],
                     input_bytes=args.build_input_max_bytes, expanded_bytes=args.build_expanded_max_bytes,
                     job_limit=job_limit)
+    budget_profile = load(args.budget_profile)
+    if prepared_original:
+        shape = next(iter(fixtures.values())).resources
+        budget_profile['runtime'].update(max_active=1, max_vcpus=shape['cpus'],
+                                         max_host_memory_bytes=(shape['memory_mib']+256)*MIB)
+        if prepared_profile['pools'][0]['max_host_slots'] != 1:
+            raise ValueError('prepared original requires one approved runtime position')
     deployment = budgets(capacity, args.rootfs.stat().st_size, args.kernel.stat().st_size,
-                         profile=load(args.budget_profile), build_required=ci_fixtures is None)
+                         profile=budget_profile, build_required=not runtime_only)
+    if prepared_original:
+        # The prebuilt catalog is served from the separately budgeted assets.
+        # This fresh run has no build/publication listener. The registry still
+        # needs a positive bound, but one byte cannot admit a kernel and rootfs.
+        deployment['registry'].update(max_artifact_bytes_global=1, max_artifact_bytes_per_tenant=1)
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
     if prepared_profile is not None:
-        from tools.template_physical_storage import envelope
-        deployment['host']['minimum_free_disk_bytes'] = 2 * envelope(prepared_profile)[0]
+        from tools.template_physical_storage import activation_budget
+        deployment['host']['minimum_free_disk_bytes'] = activation_budget(prepared_profile)['required_bytes']
         deployment['prepared_ci_disk_budget_bytes'] = disk_ceiling
         deployment['builder_dispatched'] = False
     proxy_binary = getattr(args, 'proxy_binary', None)
@@ -291,19 +337,23 @@ def exercise(args):
         from template_resource_pressure import validate_cohort
         validate_cohort([t['requirements'] for t in selected_entries], deployment)
     # Trusted operator-provided ext4 base; read metadata without mounting it.
-    superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
-                                        text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
-    fields = dict(line.split(':', 1) for line in superblock.splitlines() if ':' in line)
-    if ci_fixtures is None and int(fields['Free blocks']) * int(fields['Block size']) < capacity['worker_required_free_bytes']:
-        raise RuntimeError('builder base lacks free space for bounded import and candidate')
+    if not runtime_only:
+        superblock = subprocess.check_output(['/usr/sbin/dumpe2fs', '-h', str(args.rootfs)],
+                                            text=True, env={**os.environ, 'LC_ALL': 'C'}, stderr=subprocess.DEVNULL)
+        fields = dict(line.split(':', 1) for line in superblock.splitlines() if ':' in line)
+        if int(fields['Free blocks']) * int(fields['Block size']) < capacity['worker_required_free_bytes']:
+            raise RuntimeError('builder base lacks free space for bounded import and candidate')
     stride = capacity['uid_stride']
-    if args.uid_base < 1000 or args.uid_base + 2 * stride >= 2**32 - 1:
+    uid_end = args.uid_base + (1 if prepared_original else 2) * stride - 1
+    if args.uid_base < 1000 or uid_end >= 2**32 - 2:
         raise RuntimeError('invalid exclusive UID ranges')
-    if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
+    if processes_in_uid_range(args.uid_base, uid_end):
         raise RuntimeError('exclusive UID pools occupied')
-    if ci_fixtures is None and Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
+    if not prepared_ci and Path('/proc/sys/net/ipv4/ip_forward').read_text().strip() != '1':
         raise RuntimeError('approved public forwarding required')
-    group_parents = (args.cgroup_parent, args.build_cgroup_parent, args.service_cgroup_parent)
+    group_parents = (args.cgroup_parent, args.service_cgroup_parent)
+    if not prepared_original:
+        group_parents += (args.build_cgroup_parent,)
     if any(a.is_relative_to(b) for i, a in enumerate(group_parents) for j, b in enumerate(group_parents) if i != j):
         raise RuntimeError('service and VM cgroup parents must be disjoint')
     for parent in (*group_parents, args.scratch_parent):
@@ -316,7 +366,7 @@ def exercise(args):
                          if line.startswith('MemAvailable:'))) * 1024
     check_headroom(deployment, cpus=len(os.sched_getaffinity(0)), available_memory=available,
                    free_disk=shutil.disk_usage(args.scratch_parent).free)
-    build_tools = BUILD_TOOLS | (IGZIP_HASHES if args.igzip else {})
+    build_tools = {} if prepared_original else BUILD_TOOLS | (IGZIP_HASHES if args.igzip else {})
     for name, digest in build_tools.items():
         if sha256_file(args.tools / name) != digest:
             raise RuntimeError('fixed tool mismatch: ' + name)
@@ -326,18 +376,20 @@ def exercise(args):
         build_namespace=args.build_namespace)
     if root.parent != args.scratch_parent.resolve(strict=True):
         raise ValueError('bounded run root must be directly inside the approved scratch parent')
+    storage_receipt = None
+    if prepared_original:
+        captures = json_file(private_path(args.capture_settings), limit=65536)
+        storage_receipt = check_acceptance_volume(args.storage_directory, captures,
+                                                   args.scratch_parent, args.service_staging_parent)
     validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
 )
     root.mkdir(mode=0o700)
+    if prepared_original:
+        evidence.enter_context(observe_volume_storage(root, commit=commit))
     provision_acceptance_coordination(bounded_policy, run_root=root,
-        namespace=namespaces[0], build_namespace=namespaces[1])
+        namespace=namespaces[0], build_namespace=args.build_namespace)
     print(f'root={root} commit={commit}', flush=True)
     original = [sha256_file(p) for p in (args.kernel, args.rootfs)]
-    if (any(not re.fullmatch('[0-9a-f]{16}', n) for n in namespaces)
-            or namespaces[0][:6] == namespaces[1][:6]):
-        raise ValueError('disjoint deployment namespaces required')
-    validate_acceptance_socket_paths(root, namespaces, args.firecracker.resolve(strict=True),
-)
     (root / 'capacity.json').write_text(json.dumps(capacity, indent=2))
     (root / 'capacity-basis.json').write_text(json.dumps(capacity_basis, indent=2))
     (root / 'acceptance-budgets.json').write_text(json.dumps(deployment, indent=2))
@@ -345,14 +397,18 @@ def exercise(args):
     key = secrets.token_hex(32)
     firecracker = args.firecracker.resolve(strict=True)
     settings = []
-    for i in range(1 if ci_fixtures is not None else 2):
+    for i in range(1 if runtime_only else 2):
         pool = root / str(i)
         pool.mkdir(mode=0o700)
         for name in ('db', 'state', 'p'):
             (pool / name).mkdir(mode=0o700)
         cpu = deployment['builder_shape']['cpu_count'] if i else 1
         memory = deployment['builder_shape']['memory_mib'] if i else 2048
-        base = descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, memory)
+        templates = ([fixture.template_descriptor() for fixture in fixtures.values()] if runtime_only else
+                     [descriptor('builder-base' if i else 'runtime-base', args.kernel, args.rootfs, cpu, memory)])
+        base = templates[0]
+        if prepared_original:
+            cpu, memory = shape['cpus'], shape['memory_mib']
         cfg = {'namespace': namespaces[i], 'database': str(pool / 'db/controller.db'),
             'node_state_dir': str(pool / 'state'), 'chroot_base': str(pool / 'p/v'),
             'jailer': str(args.jailer), 'firecracker': str(firecracker),
@@ -360,38 +416,38 @@ def exercise(args):
             'vcpu_count': cpu, 'memory_mib': memory,
             'host_resources': {'cgroup_parent': str(args.build_cgroup_parent if i else args.cgroup_parent), 'memory_max_bytes': (memory + 256) * MIB},
             'file_policy_digest': 1,
-            'public_ipv4_enabled': ci_fixtures is None, **deployment['builder' if i else 'runtime'],
-            'templates': {'templates': [base], 'aliases': {'base': base['template_id']},
+            'public_ipv4_enabled': not prepared_ci, **deployment['builder' if i else 'runtime'],
+            'templates': {'templates': templates, 'aliases': {'base': base['template_id']},
                 'compute_limits': deployment['builder_compute' if i else 'runtime_compute']}}
         if i:
             base['owner'] = None  # Private builder selection remains center authority.
-        elif ci_fixtures is not None:
-            cfg['templates']['templates'] = [f.template_descriptor() for f in ci_fixtures.values()]
-            cfg = prepared_ci_runtime_configuration(cfg, bounded_policy, prepared_profile)
+        elif runtime_only:
+            cfg = prepared_ci_runtime_configuration(cfg, bounded_policy, prepared_profile,
+                template_prefix='prebuilt-' if prepared_original else 'ci-')
         settings.append(cfg)
-    (root / 'builds').mkdir(mode=0o700)
-    build = {'root': str(root / 'builds'),
-        'registry':{'root':str(root/'registry'),**deployment['registry']},
-        'registry_owner_uid':bounded_policy['runtime']['bounded_host']['physical_storage']['public_build']['registry_owner_uid']
-            if ci_fixtures is None else args.center_uid,
-        'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in build_tools.items()},
-        'dns_servers': ['1.1.1.1', '8.8.8.8'],
-        'limits': deployment['limits']}
-    original_workspace = build['limits']['workspace_bytes']
-    build_mode = ('windowed' if ci_fixtures is not None else
-                  apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy))
+    build_mode, extra = 'windowed', 0
+    if not runtime_only:
+        (root / 'builds').mkdir(mode=0o700)
+        build = {'root': str(root / 'builds'),
+            'registry':{'root':str(root/'registry'),**deployment['registry']},
+            'registry_owner_uid':bounded_policy['runtime']['bounded_host']['physical_storage']['public_build']['registry_owner_uid'],
+            'tools': {n: {'path': str(args.tools / n), 'sha256': d} for n, d in build_tools.items()},
+            'dns_servers': ['1.1.1.1', '8.8.8.8'],
+            'limits': deployment['limits']}
+        original_workspace = build['limits']['workspace_bytes']
+        build_mode = apply_acceptance_build_policy(settings[0], settings[1], build, bounded_policy)
+        extra = build['limits']['workspace_bytes'] - original_workspace
     deployment['build_mode'] = build_mode
-    extra = 0 if ci_fixtures is not None else build['limits']['workspace_bytes'] - original_workspace
     deployment['host']['minimum_free_disk_bytes'] += extra
     if shutil.disk_usage(root).free < deployment['host']['minimum_free_disk_bytes']:
         raise ValueError('bounded build policy exceeds acceptance disk headroom')
-    if args.docker_hub_mirror is not None:
+    if not runtime_only and args.docker_hub_mirror is not None:
         build['docker_hub_mirror'] = args.docker_hub_mirror
     service_record = Path(args.service_cgroup_record)
     if service_record != root / 'service-cgroup.json':
         raise ValueError('service cgroup receipt must belong to this exact acceptance run')
     private_builds = None
-    if ci_fixtures is None:
+    if not runtime_only:
         windows = bounded_policy['builder']['build_retry_windows']
         private_builds = dict(windows=bounded_policy['public']['bounded_builds']['windows'],
             window_duration_ms=windows['window_duration_ms'], max_anchors=windows['max_anchors'],
@@ -399,15 +455,19 @@ def exercise(args):
             policy={name:settings[1][name] for name in ('public_ipv4_enabled','max_timeout_secs',
                 'max_lifetime_secs','startup_timeout_secs')})
     registry = {'root': str(root / 'registry'), **deployment['registry']}
+    # Host capture/bootstrap provisioning already uses this leaf and receipt.
+    service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
+                           **deployment['service_cgroup'])
     services = RuntimeServices.prepare(args,root,settings,[config['templates'] for config in settings],
-        key,public_address,record=service_record,retained_sessions=(capacity['jobs']) + sum(pool['max_active_global'] for pool in settings),
+        key,public_address,record=service_record,
+        retained_sessions=1 if prepared_original else capacity['jobs'] + sum(pool['max_active_global'] for pool in settings),
         private_builds=private_builds,registry_config=registry,activation_ceiling_bytes=disk_ceiling)
     settings = services.native_pools  # Exactly the profile Rust initializes.
     registry_root = services.layout['registry']
     urls = [services.sdk_url] * 3  # Every public SDK/build request goes to center.
     binary = services.processes.bindings['host-0']['binary']
     build_path = root / 'build-control/build.json'
-    if ci_fixtures is None:
+    if not runtime_only:
         build.update(bind=services.layout['helper_backend_address'],
             runtime_config=str(services.processes.bindings['host-0']['config']),
             builder_config=str(services.processes.bindings['host-1']['config']),
@@ -420,9 +480,9 @@ def exercise(args):
         build_path.write_text(json.dumps(build))
         build_path.chmod(0o600)
         validate_build_service(build_path,require_physical_lease=False)
-    from tools.template_physical_storage import envelope
-    activation_bytes=2*envelope(settings[0]['bounded_host']['physical_storage'])[0]
-    if ci_fixtures is not None and activation_bytes>disk_ceiling:
+    from tools.template_physical_storage import activation_budget
+    activation_bytes=activation_budget(settings[0]['bounded_host']['physical_storage'])['required_bytes']
+    if runtime_only and activation_bytes>disk_ceiling:
         raise ValueError('dual-service/cache activation exceeds approved prepared CI ceiling')
     deployment['host']['minimum_free_disk_bytes']=max(deployment['host']['minimum_free_disk_bytes'],activation_bytes)
     (root/'acceptance-budgets.json').write_text(json.dumps(deployment,indent=2))
@@ -531,10 +591,10 @@ def exercise(args):
                 deadline=deadline,sandbox_id=row.get('sandbox_id'),
                 create_identity=create_identities.get(row.get('sandbox_id')),
                 delete_dispatched=bool(row.get('kill_dispatched')),
-                prepared_ci=ci_fixtures is not None)
+                benchmark=benchmark, **recovery_source)
             result.update(sandbox_id=recovered['sandbox_id'],runtime_recovery=recovered)
         while True:
-            pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None, row=row)
+            pending = pending_build_reservations(root / 'builds', prepared=runtime_only, row=row)
             if not pending:
                 break
             if time.monotonic() >= deadline:
@@ -564,7 +624,7 @@ def exercise(args):
                     if time.monotonic() >= deadline:
                         raise RuntimeError('pool still owns an unreclaimed identity') from None
                     time.sleep(.5)
-        if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
+        if processes_in_uid_range(args.uid_base, uid_end):
             raise RuntimeError('assigned UID still owns a live process')
         result['exact_cleanup'] = 'passed'
         if row.get('build_dispatched'):
@@ -577,7 +637,7 @@ def exercise(args):
                 read_build=lambda job: client.request('GET', '/sandproof/template-builds/' + job)))
         template = row.get('template') or (result.get('build') or {}).get('template')
         if template:
-            source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
+            source = (fixtures[row['name']].rootfs if runtime_only else
                       registry_root / 'artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
             assert sha256_file(source) == template['rootfsSha256']
         return result
@@ -586,12 +646,10 @@ def exercise(args):
     try:
         if transport is not None:
             transport.start()
-        service_cgroup.prepare(args.service_cgroup_parent, 'svc-' + namespaces[0], service_record,
-                               **deployment['service_cgroup'])
         services.start()
         services.wait_ready()
         supervisor, log = launch_build_service(checkout, root, service_prefix,
-                                               prepared=ci_fixtures is not None)
+                                               prepared=runtime_only)
         if supervisor is not None:
             wait_build_service(opener, urls[2], key, supervisor)
         observe_services()
@@ -608,26 +666,32 @@ def exercise(args):
             (output / 'inputs.json').write_text(json.dumps({'source': lock['source'], 'runtimes': runtimes,
                 'capacity_basis': capacity_basis,
                 'oracle_mode': oracle_mode,
-                'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None and not preparing_ci,
+                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing,
                 'source_kind': args.source_kind, 'artifact_limits': args.artifact_limits,
                 'failure_diagnostics': args.failure_diagnostics,
-                'network_transport': network_transport_evidence(transport, prepared=ci_fixtures is not None),
+                'network_transport': network_transport_evidence(transport, prepared=prepared_ci),
                 'task_files': {t['name']: t['files_sha256'] for t in lock['tasks']}}, indent=2))
             run_args = SimpleNamespace(source=args.source, output=output, task=sorted(selected), all=args.all,
                 oracle_mode=oracle_mode,
                 api_url=urls[0], build_url=urls[2], build_mode=build_mode, source_kind=args.source_kind,
                 failure_diagnostics=args.failure_diagnostics,
                 artifact_limits=args.artifact_limits, start_audit=audit_shape, completion_audit=completion_audit)
-            if preparing_ci:
-                run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
-                run_args.preparation_timeout_secs = preparation_timeout
-                run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
+            if preparing:
+                if preparing_ci:
+                    run_args.prepare_ci_fixtures = args.prepare_ci_fixtures
+                    run_args.preparation_timeout_secs = preparation_timeout
+                    run_args.ci_build_inputs, run_args.ci_uv = args.ci_build_inputs, args.ci_uv
+                else:
+                    run_args.prepare_original_fixtures = args.prepare_original_fixtures
+                    run_args.original_oci_digest = args.original_oci_digest
                 run_args.ready_artifacts_root, run_args.kernel = registry_root / 'artifacts', args.kernel
                 run_args.ready_artifacts_owner_uid = services.layout['center_identity'][0]
-            if ci_fixtures is not None:
+            if prepared_original:
+                run_args.original_fixtures = fixtures
+            if prepared_ci:
                 from benchmarks.ci_verifier import prepare_ci_verifier_task
                 from harbor.models.task.task import Task
-                run_args.ci_fixtures = ci_fixtures
+                run_args.ci_fixtures = fixtures
                 run_args.verifier_task_factory = lambda task, entry, destination: Task(
                     prepare_ci_verifier_task(task, entry, destination))
             old_key = os.environ.get('SANDPROOF_TEST_API_KEY')
@@ -637,7 +701,7 @@ def exercise(args):
                 text_out = io.TextIOWrapper(out, write_through=True)
                 try:
                     with contextlib.redirect_stdout(text_out), contextlib.redirect_stderr(text_out):
-                        if preparing_ci:
+                        if preparing:
                             from benchmarks.run_ci_prepare import prepare_selected
                             asyncio.run(prepare_selected(run_args, lock))
                         else:
@@ -673,7 +737,7 @@ def exercise(args):
             # Exact reclaim, not just the SDK's kill boolean.
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
-                pending = pending_build_reservations(root / 'builds', prepared=ci_fixtures is not None)
+                pending = pending_build_reservations(root / 'builds', prepared=runtime_only)
                 if pending == 0:
                     break
                 time.sleep(0.5)
@@ -696,13 +760,13 @@ def exercise(args):
                 if i==0:
                     for identity in physical_identities:
                         audit_gone(root/'0',firecracker,args.cgroup_parent,identity['resource_id'],identity=identity)
-            if processes_in_uid_range(args.uid_base, args.uid_base + 2 * stride - 1):
+            if processes_in_uid_range(args.uid_base, uid_end):
                 raise RuntimeError('exact pool UID process remains')
             for row in current:
                 row['repetition'] = repetition
                 template = row.get('template') or (row.get('build') or {}).get('template')
                 if template:
-                    source = (ci_fixtures[row['name']].rootfs if ci_fixtures is not None else
+                    source = (fixtures[row['name']].rootfs if runtime_only else
                               registry_root / 'artifacts' / template['templateId'].removeprefix('tpl-') / 'rootfs.ext4')
                     assert sha256_file(source) == template['rootfsSha256']
             rows.extend(current)
@@ -713,11 +777,13 @@ def exercise(args):
             (output / 'full-set.json').write_text(json.dumps(report, indent=2) + '\n')
             outcome = repetition_outcome(current, selected, oracle_mode=oracle_mode,
                 resource_pressure=args.resource_pressure, pressure_report=pressure_report)
-            if ci_fixtures is not None:
+            if prepared_original:
+                outcome['fixture_sha256'] = fixture_sha256
+            if prepared_ci:
                 outcome.update(original_verifier=False, original_oracle_verifier=False,
                                original_oracle=True, original_test_assertions=True,
                                fixture_sha256=fixture_sha256)
-            if preparing_ci:
+            if preparing:
                 outcome.update(execution_passed=False, original_verifier=False,
                                original_oracle_verifier=False, preparation_only=True,
                                fixture_preparation_passed=(len(current) == len(selected)
@@ -733,23 +799,26 @@ def exercise(args):
                 'services':execution['services'],'execution_manifest':execution,'service_processes':processes,
                 'service_boundary':dict(public_api='center',center_unprivileged=True,
                     redis_authority='validated',host_transport='mutual-tls',host_public_management=False),
-                'kernel_sha256': original[0], 'builder_base_sha256': original[1], 'tools': build_tools,
+                'kernel_sha256': original[0], 'tools': build_tools,
+                ('runtime_base_sha256' if prepared_original else 'builder_base_sha256'): original[1],
                 'source_kind': args.source_kind, 'tasks': rows, 'fixed_task_count': lock['task_count'],
                 'dataset': lock['dataset'], 'task_source': lock['source'],
                 'capacity_basis': capacity_basis,
-                'original_environment': args.source_kind != PRUNED_SOURCE and ci_fixtures is None and not preparing_ci,
+                'original_environment': args.source_kind != PRUNED_SOURCE and not prepared_ci and not preparing,
                 'docker_hub_mirror': args.docker_hub_mirror,
-                'network_transport': network_transport_evidence(transport, prepared=ci_fixtures is not None),
+                'network_transport': network_transport_evidence(transport, prepared=prepared_ci),
                 'failure_diagnostics': args.failure_diagnostics,
                 'acceptance_budgets': deployment, 'resource_pressure': pressure_report,
                 'prepared_ci_physical': ({'disk_budget_bytes': disk_ceiling,
                     'activation_bytes': activation_bytes,
                     'pool_roles': ['runtime'], 'builder_dispatched': False, 'public_build': False}
-                    if ci_fixtures is not None else None),
+                    if runtime_only else None),
                 'service_cgroup': service_samples[-1],
                 'service_storage': services.storage_peaks(),
                 'no_process_network_cgroup_jail_residue': True,
                 **outcome, 'paid_model_used': False}
+            if prepared_original:
+                service_report['storage_installation'] = storage_receipt
             (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')
             passed = outcome.get('fixture_preparation_passed', outcome['execution_passed'])
             all_passed = all_passed and passed
@@ -775,6 +844,9 @@ def exercise(args):
             log.close()
         try:
             services.stop_all()
+            if not complete:
+                (root / 'service-storage-diagnostics.json').write_text(
+                    json.dumps(services.storage_diagnostics(), indent=2) + '\n')
             if service_report is not None:
                 service_report['service_storage'] = services.storage_peaks()
                 (root / 'report.json').write_text(json.dumps(service_report, indent=2) + '\n')
@@ -815,7 +887,8 @@ def parser():
     parser.add_argument('--run-identity',required=True,help='approved supervisor run SHA256')
     for name in ('firecracker', 'jailer', 'kernel', 'rootfs', 'tools', 'scratch-parent',
                  'cgroup-parent', 'build-cgroup-parent', 'service-cgroup-parent', 'registry', 'source'):
-        parser.add_argument('--' + name, type=Path, required=True)
+        parser.add_argument('--' + name, type=Path,
+                            required=name not in ('rootfs', 'tools', 'build-cgroup-parent'))
     parser.add_argument('--uid-base', type=int, required=True)
     parser.add_argument('--lock', type=Path, help='explicit independently frozen task version; legacy 2.0 default retained')
     parser.add_argument("--bounded-policy", type=Path, required=True,
@@ -831,11 +904,19 @@ def parser():
     parser.add_argument('--build-namespace')
     parser.add_argument('--run-root', type=Path,
                         help='exact fresh run root already declared in the full physical profile')
-    parser.add_argument('--source-kind', choices=(*SOURCE_KINDS, 'prepared-ci'), default='oci')
+    parser.add_argument('--source-kind', choices=(*SOURCE_KINDS, 'prepared-ci', 'prepared-original'), default='oci')
+    parser.add_argument('--original-fixtures', type=Path,
+                        help='operator-approved 2.1 original template manifest, one selected task per run')
+    parser.add_argument('--original-fixtures-sha256', help='independently approved original manifest SHA-256')
+    parser.add_argument('--storage-directory', type=Path,
+                        help='installed storage directory for a prepared original run')
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
-                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
+                        help='required prepared-CI total activation ceiling, including fixed growth and operation headroom; at most 384 GiB')
+    parser.add_argument('--prepare-original-fixtures', type=Path,
+                        help='fresh destination for one approved original 2.1 OCI template')
+    parser.add_argument('--original-oci-digest', help='immutable original OCI digest for preparation')
     parser.add_argument('--prepare-ci-fixtures', type=Path,
                         help='one-time fresh private destination; builds clean fixtures, never scores tasks')
     parser.add_argument('--ci-preparation-timeout', type=int,
@@ -870,7 +951,27 @@ def parser():
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
+    arguments = parser()
+    args = arguments.parse_args(argv)
+    if args.prepare_original_fixtures is not None:
+        if (not re.fullmatch(r'sha256:[0-9a-f]{64}', args.original_oci_digest or '')
+                or args.source_kind != 'oci' or args.ci_fixtures is not None
+                or args.prepare_ci_fixtures is not None or args.original_fixtures is not None):
+            arguments.error('prepare original requires an explicit OCI digest and a fresh export destination')
+    elif args.original_oci_digest is not None:
+        arguments.error('the original OCI digest belongs to template preparation only')
+    if args.original_fixtures is not None:
+        if (args.source_kind != 'prepared-original' or args.ci_fixtures is not None
+                or not re.fullmatch(r'[0-9a-f]{64}', args.original_fixtures_sha256 or '')
+                or args.storage_directory is None
+                or any(value is not None for value in (args.rootfs, args.tools, args.build_cgroup_parent,
+                                                       args.build_namespace, args.docker_hub_mirror))
+                or args.igzip):
+            arguments.error('prepared original requires a pinned manifest, installed storage and runtime-only inputs')
+    elif (args.source_kind == 'prepared-original' or args.original_fixtures_sha256 is not None
+          or args.storage_directory is not None
+          or any(value is None for value in (args.rootfs, args.tools, args.build_cgroup_parent))):
+        arguments.error('use an explicit original manifest or supply the existing build/CI inputs')
     if args.check_arguments:
         print(json.dumps(dict(entry=Path(__file__).name, arguments_valid=True)))
         return 0

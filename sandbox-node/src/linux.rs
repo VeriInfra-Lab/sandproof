@@ -30,6 +30,9 @@ use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
 mod capture;
+pub(crate) use capture::PauseNotStarted;
+#[cfg(test)]
+pub(crate) use capture::before_pause_request;
 mod capture_cleanup;
 mod capture_profile;
 mod capture_stop;
@@ -312,6 +315,10 @@ impl ArtifactStamp {
     fn read(artifact: &TemplateArtifact) -> NodeResult<Self> {
         check_trusted_path(&artifact.path)?;
         let metadata = fs::symlink_metadata(&artifact.path)?;
+        Self::from_metadata(artifact, &metadata)
+    }
+
+    fn from_metadata(artifact: &TemplateArtifact, metadata: &fs::Metadata) -> NodeResult<Self> {
         if !metadata.is_file() || metadata.len() != artifact.size_bytes {
             return Err("template artifact type or size mismatch".into());
         }
@@ -550,7 +557,7 @@ fn validate_worker_configuration(config: &NodeConfig) -> NodeResult<()> {
 fn helper_observation_pending(result: Result<(), RuntimeError>) -> NodeResult<bool> {
     match result {
         Ok(()) => Ok(false),
-        Err(RuntimeError::InvalidConfiguration(_)) => Ok(true),
+        Err(RuntimeError::InvalidConfiguration(_) | RuntimeError::HelperGateBusy) => Ok(true),
         Err(error) => Err(error.into()),
     }
 }

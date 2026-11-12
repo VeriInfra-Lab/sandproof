@@ -1,7 +1,8 @@
 //! Single-file `CoW` on already-open, private descriptors; no publication or GC.
 //!
 //! Callers bind expected owners, lengths/budgets and protected directory entries,
-//! exclude writers, and verify the cloned bytes before syncing/publishing them.
+//! exclude writers, and establish the content digest before publishing. A
+//! restore clone may carry its already verified immutable source's digest.
 //! This operation never falls back to byte copying and never unlinks on error.
 
 use super::{FileStamp, invalid, os_error};
@@ -53,9 +54,27 @@ pub(crate) fn require_same_xfs_mount(left: &File, right: &File) -> Result<(), Ru
 /// Unsupported/cross-FS cloning, invalid FDs, space/quota errors or changed
 /// identities are returned without copying bytes or deleting partial materials.
 pub(crate) fn clone_whole_file(source: &File, destination: &File) -> Result<(), RuntimeError> {
+    clone_file(source, destination, 0o077)
+}
+
+/// Clone an already verified template protected against untrusted writers.
+/// Root ownership and the template identity are checked by the launch caller.
+pub(crate) fn clone_template_file(source: &File, destination: &File) -> Result<(), RuntimeError> {
+    clone_file(source, destination, 0o022)
+}
+
+fn clone_file(
+    source: &File,
+    destination: &File,
+    forbidden_source_mode: u32,
+) -> Result<(), RuntimeError> {
     let before = source.metadata()?;
     let target = destination.metadata()?;
-    if !before.is_file() || before.nlink() != 1 || before.len() == 0 || before.mode() & 0o077 != 0 {
+    if !before.is_file()
+        || before.nlink() != 1
+        || before.len() == 0
+        || before.mode() & forbidden_source_mode != 0
+    {
         return Err(invalid("snapshot clone source type, links or permissions"));
     }
     if !target.is_file()

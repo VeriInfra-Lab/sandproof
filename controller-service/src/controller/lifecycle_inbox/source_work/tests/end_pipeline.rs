@@ -582,3 +582,90 @@ fn final_retire_source_clear_and_cleanup_receipt_recover_as_one_commit() {
         );
     }
 }
+
+#[test]
+fn pre_request_freeze_failure_can_terminate_after_restart_without_unknown_retirement() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, state) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let full = full_request(&source);
+    journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let sandbox = source.source_sandbox();
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    success(&mut journal, &fence);
+    let freeze = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        freeze.command.command(),
+        core::Command::FreezeVm { .. }
+    ));
+    journal
+        .complete::<Evidence>(
+            &WorkReceipt {
+                identity: freeze.identity.clone(),
+                outcome: WorkOutcome::DefinitiveFailure {
+                    code: sandproof_protocol::FailureCode::ResourceUnavailable,
+                    retryable: true,
+                    partial: None,
+                },
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    assert!(!journal.uncertain_actions().unwrap().contains(&freeze));
+    let request = destroy(&mut journal);
+    drop(journal);
+    // Original application and actual reopened SQL; host effects remain the
+    // existing controlled fixture. No timeout is used as a completion fact.
+    let app = v3::application(&path, state.clone(), false);
+    app.establish_lifecycle_host_epoch().unwrap();
+    let _ = app.advance_current_workflow(sandbox).unwrap();
+    drop(app);
+    let journal = v3::open(&path);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
+    assert!(
+        state
+            .lock()
+            .unwrap()
+            .actions
+            .iter()
+            .any(|a| matches!(a.command.command(), core::Command::StopVm { .. }))
+    );
+    assert!(
+        !state
+            .lock()
+            .unwrap()
+            .actions
+            .iter()
+            .any(|a| a.identity == freeze.identity)
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&request, &v3::context())
+            .unwrap(),
+        "physical material retirement is still independently required"
+    );
+}

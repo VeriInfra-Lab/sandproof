@@ -191,13 +191,16 @@ def publish_ready_fixture(entry, template, ready_rootfs, kernel, dest, original_
         raise InvalidInput('ready CI publication failed: ' + type(error).__name__) from error
 
 
-def make_ci_fixture_manifest(items, lock):
+def make_prepared_manifest(items, lock, *, source_kind):
     """Return the strict private envelope; the harness owns atomic publication."""
+    original = source_kind == 'prepared-original'
     pin = pin_for(lock)
-    if lock.get('source') != dict(repository=pin.repository, commit=pin.commit):
-        raise InvalidInput('CI fixture envelope requires the fixed source identity')
-    if not isinstance(items, list) or len(items) != 2:
-        raise InvalidInput('CI fixture envelope requires exactly two ready fixtures')
+    if (source_kind not in ('prepared-original', 'prepared-ci')
+            or pin.version != ('2.1' if original else '2.0')
+            or lock.get('source') != dict(repository=pin.repository, commit=pin.commit)):
+        raise InvalidInput('prepared fixture envelope requires the fixed source identity')
+    if not isinstance(items, list) or len(items) != (1 if original else 2):
+        raise InvalidInput('prepared fixture envelope requires one original or two CI ready fixtures')
     entries = {entry['name']: entry for entry in lock['tasks']}
     seen = set()
     for item in items:
@@ -220,6 +223,7 @@ def make_ci_fixture_manifest(items, lock):
             if (actual != _hash(item[label]['sha256'], label)
                     or (label == 'rootfs' and identity[2] != shape['disk_mib'] * MIB)):
                 raise InvalidInput('published CI material fingerprint or size changed')
+    scoring = (dict(verifier='original') if original else
+               dict(verifier_python=PYTHON, verifier_requirements_sha256=REQUIREMENTS_SHA256))
     return dict(schema_version=1, dataset=lock['dataset'], source_commit=pin.commit,
-                verifier_python=PYTHON, verifier_requirements_sha256=REQUIREMENTS_SHA256,
-                fixtures=json.loads(canonical(items)))
+                fixtures=json.loads(canonical(items)), **scoring)

@@ -96,7 +96,7 @@ impl LinuxWorker {
     pub(super) fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
         let path = self.slot_path(slot);
         check_trusted_path(&path)?;
-        let value: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+        let value: SlotBinding = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("slot parent")?)?.sync_all()?;
         if value.slot != slot {
             return Err("slot mapping identity mismatch".into());
@@ -109,18 +109,9 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         generation: core::Generation,
     ) -> NodeResult<SlotBinding> {
-        let mut found = None;
-        for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
-            let entry = entry?;
-            let binding: SlotBinding = serde_json::from_reader(File::open(entry.path())?)?;
-            if binding.sandbox == sandbox && binding.generation == generation {
-                if found.is_some() {
-                    return Err("ambiguous VM for workspace".into());
-                }
-                found = Some(binding);
-            }
-        }
-        found.ok_or_else(|| "no VM for workspace".into())
+        // The protected host-position table already names the exact published
+        // slot. Directory-wide decoding also reads another VM's staged writes.
+        self.workspace_slot_binding(sandbox, generation)
     }
 
     pub(super) fn vm_for_workspace(
@@ -134,7 +125,7 @@ impl LinuxWorker {
     pub(super) fn fence(&self, sandbox: core::SandboxId) -> NodeResult<Fence> {
         let path = self.fence_path(sandbox);
         check_trusted_path(&path)?;
-        let value = serde_json::from_reader(File::open(&path)?)?;
+        let value = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("fence parent")?)?.sync_all()?;
         Ok(value)
     }

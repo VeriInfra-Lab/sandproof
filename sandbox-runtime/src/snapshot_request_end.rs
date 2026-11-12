@@ -251,6 +251,7 @@ mod tests {
             root.path().to_path_buf(),
             crate::snapshot_store::open_store(root.path(), owner).unwrap(),
             owner,
+            std::sync::Arc::default(),
         );
         store.require_request_end_absent(key).unwrap();
         store
@@ -263,6 +264,7 @@ mod tests {
                 root.path().to_path_buf(),
                 crate::snapshot_store::open_store(root.path(), owner).unwrap(),
                 owner,
+                std::sync::Arc::default(),
             );
             let actual: FullCaptureRequestEnd =
                 serde_json::from_slice(&reopened.read_request_end(key).unwrap()).unwrap();

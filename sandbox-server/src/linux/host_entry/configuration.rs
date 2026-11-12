@@ -109,13 +109,13 @@ impl HostConfig {
             || !profile.service_data.iter().any(|entry| {
                 entry.root == store
                     && entry.owner_uid == 0
-                    && entry.peak_bytes >= material.hard_bytes
-                    && entry.inode_budget >= material.hard_inodes
+                    && entry.on_demand_capture == (profile.pools.len() == 1)
+                    && entry.peak_bytes == material.hard_bytes
+                    && entry.inode_budget == material.hard_inodes
             })
         {
             return Err(
-                "capture layout and material limits must match original physical reservation"
-                    .into(),
+                "capture layout and material limits must match the exact snapshot project".into(),
             );
         }
         Ok(())

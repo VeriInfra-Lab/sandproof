@@ -17,7 +17,7 @@ import time
 
 from .template_build_config import validate_acceptance_build_policy
 from .template_build_store import TERMINAL
-from .template_physical_storage import MAXIMUM, envelope
+from .template_physical_storage import MAXIMUM, activation_budget, envelope
 from .runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 
 
@@ -89,22 +89,27 @@ def require_bounded_host_tools():
 
 
 def _acceptance_profile(policy):
-    validate_acceptance_build_policy(policy)
+    single_runtime = type(policy) is dict and set(policy) == {'runtime'}
+    roles = ('runtime',) if single_runtime else ('runtime', 'builder')
+    if not single_runtime:
+        validate_acceptance_build_policy(policy)
     profiles = []
-    for role in ("runtime", "builder"):
+    for role in roles:
         section = policy[role]
+        if type(section) is not dict or (single_runtime and set(section) != {'bounded_host', 'maintenance'}):
+            raise ValueError("explicit bounded pool policy required: " + role)
         host, maintenance = section["bounded_host"], section["maintenance"]
         if (type(host) is not dict or type(maintenance) is not dict
                 or type(maintenance.get("capacity")) is not dict or not maintenance["capacity"]
                 or type(host.get("physical_storage")) is not dict):
             raise ValueError("complete bounded capacity and physical profile required: " + role)
         profiles.append(host["physical_storage"])
-    if profiles[0] != profiles[1]:
+    if any(profile != profiles[0] for profile in profiles[1:]):
         raise ValueError("identical immutable acceptance physical profiles required")
     profile = profiles[0]
     envelope(profile)  # Reuse the authoritative profile schema and envelope.
-    if len(profile["pools"]) != 2 or profile["public_build"] is None:
-        raise ValueError("bounded acceptance requires both pools and public workspace")
+    if {pool['role'] for pool in profile['pools']} != set(roles):
+        raise ValueError("bounded acceptance policy and physical pool roles differ")
     return profile
 
 
@@ -136,10 +141,11 @@ def acceptance_disk_budgets(deployment, policy):
     the controller journal. Charge each increase once in host free-space
     preflight; task shapes and the physical activation checks remain unchanged.
     """
-    _acceptance_profile(policy)
+    physical = _acceptance_profile(policy)
     result = copy.deepcopy(deployment)
     extra = 0
-    for role in ("runtime", "builder"):
+    for pool in physical['pools']:
+        role = pool['role']
         original = deployment[role]
         requested = acceptance_pool_disk_budget(policy, role, original["max_disk_bytes_per_tenant"])
         if any(requested[field] < original[field] for field in requested):
@@ -160,7 +166,7 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
     Prepared CI never imports/publishes templates or dispatches build VMs.
     Keep runtime/cleanup/metadata quotas and the original filesystem overhead;
     bound kernel/runtime copies by the pinned artifacts actually registered.
-    Rust still activates the same profile with twice its complete envelope.
+    Rust activates the same growth envelope plus operation-specific headroom.
     """
     profile = copy.deepcopy(_acceptance_profile(policy))
     if type(disk_budget_bytes) is not int or not 0 < disk_budget_bytes <= PREPARED_CI_MAX_ACTIVATION_BYTES:
@@ -174,19 +180,19 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
         host_template_caches=[cache for cache in profile['host_template_caches']
                               if cache['namespace'] == pool['namespace']])
     peak, _ = envelope(profile)
-    if 2 * peak > disk_budget_bytes:
+    if activation_budget(profile)['required_bytes'] > disk_budget_bytes:
         raise ValueError("prepared CI complete physical activation exceeds disk ceiling")
     return profile
 
 
-def prepared_ci_runtime_configuration(settings, policy, profile):
+def prepared_ci_runtime_configuration(settings, policy, profile, *, template_prefix='ci-'):
     """Bind only prevalidated static CI descriptors; expose no build registry."""
     if any(name in settings for name in ('bind', 'domain', 'credentials', 'request_admission',
                                         'template_registry', 'internal_build_vms', 'build_retry_windows')):
         raise ValueError('prepared CI requires new native inputs, not retired host public settings')
     result = copy.deepcopy(settings)
     catalog = result["templates"]["templates"]
-    if not catalog or any(not item["template_id"].startswith("ci-") for item in catalog):
+    if not catalog or any(not item["template_id"].startswith(template_prefix) for item in catalog):
         raise ValueError("prepared CI requires only approved static CI templates")
     base = catalog[0]
     pool = profile["pools"][0]
@@ -209,34 +215,39 @@ def prepared_ci_runtime_configuration(settings, policy, profile):
     return result
 
 
-def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace):
+def bounded_acceptance_layout(policy, *, run_root, namespace, build_namespace=None):
     """Return the explicit layout only when the unchanged profile matches it.
 
     This performs no filesystem writes, lease acquisition or activation. The
     caller separately creates a fresh private root, writes configs and starts
     Rust before the Python service's default physical-lease validation.
     """
-    if run_root is None or namespace is None or build_namespace is None:
-        raise ValueError("bounded acceptance requires explicit run root and both namespaces")
+    if run_root is None or namespace is None:
+        raise ValueError("bounded acceptance requires an explicit run root and pool namespaces")
     spelling = str(run_root)
     root = Path(spelling)
     if (not root.is_absolute() or root == Path("/") or "\0" in spelling
             or str(root) != spelling or any(part in ("", ".", "..") for part in spelling.split("/")[1:])
             or root.resolve(strict=False) != root):
         raise ValueError("absolute canonical non-symlink acceptance root required")
-    namespaces = [namespace, build_namespace]
-    if (any(type(value) is not str or re.fullmatch(r"[0-9a-f]{16}", value) is None for value in namespaces)
-            or namespace[:6] == build_namespace[:6]):
-        raise ValueError("distinct explicit physical pool namespaces required")
     profile = _acceptance_profile(policy)
-    for index, role in enumerate(("runtime", "builder")):
+    roles = ('runtime',) if profile['public_build'] is None else ('runtime', 'builder')
+    if len(roles) == 2 and build_namespace is None:
+        raise ValueError('bounded acceptance requires an explicit run root and both namespaces')
+    namespaces = [namespace] if len(roles) == 1 else [namespace, build_namespace]
+    if (any(type(value) is not str or re.fullmatch(r"[0-9a-f]{16}", value) is None for value in namespaces)
+            or len({value[:6] for value in namespaces}) != len(roles)
+            or (len(roles) == 1 and build_namespace is not None)):
+        raise ValueError("distinct explicit physical pool namespaces required")
+    for index, role in enumerate(roles):
         matches = [pool for pool in profile["pools"] if pool["role"] == role]
         expected = {"namespace": namespaces[index], "database": str(root / str(index) / "db/controller.db"),
                     "node_state_dir": str(root / str(index) / "state"), "chroot_base": str(root / str(index) / "p/v")}
         if len(matches) != 1 or any(matches[0][field] != value for field, value in expected.items()):
             raise ValueError("fixed physical profile differs from explicit acceptance layout: " + role)
     public = profile["public_build"]
-    if public["root"] != str(root / "builds") or public["registry_root"] != str(root / "registry"):
+    if public is not None and (public["root"] != str(root / "builds") or
+                               public["registry_root"] != str(root / "registry")):
         raise ValueError("fixed public physical profile differs from explicit acceptance layout")
     return root, namespaces
 
@@ -255,7 +266,7 @@ def validate_acceptance_socket_paths(root, namespaces, firecracker):
             raise ValueError("acceptance path too long for Firecracker socket")
 
 
-def provision_acceptance_coordination(policy, *, run_root, namespace, build_namespace):
+def provision_acceptance_coordination(policy, *, run_root, namespace, build_namespace=None):
     """Supply the operator-selected empty file only in a fresh private root.
 
     Call immediately after exclusive root creation, before configs or state.

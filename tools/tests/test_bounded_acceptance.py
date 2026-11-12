@@ -17,7 +17,7 @@ from tools.bounded_acceptance import (
     wait_private_build_window, provision_acceptance_coordination, validate_acceptance_socket_paths,
     prepared_ci_physical_profile, prepared_ci_runtime_configuration,
 )
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 from tools.template_build_config import apply_acceptance_build_policy
 from tools.template_build_service import configuration
 from tools.template_build_store import BuildStore
@@ -209,7 +209,7 @@ class PreparedCIDiskBudgetTests(unittest.TestCase):
         return prepared_ci_physical_profile(self.policy, **({'kernel_bytes': 64 * MIB,
             'runtime_bytes': MIB, 'disk_budget_bytes': 200 * GIB} | changes))
 
-    def test_runtime_only_keeps_full_cleanup_and_twice_envelope_under_200_gib(self):
+    def test_runtime_only_keeps_full_growth_and_operation_headroom_under_200_gib(self):
         original = copy.deepcopy(self.policy)
         profile = self.profile()
         self.assertEqual(self.policy, original)
@@ -219,10 +219,11 @@ class PreparedCIDiskBudgetTests(unittest.TestCase):
                       'host_metadata_inodes', 'max_host_slots', 'jail_inodes_per_slot'):
             self.assertEqual(profile['pools'][0][field], self.original['pools'][0][field])
         peak, _ = envelope(profile)
-        self.assertLessEqual(2 * peak, 200 * GIB)
-        self.assertEqual(self.profile(disk_budget_bytes=2 * peak), profile)
+        required = activation_budget(profile)['required_bytes']
+        self.assertLessEqual(required, 200 * GIB)
+        self.assertEqual(self.profile(disk_budget_bytes=required), profile)
         with self.assertRaisesRegex(ValueError, 'exceeds disk ceiling'):
-            self.profile(disk_budget_bytes=2 * peak - 1)
+            self.profile(disk_budget_bytes=required - 1)
 
     def test_invalid_ceiling_artifacts_and_oversized_runtime_are_rejected(self):
         self.assertEqual(self.profile(disk_budget_bytes=384 * GIB),self.profile())

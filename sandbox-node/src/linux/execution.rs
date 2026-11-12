@@ -107,7 +107,8 @@ impl LinuxWorker {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
                 }
-                if let Some(template) = &self.secret(*sandbox, *generation)?.template {
+                let template = self.secret(*sandbox, *generation)?.template;
+                if let Some(template) = &template {
                     self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
@@ -120,7 +121,12 @@ impl LinuxWorker {
                     slot: *slot,
                 };
                 self.write_node_json(&self.slot_path(*slot), &binding)?;
-                let observation = self.runtime(*sandbox, *vm)?.launch(&self.vm_name(*vm))?;
+                let observation =
+                    self.runtime(*sandbox, *vm)?
+                        .launch_verified(&self.vm_name(*vm), |disk| match &template {
+                            Some(template) => self.verify_cold_rootfs(&template.rootfs, disk),
+                            None => Ok(()),
+                        })?;
                 if observation.state != VmState::VmmRunning
                     || observation.pid == 0
                     || observation.start_time_ticks == 0
@@ -356,7 +362,7 @@ impl LinuxWorker {
                 check_trusted_path(&path)?;
                 self.sync_node_record(&path)?;
                 let stored: crate::startup::StartupRecord =
-                    serde_json::from_reader(File::open(&path)?)?;
+                    crate::json_file::from_reader(File::open(&path)?)?;
                 return stored.confirmed_for(&expected);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

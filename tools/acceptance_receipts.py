@@ -34,7 +34,7 @@ PAUSE_RECEIPT_CHILD_SCOPES = (*PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
 PAUSE_RECEIPT_LABELS = ('functional', *PAUSE_RECEIPT_CHILD_SCOPES, 'pause-receipt')
 ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop',
                          'pause-dispatch', 'pause-receipt', 'source-live', 'stage1-create-transaction-link',
-                         'stage1-original-source-rows')
+                         'stage1-original-source-rows', 'stage1-unload-audits')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
@@ -185,7 +185,7 @@ def stage1_native_labels(profile='full'):
     """Fixed full, Create or convergence scope; no caller-selected cases."""
     registered = stage1_registration()
     labels = tuple(registered.native_labels(profile))
-    counts = {'full': 77, 'create-delivery': 12, 'protocol-convergence': 22}
+    counts = {'full': 78, 'create-delivery': 12, 'protocol-convergence': 22}
     if profile not in counts:
         raise ValueError('unknown fixed native profile: ' + str(profile))
     count = counts[profile]

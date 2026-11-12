@@ -14,6 +14,7 @@ use std::{
     io::{self, Read, Write},
     os::unix::fs::{FileExt, MetadataExt},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 // Only this format attests that initialization completed the real CoW probe.
@@ -46,6 +47,7 @@ pub struct SnapshotLayout {
     record: LayoutRecord,
     owner: u32,
     material_project: Option<crate::material_project::MaterialProject>,
+    verified_bundle: Arc<Mutex<Option<crate::snapshot_store::BundleMeasurements>>>,
 }
 
 #[path = "snapshot_full_retirement.rs"]
@@ -260,6 +262,7 @@ impl SnapshotLayout {
             record,
             owner,
             material_project: None,
+            verified_bundle: Arc::default(),
         })
     }
     /// Reopen the original registered layout, including populated runtime/store
@@ -300,6 +303,7 @@ impl SnapshotLayout {
             record,
             owner,
             material_project: None,
+            verified_bundle: Arc::default(),
         })
     }
     /// Bind the original store's pre-provisioned project to protected tools.
@@ -382,8 +386,12 @@ impl SnapshotLayout {
         if let Some(project) = &self.material_project {
             project.require(&self.store)?;
         }
-        let store =
-            SnapshotStore::from_layout(self.store_root(), self.store.try_clone()?, self.owner);
+        let store = SnapshotStore::from_layout(
+            self.store_root(),
+            self.store.try_clone()?,
+            self.owner,
+            Arc::clone(&self.verified_bundle),
+        );
         // Cheap path rejection is additional; the layout's producer/original
         // identities provide the sibling relation, not this lexical predicate.
         store.require_separate_from(path)?;

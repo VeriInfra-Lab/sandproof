@@ -296,6 +296,17 @@ impl SnapshotStore {
         plan: &CaptureStoreRetirement,
     ) -> Result<(), RuntimeError> {
         self.verify_capture_retirement(plan)?;
+        let mut cached = self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))?;
+        if cached
+            .as_ref()
+            .is_some_and(|entry| entry.directory_key == plan.key)
+        {
+            *cached = None;
+        }
+        drop(cached);
         RetiredDirectory::retire(
             &self.directory,
             &key_name("staging-", &plan.key),

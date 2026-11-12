@@ -79,13 +79,14 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 Err(error) => return self.close_failed_unadmitted_unload(intent, &context, error),
             };
             let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            let physical = Self::lifecycle_capture_admission(&inner)?;
             let now = self.clock.now_ms()?;
             let admitted = inner
                 .journal
-                .admit_lifecycle_full_capture::<H::Evidence>(
+                .admit_lifecycle_full_capture_with_space::<H::Evidence>(
                     &record.work,
                     &context,
-                    &full,
+                    (&full, physical),
                     now,
                     &mut NeverCrash,
                 )
