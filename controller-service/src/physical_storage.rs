@@ -1,7 +1,7 @@
 //! Fixed deployment-wide physical envelope. These declarations allocate no
 //! blocks: the host must validate the single shared-filesystem activation and
-//! observe this entire envelope free before new work. Existing allocation is
-//! deliberately credited zero; a racy `du`/statvfs subtraction is never used.
+//! retain the full growth envelope while checking only the new operation's
+//! headroom. Existing allocation gets no racy `du`/statvfs subtraction credit.
 
 use crate::{AdmissionLimits, JournalError};
 use serde::{Deserialize, Serialize};
@@ -330,14 +330,89 @@ impl PhysicalPool {
 }
 
 impl PhysicalStorageProfile {
-    /// Fresh activation leaves one complete peak free even after every managed
-    /// writer has reached its maximum. This deliberate zero-credit contract
-    /// costs twice the envelope but permits repeated cleanup/create cycles.
+    /// Fresh activation covers all configured growth plus the largest new-work
+    /// headroom. Template copies and already bounded writers are not duplicated
+    /// in every operation's free-space check. Inode policy remains independent.
     /// # Errors
     /// Unrepresentable provisioning requirements are unsupported.
     pub fn activation_bytes(&self) -> Result<u64, JournalError> {
-        let peak = self.peak_bytes()?;
-        add(peak, peak)
+        add(self.peak_bytes()?, self.new_work_headroom_bytes()?)
+    }
+
+    /// Extra space kept available for control records, failure cleanup and
+    /// filesystem metadata. These are global, not a second disk/template pool.
+    /// # Errors
+    /// Arithmetic overflow rejects the declaration.
+    pub fn cleanup_headroom_bytes(&self) -> Result<u64, JournalError> {
+        self.pools
+            .iter()
+            .try_fold(self.filesystem_overhead_bytes, |total, pool| {
+                add(total, pool.cleanup_reserve_bytes)
+            })
+    }
+
+    /// # Errors
+    /// A foreign pool or a disk above its logical quota cannot borrow capacity.
+    pub fn create_headroom_bytes(
+        &self,
+        pool: &PhysicalPool,
+        disk_bytes: u64,
+    ) -> Result<u64, JournalError> {
+        if !self.pools.contains(pool) || disk_bytes > pool.rootfs_budget_bytes {
+            return Err(JournalError::UnsupportedStore);
+        }
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(
+                disk_bytes,
+                add(pool.kernel_copy_bytes, pool.runtime_copy_bytes)?,
+            )?,
+        )
+    }
+
+    /// # Errors
+    /// Only the exact registered cache can request download headroom.
+    pub fn cache_headroom_bytes(&self, cache: &PhysicalTemplateCache) -> Result<u64, JournalError> {
+        if !self.host_template_caches.contains(cache) {
+            return Err(JournalError::UnsupportedStore);
+        }
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(cache.max_entry_bytes, cache.metadata_bytes)?,
+        )
+    }
+
+    /// Whole public workspace/registry provision remains conservative; this
+    /// does not borrow runtime disks or unrelated host caches for publication.
+    /// # Errors
+    /// Missing public-build capacity or overflow rejects the request.
+    pub fn publication_headroom_bytes(&self) -> Result<u64, JournalError> {
+        let public = self
+            .public_build
+            .as_ref()
+            .ok_or(JournalError::UnsupportedStore)?;
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(public.workspace_bytes, public.registry_bytes)?,
+        )
+    }
+
+    /// Largest immediate operation; all simultaneous writers still share their
+    /// original bounded quotas in `peak_bytes`, not this headroom calculation.
+    /// # Errors
+    /// Unrepresentable requirements are unsupported.
+    pub fn new_work_headroom_bytes(&self) -> Result<u64, JournalError> {
+        let mut largest = self.cleanup_headroom_bytes()?;
+        for pool in &self.pools {
+            largest = largest.max(self.create_headroom_bytes(pool, pool.rootfs_budget_bytes)?);
+        }
+        for cache in &self.host_template_caches {
+            largest = largest.max(self.cache_headroom_bytes(cache)?);
+        }
+        if self.public_build.is_some() {
+            largest = largest.max(self.publication_headroom_bytes()?);
+        }
+        Ok(largest)
     }
 
     fn validate_roles(&self) -> Result<(), JournalError> {
@@ -596,6 +671,57 @@ mod tests {
         // pending prepare and unknown cleanup, even if one pool is now idle.
         assert_eq!(profile.pools[0].peak_bytes().unwrap(), 1300);
     }
+
+    #[test]
+    fn operation_headroom_does_not_duplicate_unrelated_reserved_writers() {
+        let mut profile = profile();
+        assert_eq!(profile.cleanup_headroom_bytes().unwrap(), 450);
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 100)
+                .unwrap(),
+            600
+        );
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 1000)
+                .unwrap(),
+            1500
+        );
+        assert!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 1001)
+                .is_err()
+        );
+        let mut foreign = profile.pools[0].clone();
+        foreign.namespace = "2123456789abcdef".into();
+        assert!(profile.create_headroom_bytes(&foreign, 100).is_err());
+        assert_eq!(profile.publication_headroom_bytes().unwrap(), 1650);
+        assert_eq!(profile.activation_bytes().unwrap(), 5500);
+        // Existing static service material is still fully charged to growth,
+        // but a create does not need another copy of that service's storage.
+        profile.service_data.push(PhysicalServiceData {
+            root: "/host/static".into(),
+            owner_uid: 0,
+            peak_bytes: 4000,
+            inode_budget: 4,
+            on_demand_capture: false,
+        });
+        assert_eq!(profile.activation_bytes().unwrap(), 9500);
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 100)
+                .unwrap(),
+            600
+        );
+        // Even full warming leaves every declared operation's guard. Logical
+        // quotas, not a free-space sample, still constrain concurrent requests.
+        let peak = profile.peak_bytes().unwrap();
+        for allocated in [0, peak / 2, peak] {
+            let free = profile.activation_bytes().unwrap() - allocated;
+            assert!(free >= profile.new_work_headroom_bytes().unwrap());
+        }
+    }
     #[test]
     fn mismatch_overflow_unknown_roles_and_overlapping_roots_fail() {
         let mut profile = profile();
@@ -696,7 +822,10 @@ mod tests {
         profile.host_template_caches = vec![cache.clone()];
         profile.validate().unwrap();
         assert_eq!(profile.peak_bytes().unwrap(), 3850 + extra);
-        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + extra));
+        assert_eq!(
+            profile.activation_bytes().unwrap(),
+            3850 + extra + 450 + 1000 + cache.metadata_bytes
+        );
         for field in ["temporary", "metadata", "inode", "overlap", "namespace"] {
             let mut changed = profile.clone();
             let cache = &mut changed.host_template_caches[0];
@@ -734,7 +863,7 @@ mod tests {
         profile.filesystem_overhead_inodes += 4;
         profile.validate().unwrap();
         assert_eq!(profile.peak_bytes().unwrap(), 3850 + 4096);
-        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + 4096));
+        assert_eq!(profile.activation_bytes().unwrap(), 3850 + 4096 + 1650);
         profile.service_data[0].root = "/host/registry/nested".into();
         assert!(profile.validate().is_err());
         profile.service_data[0].root = "/host/center-service".into();

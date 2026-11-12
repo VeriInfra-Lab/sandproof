@@ -17,7 +17,7 @@ sys.path.insert(0,str(ROOT/'tests/system'))
 import _runtime_services as services
 from _complete_runtime import complete_runtime
 from tools.benchmark_ci import remove_private_tree
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 
 
 class CaptureProvisionTests(unittest.TestCase):
@@ -611,11 +611,11 @@ class RuntimeServicesTests(unittest.TestCase):
                     with self.subTest(ceiling=invalid),self.assertRaisesRegex(ValueError,'explicit prepared CI activation ceiling'):
                         bind(2,invalid)
                 generic_profile=bind(2,None)
-            self.assertLessEqual(2*envelope(profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertLessEqual(activation_budget(profile)['required_bytes'],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(profile['pools'],original)
             # General template/build probes keep their own original approved
             # envelope and actual free-space check, not the two-task CI ceiling.
-            self.assertGreater(2*envelope(generic_profile)[0],services.MAX_ACTIVATION_BYTES)
+            self.assertGreater(activation_budget(generic_profile)['required_bytes'],services.MAX_ACTIVATION_BYTES)
             self.assertEqual(generic_profile['pools'],original)
 
     def test_explicit_capture_bytes_and_inodes_still_require_the_full_double_envelope(self):

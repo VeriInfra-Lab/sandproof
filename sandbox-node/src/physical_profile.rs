@@ -395,7 +395,7 @@ impl PhysicalProfileLease {
                     // allowed before activation. Clear it under the exclusive
                     // lock before measuring fresh headroom: crediting its old
                     // blocks would race, and counting them again strands a
-                    // crash/retry at exactly twice the required peak.
+                    // crash/retry at exactly the activation requirement.
                     file.set_len(0)?;
                     file.sync_all()?;
                 }
@@ -408,7 +408,7 @@ impl PhysicalProfileLease {
                     || space.available_inodes < needed_inodes
                 {
                     return Err(
-                        "fresh physical activation requires twice the complete byte/inode envelope"
+                        "fresh physical activation requires the growth envelope plus operation headroom and twice the inode envelope"
                             .into(),
                     );
                 }

@@ -1,8 +1,8 @@
-"""Fixed shared-filesystem profile, with conservative zero allocated-block credit.
+"""Fixed shared-filesystem growth bounds and operation-specific headroom.
 
 The operator provisions one private coordination file for every managed pool on
 this volume. The Rust host activates it only with all managed roots empty and
-2x byte/inode peak free. Other profiles, unmanaged writers, external collectors
+the byte growth envelope plus largest-operation headroom and 2x inode peak free. Other profiles, unmanaged writers, external collectors
 and filesystem/jailer-specific overhead beyond the declared bound are explicit
 availability premises. This is not a filesystem quota or a second controller.
 """
@@ -133,16 +133,43 @@ def envelope_breakdown(profile):
             raise ValueError("physical allocation roots overlap")
         paths.append(path)
     peak = sum(item["bytes"] for item in parts)
-    if 2 * peak > MAXIMUM or 2 * positive(profile["filesystem_overhead_inodes"]) > MAXIMUM or profile["filesystem_overhead_inodes"] < inodes:
+    if peak + _new_work_headroom(profile) > MAXIMUM or 2 * positive(profile["filesystem_overhead_inodes"]) > MAXIMUM or profile["filesystem_overhead_inodes"] < inodes:
         raise ValueError("physical envelope overflow or insufficient inode provision")
     return parts, profile["filesystem_overhead_inodes"]
+
+
+def _cleanup_headroom(profile):
+    return profile['filesystem_overhead_bytes'] + sum(pool['cleanup_reserve_bytes'] for pool in profile['pools'])
+
+
+def _new_work_headroom(profile):
+    cleanup = _cleanup_headroom(profile)
+    growth = [0]
+    growth.extend(pool['rootfs_budget_bytes'] + pool['kernel_copy_bytes'] + pool['runtime_copy_bytes']
+                  for pool in profile['pools'])
+    growth.extend(cache['max_entry_bytes'] + cache['metadata_bytes'] for cache in profile['host_template_caches'])
+    public = profile['public_build']
+    if public is not None:
+        growth.append(public['workspace_bytes'] + public['registry_bytes'])
+    return cleanup + max(growth)
+
+
+def publication_headroom(profile):
+    """The existing public builder's immediate workspace/registry requirement."""
+    envelope(profile)
+    public = profile['public_build']
+    if public is None:
+        raise ValueError('public build physical provision required')
+    return _cleanup_headroom(profile) + public['workspace_bytes'] + public['registry_bytes']
 
 
 def activation_budget(profile):
     """The complete activation budget, before observing any filesystem."""
     parts, inodes = envelope_breakdown(profile)
     peak = sum(item["bytes"] for item in parts)
-    return dict(parts=parts, peak_bytes=peak, required_bytes=2 * peak, required_inodes=2 * inodes)
+    headroom = _new_work_headroom(profile)
+    return dict(parts=parts, peak_bytes=peak, headroom_bytes=headroom,
+                required_bytes=peak + headroom, required_inodes=2 * inodes)
 
 
 def activation_capacity(profile, filesystem):
@@ -294,7 +321,7 @@ class PhysicalProfileLease:
     def admit(self, free_bytes):
         self.validate()
         space = os.statvfs(self.file.fileno())
-        return free_bytes >= self.peak and space.f_favail >= self.inodes
+        return free_bytes >= publication_headroom(self.profile) and space.f_favail >= self.inodes
 
     def close(self):
         if not self.file.closed:

@@ -65,10 +65,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let pool = profile
             .pool(inner.journal.deployment_namespace())
             .map_err(map_journal)?;
-        let cleanup_and_fs_bytes = pool
-            .cleanup_reserve_bytes
-            .checked_add(profile.filesystem_overhead_bytes)
-            .ok_or(ApplicationError::Busy)?;
+        let cleanup_and_fs_bytes = profile.cleanup_headroom_bytes().map_err(map_journal)?;
         Ok(Some(CaptureAdmission {
             space: inner.host.lifecycle_capture_space(&profile, pool)?,
             fixed_bytes: profile.peak_bytes().map_err(map_journal)?,
@@ -80,7 +77,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
         &self,
         inner: &Inner<H>,
     ) -> Result<(), ApplicationError> {
-        let required = self.physical_admission_bytes(inner, &CreateOptions::default(), 0)?;
+        self.physical_admission_bytes(inner, &CreateOptions::default(), 0)?;
+        let required = full_profile(&inner.journal)?
+            .publication_headroom_bytes()
+            .map_err(map_journal)?;
         if inner.host.available_disk_bytes()? < required {
             return Err(ApplicationError::QuotaExceeded);
         }
@@ -174,8 +174,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
             return Err(ApplicationError::Busy);
         }
         inner.host.validate_physical_storage(profile, pool)?;
-        // Do not add the new disk again: the profile already includes the full
-        // rootfs quota of both pools, pending sparse growth and unknown cleanup.
-        profile.peak_bytes().map_err(map_journal)
+        // The fixed profile still reserves all future disk growth and unknown
+        // cleanup. Immediate free space covers this operation, not all pools.
+        profile
+            .create_headroom_bytes(pool, disk_bytes)
+            .map_err(map_journal)
     }
 }

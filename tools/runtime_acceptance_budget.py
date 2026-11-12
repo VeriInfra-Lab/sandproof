@@ -5,7 +5,7 @@ checks. Planning output alone never certifies available space or a hard quota.
 """
 import copy
 from pathlib import Path
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 
 MIB=1024**2
 MAX_ACTIVATION_BYTES=200*1024**3
@@ -69,7 +69,7 @@ def profile_declaration(native_pools, catalogs, layout, *, registry, service_pea
         if (type(activation_ceiling_bytes) is not int
                 or not 0<activation_ceiling_bytes<=PREPARED_CI_MAX_ACTIVATION_BYTES):
             raise ValueError('explicit prepared CI activation ceiling at most 384 GiB required')
-        if 2*peak>activation_ceiling_bytes:
+        if activation_budget(profile)['required_bytes']>activation_ceiling_bytes:
             raise ValueError('complete dual-service activation exceeds prepared CI ceiling; no quota is reduced')
     return profile
 

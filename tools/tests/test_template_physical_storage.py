@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tools import single_host_storage
-from tools.template_physical_storage import envelope, validate_configuration, PhysicalProfileLease
+from tools.template_physical_storage import activation_budget, publication_headroom, envelope, validate_configuration, PhysicalProfileLease
 
 
 def configuration(root):
@@ -75,7 +75,7 @@ class PhysicalProfileTests(unittest.TestCase):
 
     def test_file_volume_plan_counts_backing_reserve_before_volume_exists(self):
         profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
-        required = 2 * envelope(profile)[0]
+        required = activation_budget(profile)['required_bytes']
         free = SimpleNamespace(f_bavail=required + 63, f_frsize=1, f_favail=100)
         with patch('tools.single_host_storage.os.statvfs', return_value=free):
             plan = single_host_storage.volume_plan(profile, self.root, image_bytes=required, host_reserve_bytes=64)
@@ -86,7 +86,7 @@ class PhysicalProfileTests(unittest.TestCase):
 
     def test_automatic_file_volume_leaves_room_for_formatting_and_staging(self):
         profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
-        required = 2 * envelope(profile)[0]
+        required = activation_budget(profile)['required_bytes']
         outer_available = required + 3 * 1024**3
         free = SimpleNamespace(f_bavail=outer_available, f_frsize=1, f_favail=100)
         with (patch.object(single_host_storage, 'mount_info', return_value={'fstype': 'ext4', 'options': 'rw'}),
@@ -177,10 +177,10 @@ class PhysicalProfileTests(unittest.TestCase):
         activate_for_test(self.profile)
         lease = PhysicalProfileLease(self.profile)
         # Rootfs allocation is not inferred from current sparse block count.
-        # Activation reserves 2*peak, so full self-warmup leaves >=peak free.
+        # Full growth leaves the largest operation headroom, including cleanup.
         for allocated in (0, 1, peak // 2, peak):
-            self.assertTrue(lease.admit(2 * peak - allocated))
-        self.assertFalse(lease.admit(peak - 1))
+            self.assertTrue(lease.admit(activation_budget(self.profile)['required_bytes'] - allocated))
+        self.assertFalse(lease.admit(publication_headroom(self.profile) - 1))
         lease.close()
 
     def test_cache_shares_payload_peak_and_retains_temporary_and_metadata_checks(self):

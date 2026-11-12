@@ -321,8 +321,8 @@ def exercise_with_evidence(args, evidence):
         deployment['registry'].update(max_artifact_bytes_global=1, max_artifact_bytes_per_tenant=1)
     deployment = acceptance_disk_budgets(deployment, bounded_policy)
     if prepared_profile is not None:
-        from tools.template_physical_storage import envelope
-        deployment['host']['minimum_free_disk_bytes'] = 2 * envelope(prepared_profile)[0]
+        from tools.template_physical_storage import activation_budget
+        deployment['host']['minimum_free_disk_bytes'] = activation_budget(prepared_profile)['required_bytes']
         deployment['prepared_ci_disk_budget_bytes'] = disk_ceiling
         deployment['builder_dispatched'] = False
     proxy_binary = getattr(args, 'proxy_binary', None)
@@ -480,8 +480,8 @@ def exercise_with_evidence(args, evidence):
         build_path.write_text(json.dumps(build))
         build_path.chmod(0o600)
         validate_build_service(build_path,require_physical_lease=False)
-    from tools.template_physical_storage import envelope
-    activation_bytes=2*envelope(settings[0]['bounded_host']['physical_storage'])[0]
+    from tools.template_physical_storage import activation_budget
+    activation_bytes=activation_budget(settings[0]['bounded_host']['physical_storage'])['required_bytes']
     if runtime_only and activation_bytes>disk_ceiling:
         raise ValueError('dual-service/cache activation exceeds approved prepared CI ceiling')
     deployment['host']['minimum_free_disk_bytes']=max(deployment['host']['minimum_free_disk_bytes'],activation_bytes)
@@ -913,7 +913,7 @@ def parser():
     parser.add_argument('--ci-fixtures', type=Path,
                         help='operator-pinned prepared CI manifest; no runtime Internet or original-environment claim')
     parser.add_argument('--prepared-ci-disk-budget-bytes', type=int,
-                        help='required prepared-CI total activation ceiling, including twice the physical envelope; at most 384 GiB')
+                        help='required prepared-CI total activation ceiling, including fixed growth and operation headroom; at most 384 GiB')
     parser.add_argument('--prepare-original-fixtures', type=Path,
                         help='fresh destination for one approved original 2.1 OCI template')
     parser.add_argument('--original-oci-digest', help='immutable original OCI digest for preparation')

@@ -17,7 +17,7 @@ import time
 
 from .template_build_config import validate_acceptance_build_policy
 from .template_build_store import TERMINAL
-from .template_physical_storage import MAXIMUM, envelope
+from .template_physical_storage import MAXIMUM, activation_budget, envelope
 from .runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 
 
@@ -166,7 +166,7 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
     Prepared CI never imports/publishes templates or dispatches build VMs.
     Keep runtime/cleanup/metadata quotas and the original filesystem overhead;
     bound kernel/runtime copies by the pinned artifacts actually registered.
-    Rust still activates the same profile with twice its complete envelope.
+    Rust activates the same growth envelope plus operation-specific headroom.
     """
     profile = copy.deepcopy(_acceptance_profile(policy))
     if type(disk_budget_bytes) is not int or not 0 < disk_budget_bytes <= PREPARED_CI_MAX_ACTIVATION_BYTES:
@@ -180,7 +180,7 @@ def prepared_ci_physical_profile(policy, *, kernel_bytes, runtime_bytes, disk_bu
         host_template_caches=[cache for cache in profile['host_template_caches']
                               if cache['namespace'] == pool['namespace']])
     peak, _ = envelope(profile)
-    if 2 * peak > disk_budget_bytes:
+    if activation_budget(profile)['required_bytes'] > disk_budget_bytes:
         raise ValueError("prepared CI complete physical activation exceeds disk ceiling")
     return profile
 
