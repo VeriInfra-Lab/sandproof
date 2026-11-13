@@ -434,6 +434,7 @@ class RetainedExclusionTests(unittest.TestCase):
         with patch.object(runtime,'original_process',return_value=False),patch.dict(sys.modules,{'sdk_c02_acceptance':sdk}):
             state.finish(report)
         state.services.stop_all.assert_called_once_with()
+        state.services.retire_private_templates.assert_called_once_with()
         state.lease.release.assert_not_called()
         self.assertEqual(report['host_lease'],'retained-until-exact-filesystem-teardown')
         stopped=json.loads((self.root/'scenario-stopped.json').read_text())
@@ -819,6 +820,7 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
         state.finish(report)
         self.assertEqual(report['cleanup'],'unknown-preserved-original-resources-and-host-lease')
         state.services.stop_all.assert_not_called()
+        state.services.retire_private_templates.assert_not_called()
 
 
 class RestoreGateBindingTests(unittest.TestCase):

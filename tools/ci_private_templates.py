@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import stat
 
-from tools.ci_retention import reject_mounts
+from tools.ci_retention import fsync_directory, reject_mounts
 from tools.system_acceptance import digest, private_path, write_once
 
 
@@ -53,6 +53,8 @@ def retire(caches, evidence):
         if [info.st_dev,info.st_ino]!=row['identity'] or not stat.S_ISREG(info.st_mode):
             raise ValueError('private template file changed before retirement')
         path.unlink()
+    for directory in {Path(row['path']).parent for row in rows}:
+        fsync_directory(directory)
     write_once(evidence.with_name(evidence.stem+'-complete.json'),
         dict(removed_files=len(rows),allocated_bytes=sum(r['allocated_bytes'] for r in rows),
              intent_sha256=digest(evidence)))
