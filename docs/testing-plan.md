@@ -133,6 +133,13 @@ Prepare 仍未完成时，才恢复这个进程供原取证/Stop 流程推进；
 Cleanup 阻止明细退休，不靠轮询碰巧抢在 GC 之前。重开后沿原 Cleanup 观察、公开
 Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成功。
 
+同一场景还在公开 Destroy 已接受、原 LoadPaused 候选仍停止的 `Terminating` 阶段，
+以及实际产品回收后的 `Cleaned` 阶段，分别重放原完整 Resume 请求。必须返回原历史接受，
+当前终止版本和阶段保持不变；同键改写期望版本必须冲突，数据访问和旧凭据仍拒绝。
+前一重放之后继续检查原 Prepared/Stop 与没有第二次 Prepare/Activate，后一重放之后继续
+核对最终资源结算，不能只凭两次 HTTP 202 宣称不会复活。这只覆盖原保留窗口内的重放，
+不替代过期窗口、迟到物理删除或 TTL 竞争。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full

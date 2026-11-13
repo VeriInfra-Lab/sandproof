@@ -689,6 +689,42 @@ class RepeatedLifecycleRequestTests(unittest.TestCase):
                     patch.object(client,'query',return_value=view),self.assertRaises(AssertionError):
                 client.assert_resume_replay(dict(window=1,sequence=3,expected_version=2),accepted,current)
 
+    def test_terminal_resume_replay_checks_both_stages_without_allocating_a_request(self):
+        for phase in ('terminating', 'cleaned'):
+            client=self.client()
+            accepted=dict(session=client.session,key=client.key(3),accepted_version=3)
+            client.sequence=4
+            client.current_acceptance=dict(session=client.session,key=client.key(4),accepted_version=4)
+            current=self.view(client,phase)
+            request=dict(window=1,sequence=3,expected_version=2)
+            with self.subTest(phase=phase), patch.object(client,'query',return_value=current), \
+                    patch.object(client,'read_json',return_value=accepted) as replay, \
+                    patch.object(client,'call',return_value=(409,b'')) as changed, \
+                    patch.object(client,'assert_data_closed') as access, \
+                    patch.object(client,'assert_previous_tokens_closed') as tokens:
+                result=client.assert_terminal_resume_replay(request,accepted,phase=phase)
+            self.assertEqual(result['phase'],phase)
+            self.assertEqual(replay.call_args.kwargs['body'],request)
+            self.assertEqual(changed.call_args.kwargs['body'],dict(request,expected_version=4))
+            self.assertEqual(client.sequence,4)
+            self.assertEqual(client.current_acceptance['accepted_version'],4)
+            access.assert_called_once();tokens.assert_called_once()
+
+    def test_terminal_resume_replay_rejects_revival_or_accepted_altered_parameters(self):
+        for changed_status,revived in ((202,False),(409,True)):
+            client=self.client()
+            accepted=dict(session=client.session,key=client.key(3),accepted_version=3)
+            client.current_acceptance=dict(session=client.session,key=client.key(4),accepted_version=4)
+            current=self.view(client,'cleaned')
+            after=dict(current,phase='running') if revived else current
+            with self.subTest(changed_status=changed_status,revived=revived), \
+                    patch.object(client,'query',side_effect=[current,after,current]), \
+                    patch.object(client,'read_json',return_value=accepted), \
+                    patch.object(client,'call',return_value=(changed_status,b'')), \
+                    self.assertRaises(AssertionError):
+                client.assert_terminal_resume_replay(dict(window=1,sequence=3,expected_version=2),
+                    accepted,phase='cleaned')
+
     def test_state_lost_completes_original_resume_and_allows_explicit_destroy(self):
         client=self.client()
         client.operation_sent('resume')
