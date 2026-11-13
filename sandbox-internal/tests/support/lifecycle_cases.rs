@@ -4,7 +4,7 @@ use sandproof_internal::{LifecycleReceiver, ReceiveError};
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, CenterIdentity, ExpectedSession,
     LIFECYCLE_PATH, LifecycleOperation, LifecycleRequest, OperationBinding, OperationKey,
-    RecordedLifecycleIntent, RetentionBinding,
+    RecordedLifecycleIntent, RetentionBinding, UnloadObservation, UnloadOutcome, UnloadedFacts,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[path = "../../../sandbox-protocol/tests/support/lifecycle.rs"]
@@ -35,6 +35,18 @@ impl sandproof_internal::DataReceiver for Counted {
     }
 }
 impl LifecycleReceiver for Counted {
+    async fn observe_unload(
+        &self,
+        intent: AcceptedLifecycleIntent,
+        context: AuthenticatedCenterContext,
+    ) -> Result<UnloadObservation, ReceiveError> {
+        assert_eq!(context.center(), &center());
+        assert_eq!(context.expected_node(), &fixture::node("host-a"));
+        self.0.fetch_add(1, Ordering::SeqCst);
+        self.1.lock().unwrap().push(intent.clone());
+        // Controlled decoded value only: no journal, disk, capture or VM claim.
+        Ok(unloaded_value(intent))
+    }
     async fn observe_resume(
         &self,
         _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
@@ -59,6 +71,107 @@ impl LifecycleReceiver for Counted {
             intent,
         })
     }
+}
+
+fn unloaded_value(request: AcceptedLifecycleIntent) -> UnloadObservation {
+    let LifecycleOperation::Unload {
+        source_incarnation,
+        capture,
+    } = request.request.operation
+    else {
+        panic!("Unload component fixture requires its original operation");
+    };
+    let facts = UnloadedFacts {
+        source_incarnation,
+        capture,
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
+        material_bytes: 8192,
+        started_at_ms: 900,
+        end_at_ms: 1000,
+        max_end_at_ms: 1100,
+        startup_deadline_ms: 1000,
+    };
+    UnloadObservation {
+        request,
+        outcome: UnloadOutcome::Unloaded { facts },
+    }
+}
+
+/// Actual Rust request/response codecs and both original Python TLS legs.
+/// The controlled receiver supplies a value, not durable or physical evidence.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_unload_receipt_is_held_dropped_and_retried_across_double_mtls() {
+    let certs = certificates_with_dual_roles();
+    let count = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server = counted_server(&certs, Arc::clone(&count), Arc::clone(&captured));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let backend = listener.local_addr().unwrap();
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let mut relay = super::python_relay::PythonRelay::start_unload_gate(
+        &certs,
+        backend,
+        &fixture::node("host-a"),
+    );
+    let caller = InternalClient::new(
+        ClientTls::new(
+            certs.center.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(relay.address, "host.test".into(), fixture::node("host-a"))
+            .unwrap(),
+        limits(),
+    );
+    let mut original = accepted(LifecycleOperation::Unload {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 3.try_into().unwrap(),
+    });
+    // Both windows are valid and intentionally distinct, as in the Rust guard.
+    original.retention.window = 7.try_into().unwrap();
+    let expected = unloaded_value(original.clone());
+    assert!(expected.matches_request(&original));
+    let request = original.clone();
+    let call = tokio::spawn(async move {
+        let discarded_result = caller.observe_lifecycle_unload(&request).await;
+        (caller, discarded_result)
+    });
+    assert_eq!(
+        serde_json::from_value::<UnloadObservation>(relay.wait_unload()).unwrap(),
+        expected
+    );
+    assert!(
+        !call.is_finished(),
+        "completed reply escaped the original relay gate"
+    );
+    let loss = relay.discard_unload();
+    assert_eq!(
+        loss["observation"],
+        serde_json::to_value(&expected).unwrap()
+    );
+    assert_eq!(loss["held"], 1);
+    assert_eq!(loss["dropped"], 1);
+    assert_eq!(loss["response_attempts"], 0);
+    let (caller, discarded_result) = call.await.unwrap();
+    assert!(
+        discarded_result.is_err(),
+        "explicitly dropped response must not return a result"
+    );
+    assert_eq!(caller.active_calls(), 0);
+    assert_eq!(
+        caller.observe_lifecycle_unload(&original).await.unwrap(),
+        expected
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    assert_eq!(*captured.lock().unwrap(), vec![original.clone(), original]);
+    relay.stop();
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
 }
 
 fn center() -> CenterIdentity {
@@ -149,7 +262,7 @@ async fn unsupported_resume_is_rejected_over_actual_tls() {
         target_incarnation: 2.try_into().unwrap(),
         manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
     });
-    // Counted supports recording only. Its explicit refusal reproduces the
+    // Counted explicitly refuses Resume. This refusal reproduces the
     // former trait default, through the authenticated endpoint and wrapper.
     assert!(matches!(
         client.observe_lifecycle_resume(&request).await,

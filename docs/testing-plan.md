@@ -81,6 +81,14 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
+E13 首次 Unload 的中心回执窗口另提供[一次性回执门](../tests/system/_internal_fault_relay.py)和[恢复观察器](../tests/system/lifecycle_unload_receipt_loss.py)，默认不启用，尚未接入 `lifecycle_unload_scenario.py` 的实机选择器。回执门只在原 `/internal/lifecycle/unload-observation` 返回真实完整 `Unloaded` 时，在发送任何回复头之前挂起；`Pending`、`OriginalContinued`、其他路径和错误状态均不算完成回执。并发完成回执必须全文相同，显式丢弃并全部排空才提供证据；超时、503、回复尝试或 relay worker 失败不能代替该证据。原 Create/DK02 行为保持独立。
+
+观察器范围为同一原 Create→首次 Unload：以原生运行证据提供 `create_identity`、四个寿命字段，以公开 Unload 回执提供完整接受键/会话/版本；按 `hold → center_stopped → discarded → restarted → recovered` 顺序比对原中心审计和实际进程观察。`hold` 在门已截获真实完成回执时记录 `Processes.observe()`；随后只强停中心，原 `Processes.audit('center')` 必须仍显示完整接受的 Unload、尚未保存结果且未退额。`observe_survivors(processes)` 直接复用原 procfs/cgroup 观察器，要求中心已死、Host/Redis 的 PID/启动时钟/账号/二进制 inode 均未变化。丢弃后等待 `drained`，使用 `relay.unload_loss_evidence()`，再启动原中心并采样 `Processes.observe()` 交给 `restarted`。恢复后的原生中心审计只允许该操作增加同一完整 `unloaded` 结果及相位变为 `unloaded`；Create 历史、接受时刻、完整 intent/context/retention、源代/capture、摘要/材料字节、寿命及原资源预留均保持。
+
+中心原生审计需要停止其写者，因此恢复后的进程采样须在后续计划审计之前完成；该计划停止另记，不能冒充故障窗口内只有一次重启。任何需要重启 Host 的离线审计也放在该窗口之外。Unload 已完成时原 VMM 应已退出，不能套用 DK02 要求旧 VMM 仍运行。实机装配继续复用原 `RuntimeServices`、受保护配置、HostLease、固定预算/截止时间和后续 Resume→Destroy→GC；仍须实际核对 Host 原持久 Unloaded/清单及材料、原 VMM 退出、重复观察不再次捕获/停止和最终精确收尾，不能仅凭这些字段断言物理事实。
+
+[自测](../tools/tests/test_lifecycle_unload_receipt_loss.py)覆盖正常记录、遗漏/变更字段、进程身份、阶段顺序及失败关闭；原生 `secure_probe` 的 `original_unload_receipt_is_held_dropped_and_retried_across_double_mtls` 使用 Rust 真实请求/响应编解码及原双向 mTLS relay，两端 CA/SAN/叶 pin/ALPN 保持原检查。其 receiver 是受控值提供者，不是持久收件、Redis 恢复或 VM 证据。这些组件检查不表示 E13 或 Linux/KVM 场景已验收。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、

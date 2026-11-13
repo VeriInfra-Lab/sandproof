@@ -51,6 +51,7 @@ class InternalFaultRelayTests(unittest.TestCase):
         expected = (
             '/internal/lifecycle', '/internal/lifecycle/result-confirmation',
             '/internal/lifecycle/window-close', '/internal/lifecycle/create-observation',
+            '/internal/lifecycle/unload-observation',
             '/internal/lifecycle/terminal-observation', '/internal/lifecycle/renewal-confirmation',
             '/internal/node-status', '/internal/probe', '/internal/template-cache',
             '/internal/template-validation-evidence',
@@ -194,6 +195,7 @@ class InternalFaultRelayTests(unittest.TestCase):
     def partition_relay(self, node):
         value = relay.InternalFaultRelay.__new__(relay.InternalFaultRelay)
         value.barrier = relay.ReceiptBarrier(node)
+        value.unload_barrier = relay.UnloadReceiptBarrier(node)
         value.partition_requests = []
         value.lock = threading.Lock()
         value.destroy_seen = threading.Event()

@@ -3,11 +3,11 @@ use super::{Certificates, NodeIdentity, SocketAddr};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::TcpListener,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, ChildStdout, Command, Stdio},
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -15,12 +15,30 @@ use std::{
 
 pub(super) struct PythonRelay {
     child: Child,
+    output: Option<BufReader<ChildStdout>>,
     _files: tempfile::TempDir,
     pub address: SocketAddr,
 }
 
 impl PythonRelay {
     pub fn start(certs: &Certificates, backend: SocketAddr, node: &NodeIdentity) -> Self {
+        Self::start_gate(certs, backend, node, false)
+    }
+
+    pub fn start_unload_gate(
+        certs: &Certificates,
+        backend: SocketAddr,
+        node: &NodeIdentity,
+    ) -> Self {
+        Self::start_gate(certs, backend, node, true)
+    }
+
+    fn start_gate(
+        certs: &Certificates,
+        backend: SocketAddr,
+        node: &NodeIdentity,
+        unload_gate: bool,
+    ) -> Self {
         let files = tempfile::tempdir().unwrap();
         // macOS /var is a symlink; the same original private_path contract
         // requires canonical file paths on both supported development OSes.
@@ -47,31 +65,55 @@ impl PythonRelay {
             .unwrap();
         let mut peer = Self {
             child,
+            output: None,
             _files: files,
             address,
         };
         let value = serde_json::json!({
             "operator": operator, "control": control, "receipt": receipt,
             "listen_port": address.port(), "backend_port": backend.port(), "node": node,
+            "unload_gate": unload_gate,
         });
         let input = peer.child.stdin.as_mut().unwrap();
         serde_json::to_writer(&mut *input, &value).unwrap();
         input.write_all(b"\n").unwrap();
         input.flush().unwrap();
-        let mut stdout = peer.child.stdout.take().unwrap();
+        peer.output = Some(BufReader::new(peer.child.stdout.take().unwrap()));
+        assert_eq!(peer.read_line(), b"READY\n");
+        peer
+    }
+
+    fn read_line(&mut self) -> Vec<u8> {
+        let mut stdout = self.output.take().unwrap();
         let (send, receive) = mpsc::channel();
         let reader = thread::spawn(move || {
-            let mut ready = [0; 6];
-            let result = stdout.read_exact(&mut ready).map(|()| ready);
-            let _ = send.send(result);
+            let mut line = Vec::new();
+            let result = (&mut stdout)
+                .take(2 * 1024 * 1024 + 1)
+                .read_until(b'\n', &mut line);
+            let _ = send.send((result, line, stdout));
         });
-        let ready = receive
-            .recv_timeout(Duration::from_secs(10))
-            .unwrap()
-            .unwrap();
+        let (result, line, stdout) = receive.recv_timeout(Duration::from_secs(10)).unwrap();
+        result.unwrap();
         reader.join().unwrap();
-        assert_eq!(&ready, b"READY\n");
-        peer
+        self.output = Some(stdout);
+        assert!(line.len() <= 2 * 1024 * 1024 && line.ends_with(b"\n"));
+        line
+    }
+
+    fn gate_command(&mut self, command: &[u8]) -> serde_json::Value {
+        let input = self.child.stdin.as_mut().unwrap();
+        input.write_all(command).unwrap();
+        input.flush().unwrap();
+        serde_json::from_slice(&self.read_line()).unwrap()
+    }
+
+    pub fn wait_unload(&mut self) -> serde_json::Value {
+        self.gate_command(b"WAIT-UNLOAD\n")
+    }
+
+    pub fn discard_unload(&mut self) -> serde_json::Value {
+        self.gate_command(b"DROP-UNLOAD\n")
     }
 
     pub fn stop(&mut self) {
