@@ -1,0 +1,81 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open scoped Classical
+noncomputable section
+
+def cursor (values : Slice α) (index : Nat) : core.slice.iter.Iter α := ⟨values, index⟩
+
+def entryHit (key : OperationKey) (entry : Entry) : Bool :=
+  decide (entry.intent.request.binding.key = key)
+
+def laneHit (id : SessionId) (key : OperationKey) (lane : LifecycleRetentionLane) : Bool :=
+  lane.last_retired.any (fun retired =>
+    decide (retired.request.request.binding.session = id) ||
+    decide (retired.request.request.binding.key = key))
+
+def sessionHit (id : SessionId) (key : OperationKey) (session : Session) : Bool :=
+  decide (session.id = id) || session.entries.val.any (entryHit key)
+
+def BorrowedVecBinding (α : Type) : Prop := ∀ values : alloc.vec.Vec α,
+  SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter Global values =
+    core.slice.Slice.iter (alloc.vec.Vec.deref values)
+
+abbrev Return := core.result.Result Unit sandproof_controller_service.JournalError
+
+def conflictAt (inbox : Inbox) (index : Nat) (lane : LifecycleRetentionLane) : Bool :=
+  lane.last_retired.any (fun retired =>
+    (inbox.lanes.val.take index).any
+      (laneHit retired.request.request.binding.session retired.request.request.binding.key) ||
+    inbox.sessions.val.any
+      (sessionHit retired.request.request.binding.session retired.request.request.binding.key))
+
+def remainingConflict (inbox : Inbox) (index : Nat) : Bool :=
+  ((inbox.lanes.val.drop index).zipIdx index).any (fun pair => conflictAt inbox pair.2 pair.1)
+
+def validationResult (conflict : Bool) : Return :=
+  if conflict then .Err .CorruptStore else .Ok ()
+
+abbrev EnumIter (α : Type) := core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter α)
+def enumCursor (values : Slice α) (index : Usize) : EnumIter α := ⟨⟨values, index.val⟩, index⟩
+
+abbrev outerBody (inbox : Inbox) := Inbox.validate_retired_identities_loop.body
+  inbox.config inbox.host_epoch_observation inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes
+
+abbrev outerLoop (inbox : Inbox) (iter : EnumIter LifecycleRetentionLane) :=
+  Inbox.validate_retired_identities_loop iter
+    inbox.config inbox.host_epoch_observation inbox.owner_high_water inbox.owners inbox.sessions inbox.lanes
+
+def FullRetiredIdentityContract (run : Inbox → Result Return) : Prop :=
+  ∀ inbox, run inbox = .ok (validationResult (remainingConflict inbox 0))
+
+def IdentitiesSeparated (inbox : Inbox) : Prop :=
+  ∀ pair ∈ inbox.lanes.val.zipIdx,
+    ∀ retired, pair.1.last_retired = some retired →
+      (∀ prior ∈ inbox.lanes.val.take pair.2,
+        ∀ last, prior.last_retired = some last →
+          last.request.request.binding.session ≠ retired.request.request.binding.session ∧
+          last.request.request.binding.key ≠ retired.request.request.binding.key) ∧
+      (∀ session ∈ inbox.sessions.val,
+        session.id ≠ retired.request.request.binding.session ∧
+        ∀ entry ∈ session.entries.val,
+          entry.intent.request.binding.key ≠ retired.request.request.binding.key)
+
+theorem option_any_false (value : Option α) (pred : α → Bool) :
+    value.any pred = false ↔ ∀ v, value = some v → pred v = false := by
+  cases value <;> simp [Option.any]
+
+theorem specification_accepts_iff (inbox : Inbox) :
+    validationResult (remainingConflict inbox 0) = .Ok () ↔ IdentitiesSeparated inbox := by
+  simp [validationResult, remainingConflict, conflictAt, IdentitiesSeparated,
+    option_any_false, laneHit, sessionHit, entryHit]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.option_any_false
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.specification_accepts_iff

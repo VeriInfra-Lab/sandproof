@@ -6,8 +6,11 @@ import shutil
 import tempfile
 import unittest
 
-from tools.check_loop_callbacks_contract import (ROOT,DEST,LLBC,CRATE,METHOD,
+from tools.check_loop_callbacks_contract import (DEST,LLBC,CRATE,METHOD,
     check,check_extraction,digest,llbc_digest)
+
+from tools.tests.proof_input_fixture import reference_root
+ROOT = reference_root()
 
 
 class SharedQueryExtractionTests(unittest.TestCase):

@@ -60,6 +60,19 @@ pub(crate) fn provision_bootstrap(path: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// First deployment only; never called by initialize/serve/restart recovery.
+/// Quota activation/hardcap readback is the independently approved OS setup.
+pub(crate) fn provision_capture_layout(path: &Path) -> Result<(), Box<dyn Error>> {
+    let config = read_configuration(path)?;
+    config.validate_static()?;
+    sandbox_runtime::SnapshotLayout::initialize_material_project(
+        &config.capture.layout_parent,
+        *config.capture.layout_binding.as_bytes(),
+        config.capture.material_project,
+    )?;
+    Ok(())
+}
+
 fn read_configuration(path: &Path) -> Result<HostConfig, Box<dyn Error>> {
     private_root_path(&std::env::current_exe()?)?;
     Ok(serde_json::from_slice(&read_protected(
@@ -171,11 +184,15 @@ fn application(
     disk_bytes: u64,
 ) -> Result<Arc<ControllerApplication<NodeHost>>, Box<dyn Error>> {
     let managed = application_config(&config.native, disk_bytes)?;
+    let original_epoch = journal.host_epoch_requirement()?;
+    let host = NodeHost::new(node, physical, std::env::current_exe()?)
+        .with_host_epoch_source(ProtectedHostEpochSource::at(
+            config.protected_bootstrap_path.clone(),
+        )?)
+        .with_capture_settings(&config.capture, &original_epoch)?;
     let application = ControllerApplication::with_templates(
         journal,
-        NodeHost::new(node, physical, std::env::current_exe()?).with_host_epoch_source(
-            ProtectedHostEpochSource::at(config.protected_bootstrap_path.clone())?,
-        ),
+        host,
         managed,
         config
             .native

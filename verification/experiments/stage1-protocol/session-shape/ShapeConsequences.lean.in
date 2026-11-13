@@ -1,0 +1,128 @@
+import SandboxModel.Lifecycle.Protocol.ShapeProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem receipt_error_precedes_shape {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session) (error : JournalError)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Err error)) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = .ok (.Err error) := by
+  unfold Inbox.validate_session_shape_using
+  rw [SavedRetirement.validate_saved_spec, receipt]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem empty_entries_rejected_after_receipt {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (empty : session.entries.val = []) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = SavedRetirement.corrupt := by
+  unfold Inbox.validate_session_shape_using
+  rw [SavedRetirement.validate_saved_spec, receipt]
+  simp [core.result.Result.Insts.CoreOpsTry.branch, SavedRetirement.corrupt,
+    alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty, empty]
+
+
+theorem accepted_iff {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = .ok (.Ok ()) ↔
+      SavedRetirement.validateView saved session = .ok (.Ok ()) ∧
+      BeforePrior inbox session ∧ index.val ≤ inbox.sessions.val.length ∧
+      (¬∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session) ∧
+      (session.refusal = none ∨ RefusalFields session) ∧
+      checkConfirmed terminal session = .ok (.Ok ()) := by
+  rw [validate_shape_spec]
+  unfold validateView
+  generalize receipt : SavedRetirement.validateView saved session = checked
+  cases checked using Result.cases with
+  | vis effect continuation => simp
+  | div => simp
+  | ret value =>
+    cases value with
+    | Err error => simp
+    | Ok value =>
+      cases value
+      simp only [bind_tc_ok]
+      by_cases before : BeforePrior inbox session <;>
+        by_cases bound : index.val ≤ inbox.sessions.val.length <;>
+        by_cases prior : ∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session <;>
+        by_cases refusal : session.refusal = none ∨ RefusalFields session <;>
+        simp [before, bound, prior, refusal, corrupt, SavedRetirement.corrupt]
+
+theorem rejected_before_index {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (invalid : ¬ BeforePrior inbox session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = corrupt := by
+  simp [validate_shape_spec, validateView, receipt, invalid]
+
+theorem index_panic_after_shape {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (before : BeforePrior inbox session) (outside : inbox.sessions.val.length < index.val) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = .fail .panic := by
+  simp [validate_shape_spec, validateView, receipt, before, Nat.not_le.mpr outside]
+
+theorem prior_rejected_before_confirmed {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (before : BeforePrior inbox session) (bound : index.val ≤ inbox.sessions.val.length)
+    (prior : ∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = corrupt := by
+  simp [validate_shape_spec, validateView, receipt, before, bound, prior]
+
+theorem refusal_rejected_before_confirmed {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (before : BeforePrior inbox session) (bound : index.val ≤ inbox.sessions.val.length)
+    (prior : ¬∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session)
+    (refusal : session.refusal ≠ none) (invalid : ¬RefusalFields session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = corrupt := by
+  simp [validate_shape_spec, validateView, receipt, before, bound, prior, refusal, invalid]
+
+theorem confirmed_reached_exactly {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .ok (.Ok ()))
+    (before : BeforePrior inbox session) (bound : index.val ≤ inbox.sessions.val.length)
+    (prior : ¬∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session)
+    (refusal : session.refusal = none ∨ RefusalFields session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = checkConfirmed terminal session := by
+  simp [validate_shape_spec, validateView, receipt, before, bound, prior, refusal]
+
+theorem receipt_failure_preserved {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session) (error : Error)
+    (receipt : SavedRetirement.validateView saved session = .fail error) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = .fail error := by
+  simp [validate_shape_spec, validateView, receipt]
+
+theorem receipt_divergence_preserved {R E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session)
+    (receipt : SavedRetirement.validateView saved session = .div) :
+    Inbox.validate_session_shape_using saved terminal inbox index session = .div := by
+  simp [validate_shape_spec, validateView, receipt]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.accepted_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.rejected_before_index
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.index_panic_after_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_rejected_before_confirmed
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_rejected_before_confirmed
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.confirmed_reached_exactly
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.receipt_failure_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.receipt_divergence_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.receipt_error_precedes_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.empty_entries_rejected_after_receipt

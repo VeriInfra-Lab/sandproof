@@ -1,0 +1,70 @@
+import SandboxModel.Lifecycle.Protocol.ShapeIteration
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.capacity
+
+namespace SandboxModel.Stage1Protocol.InboxLoadCapacity
+noncomputable section
+open scoped Classical
+
+def ScalarValid (value : U64) : Prop :=
+  value.val ≠ 0 ∧ value.val ≤ 9223372036854775807 ∧ value.val ≤ Usize.max
+
+theorem signed_max_cast :
+    IScalar.hcast .U64 core.num.I64.MAX = 9223372036854775807#u64 := by rfl
+
+theorem usize_max_cast : (UScalar.cast .U64 core.num.Usize.MAX).val = Usize.max := by
+  rw [UScalar.cast_val_eq]
+  cases Usize.bounds_eq <;> simp_all [core.num.Usize.MAX, U32.max, U64.max, U64.numBits, U32.numBits]
+
+theorem bounds_body_end (values : Array U64 12#usize) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    invalid_capacity_values_loop.body values index = .ok (.done false) := by
+  have bound : 12 ≤ index.val := by simpa using outside
+  simp [invalid_capacity_values_loop.body, lift, Slice.len, UScalar.lt_equiv, Nat.not_lt.mpr bound]
+
+theorem bounds_body_step (values : Array U64 12#usize) (index next : Usize)
+    (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    invalid_capacity_values_loop.body values index = .ok
+      (if ¬ ScalarValid values.val[index.val] then .done true else .cont next) := by
+  have bound : index.val < 12 := by simpa using inside
+  have indexed : Array.index_usize values index = .ok values.val[index.val] := by
+    simp [Array.index_usize, bound]
+  simp only [invalid_capacity_values_loop.body, lift, bind_tc_ok, Slice.len,
+    UScalar.lt_equiv, Array.val_to_slice, indexed,
+    signed_max_cast, usize_max_cast, SessionShape.index_add_one index next added]
+  unfold ScalarValid
+  split_ifs <;> simp_all <;> omega
+
+theorem bounds_loop_refines (values : Array U64 12#usize) (index : Usize) :
+    invalid_capacity_values_loop values index =
+      .ok ((values.val.drop index.val).any (fun value => decide (¬ScalarValid value))) := by
+  unfold invalid_capacity_values_loop
+  have proof := SessionShape.indexed_any_loop (Array.to_slice values)
+    (fun value => decide (¬ScalarValid value)) (invalid_capacity_values_loop.body values)
+    (by intro i outside; exact bounds_body_end values i (by simpa only [Array.val_to_slice] using outside))
+    (by
+      intro i next inside added
+      have bound : i.val < values.val.length := by simpa only [Array.val_to_slice] using inside
+      have actual := bounds_body_step values i next bound added
+      by_cases good : ScalarValid values.val[i.val] <;> simpa [Array.val_to_slice, good] using actual) index
+  simpa only [Array.val_to_slice] using proof
+
+theorem bounds_refines (values : Array U64 12#usize) :
+    invalid_capacity_values values = .ok (decide (¬∀ value ∈ values.val, ScalarValid value)) := by
+  rw [invalid_capacity_values, bounds_loop_refines]
+  change Result.ok (values.val.any (fun value => decide (¬ScalarValid value))) = _
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadCapacity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.signed_max_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.usize_max_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.bounds_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.bounds_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.bounds_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadCapacity.bounds_refines

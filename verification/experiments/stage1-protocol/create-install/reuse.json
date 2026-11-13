@@ -1,0 +1,6 @@
+{
+  "generic_proof_origin": "verification/experiments/stage1-protocol/session-shape/ShapeIteration.lean.in",
+  "verbatim_generic_proof_sha256": "6a40fde5919596dde05537bb907ffe0fd5dd618272a285e2bfd887967979e9c2",
+  "full_funs_external_origin": "verification/experiments/stage1-protocol/inbox-record/FunsExternal.lean.in",
+  "full_funs_external_sha256": "8a56bd8b9b573cd3fcf5a5f647f7f122c4fb6112ade17bf1f3897d65e33f46a3"
+}

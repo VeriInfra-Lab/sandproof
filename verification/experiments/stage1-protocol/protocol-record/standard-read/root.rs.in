@@ -1,0 +1,16 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_record_releasing(
+    effects: &mut StandardRecord<'_, '_>,
+    local: InternalLocalBinding,
+) -> bool {
+    RecordEffects::releasing(effects, local)
+}
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_record_current_operation(
+    effects: &mut StandardRecord<'_, '_>,
+    sandbox: core::SandboxId,
+) -> Option<core::OperationId> {
+    RecordEffects::current_operation(effects, sandbox)
+}

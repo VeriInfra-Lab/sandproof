@@ -71,3 +71,12 @@ pub fn startup_dispatch_revoked(
 ) -> bool {
     sandbox_controller_core::effect::startup_dispatch_revoked(world, command)
 }
+
+/// Preflight the actual worker caller, including late capture and Stop guards.
+/// Extraction alone does not establish the caller's representation relation.
+pub fn worker(
+    world: &sandbox_controller_core::World,
+    input: &sandbox_controller_core::EffectId,
+) -> Result<sandbox_controller_core::WorkerDecision, sandbox_controller_core::WorkerReject> {
+    sandbox_controller_core::handle_worker(world, input)
+}

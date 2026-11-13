@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateValues
+import SandboxModel.Lifecycle.Protocol.InboxRecordCloning
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxState.WrongCurrent
+open Values
+
+theorem stale_returned_as_current : inbox.state 0#usize 0#usize =
+    .ok { workState session oldEntry with current := true } := by
+  simp [Inbox.state, alloc.vec.Vec.index_slice_index, reads.1, reads.2.1,
+    InboxRecord.AcceptedLifecycleIntent_clone, workState]
+
+theorem rejects_same_full_state_contract : ¬ FullStateContract Inbox.state := by
+  intro contract
+  have result := contract inbox 0#usize 0#usize session_bound old_bound
+  rw [stale_returned_as_current] at result
+  have current := congrArg LifecycleWorkState.current (Result.ok_injective result)
+  simp [workState, inbox, session, oldEntry, older, EnvelopeValues.intent] at current
+
+end SandboxModel.Stage1Protocol.InboxState.WrongCurrent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.WrongCurrent.stale_returned_as_current
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.WrongCurrent.rejects_same_full_state_contract

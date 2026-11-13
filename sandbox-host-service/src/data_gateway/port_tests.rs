@@ -17,8 +17,11 @@ use tokio::{
 
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../../controller-service/tests/support/lifecycle_application.rs"]
-mod lifecycle;
+pub(super) mod lifecycle;
 use lifecycle::fixture as local;
+
+#[path = "port_tests/unload.rs"]
+mod unload;
 
 struct Permit {
     revocation: watch::Receiver<bool>,
@@ -40,7 +43,21 @@ impl DataAuthorization for Permit {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GateStage {
+    Authorization,
+    Launch,
+}
+
+struct HeldGate {
+    stage: GateStage,
+    held: Arc<AtomicBool>,
+    observed: tokio::sync::mpsc::UnboundedSender<()>,
+}
+
 struct ControlledPort {
+    gate: Option<HeldGate>,
+    children_started: AtomicUsize,
     authorization_error: Option<PortError>,
     launch_error: Option<PortError>,
     revocation: watch::Sender<bool>,
@@ -55,6 +72,8 @@ struct ControlledPort {
 impl ControlledPort {
     fn new(authorization_error: Option<PortError>, launch_error: Option<PortError>) -> Self {
         Self {
+            gate: None,
+            children_started: AtomicUsize::new(0),
             authorization_error,
             launch_error,
             revocation: watch::channel(false).0,
@@ -65,6 +84,16 @@ impl ControlledPort {
             authorization_lock: None,
             entered: None,
         }
+    }
+    fn check_gate(&self, stage: GateStage) -> Result<(), PortError> {
+        if let Some(gate) = &self.gate
+            && gate.stage == stage
+            && gate.held.load(Ordering::SeqCst)
+        {
+            let _ = gate.observed.send(());
+            return Err(PortError::DataGateBusy);
+        }
+        Ok(())
     }
 }
 
@@ -79,12 +108,13 @@ impl DataAccessPort for ControlledPort {
             .authorization_lock
             .as_ref()
             .map(|lock| lock.lock().unwrap());
-        if token != "controlled-test-token" {
+        if token != "controlled-test-token" || *self.revocation.borrow() {
             return Err(PortError::NotFound);
         }
         if let Some(error) = &self.authorization_error {
             return Err(*error);
         }
+        self.check_gate(GateStage::Authorization)?;
         Ok(Permit {
             revocation: self.revocation.subscribe(),
             drain: self.drain.clone(),
@@ -103,12 +133,28 @@ impl DataAccessPort for ControlledPort {
         if let Some(error) = &self.launch_error {
             return Err(*error);
         }
+        self.check_gate(GateStage::Launch)?;
         let reaper = RelayReaper::new()?;
-        let child = Command::new("/bin/cat")
+        let mut command = if self.gate.is_some() {
+            let mut command = Command::new("/bin/sh");
+            command.args([
+                "-c",
+                concat!(
+                    "cr=$(printf '\r'); while IFS= read -r line; do ",
+                    "[ \"$line\" = \"$cr\" ] && break; done; ",
+                    "printf 'HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n'",
+                ),
+            ]);
+            command
+        } else {
+            Command::new("/bin/cat")
+        };
+        let child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|_| PortError::Busy)?;
+        self.children_started.fetch_add(1, Ordering::SeqCst);
         Ok(reaper.attach(child))
     }
 }
@@ -393,6 +439,71 @@ async fn revocation_between_permit_and_dispatch_cannot_launch_the_tracked_child(
         Some(StatusCode::UNAUTHORIZED)
     );
     assert!(port.drain.drained());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn temporary_host_probe_contention_allows_the_original_sdk_request() {
+    for stage in [GateStage::Authorization, GateStage::Launch] {
+        let (port, held, mut overlap) = controlled_overlap(stage);
+        let response = start_during_probe(&port);
+        tokio::time::timeout(Duration::from_secs(2), overlap.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(port.children_started.load(Ordering::SeqCst), 0);
+        held.store(false, Ordering::SeqCst);
+
+        let response = response.await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(port.children_started.load(Ordering::SeqCst), 1);
+        assert!(port.authorizations.load(Ordering::SeqCst) >= 2);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revocation_during_host_probe_contention_prevents_relay_launch() {
+    for stage in [GateStage::Authorization, GateStage::Launch] {
+        let (port, held, mut overlap) = controlled_overlap(stage);
+        let response = start_during_probe(&port);
+        tokio::time::timeout(Duration::from_secs(2), overlap.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        port.revocation.send_replace(true);
+        held.store(false, Ordering::SeqCst);
+
+        assert_eq!(response.await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(port.children_started.load(Ordering::SeqCst), 0);
+        assert!(port.drain.drained());
+    }
+}
+
+fn controlled_overlap(
+    stage: GateStage,
+) -> (
+    Arc<ControlledPort>,
+    Arc<AtomicBool>,
+    tokio::sync::mpsc::UnboundedReceiver<()>,
+) {
+    let (observed, overlap) = tokio::sync::mpsc::unbounded_channel();
+    let held = Arc::new(AtomicBool::new(true));
+    let port = Arc::new(ControlledPort {
+        gate: Some(HeldGate {
+            stage,
+            held: Arc::clone(&held),
+            observed,
+        }),
+        ..ControlledPort::new(None, None)
+    });
+    (port, held, overlap)
+}
+
+fn start_during_probe(port: &Arc<ControlledPort>) -> tokio::task::JoinHandle<Response<Body>> {
+    tokio::spawn(handle(
+        Arc::clone(port),
+        Some(Arc::new(Gateway::new(fixture_limits()).unwrap())),
+        request("/process.Process/Start", true, Body::empty()),
+    ))
 }
 
 #[tokio::test]

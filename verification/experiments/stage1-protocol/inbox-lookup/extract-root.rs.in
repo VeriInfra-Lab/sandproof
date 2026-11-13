@@ -1,0 +1,8 @@
+// Extraction-only transparent root; never installed into production.
+#[expect(dead_code, reason = "selected by the fixed Charon extraction root")]
+fn proof_find(
+    inbox: &Inbox,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<Option<(usize, usize)>, JournalError> {
+    inbox.find(intent)
+}

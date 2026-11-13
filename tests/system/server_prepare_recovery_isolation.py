@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sqlite3
@@ -57,10 +58,10 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sp-", dir=parent))
     namespace = secrets.token_hex(8)
     names = [f"vm-{namespace}-{index}" for index in range(2)]
-    if len(os.fsencode(root / "jails" / args.firecracker.name / names[1] / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / args.firecracker.name / names[1] / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("test path too long for Firecracker socket")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
@@ -73,7 +74,7 @@ def exercise(args: argparse.Namespace) -> None:
     values = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
+        "chroot_base": str(root / "p/v"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1,
         "max_active_global": 2, "max_active_per_tenant": 2,
@@ -101,7 +102,7 @@ def exercise(args: argparse.Namespace) -> None:
                              {"templateID": "base", "allow_internet_access": False})
         assert status == 201, (status, body)
         first_id = json.loads(body)["sandboxID"]
-        first_claim = json.loads((root / "jails/.claims" / names[0] / "record.json").read_text())
+        first_claim = json.loads((original_chroot(root) / ".claims" / names[0] / "record.json").read_text())
         assert process_start_ticks(first_claim["pid"]) == first_claim["start_time_ticks"]
         services.processes.stop("host-0")
         assert services.native_id_for(first_id) == f"sb-{namespace}-1"
@@ -117,12 +118,12 @@ def exercise(args: argparse.Namespace) -> None:
         second_id = second_identity['binding']['session']
         second_native_id = services.native_id_for(second_id)
         assert second_native_id == f"sb-{namespace}-2"
-        second_record = root / "jails/.claims" / names[1] / "record.json"
+        second_record = original_chroot(root) / ".claims" / names[1] / "record.json"
         second_claim = json.loads(second_record.read_text()) if args.window == "after-host" else None
         if second_claim is not None:
             assert process_start_ticks(second_claim["pid"]) == second_claim["start_time_ticks"]
         else:
-            assert (root / "jails/.claims" / names[1]).is_dir()
+            assert (original_chroot(root) / ".claims" / names[1]).is_dir()
             assert not second_record.exists()
         before = database_snapshot(database)
         assert len([action for action in before["actions"]
@@ -177,7 +178,7 @@ def exercise(args: argparse.Namespace) -> None:
         for name, saved in zip(names, (first_claim, second_claim)):
             if saved is not None:
                 assert process_start_ticks(saved["pid"]) != saved["start_time_ticks"]
-            assert not (root / "jails" / args.firecracker.name / name).exists()
+            assert not (original_chroot(root) / args.firecracker.name / name).exists()
             assert not Path("/run/netns", name).exists()
             if args.cgroup_parent is not None:
                 assert not (args.cgroup_parent / name).exists()
@@ -188,7 +189,7 @@ def exercise(args: argparse.Namespace) -> None:
         # A similarly named but unbound claim is not eligible for the local
         # exception. Startup must fail closed rather than borrowing an
         # unrelated PrepareVm or silently deleting this directory.
-        unbound = root / "jails/.claims" / f"vm-{namespace}-999"
+        unbound = original_chroot(root) / ".claims" / f"vm-{namespace}-999"
         unbound.mkdir(mode=0o700)
         process = services.processes.start("host-0")
         assert process.wait(timeout=10) != 0

@@ -1,0 +1,9 @@
+
+#[cfg(feature = "durable")]
+/// # Errors
+/// Propagates the original method's operation-kind refusal.
+pub fn proof_source_pause_request(
+    work: &SourceWork,
+) -> Result<capture::PauseWorkRequest, JournalError> {
+    work.pause_request()
+}

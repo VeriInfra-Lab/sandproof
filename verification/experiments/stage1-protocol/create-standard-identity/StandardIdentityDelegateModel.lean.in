@@ -1,0 +1,21 @@
+import SandproofStage1CreateAttachment.Funs
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityModel
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1CreateAttachmentRust
+namespace SandboxModel.Stage1Protocol.StandardIdentityDelegate
+open CreateFixedIdentity
+
+abbrev Effects := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment
+abbrev call :=
+  sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.sandbox_id
+
+def FullStandardIdentityContract
+    (run : Effects → Str → U64 → Result ((core.result.Result String
+      sandproof_controller_service.JournalError) × Effects)) : Prop :=
+  ∀ (effects : Effects) (value : Str) (text : String) (sandbox : U64),
+    value.val = SandproofFoundationsRust.IdentifierLibrary.stringBytes text →
+    SandproofFoundationsRust.IdentifierLibrary.StringRepresentable (rendered text sandbox) →
+    run effects value sandbox = .ok (expected text sandbox, effects)
+
+end SandboxModel.Stage1Protocol.StandardIdentityDelegate

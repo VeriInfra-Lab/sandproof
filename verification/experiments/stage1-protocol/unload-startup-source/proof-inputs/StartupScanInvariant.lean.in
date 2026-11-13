@@ -1,0 +1,131 @@
+import OriginalRowsInvariant
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace UnloadFirstStartupScan
+open SandboxModel.Stage1Protocol.OriginalRowsDriver
+
+abbrev RowPair (Action : Type) := Action × alloc.vec.Vec U8
+
+/- Each edge uses the existing iterator and callback equations. In particular a
+callback error is never an edge, even if it returns an updated buffer. -/
+inductive Prefix {I F Item State Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (initial : I × State × F) : I × State × F → Prop
+  | start : Prefix iterator accept initial initial
+  | next {i i' : I} {s s' : State} {f f' : F} {row : Item} :
+      Prefix iterator accept initial (i, s, f) →
+      iterator.next i = .ok (some row, i') →
+      accept.call_mut f (row, s) = .ok ((.Ok (), s'), f') →
+      Prefix iterator accept initial (i', s', f')
+
+theorem prefix_preserves_driver_result {I F Item State Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    {initial reached : I × State × F}
+    (history : Prefix iterator accept initial reached) :
+    run iterator accept initial.1 initial.2.1 initial.2.2 =
+      run iterator accept reached.1 reached.2.1 reached.2.2 := by
+  induction history with
+  | start => rfl
+  | next _ nextItem called ih =>
+      exact ih.trans (run_some_callback_ok iterator accept _ _ _ _ _ _ _ nextItem called)
+
+/-- A later first error still wins even if a preceding row filled slot 1. -/
+theorem first_error_after_observed_prefix {I F Item State Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    {initial : I × State × F}
+    {i i' : I} {s s' : State} {f f' : F} {row : Item} {error : Error}
+    (history : Prefix iterator accept initial (i, s, f))
+    (next : iterator.next i = .ok (some row, i'))
+    (called : accept.call_mut f (row, s) = .ok ((.Err error, s'), f')) :
+    run iterator accept initial.1 initial.2.1 initial.2.2 = .ok (.Err error, s') :=
+  (prefix_preserves_driver_result iterator accept history).trans
+    (run_some_callback_error iterator accept i i' s s' f f' row error next called)
+
+def WrittenAtSecond {I F Item State Action Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (initial : I × State × F)
+    (second : State → Option (Option (RowPair Action)))
+    (rowFact : Item → RowPair Action → Prop)
+    (pair : RowPair Action) : Prop :=
+  ∃ i s f i' row s' f',
+    Prefix iterator accept initial (i, s, f) ∧
+    iterator.next i = .ok (some row, i') ∧
+    accept.call_mut f (row, s) = .ok ((.Ok (), s'), f') ∧
+    second s = some none ∧ second s' = some (some pair) ∧ rowFact row pair
+
+/-- Instantiate `rowStep` with the actual startup handler. The iterator is the
+one bound to the startup SQL and its physical transaction and parameters. -/
+theorem second_slot_from_observed_write {I F Item State Action Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (iter : I) (slots final : State) (callback : F)
+    (second : State → Option (Option (RowPair Action)))
+    (rowFact : Item → RowPair Action → Prop)
+    (rowStep : ∀ f row before after f',
+      accept.call_mut f (row, before) = .ok ((.Ok (), after), f') →
+      second after = second before ∨
+        ∃ pair, second before = some none ∧
+          second after = some (some pair) ∧ rowFact row pair)
+    (initialEmpty : second slots = some none)
+    (returned : run iterator accept iter slots callback = .ok (.Ok (), final))
+    (pair : RowPair Action) (slot : second final = some (some pair)) :
+    WrittenAtSecond iterator accept (iter, slots, callback) second rowFact pair := by
+  let Source := WrittenAtSecond iterator accept (iter, slots, callback) second rowFact
+  let Good := fun (s : State) =>
+    ∀ pair, second s = some (some pair) → Source pair
+  let Inv := fun (i : I) (s : State) (f : F) =>
+    Prefix iterator accept (iter, slots, callback) (i, s, f) ∧ Good s
+  let Post : (core.result.Result Unit Error × State) → Prop := fun result =>
+    match result.1 with
+    | .Ok _ => Good result.2
+    | .Err _ => True
+  have done : Post (.Ok (), final) := by
+    apply run_normal_return_of_calls iterator accept Inv Post ?_ ?_ ?_
+      iter slots callback ?_ (.Ok (), final) returned
+    · intro _ _ _ _ h _
+      exact h.2
+    · intro i before f i' row after f' h next called
+      rcases h with ⟨history, held⟩
+      refine ⟨Prefix.next history next called, ?_⟩
+      intro pair atSlot
+      rcases rowStep f row before after f' called with same | ⟨written, empty, atWrite, fact⟩
+      · exact held pair (same.symm.trans atSlot)
+      · have equal : written = pair := by
+          simpa only [Option.some.injEq] using atWrite.symm.trans atSlot
+        subst written
+        exact ⟨i, before, f, i', row, after, f', history, next, called, empty, atWrite, fact⟩
+    · intros
+      trivial
+    · refine ⟨Prefix.start, ?_⟩
+      intro pair atSlot
+      simp [initialEmpty] at atSlot
+  exact done pair slot
+
+/-- A successful collector must provide `packed` for the actual final buffer.
+This lemma only projects the existing order and does not model the collector. -/
+theorem ordered_rows_keep_scan_slot {Action : Type}
+    (final : List (Option (RowPair Action))) (rows : List (RowPair Action))
+    (pair : RowPair Action)
+    (packed : final = rows.map some)
+    (slot : final[1]? = some (some pair)) :
+    rows[1]? = some pair := by
+  have mapped : Option.map some rows[1]? = some (some pair) := by
+    simpa only [packed, List.getElem?_map] using slot
+  cases h : rows[1]? <;> simp_all
+
+end UnloadFirstStartupScan
+
+#audit_controller_proof UnloadFirstStartupScan.prefix_preserves_driver_result
+#audit_controller_proof UnloadFirstStartupScan.first_error_after_observed_prefix
+#audit_controller_proof UnloadFirstStartupScan.second_slot_from_observed_write
+#audit_controller_proof UnloadFirstStartupScan.ordered_rows_keep_scan_slot

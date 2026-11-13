@@ -25,13 +25,26 @@ pub(crate) enum CurrentObservationError {
     Shared(PortError),
     Host(PortError),
     Superseded,
+    Pending,
     Deadline,
 }
+impl From<PortError> for CurrentObservationError {
+    fn from(error: PortError) -> Self {
+        Self::Shared(error)
+    }
+}
 impl CurrentObservationError {
-    fn into_port(self) -> PortError {
+    pub(crate) fn into_port(self) -> PortError {
         match self {
             Self::Shared(error) | Self::Host(error) => error,
-            Self::Superseded => PortError::Busy,
+            Self::Superseded => {
+                diagnostics::emit(
+                    DiagnosticStage::CreateObservationSuperseded,
+                    DiagnosticFailure::Port(PortError::Busy),
+                );
+                PortError::Busy
+            }
+            Self::Pending => PortError::Busy,
             Self::Deadline => PortError::OutcomeUnknown,
         }
     }
@@ -51,14 +64,6 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         Ok(self)
     }
 
-    pub(crate) fn current_create_observation(
-        &self,
-        intent: &AcceptedLifecycleIntent,
-    ) -> Result<CreateObservation, PortError> {
-        self.current_create_observation_attempt(intent)
-            .map_err(CurrentObservationError::into_port)
-    }
-
     pub(crate) fn current_create_observation_attempt(
         &self,
         intent: &AcceptedLifecycleIntent,
@@ -69,7 +74,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         self.current_create_observation_before(intent, deadline)
     }
 
-    fn current_create_observation_before(
+    pub(crate) fn current_create_observation_before(
         &self,
         intent: &AcceptedLifecycleIntent,
         deadline: Instant,
@@ -119,13 +124,30 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             return Ok(view);
         }
         let CurrentCreateReadiness::Observed { facts } = &view.readiness else {
-            return Err(CurrentObservationError::Host(PortError::Busy));
+            let rejection = match &view.readiness {
+                CurrentCreateReadiness::NotCurrent => DiagnosticStage::CreateObservationNotCurrent,
+                CurrentCreateReadiness::NotRunning => DiagnosticStage::CreateObservationNotRunning,
+                CurrentCreateReadiness::Expired => DiagnosticStage::CreateObservationExpired,
+                _ => DiagnosticStage::CreateObservationPending,
+            };
+            diagnostics::emit(rejection, DiagnosticFailure::Port(PortError::Busy));
+            return Err(
+                if matches!(view.readiness, CurrentCreateReadiness::Pending) {
+                    CurrentObservationError::Pending
+                } else {
+                    CurrentObservationError::Host(PortError::Busy)
+                },
+            );
         };
         if policy
             .healthy_until(before, after, facts.observed_at_ms)
             .is_none()
             || after >= facts.end_at_ms
         {
+            diagnostics::emit(
+                DiagnosticStage::CreateObservationTimeRejected,
+                DiagnosticFailure::Port(PortError::Busy),
+            );
             return Err(CurrentObservationError::Host(PortError::Busy));
         }
         Ok(view)
@@ -399,8 +421,14 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         if !received.matches(intent) || !received.current {
             return Ok(false);
         }
+        if matches!(intent.request.operation, LifecycleOperation::Unload { .. }) {
+            return self.reconcile_unload(intent, deadline);
+        }
         if matches!(intent.request.operation, LifecycleOperation::Destroy {}) {
             return self.reconcile_terminal(intent, deadline);
+        }
+        if self.is_resumed_execution(intent)? {
+            return self.reconcile_resume(intent, deadline);
         }
         // All current intents use the same durable receiver. Recording Unload
         // or Destroy cannot publish physical completion or retire the outbox;
@@ -416,6 +444,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             Err(CurrentObservationError::Shared(error)) => return Err(error),
             Err(
                 CurrentObservationError::Host(_)
+                | CurrentObservationError::Pending
                 | CurrentObservationError::Superseded
                 | CurrentObservationError::Deadline,
             ) => return Ok(false),
@@ -454,6 +483,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 Ok(_)
                 | Err(
                     CurrentObservationError::Host(_)
+                    | CurrentObservationError::Pending
                     | CurrentObservationError::Superseded
                     | CurrentObservationError::Deadline,
                 ) => Ok(true),
@@ -498,7 +528,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         Ok(())
     }
 
-    fn confirm_pending_sdk_renewal_before(
+    pub(crate) fn confirm_pending_sdk_renewal_before(
         &self,
         owner: &TenantId,
         session: &SessionId,
@@ -545,6 +575,43 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         }
         time_left(deadline).map_err(|_| CurrentObservationError::Deadline)?;
         Ok(true)
+    }
+
+    fn reconcile_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        deadline: Instant,
+    ) -> Result<bool, PortError> {
+        let Ok(observation) = self
+            .hosts
+            .observe_lifecycle_unload(intent, time_left(deadline)?)
+        else {
+            return Ok(false);
+        };
+        if !observation.matches_request(intent)
+            || (observation.outcome.unloaded().is_none()
+                && observation.outcome.continued().is_none())
+        {
+            return Ok(false);
+        }
+        time_left(deadline)?;
+        let saved = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .accept_lifecycle_unload_observation(&observation, self.now()?);
+        match saved {
+            Ok(()) => {
+                if observation.outcome.continued().is_some() {
+                    self.reconcile_continued_loss(intent, deadline)?;
+                }
+                Ok(true)
+            }
+            Err(AuthorityError::Decision(
+                DecisionError::Stale | DecisionError::Conflict | DecisionError::NotFound,
+            )) => Ok(false),
+            Err(error) => Err(authority_error(error)),
+        }
     }
 
     fn reconcile_terminal(
@@ -629,7 +696,7 @@ fn refused_create_destroy(
     Ok(Some(current.clone()))
 }
 
-fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
+pub(crate) fn time_left(deadline: Instant) -> Result<std::time::Duration, PortError> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|left| !left.is_zero())

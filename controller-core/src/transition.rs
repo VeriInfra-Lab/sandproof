@@ -42,11 +42,13 @@ pub fn authorized(actor: &Actor, owner: TenantId) -> bool {
 
 fn insert_unique<T: Clone + PartialEq>(values: &mut Vec<T>, value: T) {
     let mut index = 0;
-    while index < values.len() {
-        if values[index] == value {
-            return;
-        }
+    let mut found = false;
+    while index < values.len() && !found {
+        found = values[index] == value;
         index += 1;
+    }
+    if found {
+        return;
     }
     let mut updated = Vec::new();
     updated.push(value);
@@ -99,6 +101,56 @@ pub fn initial_operation_plan(
         retry_limit: DEFAULT_RETRY_LIMIT,
         sealed: operation.kind == OperationKind::Kill,
     }
+}
+
+// Terminal Resume compensation does not acquire the already reclaimed predecessor's
+// cleanup work. History stays indexed and all global publication checks still
+// require its original Stop evidence. Missing, live or current-generation
+// resources remain obligations rather than being inferred closed.
+fn resume_cleanup_index(
+    world: &World,
+    sandbox: SandboxId,
+    generation: crate::Generation,
+    mut index: crate::ResourceIndex,
+) -> crate::ResourceIndex {
+    let mut vms = Vec::new();
+    let mut cursor = 0;
+    while cursor < index.vms.len() {
+        let id = index.vms[cursor];
+        let closed_history = world.vm_record(id).is_some_and(|vm| {
+            vm.sandbox == sandbox
+                && vm.generation < generation
+                && vm.status == crate::VmStatus::Reclaimed
+        });
+        if !closed_history {
+            vms.push(id);
+        }
+        cursor += 1;
+    }
+    let mut slots = Vec::new();
+    cursor = 0;
+    while cursor < index.slots.len() {
+        let id = index.slots[cursor];
+        let closed_history = world.slot_record(id).is_some_and(|slot| {
+            slot.sandbox == sandbox
+                && slot.generation < generation
+                && slot.reclaimed
+                && !slot.active
+                && world.vm_record(slot.vm).is_some_and(|vm| {
+                    vm.sandbox == sandbox
+                        && vm.owner == slot.owner
+                        && vm.generation == slot.generation
+                        && vm.status == crate::VmStatus::Reclaimed
+                })
+        });
+        if !closed_history {
+            slots.push(id);
+        }
+        cursor += 1;
+    }
+    index.vms = vms;
+    index.slots = slots;
+    index
 }
 
 pub fn store_new_operation(
@@ -356,12 +408,11 @@ fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: O
     let Some(operation) = current else {
         return;
     };
-    if !matches!(
-        operation.status,
-        OperationStatus::Pending | OperationStatus::OutcomeUnknown
-    ) {
-        return;
-    }
+    let failure = match operation.status {
+        OperationStatus::Pending | OperationStatus::OutcomeUnknown => FailureKind::Cancelled,
+        OperationStatus::Compensating(failure) if operation.kind == OperationKind::Pause => failure,
+        _ => return,
+    };
     let key = operation_key(sandbox, operation.id);
     let Some(ledger) = world.operations.get(&key) else {
         return;
@@ -370,8 +421,8 @@ fn supersede_current_operation(world: &mut World, sandbox: SandboxId, current: O
         return;
     }
     let mut superseded = ledger.clone();
-    superseded.operation.status = OperationStatus::Failed(FailureKind::Cancelled);
-    superseded.result = Some(OperationResult::Failed(FailureKind::Cancelled));
+    superseded.operation.status = OperationStatus::Failed(failure);
+    superseded.result = Some(OperationResult::Failed(failure));
     world.operations.put(key, superseded);
 }
 
@@ -462,8 +513,8 @@ pub fn begin_compensation(
         }
         if let Some(stored) = next.operation_plans.get(&key) {
             let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.ordinary_failure());
+            if let Some(handoff) = plan.capture {
+                plan.capture = Some(handoff.ordinary_failure());
             }
             next.operation_plans.put(key, plan);
         }
@@ -484,6 +535,25 @@ pub fn begin_compensation(
         ledger.operation = compensating;
         ledger.result = None;
         next.operations.put(key, ledger);
+    }
+
+    if operation.kind == OperationKind::Resume
+        && let Some(stored) = next.operation_plans.get(&key)
+    {
+        let mut plan = stored.clone();
+        let index = resume_cleanup_index(
+            world,
+            sandbox,
+            plan.generation,
+            crate::ResourceIndex {
+                vms: plan.stop_vms.clone(),
+                slots: plan.close_slots.clone(),
+                snapshots: Vec::new(),
+            },
+        );
+        plan.stop_vms = index.vms;
+        plan.close_slots = index.slots;
+        next.operation_plans.put(key, plan);
     }
 
     enqueue(
@@ -670,6 +740,41 @@ mod tests {
         assert_eq!(
             reserve_pause_snapshot(&snapshot_world, plan.key, &plan, VmId(8)),
             None
+        );
+    }
+
+    #[test]
+    fn insertion_stops_at_first_equal_element_and_preserves_prepend_order() {
+        use std::{cell::RefCell, rc::Rc};
+        #[derive(Clone)]
+        struct Compared {
+            value: u64,
+            visited: Rc<RefCell<Vec<u64>>>,
+        }
+        impl PartialEq for Compared {
+            fn eq(&self, other: &Self) -> bool {
+                self.visited.borrow_mut().push(self.value);
+                self.value == other.value
+            }
+        }
+        let visited = Rc::new(RefCell::new(Vec::new()));
+        let item = |value| Compared {
+            value,
+            visited: visited.clone(),
+        };
+        let mut values = vec![item(1), item(2), item(3)];
+        super::insert_unique(&mut values, item(2));
+        assert_eq!(*visited.borrow(), vec![1, 2]);
+        assert_eq!(
+            values.iter().map(|entry| entry.value).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        visited.borrow_mut().clear();
+        super::insert_unique(&mut values, item(4));
+        assert_eq!(*visited.borrow(), vec![1, 2, 3]);
+        assert_eq!(
+            values.iter().map(|entry| entry.value).collect::<Vec<_>>(),
+            vec![4, 1, 2, 3]
         );
     }
 }

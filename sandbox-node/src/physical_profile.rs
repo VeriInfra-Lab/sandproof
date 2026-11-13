@@ -395,7 +395,7 @@ impl PhysicalProfileLease {
                     // allowed before activation. Clear it under the exclusive
                     // lock before measuring fresh headroom: crediting its old
                     // blocks would race, and counting them again strands a
-                    // crash/retry at exactly twice the required peak.
+                    // crash/retry at exactly the activation requirement.
                     file.set_len(0)?;
                     file.sync_all()?;
                 }
@@ -408,7 +408,7 @@ impl PhysicalProfileLease {
                     || space.available_inodes < needed_inodes
                 {
                     return Err(
-                        "fresh physical activation requires twice the complete byte/inode envelope"
+                        "fresh physical activation requires the growth envelope plus operation headroom and twice the inode envelope"
                             .into(),
                     );
                 }
@@ -439,6 +439,26 @@ impl PhysicalProfileLease {
             profile: profile.clone(),
             namespace: namespace.into(),
         })
+    }
+
+    pub(crate) fn capture_space(
+        &self,
+        profile: &PhysicalStorageProfile,
+        pool: &PhysicalPool,
+    ) -> Result<sandproof_controller_service::physical_storage::CaptureSpace, Box<dyn Error>> {
+        self.validate_admission(profile, pool)?;
+        let space = crate::disk_space(&self.path)?;
+        if space.device != self.device
+            || space.available_inodes < profile.filesystem_overhead_inodes
+        {
+            return Err("snapshot volume identity or inode reserve unavailable".into());
+        }
+        Ok(
+            sandproof_controller_service::physical_storage::CaptureSpace {
+                usable_bytes: space.usable_bytes,
+                available_bytes: space.available_bytes,
+            },
+        )
     }
 
     pub(crate) fn validate_admission(
@@ -740,6 +760,7 @@ mod physical_tests {
         fs::write(&file, b"bytes").unwrap();
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
         fixture.profile.service_data = vec![PhysicalServiceData {
+            on_demand_capture: false,
             root: root.clone(),
             owner_uid: fixture.owner,
             peak_bytes: 5,

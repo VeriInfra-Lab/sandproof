@@ -1,0 +1,17 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel
+import SandboxModel.Lifecycle.Protocol.InboxAppendWrongSdk
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecordTotal
+
+/-- The existing real Rust counterexample also rejects the unconditional caller
+contract, by specialization to exactly the earlier full existing-state contract. -/
+theorem wrong_sdk_rejects_total : ¬ FullRecordContract Inbox.record := by
+  intro contract
+  exact InboxAppend.WrongSdk.rejects_same_full_record_contract
+    (total_implies_existing Inbox.record contract)
+
+end SandboxModel.Stage1Protocol.InboxRecordTotal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordTotal.wrong_sdk_rejects_total

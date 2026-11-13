@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallQuery
+import SandboxModel.Lifecycle.Protocol.CreateInstallValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateInstall.WrongFrame
+noncomputable section
+open scoped Classical
+open Values
+
+def observedResult : Inbox := { freshResult with sessions := InboxLookup.Witness.singleton { mapped with current_version := 0#u64 } }
+
+theorem observed : run base 0#usize 0#usize binding = .ok observedResult := by
+  have capacity : 1 ≤ U32.max ∨ 1 ≤ Usize.max := by
+    left
+    scalar_tac
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_install
+  simp [capacity, present_complete, HasOwner, ownerRow, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_mut_slice_index,
+    alloc.vec.Vec.index_usize, alloc.vec.Vec.index_mut_usize, alloc.vec.Vec.push,
+    alloc.vec.Vec.set, sandproof_protocol.TenantId.Insts.CoreCloneClone.clone,
+    alloc.string.String.Insts.CoreCloneClone.clone, bind_tc_ok, uncurry_apply_pair,
+    base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.singleton, InboxLookup.Witness.empty,
+    selected, CreateSelection.Values.selected, mapped, freshResult, observedResult, binding]
+
+theorem violates_full_contract : ¬ FullInstallContract run := by
+  intro contract
+  have post := contract base 0#usize 0#usize binding base_bounds.1 base_bounds.2 (by intro _; exact base_room)
+  rw [observed] at post
+  simp only [WP.spec_ok] at post
+  obtain ⟨owners, contents, frame⟩ := post
+  have field := congrArg (fun value : Inbox => value.sessions.val.head?.map (fun session => session.current_version)) frame
+  simp [observedResult, freshResult, mapped, sessionAfter,
+    base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.singleton, InboxLookup.Witness.empty, selected, CreateSelection.Values.selected,
+    alloc.vec.Vec.set_val_eq, binding, InboxLookup.Witness.session] at field
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall.WrongFrame
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.WrongFrame.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.WrongFrame.violates_full_contract

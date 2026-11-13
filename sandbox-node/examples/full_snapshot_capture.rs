@@ -16,8 +16,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(target_os = "linux")]
 mod linux {
     use sandbox_runtime::{
-        FullCaptureLimits, Runtime, RuntimeConfig, RuntimeError, RuntimeProcessIdentity,
-        SnapshotLayout, VmState,
+        FullCaptureApiContext, FullCaptureLimits, Runtime, RuntimeConfig, RuntimeError,
+        RuntimeProcessIdentity, SnapshotLayout, VmState,
     };
     use sandproof_node::full_snapshot::{
         ExpectedFullCapture, SealedFullSnapshot, capture_directory_key, seal_full_capture,
@@ -136,6 +136,18 @@ mod linux {
         Ok(())
     }
 
+    // Explicit probe provenance, never an original journal worker's job hash.
+    fn diagnostic_context(binding: &CaptureBinding) -> ProbeResult<FullCaptureApiContext> {
+        let bytes = serde_json::to_vec(binding)?;
+        Ok(FullCaptureApiContext {
+            work_sha256: Sha256::digest(&bytes).into(),
+            job_sha256: Sha256::digest(serde_json::to_vec(&("physical-probe-job", binding))?)
+                .into(),
+            action_sha256: Sha256::digest(serde_json::to_vec(&("physical-probe-full", binding))?)
+                .into(),
+        })
+    }
+
     fn capture(
         fixture: &Fixture,
         runtime: &Runtime,
@@ -165,6 +177,7 @@ mod linux {
             layout,
             failed_key,
             FullCaptureLimits {
+                api_context: diagnostic_context(&failed_binding)?,
                 state_bytes: 1,
                 disk_bytes,
                 api_timeout: Duration::from_secs(30),
@@ -191,6 +204,7 @@ mod linux {
             layout,
             directory_key,
             FullCaptureLimits {
+                api_context: diagnostic_context(&fixture.binding)?,
                 state_bytes: 16 * 1024 * 1024,
                 disk_bytes,
                 api_timeout: Duration::from_secs(30),

@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord InboxLookup
+
+/-- Lookup has no retained key anywhere, and the actual first session-ID match
+selects this row. These facts assert neither authorization nor durable commit. -/
+def ExistingSelection (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s : Usize) : Prop :=
+  (∀ session ∈ inbox.sessions.val, NoKey intent session.entries.val) ∧
+  firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 = some s.val
+
+theorem selected_bound (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s : Usize)
+    (selected : ExistingSelection inbox intent s) : s.val < inbox.sessions.val.length := by
+  simpa using (firstIndex_bounds _ _ _ _ selected.2).2
+
+def FullRecordExistingContract (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn) : Prop :=
+  ∀ inbox intent s, ∀ selected : ExistingSelection inbox intent s,
+    run inbox intent ⦃ out =>
+      ExistingPost inbox s (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent
+        (existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent) out ⦄
+
+theorem record_existing_path (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s : Usize)
+    (selected : ExistingSelection inbox intent s) :
+    inbox.record intent = inbox.record_existing s intent := by
+  have lookup := (find_none_iff inbox intent).mpr selected.1
+  obtain ⟨index, returned, position⟩ := WP.spec_imp_exists
+    (session_index_spec inbox intent.request.binding.session)
+  rw [selected.2] at position
+  have same : index = some s := by
+    cases index with
+    | none => simp at position
+    | some value =>
+      simp only [Option.map_some, Option.some.injEq] at position
+      have equal : value = s := UScalar.eq_of_val_eq position
+      simp [equal]
+  simp [Inbox.record, lookup, returned, same, core.result.Result.Insts.CoreOpsTry.branch]
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.selected_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.record_existing_path

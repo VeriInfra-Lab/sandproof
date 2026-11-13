@@ -1,0 +1,32 @@
+import SandproofFoundations.FunsExternal
+import SandproofStage1Request.Types
+
+/-! Namespace bindings for five existing fixed A6 models.
+No standard-library or sender-authentication proof is claimed here. -/
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+
+/- A6-network-stdlib String::clone, the exact registered normal-value body.
+Importing Network.Types here collides with generated discriminant declarations. -/
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String :=
+  .ok value
+
+end SandproofStage1RequestRust

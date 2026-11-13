@@ -1,0 +1,19 @@
+import Aeneas
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardBlobDomain
+noncomputable section
+
+theorem bind_success_value {α β : Type} (run : Result α) (next : α → Result β)
+    (output : β) (returned : Bind.bind run next = .ok output) :
+    ∃ value, run = .ok value ∧ next value = .ok output := by
+  cases run using Result.cases with
+  | ret value => exact ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩
+  | vis effect continuation => simp only [bind_tc_vis, vis_not_ok] at returned
+  | div => simp only [bind_tc_div, div_not_ok] at returned
+
+end
+end SandboxModel.Stage1Protocol.StandardBlobDomain
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobDomain.bind_success_value

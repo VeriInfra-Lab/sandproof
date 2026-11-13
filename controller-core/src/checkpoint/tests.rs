@@ -7,7 +7,11 @@ use crate::maintenance::{
 use crate::*;
 mod history;
 use history::*;
+mod capture_drain;
+mod continuation;
 mod malformed;
+mod released_unload;
+mod resume;
 mod unload;
 
 const LIMITS: CheckpointLimits = CheckpointLimits {

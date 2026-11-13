@@ -1,0 +1,33 @@
+import SandproofParentCommit.Funs
+open Aeneas Aeneas.Std SandproofParentCommitRust
+set_option autoImplicit false
+
+namespace SandproofParentCommitRust.CommitOrder
+open controller.transaction
+
+-- This contract exposes the order and the returned Rust error. Validator
+-- correctness, same-guard concrete delegates, A4 commit and B2 cell transfers
+-- remain separate obligations; arbitrary generic effects may change their state.
+def continueAfter {E : Type}
+    (check : E → Result (core.result.Result Unit JournalError × E))
+    (next : E → Result (core.result.Result Unit JournalError)) (state : E) :
+    Result (core.result.Result Unit JournalError) := do
+  let (result, after) ← check state
+  match result with
+  | .Err error => .ok (.Err error)
+  | .Ok () => next after
+
+def orderView {E : Type} (io : CommitEffects E) :
+    E → Result (core.result.Result Unit JournalError) :=
+  continueAfter io.validate_candidate
+    (continueAfter io.validate_inbox
+      (continueAfter io.validate_capacity
+        (continueAfter io.validate_transaction io.finish_commit)))
+
+abbrev Implementation := ∀ {E : Type}, CommitEffects E → E →
+  Result (core.result.Result Unit JournalError)
+
+def FullOrderContract (run : Implementation) : Prop :=
+  ∀ {E : Type} (io : CommitEffects E) (state : E), run io state = orderView io state
+
+end SandproofParentCommitRust.CommitOrder

@@ -1,0 +1,116 @@
+import SandproofUnloadBaseSnapshot.Types
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+
+namespace SandproofUnloadBaseSnapshot
+
+def core.option.Option.map {T U F : Type}
+    (callback : core.ops.function.FnOnce F T U) (option : Option T) (state : F) : Result (Option U) :=
+  match option with
+  | none => .ok none
+  | some value => do
+    let mapped ← callback.call_once state value
+    .ok (some mapped)
+
+def core.option.OptionResult.transpose {T E : Type} :
+    Option (core.result.Result T E) → Result (core.result.Result (Option T) E)
+  | none => .ok (.Ok none)
+  | some (.Ok value) => .ok (.Ok (some value))
+  | some (.Err error) => .ok (.Err error)
+
+def core.option.OptionOption.flatten {T : Type} :
+    Option (Option T) → Result (Option T)
+  | none => .ok none
+  | some value => .ok value
+
+class Operations [Representations] where
+  deref : rusqlite.transaction.Transaction → Result rusqlite.Connection
+  sandboxRecord :
+  sandbox_controller_core.model.World → sandbox_controller_core.ids.SandboxId
+    → Result (Option sandbox_controller_core.model.SandboxRecord)
+  cloneIntent :
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+  inputHighWater : rusqlite.Connection → Result (core.result.Result Std.U64 JournalError)
+  loadInbox :
+  rusqlite.Connection → Result (core.result.Result (Option
+    controller.lifecycle_inbox.model.Inbox) JournalError)
+  findIntent :
+  controller.lifecycle_inbox.model.Inbox →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result
+    (core.result.Result (Option (Std.Usize × Std.Usize)) JournalError)
+  nativeSnapshot :
+  rusqlite.transaction.Transaction → Str →
+    sandbox_controller_core.model.World →
+    controller.internal_inbox.model.InternalLocalBinding →
+    sandbox_controller_core.model.SandboxRecord → Result (core.result.Result
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot JournalError)
+  originalResult :
+  sandbox_controller_core.model.World →
+    controller.internal_inbox.model.InternalLocalBinding → Result
+    (core.result.Result (Option sandbox_controller_core.model.OperationResult)
+    JournalError)
+  readiness :
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    controller.lifecycle_inbox.model.Entry →
+    controller.lifecycle_inbox.model.Session → Option
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot → Result
+    controller.lifecycle_inbox.readiness.CreateReadiness
+  authenticate :
+  controller.lifecycle_inbox.model.Inbox →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext →
+    Result (core.result.Result Unit JournalError)
+
+variable [Representations] [ops : Operations]
+
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref : rusqlite.transaction.Transaction → Result rusqlite.Connection := ops.deref
+
+abbrev sandbox_controller_core.model.World.sandbox_record :
+  sandbox_controller_core.model.World → sandbox_controller_core.ids.SandboxId
+    → Result (Option sandbox_controller_core.model.SandboxRecord) := ops.sandboxRecord
+
+abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone :
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent := ops.cloneIntent
+
+abbrev controller.allocators.input_high_water : rusqlite.Connection → Result (core.result.Result Std.U64 JournalError) := ops.inputHighWater
+
+abbrev controller.lifecycle_inbox.codec.load :
+  rusqlite.Connection → Result (core.result.Result (Option
+    controller.lifecycle_inbox.model.Inbox) JournalError) := ops.loadInbox
+
+abbrev controller.lifecycle_inbox.model.Inbox.find :
+  controller.lifecycle_inbox.model.Inbox →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result
+    (core.result.Result (Option (Std.Usize × Std.Usize)) JournalError) := ops.findIntent
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.native_snapshot :
+  rusqlite.transaction.Transaction → Str →
+    sandbox_controller_core.model.World →
+    controller.internal_inbox.model.InternalLocalBinding →
+    sandbox_controller_core.model.SandboxRecord → Result (core.result.Result
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot JournalError) := ops.nativeSnapshot
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.original_result :
+  sandbox_controller_core.model.World →
+    controller.internal_inbox.model.InternalLocalBinding → Result
+    (core.result.Result (Option sandbox_controller_core.model.OperationResult)
+    JournalError) := ops.originalResult
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.base_snapshot_readiness :
+  sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    controller.lifecycle_inbox.model.Entry →
+    controller.lifecycle_inbox.model.Session → Option
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot → Result
+    controller.lifecycle_inbox.readiness.CreateReadiness := ops.readiness
+
+abbrev controller.lifecycle_inbox.authenticated :
+  controller.lifecycle_inbox.model.Inbox →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+    sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext →
+    Result (core.result.Result Unit JournalError) := ops.authenticate
+
+end SandproofUnloadBaseSnapshot

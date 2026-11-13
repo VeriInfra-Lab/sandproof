@@ -1,0 +1,20 @@
+import SandproofLifetimeRow.Types
+import SandproofFoundations.IdentifierLibrary
+open Aeneas Aeneas.Std
+namespace SandproofLifetimeRowRust
+-- Narrow library connection candidates; no business predicate is assumed.
+-- The real TryFromIntError contains IntErrorKind; the fixed backend erases it.
+-- This call is reached only after bytes > 0, hence conversion cannot return an
+-- error. No theorem here claims to preserve an observed negative-conversion
+-- payload or provides a general TryFromIntError representation.
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.ne
+    (left : String) (right : Str) : Result Bool := .ok (decide (SandproofFoundationsRust.IdentifierLibrary.stringBytes left ≠ right.val))
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok false
+  | some present => callback.call_once state present
+def U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from
+    (value : Std.I64) : Result (core.result.Result Std.U64 core.num.error.TryFromIntError) :=
+  .ok (if 0 ≤ value.val then .Ok (IScalar.hcast .U64 value) else .Err ())
+end SandproofLifetimeRowRust

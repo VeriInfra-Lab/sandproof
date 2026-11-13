@@ -27,19 +27,26 @@ from tools.ci_e2e_artifacts import tls_material_files
 from tools.ci_e2e_prepare import bounded_json_command
 from tools.check_kvm_host import trusted_path
 from tools.system_acceptance import private_path
-from tools.runtime_create_recovery import find_runtime_create, original_create_identity, terminal_result
+from tools.runtime_create_recovery import LIFECYCLE_PROTOCOL_VERSION, find_runtime_create, original_create_identity, terminal_result
 
 
 BLOCK_BYTES = 16 * 1024**2
 REDIS_MEMORY_BYTES = 128 * 1024**2
 CERTIFICATE_BYTES = 1024**2
 OPTIONS_BYTES = 4096
-OPERATIONS = 4
+OPERATIONS = 8  # Normal Create, three Unload/Resume pairs, and reserved Destroy.
+# Center terminal-result retention; independent of Host/build/Guest retention.
+RESULT_RETENTION_MS = 300_000
 HOST_FAULT_VARIABLES = frozenset({
     'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION', 'SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION',
     'SANDPROOF_TEST_EXIT_AFTER_GUEST_INIT', 'SANDPROOF_TEST_FAIL_RECLAIM_STOP_SANDBOX',
     'SANDPROOF_TEST_FAIL_RECLAIM_PREPARE_SANDBOX', 'SANDPROOF_TEST_EXIT_AFTER_VM_CLAIM',
     'SANDPROOF_TEST_EXIT_AFTER_TEMPLATE_START', 'SANDPROOF_TEST_STOP_GATE',
+    'SANDPROOF_TEST_RESTORE_ACTIVATION_GATE',
+    'SANDPROOF_TEST_CAPTURE_CANCEL_GATE',
+    'SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE',
+    'SANDPROOF_TEST_DATA_DRAIN_GATE',
+    'SANDPROOF_TEST_MATERIAL_RETIREMENT_GATE',
 })
 
 
@@ -82,29 +89,43 @@ def test_credentials(key,extra_credentials=None):
     return values
 
 
+def validate_redis_operation_timeout_ms(value):
+    """Match the product StoreConfig bound; never alter durability or retries."""
+    if type(value) is not int or not 1 <= value <= 60000:
+        raise ValueError('Redis operation timeout must be an integer in 1..60000 milliseconds')
+    return value
+
+
 def render(native_pools, *, registered_catalogs, deployment, center_root, host_tls_roots, host_addresses,
-           public_address, artifact_address, redis_address, password, key, job_count,
-           registry, versions, private_builds=None, private_build_boundary=None,extra_credentials=None):
+           public_address, artifact_address, redis_address, password, key, retained_sessions,
+           registry, versions, capture_settings, private_builds=None, private_build_boundary=None,extra_credentials=None,
+           redis_operation_timeout_ms=1000):
     """Render one explicit protected product configuration per role.
 
     This function neither computes Rust canonical descriptor digests nor models
     required-block/SQL reservations. Product initialize must reject insufficient
     approved capacities; this fixture never increases them to force success.
     """
+    redis_operation_timeout_ms=validate_redis_operation_timeout_ms(redis_operation_timeout_ms)
     if (not native_pools or len(native_pools) != len(host_addresses)
             or len(native_pools) != len(host_tls_roots) or len(native_pools) != len(registered_catalogs)
             or len(native_pools) > 2
-            or type(job_count) is not int or not 0 < job_count <= 10000):
+            or type(retained_sessions) is not int or not 0 < retained_sessions):
         raise ValueError('explicit finite test cohort and registered host roles required')
+    if (type(capture_settings) is not list or len(capture_settings) != len(native_pools)
+            or any(type(value) is not dict for value in capture_settings)):
+        raise ValueError('one explicit protected capture profile per original host required')
     credentials=test_credentials(key,extra_credentials)
     center_root = Path(center_root)
+    center_id = 'center-main'
     catalog = {'templates': [], 'aliases': {}, 'compute_limits': {}}
     template_ids = {binding['template_id'] for registered in registered_catalogs
                     for binding in registered['templates']}
     hosts, nodes, registrations = [], [], []
     platform = dict(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
     tenant = dict(platform)
-    max_records = job_count + sum(pool['max_active_global'] for pool in native_pools)
+    # A scenario declares its retained histories independently of live VM slots.
+    max_records = retained_sessions
     if type(max_records) is not int or not 0 < max_records <= 2**16 - 1:
         raise ValueError('existing inbox capacity must fit the mandatory retention slot count')
     expected_roles = ('runtime',) if len(native_pools) == 1 else ('runtime','builder')
@@ -114,6 +135,10 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
                 'template_registry','internal_build_vms','build_retry_windows')):
             raise ValueError('new native inputs required; retired public host configuration is not upgraded')
         native = copy.deepcopy(source)
+        policy=native.get('maintenance')
+        operations=policy.get('max_operations_per_sandbox') if type(policy) is dict else None
+        if type(operations) is not int or not OPERATIONS <= operations < 2**64:
+            raise ValueError('explicit maintenance operation bound must cover the Stage1 inbox')
         native_catalog = native['templates']
         pools = [pool for pool in native['bounded_host']['physical_storage']['pools']
                  if pool['namespace'] == native['namespace']]
@@ -161,8 +186,17 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         cache = copy.deepcopy(matching_caches[0])
         artifact_tls = tls_files(tls_root, 'host')
         artifact_tls['artifact_leaves'] = artifact_tls.pop('center_leaves')
-        hosts.append(dict(native=native, inbox=dict(node=node, max_sandboxes=max_records,
-            operations_per_sandbox=OPERATIONS, max_options_bytes=OPTIONS_BYTES),
+        capture = copy.deepcopy(capture_settings[index])
+        hosts.append(dict(native=native, inbox=dict(node=node,
+            center=dict(deployment=deployment, center=center_id), host_epoch=None,
+            max_sessions=max_records, max_operations_per_session=OPERATIONS,
+            max_options_bytes=OPTIONS_BYTES, max_profile_bytes=65536, max_manifest_bytes=262144),
+            protected_bootstrap_path=str(Path(tls_root).parent/'host-bootstrap.json'),
+            source_observation=dict(max_work_bytes=65536,max_configuration_bytes=65536,
+                max_executable_bytes=67108864,max_kernel_bytes=268435456,
+                max_disk_bytes=capture['disk_copy_bytes'],
+                max_material_bytes=capture['material_project']['hard_bytes']),
+            capture=capture,
             internal=dict(bind=address, max_connections=transfers + 4,
                 handshake_timeout_ms=2000, request_timeout_ms=10000, tls=tls_files(tls_root, 'host')),
             template_cache=cache,
@@ -188,7 +222,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
     tls_root = center_root / 'tls'
     common_tls = dict(certificate_chain_der=[str(tls_root / 'center.der')],
         private_key_der=str(tls_root / 'center-key.der'), trusted_roots_der=[str(tls_root / 'ca.der')])
-    center = dict(deployment_id=deployment, bind=public_address, domain='example.invalid',
+    center = dict(deployment_id=deployment, center_id=center_id, bind=public_address, domain='example.invalid',
         credentials=credentials, data_token_key=str(center_root / 'token.key'),
         max_timeout_secs=runtime['max_timeout_secs'], max_lifetime_secs=runtime['max_lifetime_secs'],
         startup_timeout_secs=runtime['startup_timeout_secs'], reply_timeout_ms=25000,
@@ -198,7 +232,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
         data_transfer=center_transfer,
         redis=dict(address=redis_address, username='default', password=password,
             max_block_bytes=BLOCK_BYTES, memory_bytes=REDIS_MEMORY_BYTES,
-            operation_timeout_ms=1000, writer_root=str(center_root / 'writer')),
+            operation_timeout_ms=redis_operation_timeout_ms, writer_root=str(center_root / 'writer')),
         tls=dict(**common_tls, max_connections=transfers + 4,
             handshake_timeout_ms=2000, request_timeout_ms=10000),
         node_observation=dict(health_window_ms=runtime['expiry_scan_seconds']*1000+5000,
@@ -208,7 +242,7 @@ def render(native_pools, *, registered_catalogs, deployment, center_root, host_t
             stream_timeout_ms=900000),
         bounds=dict(max_nodes=len(nodes), max_templates_per_node=max(host['template_cache']['max_entries'] for host in hosts),
             max_sandboxes=max_records, operations_per_sandbox=OPERATIONS,
-            max_options_bytes=OPTIONS_BYTES, platform=platform),
+            max_options_bytes=OPTIONS_BYTES, result_retention_ms=RESULT_RETENTION_MS, platform=platform),
         tenants=[dict(tenant=str(value['tenant']),limit=copy.deepcopy(tenant)) for value in credentials], nodes=nodes,
         template_registry=copy.deepcopy(registry), metadata_budget=dict(max_certificate_bytes=CERTIFICATE_BYTES),
         private_builds=copy.deepcopy(private_builds),
@@ -398,7 +432,7 @@ def local_binding(audit, sandbox, *, expected_node):
     row = rows[0]
     if (row['binding']['node'] != expected_node
             or type(row['binding']['protocol_version']) is not int
-            or row['binding']['protocol_version'] != 3
+            or row['binding']['protocol_version'] != LIFECYCLE_PROTOCOL_VERSION
             or type(row['accepted_version']) is not int or not 0 < row['accepted_version'] < 2**64):
         raise ValueError('host audit identity mismatch')
     return row['local']

@@ -1,0 +1,119 @@
+import SandboxModel.Lifecycle.Protocol.Library
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxLookup
+
+inductive Reply where
+  | absent
+  | found (index : Nat)
+  | conflict
+  deriving DecidableEq
+
+noncomputable def entrySpec (intent : AcceptedLifecycleIntent) : List Entry → Nat → Reply
+  | [], _ => .absent
+  | entry :: tail, start => by
+      classical
+      exact if entry.intent.request.binding.key = intent.request.binding.key then
+        if entry.intent = intent then .found start else .conflict
+      else entrySpec intent tail (start + 1)
+
+def observeEntry : core.result.Result (Option Usize) sandproof_controller_service.JournalError → Option Reply
+  | .Ok none => some .absent
+  | .Ok (some index) => some (.found index.val)
+  | .Err .Conflict => some .conflict
+  | .Err _ => none
+
+inductive InboxReply where
+  | absent
+  | found (session entry : Nat)
+  | conflict
+  deriving DecidableEq
+
+noncomputable def inboxSpec (intent : AcceptedLifecycleIntent) : List Session → Nat → InboxReply
+  | [], _ => .absent
+  | session :: tail, start =>
+      match entrySpec intent session.entries.val 0 with
+      | .absent => inboxSpec intent tail (start + 1)
+      | .found entry => .found start entry
+      | .conflict => .conflict
+
+def observeInbox : core.result.Result (Option (Usize × Usize)) sandproof_controller_service.JournalError → Option InboxReply
+  | .Ok none => some .absent
+  | .Ok (some (session, entry)) => some (.found session.val entry.val)
+  | .Err .Conflict => some .conflict
+  | .Err _ => none
+
+def FullLookupContract (run : Inbox → AcceptedLifecycleIntent →
+    Result (core.result.Result (Option (Usize × Usize)) sandproof_controller_service.JournalError)) : Prop :=
+  ∀ inbox intent, run inbox intent
+    ⦃ result => observeInbox result = some (inboxSpec intent inbox.sessions.val 0) ⦄
+
+def NoKey (intent : AcceptedLifecycleIntent) (entries : List Entry) : Prop :=
+  ∀ entry ∈ entries, entry.intent.request.binding.key ≠ intent.request.binding.key
+
+theorem entry_absent_iff (intent : AcceptedLifecycleIntent) (entries : List Entry) (start : Nat) :
+    entrySpec intent entries start = .absent ↔ NoKey intent entries := by
+  classical
+  induction entries generalizing start with
+  | nil => simp [entrySpec, NoKey]
+  | cons entry tail ih =>
+    by_cases key : entry.intent.request.binding.key = intent.request.binding.key
+    · by_cases full : entry.intent = intent <;> simp [entrySpec, NoKey, key, full]
+    · simp [entrySpec, NoKey, key, ih, NoKey] at *
+
+theorem entry_prefix (intent : AcceptedLifecycleIntent) (before tail : List Entry) (start : Nat)
+    (clear : NoKey intent before) :
+    entrySpec intent (before ++ tail) start = entrySpec intent tail (start + before.length) := by
+  classical
+  induction before generalizing start with
+  | nil => simp
+  | cons entry before ih =>
+    have key := clear entry (by simp)
+    have rest : NoKey intent before := by intro e member; exact clear e (by simp [member])
+    simpa [entrySpec, key, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using ih (start+1) rest
+
+theorem inbox_absent_iff (intent : AcceptedLifecycleIntent) (sessions : List Session) (start : Nat) :
+    inboxSpec intent sessions start = .absent ↔ ∀ session ∈ sessions, NoKey intent session.entries.val := by
+  induction sessions generalizing start with
+  | nil => simp [inboxSpec]
+  | cons session tail ih =>
+    have absent := entry_absent_iff intent session.entries.val 0
+    cases shape : entrySpec intent session.entries.val 0 <;> simp_all [inboxSpec]
+
+theorem inbox_prefix (intent : AcceptedLifecycleIntent) (before tail : List Session) (start : Nat)
+    (clear : ∀ session ∈ before, NoKey intent session.entries.val) :
+    inboxSpec intent (before ++ tail) start = inboxSpec intent tail (start + before.length) := by
+  induction before generalizing start with
+  | nil => simp
+  | cons session before ih =>
+    have absent := (entry_absent_iff intent session.entries.val 0).mpr (clear session (by simp))
+    have rest : ∀ s ∈ before, NoKey intent s.entries.val := by intro s member; exact clear s (by simp [member])
+    simpa [inboxSpec, absent, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using ih (start+1) rest
+
+/-- Prefixes exclude every earlier matching complete operation key; no uniqueness assumption. -/
+
+theorem first_key_spec (intent : AcceptedLifecycleIntent)
+    (before after : List Session) (session : Session)
+    (earlier later : List Entry) (entry : Entry)
+    (sessions_clear : ∀ s ∈ before, NoKey intent s.entries.val)
+    (entries_clear : NoKey intent earlier)
+    (entries : session.entries.val = earlier ++ entry :: later)
+    (key : entry.intent.request.binding.key = intent.request.binding.key) :
+    inboxSpec intent (before ++ session :: after) 0 =
+      (by classical exact if entry.intent = intent then InboxReply.found before.length earlier.length else .conflict) := by
+  classical
+  rw [inbox_prefix intent before (session :: after) 0 sessions_clear]
+  simp only [inboxSpec, entries]
+  rw [entry_prefix intent earlier (entry :: later) 0 entries_clear]
+  by_cases full : entry.intent = intent <;> simp [entrySpec, key, full]
+
+end SandboxModel.Stage1Protocol.InboxLookup
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_absent_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.entry_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_absent_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.first_key_spec

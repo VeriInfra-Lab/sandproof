@@ -116,7 +116,7 @@ check_begin workspace-clippy lint
 cargo --config scripts/check-profiles.toml clippy --workspace --all-targets --locked -- -D warnings
 check_end
 check_begin workspace-tests test
-cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked
+cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast
 check_end
 check_begin workspace-doctests test
 cargo --config scripts/check-profiles.toml test --workspace --doc --locked

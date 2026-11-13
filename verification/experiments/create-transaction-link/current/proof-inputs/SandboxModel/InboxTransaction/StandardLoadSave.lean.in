@@ -1,0 +1,58 @@
+import SandboxModel.InboxTransaction.IOTransfer
+import SandboxModel.Lifecycle.Protocol.InboxLoadComposition
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open model codec recording native_retirement renewal_confirmation unload_resolution
+set_option autoImplicit false
+
+namespace SandboxModel.StandardRecordLoadSave
+noncomputable section
+open SandboxModel.StandardRecordCodec
+
+-- The actual three generated production dictionaries, rather than a parallel
+-- hand-built effects record or another generated type universe.
+abbrev readIO {D : Type} (codec : RecordCodec D) :=
+  StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects codec
+abbrev loadIO {D : Type} (codec : RecordCodec D) :=
+  StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects codec
+abbrev saveIO {D : Type} (codec : RecordCodec D) :=
+  StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects codec
+
+-- Existing generic business mathematics now instantiated at the actual
+-- StandardRecord<D> dictionaries. This condition is a decoded representation
+-- requirement; it is not a proof of the standard serde implementation.
+theorem actual_load_contract {R T N U B D : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B)
+    (graphicLaw : Stage1Protocol.ComposedConfig.FullGraphicContract graphic)
+    (codec : RecordCodec D)
+    (represented : Stage1Protocol.InboxLoad.DecodedStringsRepresentable (loadIO codec))
+    (before : Holder D) :
+    load_using saved terminal renewal unload graphic (loadIO codec) before =
+      Stage1Protocol.InboxLoad.fullLoadView saved terminal renewal unload (loadIO codec) before := by
+  exact Stage1Protocol.InboxLoad.full_load_refines saved terminal renewal unload graphic
+    graphicLaw (loadIO codec) represented before
+
+theorem actual_save_contract {R T N U B D : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B)
+    (graphicLaw : Stage1Protocol.ComposedConfig.FullGraphicContract graphic)
+    (codec : RecordCodec D) (inbox : Inbox) (before : Holder D)
+    (bounded : Stage1Protocol.ConfigValidation.Representable inbox.config) :
+    save_using saved terminal renewal unload graphic (saveIO codec) inbox before =
+      Stage1Protocol.InboxSave.saveView saved terminal renewal.encode unload.encode
+        (saveIO codec) inbox before := by
+  exact Stage1Protocol.InboxSave.save_refines saved terminal renewal unload graphic
+    graphicLaw (saveIO codec) inbox before bounded
+
+end
+end SandboxModel.StandardRecordLoadSave
+
+#audit_controller_proof SandboxModel.StandardRecordLoadSave.actual_load_contract
+#audit_controller_proof SandboxModel.StandardRecordLoadSave.actual_save_contract

@@ -1,0 +1,153 @@
+{
+  "kind": "unaltered-proofs-from-complete-local-original-views",
+  "original_source_commit": "7aa235451ad887dffb429ca9e21c0e2f57d3fa7f",
+  "original_complete_union_readback_sha256": "6543b2a3ad3c3104e0a100f6bcc13c65b9cf97c3b0eafe2a4d73ad30d1d54687",
+  "templates": {
+    "BlobColumnsModel.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "4ac62e3bb8b5ffd0065e85588573bceb1dee3ddd794da9eb30958ab52aca49eb",
+      "mathematics_changed": false
+    },
+    "BlobColumnsLibrary.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "eeb08e36b1e52af2a335b938d03a97901157974e4e8544e3bd74b19c6cd79401",
+      "mathematics_changed": false
+    },
+    "BlobColumnsValues.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "ff676adf16e24aaa06e31acfa4947efb28d338c977cf381842a3159e16ebd31d",
+      "mathematics_changed": false
+    },
+    "StandardBlobModel.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "8629667d8867eea57e4be68c5d0f53bf179b84480372c477d2b5afa81fdee253",
+      "mathematics_changed": false
+    },
+    "StandardBlobValues.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "e203802b5d1cea7e79e69b6abc7deae2ab217a6895c58c4fc186191f7997dea5",
+      "mathematics_changed": false
+    },
+    "StandardBlobLibrary.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "fad992e0866eef5a89cb558b14e3625a2155f45ce61f70ceb7267f31f052045b",
+      "mathematics_changed": false
+    },
+    "StandardBlobObserve.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "bd8c655bb94d8f353091d19553e8c345ccf910fa59fa0e912671315d9059cf73",
+      "mathematics_changed": false
+    },
+    "BlobColumnsCore.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "e2120d2405e23be5b035f41ed742d0ca0fa1de529857b9eb5b8785236ee48f89",
+      "mathematics_changed": false
+    },
+    "StandardBlobCore.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "77e0606bfcd930974f4e19e31b6aec4f2dcc8206ace94ee4b711c77007d98a9f",
+      "mathematics_changed": false
+    },
+    "StandardBlobWitnesses.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "03ff46e07d186975706403803396de5545f40b4815c2f6833330ffe985b65d38",
+      "mathematics_changed": false
+    },
+    "StandardBlobResult.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "11bfe695d5153e504d83071b02133cf12063c09f26c99b0af69c1a9d7dfb186f",
+      "mathematics_changed": false
+    },
+    "NegativeBlobRepeat.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "1ef0058071477e50ac8ba5275b546512967f5d43d581b1ec64f9e6018f9fe712",
+      "mathematics_changed": false
+    },
+    "NegativeStandardBlobRepeat.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "f1f52793aa71504ebc245589bcd898a5412fdfbce3aeb850d4f88d09b7c25948",
+      "mathematics_changed": false
+    },
+    "NegativeBlobOrder.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "849259511e464268e9295442951ef3242eeb2bfeb946a888071d5eb7020e54dd",
+      "mathematics_changed": false
+    },
+    "NegativeStandardBlobOrder.lean.in": {
+      "origin": "original complete local named standard view",
+      "sha256": "d6ee66cd03810b76e14d4c8f7cbca0f82d0b4e35c055f1b18058495feb4e8cd8",
+      "mathematics_changed": false
+    },
+    "StandardBlobDomainSupport.lean.in": {
+      "origin": "original complete local Load/domain bridge and exact generic bind support",
+      "sha256": "0c9d7f1463ee8241d2a33d7ac7bdfa523336bdbe008904ffd09295dba502e08e",
+      "mathematics_changed": false
+    },
+    "StandardBlobDomain.lean.in": {
+      "origin": "original complete local Load/domain bridge and exact generic bind support",
+      "sha256": "4ca930a639d322ad826845b21cb6cd52da46f838a8499b705b79a7c007497316",
+      "mathematics_changed": false
+    },
+    "StandardBlobNormalContext.lean.in": {
+      "origin": "original complete local Load/domain bridge and exact generic bind support",
+      "sha256": "cf7597cf536875a9c9a9a684a63d2d6a6ac8ed06094fe0a1fc5de661cc2a0ae3",
+      "mathematics_changed": false
+    },
+    "StandardBlobReplyBridge.lean.in": {
+      "origin": "original complete local Load/domain bridge and exact generic bind support",
+      "sha256": "3b3fa4c72c0a6393f9c15ef073c09238aa040ddb6fbf4fa355c23914314f7507",
+      "mathematics_changed": false
+    },
+    "InboxLoadStandardBlobDigestDomain.lean.in": {
+      "origin": "original complete local Load/domain bridge and exact generic bind support",
+      "sha256": "7b0c37988ba3c14a3481c9a16a7f2b5e50f2b8d16f8b3e29a3545b471778931b",
+      "mathematics_changed": false
+    },
+    "InboxLoadBlobDigestDomain.lean.in": {
+      "origin": "original complete seven-lemma Load normal digest domain",
+      "sha256": "bab3e0066cecc10ec4c776472c58b7e7ff97b0808f45896fac590802432d1348",
+      "mathematics_changed": false
+    },
+    "external/ReadValueData.lean.in": {
+      "origin": "same complete local finite five-symbol read view",
+      "sha256": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9",
+      "mathematics_changed": false
+    },
+    "external/ReadTypeBindings.lean.in": {
+      "origin": "same complete local finite five-symbol read view",
+      "sha256": "600b8970ab4884c85363bb24b0661fc49daba39c8540a1c2670eede52867100b",
+      "mathematics_changed": false
+    },
+    "external/TypesExternal.lean.in": {
+      "origin": "same complete local finite five-symbol read view",
+      "sha256": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a",
+      "mathematics_changed": false
+    },
+    "external/FunsExternal.lean.in": {
+      "origin": "same complete local finite five-symbol read view",
+      "sha256": "6c88ead717a3945eefe6129560f6f1e8c32f1e64e330421813eba9d9ecc3c14c",
+      "mathematics_changed": false
+    },
+    "external/LoadFunsExternal.lean.in": {
+      "origin": "complete local canonical original Load view",
+      "sha256": "e95886794931e808a9fe0676863c26c21dfb22bd00a79e4ac8c899b11e201517",
+      "mathematics_changed": false
+    },
+    "enum-names.json": {
+      "origin": "original compiled mutant/native/extraction metadata definition",
+      "sha256": "119859c91238ea30847b48ea5a67c2a933e19176f192c369f518a1a4ade2d2cc",
+      "mathematics_changed": false
+    },
+    "mutations.json": {
+      "origin": "original compiled mutant/native/extraction metadata definition",
+      "sha256": "ef77ec44241b804493ca5aa0872eb1c9a9d028131b80c641b17120b845233d8c",
+      "mathematics_changed": false
+    },
+    "native-cases.rs.in": {
+      "origin": "original compiled mutant/native/extraction metadata definition",
+      "sha256": "3dbe61a8eb88b25f29e094c8c25d0e154717ae8ef9d3821bc2f48ab30a79d226",
+      "mathematics_changed": false
+    }
+  },
+  "new_baseline_acceptance_claimed": false
+}

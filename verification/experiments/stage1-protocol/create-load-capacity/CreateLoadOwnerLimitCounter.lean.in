@@ -1,0 +1,92 @@
+import SandboxModel.Lifecycle.Protocol.InboxSessionsScan
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+import SandboxModel.Lifecycle.Protocol.InboxLoadWitnessValues
+import SandboxModel.Lifecycle.Protocol.CreateLoadCapacityModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
+noncomputable section
+open InboxValidation InboxValidation.Values
+open SessionShape.Values (vector)
+
+def crowded : Inbox := { normal with
+  owner_high_water := 2#u64,
+  owners := vector [alice, bob, ⟨"charlie", 2#u64⟩] (by decide) }
+
+theorem actually_accepts :
+    Inbox.validate_using SavedRetirement.Values.small SessionShape.Values.small
+      (N := Unit) ⟨InboxLoad.Values.renewal⟩ (U := Unit) ⟨InboxLoad.Values.unload⟩
+      ComposedConfig.standardGraphic crowded = .ok (.Ok ()) := by
+  have config : LifecycleInboxConfig.valid_using ComposedConfig.standardGraphic crowded.config = .ok true :=
+    normal_configs_accepted ConfigValidation.Values.fixture (by simp)
+  have owners : OwnersValid crowded := by
+    simp [OwnersValid, crowded, normal, vector, alice, bob]
+  have ownersChecked := (owners_accepts_iff crowded).mpr owners
+  have laneResult : laneScan SessionShape.Values.small.encode (decodedContext crowded.config) crowded.lanes.val 0 = .ok true := by
+    have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+    simp [crowded, normal, vector, laneScan, RetentionLane.validateView, checked]
+  have retired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict crowded 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict, RetiredIdentity.conflictAt,
+      crowded, normal, vector]
+  unfold Inbox.validate_using
+  rw [config]
+  simp only [bind_tc_ok, ↓reduceIte,
+    lift, alloc.vec.Vec.len_val, core.convert.num.FromUsizeU16.from_val_eq, UScalar.lt_equiv]
+  have sessionsBound : ¬ crowded.sessions.val.length > crowded.config.max_sessions.val := by decide
+  simp only [sessionsBound, ↓reduceIte]
+  rw [context_fields]
+  simp only [bind_tc_ok, bne_iff_ne, ne_eq, UScalar.eq_equiv, alloc.vec.Vec.len_val,
+    core.convert.num.FromUsizeU16.from_val_eq]
+  have laneCount : ¬ crowded.lanes.val.length ≠ crowded.config.max_sessions.val := by decide
+  simp only [laneCount, ↓reduceIte]
+  rw [lanes_invalid_refines]
+  simp only [bind_assoc_eq]
+  rw [laneResult]
+  simp only [bind_tc_ok, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+  rw [RetiredIdentity.candidate_retired_contract, retired]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref]
+  rw [host_option]
+  simp only [bind_tc_ok, decide_eq_true_eq]
+  have host : HostMatches crowded := by simp [HostMatches, crowded, normal]
+  simp only [host, not_true_eq_false, ownersChecked, bind_tc_ok, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default]
+  change sessionsLoop _ _ _ _ crowded (decodedContext crowded.config)
+    (RetiredIdentity.enumCursor (alloc.vec.Vec.deref crowded.sessions) 0#usize) = _
+  rw [sessions_loop_refines]
+  simp [crowded, normal, vector, sessionsView, alloc.vec.Vec.deref]
+
+theorem exceeds_owner_limit : ¬ OwnerLimit crowded := by decide
+
+theorem full_model_rejects : inboxView SavedRetirement.Values.small SessionShape.Values.small
+    InboxLoad.Values.renewal InboxLoad.Values.unload crowded = .ok (.Err .CorruptStore) := by
+  have over : crowded.owners.val.length > crowded.config.max_sessions.val := by decide
+  simp [inboxView, over, rejected]
+
+theorem violates_full_inbox_contract : ¬ FullInboxContract
+    (fun saved terminal renewal unload inbox =>
+      Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+        ComposedConfig.standardGraphic inbox) := by
+  intro contract
+  have represented : ConfigValidation.Representable crowded.config := fixture_representable
+  have required := contract SavedRetirement.Values.small SessionShape.Values.small
+    InboxLoad.Values.renewal InboxLoad.Values.unload crowded represented
+  change Inbox.validate_using SavedRetirement.Values.small SessionShape.Values.small
+    (N := Unit) ⟨InboxLoad.Values.renewal⟩ (U := Unit) ⟨InboxLoad.Values.unload⟩
+    ComposedConfig.standardGraphic crowded = inboxView SavedRetirement.Values.small SessionShape.Values.small
+      InboxLoad.Values.renewal InboxLoad.Values.unload crowded at required
+  rw [actually_accepts, full_model_rejects] at required
+  cases Result.ok_injective required
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.actually_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.exceeds_owner_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.full_model_rejects
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.OwnerLimitCounter.violates_full_inbox_contract

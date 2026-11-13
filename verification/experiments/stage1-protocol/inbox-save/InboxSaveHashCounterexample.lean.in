@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveValidationWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxSave.Values
+noncomputable section
+
+def wrongHashTrace (inbox : Inbox) : Trace :=
+  [.encoded inbox, .digested [], .updated statement bytes.val digest.val]
+
+theorem wrong_hash_saved (trace : Trace) :
+    runSave saved terminal renewal unload (effects bytes (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Ok (), trace ++ wrongHashTrace InboxValidation.Values.normal) := by
+  unfold runSave save_using
+  rw [actual_normal_validation]
+  obtain ⟨budget, returned, exactValue⟩ :=
+    ConfigBudget.required_bytes_refines InboxValidation.Values.normal.config
+  have value : budget.val = 286720 := exactValue.trans fixture_budget
+  simp [effects, returned, value, bytes, SessionShape.Values.vector,
+    core.result.Result.Insts.CoreOpsTry.branch, lift, UScalar.lt_equiv, UScalar.cast_val_eq,
+    alloc.vec.Vec.deref, Array.to_slice, Aeneas.Std.Array.empty, wrongHashTrace, statement, List.append_assoc]
+
+theorem hash_input_traces_differ :
+    wrongHashTrace InboxValidation.Values.normal ≠ completeTrace InboxValidation.Values.normal bytes := by
+  simp [wrongHashTrace, completeTrace, bytes, SessionShape.Values.vector]
+
+theorem wrong_hash_contract_rejected : ¬FullSaveContract (runSave (E := Trace)) := by
+  intro contract
+  have contradiction := contract saved terminal renewal unload (effects bytes (.Ok 1#usize))
+    InboxValidation.Values.normal [] InboxValidation.Values.fixture_representable
+  rw [wrong_hash_saved, normal_model_saved] at contradiction
+  simp only [Result.ok.injEq, Prod.mk.injEq, List.nil_append] at contradiction
+  exact hash_input_traces_differ contradiction.2
+
+end
+end SandboxModel.Stage1Protocol.InboxSave.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.wrong_hash_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.hash_input_traces_differ
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.wrong_hash_contract_rejected

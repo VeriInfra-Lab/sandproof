@@ -1,12 +1,13 @@
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
-use rustix::fs::chown;
+use rustix::fs::{Mode, OFlags, open, openat};
 use rustix::process::{Gid, Pid, PidfdFlags, Signal, Uid, pidfd_open, pidfd_send_signal};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt::{self, Display};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -16,6 +17,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "api_response.rs"]
+mod api_response;
 #[path = "boot_plan.rs"]
 mod boot_plan;
 #[path = "cgroup.rs"]
@@ -23,6 +26,9 @@ mod cgroup;
 #[path = "cpu_domain.rs"]
 mod cpu_domain;
 use crate::child_process;
+use crate::snapshot_store::{
+    FileStamp, clone_template_file, matches_entry, require_same_xfs_mount,
+};
 #[path = "helper_gate.rs"]
 pub(crate) mod helper_gate;
 #[path = "jail.rs"]
@@ -35,9 +41,12 @@ mod original_stop;
 mod retirement;
 #[path = "snapshot.rs"]
 mod snapshot;
+#[path = "snapshot_restore.rs"]
+mod snapshot_restore;
+pub use snapshot_restore::{LoadedSnapshotObservation, LoadedSnapshotState};
 #[path = "snapshot_layout.rs"]
 mod snapshot_layout;
-pub use snapshot_layout::SnapshotLayout;
+pub use snapshot_layout::{FullMaterialRetirement, SnapshotLayout};
 #[path = "staging.rs"]
 mod staging;
 #[path = "uid_retirement.rs"]
@@ -52,8 +61,9 @@ pub use jail::JailObservation;
 pub use observation::{RuntimeObservationConfig, RuntimePhysicalObserver};
 pub use retirement::RetirementManifest;
 pub use snapshot::{
-    CapturedFullSnapshot, FullCaptureLimits, OriginalConfigurationObservation,
-    OriginalPauseObservation, PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
+    CapturedFullSnapshot, FullCaptureApiContext, FullCaptureLimits, FullCaptureRequestEnd,
+    FullCaptureRequestOutcome, OriginalConfigurationObservation, OriginalPauseObservation,
+    PausedOriginalVm, PublishedFullCapture, SourceConfigurationLimits,
 };
 pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 
@@ -75,6 +85,7 @@ pub enum RuntimeError {
     KvmUnavailable(io::Error),
     Json(serde_json::Error),
     InvalidConfiguration(&'static str),
+    HelperGateBusy,
     InvalidId,
     AlreadyClaimed,
     MissingRecord,
@@ -100,6 +111,7 @@ impl Display for RuntimeError {
             Self::InvalidConfiguration(reason) => {
                 write!(f, "invalid runtime configuration: {reason}")
             }
+            Self::HelperGateBusy => f.write_str("the host helper gate is busy"),
             Self::InvalidId => f.write_str("invalid jailer resource ID"),
             Self::AlreadyClaimed => {
                 f.write_str("resource ID is already claimed; observe before retrying")
@@ -171,6 +183,8 @@ pub enum ConsolePolicy {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Stable logical guest identity, preserved across physical VM incarnations.
+    pub guest_instance_id: String,
     /// Explicit discard is required by the full bounded deployment policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_policy: Option<ConsolePolicy>,
@@ -319,6 +333,7 @@ impl Runtime {
     }
 
     fn validate_physical_values(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+        validate_id(&config.guest_instance_id)?;
         if config
             .host_slot
             .as_ref()
@@ -393,7 +408,60 @@ impl Runtime {
     /// # Errors
     /// Preserves partial resources when a launch phase fails.
     pub fn launch(&self, id: &str) -> Result<Observation, RuntimeError> {
+        self.launch_verified(id, |_| Ok(()))
+    }
+
+    /// Launch using the same open rootfs descriptor supplied to the registered
+    /// template check, before creating any runtime claim.
+    /// # Errors
+    /// A failed template check has no runtime claim. Later launch errors retain
+    /// partial resources under the original claim.
+    pub fn launch_verified(
+        &self,
+        id: &str,
+        verify_template: impl FnOnce(&File) -> Result<(), RuntimeError>,
+    ) -> Result<Observation, RuntimeError> {
         Self::validate_images(&self.config)?;
+        let disk = File::from(
+            open(
+                &self.config.rootfs,
+                OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+                Mode::empty(),
+            )
+            .map_err(errno_to_io)?,
+        );
+        let source = disk.metadata()?;
+        if !source.is_file()
+            || source.uid() != 0
+            || source.mode() & 0o022 != 0
+            || source.nlink() != 1
+            || source.len() == 0
+        {
+            return Err(RuntimeError::InvalidConfiguration(
+                "cold template must be an original protected root-owned file",
+            ));
+        }
+        let chroot = File::from(
+            open(
+                &self.config.chroot_base,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+                Mode::empty(),
+            )
+            .map_err(errno_to_io)?,
+        );
+        require_same_xfs_mount(&disk, &chroot)?;
+        verify_template(&disk)?;
+        let source_stamp = FileStamp::from_metadata(&source);
+        let record = self.claim_and_spawn(id)?;
+        self.stage_and_boot(id, record.pid, &disk, &source_stamp)?;
+        let observation = self.observe(id)?;
+        if observation.state != VmState::VmmRunning {
+            return Err(RuntimeError::Protocol("VM did not enter Running"));
+        }
+        Ok(observation)
+    }
+
+    fn claim_and_spawn(&self, id: &str) -> Result<ProcessRecord, RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         // Linux sockaddr_un.sun_path has 108 bytes including its trailing NUL.
@@ -407,12 +475,7 @@ impl Runtime {
             self.prepare_private_network(id, &claim)?;
         }
         let record = self.spawn_jailer(id, &claim)?;
-        self.stage_and_boot(id, record.pid)?;
-        let observation = self.observe(id)?;
-        if observation.state != VmState::VmmRunning {
-            return Err(RuntimeError::Protocol("VM did not enter Running"));
-        }
-        Ok(observation)
+        Ok(record)
     }
 
     fn claim_resource(&self, id: &str) -> Result<PathBuf, RuntimeError> {
@@ -526,8 +589,29 @@ impl Runtime {
         result
     }
 
-    fn stage_and_boot(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
+    fn stage_and_boot(
+        &self,
+        id: &str,
+        pid: u32,
+        disk: &File,
+        source_stamp: &FileStamp,
+    ) -> Result<(), RuntimeError> {
         self.require_launch_jail(id, 0)?;
+        self.wait_api_socket(id, pid)?;
+        self.stage_cold_images(id, disk)?;
+        if &FileStamp::from_metadata(&disk.metadata()?) != source_stamp {
+            return Err(RuntimeError::IdentityMismatch(
+                "original cold template changed",
+            ));
+        }
+        boot_plan::BootPlan::for_runtime(&self.config)
+            .configure(|path, body| self.put(id, path, body))?;
+        self.configure_access_metadata(id)?;
+        self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
+        Ok(())
+    }
+
+    fn wait_api_socket(&self, id: &str, pid: u32) -> Result<(), RuntimeError> {
         let socket = self.socket_path(id);
         let deadline = Instant::now() + START_TIMEOUT;
         while !socket.exists() {
@@ -541,30 +625,33 @@ impl Runtime {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        let root = self.root_path(id);
+        Ok(())
+    }
+
+    fn stage_cold_images(&self, id: &str, disk: &File) -> Result<(), RuntimeError> {
+        let directory = self.launch_jail_root(id, 0)?;
         copy_private_kernel(
             &self.config.kernel,
-            &root.join("vmlinux"),
+            &self.root_path(id).join("vmlinux"),
             self.config.vm_uid,
             self.config.vm_gid,
         )?;
-        copy_private_disk(&self.config.rootfs, &root.join("rootfs.ext4"))?;
-        chown(
-            root.join("rootfs.ext4"),
-            Some(Uid::from_raw(self.config.vm_uid)),
-            Some(Gid::from_raw(self.config.vm_gid)),
+        clone_private_disk(
+            disk,
+            &directory,
+            Uid::from_raw(self.config.vm_uid),
+            Gid::from_raw(self.config.vm_gid),
         )
-        .map_err(errno_to_io)?;
-        boot_plan::BootPlan::for_runtime(&self.config)
-            .configure(|path, body| self.put(id, path, body))?;
+    }
+
+    fn configure_access_metadata(&self, id: &str) -> Result<(), RuntimeError> {
         if let Some(hash) = &self.config.access_token_hash {
             self.put(
                 id,
                 "/mmds",
-                &json!({ "instanceID": id, "envID": "sandproof-base", "accessTokenHash": hash }),
+                &json!({ "instanceID": self.config.guest_instance_id, "envID": "sandproof-base", "accessTokenHash": hash }),
             )?;
         }
-        self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
     }
 
@@ -642,7 +729,36 @@ impl Runtime {
         self.cleanup_for_owner(id, 0)
     }
 
+    /// Reuse the original already-held exclusive slot gate for Unload cleanup.
+    /// This grants no SQL permission and never changes the saved material store.
+    /// # Errors
+    /// Refuses a shared/foreign/busy guard, live source or unknown cleanup.
+    pub fn cleanup_under_gate(
+        &self,
+        id: &str,
+        gate: &RuntimeHelperGuard,
+    ) -> Result<(), RuntimeError> {
+        let context = self
+            .config
+            .host_slot
+            .as_ref()
+            .ok_or(RuntimeError::IdentityMismatch(
+                "missing original cleanup slot",
+            ))?;
+        gate.require_exclusive_context(context)?;
+        self.cleanup_for_owner_with_gate(id, 0, Some(gate))
+    }
+
     fn cleanup_for_owner(&self, id: &str, owner: u32) -> Result<(), RuntimeError> {
+        self.cleanup_for_owner_with_gate(id, owner, None)
+    }
+
+    fn cleanup_for_owner_with_gate(
+        &self,
+        id: &str,
+        owner: u32,
+        gate: Option<&RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         validate_id(id)?;
         self.validate_network_id(id)?;
         let record = self.read_record(id)?;
@@ -655,7 +771,7 @@ impl Runtime {
         self.cleanup_cgroup(id, false)?;
         self.cleanup_jail(id, owner, false)?;
         if self.config.private_netns.is_some() {
-            self.cleanup_private_network(id)?;
+            self.cleanup_private_network_with_gate(id, gate)?;
         }
         Ok(())
     }
@@ -752,7 +868,11 @@ impl Runtime {
         Ok(())
     }
 
-    fn cleanup_private_network(&self, id: &str) -> Result<(), RuntimeError> {
+    fn cleanup_private_network_with_gate(
+        &self,
+        id: &str,
+        gate: Option<&RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         let namespace =
             self.config
                 .private_netns
@@ -773,7 +893,7 @@ impl Runtime {
         let metadata = match fs::symlink_metadata(namespace) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return self.cleanup_uplink_after_namespace(id);
+                return self.cleanup_uplink_after_namespace_with_gate(id, gate);
             }
             Err(error) => return Err(error.into()),
         };
@@ -786,18 +906,40 @@ impl Runtime {
         {
             return Err(RuntimeError::IdentityMismatch("network namespace handle"));
         }
-        let pids = self.read_host_helper(
-            "list namespace processes",
-            "/usr/bin/ip",
-            &["netns", "pids", id],
-        )?;
+        let pids = if let Some(held) = gate {
+            helper_gate::helper_output(
+                Some(held),
+                self.config.host_slot.as_ref(),
+                "list namespace processes",
+                "/usr/bin/ip",
+                &["netns", "pids", id],
+                None,
+            )?
+        } else {
+            self.read_host_helper(
+                "list namespace processes",
+                "/usr/bin/ip",
+                &["netns", "pids", id],
+            )?
+        };
         if !pids.is_empty() {
             return Err(RuntimeError::InvalidConfiguration(
                 "namespace still contains a process or cannot be checked",
             ));
         }
-        self.run_ip("delete namespace", &["netns", "delete", id])?;
-        self.cleanup_uplink_after_namespace(id)
+        if let Some(held) = gate {
+            helper_gate::helper_output(
+                Some(held),
+                self.config.host_slot.as_ref(),
+                "delete namespace",
+                "/usr/bin/ip",
+                &["netns", "delete", id],
+                None,
+            )?;
+        } else {
+            self.run_ip("delete namespace", &["netns", "delete", id])?;
+        }
+        self.cleanup_uplink_after_namespace_with_gate(id, gate)
     }
 
     /// Read-only check of the exact namespace handle and its guest-facing
@@ -1225,6 +1367,30 @@ impl Runtime {
         self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
     }
 
+    fn api_stream(&self, id: &str, timeout: Duration) -> Result<UnixStream, RuntimeError> {
+        let record = self.read_record(id)?;
+        if verified_process(&record)?.is_none() {
+            return Err(RuntimeError::IdentityMismatch(
+                "API original VMM is not alive",
+            ));
+        }
+        self.require_launch_jail(id, 0)?;
+        let stream = UnixStream::connect(self.socket_path(id))?;
+        let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(errno_to_io)?;
+        if u32::try_from(peer.pid.as_raw_nonzero().get()).ok() != Some(record.pid)
+            || peer.uid.as_raw() != self.config.vm_uid
+            || peer.gid.as_raw() != self.config.vm_gid
+            || verified_process(&record)?.is_none()
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "API connected peer differs from original VMM",
+            ));
+        }
+        stream.set_read_timeout(Some(timeout))?;
+        stream.set_write_timeout(Some(timeout))?;
+        Ok(stream)
+    }
+
     fn api_with_timeout(
         &self,
         id: &str,
@@ -1233,63 +1399,7 @@ impl Runtime {
         body: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<Vec<u8>, RuntimeError> {
-        let mut stream = UnixStream::connect(self.socket_path(id))?;
-        stream.set_read_timeout(Some(timeout))?;
-        stream.set_write_timeout(Some(timeout))?;
-        let data = body.unwrap_or_default();
-        write!(
-            stream,
-            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            data.len()
-        )?;
-        stream.write_all(data)?;
-        let mut response = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        let header_end = loop {
-            if let Some(position) = response.windows(4).position(|part| part == b"\r\n\r\n") {
-                break position;
-            }
-            if response.len() > 65_536 {
-                return Err(RuntimeError::Protocol("API headers exceeded limit"));
-            }
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before headers"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        };
-        let header = std::str::from_utf8(&response[..header_end])
-            .map_err(|_| RuntimeError::Protocol("non-UTF-8 HTTP headers"))?;
-        let status: u16 = header
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .and_then(|code| code.parse().ok())
-            .ok_or(RuntimeError::Protocol("missing HTTP status"))?;
-        let declared_length: Option<usize> = header.lines().find_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            key.trim()
-                .eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse().ok())
-                .flatten()
-        });
-        let content_length = if status == 204 || status == 304 || status < 200 {
-            declared_length.unwrap_or(0)
-        } else {
-            declared_length.ok_or(RuntimeError::Protocol("missing Content-Length"))?
-        };
-        if content_length > 1_048_576 {
-            return Err(RuntimeError::Protocol("API response exceeded limit"));
-        }
-        let body_start = header_end + 4;
-        while response.len() - body_start < content_length {
-            let count = stream.read(&mut chunk)?;
-            if count == 0 {
-                return Err(RuntimeError::Protocol("API closed before response body"));
-            }
-            response.extend_from_slice(&chunk[..count]);
-        }
-        let body = response[body_start..body_start + content_length].to_vec();
+        let (status, body) = self.api_reply(id, method, path, body, timeout)?;
         if !(200..300).contains(&status) {
             return Err(RuntimeError::Api {
                 status,
@@ -1297,6 +1407,25 @@ impl Runtime {
             });
         }
         Ok(body)
+    }
+
+    fn api_reply(
+        &self,
+        id: &str,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<(u16, Vec<u8>), RuntimeError> {
+        let mut stream = self.api_stream(id, timeout)?;
+        let data = body.unwrap_or_default();
+        write!(
+            stream,
+            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            data.len()
+        )?;
+        stream.write_all(data)?;
+        api_response::read_reply(&mut stream)
     }
 }
 
@@ -1432,73 +1561,38 @@ fn copy_private_kernel(
     Ok(())
 }
 
-fn copy_private_disk(source: &Path, destination: &Path) -> Result<(), RuntimeError> {
-    let mut input = File::open(source)?;
-    let metadata = input.metadata()?;
-    if !metadata.is_file() {
-        return Err(RuntimeError::InvalidConfiguration("template is not a file"));
-    }
-    // Each new jail owns a fresh disk. Never overwrite an existing file or
-    // follow a destination symlink after an interrupted preparation.
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(destination)?;
-    let length = metadata.len();
-    let mut position = 0;
-    while position < length {
-        // Skip source holes without reading tens of GiB of zeroes. Filesystems
-        // without extent queries fall back to bounded scanning below.
-        let data = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Data(position)) {
-            Ok(data) => data,
-            Err(rustix::io::Errno::NXIO) => break,
-            Err(rustix::io::Errno::INVAL) => position,
-            Err(error) => return Err(errno_to_io(error).into()),
-        };
-        let end = match rustix::fs::seek(&input, rustix::fs::SeekFrom::Hole(data)) {
-            Ok(end) => end.min(length),
-            Err(rustix::io::Errno::INVAL) => length,
-            Err(error) => return Err(errno_to_io(error).into()),
-        };
-        if data < position || data >= length || end <= data {
-            return Err(RuntimeError::InvalidConfiguration(
-                "invalid template extent",
-            ));
-        }
-        input.seek(SeekFrom::Start(data))?;
-        output.seek(SeekFrom::Start(data))?;
-        copy_sparse_range(&mut input, &mut output, end - data)?;
-        position = end;
-    }
-    // Seeking over a trailing hole does not extend a file. Its logical size
-    // still determines the guest disk and all admission/accounting budgets.
-    output.set_len(length)?;
+fn clone_private_disk(
+    source: &File,
+    directory: &File,
+    uid: Uid,
+    gid: Gid,
+) -> Result<(), RuntimeError> {
+    let name = OsStr::new("rootfs.ext4");
+    // The original jail claim owns the new file even if clone, ownership,
+    // verification or sync fails. Never replace or remove a name here.
+    let output = File::from(
+        openat(
+            directory,
+            name,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::RUSR | Mode::WUSR,
+        )
+        .map_err(errno_to_io)?,
+    );
     output.set_permissions(fs::Permissions::from_mode(0o600))?;
-    Ok(())
-}
-
-fn copy_sparse_range(
-    input: &mut impl Read,
-    output: &mut (impl Write + Seek),
-    mut length: u64,
-) -> io::Result<()> {
-    let mut buffer = vec![0_u8; 64 * 1024];
-    while length > 0 {
-        let count = usize::try_from(length.min(buffer.len() as u64))
-            .expect("count is bounded by the buffer size");
-        let block = &mut buffer[..count];
-        input.read_exact(block)?;
-        // Also reclaim allocated zero blocks in dense imported templates.
-        if block.iter().all(|byte| *byte == 0) {
-            output.seek(SeekFrom::Current(
-                i64::try_from(count).expect("64 KiB fits i64"),
-            ))?;
-        } else {
-            output.write_all(block)?;
-        }
-        length -= count as u64;
+    clone_template_file(source, &output)?;
+    rustix::fs::fchown(&output, Some(uid), Some(gid)).map_err(errno_to_io)?;
+    output.sync_all()?;
+    matches_entry(directory, name, &output)?;
+    let prepared = output.metadata()?;
+    if prepared.uid() != uid.as_raw()
+        || prepared.gid() != gid.as_raw()
+        || prepared.mode() & 0o7777 != 0o600
+        || prepared.nlink() != 1
+    {
+        return Err(RuntimeError::IdentityMismatch("private cold disk changed"));
     }
+    directory.sync_all()?;
     Ok(())
 }
 
@@ -1743,6 +1837,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
@@ -1795,6 +1890,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
@@ -1871,6 +1967,7 @@ mod tests {
             .unwrap();
         let runtime = Runtime {
             config: RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
                 console_policy: None,
                 host_slot: None,
                 jailer: PathBuf::from("/usr/bin/true"),
@@ -1917,7 +2014,9 @@ mod tests {
             runtime.observe_private_network(&id),
             Err(RuntimeError::IdentityMismatch("guest guard rules"))
         ));
-        runtime.cleanup_private_network(&id).unwrap();
+        runtime
+            .cleanup_private_network_with_gate(&id, None)
+            .unwrap();
     }
 
     #[test]
@@ -2092,126 +2191,93 @@ mod tests {
     }
 
     #[test]
-    fn readonly_template_produces_independent_writable_disk() {
-        let directory = std::env::temp_dir().join(format!("sandproof-copy-{}", std::process::id()));
-        fs::create_dir(&directory).unwrap();
-        let source = directory.join("base");
-        let destination = directory.join("private");
-        fs::write(&source, b"base contents").unwrap();
-        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
-        copy_private_disk(&source, &destination).unwrap();
-        assert_eq!(fs::metadata(&destination).unwrap().mode() & 0o777, 0o600);
-        fs::write(&destination, b"guest changes").unwrap();
-        assert_eq!(fs::read(&source).unwrap(), b"base contents");
-        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o777, 0o444);
-        fs::remove_file(destination).unwrap();
-        fs::remove_file(source).unwrap();
-        fs::remove_dir(directory).unwrap();
-    }
+    fn cold_disk_clones_keep_template_and_sibling_writes_independent() {
+        use std::io::{Seek, SeekFrom};
+        use std::os::unix::fs::FileExt;
 
-    #[test]
-    fn private_disk_preserves_holes_bytes_and_logical_length() {
         let directory = tempfile::tempdir().unwrap();
-        let source = directory.path().join("template");
-        let destination = directory.path().join("private");
-        let mut file = File::create(&source).unwrap();
-        file.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
-        file.write_all(b"first unaligned extent").unwrap();
-        file.seek(SeekFrom::Start(3 * 1024 * 1024 - 3)).unwrap();
-        file.write_all(b"cross a block boundary").unwrap();
-        file.set_len(8 * 1024 * 1024 + 13).unwrap();
-        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+        let template = directory.path().join("template");
+        let mut file = File::create(&template).unwrap();
+        let offset = 1024 * 1024 + 7;
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        file.write_all(b"original").unwrap();
+        file.set_len(2 * 1024 * 1024 + 13).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o444)).unwrap();
 
-        copy_private_disk(&source, &destination).unwrap();
-        let original = fs::metadata(&source).unwrap();
-        let copied = fs::metadata(&destination).unwrap();
-        assert_eq!(original.len(), copied.len());
-        assert_ne!(original.ino(), copied.ino());
-        assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
-        assert!(copied.blocks() * 512 < copied.len() / 2);
-        let mut private = OpenOptions::new().write(true).open(&destination).unwrap();
-        private.seek(SeekFrom::Start(1024 * 1024 + 7)).unwrap();
-        private.write_all(b"guest overwrite").unwrap();
-        let mut original_file = File::open(&source).unwrap();
-        original_file
-            .seek(SeekFrom::Start(1024 * 1024 + 7))
-            .unwrap();
-        let mut bytes = [0; 5];
-        original_file.read_exact(&mut bytes).unwrap();
-        assert_eq!(&bytes, b"first");
-        assert_eq!(fs::metadata(&source).unwrap().mode() & 0o777, 0o444);
-        assert_eq!(copied.mode() & 0o777, 0o600);
-    }
-
-    #[test]
-    fn private_disk_handles_empty_all_hole_and_dense_zero_templates() {
-        let directory = tempfile::tempdir().unwrap();
-        for (name, length, dense) in [
-            ("empty", 0, false),
-            ("hole", 1_048_593, false),
-            ("dense", 1_048_593, true),
-        ] {
-            let source = directory.path().join(name);
-            let destination = source.with_extension("private");
-            let mut file = File::create(&source).unwrap();
-            if dense {
-                file.write_all(&vec![0; length]).unwrap();
-            } else {
-                file.set_len(length as u64).unwrap();
-            }
-            copy_private_disk(&source, &destination).unwrap();
-            let copied = fs::metadata(&destination).unwrap();
-            assert_eq!(copied.len(), length as u64);
-            assert_eq!(fs::read(&source).unwrap(), fs::read(&destination).unwrap());
-            if length > 0 {
-                assert!(copied.blocks() * 512 < copied.len() / 2);
-            }
+        let source = File::open(&template).unwrap();
+        let original = source.metadata().unwrap();
+        let mut paths = Vec::new();
+        let uid = rustix::process::geteuid();
+        let gid = rustix::process::getegid();
+        for name in ["first", "second"] {
+            let root = directory.path().join(name);
+            fs::create_dir(&root).unwrap();
+            clone_private_disk(&source, &File::open(&root).unwrap(), uid, gid).unwrap();
+            let path = root.join("rootfs.ext4");
+            let clone = path.metadata().unwrap();
+            assert_ne!(clone.ino(), original.ino());
+            assert_eq!(clone.len(), original.len());
+            assert_eq!((clone.uid(), clone.gid()), (uid.as_raw(), gid.as_raw()));
+            assert_eq!(clone.mode() & 0o7777, 0o600);
+            assert_eq!(fs::read(&path).unwrap(), fs::read(&template).unwrap());
+            paths.push(path);
         }
+        assert_ne!(
+            paths[0].metadata().unwrap().ino(),
+            paths[1].metadata().unwrap().ino()
+        );
+        for (path, bytes) in paths.iter().zip([b"first VM", b"secondVM"]) {
+            let mut private = OpenOptions::new().write(true).open(path).unwrap();
+            private.seek(SeekFrom::Start(offset)).unwrap();
+            private.write_all(bytes).unwrap();
+        }
+        let written_bytes = |path: &Path| {
+            let mut bytes = [0; 8];
+            File::open(path)
+                .unwrap()
+                .read_exact_at(&mut bytes, offset)
+                .unwrap();
+            bytes
+        };
+        assert_eq!(written_bytes(&paths[0]), *b"first VM");
+        assert_eq!(written_bytes(&paths[1]), *b"secondVM");
+        assert_eq!(written_bytes(&template), *b"original");
+        assert_eq!(template.metadata().unwrap().mode() & 0o7777, 0o444);
     }
 
     #[test]
-    fn private_disk_refuses_existing_files_and_symlinks() {
+    fn cold_disk_clone_failure_retains_original_destination_for_cleanup() {
         let directory = tempfile::tempdir().unwrap();
-        let source = directory.path().join("template");
-        let existing = directory.path().join("existing");
-        let link = directory.path().join("link");
-        fs::write(&source, b"template bytes").unwrap();
-        fs::write(&existing, b"do not overwrite").unwrap();
-        std::os::unix::fs::symlink(&existing, &link).unwrap();
-        for destination in [&existing, &link, &source] {
-            assert!(copy_private_disk(&source, destination).is_err());
-        }
-        assert_eq!(fs::read(existing).unwrap(), b"do not overwrite");
-        assert_eq!(fs::read(source).unwrap(), b"template bytes");
-    }
+        let root = File::open(directory.path()).unwrap();
+        let template = directory.path().join("template");
+        fs::write(&template, b"group-writable source").unwrap();
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o660)).unwrap();
+        let source = File::open(&template).unwrap();
+        let target = directory.path().join("rootfs.ext4");
+        let uid = rustix::process::geteuid();
+        let gid = rustix::process::getegid();
+        assert!(matches!(
+            clone_private_disk(&source, &root, uid, gid),
+            Err(RuntimeError::IdentityMismatch(_))
+        ));
+        let partial = target.metadata().unwrap();
+        assert_eq!(partial.len(), 0);
+        assert!(matches!(
+            clone_private_disk(&source, &root, uid, gid),
+            Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::AlreadyExists
+        ));
+        assert_eq!(target.metadata().unwrap().ino(), partial.ino());
+        fs::remove_file(&target).unwrap();
 
-    #[test]
-    fn sparse_range_fallback_handles_short_reads_and_rejects_truncation() {
-        struct ShortReads(std::io::Cursor<Vec<u8>>);
-        impl Read for ShortReads {
-            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-                let length = buffer.len().min(97);
-                self.0.read(&mut buffer[..length])
-            }
-        }
-        let mut bytes = vec![0; 3 * 64 * 1024 + 7];
-        bytes[65536..65541].copy_from_slice(b"data!");
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("fallback");
-        let mut output = File::create(&path).unwrap();
-        copy_sparse_range(
-            &mut ShortReads(io::Cursor::new(bytes.clone())),
-            &mut output,
-            bytes.len() as u64,
-        )
-        .unwrap();
-        output.set_len(bytes.len() as u64).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), bytes);
-        assert!(output.metadata().unwrap().blocks() * 512 < bytes.len() as u64 / 2);
-        let error = copy_sparse_range(&mut &b"short"[..], &mut output, 6).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
-        let mut readonly = File::open(&path).unwrap();
-        assert!(copy_sparse_range(&mut &b"write"[..], &mut readonly, 5).is_err());
+        std::os::unix::fs::symlink(&template, &target).unwrap();
+        assert!(matches!(
+            clone_private_disk(&source, &root, uid, gid),
+            Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::AlreadyExists
+        ));
+        assert!(target.symlink_metadata().unwrap().is_symlink());
+        assert_eq!(fs::read(template).unwrap(), b"group-writable source");
     }
 }
 

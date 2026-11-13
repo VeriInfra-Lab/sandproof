@@ -1,0 +1,98 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobCore
+import SandboxModel.Lifecycle.Protocol.StandardBlobDomainSupport
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlobDomain
+noncomputable section
+
+/-- Only normal Rows returned by this exact original issued-statement read.
+This finite library condition does not hold for arbitrary manufactured ValueRef
+and establishes neither a business quota nor coherent repeated reads. -/
+def ReturnedRowsBound (connection : rusqlite.Connection) : Prop :=
+  ∀ statement row,
+    connection.expectedRow statement (issuedReadStatement connection statement 0) = .ok (.Ok row) →
+    BlobColumns.RowBlobBound row
+
+theorem column_cint_bound (row : rusqlite.row.Row) (index : Usize) (bytes : BlobColumns.Bytes)
+    (bounded : BlobColumns.RowBlobBound row) (read : BlobColumns.column row index = .Ok bytes) :
+    bytes.val.length ≤ 2147483647 := by
+  unfold BlobColumns.column at read
+  split at read
+  · rename_i inside
+    cases raw : row.column index <;> simp only [raw, reduceCtorEq] at read
+    rename_i original
+    cases read
+    exact bounded index original inside raw
+  · cases read
+
+/-- Exposes the actual single-call successful row and the unchanged full
+Context. No successful overall load, parse, hash, transaction or commit is
+assumed or concluded by this standard-read fact. -/
+theorem standard_success_row (self : StandardBlob.Context) (statement : Str)
+    (left right : BlobColumns.Bytes) (after : StandardBlob.Context)
+    (returned : StandardBlob.actual self statement = .ok (.Ok (left, right), after)) :
+    ∃ row,
+      self.connection.canonical.prepare statement = .ok (.Ok 0) ∧
+      self.connection.expectedRow statement (issuedReadStatement self.connection statement 0) = .ok (.Ok row) ∧
+      BlobColumns.expected row 0#usize 1#usize = .Ok (left, right) ∧ after = self := by
+  have modeled : StandardBlob.expected self statement = .ok (.Ok (left, right), after) :=
+    (StandardBlob.standard_refines self statement).symm.trans returned
+  unfold StandardBlob.expected at modeled
+  obtain ⟨reply, queried, finished⟩ := bind_success_value _ _ _ modeled
+  cases reply with
+  | Err error => simp at finished
+  | Ok pair =>
+    have same := Prod.mk.inj (Result.ok_injective finished)
+    have pairSame : pair = (left, right) := core.result.Result.Ok.inj same.1
+    have contextSame : after = self := same.2.symm
+    unfold StandardBlob.queryView at queried
+    obtain ⟨prepared, prepareResult, continued⟩ := bind_success_value _ _ _ queried
+    cases prepared with
+    | Err error => simp at continued
+    | Ok count =>
+      dsimp only at continued
+      by_cases zero : count = 0
+      · subst count
+        simp only [↓reduceIte] at continued
+        obtain ⟨read, readResult, completed⟩ := bind_success_value _ _ _ continued
+        cases read with
+        | Err error => simp at completed
+        | Ok row =>
+          have completePair : BlobColumns.expected row 0#usize 1#usize = .Ok pair :=
+            Result.ok_injective completed
+          exact ⟨row, prepareResult, readResult,
+            completePair.trans (congrArg core.result.Result.Ok pairSame), contextSame⟩
+      · simp [zero] at continued
+
+theorem standard_success_cint_bounds (self : StandardBlob.Context) (statement : Str)
+    (left right : BlobColumns.Bytes) (after : StandardBlob.Context)
+    (bounded : ReturnedRowsBound self.connection)
+    (returned : StandardBlob.actual self statement = .ok (.Ok (left, right), after)) :
+    after = self ∧ left.val.length ≤ 2147483647 ∧ right.val.length ≤ 2147483647 := by
+  obtain ⟨row, _, read, complete, contextSame⟩ :=
+    standard_success_row self statement left right after returned
+  have helper : BlobColumns.actual row 0#usize 1#usize = .ok (.Ok (left, right)) :=
+    (BlobColumns.actual_refines row 0#usize 1#usize).trans (congrArg Result.ok complete)
+  obtain ⟨leftRead, rightRead⟩ :=
+    (BlobColumns.success_keeps_both_columns row 0#usize 1#usize left right).mp helper
+  exact ⟨contextSame,
+    column_cint_bound row 0#usize left (bounded statement row read) leftRead,
+    column_cint_bound row 1#usize right (bounded statement row read) rightRead⟩
+
+theorem standard_success_digest_bounds (self : StandardBlob.Context) (statement : Str)
+    (left right : BlobColumns.Bytes) (after : StandardBlob.Context)
+    (bounded : ReturnedRowsBound self.connection)
+    (returned : StandardBlob.actual self statement = .ok (.Ok (left, right), after)) :
+    after = self ∧ left.val.length < 2^61 ∧ right.val.length < 2^61 := by
+  obtain ⟨contextSame, leftBound, rightBound⟩ :=
+    standard_success_cint_bounds self statement left right after bounded returned
+  exact ⟨contextSame, lt_of_le_of_lt leftBound (by decide), lt_of_le_of_lt rightBound (by decide)⟩
+
+
+end
+end SandboxModel.Stage1Protocol.StandardBlobDomain
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobDomain.column_cint_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobDomain.standard_success_row
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobDomain.standard_success_cint_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobDomain.standard_success_digest_bounds

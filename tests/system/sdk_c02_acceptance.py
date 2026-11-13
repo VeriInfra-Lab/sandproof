@@ -35,6 +35,7 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools import check_kvm_host as host
+from tools.capture_acceptance import original_chroot
 from tools.system_acceptance import (
     Failure, PHASES, PROBES, digest, json_file, new_report, read_report,
     record_failure, require, safe_export, valid_sandbox_id, validate_probe, write_once,
@@ -176,7 +177,8 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
     _require_assertions(Failure)
     require(re.fullmatch(r"[0-9a-f]{16}", namespace) is not None, "identity_unknown")
     prefix = f"vm-{namespace}-"
-    claims = entries(root / "jails/.claims")
+    chroot=original_chroot(root)
+    claims = entries(chroot / '.claims')
     require(all(re.fullmatch(re.escape(prefix) + r"(0|[1-9][0-9]*)", p.name)
                 and not p.is_symlink() and p.is_dir() for p in claims), "resource_unknown")
     require(len(claims) <= EXPECTED_SANDBOXES, "resource_unknown")
@@ -222,7 +224,7 @@ def assert_no_exact_resources(root, namespace, first_uid, firecracker_name, *, e
                 network_inodes.add(f"net:[{network['namespace_inode']}]")
         except (OSError, ValueError, TypeError) as error:
             raise Failure("resource_unknown") from error
-    for parent in (root / "jails" / firecracker_name, Path("/run/netns")):
+    for parent in (chroot / firecracker_name, Path("/run/netns")):
         require(not any(p.name.startswith(prefix) for p in entries(parent)), "resource_residual")
     # os.walk's default swallows permission errors. An incomplete audit fails closed.
     def unavailable(error):
@@ -304,7 +306,7 @@ def record_requests(root,services,report):
             require(len(contexts)==1,'identity_unknown')
             context=contexts[0]
             name_vm='vm-'+services.native_pools[0]['namespace']+'-'+str(context['binding']['vm'])
-            claim=root/'jails/.claims'/name_vm
+            claim=original_chroot(root) / '.claims'/name_vm
             record,network=json_file(claim/'record.json'),json_file(claim/'network.json')
             require(record['resource_id']==name_vm and network['resource_id']==name_vm
                 and process_start_ticks(record['pid'])==record['start_time_ticks'],'resource_unknown')
@@ -435,9 +437,9 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     _require_assertions(Failure)
     from server_templates import descriptor
     firecracker = args.firecracker.name
-    longest_socket = root / "jails" / firecracker / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
+    longest_socket = root / "p/v" / firecracker / f"vm-{namespace}-{2**64 - 1}" / "root/api.socket"
     require(len(os.fsencode(longest_socket)) < 108, "invalid_configuration")
-    for name in ("db", "state", "jails","resource-evidence","resource-requests"):
+    for name in ("db", "state", "p","resource-evidence","resource-requests"):
         (root / name).mkdir(mode=0o700)
     report["private_staged"] = {}
     report["staged_copies"] = "retained"
@@ -457,7 +459,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
     config = {
         "namespace": namespace, "database": str(root / "db/controller.db"),
         "node_state_dir": str(root / "state"), "jailer": str(args.jailer),
-        "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
+        "firecracker": str(args.firecracker), "chroot_base": str(root / "p/v"),
         "kernel": str(root / "vmlinux"), "rootfs": str(root / "rootfs.ext4"),
         "uid_base": args.uid_base, "vcpu_count": 1,
         "memory_mib": 512, "file_policy_digest": 1,
@@ -469,7 +471,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         # center/host assembly consumes these before Rust deserializes native.
         "startup_timeout_secs": 300, "public_ipv4_enabled": False,
     }
-    config = complete_runtime(config, slots=PHYSICAL_SLOTS)
+    config = complete_runtime(config, slots=PHYSICAL_SLOTS, inbox_sessions=EXPECTED_SANDBOXES+config["max_active_global"])
     # The fixed smoke's 8 MiB+1 refusal and data-contract corpus share this
     # explicit fixture upload budget; it is not an SDK or product default.
     config["data_transfer"]["file_upload_bytes"] = 8 * 1024 * 1024
@@ -482,7 +484,7 @@ def prepare(args, root, namespace, owner_key, foreign_key, port, report):
         max_memory_bytes_per_tenant=2*768*1024**2))
     config['templates']=catalog
     services=RuntimeServices.prepare(args,root,[config],[catalog],owner_key,f'127.0.0.1:{port}',
-        args.service_cgroup_record,job_count=EXPECTED_SANDBOXES,extra_credentials=[dict(tenant=2,secret=foreign_key)],
+        args.service_cgroup_record,retained_sessions=(EXPECTED_SANDBOXES) + config['max_active_global'],extra_credentials=[dict(tenant=2,secret=foreign_key)],
         registry_config=dict(root=str(root/'unused-registry'),max_templates_global=1,max_templates_per_tenant=1,
             max_artifact_bytes_global=disk_bytes+args.kernel.stat().st_size,
             max_artifact_bytes_per_tenant=disk_bytes+args.kernel.stat().st_size,validation_timeout_secs=60))

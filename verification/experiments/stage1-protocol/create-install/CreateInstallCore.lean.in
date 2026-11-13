@@ -1,0 +1,114 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallQuery
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateInstall
+noncomputable section
+open scoped Classical
+
+theorem read_at (values : alloc.vec.Vec α) (index : Usize)
+    (bound : index.val < values.val.length) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice α) values index =
+      .ok values.val[index.val] := by
+  obtain ⟨item, returned, same⟩ := WP.spec_imp_exists (alloc.vec.Vec.index_usize_spec values index bound)
+  simpa [alloc.vec.Vec.index_slice_index, same] using returned
+
+theorem mutable_at (values : alloc.vec.Vec α) (index : Usize)
+    (bound : index.val < values.val.length) :
+    alloc.vec.Vec.index_mut (core.slice.index.SliceIndexUsizeSlice α) values index =
+      .ok (values.val[index.val], values.set index) := by
+  obtain ⟨⟨item, back⟩, returned, same, callback⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec values index bound)
+  simpa [alloc.vec.Vec.index_mut_slice_index, same, callback] using returned
+
+theorem set_twice (values : alloc.vec.Vec α) (index : Usize) (first last : α) :
+    (values.set index first).set index last = values.set index last := by
+  apply alloc.vec.Vec.ext
+  simp [alloc.vec.Vec.set_val_eq, List.set_set]
+
+theorem owners_room_from_limit (inbox : Inbox)
+    (bounded : inbox.owners.val.length ≤ inbox.config.max_sessions.val) :
+    inbox.owners.val.length < Usize.max := by
+  scalar_tac
+
+set_option maxHeartbeats 800000 in
+theorem install_outcome (inbox : Inbox) (s e : Usize) (binding : InternalLocalBinding)
+    (bound : s.val < inbox.sessions.val.length)
+    (entryBound : e.val < inbox.sessions.val[s.val].entries.val.length)
+    (room : ¬ HasOwner inbox inbox.sessions.val[s.val].owner → inbox.owners.val.length < Usize.max) :
+    ∃ result, run inbox s e binding = .ok result ∧
+      Installed inbox s e inbox.sessions.val[s.val] inbox.sessions.val[s.val].entries.val[e.val] binding result := by
+  let session := inbox.sessions.val[s.val]
+  let entry := session.entries.val[e.val]
+  let first : Session := { session with «local» := some binding }
+  have read := read_at inbox.sessions s bound
+  have firstMut := mutable_at inbox.sessions s bound
+  have secondBound : s.val < (inbox.sessions.set s first).val.length := by simpa using bound
+  have secondRead : (inbox.sessions.set s first).val[s.val] = first := by
+    simp [alloc.vec.Vec.set_val_eq]
+  have secondMut := mutable_at (inbox.sessions.set s first) s secondBound
+  rw [secondRead] at secondMut
+  have entryMut := mutable_at session.entries e entryBound
+  change e.val < session.entries.val.length at entryBound
+  change alloc.vec.Vec.index_mut _ session.entries e = .ok (entry, _) at entryMut
+  by_cases present : HasOwner inbox session.owner
+  · have present' : HasOwner inbox inbox.sessions.val[s.val].owner := present
+    let result : Inbox := { inbox with sessions := inbox.sessions.set s (sessionAfter session e entry binding) }
+    refine ⟨result, ?_, ?_⟩
+    · unfold run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_install
+      rw [read]
+      simp only [bind_tc_ok]
+      rw [present_complete]
+      simp only [present', decide_true, ↓reduceIte, bind_tc_ok, uncurry_apply_pair]
+      rw [firstMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      erw [secondMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      erw [entryMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      simp [result, sessionAfter, first, set_twice]
+    · refine ⟨inbox.owners, ?_, ?_⟩
+      · simp [present']
+      · simp [result, present', session, entry]
+  · have absent : ¬ HasOwner inbox inbox.sessions.val[s.val].owner := present
+    have capacity := room absent
+    obtain ⟨owners, pushed, contents⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.push_spec inbox.owners (ownerRow session binding) capacity)
+    let result : Inbox := { inbox with
+      owner_high_water := binding.owner, owners := owners,
+      sessions := inbox.sessions.set s (sessionAfter session e entry binding) }
+    refine ⟨result, ?_, ?_⟩
+    · unfold run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_install
+      rw [read]
+      simp only [bind_tc_ok]
+      rw [present_complete]
+      simp only [absent, decide_false, Bool.false_eq_true, ↓reduceIte, bind_tc_ok,
+        sandproof_protocol.TenantId.Insts.CoreCloneClone.clone,
+        alloc.string.String.Insts.CoreCloneClone.clone]
+      erw [pushed]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      rw [firstMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      erw [secondMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      erw [entryMut]
+      simp only [bind_tc_ok, uncurry_apply_pair]
+      simp [result, sessionAfter, first, set_twice]
+    · refine ⟨owners, ?_, ?_⟩
+      · simpa [absent] using contents
+      · simp [result, absent, session, entry]
+
+theorem install_complete : FullInstallContract run := by
+  intro inbox s e binding bound entryBound room
+  obtain ⟨result, returned, post⟩ := install_outcome inbox s e binding bound entryBound room
+  rw [returned]
+  exact WP.spec.ret post
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.read_at
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.mutable_at
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.set_twice
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.owners_room_from_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.install_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.install_complete

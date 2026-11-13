@@ -1,0 +1,82 @@
+import Aeneas
+
+/-!
+Unchecked candidate for the exact B4 `capture::accept_original_rows` boundary.
+This file does not establish conformance of the Rust driver or physical cleanup.
+The actual caller, row handler and library dictionaries remain separate inputs.
+
+Sources: fixed Aeneas 505b6ca, Std/Primitives.lean (ControlFlow/loop),
+Std/Core/Iter.lean (Iterator.next), Std/Core/Ops.lean (FnMut.call_mut).
+The one-step proofs follow inbox-entry-validation/InboxEntryCount.lean.in:
+unfold the wrapper, rewrite the existing loop equation, then use observed calls.
+No termination or finite-iterator premise is introduced.
+-/
+
+namespace SandboxModel.Stage1Protocol.OriginalRowsDriver
+open Aeneas Aeneas.Std
+
+def step {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (current : I × State × F) :
+    Result (ControlFlow (I × State × F) (core.result.Result Unit Error × State)) := do
+  let (iter, state, accept) := current
+  let (item, iter') ← iteratorInst.next iter
+  match item with
+  | none => .ok (.done (.Ok (), state))
+  | some row =>
+    let ((reply, state'), accept') ← acceptInst.call_mut accept (row, state)
+    match reply with
+    | .Err error => .ok (.done (.Err error, state'))
+    | .Ok () => .ok (.cont (iter', state', accept'))
+
+def run {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (iter : I) (state : State) (accept : F) :
+    Result (core.result.Result Unit Error × State) :=
+  loop (step iteratorInst acceptInst) (iter, state, accept)
+
+theorem run_next_none {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (iter iter' : I) (state : State) (accept : F)
+    (observed : iteratorInst.next iter = .ok (none, iter')) :
+    run iteratorInst acceptInst iter state accept = .ok (.Ok (), state) := by
+  unfold run
+  rw [loop]
+  simp [step, observed]
+
+theorem run_some_callback_error {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (iter iter' : I) (state state' : State) (accept accept' : F)
+    (item : Item) (error : Error)
+    (observedNext : iteratorInst.next iter = .ok (some item, iter'))
+    (observedCall : acceptInst.call_mut accept (item, state) =
+      .ok ((.Err error, state'), accept')) :
+    run iteratorInst acceptInst iter state accept = .ok (.Err error, state') := by
+  unfold run
+  rw [loop]
+  simp [step, observedNext, observedCall]
+
+theorem run_some_callback_ok {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (iter iter' : I) (state state' : State) (accept accept' : F)
+    (item : Item)
+    (observedNext : iteratorInst.next iter = .ok (some item, iter'))
+    (observedCall : acceptInst.call_mut accept (item, state) =
+      .ok ((.Ok (), state'), accept')) :
+    run iteratorInst acceptInst iter state accept =
+      run iteratorInst acceptInst iter' state' accept' := by
+  unfold run
+  rw [loop]
+  simp [step, observedNext, observedCall]
+
+end SandboxModel.Stage1Protocol.OriginalRowsDriver

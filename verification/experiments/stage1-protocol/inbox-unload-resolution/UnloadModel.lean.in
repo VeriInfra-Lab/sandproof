@@ -1,0 +1,71 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.UnloadResolution
+open scoped Classical
+noncomputable section
+
+abbrev Facts := sandproof_protocol.lifecycle.observation.CurrentReadyFacts
+abbrev Snapshot := sandproof_controller_service.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev Resolution := sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution
+abbrev Return := core.result.Result Unit sandproof_controller_service.JournalError
+abbrev Encoding := Resolution → Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+
+def unload (entry : Entry) : Bool :=
+  match entry.intent.request.operation with
+  | .Unload _ _ => true
+  | _ => false
+
+def snapshotInvalid (original : Snapshot) : Bool :=
+  decide (original.phase ≠ .Running) || original.terminal || original.current_vm.isNone ||
+    !original.uncertain_actions.val.isEmpty || original.lifetime.isNone
+
+/-- Presence checks only: no owner, incarnation, current-operation, lifetime
+content, resource existence or authorization fact is added to the original. -/
+def metadataInvalid (entry : Entry) : Resolution → Bool
+  | .BeforeAdmission original _ => entry.local_operation.isSome || snapshotInvalid original
+  | .AfterCapture _ => entry.local_operation.isNone
+
+def resultOf : Resolution → Option Facts
+  | .BeforeAdmission _ result => result
+  | .AfterCapture facts => some facts
+
+def factsInvalid (facts : Facts) : Bool :=
+  decide (facts.started_at_ms > facts.observed_at_ms) ||
+    decide (facts.observed_at_ms ≥ facts.end_at_ms) ||
+    decide (facts.end_at_ms > facts.max_end_at_ms) ||
+    decide (facts.started_at_ms > facts.startup_deadline_ms)
+
+def corrupt : Return := .Err .CorruptStore
+
+def afterEncoding (entry : Entry) (resolution : Resolution) (bytes : alloc.vec.Vec U8) : Return :=
+  if bytes.val.length > 4096 then corrupt
+  else if metadataInvalid entry resolution then corrupt
+  else if (resultOf resolution).any factsInvalid then corrupt
+  else .Ok ()
+
+/-- Arbitrary encoding computation; errors, outer failure and divergence are
+preserved. No JSON field, successful encoding, or byte-length premise is assumed. -/
+def validateView (encode : Encoding) (entry : Entry) : Result Return :=
+  match entry.unload_resolution with
+  | none => .ok (.Ok ())
+  | some resolution =>
+    if unload entry then do
+      let encoded ← encode resolution
+      match encoded with
+      | .Err error => .ok (.Err (.Json error))
+      | .Ok bytes => .ok (afterEncoding entry resolution bytes)
+    else .ok corrupt
+
+def FullUnloadContract (run : Encoding → Entry → Result Return) : Prop :=
+  ∀ encode entry, run encode entry = validateView encode entry
+
+def run (encode : Encoding) (entry : Entry) : Result Return :=
+  sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.validate_entry_using
+    (E := Unit) ⟨encode⟩ entry
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution

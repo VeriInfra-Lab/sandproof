@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.RestoreLifetime.Spec
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+open Aeneas Aeneas.Std SandproofRestoreValidationRust
+namespace SandboxModel.Stage1Protocol.RestoreLifetime
+open controller.lifecycle_inbox.source_work.restore.continued_exit
+/-- Every finite decoded input, with all actual first branches. -/
+theorem lifetime_refines : FullLifetimeContract lifetime_matches := by
+  intro native saved now
+  classical
+  cases hn : native.lifetime with
+  | none => simp [lifetime_matches, Matches, hn]
+  | some life =>
+    cases hs : life.started_at_ms with
+    | none => simp [lifetime_matches, Matches, hn, hs]
+    | some started =>
+      by_cases n : now < 0#i64
+      · simp [lifetime_matches, Matches, hn, hs, n]
+      · by_cases s : started < 0#i64
+        · simp [lifetime_matches, Matches, hn, hs, s]
+        · by_cases d : life.deadline_ms < 0#i64
+          · simp [lifetime_matches, Matches, hn, hs, d]
+          · by_cases m : life.max_deadline_ms < 0#i64
+            · simp [lifetime_matches, Matches, hn, hs, m]
+            · by_cases w : life.startup_deadline_ms < 0#i64
+              · simp [lifetime_matches, Matches, hn, hs, w]
+              · simp [lifetime_matches, Matches, hn, hs, n, s, d, m, w, lift, Replay.ok_and, Bool.and_assoc]
+theorem accepts_iff (native : Native) (saved : Facts) (now : I64) :
+    lifetime_matches native saved now = .ok true ↔ Matches native saved now := by
+  classical
+  rw [lifetime_refines native saved now]
+  simp
+
+theorem refuses_iff (native : Native) (saved : Facts) (now : I64) :
+    lifetime_matches native saved now = .ok false ↔ ¬ Matches native saved now := by
+  classical
+  rw [lifetime_refines native saved now]
+  simp
+
+theorem total (native : Native) (saved : Facts) (now : I64) :
+    ∃ result, lifetime_matches native saved now = .ok result := by
+  exact ⟨_, lifetime_refines native saved now⟩
+end SandboxModel.Stage1Protocol.RestoreLifetime
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.lifetime_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.total

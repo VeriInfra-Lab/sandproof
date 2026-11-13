@@ -30,6 +30,26 @@ mod lifecycle;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// Current original Resume only; absence is neither Ready nor `StateLost`.
+    /// Every receiver must explicitly forward or reject this operation.
+    fn observe_resume(
+        &self,
+        _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError>,
+    > + Send;
+    /// Read a completed original Unload from durable host state only.
+    fn observe_unload(
+        &self,
+        _intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> impl std::future::Future<
+        Output = Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError>,
+    > + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
+
     /// Exact SDK Renew result only; unsupported receivers cannot confirm it.
     fn confirm_renewal(
         &self,
@@ -114,7 +134,15 @@ pub enum ReceiveError {
 
 /// Diagnostic receivers reject lifecycle calls; no public deployment fallback.
 pub struct RejectLifecycle;
-impl LifecycleReceiver for RejectLifecycle {}
+impl LifecycleReceiver for RejectLifecycle {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for RejectLifecycle {
     async fn receive_data(
         &self,
@@ -257,35 +285,44 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             return Ok(receive_data(request, context, &*self.handler, streaming).await);
         }
         if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
+            || request.uri().path() == sandproof_protocol::lifecycle::RESUME_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
             || request.uri().path() == VALIDATION_PATH
         {
-            let call =
-                if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH {
-                    lifecycle::Call::CreateObservation
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
-                {
-                    lifecycle::Call::TerminalObservation
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
-                {
-                    lifecycle::Call::Confirm
-                } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
-                    lifecycle::Call::Close
-                } else if request.uri().path()
-                    == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
-                {
-                    lifecycle::Call::RenewalConfirm
-                } else if request.uri().path() == VALIDATION_PATH {
-                    lifecycle::Call::Validation
-                } else {
-                    lifecycle::Call::Record
-                };
+            let call = if request.uri().path()
+                == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
+            {
+                lifecycle::Call::UnloadObservation
+            } else if request.uri().path() == sandproof_protocol::lifecycle::RESUME_OBSERVATION_PATH
+            {
+                lifecycle::Call::ResumeObservation
+            } else if request.uri().path() == sandproof_protocol::lifecycle::CREATE_OBSERVATION_PATH
+            {
+                lifecycle::Call::CreateObservation
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::TERMINAL_OBSERVATION_PATH
+            {
+                lifecycle::Call::TerminalObservation
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::RESULT_CONFIRMATION_PATH
+            {
+                lifecycle::Call::Confirm
+            } else if request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH {
+                lifecycle::Call::Close
+            } else if request.uri().path()
+                == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
+            {
+                lifecycle::Call::RenewalConfirm
+            } else if request.uri().path() == VALIDATION_PATH {
+                lifecycle::Call::Validation
+            } else {
+                lifecycle::Call::Record
+            };
             let work =
                 lifecycle::respond(request, peer, self.lifecycle.as_ref(), &*self.handler, call);
             return Ok(timeout(self.limits.request_timeout, work)
@@ -472,18 +509,43 @@ async fn cache_template<H: CacheReceiver>(
     }
 }
 
+pub trait ProofJsonResponseBuilder {
+    type Response;
+    fn empty_error() -> Self::Response;
+    fn json_ok(encoded: Vec<u8>) -> Self::Response;
+}
+
+pub struct ProofHttpJsonResponseBuilder;
+impl ProofJsonResponseBuilder for ProofHttpJsonResponseBuilder {
+    type Response = Response<Full<Bytes>>;
+    fn empty_error() -> Self::Response {
+        response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new())
+    }
+    fn json_ok(encoded: Vec<u8>) -> Self::Response {
+        let mut answer = response(StatusCode::OK, Bytes::from(encoded));
+        answer.headers_mut().insert(
+            hyper::header::CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        answer
+    }
+}
+
 fn json_response(answer: &impl serde::Serialize, limit: usize) -> Response<Full<Bytes>> {
-    let Ok(encoded) =
-        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit)
-    else {
-        return response(StatusCode::INTERNAL_SERVER_ERROR, Bytes::new());
-    };
-    let mut answer = response(StatusCode::OK, Bytes::from(encoded));
-    answer.headers_mut().insert(
-        hyper::header::CONTENT_TYPE,
-        hyper::header::HeaderValue::from_static("application/json"),
-    );
-    answer
+    proof_json_response_result::<ProofHttpJsonResponseBuilder>(
+        sandproof_controller_service::template_registry::evidence::encode_bounded(answer, limit),
+    )
+}
+
+/// The original result-selection body, separated from the library call.
+#[must_use]
+pub fn proof_json_response_result<P: ProofJsonResponseBuilder>(
+    result: Result<Vec<u8>, sandproof_controller_service::JournalError>,
+) -> P::Response {
+    match result {
+        Ok(encoded) => P::json_ok(encoded),
+        Err(_error) => P::empty_error(),
+    }
 }
 
 async fn validation_evidence<H: ValidationReceiver>(

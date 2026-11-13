@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetainedModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRetained
+
+theorem follows_refines (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) :
+    renewal_confirmation.follows_retained session previous intent =
+      .ok (expected session previous intent) := by
+  cases shape : intent.request.binding.expected with
+  | Absent => simp [renewal_confirmation.follows_retained, expected, shape]
+  | Version version =>
+    cases ht : session.compacted_sdk_through <;> cases hc : session.confirmed_renewal <;>
+      simp [renewal_confirmation.follows_retained, expected, shape, ht, hc,
+        core.option.Option.is_some_and, core.option.Option.as_ref,
+        SandproofFoundationsRust.core.option.Option.is_some_and,
+        SandproofFoundationsRust.core.option.Option.as_ref,
+        renewal_confirmation.follows_retained.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once,
+        renewal_confirmation.follows_retained.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedRenewalConfirmationBool.call_once]
+    all_goals split_ifs <;> simp_all
+
+theorem full_contract : FullRetainedContract renewal_confirmation.follows_retained :=
+  follows_refines
+
+theorem expected_iff (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) :
+    expected session previous intent = true ↔ RetainedOrder session previous intent := by
+  cases shape : intent.request.binding.expected with
+  | Absent => simp [expected, RetainedOrder, shape]
+  | Version version =>
+    cases ht : session.compacted_sdk_through <;> cases hc : session.confirmed_renewal <;>
+      simp [expected, RetainedOrder, shape, ht, hc, Option.any, and_comm]
+    all_goals split_ifs <;> simp_all
+
+theorem accepts_iff (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) :
+    renewal_confirmation.follows_retained session previous intent = .ok true ↔
+      RetainedOrder session previous intent := by
+  rw [follows_refines]
+  simpa using expected_iff session previous intent
+
+theorem rejects_iff (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) :
+    renewal_confirmation.follows_retained session previous intent = .ok false ↔
+      ¬ RetainedOrder session previous intent := by
+  rw [follows_refines]
+  simp [← expected_iff]
+
+end SandboxModel.Stage1Protocol.InboxRetained
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.follows_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.expected_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.rejects_iff

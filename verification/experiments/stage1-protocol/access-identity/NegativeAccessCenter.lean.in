@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.AccessValues
+import SandboxModel.Lifecycle.Protocol.Accepted
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.access sandproof_protocol.lifecycle.authority
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.AccessValues
+open SandboxModel.Stage1Protocol.EnvelopeValues
+namespace SandboxModel.Stage1Protocol.NegativeAccessCenter
+
+-- Actual compiled/extracted Rust mutant; the full specification stays unchanged.
+theorem actual_mutant_result : access_validate wrongCenter context = .ok (.Ok ()) := by
+  simp [access_validate, LifecycleAccessIdentity.validate,
+    wrongCenter, identity, context, center, node,
+    sandproof_protocol.lifecycle.PROTOCOL_VERSION,
+    AuthenticatedCenterContext.impl.expected_node,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    Replay.node_eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem violates_same_full_contract : ¬ AccessBinding.FullContract access_validate := by
+  intro contract
+  have exact_result := contract wrongCenter context
+  rw [actual_mutant_result, rejection_witnesses.2.1] at exact_result
+  simp at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeAccessCenter
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeAccessCenter.actual_mutant_result
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeAccessCenter.violates_same_full_contract

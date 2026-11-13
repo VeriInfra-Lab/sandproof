@@ -38,7 +38,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import check_kvm_host as host
-from tools.template_physical_storage import envelope
+from tools.template_physical_storage import activation_budget, envelope
 from tools.bounded_acceptance import require_bounded_host_tools
 
 
@@ -89,6 +89,9 @@ def validate_runtime_configuration(settings, rounds, wait_seconds):
     bounded = settings.get('bounded_host', {})
     maintenance = settings.get('maintenance', {})
     capacity = maintenance.get('capacity')
+    operations=maintenance.get('max_operations_per_sandbox')
+    if type(operations) is not int or not 0 < operations < 2**64:
+        raise ValueError('explicit finite maintenance operation bound required')
     if (not capacity or bounded.get('console_policy') != 'discard'
             or bounded.get('maintenance', {}).get('max_host_slots') != 2
             or settings.get('max_active_global') != 2
@@ -124,7 +127,7 @@ def validate_configuration(settings, host_config, rounds, wait_seconds):
     for name in host.ARTIFACTS:
         if host_config['artifacts'][name]['path'] != settings[name]:
             raise ValueError('preflight artifact differs from runtime: ' + name)
-    if host_config['min_free_disk_bytes'] < 2 * peak:
+    if host_config['min_free_disk_bytes'] < activation_budget(settings['bounded_host']['physical_storage'])['required_bytes']:
         raise ValueError('preflight omits the complete fresh physical activation peak')
     return pool, peak, inodes
 
@@ -365,7 +368,7 @@ def exercise(args):
         max_artifact_bytes_global=sum(sizes),max_artifact_bytes_per_tenant=sum(sizes),validation_timeout_secs=60)
     services = RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[catalog],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=2,registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
+        retained_sessions=2 + settings['max_active_global'],registry_config=registry,extra_credentials=[{'tenant':2,'secret':foreign_key}])
     try:
         services.start()
         services.wait_ready()

@@ -1,0 +1,18 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -1710,3 +1710,15 @@
+ 此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+ 
+ 原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
++
++## V3 parser 错误组合候选（生产 a9c9967）
++
++[实际文件](../verification/experiments/stage1-protocol/parser-binding/EnvelopeParser.lean.in)复用原字段回调、Content 返回短路、
++JSON 容器收尾和 document end；8项条件定理覆盖最近错误位置、首错、效果及完整正常值保持。
++[执行与证据边界](../verification/experiments/stage1-protocol/parser-binding/README.md)分别列出当前
++Request/JSON/字节根的重新抽取与全部物理文件审计、7项真实解析回归、原版/允许未知字段错误版/恢复版
++同合同，以及实际错误版 Charon 后的源合同拒绝。源拒绝不是新增 Rust Lean 形式反例。
++
++本记录为主控候选：普通/原生和统一完整入口仍由 ning/主控验收，具体 SliceContract 采用、完整 parser、
++真实路由、Manifest、持久收件及系统闭环仍待完成。字段缓冲错误可在无外层容器时保持0/0，不能沿用
++“所有字段由 SliceRead 直接读取”或“自有字段错误总先于缓冲语法错误”的更强解释。

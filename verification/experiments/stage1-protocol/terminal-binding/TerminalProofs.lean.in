@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.TerminalModel
+import SandboxModel.Lifecycle.Protocol.Accepted
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.Terminal
+
+theorem terminal_refines (observation : TerminalLifecycleObservation) (request : AcceptedLifecycleIntent) :
+    terminal_matches observation request = .ok (expected observation request) := by
+  classical
+  rcases request with ⟨⟨binding, operation⟩, version, center, retention⟩
+  have one_version : decide (1#u64 = version) = decide (version = 1#u64) := by
+    by_cases equal : version = 1#u64
+    · simp [equal]
+    · have different : 1#u64 ≠ version := Ne.symm equal
+      simp [equal, different]
+  cases he : binding.expected <;> cases operation <;>
+    simp [terminal_matches, TerminalLifecycleObservation.matches_request, Replay.accepted_eq,
+      Validation.retention_valid, AcceptedLifecycleIntent.accepted_version_for_request,
+      he, Library.option_u64_eq, expected, Matches, Validation.versionOK,
+      Replay.ok_and, gt_iff_lt]
+  all_goals rw [one_version]
+
+theorem terminal_full_contract : FullTerminalContract terminal_matches := terminal_refines
+
+theorem terminal_accepts_iff (observation : TerminalLifecycleObservation) (request : AcceptedLifecycleIntent) :
+    terminal_matches observation request = .ok true ↔ Matches observation request := by
+  classical
+  simp [terminal_refines, expected]
+
+theorem terminal_rejects_iff (observation : TerminalLifecycleObservation) (request : AcceptedLifecycleIntent) :
+    terminal_matches observation request = .ok false ↔ ¬ Matches observation request := by
+  classical
+  simp [terminal_refines, expected]
+
+theorem status_not_certified (observation : TerminalLifecycleObservation)
+    (request : AcceptedLifecycleIntent) (status : TerminalStatus) :
+    terminal_matches { observation with status := status } request = terminal_matches observation request := by
+  rw [terminal_refines, terminal_refines]
+  rfl
+
+theorem complete_intent_preserved (observation : TerminalLifecycleObservation)
+    (request : AcceptedLifecycleIntent) (accepted : terminal_matches observation request = .ok true) :
+    observation.request = request := ((terminal_accepts_iff observation request).mp accepted).1
+
+end SandboxModel.Stage1Protocol.Terminal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.terminal_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.terminal_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.terminal_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.terminal_rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.status_not_certified
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.complete_intent_preserved

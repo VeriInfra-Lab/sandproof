@@ -1,0 +1,44 @@
+import SandproofDigestUses.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofDigestUsesRust
+namespace SandboxModel.Stage1Protocol.DigestUses
+abbrev Config := sandproof_controller_service.controller.checkpoint.config.StandardConfigRead
+abbrev Save := sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave
+abbrev Effects := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment
+abbrev DigestValue := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev libraryCall := sandproof_controller_service.controller.lifecycle_inbox.sha256.digest
+abbrev configLoad := sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+abbrev inboxSave := sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+abbrev configSave := sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+abbrev createLoad := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+abbrev createSave := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+abbrev sourceDigest := sandproof_controller_service.controller.lifecycle_inbox.source_work.digest
+abbrev Normal (bytes : Slice U8) := Sha256Bytes.SupportedInput (DigestByteBridge.inputBytes bytes)
+abbrev expected := DigestByteBridge.referenceOutput
+
+/-- Same complete value contract for every effect method and every Rust view.
+The entire returned context is compared, including all World and SQL carriers.
+This is a value frame, not a shared heap or physical transaction theorem. -/
+def EffectDigestContract {State : Type}
+    (call : State → Slice U8 → Result ((Array U8 32#usize) × State)) : Prop :=
+  ∀ state bytes, Normal bytes → call state bytes = .ok (expected bytes, state)
+
+def SourceDigestContract (call : Slice U8 → Result DigestValue) : Prop :=
+  ∀ bytes, Normal bytes → call bytes = .ok (expected bytes)
+
+structure Calls where
+  configLoad : Config → Slice U8 → Result ((Array U8 32#usize) × Config)
+  inboxSave : Save → Slice U8 → Result ((Array U8 32#usize) × Save)
+  configSave : Config → Slice U8 → Result ((Array U8 32#usize) × Config)
+  createLoad : Effects → Slice U8 → Result ((Array U8 32#usize) × Effects)
+  createSave : Effects → Slice U8 → Result ((Array U8 32#usize) × Effects)
+  sourceDigest : Slice U8 → Result DigestValue
+
+def actualCalls : Calls := ⟨configLoad, inboxSave, configSave, createLoad, createSave, sourceDigest⟩
+
+def FullDigestUsesContract (calls : Calls) : Prop :=
+  EffectDigestContract calls.configLoad ∧ EffectDigestContract calls.inboxSave ∧
+  EffectDigestContract calls.configSave ∧ EffectDigestContract calls.createLoad ∧
+  EffectDigestContract calls.createSave ∧ SourceDigestContract calls.sourceDigest
+
+end SandboxModel.Stage1Protocol.DigestUses

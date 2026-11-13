@@ -1,9 +1,12 @@
 //! Checked maintenance of the existing controller state. These transitions
 //! perform no I/O and never constitute physical cleanup evidence themselves.
 
+pub mod released_execution;
 pub mod retirement;
 pub mod slots;
+mod unload_history;
 pub mod windows;
+pub use unload_history::released_unload_termination_history;
 
 use crate::{
     Authority, ControllerDecision, ControllerEvent, FsId, OperationKey, Phase, SandboxId, Store,
@@ -47,6 +50,8 @@ pub enum MaintenanceInput {
     },
     Slot(SlotInput),
     Window(WindowInput),
+    /// Original confirmed release, not a new physical fence acknowledgement.
+    CloseReleasedExecution(released_execution::ReleasedExecution),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +62,7 @@ pub enum MaintenanceEvent {
     SlotChanged(HostSlotId),
     SlotChecked(HostSlotId),
     Window(windows::WindowEvent),
+    ReleasedExecutionClosed(SandboxId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -197,12 +203,12 @@ fn apply_slot(world: &World, input: SlotInput) -> Result<World, MaintenanceRejec
             let record = world
                 .sandbox_record(binding.sandbox)
                 .ok_or(MaintenanceReject::ResourceMismatch)?;
-            if record.owner != binding.owner
-                || !record.terminal
-                || record.phase != Phase::Destroyed
-                || record.desired != Authority::Closed
-                || record.effective != Authority::Closed
-            {
+            let terminal = record.terminal
+                && record.phase == Phase::Destroyed
+                && record.desired == Authority::Closed
+                && record.effective == Authority::Closed;
+            let unloaded = paused_release_state(world, binding.sandbox, record);
+            if record.owner != binding.owner || !(terminal || unloaded) {
                 return Err(MaintenanceReject::ResourcesNotReclaimed);
             }
             if world.vm_record(binding.vm).is_some_and(|vm| {
@@ -328,6 +334,10 @@ pub fn handle_maintenance(
             state.retained.retain(|_, value| value.expires_at > now_ms);
             (next, MaintenanceEvent::ResultsExpired)
         }
+        MaintenanceInput::CloseReleasedExecution(basis) => (
+            released_execution::close(world, basis)?,
+            MaintenanceEvent::ReleasedExecutionClosed(basis.key.sandbox),
+        ),
         MaintenanceInput::Slot(input) => {
             let event = if matches!(input, SlotInput::CheckOccupied { .. }) {
                 MaintenanceEvent::SlotChecked(slot_position(input))
@@ -498,3 +508,32 @@ mod tests {
 #[cfg(test)]
 #[path = "maintenance/slot_integration_tests.rs"]
 mod slot_integration_tests;
+
+pub(crate) fn paused_release_state(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+) -> bool {
+    !record.terminal
+        && record.current_vm.is_none()
+        && record.net_slot.is_none()
+        && record.phase == Phase::Paused
+        && record.durable_snapshot.is_some_and(|source| {
+            let authority = Authority::Paused { sandbox, source };
+            record.desired == authority
+                && record.effective == authority
+                && record.current_operation.is_some_and(|operation| {
+                    world
+                        .operation_plan(crate::OperationKey {
+                            sandbox,
+                            operation: operation.id,
+                        })
+                        .is_some_and(|plan| {
+                            plan.target_snapshot == Some(source)
+                                && plan
+                                    .capture
+                                    .is_some_and(crate::capture::CaptureHandoff::may_stop_original)
+                        })
+                })
+        })
+}

@@ -39,6 +39,169 @@ fn context() -> AuthenticatedCenterContext {
     config().context()
 }
 
+struct RecordCodecProbe {
+    connection: *const rusqlite::Connection,
+    calls: Vec<(&'static str, Vec<u8>)>,
+    token: u64,
+    fail_at: Option<usize>,
+}
+impl RecordCodecProbe {
+    fn assert_trace(&self, original: &[u8], maintenance: &[u8]) {
+        let expected_calls = self.fail_at.unwrap_or(5);
+        assert_eq!(self.calls.len(), expected_calls);
+        assert_eq!(self.token, 41 + 7 * u64::try_from(expected_calls).unwrap());
+        let order: Vec<_> = self.calls.iter().map(|(kind, _)| *kind).collect();
+        assert_eq!(
+            order,
+            [
+                "maintenance",
+                "decode-inbox",
+                "encode",
+                "maintenance",
+                "encode"
+            ][..expected_calls]
+        );
+        // Capacity and the later load policy each decode the complete original config.
+        for ((_, actual), expected) in
+            self.calls
+                .iter()
+                .zip([maintenance, original, original, maintenance])
+        {
+            assert_eq!(actual, expected);
+        }
+    }
+
+    fn observe(
+        &mut self,
+        connection: &rusqlite::Connection,
+        kind: &'static str,
+        bytes: &[u8],
+    ) -> serde_json::Result<()> {
+        assert!(std::ptr::eq(connection, self.connection));
+        self.calls.push((kind, bytes.to_vec()));
+        self.token += 7;
+        if self.fail_at == Some(self.calls.len()) {
+            Err(serde_json::Error::io(std::io::Error::other("codec fault")))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl recording::RecordCodec for RecordCodecProbe {
+    fn decode_maintenance(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<super::super::checkpoint::MaintenanceConfig> {
+        self.observe(connection, "maintenance", bytes)?;
+        serde_json::from_slice(bytes)
+    }
+    fn decode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        bytes: &[u8],
+    ) -> serde_json::Result<Inbox> {
+        self.observe(connection, "decode-inbox", bytes)?;
+        serde_json::from_slice(bytes)
+    }
+    fn encode_inbox(
+        &mut self,
+        connection: &rusqlite::Connection,
+        inbox: &Inbox,
+    ) -> serde_json::Result<Vec<u8>> {
+        let bytes = serde_json::to_vec(inbox)?;
+        self.observe(connection, "encode", &bytes)?;
+        Ok(bytes)
+    }
+}
+
+#[test]
+fn record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection() {
+    use super::super::checkpoint::ReadConfigEffects;
+
+    for fail_at in [None, Some(1), Some(2), Some(3), Some(4), Some(5)] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let mut journal = initialize(&path);
+        let original: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let maintenance: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT config_json FROM controller_maintenance_config WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let codec = RecordCodecProbe {
+            connection: std::ptr::from_ref(&journal.journal.connection),
+            calls: Vec::new(),
+            token: 41,
+            fail_at,
+        };
+        let tx = super::super::transaction::WorldTransaction::begin(
+            &mut journal.journal.connection,
+            &journal.committed_world,
+        )
+        .unwrap();
+        let mut effects = recording::StandardRecord {
+            tx,
+            namespace: NS,
+            codec,
+        };
+        let result = recording::record_using::<
+            native_retirement::StandardRetirementEncoding,
+            model::StandardTerminalEncoding,
+            renewal_confirmation::StandardRenewalEncoding,
+            unload_resolution::StandardUnloadEncoding,
+            crate::capture::StandardGraphicBytes,
+            _,
+        >(&mut effects, &create("alpha", "codec-session"), &context());
+        effects.codec.assert_trace(&original, &maintenance);
+        let stored = ReadConfigEffects::query_bytes(
+            &mut effects,
+            "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+        )
+        .unwrap();
+        match fail_at {
+            None => {
+                assert!(matches!(result, Ok(recording::RecordOutcome::Recorded(_))));
+                assert_eq!(effects.codec.calls[4].1, stored);
+                assert_ne!(stored, original);
+                recording::RecordTransaction::commit(effects).unwrap();
+            }
+            Some(2) => {
+                assert!(matches!(result, Err(JournalError::CorruptStore)));
+                assert_eq!(stored, original);
+                drop(effects);
+            }
+            Some(_) => {
+                assert!(matches!(result, Err(JournalError::Json(_))));
+                assert_eq!(stored, original);
+                drop(effects);
+            }
+        }
+        let durable: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(durable, stored);
+    }
+}
+
 #[test]
 fn unknown_release_confirmation_recovers_without_rebinding_released_position() {
     use super::super::tests_support::lifecycle_application as app_fixture;
@@ -127,7 +290,7 @@ pub(super) fn admission() -> InternalAdmission {
     };
     InternalAdmission {
         now_ms: 10,
-        limits: super::super::tests_support::limits(),
+        limits: super::super::tests_support::lifecycle_application::limits(),
         compute: ComputeLimits {
             max_vcpus_global: 2,
             max_vcpus_per_tenant: 2,
@@ -154,7 +317,7 @@ pub(super) fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
         accepted_version: 1,
         request: LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: config().node,
                 session: SessionId::try_from(session).unwrap(),
                 key: OperationKey {
@@ -185,16 +348,18 @@ pub(super) fn create(owner: &str, session: &str) -> AcceptedLifecycleIntent {
         },
     }
 }
-pub(super) fn open(path: &std::path::Path) -> ControllerJournal {
-    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
-    ControllerJournal::open_complete(
+pub(super) fn host(path: &std::path::Path) -> crate::BoundedHostConfig {
+    super::super::tests_support::fixture::host(
         path,
         NS,
-        super::super::tests_support::host(4),
-        maintenance,
-        0,
+        4,
+        100_000,
+        super::super::tests_support::lifecycle_application::CLEANUP_BYTES,
     )
-    .unwrap()
+}
+pub(super) fn open(path: &std::path::Path) -> ControllerJournal {
+    let maintenance = super::super::tests_support::lifecycle_application::maintenance();
+    ControllerJournal::open_complete(path, NS, host(path), maintenance, 0).unwrap()
 }
 pub(super) fn initialize(path: &std::path::Path) -> ControllerJournal {
     let mut j = open(path);
@@ -256,7 +421,7 @@ fn export_closed_fixture(path: &std::path::Path) {
     .unwrap();
     std::fs::write(
         output.join("host.json"),
-        serde_json::to_vec(&super::super::tests_support::host(4)).unwrap(),
+        serde_json::to_vec(&host(path)).unwrap(),
     )
     .unwrap();
 }
@@ -439,7 +604,7 @@ fn v3_changed_full_request_foreign_context_and_old_native_admission_are_rejected
             0,
             60,
             4096,
-            super::super::tests_support::limits(),
+            super::super::tests_support::lifecycle_application::limits(),
             &mut NeverCrash
         )
         .is_err()
@@ -507,24 +672,9 @@ fn v3_missing_required_table_or_relabelled_feature_refuses_reopen() {
         drop(connection);
         let maintenance = super::super::tests_support::lifecycle_application::maintenance();
         assert!(
-            ControllerJournal::preflight_complete(
-                &path,
-                NS,
-                &super::super::tests_support::host(4),
-                &maintenance
-            )
-            .is_err()
+            ControllerJournal::preflight_complete(&path, NS, &host(&path), &maintenance).is_err()
         );
-        assert!(
-            ControllerJournal::open_complete(
-                &path,
-                NS,
-                super::super::tests_support::host(4),
-                maintenance,
-                0
-            )
-            .is_err()
-        );
+        assert!(ControllerJournal::open_complete(&path, NS, host(&path), maintenance, 0).is_err());
     }
 }
 

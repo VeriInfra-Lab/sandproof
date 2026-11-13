@@ -1,0 +1,32 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+/-- Full decoded OperationKey occurrence count; no authorization claim. -/
+def countEntries (key : OperationKey) (entries : List Entry) : Nat :=
+  (entries.filter fun entry => decide (entry.intent.request.binding.key = key)).length
+
+def countSessions (key : OperationKey) (sessions : List Session) : Nat :=
+  (sessions.map fun session => countEntries key session.entries.val).sum
+
+/-- Preserve the actual usize bound and integer-overflow result. -/
+def countResult (n : Nat) : Result Usize := UScalar.tryMk .Usize n
+
+def cursor (values : Slice α) (index : Nat) : core.slice.iter.Iter α := ⟨values, index⟩
+
+/-- Exact per-element-type borrowed Vec obligation; V0 adoption remains pending. -/
+def BorrowedVecBinding (α : Type) : Prop :=
+  ∀ values : alloc.vec.Vec α,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter Global values =
+      .ok (cursor (alloc.vec.Vec.deref values) 0)
+
+def FullCountContract (count : Inbox → OperationKey → Result Usize) : Prop :=
+  ∀ inbox key, count inbox key = countResult (countSessions key inbox.sessions.val)
+end
+end SandboxModel.Stage1Protocol.InboxEntry

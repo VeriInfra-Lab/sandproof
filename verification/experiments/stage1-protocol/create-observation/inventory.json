@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "base_commit": "4f52d972a368596c0a9d4a8fff8913e757dfc778",
+  "base_sources": {
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+    "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+    "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+    "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/resume.rs": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad",
+    "sandbox-protocol/src/lifecycle/resume_tests.rs": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7",
+    "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+    "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+    "verification/experiments/stage1-protocol/source_inventory.py": "4053d47fb0431c89e8f09a2c286f36910af516a5ffac441e6c08f91a378ecffb",
+    "verification/experiments/stage1-protocol/retained-protocol.json": "e433648ba08e17cd0df99e45dd4fb209fb998b8a09e701e54c434eb0bb4114f9"
+  },
+  "mutations": {
+    "create-response-key-only": {
+      "old": "self.request != *original",
+      "new": "self.request.request.binding.key != original.request.binding.key",
+      "witness": "ReadyFactValues.createIntent and changedCreate already both ValidEnvelope; observation.request=changedCreate, current_request=createIntent, Pending, original=createIntent.",
+      "source": "sandbox-protocol/src/lifecycle/observation.rs",
+      "occurrences": 1
+    },
+    "create-current-retention-omitted": {
+      "old": "            || self.current_request.retention != original.retention\n",
+      "new": "",
+      "witness": "Original legal Create; current legal newer Renew with retention window 2, Pending; all other binding fields match.",
+      "source": "sandbox-protocol/src/lifecycle/observation.rs",
+      "occurrences": 1
+    },
+    "create-refused-after-success": {
+      "old": "            if self.historical_create_succeeded\n                || original.accepted_version != 1",
+      "new": "            if original.accepted_version != 1",
+      "witness": "Legal first Create, unchanged current, Refused Capacity with historical_create_succeeded=true.",
+      "source": "sandbox-protocol/src/lifecycle/observation.rs",
+      "occurrences": 1
+    },
+    "create-renewal-negative-wrap": {
+      "old": "        let Ok(end) = u64::try_from(*end_at_ms) else {\n            return false;\n        };",
+      "new": "        let end = *end_at_ms as u64;",
+      "witness": "Use original startup deadline=1, max lifetime=U64::MAX-1 and positive timeout, so startup+max lifetime fits. Facts started=observed=0, end=max_end=U64::MAX-1; current valid newer Renew deadline=-2, Observed with history=true. This avoids the invalid startup>0 plus max lifetime=U64::MAX fixture. Full legality still must be proved/tested.",
+      "source": "sandbox-protocol/src/lifecycle/observation.rs",
+      "occurrences": 1
+    }
+  },
+  "full_guard_refinement": "pending exact TryFrom i64/u64 interface",
+  "audits": {
+    "CreateObservationModel": [],
+    "CreateObservationEquality": [
+      "SandboxModel.Stage1Protocol.CreateEquality.facts_eq",
+      "SandboxModel.Stage1Protocol.CreateEquality.reason_eq",
+      "SandboxModel.Stage1Protocol.CreateEquality.readiness_eq",
+      "SandboxModel.Stage1Protocol.CreateEquality.observation_eq",
+      "SandboxModel.Stage1Protocol.CreateEquality.observation_eq_iff"
+    ],
+    "CreateObservationValues": [
+      "SandboxModel.Stage1Protocol.CreateValues.renewed_is_valid",
+      "SandboxModel.Stage1Protocol.CreateValues.unload_destroy_are_valid",
+      "SandboxModel.Stage1Protocol.CreateValues.negative_original_is_valid",
+      "SandboxModel.Stage1Protocol.CreateValues.changed_retention_is_valid",
+      "SandboxModel.Stage1Protocol.CreateValues.normal_contract_witnesses",
+      "SandboxModel.Stage1Protocol.CreateValues.omitted_fields_violate_contract",
+      "SandboxModel.Stage1Protocol.CreateValues.negative_pending_satisfies_contract",
+      "SandboxModel.Stage1Protocol.CreateValues.reused_key_satisfies_contract",
+      "SandboxModel.Stage1Protocol.CreateValues.changed_non_refused_does_not_require_valid_original"
+    ]
+  },
+  "scope": {
+    "extraction_profile": "create-values",
+    "actual_roots": [
+      "request_validate",
+      "replay_matches",
+      "accepted_validate",
+      "recorded_matches",
+      "ready_matches_create",
+      "ready_matches_resumed",
+      "ready_matches_resumed_renewal",
+      "resume_matches_request",
+      "create_observation_equal"
+    ],
+    "full_create_matches_request_proved": false,
+    "native_mutations_are_not_formal_counterexamples": true
+  }
+}

@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRetained
+
+/-- A check on decoded metadata. This does not establish that a row was
+actually removed or that the saved checkpoint came from a committed renewal. -/
+def expected (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) : Bool :=
+  match intent.request.binding.expected with
+  | .Absent => decide (previous = 0#u64)
+  | .Version version =>
+      if version = previous then decide (0#u64 < previous)
+      else decide (0#u64 < previous) && decide (previous < version) &&
+        session.compacted_sdk_through.any (fun through => decide (version ≤ through)) &&
+        session.confirmed_renewal.any (fun confirmed =>
+          decide (intent.accepted_version ≤ confirmed.request.accepted_version))
+
+def RetainedOrder (session : Session) (previous : U64) (intent : AcceptedLifecycleIntent) : Prop :=
+  match intent.request.binding.expected with
+  | .Absent => previous = 0#u64
+  | .Version version => 0#u64 < previous ∧
+      (version = previous ∨ (previous < version ∧
+        (∃ through, session.compacted_sdk_through = some through ∧ version ≤ through) ∧
+        (∃ confirmed, session.confirmed_renewal = some confirmed ∧
+          intent.accepted_version ≤ confirmed.request.accepted_version)))
+
+def FullRetainedContract (check : Session → U64 → AcceptedLifecycleIntent → Result Bool) : Prop :=
+  ∀ session previous intent, check session previous intent = .ok (expected session previous intent)
+
+end SandboxModel.Stage1Protocol.InboxRetained

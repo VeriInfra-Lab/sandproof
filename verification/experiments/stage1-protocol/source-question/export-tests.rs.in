@@ -1,0 +1,27 @@
+#[test]
+fn proof_source_question_export_fixture() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = prepare(&mut journal);
+    let work = record.work;
+    assert!(work.anchor.original_actions.len() >= 2);
+    assert_ne!(
+        work.anchor.original_actions[0].resource,
+        work.anchor.original_actions[1].resource
+    );
+    assert_ne!(work.requirement.work_binding, work.anchor.options_sha256);
+    assert_ne!(
+        work.requirement.limits.max_material_bytes,
+        work.requirement.limits.max_disk_bytes
+    );
+    assert_eq!(
+        work.requirement.work_binding,
+        super::digest(&serde_json::to_vec(&work.anchor).unwrap())
+    );
+    assert_eq!(
+        work.requirement.resource,
+        work.anchor.original_actions[1].resource
+    );
+    let output = std::env::var("SANDPROOF_SOURCE_QUESTION_FIXTURE").unwrap();
+    std::fs::write(output, serde_json::to_vec(&work).unwrap()).unwrap();
+}

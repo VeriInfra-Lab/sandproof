@@ -1,0 +1,66 @@
+import SandboxModel.Lifecycle.Protocol.OwnerMappingModel
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck
+open OwnerMapping
+
+/-- The exact first-match subexpression of the existing OwnerMapping specification. -/
+def firstMatch (owner : sandproof_protocol.TenantId) (rows : List Owner) : Option Owner :=
+  rows.find? (fun row => decide (row.external = owner))
+
+def rowVerdict (localOwner : U64) (row : Owner) : core.result.Result Bool JournalError :=
+  if row.local = localOwner then .Ok true else .Err .Conflict
+
+def existingFrom (owner : sandproof_protocol.TenantId) (localOwner : U64)
+    (rows : List Owner) : core.result.Result Bool JournalError :=
+  match firstMatch owner rows with
+  | none => .Ok false
+  | some row => rowVerdict localOwner row
+
+def existingExpected (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64) :=
+  existingFrom owner localOwner inbox.owners.val
+
+def guardExpected (localOwner : U64) : core.result.Result U64 JournalError → core.result.Result Unit JournalError
+  | .Err error => .Err error
+  | .Ok owner => if owner = localOwner then .Ok () else .Err .Conflict
+
+def newExpected (inbox : Inbox) (world : World) (binding : InternalLocalBinding) :=
+  guardExpected binding.owner (CreateOwnerSuccessor.expected inbox world binding.sandbox)
+
+def FullExistingContract (run : Inbox → sandproof_protocol.TenantId → U64 →
+    Result (core.result.Result Bool JournalError)) : Prop :=
+  ∀ inbox owner localOwner, run inbox owner localOwner = .ok (existingExpected inbox owner localOwner)
+
+def FullNewContract (run : Inbox → World → InternalLocalBinding →
+    Result (core.result.Result Unit JournalError)) : Prop :=
+  ∀ inbox world binding, run inbox world binding = .ok (newExpected inbox world binding)
+
+theorem existing_nil (owner : sandproof_protocol.TenantId) (localOwner : U64) :
+    existingFrom owner localOwner [] = .Ok false := rfl
+
+theorem existing_cons (owner : sandproof_protocol.TenantId) (localOwner : U64)
+    (row : Owner) (rest : List Owner) :
+    existingFrom owner localOwner (row :: rest) =
+      if row.external = owner then rowVerdict localOwner row else existingFrom owner localOwner rest := by
+  by_cases same : row.external = owner <;> simp [existingFrom, firstMatch, same]
+
+theorem same_owner_mapping_spec (inbox : Inbox) (world : World)
+    (owner : sandproof_protocol.TenantId) (rows : List Owner) :
+    expectedFrom inbox world owner rows = match firstMatch owner rows with
+      | some row => .Ok row.local
+      | none => allocation (maximum inbox.owner_high_water.val world.sandboxes.entries.val) := rfl
+
+theorem missing_exact (owner : sandproof_protocol.TenantId) (localOwner : U64) (rows : List Owner) :
+    existingFrom owner localOwner rows = .Ok false ↔ firstMatch owner rows = none := by
+  cases found : firstMatch owner rows with
+  | none => simp [existingFrom, found]
+  | some row =>
+      by_cases same : row.local = localOwner <;> simp [existingFrom, found, rowVerdict, same]
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_nil
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_cons
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.same_owner_mapping_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.missing_exact

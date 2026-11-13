@@ -1,0 +1,23 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendArithmetic
+import SandboxModel.Lifecycle.Protocol.InboxAppendSelections
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open Values
+
+/-- The actual Vec mutable lookup of the selected fixture row, with its exact
+write-back function. No recording outcome is assumed. -/
+theorem fixture_mutable_zero (session : Session) (limit : U16) :
+    (withSession session limit).sessions.index_mut_usize 0#usize =
+      .ok (session, (withSession session limit).sessions.set 0#usize) := by
+  obtain ⟨⟨selected, back⟩, indexed, same, callback⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec (withSession session limit).sessions 0#usize
+      (by simp [withSession, InboxLookup.Witness.singleton]))
+  have exact_selected : selected = session := by
+    simpa [withSession, InboxLookup.Witness.singleton] using same
+  simpa [exact_selected, callback] using indexed
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.fixture_mutable_zero

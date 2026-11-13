@@ -1,0 +1,81 @@
+import BaseWorldParent
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+
+/-- The real parent reaches work with the native value computed from the
+    sandbox record used by startup, the historical result of startup's
+    detailed ledger row, and the same sealed plan from both startup reads. -/
+theorem actual_first_work_shares_world_record_and_plan
+    {nativeBase : SandproofUnloadNativeSnapshot.Representations}
+    {ledgerBase : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (parent : ParentCalls) (startupOps : SandproofUnloadStartupJoint.Operations)
+    (carriers : StartupCarriers) (errors : StartupErrorCarriers)
+    (hostView : {E : Type} → host_contract.HostEvidence E → SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (serdeView : {E : Type} → serde_core.de.DeserializeOwned E → SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E)
+    (nv : NativeLeafViews nativeBase ready) (nativeOps : NativeOps nativeBase)
+    (lv : LedgerLeafViews ledgerBase ready) (ledgerOps : LedgerOps ledgerBase)
+    (ops : BaseOps ready) (readyView : ReadyView ready) :
+    letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 startupOps
+    letI : ParentCalls := bindActualBase (bindStartupCall parent carriers errors hostView serdeView)
+      (installBaseReads carriers nv nativeOps lv ledgerOps ops) readyView
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstRead host serde tx ns intent now input)
+      (calls : UnloadFirstActualStartup.Opened (hostView host) (serdeView serde)
+        (cast carriers.tx tx) ns (cast carriers.world input.world) (carriers.localView reads.localValue))
+      (prepare : OriginalPrepareContext (cast carriers.world input.world) (carriers.localView reads.localValue) calls.plan)
+      (native : BaseNative ready)
+      (baseRead : @BaseInput.Reads (BaseReps ready) (installBaseReads carriers nv nativeOps lv ledgerOps ops)
+        tx (BaseSnapshotLink.toBaseIntent Record ready reads.originEntry.intent) reads.context
+        (baseLocalFromParent ready reads.localValue) native)
+      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world
+        (baseLocalFromParent ready reads.localValue) prepare.record = .ok (.Ok native))
+      (encoded : alloc.vec.Vec U8) (digestValue : Binding) (startupAction : Action)
+      (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))
+      (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue)
+      (slot : reads.actionIdentities.val[1]? = some startupAction)
+      (cloneResource : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)
+      (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),
+      ∃ work : Work, ∃ plan : UnloadFirstActualStartup.Plan,
+        controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+          .ok (.Ok work) ∧
+        work.anchor.«local» = reads.localValue ∧
+        work.anchor.native = BaseSnapshotLink.fromBaseNative Record ready native ∧
+        reads.base.view.historical_result = (prepare.ledger.result.map lv.resultFromStartup).map lv.resultToParent ∧
+        SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_plan
+          (cast carriers.world input.world) (SandproofUnloadStartupJoint.startupKey (carriers.localView reads.localValue)) =
+            .ok (some plan) ∧ plan = calls.plan ∧ plan.sealed = true := by
+  letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 startupOps
+  letI : BaseOps ready := installBaseReads carriers nv nativeOps lv ledgerOps ops
+  letI : ParentCalls := bindActualBase (bindStartupCall parent carriers errors hostView serdeView)
+    (installBaseReads carriers nv nativeOps lv ledgerOps ops) readyView
+  intro E host serde tx ns intent now input reads calls prepare native baseRead nativeRead
+    encoded digestValue startupAction encode digest slot cloneResource cloneLimits
+  obtain ⟨base, computed, _, nativeAt, ledgerAt⟩ :=
+    base_reads_original_world_and_ledger carriers nv nativeOps lv ledgerOps ops readyView tx ns input.world
+      reads.localValue reads.originEntry.intent reads.context prepare.record prepare.ledger native baseRead
+      prepare.recordRead prepare.ledgerRead nativeRead
+  have actualBase : ParentCalls.readBaseSnapshot tx ns input.world reads.originEntry.intent reads.context =
+      .ok (.Ok base) := computed
+  have sameBase := core.result.Result.Ok.inj (Result.ok_injective (reads.baseRead.symm.trans actualBase))
+  have sameNative : reads.native = BaseSnapshotLink.fromBaseNative Record ready native := by
+    have found := reads.nativePresent.symm
+    rw [sameBase, nativeAt] at found
+    exact Option.some.inj found
+  obtain ⟨_, plan, _, planRead, planEq⟩ :=
+    StartupReadAgreement.startup_reuses_command_plan (hostView host) (serdeView serde)
+      (cast carriers.tx tx) ns (cast carriers.world input.world) (carriers.localView reads.localValue) calls
+  have sealed := StartupReadAgreement.startup_selected_plan_is_sealed (hostView host) (serdeView serde)
+    (cast carriers.tx tx) ns (cast carriers.world input.world) (carriers.localView reads.localValue) calls
+  refine ⟨_, plan, actual_first_full_work reads encoded digestValue startupAction
+    encode digest slot cloneResource cloneLimits, rfl, sameNative, ?_, planRead, planEq, planEq.symm ▸ sealed⟩
+  rw [sameBase, ledgerAt]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_work_shares_world_record_and_plan

@@ -1,0 +1,82 @@
+import SandboxModel.Lifecycle.Protocol.RenewalModel
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+open scoped Classical
+noncomputable section
+
+/-- The unchanged SDK classifier from InboxRecord: this is not the stronger
+Renewal.Shape guard, authentication, or a persisted application fact. -/
+def sdkRenewal (intent : AcceptedLifecycleIntent) : Bool :=
+  decide (intent.request.binding.key.window = 2#u64) &&
+    match intent.request.operation with
+    | .Renew _ _ _ => true
+    | _ => false
+
+def checkpointMatches (confirmed : RenewalConfirmation) (entry : Entry) : Bool :=
+  decide (entry.intent = confirmed.request)
+
+def entryInvalid (confirmed : RenewalConfirmation) (entry : Entry) : Bool :=
+  decide (entry.applied_deadline ≠ some confirmed.effective_end_at_ms) ||
+    entry.previous_effective_end_at_ms.isNone
+
+/-- Keep the first full match, even when a later duplicate has good metadata. -/
+def checkpointInvalid (entries : List Entry) (confirmed : RenewalConfirmation) : Bool :=
+  match entries.find? (checkpointMatches confirmed) with
+  | none => true
+  | some entry => entryInvalid confirmed entry
+
+def containsVersion (entries : List Entry) (version : U64) : Bool :=
+  entries.any (fun entry => decide (entry.intent.accepted_version = version))
+
+def unappliedSdk (version : U64) (entry : Entry) : Bool :=
+  sdkRenewal entry.intent && decide (entry.intent.accepted_version ≤ version) &&
+    entry.applied_deadline.isNone
+
+def frontierInvalid (session : Session) (confirmed : RenewalConfirmation) : Bool :=
+  match session.compacted_sdk_through with
+  | none => false
+  | some through => decide (through < 2#u64) ||
+      decide (through ≥ confirmed.request.accepted_version) ||
+      containsVersion session.entries.val through
+
+abbrev Return := core.result.Result Unit sandproof_controller_service.JournalError
+abbrev Encoding := RenewalConfirmation →
+  Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+
+def corrupt : Return := .Err .CorruptStore
+
+def afterEncoding (session : Session) (confirmed : RenewalConfirmation)
+    (bytes : alloc.vec.Vec U8) : Return :=
+  if bytes.val.length > 8192 then corrupt
+  else if session.local.isNone then corrupt
+  else if checkpointInvalid session.entries.val confirmed then corrupt
+  else if frontierInvalid session confirmed then corrupt
+  else if session.entries.val.any (unappliedSdk confirmed.request.accepted_version) then corrupt
+  else .Ok ()
+
+/-- Quantify arbitrary encoding results, including the original JSON error and
+outer failure/divergence. This assumes no success or field contract for Serde. -/
+def validateView (encode : Encoding) (session : Session) : Result Return :=
+  match session.confirmed_renewal with
+  | none => .ok (if session.compacted_sdk_through.isNone then .Ok () else corrupt)
+  | some confirmed =>
+    if Renewal.Shape confirmed then do
+      let encoded ← encode confirmed
+      match encoded with
+      | .Err error => .ok (.Err (.Json error))
+      | .Ok bytes => .ok (afterEncoding session confirmed bytes)
+    else .ok corrupt
+
+def FullRenewalSessionContract (run : Encoding → Session → Result Return) : Prop :=
+  ∀ encode session, run encode session = validateView encode session
+
+def run (encode : Encoding) (session : Session) : Result Return :=
+  sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation.validate_session_using
+    (E := Unit) ⟨encode⟩ session
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal

@@ -3,7 +3,10 @@
 use super::*;
 use sandproof_center_service::LifecyclePolicy;
 use sandproof_protocol::lifecycle::{CreateParameters, PublicCreateRequest, PublicSessionPhase};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    net::SocketAddrV4,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 fn policy() -> LifecyclePolicy {
     LifecyclePolicy {
@@ -39,12 +42,26 @@ pub(super) fn request() -> PublicCreateRequest {
     }
 }
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
+    setup_with_operation_limit(
+        fixture,
+        proxy.address,
+        envelope().center.bounds().operations_per_sandbox,
+    )
+}
+
+pub(super) fn setup_with_operation_limit(
+    fixture: &Engine,
+    address: SocketAddrV4,
+    operations_per_sandbox: u16,
+) -> SharedBusinessAuthority {
     let mut state = envelope();
+    let mut bounds = state.center.bounds().clone();
+    bounds.operations_per_sandbox = operations_per_sandbox;
     // A registered second owner exercises cross-tenant refusal, independently
     // of the earlier rejection of an unregistered request-window domain.
     state.center = CenterState::new(
         state.center.deployment().clone(),
-        state.center.bounds().clone(),
+        bounds,
         state.center.nodes().to_vec(),
         ["8", "9"]
             .into_iter()
@@ -64,7 +81,7 @@ pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBu
     )
     .unwrap();
     let (ledger, _) = RedisLedger::initialize(
-        engine::endpoint(proxy.address),
+        engine::endpoint(address),
         Engine::config(state.required_block_bytes()),
         fixture.lease(),
         &state,

@@ -1,0 +1,67 @@
+import SandproofStage1CreateAttachment.Funs
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValidation
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter
+open SandproofStage1CreateAttachmentRust
+open Values
+abbrev run := sandproof_controller_service.controller.identity.sandbox_id
+
+theorem original_normal_specification : expected "normal" 2#u64 = .Ok "sb-normal-2" := normal_expected
+theorem actual_number_truncated : run normal 2#u64 = .ok (.Ok "sb-normal-0") := by
+  have constructor : sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+      "sb-normal-0" = .ok (.Ok "sb-normal-0") :=
+    sandbox_constructor_complete "sb-normal-0" (by change 11 ≤ Usize.max; scalar_tac)
+  have writer := SandboxModel.Foundations.default_string_write_refines
+    (⟨"sb-"⟩ : SandproofFoundationsRust.core.fmt.Formatter) normal "normal" rfl
+  have divided : UScalar.div 2#u64 10#u64 = .ok 0#u64 := by rfl
+  unfold run sandproof_controller_service.controller.identity.sandbox_id
+  dsimp only [HDiv.hDiv]
+  erw [divided]
+  have decimal : Nat.repr 0 = "0" := by rfl
+  simp [decimal,
+    Str.Insts.CoreFmtDisplay, Str.Insts.CoreFmtDisplay.fmt,
+    SandproofStage1CreateAttachmentRust.core.fmt.rt.Argument.new_display,
+    SandproofStage1CreateAttachmentRust.core.fmt.Arguments.new,
+    SandproofFoundationsRust.core.fmt.rt.Argument.new_display,
+    SandproofFoundationsRust.core.fmt.Arguments.new, alloc.fmt.format, fixedSandboxPieces,
+    Shared0T.Insts.CoreFmtDisplay.fmt, SandproofFoundationsRust.Shared0T.Insts.CoreFmtDisplay.fmt,
+    SandproofStage1CreateAttachmentRust.core.fmt.num.imp.DisplayU64.fmt,
+    SandproofFoundationsRust.core.fmt.num.imp.DisplayU64.fmt, writer, constructor,
+    core.hint.must_use, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem still_accepts_empty_zero : run empty 0#u64 = .ok (.Ok "sb--0") := by
+  have constructor : sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from
+      "sb--0" = .ok (.Ok "sb--0") :=
+    sandbox_constructor_complete "sb--0" (by change 5 ≤ Usize.max; scalar_tac)
+  have writer := SandboxModel.Foundations.default_string_write_refines
+    (⟨"sb-"⟩ : SandproofFoundationsRust.core.fmt.Formatter) empty "" rfl
+  have divided : UScalar.div 0#u64 10#u64 = .ok 0#u64 := by rfl
+  unfold run sandproof_controller_service.controller.identity.sandbox_id
+  dsimp only [HDiv.hDiv]
+  erw [divided]
+  have decimal : Nat.repr 0 = "0" := by rfl
+  simp [decimal,
+    Str.Insts.CoreFmtDisplay, Str.Insts.CoreFmtDisplay.fmt,
+    SandproofStage1CreateAttachmentRust.core.fmt.rt.Argument.new_display,
+    SandproofStage1CreateAttachmentRust.core.fmt.Arguments.new,
+    SandproofFoundationsRust.core.fmt.rt.Argument.new_display,
+    SandproofFoundationsRust.core.fmt.Arguments.new, alloc.fmt.format, fixedSandboxPieces,
+    Shared0T.Insts.CoreFmtDisplay.fmt, SandproofFoundationsRust.Shared0T.Insts.CoreFmtDisplay.fmt,
+    SandproofStage1CreateAttachmentRust.core.fmt.num.imp.DisplayU64.fmt,
+    SandproofFoundationsRust.core.fmt.num.imp.DisplayU64.fmt, writer, constructor,
+    core.hint.must_use, core.result.Result.Insts.CoreOpsTry.branch]
+theorem same_full_contract_rejected : ¬ FullIdentityContract run := by
+  intro law
+  have promised := law normal "normal" 2#u64 normal_represented normal_output_representable
+  rw [actual_number_truncated, normal_expected] at promised
+  have equality := Result.ok_injective promised
+  injection equality with text
+  have different : ("sb-normal-0" : String) ≠ "sb-normal-2" := by decide
+  exact different text
+
+end SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.original_normal_specification
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.actual_number_truncated
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.still_accepts_empty_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.same_full_contract_rejected

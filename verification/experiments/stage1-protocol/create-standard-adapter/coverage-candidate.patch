@@ -1,0 +1,21 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2143,0 +2144,18 @@
++
++
++### V3 Create 当前标准实例的 World/连接条件值对应（候选登记）
++
++生产基线 97071be4 的真实普通 World 读取、两层 Deref 和寿命 UPDATE/inbox save
++两处连接字段重绑定不变。FullReadAndRebindContract 对任意完整对象覆盖模型全部
++分支及原 panic 条件；读取 World 不加 transaction 检查，重绑定不加 candidate 检查。
++保留全部 20 个 World 字段、完整记录/计划/capture、事务和效果对象其余字段。
++
++正确15实际文件/22审计，真实 default-world 错误版14文件/13审计，共25唯一新增名；
++原克隆数学直接复用。错误版保留原 World 读取一次，随后错误丢值并返回默认 World，
++必须编译/抽取并到达同一完整合同反例；空 World 相同情形保留，不导入正确实例定理。
++精确输入与实际执行以本批原始 result/服务/依赖及发布树回读绑定，不重写旧身份。
++
++有限借用/guard/正常释放的库相符，以及 V5 活对象/lease/API 历史保持显式条件。
++当前 CaptureHandoff 的透明克隆补项不等于所有新协议/producer 已证明。原生同三
++断言交 ning，有限实际连接指针见证不替代一般物理事务证明。共享根/冻结/输入/
++累计审计与 verify-controller 同批验收，主控实际接收原证据另列，完整 V3 仍开放。

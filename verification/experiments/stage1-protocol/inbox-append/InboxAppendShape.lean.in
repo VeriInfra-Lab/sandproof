@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendFrame
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord
+
+def priorUnload (source : IncarnationId) (capture : CaptureId) (entry : Entry) : Bool :=
+  match entry.intent.request.operation with
+  | .Unload old oldCapture => decide (old = source ∧ oldCapture = capture)
+  | _ => false
+
+def operationAllowed (session : Session) : LifecycleOperation → Bool
+  | .Create _ _ => false
+  | .Unload source _ => session.local.isSome && decide (session.incarnation = some source) &&
+      session.entries.val.getLast?.any entryAllowsRunning
+  | .Resume source capture target _ =>
+      session.local.isSome && decide (session.incarnation = some source) &&
+      decide (U64.checked_add source 1#u64 = some target) &&
+      session.entries.val.getLast?.any (priorUnload source capture)
+  | .Renew incarnation endAt _ =>
+      session.local.isSome && decide (session.incarnation = some incarnation) &&
+      decide (0#i64 ≤ endAt) && session.entries.val.getLast?.any entryAllowsRunning
+  | .Destroy => true
+
+end SandboxModel.Stage1Protocol.InboxAppend

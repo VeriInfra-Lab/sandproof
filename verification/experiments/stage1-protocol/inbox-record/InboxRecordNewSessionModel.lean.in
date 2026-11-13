@@ -1,0 +1,33 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordFreshModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxRecord
+open InboxLookup
+
+/-- No retained operation key anywhere, and no session row with this exact ID.
+No authorization, validation, or resource-existence fact is supplied by this predicate. -/
+def NewSession (inbox : Inbox) (intent : AcceptedLifecycleIntent) : Prop :=
+  (∀ session ∈ inbox.sessions.val, NoKey intent session.entries.val) ∧
+  ∀ session ∈ inbox.sessions.val, session.id ≠ intent.request.binding.session
+
+def FullNewSessionContract (run : Inbox → AcceptedLifecycleIntent → Result RecordReturn) : Prop :=
+  ∀ inbox intent, NewSession inbox intent →
+    run inbox intent ⦃ out => FreshPost inbox intent (freshDecision inbox intent) out ⦄
+
+theorem record_new_session_path (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (new_session : NewSession inbox intent) :
+    inbox.record intent = inbox.record_fresh intent := by
+  have lookup := (find_none_iff inbox intent).mpr new_session.1
+  have absent_index : firstIndex (fun session => decide (session.id = intent.request.binding.session)) inbox.sessions.val 0 = none :=
+    (firstIndex_none_iff _ _ _).mpr (by intro session member; simp [new_session.2 session member])
+  obtain ⟨index, returned, position⟩ := WP.spec_imp_exists
+    (session_index_spec inbox intent.request.binding.session)
+  rw [absent_index] at position
+  have index_none : index = none := by cases index <;> simp_all
+  simp [Inbox.record, lookup, returned, index_none, core.result.Result.Insts.CoreOpsTry.branch]
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.record_new_session_path

@@ -21,11 +21,10 @@ use std::{
 
 const EXEC_GATE: &str =
     "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec \"$@\"";
-// In the Full preparation role, fd2 retains this slot's lock across the
-// initial shell exec. Only a durable caller-authorized release replaces it.
-// Diagnostics after release join the bounded result pipe; parsers must reject
-// anything other than their exact single reply frame.
-const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
+// The Full worker retains the slot lock on fd3 across exec. This shell gate
+// only starts bounded preparation; the worker's distinct post-SQL Release
+// controls Full. Ready and the final reply share one bounded output pipe.
+const CAPTURE_EXEC_GATE: &str = "IFS= read -r release || exit 1; [ \"$release\" = release ] || exit 1; exec 3>&2 || exit 1; exec 2>&1 || exit 1; exec \"$@\"";
 pub const MAX_HELPER_MARKER_BYTES: u64 = 16_384;
 
 /// Fixed gate inode created by the trusted node's mapping initialization.
@@ -174,6 +173,7 @@ pub struct RuntimeHelperGuard {
     owner: u32,
     active: RefCell<Option<OwnedMarker>>,
     expected: Option<RuntimeHostSlot>,
+    exclusive: bool,
 }
 
 impl RuntimeHostSlot {
@@ -393,6 +393,7 @@ impl RuntimeHelperGate {
             owner,
             active: RefCell::new(None),
             expected: expected.cloned(),
+            exclusive: !shared,
         };
         guard.recover_previous(shared)?;
         Ok(guard)
@@ -410,7 +411,7 @@ fn lock(file: &File, shared: bool) -> Result<(), RuntimeError> {
     )
     .map_err(|error| {
         if error == rustix::io::Errno::WOULDBLOCK {
-            RuntimeError::InvalidConfiguration("previous physical-slot lease is still active")
+            RuntimeError::HelperGateBusy
         } else {
             RuntimeError::Io(io::Error::from(error))
         }
@@ -492,11 +493,11 @@ impl RuntimeHelperGuard {
         self.release_tracked(prepared)
     }
 
-    /// Prepare Full's child with its slot lock held on fd2 until permission.
-    /// After release, stderr joins stdout; a Full consumer must require exactly
-    /// one bounded reply frame and reject diagnostics mixed with that frame.
-    /// A caller using this for Full must save the same process/job under its
-    /// original durable work before invoking `release_tracked`.
+    /// Prepare Full's child with its exact process witness and retained lock.
+    /// `release_tracked` starts preparation only. The caller must deliver the
+    /// complete job, validate Ready, then save that same process/job in SQL
+    /// before sending the worker's distinct Full Release. Diagnostics mixed
+    /// with either bounded output frame refuse the preparation/result.
     /// # Errors
     /// Any launch/publication error retains uncertain process evidence.
     pub fn prepare_tracked(
@@ -619,9 +620,7 @@ impl RuntimeHelperGuard {
         self.validate_context(context)?;
         let (singleton, singleton_stage) = self.gate.inflight_paths()?;
         if self.read_cell(&singleton, None)?.is_some() || super::path_present(&singleton_stage)? {
-            return Err(RuntimeError::InvalidConfiguration(
-                "singleton helper publication is pending",
-            ));
+            return Err(RuntimeError::HelperGateBusy);
         }
         for index in 0..self.gate.max_data_routes_per_slot {
             if !self.route_idle(index)? {
@@ -664,6 +663,18 @@ impl RuntimeHelperGuard {
         Err(RuntimeError::InvalidConfiguration(
             "all bounded data route cells are occupied",
         ))
+    }
+
+    pub(crate) fn require_exclusive_context(
+        &self,
+        context: &RuntimeHostSlot,
+    ) -> Result<(), RuntimeError> {
+        if !self.exclusive {
+            return Err(RuntimeError::IdentityMismatch(
+                "cleanup requires original exclusive helper gate",
+            ));
+        }
+        self.validate_context(context)
     }
 
     fn validate_context(&self, context: &RuntimeHostSlot) -> Result<(), RuntimeError> {
@@ -865,9 +876,7 @@ impl RuntimeHelperGuard {
         if let Some(previous) = &previous
             && previous.record.process.is_alive()?
         {
-            return Err(RuntimeError::InvalidConfiguration(
-                "previous tracked helper is still alive",
-            ));
+            return Err(RuntimeError::HelperGateBusy);
         }
         let mut route_stage_dirty = false;
         for index in 0..self.gate.max_data_routes_per_slot {
@@ -1193,6 +1202,122 @@ mod tests {
         )
     }
 
+    #[test]
+    fn cleanup_requires_original_exclusive_context_not_shared_or_successor() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_root, context) = fixture(2);
+        let exclusive = acquire(&context, false).unwrap();
+        exclusive.require_exclusive_context(&context).unwrap();
+        let mut wrong = context.clone();
+        wrong.vm -= 1;
+        assert!(exclusive.require_exclusive_context(&wrong).is_err());
+        drop(exclusive);
+        let shared = acquire(&context, true).unwrap();
+        assert!(shared.require_exclusive_context(&context).is_err());
+    }
+
+    fn stopped_cleanup_fixture(root: &Path, context: &RuntimeHostSlot) -> (Runtime, String) {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700)).unwrap();
+        let id = format!("vm-0123456789abcdef-{}", context.vm);
+        let mut directories = fs::DirBuilder::new();
+        directories.recursive(true);
+        std::os::unix::fs::DirBuilderExt::mode(&mut directories, 0o700);
+        directories.create(root.join(".claims").join(&id)).unwrap();
+        let runtime = Runtime {
+            config: super::super::RuntimeConfig {
+                guest_instance_id: "guest-instance".into(),
+                console_policy: None,
+                host_slot: Some(context.clone()),
+                jailer: "/usr/bin/true".into(),
+                firecracker: "/usr/bin/firecracker".into(),
+                chroot_base: root.into(),
+                kernel: PathBuf::new(),
+                rootfs: PathBuf::new(),
+                vm_uid: 10001,
+                vm_gid: 10001,
+                vcpu_count: 1,
+                memory_mib: 128,
+                host_resources: None,
+                private_netns: None,
+                access_token_hash: None,
+            },
+        };
+        let owner = rustix::process::geteuid().as_raw();
+        runtime.reserve_jail_for_fixture(&id, owner).unwrap();
+        super::super::write_new_record(
+            &root.join(".claims").join(&id).join("record.json"),
+            &super::super::ProcessRecord {
+                resource_id: id.clone(),
+                pid: i32::MAX as u32,
+                start_time_ticks: 1,
+                boot_id: boot_id().unwrap(),
+                launch_cpu_domain: vec![0],
+            },
+        )
+        .unwrap();
+        fs::write(
+            runtime.root_path(&id).join("private-running-disk"),
+            b"running disk",
+        )
+        .unwrap();
+        (runtime, id)
+    }
+
+    #[test]
+    fn held_cleanup_reuses_original_helpers_and_preserves_separate_materials() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (root, context) = fixture(2);
+        let (runtime, id) = stopped_cleanup_fixture(root.path(), &context);
+        let materials = root.path().join("s");
+        fs::create_dir(&materials).unwrap();
+        fs::write(materials.join("adopted-state"), b"must remain").unwrap();
+        let guard = acquire(&context, false).unwrap();
+        // Real original tracked child while the SAME exclusive OFD stays held;
+        // no nested acquisition or fake absent context is used.
+        helper_output(
+            Some(&guard),
+            Some(&context),
+            "held cleanup regression",
+            "/usr/bin/true",
+            &[],
+            None,
+        )
+        .unwrap();
+        runtime
+            .cleanup_for_owner_with_gate(&id, rustix::process::geteuid().as_raw(), Some(&guard))
+            .unwrap();
+        assert!(!runtime.jail_path(&id).exists());
+        assert!(
+            root.path()
+                .join(".claims")
+                .join(&id)
+                .join("record.json")
+                .exists()
+        );
+        assert_eq!(
+            fs::read(materials.join("adopted-state")).unwrap(),
+            b"must remain"
+        );
+        assert!(acquire(&context, false).is_err());
+        helper_output(
+            Some(&guard),
+            Some(&context),
+            "held cleanup after deletion",
+            "/usr/bin/true",
+            &[],
+            None,
+        )
+        .unwrap();
+        drop(guard);
+        let shared = acquire(&context, true).unwrap();
+        assert!(runtime.cleanup_under_gate(&id, &shared).is_err());
+        assert_eq!(
+            fs::read(materials.join("adopted-state")).unwrap(),
+            b"must remain"
+        );
+    }
+
     fn paused(guard: &RuntimeHelperGuard, context: &RuntimeHostSlot, route: bool) -> Child {
         let args = [
             "-c",
@@ -1237,12 +1362,7 @@ mod tests {
         });
         started.recv().unwrap();
         drop(guard);
-        let refused = matches!(
-            acquire(&context, false),
-            Err(RuntimeError::InvalidConfiguration(
-                "previous physical-slot lease is still active"
-            ))
-        );
+        let refused = matches!(acquire(&context, false), Err(RuntimeError::HelperGateBusy));
         release.send(()).unwrap();
         owner.join().unwrap();
         assert!(refused);
@@ -1277,17 +1397,35 @@ mod tests {
         drop(untracked_lock);
         assert!(matches!(
             acquire(&context, false),
-            Err(RuntimeError::InvalidConfiguration(_))
+            Err(RuntimeError::HelperGateBusy)
         ));
         assert!(matches!(
             acquire(&context, true),
-            Err(RuntimeError::InvalidConfiguration(_))
+            Err(RuntimeError::HelperGateBusy)
         ));
         finish(child);
         if let Err(error) = acquire(&context, false) {
             panic!("completed child did not drain: {error:?}");
         }
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn helper_published_after_data_admission_refuses_relay_before_creating_a_route() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_temp, context) = fixture(1);
+        let data = acquire(&context, true).unwrap();
+        let probe = acquire(&context, true).unwrap();
+        let child = paused(&probe, &context, false);
+        assert!(matches!(
+            data.spawn_route(&context, false, "/bin/true", &[]),
+            Err(RuntimeError::HelperGateBusy)
+        ));
+        let (route, staged) = context.helper_gate.route_paths(0).unwrap();
+        assert!(!route.exists() && !staged.exists());
+        finish(child);
+        probe.finish_tracked().unwrap();
+        assert!(data.route_idle(0).unwrap());
     }
 
     #[test]
@@ -1919,6 +2057,48 @@ mod tests {
         assert_reaped(process.pid);
         assert!(context.helper_gate.inflight_paths().unwrap().0.exists());
         guard.finish_tracked().unwrap();
+    }
+
+    #[test]
+    fn released_full_worker_keeps_original_gate_after_parent_handles_drop() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (temp, context) = fixture(1);
+        let fifo = temp.path().join("release-full");
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &fifo,
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
+        let guard = acquire(&context, false).unwrap();
+        let prepared = guard
+            .prepare_tracked(
+                &context,
+                "/bin/sh",
+                &[
+                    "-c",
+                    "printf 'ready\n'; IFS= read -r release < \"$1\"",
+                    "full-worker",
+                    fifo.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+        let mut child = guard.release_tracked(prepared).unwrap();
+        let ready = child
+            .prepare_full(&[], b"ready\n", HelperLimits::CONTROL)
+            .unwrap();
+        assert_eq!(ready, b"ready\n");
+        drop(child);
+        drop(guard);
+        assert!(acquire(&context, false).is_err());
+        File::options()
+            .write(true)
+            .open(&fifo)
+            .unwrap()
+            .write_all(b"done\n")
+            .unwrap();
     }
 
     #[test]

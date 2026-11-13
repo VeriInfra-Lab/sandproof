@@ -1,0 +1,36 @@
+{
+  "source_sha256": "aa886d2cb586fa1e142bf3f6875f671634bd3b2de136e4bc2a3e89cf2c3bb288",
+  "views": {
+    "skip-version": {
+      "edits": [
+        {
+          "before": "    accepted: u64,",
+          "after": "    _accepted: u64,"
+        },
+        {
+          "before": "        work_version: accepted,",
+          "after": "        work_version: current_version,"
+        }
+      ],
+      "sha256": "5d8157364bfeeaf02de703df71e5604e53fa29e38dc5c95dbf398ce87dba13d2"
+    },
+    "allow-expired": {
+      "edits": [
+        {
+          "before": "        deadline_ms: lifetime.deadline_ms,",
+          "after": "        deadline_ms: i64::MAX,"
+        }
+      ],
+      "sha256": "3f3d653efb71c67b5254be991547c45ca987d0a3f24fdb259da96f78be1ebd22"
+    },
+    "ignore-startup": {
+      "edits": [
+        {
+          "before": ".is_some_and(|started| started <= now_ms && started <= lifetime.startup_deadline_ms)",
+          "after": ".is_some_and(|started| started <= now_ms)"
+        }
+      ],
+      "sha256": "dd895b7a49e4496d37fcf4a4b3400f99005e87ca5663513a01cc6ff850148ad3"
+    }
+  }
+}

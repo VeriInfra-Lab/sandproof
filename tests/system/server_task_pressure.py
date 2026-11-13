@@ -21,6 +21,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -153,7 +154,7 @@ async def live_shape(root, args, sandbox, native_id):
     _, name, record = record_for(root, native_id=native_id)
     assert process_start_ticks(record['pid']) == record['start_time_ticks']
     group = args.cgroup_parent / name
-    bound = json.loads((root / 'jails/.claims' / name / 'cgroup.json').read_text())
+    bound = json.loads((original_chroot(root) / '.claims' / name / 'cgroup.json').read_text())
     assert group.stat().st_ino == bound['inode']
     assert Path('/proc', str(record['pid']), 'cgroup').read_text().strip() == (
         '0::/' + str(group.relative_to('/sys/fs/cgroup')))
@@ -161,7 +162,7 @@ async def live_shape(root, args, sandbox, native_id):
               ('cpu.max', 'cpu.max.burst', 'memory.max', 'memory.swap.max', 'memory.oom.group')}
     assert limits == {'cpu.max': '100000 100000', 'cpu.max.burst': '0',
                       'memory.max': str(1024 * MIB), 'memory.swap.max': '0', 'memory.oom.group': '1'}
-    private = root / 'jails' / args.firecracker.name / name / 'root/rootfs.ext4'
+    private = original_chroot(root) / args.firecracker.name / name / 'root/rootfs.ext4'
     disk = private.stat()
     source = args.rootfs.stat()
     assert disk.st_size == source.st_size
@@ -177,7 +178,7 @@ async def live_shape(root, args, sandbox, native_id):
     assert (machine['vcpu_count'], machine['mem_size_mib']) == (1, 512)
     info = await call(sandbox.get_info)
     assert (info.cpu_count, info.memory_mb) == (1, 512)
-    network = json.loads((root / 'jails/.claims' / name / 'network.json').read_text())
+    network = json.loads((original_chroot(root) / '.claims' / name / 'network.json').read_text())
     return {'sandbox_id': sandbox.sandbox_id, 'native_id': native_id, 'resource_id': name, 'pid': record['pid'],
             'start_ticks': record['start_time_ticks'], 'network_inode': network['namespace_inode'],
             'cgroup_inode': bound['inode'], 'limits': limits,
@@ -189,7 +190,7 @@ def audit_gone(root, args, rows):
     for row in rows:
         name = row['resource_id']
         assert process_start_ticks(row['pid']) != row['start_ticks']
-        assert not (root / 'jails' / args.firecracker.name / name).exists()
+        assert not (original_chroot(root) / args.firecracker.name / name).exists()
         assert not Path('/run/netns', name).exists()
         assert not (args.cgroup_parent / name).exists()
     inodes = {row['network_inode'] for row in rows}
@@ -226,10 +227,10 @@ async def exercise(args):
     before_network = network_state()
     root = Path(tempfile.mkdtemp(prefix='tp-', dir=parent))
     namespace = secrets.token_hex(8)
-    assert len(os.fsencode(root / 'jails' / args.firecracker.name / f'vm-{namespace}-5/root/api.socket')) < 108
+    assert len(os.fsencode(root / 'p/v' / args.firecracker.name / f'vm-{namespace}-5/root/api.socket')) < 108
     print(json.dumps({'event': 'run_created', 'root': str(root), 'namespace': namespace,
                       'source_commit': commit}), flush=True)
-    for name in ('db', 'state', 'jails'):
+    for name in ('db', 'state', 'p'):
         (root / name).mkdir(mode=0o700)
     keys = [secrets.token_hex(32), secrets.token_hex(32)]
     url = f'http://127.0.0.1:{free_loopback_port()}'
@@ -242,19 +243,19 @@ async def exercise(args):
         max_memory_bytes_global=3*1024*MIB, max_memory_bytes_per_tenant=2*1024*MIB))
     settings = {**budgets, 'namespace': namespace, 'database': str(database),
                 'node_state_dir': str(root / 'state'), 'jailer': str(args.jailer),
-                'firecracker': str(args.firecracker), 'chroot_base': str(root / 'jails'),
+                'firecracker': str(args.firecracker), 'chroot_base': str(root / 'p/v'),
                 'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
                 'vcpu_count': 1, 'memory_mib': 512,
                 'host_resources': {'cgroup_parent': str(args.cgroup_parent), 'memory_max_bytes': 1024 * MIB},
                 'file_policy_digest': 1, 'templates': catalog, 'public_ipv4_enabled': False,
                 'max_active_global': 3, 'max_active_per_tenant': 2, 'startup_timeout_secs': 120}
-    settings = complete_runtime(settings, slots=3)
+    settings = complete_runtime(settings, slots=3, inbox_sessions=12+settings["max_active_global"])
     registry = dict(root=str(root / 'registry'), max_templates_global=1, max_templates_per_tenant=1,
         max_artifact_bytes_global=args.kernel.stat().st_size+args.rootfs.stat().st_size,
         max_artifact_bytes_per_tenant=args.kernel.stat().st_size+args.rootfs.stat().st_size,
         validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], keys[0],
-        url.removeprefix('http://'), args.service_cgroup_record, job_count=12, registry_config=registry,
+        url.removeprefix('http://'), args.service_cgroup_record, retained_sessions=12 + settings['max_active_global'], registry_config=registry,
         extra_credentials=[dict(tenant=2, secret=keys[1])])
     sampler, monitor = None, None
     known, evidence, results = [], [], []

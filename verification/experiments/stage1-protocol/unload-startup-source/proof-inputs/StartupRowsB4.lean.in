@@ -1,0 +1,35 @@
+import SandproofUnloadStartupJoint.FunsExternal
+import OriginalRowsDriver
+
+open Aeneas Aeneas.Std
+namespace SandproofUnloadStartupJoint
+
+variable [r : Representations]
+
+abbrev StartupRowsState :=
+  Array (Option ((sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) ×
+    alloc.vec.Vec U8)) 5#usize
+
+abbrev StartupRowsReply := core.result.Result Unit JournalError × StartupRowsState
+
+/-- Exact B4 instance for the source-reviewed startup iterator loop. -/
+def startupRowsB4 {I F Item : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (callback : core.ops.function.FnMut F (Item × StartupRowsState) StartupRowsReply)
+    (rows : I) (state : StartupRowsState) (accept : F) : Result StartupRowsReply :=
+  SandboxModel.Stage1Protocol.OriginalRowsDriver.run iterator callback rows state accept
+
+/-- Preserve the exact SQL, business callback, and all other operations.
+    Only the admitted mechanical iteration call is specialized. -/
+@[reducible]
+def bindStartupRowsB4 (operations : Operations) : Operations :=
+  { operations with op50 := @startupRowsB4 r }
+
+theorem startupRowsB4_is_actual_dictionary (operations : Operations)
+    {I F Item : Type} (iterator : core.iter.traits.iterator.Iterator I Item)
+    (callback : core.ops.function.FnMut F (Item × StartupRowsState) StartupRowsReply)
+    (rows : I) (state : StartupRowsState) (accept : F) :
+    (bindStartupRowsB4 operations).op50 iterator callback rows state accept =
+      SandboxModel.Stage1Protocol.OriginalRowsDriver.run iterator callback rows state accept := rfl
+
+end SandproofUnloadStartupJoint

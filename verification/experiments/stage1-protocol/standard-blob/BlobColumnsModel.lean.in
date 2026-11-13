@@ -1,0 +1,42 @@
+import SandproofLoadBlob.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.BlobColumns
+noncomputable section
+
+abbrev Bytes := alloc.vec.Vec U8
+abbrev SqlError := rusqlite.error.Error
+abbrev ColumnOutcome := core.result.Result Bytes SqlError
+abbrev PairOutcome := core.result.Result (Bytes × Bytes) SqlError
+
+/-- Exact value/error observation for one fixed usize/Vec column instance.
+The complete raw library ValueRef is retained; invalid indices precede decoding. -/
+def column (row : rusqlite.row.Row) (index : Usize) : ColumnOutcome :=
+  if index.val < row.statement.columns.val then
+    match row.column index with
+    | .Blob bytes => .Ok ⟨bytes⟩
+    | value => .Err (row.conversionError index value invalidType)
+  else .Err (row.statement.invalidIndex index)
+
+/-- One complete contract for correct and actual wrong source views. -/
+def expected (row : rusqlite.row.Row) (first second : Usize) : PairOutcome :=
+  match column row first with
+  | .Err error => .Err error
+  | .Ok left =>
+    match column row second with
+    | .Err error => .Err error
+    | .Ok right => .Ok (left, right)
+
+def FullColumnsContract
+    (run : rusqlite.row.Row → Usize → Usize → Result PairOutcome) : Prop :=
+  ∀ row first second, run row first second = .ok (expected row first second)
+
+/-- Proposed finite library-provider condition. This does not hold for an
+arbitrary manufactured ValueRef and is not a 16MiB business or transaction law. -/
+def RowBlobBound (row : rusqlite.row.Row) : Prop :=
+  ∀ index bytes, index.val < row.statement.columns.val →
+    row.column index = .Blob bytes → bytes.val.length ≤ 2147483647
+
+end
+end SandboxModel.Stage1Protocol.BlobColumns

@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetainedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.InboxRetained.WrongCompaction
+open Values
+
+theorem actual_return :
+    renewal_confirmation.follows_retained pastCompaction 1#u64 (renewal 5#u64 4#u64) = .ok true := by
+  simp [renewal_confirmation.follows_retained, session, renewal, initial, checkpoint,
+    pastCompaction, EnvelopeValues.intent,
+    core.option.Option.is_some_and, core.option.Option.as_ref,
+    SandproofFoundationsRust.core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.as_ref,
+    renewal_confirmation.follows_retained.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once,
+    renewal_confirmation.follows_retained.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedRenewalConfirmationBool.call_once]
+
+theorem rejects_same_full_contract : ¬ FullRetainedContract renewal_confirmation.follows_retained := by
+  intro contract
+  have required := contract pastCompaction 1#u64 (renewal 5#u64 4#u64)
+  have rejected : expected pastCompaction 1#u64 (renewal 5#u64 4#u64) = false := by decide
+  rw [actual_return, rejected] at required
+  cases (Result.ok_injective required)
+
+end SandboxModel.Stage1Protocol.InboxRetained.WrongCompaction
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.WrongCompaction.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.WrongCompaction.rejects_same_full_contract

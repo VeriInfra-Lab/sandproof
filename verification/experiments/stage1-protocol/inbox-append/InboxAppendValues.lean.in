@@ -1,0 +1,104 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendCallerModel
+import SandboxModel.Lifecycle.Protocol.InboxRecordValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxAppend.Values
+open InboxRecord InboxLookup.Witness
+open scoped Classical
+
+def operationIntent (operation : LifecycleOperation) (window sequence previous accepted : U64) : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with
+  request := { (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with
+      key := ⟨"deployment", "owner", window, sequence⟩, expected := .Version previous },
+    operation := operation }, accepted_version := accepted }
+
+def unload : AcceptedLifecycleIntent := operationIntent (.Unload 1#u64 1#u64) 1#u64 2#u64 1#u64 2#u64
+def resume (capture target : U64) : AcceptedLifecycleIntent :=
+  operationIntent (.Resume 1#u64 capture target Request.digest) 1#u64 3#u64 2#u64 3#u64
+def firstRenew : AcceptedLifecycleIntent := operationIntent (.Renew 1#u64 100#i64 false) 2#u64 1#u64 1#u64 2#u64
+def laterRenew : AcceptedLifecycleIntent := operationIntent (.Renew 1#u64 200#i64 true) 2#u64 2#u64 2#u64 3#u64
+def destroy : AcceptedLifecycleIntent := operationIntent .Destroy 1#u64 3#u64 2#u64 3#u64
+
+def createEntry : Entry := { pendingEntry InboxRecord.Values.createIntent with local_operation := some 30#u64 }
+def runningSession : Session := { (session 1#u64) with
+  «local» := some ⟨10#u64, 20#u64, 30#u64⟩,
+  entries := InboxLookup.Witness.singleton createEntry }
+def afterUnload : Session := { runningSession with
+  current_version := 2#u64,
+  entries := alloc.vec.Vec.from [createEntry, pendingEntry unload] (by simp; scalar_tac) }
+def waitingSdk : Session := { runningSession with
+  current_version := 2#u64,
+  entries := alloc.vec.Vec.from [createEntry, pendingEntry firstRenew] (by simp; scalar_tac) }
+def withSession (selected : Session) (limit : U16 := 8#u16) : Inbox := {
+  (inbox 1#u64) with
+  sessions := InboxLookup.Witness.singleton selected,
+  config := { (inbox 1#u64).config with max_operations_per_session := limit } }
+
+theorem normal_unload_valid : Validation.ValidEnvelope unload EnvelopeValues.context := by
+  have added : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    unload, operationIntent, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+    EnvelopeValues.node, added]
+
+theorem resume_inputs_valid :
+    Validation.ValidEnvelope (resume 1#u64 2#u64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (resume 2#u64 2#u64) EnvelopeValues.context ∧
+    Validation.ValidEnvelope (resume 1#u64 3#u64) EnvelopeValues.context := by
+  have added : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    resume, operationIntent, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+    EnvelopeValues.node, added]
+
+theorem renewal_and_destroy_valid :
+    Validation.ValidEnvelope firstRenew EnvelopeValues.context ∧
+    Validation.ValidEnvelope laterRenew EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroy EnvelopeValues.context := by
+  have add12 : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  have add23 : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    firstRenew, laterRenew, destroy, operationIntent, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.center, EnvelopeValues.node, add12, add23]
+
+theorem unload_decision : existingDecision (withSession runningSession) runningSession unload = .append false := by
+  simp [existingDecision, withSession, runningSession, session, createEntry, pendingEntry,
+    InboxLookup.Witness.singleton, inbox, unload, operationIntent, EnvelopeValues.intent, isDestroy, operationAllowed,
+    entryAllowsRunning, sdkRenewal, InboxRecord.Values.createIntent]
+
+theorem resume_decisions :
+    existingDecision (withSession afterUnload) afterUnload (resume 1#u64 2#u64) = .append false ∧
+    existingDecision (withSession afterUnload) afterUnload (resume 2#u64 2#u64) = .reject .UnsupportedInput ∧
+    existingDecision (withSession afterUnload) afterUnload (resume 1#u64 3#u64) = .reject .UnsupportedInput := by
+  have added : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [existingDecision, withSession, afterUnload, runningSession, session, createEntry, pendingEntry,
+    InboxLookup.Witness.singleton, inbox, unload, resume, operationIntent, EnvelopeValues.intent, isDestroy, operationAllowed,
+    priorUnload, sdkRenewal, InboxRecord.Values.createIntent, added]
+
+theorem renewal_decisions :
+    existingDecision (withSession runningSession) runningSession firstRenew = .append false ∧
+    existingDecision (withSession waitingSdk) waitingSdk laterRenew = .reject .UnresolvedAction := by
+  simp [existingDecision, withSession, waitingSdk, runningSession, session, createEntry, pendingEntry,
+    InboxLookup.Witness.singleton, inbox, firstRenew, laterRenew, operationIntent, EnvelopeValues.intent, isDestroy, operationAllowed,
+    entryAllowsRunning, sdkRenewal, unconfirmedSdk, InboxRecord.Values.createIntent]
+
+/-- Destroy can use the reserved last slot even with an unconfirmed SDK renewal. -/
+theorem reserved_destroy_decision :
+    existingDecision (withSession waitingSdk 3#u16) waitingSdk destroy = .append true := by
+  simp [existingDecision, withSession, waitingSdk, runningSession, session, createEntry, pendingEntry,
+    InboxLookup.Witness.singleton, inbox, destroy, operationIntent, EnvelopeValues.intent, isDestroy, operationAllowed, sdkRenewal]
+
+end SandboxModel.Stage1Protocol.InboxAppend.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.normal_unload_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.resume_inputs_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.renewal_and_destroy_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.unload_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.resume_decisions
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.renewal_decisions
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.reserved_destroy_decision

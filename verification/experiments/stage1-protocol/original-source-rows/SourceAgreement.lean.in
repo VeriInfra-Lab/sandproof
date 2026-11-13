@@ -1,0 +1,95 @@
+import SandproofOriginalSourceRows.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceAgreement
+open SandproofFoundationsRust.IdentifierLibrary
+
+def SameSource (left right : capture.SourceProcessIdentity) : Prop :=
+  left.pid = right.pid ∧ left.start_time_ticks = right.start_time_ticks ∧
+    left.boot_id = right.boot_id
+
+instance (left right : capture.SourceProcessIdentity) : Decidable (SameSource left right) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _))
+
+def ValidSource (source : capture.SourceProcessIdentity) : Prop :=
+  source.pid ≠ 0#u32 ∧ (stringBytes source.boot_id).length ≠ 0
+
+def CompatibleSlot (slot : Option capture.SourceProcessIdentity)
+    (source : capture.SourceProcessIdentity) : Prop :=
+  match slot with
+  | none => True
+  | some previous => SameSource previous source
+
+theorem same_source_is_complete_record_equality (left right : capture.SourceProcessIdentity) :
+    SameSource left right ↔ left = right := by
+  cases left
+  cases right
+  simp [SameSource]
+
+theorem actual_source_equality_checks_all_three_fields (left right : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq left right =
+      .ok (decide (SameSource left right)) := by
+  by_cases samePid : left.pid = right.pid <;>
+    by_cases sameStart : left.start_time_ticks = right.start_time_ticks <;>
+    simp [capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq, SameSource, samePid, sameStart]
+
+theorem actual_agreement_accepts_exactly_valid_compatible_source
+    (slot : Option capture.SourceProcessIdentity) (source : capture.SourceProcessIdentity)
+    (after : Option capture.SourceProcessIdentity)
+    (bounded : StringRepresentable source.boot_id) :
+    controller.capture.agree slot source = .ok (.Ok (), after) ↔
+      ValidSource source ∧ after = some source ∧ CompatibleSlot slot source := by
+  cases slot with
+  | none =>
+    by_cases zero : source.pid = 0#u32 <;>
+      by_cases empty : stringBytes source.boot_id = [] <;>
+      simp [controller.capture.agree, alloc.string.String.is_empty,
+        alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, bounded, zero, empty,
+        ValidSource, CompatibleSlot]; exact eq_comm
+  | some previous =>
+    by_cases same : SameSource previous source
+    · have equal := (same_source_is_complete_record_equality previous source).mp same
+      subst previous
+      by_cases zero : source.pid = 0#u32 <;>
+        by_cases empty : stringBytes source.boot_id = [] <;>
+        simp [controller.capture.agree, alloc.string.String.is_empty,
+          alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, bounded, zero, empty,
+          actual_source_equality_checks_all_three_fields, SameSource, ValidSource,
+          CompatibleSlot]; exact eq_comm
+    · by_cases zero : source.pid = 0#u32 <;>
+        by_cases empty : stringBytes source.boot_id = [] <;>
+        simp [controller.capture.agree, alloc.string.String.is_empty,
+          alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, bounded, zero, empty,
+          actual_source_equality_checks_all_three_fields, same, ValidSource,
+          CompatibleSlot]
+
+theorem successful_agreement_keeps_existing_source
+    (previous source : capture.SourceProcessIdentity) (after : Option capture.SourceProcessIdentity)
+    (bounded : StringRepresentable source.boot_id)
+    (accepted : controller.capture.agree (some previous) source = .ok (.Ok (), after)) :
+    after = some previous := by
+  obtain ⟨_valid, sameAfter, compatible⟩ :=
+    (actual_agreement_accepts_exactly_valid_compatible_source
+      (some previous) source after bounded).mp accepted
+  have same := (same_source_is_complete_record_equality previous source).mp compatible
+  simpa only [same] using sameAfter
+
+theorem conflicting_source_is_rejected_without_replacing_previous
+    (previous source : capture.SourceProcessIdentity)
+    (bounded : StringRepresentable source.boot_id)
+    (different : ¬ SameSource previous source) :
+    controller.capture.agree (some previous) source =
+      .ok (.Err JournalError.UnresolvedAction, some previous) := by
+  simp [controller.capture.agree, alloc.string.String.is_empty,
+    alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, bounded,
+    actual_source_equality_checks_all_three_fields, different]
+
+end SandproofOriginalSourceRowsRust.SourceAgreement
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceAgreement.same_source_is_complete_record_equality
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceAgreement.actual_source_equality_checks_all_three_fields
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceAgreement.actual_agreement_accepts_exactly_valid_compatible_source
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceAgreement.successful_agreement_keeps_existing_source
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceAgreement.conflicting_source_is_rejected_without_replacing_previous

@@ -26,6 +26,7 @@ import ssl
 import stat
 import threading
 
+from tools.runtime_create_recovery import LIFECYCLE_PROTOCOL_VERSION
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
 
@@ -134,7 +135,7 @@ def accepted_request(value, node):
     _opaque(actual_node['deployment_id'])
     _opaque(actual_node['node_id'])
     _u64(actual_node['node_generation'], positive=True)
-    if (type(binding['protocol_version']) is not int or binding['protocol_version'] != 3
+    if (type(binding['protocol_version']) is not int or binding['protocol_version'] != LIFECYCLE_PROTOCOL_VERSION
             or actual_node != node or center['deployment'] != actual_node['deployment_id']):
         raise ValueError('current protocol and exact original node required')
     _opaque(binding['session'])

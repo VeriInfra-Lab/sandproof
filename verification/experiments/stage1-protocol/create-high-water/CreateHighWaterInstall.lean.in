@@ -1,0 +1,98 @@
+-- High-water consequences over the original models and actual shared-value representation.
+import SandboxModel.Lifecycle.Protocol.CreateLoadOwnerBound
+import SandboxModel.Lifecycle.Protocol.CreateInstallModel
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckNew
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckExisting
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterBounds
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater
+
+theorem existing_success_has_owner (inbox : Inbox) (owner : sandproof_protocol.TenantId)
+    (localOwner : U64)
+    (accepted : CreateOwnerCheck.existingRun inbox owner localOwner = .ok (.Ok true)) :
+    CreateInstall.HasOwner inbox owner := by
+  have required := CreateOwnerCheck.existing_complete inbox owner localOwner
+  have model := Result.ok_injective (required.symm.trans accepted)
+  cases found : CreateOwnerCheck.firstMatch owner inbox.owners.val with
+  | none =>
+      simp [CreateOwnerCheck.existingExpected, CreateOwnerCheck.existingFrom, found] at model
+  | some row =>
+      refine ⟨row, List.mem_of_find?_eq_some found, ?_⟩
+      simpa only [decide_eq_true_eq] using List.find?_some found
+
+theorem actual_new_success_above_high_water (inbox : Inbox)
+    (world : sandbox_controller_core.model.World) (binding : InternalLocalBinding)
+    (accepted : CreateOwnerCheck.newRun inbox world binding = .ok (.Ok ())) :
+    inbox.owner_high_water.val < binding.owner.val := by
+  have required := CreateOwnerCheck.new_complete inbox world binding
+  have model := Result.ok_injective (required.symm.trans accepted)
+  exact new_success_above_high_water inbox world binding model
+
+theorem installed_high_water (inbox result : Inbox) (s e : Usize) (session : Session)
+    (entry : Entry) (binding : InternalLocalBinding)
+    (installed : CreateInstall.Installed inbox s e session entry binding result)
+    (fresh : ¬ CreateInstall.HasOwner inbox session.owner →
+      inbox.owner_high_water.val < binding.owner.val) :
+    inbox.owner_high_water.val ≤ result.owner_high_water.val := by
+  obtain ⟨owners, _, rfl⟩ := installed
+  by_cases existing : CreateInstall.HasOwner inbox session.owner
+  · simp [existing]
+  · simpa only [existing, if_false] using Nat.le_of_lt (fresh existing)
+
+
+theorem checked_install_high_water (inbox result : Inbox) (s e : Usize) (session : Session)
+    (entry : Entry) (binding : InternalLocalBinding) (world : sandbox_controller_core.model.World)
+    (installed : CreateInstall.Installed inbox s e session entry binding result)
+    (checked : CreateOwnerCheck.existingRun inbox session.owner binding.owner = .ok (.Ok true) ∨
+      (CreateOwnerCheck.existingRun inbox session.owner binding.owner = .ok (.Ok false) ∧
+       CreateOwnerCheck.newRun inbox world binding = .ok (.Ok ()))) :
+    inbox.owner_high_water.val ≤ result.owner_high_water.val := by
+  apply installed_high_water inbox result s e session entry binding installed
+  intro missing
+  rcases checked with existing | ⟨_, fresh⟩
+  · exact False.elim (missing (existing_success_has_owner inbox session.owner binding.owner existing))
+  · exact actual_new_success_above_high_water inbox world binding fresh
+
+theorem loaded_selected_checked_install {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : InboxLoad.DecodedStringsRepresentable io)
+    (state after : E) (inbox : Inbox)
+    (loaded : load_using saved terminal renewal unload graphic io state = .ok (.Ok (some inbox), after))
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (deadline : U64)
+    (binding : InternalLocalBinding) (world : sandbox_controller_core.model.World)
+    (selected : CreateSelection.run inbox intent = .ok (.Ok (s, e, deadline)))
+    (checked : ∀ session, inbox.sessions.val[s.val]? = some session →
+      CreateOwnerCheck.existingRun inbox session.owner binding.owner = .ok (.Ok true) ∨
+       (CreateOwnerCheck.existingRun inbox session.owner binding.owner = .ok (.Ok false) ∧
+        CreateOwnerCheck.newRun inbox world binding = .ok (.Ok ()))) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent ∧ CreateInstall.run inbox s e binding ⦃ result =>
+        CreateInstall.Installed inbox s e session entry binding result ∧
+        inbox.owner_high_water.val ≤ result.owner_high_water.val ⦄ := by
+  obtain ⟨session, entry, sessionRead, entryRead, full, installed⟩ :=
+    CreateLoadCapacity.actual_loaded_selected_install saved terminal renewal unload graphic graphicLaw io represented
+      state after inbox loaded intent s e deadline binding selected
+  obtain ⟨result, returned, post⟩ := WP.spec_imp_exists installed
+  refine ⟨session, entry, sessionRead, entryRead, full, ?_⟩
+  rw [returned]
+  apply WP.spec.ret
+  exact ⟨post, checked_install_high_water inbox result s e session entry binding world post (checked session sessionRead)⟩
+
+end SandboxModel.Stage1Protocol.CreateHighWater
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.actual_new_success_above_high_water
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.installed_high_water
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.existing_success_has_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.checked_install_high_water
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.loaded_selected_checked_install

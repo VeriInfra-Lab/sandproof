@@ -1,0 +1,79 @@
+import SandproofUnloadFirstObservation.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [ParentCalls]
+
+abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev Anchor := controller.lifecycle_inbox.source_work.SourceAnchor
+abbrev Work := controller.lifecycle_inbox.source_work.SourceWork
+abbrev Current := controller.lifecycle_inbox.source_work.snapshot.CurrentSource
+abbrev Limits := capture.source.SourceObservationConfig
+abbrev Binding := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev Action := sandproof_protocol.ActionIdentity
+abbrev question := controller.lifecycle_inbox.source_work.snapshot.question
+abbrev buildQuestion := controller.lifecycle_inbox.source_work.snapshot.question_from_binding
+
+def workFor (anchor : Anchor) (limits : Limits) (binding : Binding) (action : Action) : Work :=
+  { anchor := anchor
+    requirement := {
+      work_binding := binding
+      node := anchor.node
+      host_bootstrap := anchor.host_bootstrap
+      resource := action.resource
+      source := anchor.source
+      limits := limits } }
+
+theorem question_keeps_full_anchor (anchor : Anchor) (limits : Limits)
+    (encoded : alloc.vec.Vec U8) (binding : Binding) (action : Action)
+    (encode : ParentCalls.encodeCompleteSourceAnchor anchor = .ok (.Ok encoded))
+    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok binding)
+    (node : ParentCalls.cloneNode anchor.node = .ok anchor.node)
+    (host : ParentCalls.cloneHostRegistration anchor.host_bootstrap = .ok anchor.host_bootstrap)
+    (slot : anchor.original_actions.val[1]? = some action)
+    (resource : ParentCalls.cloneResource action.resource = .ok action.resource)
+    (source : ParentCalls.cloneProcessIdentity anchor.source = .ok anchor.source)
+    (bounds : ParentCalls.cloneLimits limits = .ok limits) :
+    question anchor limits = .ok (.Ok (workFor anchor limits binding action)) := by
+  simp [question, controller.lifecycle_inbox.source_work.snapshot.question,
+    controller.lifecycle_inbox.source_work.snapshot.question_from_binding, workFor, encode, digest, node, host, resource, source, bounds,
+    core.result.Result.Insts.CoreOpsTry.branch, alloc.vec.Vec.index_slice_index,
+    alloc.vec.Vec.index_usize, slot]
+
+theorem question_encoding_first_error (anchor : Anchor) (limits : Limits)
+    (error : serde_json.error.Error) (journal : JournalError)
+    (encode : ParentCalls.encodeCompleteSourceAnchor anchor = .ok (.Err error))
+    (convert : ParentCalls.journalFromJsonError error = .ok journal) :
+    question anchor limits = .ok (.Err journal) := by
+  simp [question, controller.lifecycle_inbox.source_work.snapshot.question, encode, convert, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem current_find_first_error {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (namespaceId : Str) (intent : Intent) (now : I64) (current : Current)
+    (err : JournalError)
+    (find : ParentCalls.inboxFindCompleteRequest current.inbox intent = .ok (.Err err)) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx namespaceId intent now
+      current = .ok (.Err err) := by
+  simp [controller.lifecycle_inbox.source_work.snapshot.current, find,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem current_missing_request {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (namespaceId : Str) (intent : Intent) (now : I64) (current : Current)
+    (find : ParentCalls.inboxFindCompleteRequest current.inbox intent = .ok (.Ok none)) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx namespaceId intent now
+      current = .ok (.Err JournalError.Conflict) := by
+  simp [controller.lifecycle_inbox.source_work.snapshot.current, find,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.question_keeps_full_anchor
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.question_encoding_first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.current_find_first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.current_missing_request

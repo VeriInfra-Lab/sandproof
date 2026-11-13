@@ -1,0 +1,45 @@
+import SandproofActualRecord.ScopeTransport
+import SandproofStage1Request.Funs
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust
+
+noncomputable section
+
+open controller.lifecycle_inbox
+
+private def liftedOutcome :
+    SandproofParentCommitRust.ErrorTransport.RequestRustResult ScopeTransport.OldOutcome →
+      core.result.Result recording.RecordOutcome JournalError
+  | .Ok outcome => .Ok (ScopeTransport.outcomeFromSource outcome)
+  | .Err error => .Err (SandproofParentCommitRust.ErrorTransport.fromRequest error)
+
+-- The established extraction executes the full original record_using body.
+-- The enclosing effects carrier E remains the caller's concrete E.
+def controller.lifecycle_inbox.recording.record_using
+    {R T N U B E : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B) (effects : recording.RecordEffects E)
+    (transaction : E) (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+    Result (core.result.Result recording.RecordOutcome JournalError × E) :=
+  SandproofParentCommitRust.ErrorTransport.liftResult
+    (fun reply => (liftedOutcome reply.1, reply.2))
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+      (R := R) (T := T) (N := N) (U := U) (B := B)
+      { encode_intent := retirement.encode_intent, digest := retirement.digest,
+        encode_receipt := retirement.encode_receipt }
+      { encode := terminal.encode }
+      { encode := renewal.encode }
+      { encode := unload.encode }
+      { all_graphic := graphic.all_graphic }
+      (ScopeTransport.recordEffects effects) transaction intent context)
+
+end
+
+end SandproofActualRecordRust

@@ -1,0 +1,36 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigBudget
+noncomputable section
+
+def perPosition (config : LifecycleInboxConfig) : Nat :=
+  4 * config.max_options_bytes.val + config.max_operations_per_session.val * 8192 +
+    2 * config.max_manifest_bytes.val + config.max_profile_bytes.val + 32768
+
+def bytes (config : LifecycleInboxConfig) : Nat :=
+  config.max_sessions.val * perPosition config + 8192
+
+def FullBudgetContract (run : LifecycleInboxConfig → Result U64) : Prop :=
+  ∀ config, ∃ output, run config = .ok output ∧ output.val = bytes config
+
+theorem per_position_bound (config : LifecycleInboxConfig) :
+    perPosition config ≤ 30601666553 := by
+  unfold perPosition
+  scalar_tac
+
+theorem total_bound (config : LifecycleInboxConfig) :
+    bytes config ≤ 2005480217559047 := by
+  unfold bytes
+  have sessions : config.max_sessions.val ≤ 65535 := by scalar_tac
+  have product := Nat.mul_le_mul sessions (per_position_bound config)
+  omega
+
+
+end
+end SandboxModel.Stage1Protocol.ConfigBudget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.per_position_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.total_bound

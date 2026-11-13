@@ -51,7 +51,15 @@ impl sandproof_internal::ValidationReceiver for Streams {
         Err(ReceiveError::Unavailable)
     }
 }
-impl LifecycleReceiver for Streams {}
+impl LifecycleReceiver for Streams {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for Streams {
     async fn receive_data(
         &self,

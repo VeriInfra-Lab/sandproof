@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -170,6 +171,42 @@ class Preparation(unittest.TestCase):
         with patch.object(preparation.time, 'monotonic', side_effect=[0, 6]), \
                 self.assertRaisesRegex(TimeoutError, 'metadata deadline'):
             run('exec /bin/sleep 30\n')
+
+    def test_argument_preflight_uses_exact_candidate_parser_without_host_credentials(self):
+        for entry in ('center_host_faults.py', 'harbor_generic_chain.py'):
+            command = [str(self.root / 'checkout/benchmarks/.venv/bin/python'),
+                       str(self.root / 'checkout/tests/system' / entry), '--run-identity', 'b' * 64]
+            with patch.object(preparation, 'bounded_json_command',
+                              return_value=dict(entry=entry, arguments_valid=True)) as read, \
+                    patch.dict(os.environ, APP_PRIVATE_KEY='must-not-enter-candidate'):
+                preparation.check_candidate_arguments(command, self.config)
+            args, kwargs = read.call_args
+            self.assertEqual(args[0], command + ['--check-arguments'])
+            self.assertNotIn('APP_PRIVATE_KEY', args[1])
+            self.assertEqual((kwargs['timeout'], kwargs['max_bytes']), (15, 1024))
+
+    def test_argument_preflight_rejects_foreign_entry_unknown_response_or_parser_failure(self):
+        command = [str(self.root / 'checkout/benchmarks/.venv/bin/python'),
+                   str(self.root / 'checkout/tests/system/center_host_faults.py')]
+        for changed in ([sys.executable, *command[1:]],
+                        [command[0], '/foreign/center_host_faults.py'],
+                        [*command, '--check-arguments']):
+            with self.subTest(command=changed), \
+                    patch.object(preparation, 'bounded_json_command') as read, \
+                    self.assertRaisesRegex(ValueError, 'original candidate'):
+                preparation.check_candidate_arguments(changed, self.config)
+            read.assert_not_called()
+        for result in ({}, dict(entry='harbor_generic_chain.py', arguments_valid=True),
+                       dict(entry='center_host_faults.py', arguments_valid=False),
+                       dict(entry='center_host_faults.py', arguments_valid=1),
+                       dict(entry='center_host_faults.py', arguments_valid=True, passed=True)):
+            with self.subTest(result=result), patch.object(preparation, 'bounded_json_command',
+                                                          return_value=result), \
+                    self.assertRaisesRegex(ValueError, 'response differs'):
+                preparation.check_candidate_arguments(command, self.config)
+        with patch.object(preparation, 'bounded_json_command', side_effect=ValueError('parser failed')), \
+                self.assertRaisesRegex(ValueError, 'parser failed'):
+            preparation.check_candidate_arguments(command, self.config)
 
 
 if __name__ == '__main__':

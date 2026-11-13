@@ -112,7 +112,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .journal
             .create_options(sandbox)
             .map_err(map_admission)?;
-        if !inner.host.has_bound_launch_config(sandbox, &options)? {
+        if !inner
+            .host
+            .has_bound_launch_config(sandbox, record.generation, &options)?
+        {
             return Err(ApplicationError::Busy);
         }
         Ok(Session {
@@ -356,7 +359,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .map_err(|error| map_unknown_application(error, FaultStage::PutCredential, context))?;
         inner
             .host
-            .put_bound_launch_config(sandbox, &secret, options)
+            .put_bound_launch_config(sandbox, 1, &secret, options)
             .map_err(|error| map_unknown_application(error, FaultStage::PutCredential, context))?;
         data_credentials::register_original(&mut inner.journal, sandbox, &secret)?;
         let Inner { journal, host, .. } = &mut *inner;
@@ -456,7 +459,17 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .journal
             .create_options(sandbox)
             .map_err(map_admission)?;
-        if !inner.host.has_bound_launch_config(sandbox, &options)? {
+        let generation = inner
+            .journal
+            .world()
+            .map_err(map_journal)?
+            .sandbox_record(sandbox)
+            .ok_or(ApplicationError::Busy)?
+            .generation;
+        if !inner
+            .host
+            .has_bound_launch_config(sandbox, generation, &options)?
+        {
             return Err(ApplicationError::Busy);
         }
         let networking = options.networking;

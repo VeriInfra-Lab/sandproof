@@ -1,0 +1,76 @@
+import SandboxModel.Lifecycle.Protocol.ShapeIteration
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+def windowFrom (lanes : List LifecycleRetentionLane) (session : Session) : Bool :=
+  match lanes.find? (fun lane => decide (lane.slot = session.retention.slot)) with
+  | none => false
+  | some lane => decide (lane.current_window = some session.retention.window)
+
+theorem window_cons (lane : LifecycleRetentionLane) (tail : List LifecycleRetentionLane)
+    (session : Session) :
+    windowFrom (lane :: tail) session =
+      if lane.slot = session.retention.slot then decide (lane.current_window = some session.retention.window)
+      else windowFrom tail session := by
+  by_cases hit : lane.slot = session.retention.slot <;>
+    simp [windowFrom, hit]
+
+theorem lane_body_end (inbox : Inbox) (session : Session) (index : Usize)
+    (outside : inbox.lanes.val.length ≤ index.val) :
+    first_lane_window_matches_loop.body inbox session index = .ok (.done false) := by
+  simp [first_lane_window_matches_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv,
+    Nat.not_lt.mpr outside]
+
+theorem lane_body_step (inbox : Inbox) (session : Session) (index next : Usize)
+    (inside : index.val < inbox.lanes.val.length) (added : next.val = index.val + 1) :
+    first_lane_window_matches_loop.body inbox session index = .ok
+      (if inbox.lanes.val[index.val].slot = session.retention.slot then
+        .done (decide (inbox.lanes.val[index.val].current_window = some session.retention.window))
+       else .cont next) := by
+  obtain ⟨lane, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.lanes index inside)
+  simp [first_lane_window_matches_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv,
+    inside, indexed, same, option_window_eq, index_add_one index next added]
+  split <;> rfl
+
+theorem lane_loop_refines (inbox : Inbox) (session : Session) (index : Usize) :
+    first_lane_window_matches_loop inbox session index =
+      .ok (windowFrom (inbox.lanes.val.drop index.val) session) := by
+  induction remaining : inbox.lanes.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    unfold first_lane_window_matches_loop
+    conv_lhs => rw [loop]
+    by_cases inside : index.val < inbox.lanes.val.length
+    · let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+      have added : next.val = index.val + 1 := by rfl
+      rw [lane_body_step inbox session index next inside added]
+      rw [List.drop_eq_getElem_cons inside, window_cons]
+      split
+      · simp only [bind_ok]
+      · simp only [bind_ok]
+        have later := ih (inbox.lanes.val.length - next.val) (by omega) next rfl
+        simpa only [first_lane_window_matches_loop, added] using later
+    · rw [lane_body_end inbox session index (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : inbox.lanes.val.length ≤ index.val), windowFrom]
+
+theorem first_window_spec (inbox : Inbox) (session : Session) :
+    first_lane_window_matches inbox session = .ok (decide (FirstWindowMatches inbox session)) := by
+  rw [first_lane_window_matches, lane_loop_refines]
+  change Result.ok (windowFrom inbox.lanes.val session) = Result.ok (decide (FirstWindowMatches inbox session))
+  unfold windowFrom FirstWindowMatches
+  cases found : inbox.lanes.val.find? (fun lane => decide (lane.slot = session.retention.slot)) <;> simp
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.window_cons
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.lane_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.lane_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.lane_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.first_window_spec

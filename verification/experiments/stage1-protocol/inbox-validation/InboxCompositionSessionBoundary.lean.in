@@ -1,0 +1,68 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+
+variable (saved : sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit)
+    (terminal : TerminalEncoding Unit) (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+
+def wrongCurrentSession : Session := { recordedSession with current_version := 2#u64 }
+def wrongCurrent : Inbox := { recorded with sessions := vector [wrongCurrentSession] (by decide) }
+
+theorem wrong_current_session_model : sessionView saved terminal renewal unload wrongCurrent 0#usize
+    wrongCurrentSession (decodedContext wrongCurrent.config) = rejected := by
+  have receipt : SavedRetirement.validateView saved wrongCurrentSession = .ok (.Ok ()) := rfl
+  have before : SessionShape.BeforePrior wrongCurrent wrongCurrentSession := by
+    simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, wrongCurrent,
+      wrongCurrentSession, recorded, recordedSession, SessionShape.Values.normal,
+      SavedRetirement.Values.normal, SessionShape.Values.entry, SavedRetirement.Values.createIntent,
+      EnvelopeValues.intent, normal, vector, ConfigValidation.Values.fixture,
+      ConfigBudget.Values.fixture, ConfigBudget.Values.small]
+  have shape : SessionShape.validateView saved terminal wrongCurrent 0#usize wrongCurrentSession = .ok (.Ok ()) := by
+    rw [SessionShape.validateView, receipt]
+    simp only [bind_tc_ok, before, ↓reduceIte]
+    simp [wrongCurrent, wrongCurrentSession, recorded, recordedSession, normal, vector,
+      SessionShape.Values.normal, SavedRetirement.Values.normal, SessionShape.checkConfirmed]
+  have renewed : InboxRenewal.validateView renewal wrongCurrentSession = .ok (.Ok ()) := rfl
+  have ordered : entryScan unload wrongCurrent wrongCurrentSession (decodedContext wrongCurrent.config)
+      wrongCurrentSession.entries.val initialSummary = .ok (.Ok createSummary) := by
+    exact recorded_order unload
+  have lineage : InboxLineage.expectedResult wrongCurrentSession = .Ok () := by
+    simp [InboxLineage.expectedResult, InboxLineage.scan, InboxLineage.step, InboxLineage.initial,
+      InboxLineage.observed, wrongCurrentSession, recordedSession, SessionShape.Values.normal, vector,
+      SessionShape.Values.entry, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have summary : ¬SummaryFields wrongCurrent wrongCurrentSession createSummary := by
+    simp [SummaryFields, wrongCurrentSession, recordedSession, SessionShape.Values.normal, createSummary]
+  simp only [sessionView, shape, renewed, ordered, lineage, summary, bind_tc_ok, ↓reduceIte]
+
+theorem wrong_current_model : inboxView saved terminal renewal unload wrongCurrent = rejected := by
+  have valid : ConfigValidation.Valid wrongCurrent.config :=
+    ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  simp only [inboxView, valid, not_true_eq_false, ↓reduceIte]
+  have ownerFields : OwnersValid wrongCurrent := normal_owner_fields
+  have lanes : laneScan terminal.encode (decodedContext wrongCurrent.config) wrongCurrent.lanes.val 0 = .ok true := by
+    simp [wrongCurrent, recorded, normal, vector, laneScan, RetentionLane.validateView, checked]
+  have noRetired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict wrongCurrent 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict, RetiredIdentity.conflictAt,
+      wrongCurrent, recorded, normal, vector]
+  have host : HostMatches wrongCurrent := by simp [HostMatches, wrongCurrent, recorded, normal]
+  have sessionsBound : ¬wrongCurrent.sessions.val.length > wrongCurrent.config.max_sessions.val := by decide
+  have ownersBound : ¬wrongCurrent.owners.val.length > wrongCurrent.config.max_sessions.val := by decide
+  have laneCount : ¬wrongCurrent.lanes.val.length ≠ wrongCurrent.config.max_sessions.val := by decide
+  simp only [sessionsBound, ownersBound, laneCount, ↓reduceIte, lanes, bind_tc_ok,
+    Bool.true_eq_false, noRetired, host, ownerFields, not_true_eq_false]
+  change sessionsView saved terminal renewal unload wrongCurrent (decodedContext wrongCurrent.config)
+    [wrongCurrentSession] 0#usize = _
+  have next : 0#usize + 1#usize = Result.ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp only [sessionsView, next, bind_tc_ok, wrong_current_session_model, rejected]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.wrong_current_session_model
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.wrong_current_model

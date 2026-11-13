@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "kind": "unaltered-received-raw-providers-not-new-extraction",
+  "transport_archive_sha256": "03d031836e86cf725200e6d6fa9fe71a369080d4b74de230075ef1fe0fd1b7dd",
+  "archive_size_bytes": 112671,
+  "raw_files": {
+    "verification/experiments/stage1-protocol/production-json/raw/accepted/SandproofStage1Request/Types.lean": {
+      "installed_path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+      "sha256": "35e474c3aed22ef2cf0fa6b0de0d9443fb7aabc22e1270555380fa8fe56ada69",
+      "original_source": "/home/argustest/lizn/sandproof/artifacts/635-json-wire/artifacts/json-wire/formal-03/correct/source/verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean",
+      "materialization": "original-accepted-profile-capture"
+    },
+    "verification/experiments/stage1-protocol/production-json/raw/accepted/SandproofStage1Request/Funs.lean": {
+      "installed_path": "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+      "sha256": "4763261d187e59718c6204331d27fa38acbe311d717466bc09b4c0d9e2569118",
+      "original_source": "/home/argustest/lizn/sandproof/artifacts/635-json-wire/artifacts/json-wire/formal-03/correct/source/verification/aeneas/stage1-protocol/request/SandproofStage1Request/Funs.lean",
+      "materialization": "original-accepted-profile-capture"
+    },
+    "verification/experiments/stage1-protocol/production-json/raw/schema-result/SandproofProtocolResult/Funs.lean": {
+      "installed_path": "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean",
+      "sha256": "f43c27c35f833ecd8c013cd48ca2c111eff70c1522a315232ea5cdc2c7a194b3",
+      "original_source": "/home/argustest/lizn/sandproof/artifacts/635-envelope-writer/artifacts/envelope-writer/formal-correct-01/preparation/source/verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Funs.lean",
+      "materialization": "original-reviewed-map-generation"
+    },
+    "verification/experiments/stage1-protocol/production-json/raw/schema-result/SandproofProtocolResult/Types.lean": {
+      "installed_path": "verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean",
+      "sha256": "d03187059baf5fe9d84dff9b71e8c64c136d8168f27d954bc726b9f9f6ca552e",
+      "original_source": "/home/argustest/lizn/sandproof/artifacts/635-envelope-writer/artifacts/envelope-writer/formal-correct-01/preparation/source/verification/aeneas/stage1-protocol/schema-result/SandproofProtocolResult/Types.lean",
+      "materialization": "original-reviewed-map-generation"
+    }
+  },
+  "original_captures": {
+    "accepted": {
+      "result_path": "/home/argustest/lizn/sandproof/artifacts/635-json-wire/artifacts/json-wire/formal-03/result.json",
+      "result_sha256": "7e6b4c76240820615e133406f44e8929011122eb1854a525be9d5a89cad824f2",
+      "source_commit": "39577ca1e61f4daa4ba4bbda7db94bf087bdaef0",
+      "complete": true,
+      "original_sources": {
+        "controller-service/src/template_registry/evidence.rs": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+        "sandbox-internal/src/lifecycle.rs": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+        "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+        "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+        "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+        "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+        "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+        "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+        "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+        "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+        "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+        "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+        "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+        "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+        "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+        "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+        "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+        "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+        "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+        "sandbox-protocol/src/lifecycle/resume.rs": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+        "sandbox-protocol/src/lifecycle/resume_tests.rs": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+        "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+        "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+        "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+        "verification/experiments/stage1-protocol/json-wire/accepted/lib.rs.in": "7063414c1abebfb8e33377428d3300b265cac8e2075975552ef801c316229226",
+        "verification/experiments/stage1-protocol/json-wire/extract.py": "a2e56fa55efc5b22136fa6fd75fb325c88afe2cf2e75684d5e933917a5884417"
+      },
+      "extraction": {
+        "result_path": "/home/argustest/lizn/sandproof/artifacts/635-json-wire/artifacts/json-wire/formal-03/correct/source/artifacts/extraction/result.json",
+        "result_sha256": "3f17d39704506aca307963a2fb372d9d6499a18e2dd72b55ce54d07c8bac543c",
+        "success": true,
+        "profile": "accepted",
+        "llbc_sha256": "a329871250f04145e1bb44cbd14c7c75529147777a3eaf78d4dc2b84d6b78e7f",
+        "generated_sha256": {
+          "SandproofStage1Request/Funs.lean": "4763261d187e59718c6204331d27fa38acbe311d717466bc09b4c0d9e2569118",
+          "SandproofStage1Request/FunsExternal_Template.lean": "0ae3471bc63767e1f3fefe8f7a8ec7d86facf6fc0404e5edff9076686176bf94",
+          "SandproofStage1Request/Types.lean": "35e474c3aed22ef2cf0fa6b0de0d9443fb7aabc22e1270555380fa8fe56ada69",
+          "translation.json": "929fd002e15ea9e1b5bae1f2b21344e021ccfbb5f5de7567741c126e098f6143"
+        }
+      }
+    },
+    "writer": {
+      "result_path": "/home/argustest/lizn/sandproof/artifacts/635-envelope-writer/artifacts/envelope-writer/formal-correct-01/result.json",
+      "result_sha256": "c2655433d8672d6b0253893da27f35ad7dbede70a699f07b69c1b2689e4ed484",
+      "source_commit": "9a53e8c17721926998f1613557b30997e40cc1c7",
+      "complete": true,
+      "original_sources": {
+        "controller-service/src/template_registry/evidence.rs": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+        "sandbox-internal/src/lifecycle.rs": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+        "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+        "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+        "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+        "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+        "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+        "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+        "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+        "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+        "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+        "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+        "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+        "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+        "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+        "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+        "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+        "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+        "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+        "sandbox-protocol/src/lifecycle/resume.rs": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+        "sandbox-protocol/src/lifecycle/resume_tests.rs": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+        "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+        "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+        "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+        "verification/experiments/stage1-protocol/envelope-writer/extract.py": "547958b4c01576263ebce9dca5911fcae501a54d6a92d725c09c2a3684de38fa",
+        "verification/experiments/stage1-protocol/json-wire/accepted/lib.rs.in": "7063414c1abebfb8e33377428d3300b265cac8e2075975552ef801c316229226",
+        "verification/experiments/stage1-protocol/json-wire/extract.py": "a2e56fa55efc5b22136fa6fd75fb325c88afe2cf2e75684d5e933917a5884417"
+      }
+    }
+  },
+  "accepted_root_template": {
+    "path": "verification/experiments/stage1-protocol/json-wire/accepted/lib.rs.in",
+    "sha256": "7063414c1abebfb8e33377428d3300b265cac8e2075975552ef801c316229226"
+  },
+  "accepted_candidate_sources": {
+    "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+  },
+  "schema_result_producer": "verification/experiments/stage1-protocol/schema-leaves/extract-map.sh",
+  "not_claimed": [
+    "complete-current-source-extraction",
+    "serde-library-proof",
+    "formal-acceptance"
+  ],
+  "fixed_tool_registration": {
+    "path": "verification/foundations-environment.json",
+    "sha256": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "charon": {
+      "revision": "b104e24fea7d721b71e6c39fd70f26ff20bc0980",
+      "binary_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd"
+    },
+    "aeneas": {
+      "revision": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+      "binary_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a"
+    },
+    "extraction_frontend": "nightly-2026-08-18",
+    "target": "x86_64-unknown-linux-gnu"
+  }
+}

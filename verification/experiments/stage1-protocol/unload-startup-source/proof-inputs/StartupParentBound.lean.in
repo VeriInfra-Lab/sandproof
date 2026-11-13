@@ -1,0 +1,79 @@
+import StartupCallBinding
+import ActualStartupParentCompose
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+open SandproofUnloadStartupJoint (startupPrepare rowAction rowReceipt)
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+
+/-- The parent composition with the generated startup call installed.
+The original successful reads, record and plan guards, and boundary providers
+are still required. -/
+theorem actual_first_work_uses_bound_startup (base : SandproofUnloadStartupJoint.Operations)
+    (parent : ParentCalls) (carriers : StartupCarriers) (errors : StartupErrorCarriers)
+    (hostView : {E : Type} → host_contract.HostEvidence E →
+      SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (serdeView : {E : Type} → serde_core.de.DeserializeOwned E →
+      SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E) :
+    letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 base
+    letI : ParentCalls := bindStartupCall parent carriers errors hostView serdeView
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input)
+    (calls : UnloadFirstActualStartup.Opened (hostView host) (serdeView serde) (cast carriers.tx tx)
+      ns (cast carriers.world input.world) (carriers.localView reads.localValue))
+    (output : UnloadFirstActualStartup.Output)
+    (prepare : OriginalPrepareContext (cast carriers.world input.world)
+      (carriers.localView reads.localValue) calls.plan)
+    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records
+      (hostView host) (serdeView serde) (cast carriers.tx tx) ns (cast carriers.world input.world)
+      (carriers.localView reads.localValue) = .ok (.Ok output))
+    (digestRepresentation : Sha256Array = Binding)
+    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)
+    (normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,
+      (alloc.vec.Vec.deref raw).val.length < 2^61)
+    (encodedAnchor : alloc.vec.Vec U8) (binding : Binding)
+    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))
+    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)
+    (cloneResource : ∀ resource : sandproof_protocol.ResourceRef,
+      ParentCalls.cloneResource resource = .ok resource)
+    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),
+    ∃ (work : Work) (pair : UnloadFirstActualStartup.Pair)
+      (row : UnloadFirstActualStartup.RawRow) (actionBytes : UnloadFirstActualStartup.Bytes)
+      (receipt : SandproofUnloadStartupJoint.sandproof_protocol.WorkReceipt E),
+      calls.writtenHere row pair ∧
+      row = .Ok (actionBytes, pair.2) ∧
+      rowAction actionBytes = .ok (.Ok pair.1) ∧
+      SandproofUnloadStartupJoint.sandbox_controller_core.model.EffectId.command pair.1.command =
+        .ok (startupPrepare (carriers.localView reads.localValue) calls.plan prepare.vm prepare.slot) ∧
+      SandproofUnloadStartupJoint.controller.identity.resource ns
+        (startupPrepare (carriers.localView reads.localValue) calls.plan prepare.vm prepare.slot) =
+          .ok (.Ok pair.1.identity.resource) ∧
+      rowReceipt (serdeView serde) pair.2 = .ok (.Ok receipt) ∧
+      SandproofUnloadStartupJoint.sandproof_protocol.WorkReceipt.validate_for
+        (hostView host).sandproof_protocolResourceEvidenceInst receipt pair.1 = .ok (.Ok ()) ∧
+      controller.lifecycle_inbox.source_work.snapshot.current
+        host serde tx ns intent now input = .ok (.Ok work) ∧
+      work.requirement.resource = cast carriers.resource pair.1.identity.resource ∧
+      work.anchor.original_actions.val[1]? = some (carriers.actionView pair.1).identity ∧
+      work.anchor.original_receipts.val[1]? = some
+        (cast digestRepresentation (referenceOutput (alloc.vec.Vec.deref pair.2))) ∧
+      reads.originalReceipts.val[1]? = some pair.2 := by
+  letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 base
+  letI : ParentCalls := bindStartupCall parent carriers errors hostView serdeView
+  intro E host serde tx ns intent now input reads calls output prepare startupReturned
+    digestRepresentation receiptDigestsLinked normalReceiptBytes encodedAnchor binding encode digest
+    cloneResource cloneLimits
+  have linked := bound_startup_call_linked parent carriers errors hostView serdeView
+    host serde tx ns input.world reads.localValue
+  exact actual_first_work_uses_observed_prepare base reads (hostView host) (serdeView serde)
+    carriers calls output prepare startupReturned errors.toParent linked digestRepresentation
+    receiptDigestsLinked normalReceiptBytes encodedAnchor binding encode digest cloneResource cloneLimits
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_work_uses_bound_startup

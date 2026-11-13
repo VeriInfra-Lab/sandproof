@@ -1,0 +1,122 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordValidationEntries
+
+-- Decoded values and explicit encoding providers; no durable-acceptance or resource claim.
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxRecordValidation
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxSave.Values (saved terminal renewal unload)
+
+def firstSummary : InboxValidation.EntrySummary :=
+  ⟨2#u64, fun index => if index.val = 1 then 1 else InboxValidation.Values.createSummary.counts index⟩
+def nextSummary : InboxValidation.EntrySummary :=
+  ⟨3#u64, fun index => if index.val = 1 then 2 else firstSummary.counts index⟩
+def summary (later : Option U64) := later.elim firstSummary (fun _ => nextSummary)
+
+theorem ordered (later : Option U64) :
+    InboxValidation.entryScan unload (inbox later) (session later) EnvelopeValues.context
+      (session later).entries.val InboxValidation.initialSummary = .ok (.Ok (summary later)) := by
+  have cversion : created.intent.accepted_version = 1#u64 := rfl
+  have fversion : resolved.intent.accepted_version = 2#u64 := rfl
+  have nversion (capture : U64) : (InboxRecord.pendingEntry (next capture)).intent.accepted_version = 3#u64 := rfl
+  have cretained : InboxRetained.expected (session later) 0#u64 created.intent = true := by simp [InboxRetained.expected, created, InboxRecord.pendingEntry, create, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have fretained : InboxRetained.expected (session later) 1#u64 resolved.intent = true := by simp [InboxRetained.expected, resolved, InboxRecord.pendingEntry, first, unloadIntent]
+  have nretained (capture : U64) :
+      InboxRetained.expected (session (some capture)) 2#u64 (InboxRecord.pendingEntry (next capture)).intent = true := by simp [InboxRetained.expected, InboxRecord.pendingEntry, next, unloadIntent]
+  have one : 1 ≤ U16.max := by scalar_tac
+  have zero_lt : 0 < U16.max := by scalar_tac
+  have one_lt : 1 < U16.max := by scalar_tac
+  have contents : (session later).entries.val =
+      [created, resolved] ++ later.toList.map (fun capture => InboxRecord.pendingEntry (next capture)) := by simp [session, entries, vector]
+  rw [contents]
+  cases later <;>
+    simp [InboxValidation.entryScan, cversion, fversion, nversion,
+      InboxValidation.initialSummary, cretained, fretained, nretained, created_kind, resolved_kind,
+      pending_kind, InboxValidation.incrementKind, one, zero_lt, one_lt, summary, firstSummary, nextSummary,
+      InboxValidation.Values.createSummary]
+
+theorem lineage_before : InboxLineage.expectedResult (session none) = .Ok () := by
+  simp [InboxLineage.expectedResult, InboxLineage.observed, InboxLineage.scan, InboxLineage.step,
+    InboxLineage.initial, session, entries, vector, created, resolved, InboxRecord.pendingEntry,
+    first, unloadIntent, create, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+    InboxValidation.Values.recordedSession]
+
+theorem lineage_after (capture : U64) :
+    InboxLineage.expectedResult (session (some capture)) =
+      if capture ≤ 7#u64 then .Err .CorruptStore else .Ok () := by
+  by_cases fresh : capture ≤ 7#u64 <;>
+    simp [InboxLineage.expectedResult, InboxLineage.observed, InboxLineage.scan, InboxLineage.step,
+      InboxLineage.initial, session, entries, vector, created, resolved, InboxRecord.pendingEntry,
+      first, next, unloadIntent, create, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+      InboxValidation.Values.recordedSession, fresh]
+
+theorem summary_fields (later : Option U64) :
+    InboxValidation.SummaryFields (inbox later) (session later) (summary later) := by
+  cases later <;>
+    simp [InboxValidation.SummaryFields, inbox, session, summary, firstSummary, nextSummary,
+      InboxValidation.Values.createSummary, InboxValidation.Values.recordedSession,
+      SessionShape.Values.normal, SavedRetirement.Values.normal, owner,
+      SavedRetirement.Values.binding, vector]
+
+def expected (later : Option U64) : core.result.Result Unit JournalError :=
+  match later with
+  | none => .Ok ()
+  | some capture => if capture ≤ 7#u64 then .Err .CorruptStore else .Ok ()
+
+theorem session_result (later : Option U64) :
+    InboxValidation.sessionView saved terminal renewal unload (inbox later) 0#usize
+      (session later) EnvelopeValues.context = .ok (expected later) := by
+  simp only [InboxValidation.sessionView, shape_accepted, bind_tc_ok, renewal_accepted,
+    ordered, summary_fields, ↓reduceIte]
+  cases later with
+  | none => simp [expected, lineage_before]
+  | some capture =>
+    by_cases fresh : capture ≤ 7#u64 <;> simp [expected, lineage_after, fresh]
+
+theorem inbox_result (later : Option U64) :
+    InboxValidation.inboxView saved terminal renewal unload (inbox later) = .ok (expected later) := by
+  have valid : ConfigValidation.Valid (inbox later).config := config_valid
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  have ownerFields : InboxValidation.OwnersValid (inbox later) := by
+    simp [InboxValidation.OwnersValid, inbox, owner, vector]
+  have lanes : InboxValidation.laneScan terminal.encode (InboxValidation.decodedContext (inbox later).config)
+      (inbox later).lanes.val 0 = .ok true := by
+    simp [inbox, InboxValidation.Values.normal, vector, InboxValidation.laneScan,
+      RetentionLane.validateView, checked]
+  have noRetired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict (inbox later) 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict,
+      RetiredIdentity.conflictAt, inbox, InboxValidation.Values.normal, vector]
+  have host : InboxValidation.HostMatches (inbox later) := by
+    simp [InboxValidation.HostMatches, inbox, config]
+  have sessionsBound : ¬(inbox later).sessions.val.length > (inbox later).config.max_sessions.val := by
+    simp [inbox, vector, config, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture]
+  have ownersBound : ¬(inbox later).owners.val.length > (inbox later).config.max_sessions.val := by
+    simp [inbox, vector, config, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture]
+  have laneCount : ¬(inbox later).lanes.val.length ≠ (inbox later).config.max_sessions.val := by
+    simp [inbox, vector, config, InboxValidation.Values.normal, ConfigValidation.Values.fixture,
+      ConfigBudget.Values.fixture]
+  simp only [InboxValidation.inboxView, valid, not_true_eq_false, sessionsBound, ownersBound,
+    laneCount, ↓reduceIte, lanes, bind_tc_ok, Bool.true_eq_false, noRetired, host, ownerFields]
+  change InboxValidation.sessionsView saved terminal renewal unload (inbox later) EnvelopeValues.context
+    [session later] 0#usize = _
+  have advance : 0#usize + 1#usize = Result.ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp only [InboxValidation.sessionsView, advance, bind_tc_ok, session_result]
+  cases later with
+  | none => rfl
+  | some capture => by_cases fresh : capture ≤ 7#u64 <;> simp [expected, fresh]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxRecordValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.ordered
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.lineage_before
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.lineage_after
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.summary_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.session_result
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.inbox_result

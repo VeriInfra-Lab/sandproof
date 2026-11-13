@@ -80,6 +80,13 @@ struct Receiver {
     change_ack: Arc<AtomicBool>,
 }
 impl LifecycleReceiver for Receiver {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
     async fn confirm_renewal(
         &self,
         result: RenewalConfirmation,

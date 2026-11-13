@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.ComposedConfigLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ComposedConfig
+open ConfigValidation
+noncomputable section
+
+theorem host_refines {B : Type} (graphic : GraphicBytes B) (law : FullGraphicContract graphic) (host : HostEpochRegistration) (bounded : StringRepresentable host.boot_id) :
+    HostEpochRegistration.valid_using graphic host = .ok (decide (validHost host)) := by
+  unfold FullGraphicContract at law
+  simp only [HostEpochRegistration.valid_using]
+  by_cases version : host.version = 1#u16
+  · simp only [version, ↓reduceIte]
+    simp only [alloc.string.String.is_empty,
+      SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+      bounded, ↓reduceDIte, bind_tc_ok, SandproofFoundationsRust.core.str.Str.is_empty]
+    by_cases empty : (stringBytes host.boot_id).length = 0
+    · simp [empty, validHost]
+    · have positive : 0 < (stringBytes host.boot_id).length := by omega
+      have nonempty : stringBytes host.boot_id ≠ [] := by
+        intro zero
+        simp [zero] at empty
+      simp only [alloc.string.String.len,
+        SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+        bounded, ↓reduceDIte, bind_tc_ok, SandproofFoundationsRust.core.str.Str.len]
+      by_cases limit : (stringBytes host.boot_id).length ≤ 128
+      · simp [limit, validHost, version, positive, nonempty,
+          alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          bounded, law]
+        apply Bool.eq_iff_iff.mpr
+        simp
+      · simp [limit, validHost]
+  · simp [version, validHost]
+
+end
+end SandboxModel.Stage1Protocol.ComposedConfig
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ComposedConfig.host_refines

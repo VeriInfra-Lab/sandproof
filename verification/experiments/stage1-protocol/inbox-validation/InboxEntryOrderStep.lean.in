@@ -1,0 +1,125 @@
+import SandboxModel.Lifecycle.Protocol.InboxCounterStep
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+theorem counter_continuation (version : U64) (kinds : Array U16 5#usize) (kind : Usize)
+    (reject : JournalError → Result α) (success : StoredSummary → Result α) :
+    (do
+      let old ← Array.index_usize kinds kind
+      let next ← old + 1#u16
+      let (_, back) ← Array.index_mut_usize kinds kind
+      if kind = 0#usize then
+        let kinds' := back next
+        let count ← Array.index_usize kinds' kind
+        if count > 1#u16 then reject .CorruptStore else success (version, kinds')
+      else if kind = 2#usize then
+        let kinds' := back next
+        let count ← Array.index_usize kinds' kind
+        if count > 1#u16 then reject .CorruptStore else success (version, kinds')
+      else success (version, back next)) =
+    (do let counted ← storedIncrement version kinds kind
+        match counted with
+        | .Err error => reject error
+        | .Ok next => success next) := by
+  by_cases bound : kind.val < 5
+  · simp only [storedIncrement, Array.index_mut_usize, array_read _ _ bound, bind_tc_ok]
+    let old := kinds.val[kind.val]'(by simpa using bound)
+    by_cases room : old.val + 1 ≤ U16.max
+    · rw [u16_increment_ok old room]
+      simp only [bind_tc_ok]
+      split_ifs <;> simp_all
+    · rw [u16_increment_overflow old room]
+      simp
+  · simp [storedIncrement, array_read_outside _ _ (by omega : 5 ≤ kind.val)]
+
+abbrev EntryLoopState := core.slice.iter.Iter Entry × U64 × Array U16 5#usize
+abbrev EntryLoopReturn := core.result.Result StoredSummary JournalError
+
+def entryBody {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (iterator : core.slice.iter.Iter Entry)
+    (maximum : U64) (kinds : Array U16 5#usize) :=
+  Inbox.validate_entry_order_using_loop.body encoding inbox session.id session.retention
+    session.owner session.current_version session.terminal session.refusal session.incarnation
+    session.local session.entries session.confirmed_terminal session.confirmed_renewal
+    session.compacted_sdk_through session.native_retirement context iterator maximum kinds
+
+def storedEntryStep (encode : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (entry : Entry) (maximum : U64)
+    (kinds : Array U16 5#usize) : Result EntryLoopReturn :=
+  if entry.intent.accepted_version ≤ maximum then .ok (.Err .CorruptStore)
+  else if entry.intent.request.operation ≠ .Destroy ∧
+    InboxRetained.expected session maximum entry.intent = false then .ok (.Err .CorruptStore)
+  else do
+    let checked ← InboxEntry.entryView encode inbox session entry context
+    match checked with
+    | .Err error => .ok (.Err error)
+    | .Ok kind => storedIncrement entry.intent.accepted_version kinds kind
+
+def continueEntries (iterator : core.slice.iter.Iter Entry) (result : EntryLoopReturn) :
+    Result (ControlFlow EntryLoopState EntryLoopReturn) :=
+  match result with
+  | .Err error => .ok (.done (.Err error))
+  | .Ok value => .ok (.cont (iterator, value.1, value.2))
+
+theorem entry_body_end {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (values : Slice Entry) (index : Nat)
+    (maximum : U64) (kinds : Array U16 5#usize) (outside : values.val.length ≤ index) :
+    entryBody encoding inbox session context (InboxEntry.cursor values index) maximum kinds =
+      .ok (.done (.Ok (maximum, kinds))) := by
+  simp [entryBody, Inbox.validate_entry_order_using_loop.body,
+    InboxEntry.next_none values index outside]
+
+theorem entry_body_next {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (values : Slice Entry) (index : Nat)
+    (maximum : U64) (kinds : Array U16 5#usize) (inside : index < values.val.length) :
+    entryBody encoding inbox session context (InboxEntry.cursor values index) maximum kinds =
+      (do let checked ← storedEntryStep encoding.encode inbox session context values.val[index] maximum kinds
+          continueEntries (InboxEntry.cursor values (index + 1)) checked) := by
+  unfold entryBody Inbox.validate_entry_order_using_loop.body
+  rw [InboxEntry.next_some values index inside]
+  simp only [bind_tc_ok]
+  by_cases ordered : values.val[index].intent.accepted_version.val ≤ maximum.val
+  · simp [storedEntryStep, ordered, continueEntries]
+  · have notGreater : ¬maximum.val > values.val[index].intent.accepted_version.val := by omega
+    simp only [UScalar.le_equiv]
+    cases operation : values.val[index].intent.request.operation <;>
+      simp [storedEntryStep, operation, ordered, notGreater,
+        InboxRetained.follows_refines, InboxEntry.entry_kind_refines,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        continueEntries]
+    all_goals simp only [← operation]
+    all_goals cases retained : InboxRetained.expected session maximum values.val[index].intent
+    all_goals simp -failIfUnchanged only [Bool.false_eq_true, Bool.true_eq_false, ↓reduceIte, bind_tc_ok]
+    all_goals try rw [bind_assoc_eq]
+    all_goals apply congrArg (fun continuation => Bind.bind (InboxEntry.entryView encoding.encode inbox session values.val[index] context) continuation)
+    all_goals funext checked
+    all_goals cases checked with
+      | Err error => simp
+      | Ok kind =>
+        simp only [bind_tc_ok]
+        refine Eq.trans ?_ (counter_continuation (α := ControlFlow EntryLoopState EntryLoopReturn) values.val[index].intent.accepted_version kinds kind
+          (fun error => .ok (.done (.Err error)))
+          (fun (version, next) => .ok (.cont (InboxEntry.cursor values (index + 1), version, next))))
+        apply congrArg (fun continuation => Bind.bind (Array.index_usize kinds kind) continuation)
+        funext old
+        apply congrArg (fun continuation => Bind.bind (old + 1#u16) continuation)
+        funext next
+        apply congrArg (fun continuation => Bind.bind (Array.index_mut_usize kinds kind) continuation)
+        funext cell
+        rcases cell with ⟨previous, back⟩
+        by_cases zero : kind = 0#usize <;> by_cases two : kind = 2#usize <;> simp [uncurry, zero, two]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.counter_continuation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_body_next

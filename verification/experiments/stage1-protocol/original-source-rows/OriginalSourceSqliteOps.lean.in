@@ -1,0 +1,162 @@
+import SandproofOriginalSourceRows.Types
+import SandproofSqliteSession.ReadOps
+import SandproofFoundations.IdentifierLibrary
+
+/-!
+UNCHECKED integration candidate for exactly C17's ten external SQLite calls.
+Requires the companion Data patch and C's six external carrier aliases.
+No actual Types/Funs/provider is changed by this file. The actual Rust
+Transaction/Value/ValueRef/ToSqlOutput and trait dictionaries remain original.
+NormalTextScanBinding is a separate, unproved A4/B4 source-binding condition.
+-/
+open Aeneas Aeneas.Std
+open SandproofOriginalSourceRowsRust
+
+namespace SandboxModel.Stage1Protocol.OriginalSourceSqliteOps
+
+abbrev SessionValue := SandproofSqliteSession.RawValue
+
+/-- Structural transport of the actual five variants; TEXT remains bytes. -/
+def toSessionValue (value : rusqlite.types.value_ref.ValueRef) : SessionValue :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def fromSessionValue (value : SessionValue) : rusqlite.types.value_ref.ValueRef :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+/-- Owned String uses the existing A6 byte representation, not a SQL-value
+fallback. The oversized mathematical-String branch is outside the existing
+Rust StringRepresentable domain; the actual C dictionary returns Borrowed. -/
+def outputValue (value : rusqlite.types.to_sql.ToSqlOutput) : Result SessionValue :=
+  match value with
+  | .Borrowed value => .ok (toSessionValue value)
+  | .Owned (.Null) => .ok .Null
+  | .Owned (.Integer value) => .ok (.Integer value)
+  | .Owned (.Real value) => .ok (.Real value)
+  | .Owned (.Blob value) => .ok (.Blob value.slice)
+  | .Owned (.Text value) =>
+    if h : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable value then
+      .ok (.Text (.from
+        (SandproofFoundationsRust.IdentifierLibrary.stringBytes value) h))
+    else .fail .maximumSizeExceeded
+
+/-- 1. Original prepare observation; no synthetic successful statement. -/
+def prepare (connection : rusqlite.Connection) (sql : Str) :
+    Result (core.result.Result rusqlite.statement.Statement rusqlite.error.Error) := do
+  let reply ← connection.current.single.canonical.prepare sql
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok count =>
+    .ok (.Ok {
+      sql := sql
+      row := SandproofLoadBlobRust.issuedReadStatement connection.current.single sql count
+      source := connection.current
+      boundArguments := [] })
+
+/-- 2. Exact fixed Array<T,1> bind order: expected=0 fails before ToSql;
+otherwise ToSql then raw bind, then final parameter-count check. The raw
+bind's returned metadata is retained even on Err. No other variant is dropped. -/
+def bindArray1 {T : Type} (dict : rusqlite.types.to_sql.ToSql T)
+    (values : Array T 1#usize) (statement : rusqlite.statement.Statement) :
+    Result ((core.result.Result Unit rusqlite.error.Error) ×
+      rusqlite.statement.Statement) := do
+  let expected := statement.row.canonical.expectedParameters
+  if expected = 0 then
+    .ok (.Err (statement.row.canonical.countError 1), statement)
+  else
+    let value ← Array.index_usize values 0#usize
+    let encoded ← dict.to_sql value
+    match encoded with
+    | .Err error => .ok (.Err error, statement)
+    | .Ok encoded =>
+      let raw ← outputValue encoded
+      let (reply, rowAfter) ← statement.source.bindFirst statement.sql statement.row raw
+      let after := { statement with row := rowAfter, boundArguments := [raw] }
+      match reply with
+      | .Err error => .ok (.Err error, after)
+      | .Ok () =>
+        if expected = 1 then .ok (.Ok (), after)
+        else .ok (.Err (statement.row.canonical.countError 1), after)
+
+/-- 3. Reuse the original mappedNext. SQL RowErr bypasses the column mapper;
+the returned Some Err still reaches the transparent outer business handler.
+Only Ok(Some rawRow) gets this cursor's exact issued statement. Raw metadata
+is retained separately; its normal equality is an explicit source condition. -/
+def mappedNext {T F : Type}
+    (dict : core.ops.function.FnMut F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (rows : rusqlite.row.MappedRows F) :
+    Result (Option (core.result.Result T rusqlite.error.Error) ×
+      rusqlite.row.MappedRows F) := do
+  let (reply, after) ← SandproofSqliteSession.mappedNext
+    (fun callback rawRow => dict.call_mut callback
+      { original := rawRow, statement := rows.statement }) rows.mapped
+  .ok (reply, { rows with mapped := after })
+
+/-- 4. idx receives the actual full issued Statement. Column values and
+conversionError come from the untouched original Row observation. -/
+def rowGet {I T : Type} (indexDict : rusqlite.row.RowIndex I)
+    (convertDict : rusqlite.types.from_sql.FromSql T)
+    (row : rusqlite.row.Row) (position : I) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet
+    (fun position _rawStatement => indexDict.idx position row.statement)
+    (fun value => convertDict.column_result (fromSessionValue value))
+    row.original position
+
+/-- 5. Existing exact usize index operation on the issued statement metadata. -/
+def index (position : Usize) (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Usize rusqlite.error.Error) :=
+  SandproofSqliteSession.index position statement.row
+
+/-- 6. Original Params dictionary runs once. Its complete returned statement
+is used both for trace selection and the returned statement, including Err.
+issueScan is input observation selection, not another fallible SQL operation.
+The legacy cursor.query is exact only under NormalTextScanBinding. -/
+def queryMap {T P F : Type} (paramsDict : rusqlite.params.Params P)
+    (_callDict : core.ops.function.FnMut F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (statement : rusqlite.statement.Statement) (params : P) (callback : F) :
+    Result ((core.result.Result (rusqlite.row.MappedRows F) rusqlite.error.Error) ×
+      rusqlite.statement.Statement) := do
+  let (reply, after) ← paramsDict.__bind_in params statement
+  match reply with
+  | .Err error => .ok (.Err error, after)
+  | .Ok () =>
+    let trace := after.source.issueScan after.sql after.row after.boundArguments
+    .ok (.Ok {
+      mapped := {
+        cursor := { query := after.query, trace := trace, calls := 0 }
+        callback := callback }
+      statement := after }, after)
+
+/-- 7. The actual generated Transaction remains the only transaction type. -/
+def transactionDeref (transaction : rusqlite.transaction.Transaction) :
+    Result rusqlite.Connection := .ok transaction.conn
+
+/-- 8. Existing blob-only FromSql, including invalidType for all other tags. -/
+def blobColumn (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8)
+      rusqlite.types.from_sql.FromSqlError) :=
+  SandproofSqliteSession.blobColumn (toSessionValue value)
+
+/-- 9. Original dictionary, including its SQL Err, fail and divergence. -/
+def sharedToSql {T : Type} (dict : rusqlite.types.to_sql.ToSql T) (value : T) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  dict.to_sql value
+
+/-- 10. Original str instance: no decoding or validity claim about raw bytes. -/
+def strToSql (value : Str) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  .ok (.Ok (.Borrowed (.Text value)))
+
+end SandboxModel.Stage1Protocol.OriginalSourceSqliteOps

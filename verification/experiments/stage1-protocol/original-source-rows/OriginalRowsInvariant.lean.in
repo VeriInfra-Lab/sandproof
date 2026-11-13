@@ -1,0 +1,201 @@
+import OriginalRowsDriver
+import SandboxModel.ProofAuditCommand
+
+/-!
+UNCHECKED downstream candidate. Uses the unchanged fixed OriginalRowsDriver.
+Only partial correctness: fail and div are allowed, and no finite/termination
+assumption is made. C must compile and check this file in the original slot.
+-/
+
+namespace SandboxModel.Stage1Protocol.OriginalRowsDriver
+open Aeneas Aeneas.Std
+open Lean.Order Aeneas.Data.Coinductive
+
+section NormalReturnMath
+unseal Result
+
+/-- Fixed RustEffect has only failure, with no possible continuation input. -/
+private theorem result_flat {α : Type} (a b : Result α) (h : a ⊑ b) :
+    a = Result.div ∨ a = b := by
+  change @PartialOrder.rel (ITree RustEffect α)
+    (instPartialOrderCoIndOfInhabitedPUnit (ITreeF RustEffect α)) a b at h
+  rw [ITree.le_unfold] at h
+  rcases h with h | ⟨r, ha, hb⟩ | ⟨i, k₁, k₂, ha, hb, _⟩
+  · exact Or.inl h
+  · exact Or.inr (ha.trans hb.symm)
+  · right
+    have same : k₁ = k₂ := by
+      funext o
+      cases i
+      exact o.elim
+    exact ha.trans ((congrArg (ITree.vis i) same).trans hb.symm)
+
+/-- Any predicate containing div is closed under chains of the fixed Result.
+This uses the existing CCPO and does not change loop or its interpreter. -/
+private theorem result_admissible {α : Type} (P : Result α → Prop)
+    (hdiv : P Result.div) : admissible P := by
+  intro c hc hP
+  by_cases hn : ∃ a, c a ∧ a ≠ Result.div
+  · obtain ⟨a, hca, hna⟩ := hn
+    have upper : ∀ b, c b → b ⊑ a := by
+      intro b hcb
+      rcases hc b a hcb hca with hba | hab
+      · exact hba
+      · rcases result_flat a b hab with hd | he
+        · exact False.elim (hna hd)
+        · rw [← he]
+    have same : CCPO.csup hc = a :=
+      PartialOrder.rel_antisymm (csup_le hc upper) (le_csup hc hca)
+    rw [same]
+    exact hP a hca
+  · have upper : ∀ b, c b → b ⊑ Result.div := by
+      intro b hcb
+      have hb : b = Result.div := by
+        by_contra hb
+        exact hn ⟨b, hcb, hb⟩
+      rw [hb]
+    have same : CCPO.csup hc = Result.div :=
+      ITree.le_div_is_div _ (csup_le hc upper)
+    rw [same]
+    exact hdiv
+
+seal Result
+
+/-- Normal-return invariant rule for the existing Aeneas loop. -/
+theorem loop_normal_return {α β : Type}
+    (body : α → Result (ControlFlow α β))
+    (Inv : α → Prop) (Post : β → Prop)
+    (hbody : ∀ s, Inv s → ∀ out, body s = .ok out →
+      match out with
+      | .cont next => Inv next
+      | .done result => Post result) :
+    ∀ s, Inv s → ∀ result, loop body s = .ok result → Post result := by
+  apply loop.fixpoint_induct
+    (motive := fun recur => ∀ s, Inv s → ∀ result,
+      recur s = .ok result → Post result)
+  · apply admissible_pi
+    intro s
+    apply admissible_pi
+    intro _
+    apply admissible_apply
+      (fun (_ : α) (r : Result β) =>
+        ∀ result : β, r = Result.ok result → Post result) s
+    apply result_admissible
+    intro result h
+    exact False.elim (div_not_ok h)
+  · intro recur ih s hs result returned
+    cases observed : body s with
+    | ret flow =>
+        have hf := hbody s hs flow observed
+        cases flow with
+        | cont next =>
+            apply ih next hf result
+            simpa only [observed, bind_ok] using returned
+        | done value =>
+            have same : value = result := by
+              simpa only [observed, bind_ok, Result.ok.injEq] using returned
+            simpa only [same] using hf
+    | vis effect continuation =>
+        simp only [observed, bind_vis, vis_not_ok] at returned
+    | div =>
+        simp only [observed, bind_div, div_not_ok] at returned
+
+end NormalReturnMath
+
+/-- The invariant lives on the actual iterator/row-state/callback triple. -/
+theorem run_normal_return
+    {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (Inv : I → State → F → Prop)
+    (Post : (core.result.Result Unit Error × State) → Prop)
+    (hstep : ∀ iter state accept, Inv iter state accept →
+      ∀ out, step iteratorInst acceptInst (iter, state, accept) = .ok out →
+        match out with
+        | .cont (iter', state', accept') => Inv iter' state' accept'
+        | .done result => Post result)
+    (iter : I) (state : State) (accept : F)
+    (hinit : Inv iter state accept)
+    (result : core.result.Result Unit Error × State)
+    (returned : run iteratorInst acceptInst iter state accept = .ok result) :
+    Post result := by
+  exact loop_normal_return (step iteratorInst acceptInst)
+    (fun s => Inv s.1 s.2.1 s.2.2) Post
+    (by
+      rintro ⟨i, s, f⟩ hi out hout
+      cases out with
+      | cont next =>
+          rcases next with ⟨i', s', f'⟩
+          exact hstep i s f hi (.cont (i', s', f')) hout
+      | done value =>
+          exact hstep i s f hi (.done value) hout)
+    (iter, state, accept) hinit result returned
+
+/-- Direct dictionary-call form. Error is an ordinary callback result; Item is
+unrestricted (in particular it may itself include RowErr). The first callback
+Err is a done branch and imposes no invariant on an unexecuted later call. -/
+theorem run_normal_return_of_calls
+    {I F Item State Error : Type}
+    (iteratorInst : core.iter.traits.iterator.Iterator I Item)
+    (acceptInst : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (Inv : I → State → F → Prop)
+    (Post : (core.result.Result Unit Error × State) → Prop)
+    (hnone : ∀ i s f i', Inv i s f →
+      iteratorInst.next i = .ok (none, i') → Post (.Ok (), s))
+    (hok : ∀ i s f i' row s' f', Inv i s f →
+      iteratorInst.next i = .ok (some row, i') →
+      acceptInst.call_mut f (row, s) = .ok ((.Ok (), s'), f') →
+      Inv i' s' f')
+    (herr : ∀ i s f i' row error s' f', Inv i s f →
+      iteratorInst.next i = .ok (some row, i') →
+      acceptInst.call_mut f (row, s) = .ok ((.Err error, s'), f') →
+      Post (.Err error, s'))
+    (iter : I) (state : State) (accept : F)
+    (hinit : Inv iter state accept)
+    (result : core.result.Result Unit Error × State)
+    (returned : run iteratorInst acceptInst iter state accept = .ok result) :
+    Post result := by
+  apply run_normal_return iteratorInst acceptInst Inv Post ?_
+    iter state accept hinit result returned
+  intro i s f hi out hout
+  cases hnext : iteratorInst.next i with
+  | ret next =>
+      rcases next with ⟨item, i'⟩
+      cases item with
+      | none =>
+          have he : out = .done (.Ok (), s) := by
+            simpa [step, hnext] using hout.symm
+          rw [he]
+          exact hnone i s f i' hi hnext
+      | some row =>
+          cases hcall : acceptInst.call_mut f (row, s) with
+          | ret called =>
+              rcases called with ⟨⟨reply, s'⟩, f'⟩
+              cases reply with
+              | Ok replyUnit =>
+                  cases replyUnit
+                  have he : out = .cont (i', s', f') := by
+                    simpa [step, hnext, hcall] using hout.symm
+                  rw [he]
+                  exact hok i s f i' row s' f' hi hnext hcall
+              | Err error =>
+                  have he : out = .done (.Err error, s') := by
+                    simpa [step, hnext, hcall] using hout.symm
+                  rw [he]
+                  exact herr i s f i' row error s' f' hi hnext hcall
+          | vis effect continuation =>
+              simp [step, hnext, hcall] at hout
+          | div =>
+              simp [step, hnext, hcall] at hout
+  | vis effect continuation =>
+      simp [step, hnext] at hout
+  | div =>
+      simp [step, hnext] at hout
+
+end SandboxModel.Stage1Protocol.OriginalRowsDriver
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginalRowsDriver.loop_normal_return
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return_of_calls

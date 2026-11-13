@@ -1,0 +1,121 @@
+{
+  "scope": "actual stored CreateOptions encoder and reader",
+  "source_sha256": {
+    "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
+    "controller-service/src/templates.rs": "43dd7d2fa214bf2b5035d9de87e07b6656b3b364bf6226861d16b59c8c98e573"
+  },
+  "captures": {
+    "encoder": {
+      "original_base": "9ce0d22bb69d2dcae9d0033a1beb873051a2a7ae",
+      "charon_options": {
+        "preset": "Aeneas",
+        "sysroot": "default",
+        "error_on_warnings": true,
+        "start_from": [
+          "sandproof_controller_service::host_contract::_::encoded"
+        ],
+        "include": [
+          "sandproof_controller_service::host_contract::_::encoded",
+          "sandproof_controller_service::host_contract::CreateOptions",
+          "sandproof_controller_service::host_contract::AdmissionError",
+          "sandproof_controller_service::host_contract::valid_create_fields"
+        ],
+        "opaque": [
+          "sandproof_controller_service",
+          "sandbox_controller_core",
+          "sandproof_protocol",
+          "serde_json"
+        ]
+      },
+      "aeneas_options": [
+        "-backend",
+        "lean",
+        "-abort-on-error",
+        "-warnings-as-errors",
+        "-split-files",
+        "-emit-json",
+        "-namespace",
+        "SandproofCreateOptionsEncoded",
+        "-subdir",
+        "SandproofCreateOptionsEncoded"
+      ],
+      "llbc_sha256": "7d4a5282643bd5cb76ecc6d37999c3d8052290dfe76fd23b4891f6d287be2924",
+      "roots": {
+        "encoded": 11,
+        "valid_create_fields": 22
+      },
+      "original_lean": {
+        "Funs.lean": "9dbab12b6875bb1c902aa6ee160664a5b178123651545e093978da197e53691b",
+        "FunsExternal_Template.lean": "e8435eba5d218eae543f8bbdf378c97c744f19392f7aa01816a1a80eadcfaca2",
+        "Types.lean": "9cfa4438ac233a4d970cd262091aa2c80d74372e4c7abb317a3d3d2ea2d66fb3",
+        "TypesExternal_Template.lean": "cfb75edb52252d55a751a5b7b726b8d21413289e325dadee716e76ad0a52cca3"
+      }
+    },
+    "reader": {
+      "original_base": "4d5c1db07c8f1b91504c2c7eb9efe5183b0f2421",
+      "charon_options": {
+        "preset": "Aeneas",
+        "sysroot": "default",
+        "error_on_warnings": true,
+        "start_from": [
+          "sandproof_controller_service::controller::admission::read_create_options"
+        ],
+        "include": [
+          "sandproof_controller_service::controller::admission::read_create_options",
+          "sandproof_controller_service::host_contract::AdmissionError",
+          "sandproof_controller_service::JournalError"
+        ],
+        "opaque": [
+          "sandproof_controller_service",
+          "sandbox_controller_core",
+          "sandproof_protocol",
+          "rusqlite",
+          "serde_json"
+        ]
+      },
+      "aeneas_options": [
+        "-backend",
+        "lean",
+        "-abort-on-error",
+        "-warnings-as-errors",
+        "-split-files",
+        "-emit-json",
+        "-namespace",
+        "SandproofUnloadOptionsRead",
+        "-subdir",
+        "SandproofUnloadOptionsRead"
+      ],
+      "llbc_sha256": "51b75a6d7c2810127572c87867347376ec0881d8b24a3bbe88877278a168e3df",
+      "roots": {
+        "read_create_options": 11
+      },
+      "original_lean": {
+        "Funs.lean": "33a8aaf60e655dc1458ad1ecec016fac651e4e0ebe539ecdb621f17273efd071",
+        "FunsExternal_Template.lean": "081b7da468f8c4e7d910aaf1ca57229fc3f2c032c0517d3ddf498822422403f1",
+        "Types.lean": "28586efa69794bd39dc73d090cb117d81213b3731217ba91d9b34cc8f53a5039",
+        "TypesExternal_Template.lean": "16007ac718283cfa670914fd420d58aff114fa898f22bf0c4d8b9b40ea9031fa"
+      }
+    }
+  },
+  "original_msra_results": {
+    "olean_sha256": {
+      "SourceOptionsEncodedActual": "d7395521f2a02cd717a7667af679679bd7931c8a14efc43670ce42da1fa63826",
+      "SourceOptionsEncodedLink": "b28e5ea158a895978bc1e3138197a6e5bcd2cf4d401c059c35afaf0c3487a9c3",
+      "SourceOptionsRead": "823d12d7fe791a51e812f64aadb354a72a615d2a1bdc48968c306ff4069eab6c"
+    },
+    "encoder_and_link_audits": [
+      7,
+      2
+    ],
+    "registered_service_log_sha256": "b416f5fb66a3d1f86f7a4aaad443df52ded8fff31055aa5d0b51aab6cdc7d233"
+  },
+  "public_projection": {
+    "modules": 119,
+    "proof_roots_reused": [
+      "SourceOptionsEncodedActual",
+      "SourceOptionsEncodedLink",
+      "SourceOptionsRead"
+    ]
+  }
+}

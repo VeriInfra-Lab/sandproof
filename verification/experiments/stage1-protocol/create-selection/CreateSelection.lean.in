@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.CreateSelectionModel
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+import SandboxModel.Lifecycle.Protocol.InboxPositionLookup
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateSelection
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection
+
+theorem absent (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (missing : inbox.find intent = .ok (.Ok none)) :
+    run inbox intent = .ok (.Err .Conflict) := by
+  simp [run, sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection,
+    missing, core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem conflict (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (rejected : inbox.find intent = .ok (.Err .Conflict)) :
+    run inbox intent = .ok (.Err .Conflict) := by
+  simp [run, sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection,
+    rejected, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem found (inbox : Inbox) (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (returned : inbox.find intent = .ok (.Ok (some (s, e))))
+    (bound : s.val < inbox.sessions.val.length) :
+    run inbox intent = .ok (forSession inbox.sessions.val[s.val] intent s e) := by
+  have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      inbox.sessions s = .ok inbox.sessions.val[s.val] := by
+    rw [alloc.vec.Vec.index_slice_index]
+    obtain ⟨value, h, same⟩ := WP.spec_imp_exists (alloc.vec.Vec.index_usize_spec inbox.sessions s bound)
+    simpa only [same] using h
+  simp only [run, sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection,
+    returned, core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+    bind_tc_ok]
+  simp only [forSession, core.option.Option.is_some]
+  split_ifs <;> simp_all
+  cases intent.request.operation <;> rfl
+
+
+theorem selection_complete : FullSelectionContract run := by
+  intro inbox intent
+  have outcome := InboxLookup.find_outcome inbox intent
+  cases shape : InboxLookup.inboxSpec intent inbox.sessions.val 0 with
+  | absent =>
+      have returned := absent inbox intent (by simpa [shape] using outcome)
+      rw [returned]
+      apply WP.spec.ret
+      simp [observe, expected, shape]
+  | conflict =>
+      have returned := conflict inbox intent (by simpa [shape] using outcome)
+      rw [returned]
+      apply WP.spec.ret
+      simp [observe, expected, shape]
+  | found s e =>
+      simp only [shape] at outcome
+      obtain ⟨si, ei, spos, epos, returned⟩ := outcome
+      subst s
+      subst e
+      obtain ⟨session, entry, sessionRead, entryRead, full⟩ :=
+        InboxPosition.inbox_found_reads intent inbox.sessions.val si.val ei.val shape
+      obtain ⟨bound, same⟩ := List.getElem?_eq_some_iff.mp sessionRead
+      rw [found inbox intent si ei returned bound]
+      apply WP.spec.ret
+      rw [observe_session]
+      simp only [expected, shape, sessionRead]
+      rw [same]
+
+end SandboxModel.Stage1Protocol.CreateSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.absent
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.found
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.selection_complete

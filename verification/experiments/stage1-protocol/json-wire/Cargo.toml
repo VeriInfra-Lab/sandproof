@@ -1,0 +1,11 @@
+[package]
+name = "sandproof-stage1-json-wire-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sandproof-internal = { path = "../../../../sandbox-internal" }
+sandproof-protocol = { path = "../../../../sandbox-protocol" }

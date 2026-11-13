@@ -1,0 +1,4 @@
+#[cfg(test)]
+pub(super) fn proof_digest_instance_save(connection: &Connection, bytes: &[u8]) -> [u8; 32] {
+    InboxSaveEffects::digest(&mut StandardInboxSave { connection }, bytes)
+}

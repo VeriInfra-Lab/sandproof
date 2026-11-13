@@ -1,0 +1,50 @@
+import SandproofFoundations.FunsExternal
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+def core.str.Str.bytes (value : Str) : Result core.str.iter.Bytes :=
+  SandproofFoundationsRust.core.str.Str.bytes value
+
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all {F : Type}
+    (callback : core.ops.function.FnMut F U8 Bool)
+    (bytes : core.str.iter.Bytes) (state : F) : Result (Bool × core.str.iter.Bytes) :=
+  SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all callback bytes state
+
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref (value : String) : Result Str :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+
+/- Proposed call bindings, not yet adopted by V0. On the registered representable
+UTF-8 domain, these delegate to the existing exact byte-length/empty observations.
+No claim of standard-library verification or permission to widen A6 follows. -/
+def alloc.string.String.len (value : String) : Result Usize := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.len text
+
+def alloc.string.String.is_empty (value : String) : Result Bool := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.is_empty text
+
+end SandproofStage1RequestRust

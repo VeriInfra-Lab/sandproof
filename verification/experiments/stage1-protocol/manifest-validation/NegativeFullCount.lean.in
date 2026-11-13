@@ -1,0 +1,16 @@
+namespace SandboxModel.Stage1Protocol.ManifestFiles.Negative
+open SandboxModel.Stage1Protocol.ManifestValidation
+open SandboxModel.Stage1Protocol.ManifestValidation.Values
+open SandboxModel.Stage1Protocol.ManifestChecks
+
+theorem skipped_count_not_validation_contract : ¬ ValidationContract manifest_validate := by
+  intro contract
+  have accepted := contract_acceptance manifest_validate contract
+    (manifestWith profile missingFiles) original profile represented_profile
+    2#u64 mutant_accepts_missing_disk
+  rcases accepted with ⟨_, _, _, _, _, complete, _, _, _⟩
+  have count := complete.1
+  simp [manifestWith, missingFiles, files, profile] at count
+end SandboxModel.Stage1Protocol.ManifestFiles.Negative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ManifestFiles.Negative.skipped_count_not_validation_contract

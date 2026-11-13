@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsValues
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+open SandboxModel.Stage1Protocol.BlobColumns
+namespace SandboxModel.Stage1Protocol.NegativeBlobOrder
+noncomputable section
+open Values
+abbrev actual := controller.lifecycle_inbox.codec.read_blob_pair
+
+theorem common_normal : actual normal 0#usize 1#usize = .ok (.Ok (leftBytes, leftBytes)) := by
+  unfold actual controller.lifecycle_inbox.codec.read_blob_pair
+  rw [fixed_get_model_refines]
+  have readSecond : column normal 1#usize = .Ok leftBytes := by rfl
+  rw [readSecond]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rw [fixed_get_model_refines]
+  have readFirst : column normal 0#usize = .Ok leftBytes := by rfl
+  rw [readFirst]
+  simp
+
+theorem actual_second_error : actual bothErrors 0#usize 1#usize = .ok (.Err ⟨12⟩) := by
+  unfold actual controller.lifecycle_inbox.codec.read_blob_pair
+  rw [fixed_get_model_refines]
+  have read : column bothErrors 1#usize = .Err ⟨12⟩ := by rfl
+  rw [read]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem not_full_contract : ¬FullColumnsContract actual := by
+  intro contract
+  have impossible := contract bothErrors 0#usize 1#usize
+  rw [actual_second_error, first_error_expected] at impossible
+  have same := core.result.Result.Err.inj (Result.ok.injEq.mp impossible)
+  have identities := congrArg (fun error : SqlError => error.identity) same
+  cases identities
+
+end
+end SandboxModel.Stage1Protocol.NegativeBlobOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobOrder.common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobOrder.actual_second_error
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobOrder.not_full_contract

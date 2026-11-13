@@ -1,0 +1,72 @@
+import SandproofSqliteSession.Data
+
+open Aeneas Aeneas.Std
+namespace SandproofSqliteSession
+
+/-! Finite library-operation candidates. These definitions factor the existing
+fixed read provider through functions, not another generated World or trait
+universe. Binding them to an actual call and normal read prefix remains A4.
+No definition grants an active-transaction or read frame after a SQL error. -/
+
+def index (position : Usize) (statement : RowStatement) :
+    Result (SqlReply Usize) :=
+  if position.val < statement.columns.val then .ok (.Ok position)
+  else .ok (.Err (statement.invalidIndex position))
+
+def blobColumn (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8)
+      SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Blob bytes => .ok (.Ok ⟨bytes⟩)
+  | _ => .ok (.Err SandproofLoadBlobRust.invalidType)
+
+/-- The actual dictionary functions are supplied without copying their
+generated Rust trait structures or substituting a whole business callback. -/
+def rowGet {I A : Type}
+    (locate : I → RowStatement → Result (SqlReply Usize))
+    (convert : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef →
+      Result (core.result.Result A
+        SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError))
+    (row : Row) (position : I) : Result (SqlReply A) := do
+  let checked ← locate position row.statement
+  match checked with
+  | .Err error => .ok (.Err error)
+  | .Ok checked =>
+    let converted ← convert (row.column checked)
+    match converted with
+    | .Ok value => .ok (.Ok value)
+    | .Err error =>
+      .ok (.Err (row.conversionError checked (row.column checked) error))
+
+/-- rusqlite's fixed unit Params instance checks the original count. It
+does not invent bound arguments or turn a count failure into success. -/
+def bindUnit (_values : Unit) (statement : RowStatement) :
+    Result (SqlReply Unit × RowStatement) :=
+  if statement.canonical.expectedParameters = 0 then
+    .ok (.Ok (), statement)
+  else
+    .ok (.Err (statement.canonical.countError 0), statement)
+
+/-- Same prepare → original bind → expected first row → actual callback
+order as the existing fixed query_row provider. This is a single call's
+observation; returning the same Lean input does not frame an actual SQL Err. -/
+def queryRow {A P F : Type}
+    (bind : P → RowStatement → Result (SqlReply Unit × RowStatement))
+    (call : F → Row → Result (SqlReply A))
+    (connection : SingleReadView) (sql : Str) (values : P) (closure : F) :
+    Result (SqlReply A) := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err error)
+  | .Ok count =>
+    let (bound, statement) ← bind values
+      (SandproofLoadBlobRust.issuedReadStatement connection sql count)
+    match bound with
+    | .Err error => .ok (.Err error)
+    | .Ok () =>
+      let first ← connection.expectedRow sql statement
+      match first with
+      | .Err error => .ok (.Err error)
+      | .Ok row => call closure row
+
+end SandproofSqliteSession

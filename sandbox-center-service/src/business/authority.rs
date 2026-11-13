@@ -3,6 +3,9 @@ use super::{
     LocalValidationBinding, RegistryMetadata, ValidationAdmission, ValidationLink,
     ValidationSettlement,
 };
+use crate::application::diagnostics::{
+    self, Failure as DiagnosticFailure, Stage as DiagnosticStage,
+};
 use crate::{AuthorityPort, application::authority_error};
 use sandproof_api::{PortError, TemplateView};
 use sandproof_center_core::{CenterState, DecisionError, LifecycleSubmission};
@@ -111,8 +114,20 @@ impl SharedBusinessAuthority {
     pub fn snapshot(&self) -> Result<Envelope, PortError> {
         self.0
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
+            .map_err(|_| {
+                diagnostics::emit(
+                    DiagnosticStage::AuthoritySnapshotLock,
+                    DiagnosticFailure::Authority(AuthorityError::RecoveryRequired),
+                );
+                PortError::OutcomeUnknown
+            })?
             .snapshot_envelope()
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::AuthoritySnapshot,
+                    DiagnosticFailure::Authority(*error),
+                );
+            })
             .map_err(authority_error)
     }
     /// Protected operational node drain only, never a public client action.
@@ -513,6 +528,15 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn accept_lifecycle_resume_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::ResumeObservation,
+    ) -> Result<(), AuthorityError> {
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_resume_observation(observation)
+    }
     fn accept_lifecycle_create_refusal(
         &mut self,
         observation: &sandproof_protocol::lifecycle::CreateObservation,
@@ -533,6 +557,16 @@ impl AuthorityPort for SharedBusinessAuthority {
             .lock()
             .map_err(|_| AuthorityError::RecoveryRequired)?
             .terminate_expired(now_ms)
+    }
+    fn accept_lifecycle_unload_observation(
+        &mut self,
+        observation: &sandproof_protocol::lifecycle::UnloadObservation,
+        now_ms: u64,
+    ) -> Result<(), AuthorityError> {
+        self.0
+            .lock()
+            .map_err(|_| AuthorityError::RecoveryRequired)?
+            .accept_lifecycle_unload_observation(observation, now_ms)
     }
     fn accept_lifecycle_terminal_observation(
         &mut self,

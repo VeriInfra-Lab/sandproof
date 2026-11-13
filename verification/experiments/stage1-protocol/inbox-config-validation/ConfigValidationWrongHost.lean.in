@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.ConfigValidationLibrary
+import SandboxModel.Lifecycle.Protocol.ConfigValidationValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation.WrongHost
+noncomputable section
+
+theorem host_return : HostEpochRegistration.valid_using graphicEncoding { Values.host with version := 2#u16 } = .ok true := by
+  have bounded : StringRepresentable "!~" := by
+    change 2 ≤ Usize.max
+    scalar_tac
+  obtain ⟨rest, checked⟩ := graphic_all_refines (stringBytes "!~")
+  have nonempty : stringBytes "!~" ≠ [] := by decide
+  have length : (stringBytes "!~").length ≤ 128 := by decide
+  have accepted : (stringBytes "!~").all graphicByte = true := by decide
+  simp [HostEpochRegistration.valid_using,
+    StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes.all_graphic, graphic_bytes, Values.host,
+    alloc.string.String.is_empty, alloc.string.String.len,
+    alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SandproofFoundationsRust.core.str.Str.is_empty, SandproofFoundationsRust.core.str.Str.len,
+    bounded, core.str.Str.bytes, SandproofFoundationsRust.core.str.Str.bytes,
+    core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    checked, accepted, nonempty, length]
+
+theorem actual_return : LifecycleInboxConfig.valid Values.badHostVersion = .ok true := by
+  have budget : LifecycleInboxConfig.required_bytes Values.badHostVersion = .ok 106503#u64 :=
+    (ConfigBudget.required_bytes_iff _ _).mpr (by decide)
+  have kib : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by rfl
+  have mib : (16384#u64 * 1024#u64 : Result U64) = .ok 16777216#u64 := by rfl
+  simp only [LifecycleInboxConfig.valid, LifecycleInboxConfig.valid_using,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.ops.range.RangeInclusive.new, bind_tc_ok,
+    range_u16_refines, range_u32_refines, budget, kib, mib]
+  simp [Values.badHostVersion, Values.withHost, Values.small, ConfigBudget.Values.small,
+    EnvelopeValues.center, EnvelopeValues.node, host_return]
+
+theorem refutes_full_contract : ¬ FullConfigContract LifecycleInboxConfig.valid := by
+  intro full
+  have bounded : Representable Values.badHostVersion := by
+    simp [Representable, Values.badHostVersion, Values.withHost, Values.small, ConfigBudget.Values.small,
+      Values.host, StringRepresentable, stringBytes]
+    change 2 ≤ Usize.max
+    scalar_tac
+  have result := full Values.badHostVersion bounded
+  rw [actual_return] at result
+  have invalid := Values.rejected_shapes.2.2
+  simp [invalid] at result
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation.WrongHost
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongHost.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongHost.refutes_full_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigValidation.WrongHost.host_return

@@ -90,6 +90,19 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
         app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead)
             .unwrap(),
     );
+    check_renewal_limits_and_expiry(&app, &renew, incarnation, &access, &clock);
+    assert_eq!(startup_calls, state.lock().unwrap().actions.len());
+}
+
+fn check_renewal_limits_and_expiry(
+    app: &sandproof_controller_service::application::ControllerApplication<fixture::TestHost>,
+    renew: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    incarnation: sandproof_protocol::lifecycle::IncarnationId,
+    access: &sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+    clock: &fixture::TestClock,
+) {
+    use sandproof_controller_service::application::DataKind;
+    use std::sync::atomic::Ordering;
     let mut extended = renew.clone();
     extended.accepted_version = 3;
     extended.request.binding.expected = ExpectedSession::Version(2);
@@ -105,7 +118,7 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
         120_010
     );
     assert!(matches!(
-        app.lifecycle_data_authorization(&access, &context(), DataKind::FileRead),
+        app.lifecycle_data_authorization(access, &context(), DataKind::FileRead),
         Err(ApplicationError::NotFound)
     ));
     let mut excessive = extended.clone();
@@ -140,12 +153,11 @@ fn renewal_keeps_original_create_and_replays_exact_deadline_without_revival() {
     // Historical replay says only that this update committed, not that it is
     // current or the VM is alive; a new unapplied update cannot revive expiry.
     assert!(
-        !app.apply_lifecycle_renew(&renew, &context())
+        !app.apply_lifecycle_renew(renew, &context())
             .unwrap()
             .0
             .current
     );
-    assert_eq!(startup_calls, state.lock().unwrap().actions.len());
 }
 
 #[test]
@@ -257,6 +269,54 @@ fn restarted_application_does_not_recover_dispatched_startup_before_fresh_epoch(
             .count(),
         1
     );
+}
+
+#[test]
+fn health_and_real_create_use_the_same_operation_headroom_boundary() {
+    for fits in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let host = fixture::complete_fixture::host(
+            &path,
+            "0123456789abcdef",
+            64,
+            2 * 1024 * 1024,
+            v3::CLEANUP_BYTES + 1000,
+        );
+        let profile = host.physical_storage.as_ref().unwrap();
+        let pool = &profile.pools[0];
+        let disk = fixture::template().local.resources.disk_bytes;
+        // Independent arithmetic for the original single-pool fixture. The
+        // rest of its disk/cache growth is still in the unchanged global quota.
+        let required = profile.filesystem_overhead_bytes
+            + pool.cleanup_reserve_bytes
+            + pool.kernel_copy_bytes
+            + pool.runtime_copy_bytes
+            + disk;
+        assert!(required < profile.peak_bytes().unwrap());
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            disk_available: Some(required - u64::from(!fits)),
+            ..State::default()
+        }));
+        let app =
+            v3::application_with_host_configuration(&path, state.clone(), true, v3::config(), host);
+        app.record_lifecycle_intent(&request(), &context()).unwrap();
+        app.establish_lifecycle_host_epoch().unwrap();
+        let (_, free) = app
+            .internal_free_resources(&v3::config().node, fixture::compute())
+            .unwrap();
+        assert_eq!(free.disk_bytes, disk - u64::from(!fits));
+        let outcome = advance(&app).unwrap();
+        if fits {
+            assert!(outcome.local.is_some());
+            assert!(outcome.refusal.is_none());
+        } else {
+            assert!(outcome.local.is_none());
+            assert_eq!(outcome.refusal, Some(CreateRefusalReason::Capacity));
+            assert!(state.lock().unwrap().actions.is_empty());
+        }
+    }
 }
 
 #[test]
@@ -406,7 +466,7 @@ fn mapped_destroy_revokes_routes_and_restarted_cleanup_needs_no_startup_epoch() 
     app.record_lifecycle_intent(&request(), &context()).unwrap();
     app.establish_lifecycle_host_epoch().unwrap();
     let local = advance(&app).unwrap().local.unwrap();
-    let secret = state.lock().unwrap().configurations[&local.sandbox.0]
+    let secret = state.lock().unwrap().configurations[&(local.sandbox.0, 1)]
         .0
         .clone();
     let permit = app

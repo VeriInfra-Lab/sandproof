@@ -1,0 +1,20 @@
+import SandproofSourceObservation.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation
+abbrev Observation := capture.source.RawSourceObservation
+abbrev Requirement := capture.source.SourceObservationRequirement
+-- This is exactly the decoded guard; unused fields are not silently added.
+def Accepts (value : Observation) (requirement : Requirement) : Prop :=
+  value.work_binding = requirement.work_binding ∧
+  value.resource = requirement.resource ∧
+  value.source = requirement.source ∧
+  value.configuration.length ≠ 0 ∧
+  value.configuration.length ≤ requirement.limits.max_configuration_bytes.val ∧
+  0 < value.kernel_bytes.val ∧ value.kernel_bytes.val ≤ requirement.limits.max_kernel_bytes.val ∧
+  0 < value.disk_bytes.val ∧ value.disk_bytes.val ≤ requirement.limits.max_disk_bytes.val
+noncomputable def Expected (value : Observation) (requirement : Requirement) : Bool :=
+  by classical exact decide (Accepts value requirement)
+def FullObservationContract (run : Observation → Requirement → Result Bool) : Prop :=
+  ∀ value requirement, run value requirement = .ok (Expected value requirement)
+end SandboxModel.Stage1Protocol.SourceObservation

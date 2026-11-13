@@ -42,6 +42,10 @@ async def run_selected(args, lock):
         raise InvalidInput('select task names from the complete locked task set')
     mode = validate_oracle_mode(args, selected)
     ci_fixtures = getattr(args, 'ci_fixtures', None)
+    original_fixtures = getattr(args, 'original_fixtures', None)
+    fixtures = ci_fixtures if ci_fixtures is not None else original_fixtures
+    recovery_source = ({'prepared_original': True} if original_fixtures is not None else
+                       {'prepared_ci': ci_fixtures is not None})
     if ci_fixtures is not None:
         if args.source_kind != 'prepared-ci' or lock['dataset'] != 'terminal-bench@2.0' or mode != 'original':
             raise InvalidInput('prepared CI requires its explicit original-oracle variant')
@@ -49,7 +53,13 @@ async def run_selected(args, lock):
             raise InvalidInput('selected task has no approved CI fixture')
         if not callable(getattr(args, 'verifier_task_factory', None)):
             raise InvalidInput('prepared CI requires an explicit scoring-entry variant factory')
-    else:
+    if original_fixtures is not None:
+        if (ci_fixtures is not None or args.source_kind != 'prepared-original'
+                or lock['dataset'] != 'terminal-bench@2.1' or mode != 'original'
+                or not selected <= original_fixtures.keys()
+                or getattr(args, 'verifier_task_factory', None) is not None):
+            raise InvalidInput('prepared original templates require the locked 2.1 oracle and verifier')
+    if fixtures is None:
         validate_source_kind(args.source_kind, [entries[name] for name in selected])
     rows = [{'name': t['name'], 'status': 'not_run',
              'reason': 'not_started' if t['name'] in selected else 'not_selected'} for t in lock['tasks']]
@@ -79,10 +89,10 @@ async def run_selected(args, lock):
         def factory(*, recipe, **kwargs):
             nonlocal environment
             factory_type = GenericEnvironment
-            if ci_fixtures is not None:
-                from benchmarks.prepared_ci_environment import PreparedCiEnvironment
-                factory_type = PreparedCiEnvironment
-                kwargs['fixture'] = ci_fixtures[name]
+            if fixtures is not None:
+                from benchmarks.prepared_template_environment import PreparedTemplateEnvironment
+                factory_type = PreparedTemplateEnvironment
+                kwargs['fixture'] = fixtures[name]
             environment = factory_type(entry=entry, source=args.source, source_kind=args.source_kind,
                 build_url=args.build_url, start_audit=getattr(args, 'start_audit', None), **kwargs)
             return environment
@@ -119,13 +129,15 @@ async def run_selected(args, lock):
                 row.setdefault('build_id', environment.build_id)
                 row.setdefault('build', environment.build_result)
                 row.setdefault('template', environment.template)
+                if timing := getattr(environment, 'startup_timing', None):
+                    row['startup_timing'] = timing.copy()
                 if not row.get('runtime_intent'):
                     try:
                         row['runtime_intent'] = load_runtime_intent(
                             result.parent, task=name, runtime_attempt=environment.runtime_attempt,
                             build_id=environment.build_id, template=environment.template,
                             benchmark=entry.get('dataset', 'terminal-bench-2.0'),
-                            prepared_ci=ci_fixtures is not None)
+                            **recovery_source)
                     except (OSError, ValueError, TypeError) as error:
                         row.setdefault('execution_status', row['status'])
                         row.update(status='cleanup_unknown', exact_cleanup='unknown',

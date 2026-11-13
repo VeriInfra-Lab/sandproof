@@ -1,0 +1,123 @@
+import LedgerBaseBinding
+import StartupProviderParent
+import StartupPlanSealed
+import ParentCompleteDraft
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+open SandproofUnloadFirstObservation
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+
+namespace BaseInput
+
+open SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness (CreateReadiness NativeCreateSnapshot)
+open SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot (first_entry_at_version)
+
+structure ReadsBeforeLocal [r : SandproofUnloadBaseSnapshot.Representations]
+    (ops : SandproofUnloadBaseSnapshot.Operations)
+    (tx : SandproofUnloadBaseSnapshot.rusqlite.transaction.Transaction)
+    (intent : SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (context : SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (native : NativeCreateSnapshot) where
+  connection : SandproofUnloadBaseSnapshot.rusqlite.Connection
+  inbox : SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Inbox
+  session : SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Session
+  entry : SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Entry
+  s : Usize
+  e : Usize
+  ready : CreateReadiness
+  high : U64
+  createOrResume :
+    (∃ request incarnation, intent.request.operation = .Create request incarnation) ∨
+    (∃ source capture target digest, intent.request.operation = .Resume source capture target digest)
+  derefOk : ops.deref tx = .ok connection
+  loaded : ops.loadInbox connection = .ok (.Ok (some inbox))
+  authOk : ops.authenticate inbox intent context = .ok (.Ok ())
+  found : ops.findIntent inbox intent = .ok (.Ok (some (s, e)))
+  indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.model.Session) inbox.sessions s = .ok session
+  entryFound : first_entry_at_version (alloc.vec.Vec.deref session.entries) session.current_version =
+    .ok (some entry)
+  cloneOk : ops.cloneIntent entry.intent = .ok entry.intent
+  readyOk : ops.readiness intent entry.intent entry session (some native) = .ok ready
+  requestCloneOk : ops.cloneIntent intent = .ok intent
+  highOk : ops.inputHighWater connection = .ok (.Ok high)
+
+structure Reads [SandproofUnloadBaseSnapshot.Representations]
+    (ops : SandproofUnloadBaseSnapshot.Operations)
+    (tx : SandproofUnloadBaseSnapshot.rusqlite.transaction.Transaction)
+    (intent : SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (context : SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (binding : SandproofUnloadBaseSnapshot.controller.internal_inbox.model.InternalLocalBinding)
+    (native : NativeCreateSnapshot)
+    extends ReadsBeforeLocal ops tx intent context native where
+  localEq : session.«local» = some binding
+
+end BaseInput
+
+abbrev ReadyView (ready : Type) := BaseSnapshotLink.BReadiness Record ready → BaseSnapshotLink.PReadiness
+
+@[reducible] def bindActualBase {ready : Type} (parent : ParentCalls)
+    (ops : BaseOps ready) (readyView : ReadyView ready) : ParentCalls :=
+  letI : BaseOps ready := ops
+  { parent with readBaseSnapshot := BaseSnapshotLink.actualReadBaseSnapshot Record ready readyView }
+
+variable [SandproofUnloadStartupJoint.Operations]
+
+/-- A base result is evaluated from the actual generated body, using the
+    exact same record and ledger row read by the startup command builder. -/
+theorem base_reads_original_world_and_ledger
+    {nativeBase : SandproofUnloadNativeSnapshot.Representations}
+    {ledgerBase : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (carriers : StartupCarriers) (nv : NativeLeafViews nativeBase ready) (nativeOps : NativeOps nativeBase)
+    (lv : LedgerLeafViews ledgerBase ready) (ledgerOps : LedgerOps ledgerBase)
+    (ops : BaseOps ready) (readyView : ReadyView ready)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : sandbox_controller_core.model.World)
+    (binding : Local) (origin : Intent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (record : Record) (ledger : StartupLedger) (native : BaseNative ready)
+    (baseRead : @BaseInput.Reads (BaseReps ready) (installBaseReads carriers nv nativeOps lv ledgerOps ops)
+      tx (BaseSnapshotLink.toBaseIntent Record ready origin) context
+      (baseLocalFromParent ready binding) native)
+    (recordRead : SandproofUnloadStartupJoint.sandbox_controller_core.model.World.sandbox_record
+      (cast carriers.world world) (carriers.localView binding).sandbox = .ok (some record))
+    (ledgerRead : SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_record
+      (cast carriers.world world) (SandproofUnloadStartupJoint.startupKey (carriers.localView binding)) =
+        .ok (some ledger))
+    (nativeRead : actualNativeRead carriers nv nativeOps tx ns world (baseLocalFromParent ready binding) record =
+      .ok (.Ok native)) :
+    letI : BaseOps ready := installBaseReads carriers nv nativeOps lv ledgerOps ops
+    ∃ candidate : Ready,
+      BaseSnapshotLink.actualReadBaseSnapshot Record ready readyView tx ns world origin context =
+        .ok (.Ok candidate) ∧
+      candidate.view.«local» = some binding ∧
+      candidate.view.native = some (BaseSnapshotLink.fromBaseNative Record ready native) ∧
+      candidate.view.historical_result = (ledger.result.map lv.resultFromStartup).map lv.resultToParent := by
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  letI baseOps : SandproofUnloadBaseSnapshot.Operations :=
+    installBaseReads carriers nv nativeOps lv ledgerOps ops
+  let baseLocal := baseLocalFromParent ready binding
+  let baseIntent := BaseSnapshotLink.toBaseIntent Record ready origin
+  let history := (ledger.result.map lv.resultFromStartup).map lv.resultToParent
+  have gotRecord : baseOps.sandboxRecord world baseLocal.sandbox = .ok (some record) := recordRead
+  have gotNative : baseOps.nativeSnapshot tx ns world baseLocal record = .ok (.Ok native) := nativeRead
+  have gotHistory : baseOps.originalResult world baseLocal = .ok (.Ok history) :=
+    actual_ledger_reads_selected_row carriers lv ledgerOps world binding ledger ledgerRead
+  have evaluated := SandproofUnloadBaseSnapshot.originalExecutionRead tx baseRead.connection ns world
+    baseIntent context baseRead.inbox baseRead.session baseRead.entry baseLocal record native history baseRead.ready
+    baseRead.s baseRead.e baseRead.createOrResume baseRead.derefOk baseRead.loaded baseRead.authOk baseRead.found
+    baseRead.indexed baseRead.entryFound baseRead.localEq baseRead.cloneOk gotRecord gotNative gotHistory
+    baseRead.readyOk baseRead.requestCloneOk
+  dsimp only [baseIntent] at evaluated
+  unfold BaseSnapshotLink.actualReadBaseSnapshot
+  rw [evaluated]
+  simp only [SandproofUnloadBaseSnapshot.finishRead]
+  rw [baseRead.highOk]
+  simp only [bind_tc_ok]
+  refine ⟨_, rfl, ?_, rfl, rfl⟩
+  change some (BaseSnapshotLink.fromBaseLocal Record ready (baseLocalFromParent ready binding)) = _
+  rw [base_local_roundtrip]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.base_reads_original_world_and_ledger

@@ -1,0 +1,14 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Core
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Examples
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+open Values
+theorem normal_witness : run anchor limits digest = .ok (Build anchor limits digest vmAction.resource) := by
+  rw [actual]
+  simp [Expected, anchor]
+theorem short_input_witness : run base.anchor limits digest = .fail .arrayOutOfBounds := by
+  rw [actual]
+  simp [Expected, base]
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.normal_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.short_input_witness

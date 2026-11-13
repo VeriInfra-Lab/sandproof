@@ -1,0 +1,230 @@
+import SandproofOriginalSourceRows.Funs
+import SandboxModel.ProofAuditCommand
+
+/-!
+Unchecked downstream candidate for the original C29/10037 handler.
+No Rust/Types/Funs/External file is copied or changed. This is a slot-update
+projection, not a replacement flow, parser or source-history specification.
+The normal-return hypothesis retains the actual complete Rows and D poststate.
+No valid-source/representable-string premise is needed for no-overwrite.
+-/
+open Aeneas Aeneas.Std
+
+namespace SandproofOriginalSourceRowsRust.SourceRowSlots
+
+abbrev Source := capture.SourceProcessIdentity
+abbrev Rows := controller.capture.OriginalSourceRows
+abbrev RowInput := core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8)
+  rusqlite.error.Error
+abbrev Binding := sandbox_controller_core.ids.SandboxId ×
+  sandbox_controller_core.ids.VmId × sandproof_protocol.SandboxId
+abbrev Reply := core.result.Result Unit JournalError
+
+/-- Invert only a normal Result bind. A failure or non-return cannot supply
+an invented returned value. This follows directly from fixed Result.cases. -/
+private theorem normal_bind {A B : Type} (action : Result A)
+    (next : A → Result B) (output : B)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ value, action = .ok value ∧ next value = .ok output := by
+  exact Result.cases
+    (motive := fun action =>
+      (do let value ← action; next value) = .ok output →
+        ∃ value, action = .ok value ∧ next value = .ok output)
+    action
+    (fun value returned => ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩)
+    (fun effect continuation returned => by
+      simp only [bind_tc_vis, vis_not_ok] at returned)
+    (fun returned => by simp only [bind_tc_div, div_not_ok] at returned)
+    returned
+
+/-- Pair destructuring is available only when the actual bind output type
+is Prod. In particular this never cases on a JournalError or other payload. -/
+private theorem normal_bind_pair {A B C : Type} (action : Result (A × B))
+    (next : (A × B) → Result C) (output : C)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ left right, action = .ok (left, right) ∧ next (left, right) = .ok output := by
+  obtain ⟨value, actualCall, tail⟩ := normal_bind action next output returned
+  rcases value with ⟨left, right⟩
+  exact ⟨left, right, actualCall, tail⟩
+
+private theorem normal_bind_result_pair {A Err B C : Type}
+    (action : Result (core.result.Result A Err × B))
+    (next : (core.result.Result A Err × B) → Result C) (output : C)
+    (returned : (do let value ← action; next value) = .ok output) :
+    (∃ value state, action = .ok (.Ok value, state) ∧
+      next (.Ok value, state) = .ok output) ∨
+    (∃ error state, action = .ok (.Err error, state) ∧
+      next (.Err error, state) = .ok output) := by
+  obtain ⟨reply, state, actualCall, tail⟩ := normal_bind_pair action next output returned
+  cases reply with
+  | Ok value => exact Or.inl ⟨value, state, actualCall, tail⟩
+  | Err error => exact Or.inr ⟨error, state, actualCall, tail⟩
+
+private theorem normal_if_iff {A : Type} (condition : Prop) [Decidable condition]
+    (yes no : Result A) (output : A) :
+    ((if condition then yes else no) = .ok output) ↔
+      ((condition ∧ yes = .ok output) ∨ (¬ condition ∧ no = .ok output)) := by
+  by_cases holds : condition <;> simp only [holds, if_true, if_false,
+    true_and, false_and, not_true_eq_false, not_false_eq_true, or_false, false_or]
+
+/-- For an existing Some, every actual normal agree result keeps that full
+record, including its business Err branches. No equality or validity of the
+newly observed source is assumed; the source comparison may itself fail. -/
+theorem actual_agree_normal_return_keeps_some
+    (previous observed : Source) (reply : Reply) (after : Option Source)
+    (returned : controller.capture.agree (some previous) observed =
+      .ok (reply, after)) : after = some previous := by
+  unfold controller.capture.agree at returned
+  split at returned
+  · exact (congrArg Prod.snd (Result.ok_injective returned)).symm
+  · obtain ⟨empty, _emptyCall, returned⟩ := normal_bind _ _ _ returned
+    split at returned
+    · exact (congrArg Prod.snd (Result.ok_injective returned)).symm
+    · dsimp only at returned
+      obtain ⟨equal, _equalCall, returned⟩ := normal_bind _ _ _ returned
+      split at returned <;>
+        exact (congrArg Prod.snd (Result.ok_injective returned)).symm
+
+/-- Exactly one of these slot projections witnesses a normal return. The
+source in an update branch is from an actual agree call in the generated
+handler, not an assumed property of a callback. The original reply is kept.
+This does not yet identify the earlier evidence/command history: C's source
+success contract is responsible for that additional business connection. -/
+def ActualSlotStep (before : Rows) (reply : Reply) (after : Rows) : Prop :=
+  after = before ∨
+  (∃ observed slot,
+    controller.capture.agree before.prepared observed = .ok (reply, slot) ∧
+    after = { before with prepared := slot }) ∨
+  (∃ observed slot,
+    controller.capture.agree before.activated observed = .ok (reply, slot) ∧
+    after = { before with activated := slot })
+
+/-- Transport a terminal step using only the actual normal return's reply
+and Rows projections. The complete codec is left untouched, not enumerated. -/
+private theorem terminal_slot_step {D : Type} (before : Rows)
+    {actualReply reply : Reply} {actualRows nextRows : Rows}
+    {actualCodec afterCodec : D}
+    (returned : Result.ok ((actualReply, actualRows), actualCodec) =
+      Result.ok ((reply, nextRows), afterCodec))
+    (step : ActualSlotStep before actualReply actualRows) :
+    ActualSlotStep before reply nextRows := by
+  have same := Result.ok_injective returned
+  have replyEq := congrArg (fun output => output.1.1) same
+  have rowsEq := congrArg (fun output => output.1.2) same
+  change actualReply = reply at replyEq
+  change actualRows = nextRows at rowsEq
+  rw [← rowsEq, ← replyEq]
+  exact step
+
+/-- A finite symbolic walk of this one generated handler. All unrelated
+computations are inverted at their original binds; none is unfolded into a
+second business algorithm or assumed successful. All actual codec poststates
+remain in the equality hypothesis and are never replaced by the input D. -/
+theorem actual_handler_slot_step {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (rows nextRows : Rows) (codec afterCodec : D) (reply : Reply)
+    (returned : controller.capture.accept_original_source_row evidence ops row
+      world ns current binding rows codec = .ok ((reply, nextRows), afterCodec)) :
+    ActualSlotStep rows reply nextRows := by
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  rcases row with ⟨⟨actionBytes, receiptBytes⟩⟩ | failure
+  all_goals
+    simp only [controller.capture.accept_original_source_row] at returned
+    try dsimp (config := { zeta := true, iota := true }) only at returned
+    repeat' first
+      | (rcases normal_bind_result_pair _ _ _ returned with
+           ⟨value, right, actualCall, returned⟩ | ⟨error, right, actualCall, returned⟩)
+      | (obtain ⟨value, actualCall, returned⟩ := normal_bind _ _ _ returned
+         try dsimp only at returned)
+      | (rw [normal_if_iff] at returned
+         rcases returned with ⟨branch, returned⟩ | ⟨branch, returned⟩)
+      | (split at returned <;> try dsimp only at returned)
+      | (apply terminal_slot_step rows returned
+         first
+           | exact Or.inl rfl
+           | exact Or.inr (Or.inl ⟨_, _, by assumption, rfl⟩)
+           | exact Or.inr (Or.inr ⟨_, _, by assumption, rfl⟩))
+
+/-- A handler normal return can update at most one slot. Thus the non-target
+slot is retained even when the target agree returns a business Err. -/
+theorem actual_handler_retains_non_target_slot {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (rows nextRows : Rows) (codec afterCodec : D) (reply : Reply)
+    (returned : controller.capture.accept_original_source_row evidence ops row
+      world ns current binding rows codec = .ok ((reply, nextRows), afterCodec)) :
+    nextRows.prepared = rows.prepared ∨ nextRows.activated = rows.activated := by
+  rcases actual_handler_slot_step evidence ops row world ns current binding
+    rows nextRows codec afterCodec reply returned with unchanged | prepared | activated
+  · subst nextRows
+    exact Or.inl rfl
+  · rcases prepared with ⟨observed, slot, _agreed, rfl⟩
+    exact Or.inr rfl
+  · rcases activated with ⟨observed, slot, _agreed, rfl⟩
+    exact Or.inl rfl
+
+/-- Main invariant: either normal business outcome retains every existing
+Some source in both actual slots, with no precondition that it was valid. -/
+theorem actual_handler_never_overwrites_existing_source {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (rows nextRows : Rows) (codec afterCodec : D) (reply : Reply)
+    (returned : controller.capture.accept_original_source_row evidence ops row
+      world ns current binding rows codec = .ok ((reply, nextRows), afterCodec)) :
+    (∀ previous, rows.prepared = some previous → nextRows.prepared = some previous) ∧
+    (∀ previous, rows.activated = some previous → nextRows.activated = some previous) := by
+  rcases actual_handler_slot_step evidence ops row world ns current binding
+    rows nextRows codec afterCodec reply returned with unchanged | prepared | activated
+  · subst nextRows
+    exact ⟨fun _ present => present, fun _ present => present⟩
+  · rcases prepared with ⟨observed, slot, agreed, rfl⟩
+    constructor
+    · intro previous present
+      exact actual_agree_normal_return_keeps_some previous observed reply slot
+        (by simpa only [present] using agreed)
+    · exact fun _ present => present
+  · rcases activated with ⟨observed, slot, agreed, rfl⟩
+    constructor
+    · exact fun _ present => present
+    · intro previous present
+      exact actual_agree_normal_return_keeps_some previous observed reply slot
+        (by simpa only [present] using agreed)
+
+/-- If a normal successful handler installs a prepared source into an empty
+slot, that exact slot comes from an actual normally successful agree; the
+activated slot is unchanged. No desired-source callback law is introduced. -/
+theorem new_prepared_slot_comes_from_actual_agree {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (rows nextRows : Rows) (codec afterCodec : D) (installed : Source)
+    (empty : rows.prepared = none) (present : nextRows.prepared = some installed)
+    (returned : controller.capture.accept_original_source_row evidence ops row
+      world ns current binding rows codec = .ok ((.Ok (), nextRows), afterCodec)) :
+    (∃ observed, controller.capture.agree none observed = .ok (.Ok (), some installed)) ∧
+      nextRows.activated = rows.activated := by
+  rcases actual_handler_slot_step evidence ops row world ns current binding
+    rows nextRows codec afterCodec (.Ok ()) returned with unchanged | prepared | activated
+  · simp [unchanged, empty] at present
+  · rcases prepared with ⟨observed, slot, agreed, rfl⟩
+    have slotPresent : slot = some installed := present
+    rw [slotPresent] at agreed
+    exact ⟨⟨observed, by simpa only [empty] using agreed⟩, rfl⟩
+  · rcases activated with ⟨observed, slot, _agreed, rfl⟩
+    simp [empty] at present
+
+end SandproofOriginalSourceRowsRust.SourceRowSlots
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowSlots.actual_agree_normal_return_keeps_some
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_slot_step
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_retains_non_target_slot
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_never_overwrites_existing_source
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceRowSlots.new_prepared_slot_comes_from_actual_agree

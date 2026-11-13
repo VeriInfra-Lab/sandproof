@@ -1,0 +1,91 @@
+import SandboxModel.Lifecycle.Protocol.ShapeModel
+import SandboxModel.Lifecycle.Protocol.ShapeLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem option_none_spec (value : Option α) :
+    core.option.Option.is_none value = decide (value = none) := by
+  cases value <;> simp [core.option.Option.is_none]
+
+theorem terminal_status_ne (status : TerminalStatus) :
+    core.cmp.PartialEq.ne.trait_default TerminalStatus.Insts.CoreCmpPartialEqTerminalStatus
+      status .Cleaned = .ok (decide (status ≠ .Cleaned)) := by
+  cases status <;> simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    TerminalStatus.Insts.CoreCmpPartialEqTerminalStatus.eq, TerminalStatus.read_discriminant]
+
+theorem terminal_self_spec (confirmed : TerminalLifecycleObservation) :
+    TerminalLifecycleObservation.matches_request confirmed confirmed.request =
+      .ok (decide (Terminal.Matches confirmed confirmed.request)) := by
+  simpa only [terminal_matches, Terminal.expected] using Terminal.terminal_refines confirmed confirmed.request
+
+theorem last_terminal_pred {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (confirmed : TerminalLifecycleObservation) (entry : Entry) :
+    Inbox.validate_session_shape_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once
+      saved terminal confirmed entry = .ok (decide (entry.intent ≠ confirmed.request)) := by
+  simp [Inbox.validate_session_shape_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.accepted_eq]
+
+theorem last_terminal_option {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (confirmed : TerminalLifecycleObservation) (entries : Option Entry) :
+    core.option.Option.is_none_or
+      (Inbox.validate_session_shape_using.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool saved terminal)
+      entries confirmed = .ok (decide (¬∃ last, entries = some last ∧ last.intent = confirmed.request)) := by
+  cases entries <;> simp [core.option.Option.is_none_or,
+    SandproofFoundationsRust.core.option.Option.is_none_or, last_terminal_pred]
+
+def encodedResult (value : core.result.Result (alloc.vec.Vec U8) serde_json.error.Error) : CheckResult :=
+  match value with
+  | .Err error => .ok (.Err (.Json error))
+  | .Ok bytes => if bytes.val.length ≤ 8192 then .ok (.Ok ()) else corrupt
+
+def encodedTerminal {E : Type} (encoding : TerminalEncoding E)
+    (confirmed : TerminalLifecycleObservation) : CheckResult := do
+  let value ← encoding.encode confirmed
+  encodedResult value
+
+theorem encoding_branch_spec (value : core.result.Result (alloc.vec.Vec U8) serde_json.error.Error) :
+    (do
+      let cf ← core.result.Result.Insts.CoreOpsTry.branch value
+      match cf with
+      | .Continue bytes =>
+        if alloc.vec.Vec.len bytes > 8192#usize then Result.ok (.Err JournalError.CorruptStore)
+        else Result.ok (.Ok ())
+      | .Break residual =>
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Unit JournalError.Insts.CoreConvertFromError residual) = encodedResult value := by
+  cases value with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from, encodedResult]
+  | Ok bytes =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+      encodedResult, corrupt, SavedRetirement.corrupt]
+    simp only [← not_le, ite_not, UScalar.le_equiv, alloc.vec.Vec.len_val]
+    rfl
+
+theorem confirmed_model_unfold {E : Type} (encoding : TerminalEncoding E) (session : Session) :
+    checkConfirmed encoding session =
+      match session.confirmed_terminal with
+      | none => .ok (.Ok ())
+      | some confirmed =>
+        if ConfirmedFields session confirmed then encodedTerminal encoding confirmed else corrupt := by
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.option_none_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.terminal_status_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.terminal_self_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.last_terminal_pred
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.last_terminal_option
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.encoding_branch_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.confirmed_model_unfold

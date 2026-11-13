@@ -1,0 +1,11 @@
+//! Direct roots for the unchanged production limits.
+pub fn request_body_bytes() -> usize {
+    sandproof_internal::lifecycle::REQUEST_BODY_BYTES
+}
+
+pub fn max_options_bytes() -> usize {
+    sandproof_protocol::internal::lifecycle::MAX_OPTIONS_BYTES
+}
+
+#[cfg(test)]
+mod tests;

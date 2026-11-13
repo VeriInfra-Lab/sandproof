@@ -1,0 +1,5 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_before_admission_exit_matches(candidate: &BeforeAdmissionExitCandidate, observed: &RestoreCandidateExitObservation) -> bool { candidate.matches(observed) }
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_continued_exit_matches(candidate: &ContinuedExitCandidate, observed: &OriginalContinueExitObservation) -> bool { candidate.matches(observed) }

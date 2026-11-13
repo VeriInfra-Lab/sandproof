@@ -29,6 +29,7 @@ pub fn capacity() -> CapacityConfig {
 
 pub fn maintenance() -> MaintenanceConfig {
     MaintenanceConfig {
+        max_operations_per_sandbox: 3,
         capacity: Some(capacity()),
         retention_ms: 100,
         max_checkpoint_bytes: 4 * 1024 * 1024,

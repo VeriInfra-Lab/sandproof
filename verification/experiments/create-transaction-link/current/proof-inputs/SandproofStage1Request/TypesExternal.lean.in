@@ -1,0 +1,39 @@
+import SandproofTxFinish.TypesExternal
+import SandproofFoundations.TypesExternal
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofStage1RequestRust
+
+abbrev F64 := SandproofFoundationsRust.F64
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev sandbox_controller_core.capture.CaptureHandoff := SandproofTxFinishRust.sandbox_controller_core.capture.CaptureHandoff
+abbrev sandbox_controller_core.maintenance.MaintenanceState := SandproofTxFinishRust.sandbox_controller_core.maintenance.MaintenanceState
+
+structure CellBeforeBorrow (T : Type) where
+  value : T
+  beforeBorrowCount : Int
+
+structure LocalMutableGuard (T : Type) where
+  value : T
+  activeBorrowCount : Int
+
+abbrev core.cell.RefCell := CellBeforeBorrow
+abbrev core.cell.RefMut := LocalMutableGuard
+
+-- Same existing admitted call-view: not a second SQL connection or raw T.
+abbrev rusqlite.Connection := SandproofTxFinishRust.RollbackCallView
+abbrev rusqlite.row.Row := SandproofSqliteSession.Row
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.RowStatement
+abbrev rusqlite.types.from_sql.FromSqlError := SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+
+def invalidType := SandproofLoadBlobRust.invalidType
+
+-- Exact fixed library data cases; no automatic cleanup semantics.
+inductive rusqlite.transaction.DropBehavior where
+  | Rollback | Commit | Ignore | Panic
+
+end SandproofStage1RequestRust

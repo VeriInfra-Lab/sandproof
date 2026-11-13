@@ -1,0 +1,127 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryLibrary
+import SandboxModel.Lifecycle.Protocol.InboxEntryCount
+import SandboxModel.Lifecycle.Protocol.UnloadProofs
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.request sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open scoped Classical
+noncomputable section
+
+theorem entry_kind_with_count (countContract : FullCountContract Inbox.count_entry_key) {E : Type} (encoding : UnloadEncoding E)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext) :
+    Inbox.entry_kind_using encoding inbox session entry context =
+      entryView encoding.encode inbox session entry context := by
+  unfold Inbox.entry_kind_using entryView
+  rw [UnloadResolution.validate_entry_spec]
+  apply congrArg (fun continuation => Bind.bind (UnloadResolution.validateView encoding.encode entry) continuation)
+  funext unloaded
+  cases unloaded with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok value =>
+    cases value
+    have counting := countContract inbox entry.intent.request.binding.key
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, accepted_body,
+      RenewalResultTag.actual_is_err, core.cmp.PartialEq.ne.trait_default,
+      core.cmp.PartialEq.ne.default, Replay.retention_eq, session_eq, owner_eq]
+    cases operation : entry.intent.request.operation <;>
+      cases localState : session.local <;> cases localOp : entry.local_operation <;>
+      simp [operation, localState, localOp, prefixInvalid, isRenew,
+        core.option.Option.is_some, core.option.Option.is_none,
+        counting, corrupt, Bool.or_eq_true, ite_or, operationResult, renewInvalid,
+        IncarnationId.get, PositiveCounter.get, previous_option, applied_option,
+        incarnation_zero, lift, alloc.vec.Vec.len,
+        ← Validation.ok_ite]
+    all_goals rfl
+
+
+theorem entry_kind_refines {E : Type} (encoding : UnloadEncoding E)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext) :
+    Inbox.entry_kind_using encoding inbox session entry context =
+      entryView encoding.encode inbox session entry context :=
+  entry_kind_with_count candidate_count_contract encoding inbox session entry context
+
+theorem full_contract : FullEntryContract run := by
+  intro encode inbox session entry context
+  exact entry_kind_refines ⟨encode⟩ inbox session entry context
+
+theorem unload_error_precedes_guards (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (error : sandproof_controller_service.JournalError)
+    (unloaded : UnloadResolution.validateView encode entry = .ok (.Err error)) :
+    run encode inbox session entry context = .ok (.Err error) := by
+  rw [full_contract]
+  simp [entryView, unloaded]
+
+theorem unload_failure_preserved (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (error : Error) (unloaded : UnloadResolution.validateView encode entry = .fail error) :
+    run encode inbox session entry context = .fail error := by
+  rw [full_contract]
+  simp [entryView, unloaded]
+
+theorem unload_divergence_preserved (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (unloaded : UnloadResolution.validateView encode entry = .div) :
+    run encode inbox session entry context = .div := by
+  rw [full_contract]
+  simp [entryView, unloaded]
+
+theorem prefix_rejection_precedes_count (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (unloaded : UnloadResolution.validateView encode entry = .ok (.Ok ()))
+    (bad : prefixInvalid session entry context = true) :
+    run encode inbox session entry context = .ok corrupt := by
+  rw [full_contract]
+  simp [entryView, unloaded, bad]
+
+theorem count_overflow_precedes_operation (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (unloaded : UnloadResolution.validateView encode entry = .ok (.Ok ()))
+    (prefixGuard : prefixInvalid session entry context = false)
+    (large : 2^UScalarTy.Usize.numBits ≤
+      countSessions entry.intent.request.binding.key inbox.sessions.val) :
+    run encode inbox session entry context = .fail .integerOverflow := by
+  rw [full_contract]
+  simp [entryView, unloaded, prefixGuard, count_result_overflow _ large]
+
+theorem accepted_after_unload_iff (encode : UnloadResolution.Encoding)
+    (inbox : Inbox) (session : Session) (entry : Entry) (context : AuthenticatedCenterContext)
+    (kind : Usize) (unloaded : UnloadResolution.validateView encode entry = .ok (.Ok ())) :
+    run encode inbox session entry context = .ok (.Ok kind) ↔
+      prefixInvalid session entry context = false ∧
+      countSessions entry.intent.request.binding.key inbox.sessions.val = 1 ∧
+      operationResult inbox session entry = .Ok kind := by
+  rw [full_contract]
+  by_cases prefixGuard : prefixInvalid session entry context = true
+  · simp [entryView, unloaded, prefixGuard, corrupt]
+  · have good : prefixInvalid session entry context = false := Bool.eq_false_iff.mpr prefixGuard
+    simp only [entryView, unloaded, bind_tc_ok, good, Bool.false_eq_true, ↓reduceIte, true_and]
+    let n := countSessions entry.intent.request.binding.key inbox.sessions.val
+    by_cases bound : n < 2^UScalarTy.Usize.numBits
+    · rw [count_result_ok n bound]
+      simp [corrupt, UScalar.ofNatCore_val_eq, ite_eq_iff, n]
+    · rw [count_result_overflow n (by omega)]
+      have notOne : n ≠ 1 := by
+        intro eqOne
+        have oneBound : 1 < 2^UScalarTy.Usize.numBits := by simpa using (1#usize).hBounds
+        omega
+      change countSessions entry.intent.request.binding.key inbox.sessions.val ≠ 1 at notOne
+      simp [notOne]
+
+end
+end SandboxModel.Stage1Protocol.InboxEntry
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entry_kind_with_count
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.entry_kind_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.unload_error_precedes_guards
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.unload_failure_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.unload_divergence_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.prefix_rejection_precedes_count
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.count_overflow_precedes_operation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.accepted_after_unload_iff

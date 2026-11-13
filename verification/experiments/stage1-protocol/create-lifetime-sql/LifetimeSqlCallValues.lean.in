@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlLibrary
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSqlLibrary
+open SandproofLifecycleSqlRust
+
+-- This derives only the complete logical arguments of the admitted whole
+-- library call. No raw binding-success or durable transaction claim follows.
+theorem connection_complete_inputs (connection : rusqlite.Connection)
+    (statement : Str) (number : I64) (text : Str) :
+    rusqlite.Connection.execute
+      (ArrayT2.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      connection statement (inputs number text) = (do
+        let prepared ← connection.prepare statement
+        match prepared with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok _ => connection.run statement [.integer number, .text text]) := by
+  simp only [rusqlite.Connection.execute,
+    SandproofSqliteStatementsRust.rusqlite.Connection.execute]
+  change (do
+    let prepared ← connection.prepare statement
+    match prepared with
+    | .Err error => .ok (core.result.Result.Err error)
+    | .Ok count => do
+        let (bound, result) ← ArrayT2.Insts.RusqliteParamsParams.__bind_in
+          rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+          (inputs number text) ⟨count, [], connection.countError count⟩
+        match bound with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok () => connection.run statement result.arguments) = _
+  simp only [array_complete_inputs, bind_tc_ok, List.nil_append]
+
+end SandboxModel.Stage1Protocol.LifetimeSqlLibrary
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.connection_complete_inputs

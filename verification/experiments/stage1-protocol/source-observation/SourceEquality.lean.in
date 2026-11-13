@@ -1,0 +1,13 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Equality
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation.Equality
+theorem source_eq (left right : capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    capture.SourceProcessIdentity.mk.injEq, ok_and]
+end SandboxModel.Stage1Protocol.SourceObservation.Equality
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.source_eq

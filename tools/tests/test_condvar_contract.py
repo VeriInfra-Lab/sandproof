@@ -1,11 +1,17 @@
-"""Reject resealed wrong-object/order bindings and broader Condvar claims."""
+"""Test historical Condvar admission rules, not current Reaper refinement."""
 import json
 from pathlib import Path
 import shutil
 import tempfile
 import unittest
 
-from tools.check_condvar_contract import ROOT, SOURCE_FILES, check, digest
+from tools.check_condvar_contract import SOURCE_FILES, check, digest
+from tools.tests.proof_input_fixture import reference_root
+
+# The #682 fixture manifest binds the original bytes to commit
+# 56b14d642c392316043dfbdbe4d26bacc663fb30.
+# Keep source and reviewed anchors together; never reseal current Reaper as old evidence.
+ROOT = reference_root()
 
 
 class CondvarAdmissionTests(unittest.TestCase):
@@ -40,7 +46,9 @@ class CondvarAdmissionTests(unittest.TestCase):
 
     def test_wrong_original_mutex_rejected_after_reseal(self):
         path = self.root / 'sandbox-runtime/src/child_process/reaper.rs'
-        path.write_text(path.read_text().replace('self.wake.wait(pending)', 'other.wake.wait(pending)'))
+        source = path.read_text()
+        self.assertEqual(source.count('self.wake.wait(pending)'), 1)
+        path.write_text(source.replace('self.wake.wait(pending)', 'other.wake.wait(pending)'))
         self.seal()
         with self.assertRaisesRegex(ValueError, 'call anchor changed'):
             check(self.root, self.sysroots)

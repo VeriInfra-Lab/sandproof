@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckCommon
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck
+open OwnerMapping
+theorem existing_step (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64)
+    (index next : Usize) (inside : index.val < inbox.owners.val.length)
+    (addition : ((index + 1#usize) : Result Usize) = .ok next) :
+    existingBody inbox owner localOwner index = .ok
+      (if inbox.owners.val[index.val].external = owner then
+        .done (rowVerdict localOwner inbox.owners.val[index.val]) else .cont next) := by
+  have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Owner) inbox.owners index =
+      .ok inbox.owners.val[index.val] := by
+    obtain ⟨row, returned, same⟩ := WP.spec_imp_exists (alloc.vec.Vec.index_usize_spec inbox.owners index inside)
+    simpa [alloc.vec.Vec.index_slice_index, same] using returned
+  cases selected : inbox.owners.val[index.val]'inside with
+  | mk external stored =>
+    have within : index < alloc.vec.Vec.len inbox.owners := inside
+    simp only [existingBody, sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop.body,
+      within, ↓reduceIte, item, selected, bind_tc_ok, tenant_eq, internal_ne, decide_eq_true_eq, addition]
+    by_cases matched : external = owner
+    · by_cases sameVal : stored.val = localOwner.val
+      · have same : stored = localOwner := UScalar.eq_of_val_eq sameVal
+        simp [matched, rowVerdict, same]
+      · have different : stored ≠ localOwner := fun same => sameVal (congrArg UScalar.val same)
+        simp [matched, rowVerdict, different]
+    · simp [matched]
+
+theorem existing_refines (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64) (index : Usize) :
+    existingLoop inbox owner localOwner index = .ok
+      (existingFrom owner localOwner (inbox.owners.val.drop index.val)) := by
+  by_cases inside : index.val < inbox.owners.val.length
+  · obtain ⟨next, addition, nextVal⟩ := next_counter index (by scalar_tac)
+    rw [existing_unfold, existing_step inbox owner localOwner index next inside addition]
+    rw [List.drop_eq_getElem_cons inside, existing_cons]
+    by_cases matched : inbox.owners.val[index.val].external = owner
+    · simp only [matched, if_true, bind_tc_ok]
+    · have rest := existing_refines inbox owner localOwner next
+      simpa only [matched, if_false, bind_tc_ok, nextVal] using rest
+  · rw [existing_unfold, existing_end inbox owner localOwner index (by omega)]
+    simp [List.drop_eq_nil_of_le (by omega : inbox.owners.val.length ≤ index.val), existing_nil]
+termination_by inbox.owners.val.length - index.val
+
+theorem existing_complete : FullExistingContract existingRun := by
+  intro inbox owner localOwner
+  unfold existingRun sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner
+  simpa [existingExpected] using existing_refines inbox owner localOwner 0#usize
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_step
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_complete

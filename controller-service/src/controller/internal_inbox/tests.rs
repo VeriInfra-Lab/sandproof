@@ -680,16 +680,18 @@ fn internal_inbox_destroy_and_native_terminal_commit_together_even_during_uncert
             j.next_operation_id(local.sandbox).unwrap(),
             core::OperationId(2)
         );
-        assert!(
+        let before_start_retry = j.world().unwrap();
+        assert!(matches!(
             crate::finish_admitted_create_timed(
                 &mut j,
                 local.sandbox,
                 local.operation,
                 &mut workflow_fixture::worker,
-                &mut || Ok(20)
-            )
-            .is_err()
-        );
+                &mut || panic!("a terminal create must not resample Running time")
+            ),
+            Err(JournalError::UnsupportedInput)
+        ));
+        assert_eq!(j.world().unwrap(), before_start_retry);
         assert_eq!(
             j.capture_internal_progress(&destroy, &mut NeverCrash)
                 .unwrap()

@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Equality
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Examples
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation.NegativePid
+open SandboxModel.Stage1Protocol.SourceObservation Values Equality
+
+theorem actual (value : Observation) (requirement : Requirement) :
+    capture.source.RawSourceObservation.matches value requirement =
+      .ok (by classical exact decide (
+        value.work_binding = requirement.work_binding ∧
+        value.resource = requirement.resource ∧
+        value.source.pid = requirement.source.pid ∧
+        value.configuration.length ≠ 0 ∧
+        value.configuration.length ≤ requirement.limits.max_configuration_bytes.val ∧
+        0 < value.kernel_bytes.val ∧
+        value.kernel_bytes.val ≤ requirement.limits.max_kernel_bytes.val ∧
+        0 < value.disk_bytes.val ∧
+        value.disk_bytes.val ≤ requirement.limits.max_disk_bytes.val)) := by
+  classical
+  simp [capture.source.RawSourceObservation.matches,
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    array_eq,
+    resource_eq,
+    alloc.vec.Vec.is_empty,
+    ok_and,
+    ok_not_and,
+    lift,
+    Bool.and_assoc,
+    Bool.and_left_comm,
+    Bool.and_comm]
+
+theorem shared_normal : proof_source_observation_matches value requirement = .ok true := by
+  change capture.source.RawSourceObservation.matches _ _ = _
+  rw [actual]
+  simp [value, requirement, limits]
+
+theorem bad_actual : proof_source_observation_matches badStart requirement = .ok true := by
+  change capture.source.RawSourceObservation.matches _ _ = _
+  rw [actual]
+  simp [badStart, value, requirement, limits]
+
+theorem rejects_same_full_contract : ¬ FullObservationContract proof_source_observation_matches := by
+  intro claimed
+  have h := claimed badStart requirement
+  rw [bad_actual, start_expected] at h
+  simp at h
+
+end SandboxModel.Stage1Protocol.SourceObservation.NegativePid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.NegativePid.actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.NegativePid.shared_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.NegativePid.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.NegativePid.rejects_same_full_contract

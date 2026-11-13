@@ -1,0 +1,587 @@
+{
+  "schema": 1,
+  "scope": "Current decoded namespace/u64 identity value; explicit finite fixed-library normal-return contract. No native/shared/transaction/whole-V3 conclusion.",
+  "source_base": "723d84acb3576fc624b172ba71e6bc966c5b32ca",
+  "source_inputs": {
+    "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
+  },
+  "providers": {
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+    "SandboxModel/Foundations/IdentifierModel.lean": "1e40b772c61a27026285f68bd54eff1243f995634a091e13e743202357e89bef",
+    "SandboxModel/Foundations/Identifiers.lean": "f0880da1f78aa6ae0dd8aaf5eed7ca6c77d22c580442c296cffb3f3973cd1786",
+    "SandboxModel/Foundations/ErrorMessages.lean": "94543f82835b52cc5bf89cf54e7cea38638268363590704f6c18a1ab4a0c7023",
+    "SandboxModel/Foundations/ByteArray.lean": "32c29657733cb72eb74e1657e816b00dc1e74f27f2926b94a1b1a788cda78bc9",
+    "SandboxModel/Foundations/Model.lean": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+    "SandboxModel/Foundations/Representation.lean": "8a5744b9381143656e5deb41a08a3ebb3fae0853dc57c0fb1a3d957a543078dd",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
+    "verification/aeneas/foundations/SandproofFoundations/Funs.lean": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9"
+  },
+  "templates": {
+    "CreateFixedIdentity.lean.in": "dee6f2c704bb62a97094becc633180be59b30b3f2dc6a5e2a64c34f3ba2a17ee",
+    "CreateFixedIdentityModel.lean.in": "2ad72bc4bcab720cddd4d12086c8b7dbf21cff8533f624d7400a720fe24f0a6e",
+    "CreateFixedIdentityNamespaceCounter.lean.in": "59bf2b621ffeffb33fa60a1d300106e13a2096d13e75384d0c501bdf738aa617",
+    "CreateFixedIdentityNumberCounter.lean.in": "e5bba6c76b4c862b8c250f7f19ddcacc558f87f5d2a9a000d41f1ced23a7ad18",
+    "CreateFixedIdentityValidation.lean.in": "9bd0e8cbf6c8ab3f987110b29f80cd02d2be2b257abcd04830a637d435a5a979",
+    "CreateFixedIdentityValues.lean.in": "da6a5aa01eb87b736b11ed7d1bb2bbb5edbc2f913a8c3378037b6f22d39be1fa",
+    "CreateFixedIdentityWitnesses.lean.in": "75ece30712f797a73bc05cd3c957a7d1fb3d9fcb8e5fc866ca5a46d59b35c22e",
+    "FixedFormatBinding.lean.in": "0512988ce87d260899fc1f38799818304f38374d026aa36e70484aa3f1096914",
+    "FunsExternal.lean.in": "612fe10e769d81590e275a3d4b77dc99104b28d0a61ba1bbe77bf493ed3c3183",
+    "README.md": "806a2d0578c020c06b99f2da990454bd8faaa2fc55d1bdbbfdffe74a20e9ac38",
+    "TypesExternal.lean.in": "c2759275e3735d5bc67a1ebfe82bea5a3d4f22fd58717c6c88b517f73d8b6f3f",
+    "native-cases.rs.in": "492638239e92bcf743664c36904708916e799e2f8cabd28ecf8656c394c39d5e",
+    "root.rs.in": "0f4991dece3ba0ff00fae9350b72f691cea0bc4e0ff85b449dcb695763c378c1"
+  },
+  "drivers": {
+    "binding.py": "de8c0290c2847343ac6ad543d3c414e2493ac763fa66b6c847f969fe72e9b4a5",
+    "formal.py": "d2b28838ade6b4d4e0f79c774e5f3a0bbe3d735160cddcd477763a2259d2eb4e",
+    "native.py": "f83fbab06b48a248f6b7aa0823c6eca4bd734e4f2eb24d05e72611ca34eb43ed",
+    "support.py": "4fce6a59d77a986c925435e9f8175878ba2fcc9d77a79b2ee71072b5730c4201"
+  },
+  "external_functions": [
+    "Shared0T.Insts.CoreFmtDisplay.fmt",
+    "Str.Insts.CoreFmtDisplay.fmt",
+    "core.num.U8.is_ascii_alphanumeric",
+    "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+    "core.str.Str.len",
+    "core.str.Str.is_empty",
+    "core.str.Str.bytes",
+    "alloc.fmt.format",
+    "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref"
+  ],
+  "standard_library_sources": {
+    "production": {
+      "core/src/fmt/mod.rs": "0b01f8c3ef1a7c1a75eaf468456a2fc10a608d9f9191b56e1793f8b9bfb29b23",
+      "core/src/fmt/rt.rs": "7a7dd4b1640a734fcb82f178ab69868b8f2f624a8c1f5a6fcf85002f4e2e4423",
+      "core/src/fmt/num.rs": "e3db1034a79b77973f7ebb280a9543fd2508c5a5e73481ba924a3c7c9694b2fe",
+      "alloc/src/fmt.rs": "5787ee1ac366050193db15b5ac46d74fde2bdcc0ce096e9962b2bf39c5d49510",
+      "core/src/str/mod.rs": "2c90ff097999f139148ef065c428c35a07807d8b38535ce5e2b43d65ad0deaae",
+      "alloc/src/string.rs": "68d7464cc83b0064bac9b600b72b4feb7c90eb5efc92def549b7eb586c6537ed",
+      "core/src/hint.rs": "b1eab1ed407ac89ff58fc6fc540b969e3854c4709254331a35c6620ec163e843"
+    },
+    "extraction": {
+      "core/src/fmt/mod.rs": "54596bb5eb43b6f24c4815543c486c997ccac39f9b6dadefb4c98ddd106317c3",
+      "core/src/fmt/rt.rs": "7a7dd4b1640a734fcb82f178ab69868b8f2f624a8c1f5a6fcf85002f4e2e4423",
+      "core/src/fmt/num.rs": "6c8f8e56e0dc92d6afa17dcca050ace3696e0bc46d977749489c8831cbc55af7",
+      "alloc/src/fmt.rs": "5787ee1ac366050193db15b5ac46d74fde2bdcc0ce096e9962b2bf39c5d49510",
+      "core/src/str/mod.rs": "f03f33d0e9c37226a2b31b112207b7e430a1e7e73b7d35fb2690b39da57645d5",
+      "alloc/src/string.rs": "525acea77c51de51eae6457674dd6942adb5aca1580de26d2e25d24d8f0b5bb8",
+      "core/src/hint.rs": "b4f66d4ba3e10b07d8106e94818577290b76e74d3252932f308c489eb3520426"
+    }
+  },
+  "common_templates": [
+    "CreateFixedIdentityModel",
+    "CreateFixedIdentityValues"
+  ],
+  "variants": {
+    "actual": {
+      "mutation": null,
+      "templates": [
+        "CreateFixedIdentityValidation",
+        "CreateFixedIdentity",
+        "CreateFixedIdentityWitnesses"
+      ],
+      "seeds": [
+        "CreateFixedIdentityWitnesses"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "Str.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for str}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.num.U8.is_ascii_alphanumeric",
+          "rust_name": "core::num::{u8}::is_ascii_alphanumeric",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+          "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.len",
+          "rust_name": "core::str::{str}::len",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.is_empty",
+          "rust_name": "core::str::{str}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.bytes",
+          "rust_name": "core::str::{str}::bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.fmt.format",
+          "rust_name": "alloc::fmt::format",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+          "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.core.hint.must_use",
+          "rust_name": "core::hint::must_use",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier",
+          "rust_name": "sandproof_protocol::valid_identifier",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from",
+          "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromContractError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<sandproof_protocol::ContractError> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.controller.identity.sandbox_id",
+          "rust_name": "sandproof_controller_service::controller::identity::sandbox_id",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Foundations/ErrorMessages.lean",
+        "SandboxModel/Foundations/IdentifierModel.lean",
+        "SandboxModel/Foundations/Identifiers.lean",
+        "SandboxModel/Foundations/Model.lean",
+        "SandboxModel/Foundations/Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentity.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValidation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValues.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityWitnesses.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Funs.lean",
+        "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FixedFormatBinding.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Types.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.identity_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.full_identity_contract",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.normal_accepted",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.empty_namespace_accepted",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.all_numeric_bits_retained",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.invalid_namespace_rejected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.unicode_namespace_rejected"
+      ]
+    },
+    "empty-namespace": {
+      "mutation": {
+        "before": "\"sb-{namespace}-{}\",\n        sandbox.0",
+        "after": "\"sb-{}-{}\",\n        if namespace.is_empty() { namespace } else { \"\" },\n        sandbox.0"
+      },
+      "templates": [
+        "CreateFixedIdentityValidation",
+        "CreateFixedIdentityNamespaceCounter"
+      ],
+      "seeds": [
+        "CreateFixedIdentityNamespaceCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "Str.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for str}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.num.U8.is_ascii_alphanumeric",
+          "rust_name": "core::num::{u8}::is_ascii_alphanumeric",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+          "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.len",
+          "rust_name": "core::str::{str}::len",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.is_empty",
+          "rust_name": "core::str::{str}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.bytes",
+          "rust_name": "core::str::{str}::bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.fmt.format",
+          "rust_name": "alloc::fmt::format",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+          "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.core.hint.must_use",
+          "rust_name": "core::hint::must_use",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier",
+          "rust_name": "sandproof_protocol::valid_identifier",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from",
+          "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromContractError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<sandproof_protocol::ContractError> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.controller.identity.sandbox_id",
+          "rust_name": "sandproof_controller_service::controller::identity::sandbox_id",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Foundations/ErrorMessages.lean",
+        "SandboxModel/Foundations/IdentifierModel.lean",
+        "SandboxModel/Foundations/Identifiers.lean",
+        "SandboxModel/Foundations/Model.lean",
+        "SandboxModel/Foundations/Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityNamespaceCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValidation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Funs.lean",
+        "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FixedFormatBinding.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Types.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.original_normal_specification",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.actual_namespace_lost",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.still_accepts_empty_zero",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NamespaceCounter.same_full_contract_rejected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected"
+      ]
+    },
+    "truncate-number": {
+      "mutation": {
+        "before": "        sandbox.0\n",
+        "after": "        sandbox.0 / 10\n"
+      },
+      "templates": [
+        "CreateFixedIdentityValidation",
+        "CreateFixedIdentityNumberCounter"
+      ],
+      "seeds": [
+        "CreateFixedIdentityNumberCounter"
+      ],
+      "generated_functions": [
+        {
+          "lean_name": "Shared0T.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for &'_0 T}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "Str.Insts.CoreFmtDisplay.fmt",
+          "rust_name": "core::fmt::{impl core::fmt::Display for str}::fmt",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.num.U8.is_ascii_alphanumeric",
+          "rust_name": "core::num::{u8}::is_ascii_alphanumeric",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all",
+          "rust_name": "core::str::iter::{impl core::iter::traits::iterator::Iterator<u8> for core::str::iter::Bytes<'_0>}::all",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.len",
+          "rust_name": "core::str::{str}::len",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.is_empty",
+          "rust_name": "core::str::{str}::is_empty",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "core.str.Str.bytes",
+          "rust_name": "core::str::{str}::bytes",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.fmt.format",
+          "rust_name": "alloc::fmt::format",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref",
+          "rust_name": "alloc::string::{impl core::ops::deref::Deref<str> for alloc::string::String}::deref",
+          "is_opaque": true,
+          "lean_file": "SandproofStage1CreateAttachment/FunsExternal_Template.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.core.hint.must_use",
+          "rust_name": "core::hint::must_use",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnMut<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_mut",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once",
+          "rust_name": "sandproof_protocol::valid_identifier::{impl core::ops::function::FnOnce<(u8,), bool> for sandproof_protocol::valid_identifier::{closure}}::call_once",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.valid_identifier",
+          "rust_name": "sandproof_protocol::valid_identifier",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_protocol.SandboxId.Insts.CoreConvertTryFromStringContractError.try_from",
+          "rust_name": "sandproof_protocol::{impl core::convert::TryFrom<alloc::string::String, sandproof_protocol::ContractError> for sandproof_protocol::SandboxId}::try_from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromContractError.from",
+          "rust_name": "sandproof_controller_service::{impl core::convert::From<sandproof_protocol::ContractError> for sandproof_controller_service::JournalError}::from",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        },
+        {
+          "lean_name": "SandproofStage1CreateAttachmentRust.sandproof_controller_service.controller.identity.sandbox_id",
+          "rust_name": "sandproof_controller_service::controller::identity::sandbox_id",
+          "is_opaque": false,
+          "lean_file": "SandproofStage1CreateAttachment/Funs.lean"
+        }
+      ],
+      "expected_files": [
+        "SandboxModel/Foundations/ByteArray.lean",
+        "SandboxModel/Foundations/ErrorMessages.lean",
+        "SandboxModel/Foundations/IdentifierModel.lean",
+        "SandboxModel/Foundations/Identifiers.lean",
+        "SandboxModel/Foundations/Model.lean",
+        "SandboxModel/Foundations/Representation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityModel.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityNumberCounter.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValidation.lean",
+        "SandboxModel/Lifecycle/Protocol/CreateFixedIdentityValues.lean",
+        "SandboxModel/ProofAuditCommand.lean",
+        "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Funs.lean",
+        "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+        "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+        "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+        "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FixedFormatBinding.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Funs.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/FunsExternal.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/Types.lean",
+        "verification/aeneas/stage1-protocol/create-fixed-identity/SandproofStage1CreateAttachment/TypesExternal.lean"
+      ],
+      "expected_audits": [
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.original_normal_specification",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.actual_number_truncated",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.still_accepts_empty_zero",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.NumberCounter.same_full_contract_rejected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+        "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected"
+      ]
+    }
+  },
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_errors": []
+    },
+    "empty-namespace": {
+      "mutation": {
+        "before": "\"sb-{namespace}-{}\",\n        sandbox.0",
+        "after": "\"sb-{}-{}\",\n        if namespace.is_empty() { namespace } else { \"\" },\n        sandbox.0"
+      },
+      "test_count": 5,
+      "expected_failures": [
+        "identity_keeps_complete_namespace",
+        "identity_keeps_original_identifier_rejection",
+        "identity_checks_full_rendered_byte_length"
+      ],
+      "expected_clippy_errors": []
+    },
+    "truncate-number": {
+      "mutation": {
+        "before": "        sandbox.0\n",
+        "after": "        sandbox.0 / 10\n"
+      },
+      "test_count": 5,
+      "expected_failures": [
+        "identity_keeps_complete_decimal_number",
+        "identity_allows_empty_namespace",
+        "identity_keeps_complete_namespace"
+      ],
+      "expected_clippy_errors": []
+    },
+    "restored-actual": {
+      "mutation": null,
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_errors": []
+    }
+  },
+  "existing_math_reused": [
+    "SandboxModel.Foundations.identifier_validator_refines",
+    "SandboxModel.Foundations.owned_constructors_refine",
+    "SandboxModel.Foundations.default_string_write_refines"
+  ],
+  "fixed_library_dependency": {
+    "name": "default-str-u64-fixed-sandbox-format-normal-return",
+    "provider": "V0 common library single writer",
+    "parameters": "Complete namespace bytes, all u64 bits, exact nine packed bytes, two default Display callbacks in order; existing default String sink",
+    "result": "Same complete sb-{namespace}-{decimal u64} String under existing normal-return/representation domain",
+    "not_proved": "Std implementation, arbitrary formatter, allocation success, arbitrary user Display"
+  },
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}

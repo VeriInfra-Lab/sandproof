@@ -1,0 +1,142 @@
+import BaseWorldParent
+import BaseInboxView
+import InboxParentLink
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox
+open SandboxModel.Stage1Protocol.InboxLoad
+open SandboxModel.Stage1Protocol.InboxOriginBinding
+open SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+variable [SandproofUnloadFirstObservation.Representations] [SandproofUnloadStartupJoint.Representations]
+
+abbrev Load := SandproofUnloadFirstObservation.rusqlite.Connection →
+  Result (core.result.Result (Option BaseInboxView.PInbox) BaseSnapshotLink.PError)
+
+@[reducible] def install {ready : Type} (ops : BaseOps ready)
+    (parent : SandproofUnloadFirstObservation.ParentCalls) (c : Carriers) (load : Load) : BaseOps ready :=
+  letI : SandproofUnloadFirstObservation.ParentCalls := bindInboxReads parent c
+  BaseInboxView.bindInbox Record ready ops load SandproofUnloadFirstObservation.ParentCalls.inboxFindCompleteRequest
+
+/-- Use the actual parent origin and two Inbox reads, then the actual base
+    load and find fields, to derive the base session's local. -/
+theorem actual_second_base_load_supplies_local {R T N U B E : Type} {ready : Type}
+    (ops : BaseOps ready) (parent : SandproofUnloadFirstObservation.ParentCalls)
+    (c : Carriers) (load : Load)
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io) (first second after₁ after₂ : E) (left right : Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁))
+    (read₂ : load_using saved terminal renewal unload graphic io second = .ok (.Ok (some right), after₂))
+    (intent : AcceptedLifecycleIntent) (s e : Usize)
+    (found : left.find intent = .ok (.Ok (some (s, e))))
+    (conn : SandproofUnloadFirstObservation.rusqlite.Connection)
+    (loadedFromRight : load conn = .ok (.Ok (some (fromInbox c right)))) :
+    letI : SandproofUnloadFirstObservation.ParentCalls := bindInboxReads parent c
+    ∀ (session : BaseInboxView.PSession)
+      (state : SandproofUnloadFirstObservation.controller.lifecycle_inbox.model.LifecycleWorkState)
+      (origin : BaseInboxView.PEntry) (binding : Local)
+      (atSession : (fromInbox c left).sessions.val[s.val]? = some session)
+      (atState : SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state)
+      (picked : SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin))
+      (localRead : state.«local» = some binding),
+      letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+      let inbox := BaseInboxView.toBaseInbox Record ready (fromInbox c right)
+      ∃ (pos : Usize) (baseSession : BaseInboxView.BSession Record ready),
+        (install ops parent c load).loadInbox conn = .ok (.Ok (some inbox)) ∧
+        (install ops parent c load).findIntent inbox (BaseSnapshotLink.toBaseIntent Record ready origin.intent) =
+          .ok (.Ok (some (s, pos))) ∧
+        inbox.sessions.val[s.val]? = some baseSession ∧
+        baseSession.«local» = some (baseLocalFromParent ready binding) := by
+  letI : SandproofUnloadFirstObservation.ParentCalls := bindInboxReads parent c
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  intro session state origin binding atSession atState picked localRead
+  obtain ⟨observedSession, observedState, sessionAt, _, stateAt, refind⟩ :=
+    parent_origin_refinds_same_local parent c saved terminal renewal unload graphic graphicLaw
+      io represented snapshot first second after₁ after₂ left right read₁ read₂ intent s e found
+  have sameSession := Option.some.inj (sessionAt.symm.trans atSession)
+  have sameState := Result.ok_injective (stateAt.symm.trans atState)
+  subst observedSession
+  subst observedState
+  obtain ⟨pos, findAt, rightSession, sameLocal⟩ := refind origin picked
+  have localRight : session.«local» = some binding := sameLocal.symm.trans localRead
+  obtain ⟨baseSession, indexed, boundLocal⟩ :=
+    BaseInboxView.local_at_index Record ready (fromInbox c right) session s rightSession binding localRight
+  have parentFind : SandproofUnloadFirstObservation.ParentCalls.inboxFindCompleteRequest
+      (fromInbox c right) origin.intent = .ok (.Ok (some (s, pos))) := by
+    change (do
+      let answer ← (toInbox c (fromInbox c right)).find (toIntent c origin.intent)
+      match answer with
+      | .Ok index => Result.ok (core.result.Result.Ok index)
+      | .Err err => Result.ok (core.result.Result.Err (fromError c err))) = _
+    simp only [to_from_Inbox, findAt, bind_tc_ok]
+  have baseLoaded := BaseInboxView.bindInbox_load_ok Record ready ops load
+    SandproofUnloadFirstObservation.ParentCalls.inboxFindCompleteRequest conn (fromInbox c right) loadedFromRight
+  have baseFound := BaseInboxView.bindInbox_find_ok Record ready ops load
+    SandproofUnloadFirstObservation.ParentCalls.inboxFindCompleteRequest
+    (fromInbox c right) origin.intent s pos parentFind
+  exact ⟨pos, baseSession, baseLoaded, baseFound, indexed, boundLocal⟩
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox.actual_second_base_load_supplies_local
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox
+
+variable [SandproofUnloadFirstObservation.Representations] [SandproofUnloadStartupJoint.Representations]
+
+/-- The normal base prefix already records its actual load, find and vector
+    index. Compare those calls to the refind witness to fill its one missing
+    local field. No equality between arbitrary base sessions is assumed. -/
+theorem prefix_from_second_read {ready : Type}
+    (ops : BaseOps ready)
+    (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (origin : BaseSnapshotLink.PIntent)
+    (context : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (binding : Local) (native : BaseNative ready)
+    (before : @BaseInput.ReadsBeforeLocal (BaseReps ready) ops tx
+      (BaseSnapshotLink.toBaseIntent Record ready origin) context native)
+    (inbox : BaseInboxView.BInbox Record ready) (s : Usize) :
+    letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+    (∃ (pos : Usize) (session : BaseInboxView.BSession Record ready),
+      ops.loadInbox before.connection = .ok (.Ok (some inbox)) ∧
+      ops.findIntent inbox (BaseSnapshotLink.toBaseIntent Record ready origin) =
+        .ok (.Ok (some (s, pos))) ∧
+      inbox.sessions.val[s.val]? = some session ∧
+      session.«local» = some (baseLocalFromParent ready binding)) →
+    Nonempty (@BaseInput.Reads (BaseReps ready) ops tx
+      (BaseSnapshotLink.toBaseIntent Record ready origin) context (baseLocalFromParent ready binding) native) := by
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  rintro ⟨pos, session, loadAt, findAt, atSession, localAt⟩
+  have sameInbox := Option.some.inj (core.result.Result.Ok.inj
+    (Result.ok_injective (before.loaded.symm.trans loadAt)))
+  have findSame := before.found
+  rw [sameInbox, findAt] at findSame
+  have indexEq : before.s = s := congrArg Prod.fst (Option.some.inj (core.result.Result.Ok.inj
+    (Result.ok_injective findSame))).symm
+  have here : before.inbox.sessions.val[before.s.val]? = some session := by
+    rw [sameInbox, indexEq]
+    exact atSession
+  obtain ⟨inside, atIndex⟩ := List.getElem?_eq_some_iff.mp here
+  have indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice _) before.inbox.sessions before.s =
+      .ok session := by
+    obtain ⟨value, returned, same⟩ := WP.spec_imp_exists
+      (alloc.vec.Vec.index_usize_spec before.inbox.sessions before.s inside)
+    simpa [alloc.vec.Vec.index_slice_index, same, atIndex] using returned
+  have sameSession := Result.ok_injective (before.indexed.symm.trans indexed)
+  exact ⟨{ toReadsBeforeLocal := before, localEq := sameSession.symm ▸ localAt }⟩
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.BaseSecondInbox.prefix_from_second_read

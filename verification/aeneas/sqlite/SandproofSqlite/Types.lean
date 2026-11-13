@@ -35,8 +35,40 @@ inductive sandbox_controller_core.auxiliary.AuxiliaryReject where
 | CapabilityDenied : sandbox_controller_core.auxiliary.AuxiliaryReject
 | DestinationDenied : sandbox_controller_core.auxiliary.AuxiliaryReject
 
+/-- [sandbox_controller_core::capture::continuation::CaptureReject]
+    Source: 'controller-core/src/capture/continuation.rs', lines 132:0-132:22
+    Name pattern: [sandbox_controller_core::capture::continuation::CaptureReject]
+    Visibility: public -/
+@[discriminant isize, rust_type
+  "sandbox_controller_core::capture::continuation::CaptureReject"]
+inductive sandbox_controller_core.capture.continuation.CaptureReject where
+| ControllerDown : sandbox_controller_core.capture.continuation.CaptureReject
+| DrainNotConfirmed :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| StopNotObserved : sandbox_controller_core.capture.continuation.CaptureReject
+| SandboxNotFound : sandbox_controller_core.capture.continuation.CaptureReject
+| Terminal : sandbox_controller_core.capture.continuation.CaptureReject
+| WrongPhase : sandbox_controller_core.capture.continuation.CaptureReject
+| IdentityMismatch : sandbox_controller_core.capture.continuation.CaptureReject
+| LedgerMismatch : sandbox_controller_core.capture.continuation.CaptureReject
+| CaptureNotRevoked :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| CommitUnresolved : sandbox_controller_core.capture.continuation.CaptureReject
+| EffectsUnresolved :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| FreezeUnresolved : sandbox_controller_core.capture.continuation.CaptureReject
+| FenceNotInstalled :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| ResourcesNotReady :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| ReceiptConflict : sandbox_controller_core.capture.continuation.CaptureReject
+| ContinuationNotPrepared :
+  sandbox_controller_core.capture.continuation.CaptureReject
+| ActivationNotObserved :
+  sandbox_controller_core.capture.continuation.CaptureReject
+
 /-- [sandbox_controller_core::worker::WorkerReject]
-    Source: 'controller-core/src/worker.rs', lines 66:0-66:21
+    Source: 'controller-core/src/worker.rs', lines 68:0-68:21
     Name pattern: [sandbox_controller_core::worker::WorkerReject]
     Visibility: public -/
 @[discriminant isize, rust_type
@@ -221,7 +253,7 @@ inductive sandbox_controller_core.maintenance.retirement.RetirementReject where
   sandbox_controller_core.maintenance.retirement.RetirementReject
 
 /-- [sandbox_controller_core::maintenance::MaintenanceReject]
-    Source: 'controller-core/src/maintenance.rs', lines 63:0-63:26
+    Source: 'controller-core/src/maintenance.rs', lines 69:0-69:26
     Name pattern: [sandbox_controller_core::maintenance::MaintenanceReject]
     Visibility: public -/
 @[discriminant isize, rust_type
@@ -272,7 +304,7 @@ inductive sandbox_controller_core.effect.EffectReject where
 | EffectRetired : sandbox_controller_core.effect.EffectReject
 
 /-- [sandbox_controller_core::controller::ControllerReject]
-    Source: 'controller-core/src/controller.rs', lines 44:0-44:25
+    Source: 'controller-core/src/controller.rs', lines 46:0-46:25
     Name pattern: [sandbox_controller_core::controller::ControllerReject]
     Visibility: public -/
 @[discriminant isize, rust_type
@@ -302,9 +334,12 @@ inductive sandbox_controller_core.controller.ControllerReject where
 | Runtime :
   sandbox_controller_core.recovery_monitor.RuntimeReject →
   sandbox_controller_core.controller.ControllerReject
+| Capture :
+  sandbox_controller_core.capture.continuation.CaptureReject →
+  sandbox_controller_core.controller.ControllerReject
 
 /-- [sandproof_protocol::ContractError]
-    Source: 'sandbox-protocol/src/lib.rs', lines 31:0-31:22
+    Source: 'sandbox-protocol/src/lib.rs', lines 35:0-35:22
     Name pattern: [sandproof_protocol::ContractError]
     Visibility: public -/
 @[discriminant isize, rust_type "sandproof_protocol::ContractError"]
@@ -321,7 +356,7 @@ structure controller.transaction.memo.Cells (Self : Type) (W : Type) where
   take_candidate : Self → Result ((Option W) × Self)
 
 /-- [sandproof_controller_service::CrashPoint]
-    Source: 'controller-service/src/lib.rs', lines 68:0-75:1
+    Source: 'controller-service/src/lib.rs', lines 78:0-85:1
     Visibility: public -/
 @[discriminant isize]
 inductive CrashPoint where
@@ -333,7 +368,7 @@ inductive CrashPoint where
 | AfterRetirementDelete : CrashPoint
 
 /-- [sandproof_controller_service::JournalError]
-    Source: 'controller-service/src/lib.rs', lines 93:0-118:1
+    Source: 'controller-service/src/lib.rs', lines 103:0-131:1
     Visibility: public -/
 @[discriminant isize]
 inductive JournalError where
@@ -345,6 +380,7 @@ inductive JournalError where
 | Conflict : JournalError
 | IdentifierExhausted : JournalError
 | MaintenanceCapacity : JournalError
+| CaptureMaterialQuotaExceeded : JournalError
 | RevisionConflict : JournalError
 | ReceiptBeforeDispatch : JournalError
 | ConflictingReceipt : JournalError

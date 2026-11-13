@@ -1,0 +1,11 @@
+#[cfg(test)]
+pub(super) fn proof_entry_kind(
+    inbox: &Inbox,
+    session: &Session,
+    entry: &Entry,
+    context: &AuthenticatedCenterContext,
+) -> Result<usize, JournalError> {
+    inbox.entry_kind_using::<super::unload_resolution::StandardUnloadEncoding>(
+        session, entry, context,
+    )
+}

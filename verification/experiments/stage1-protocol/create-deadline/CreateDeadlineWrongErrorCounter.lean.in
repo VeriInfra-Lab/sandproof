@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineModel
+import SandboxModel.Lifecycle.Protocol.CreateDeadlineCast
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter
+open CreateDeadlineModel
+abbrev run : U64 → Result RustResult :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+abbrev wrongError : JournalError :=
+  SandproofStage1RequestRust.sandproof_controller_service.JournalError.UnsupportedStore
+
+theorem actual_zero_accepted : run 0#u64 = .ok (.Ok 0#i64) := by
+  unfold run SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+  have returned := CreateDeadlineCast.zero_accepted
+  change SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from 0#u64 = _ at returned
+  rw [returned]
+  simp [core.result.Result.map_err]
+
+theorem actual_overflow_wrong_error : run 9223372036854775808#u64 = .ok (.Err wrongError) := by
+  unfold run SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline
+  have returned := CreateDeadlineCast.first_overflow_rejected
+  change SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from 9223372036854775808#u64 = _ at returned
+  rw [returned]
+  simp [core.result.Result.map_err,
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.create_attachment_deadline.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once,
+    wrongError]
+
+theorem wrong_error_violates_complete_relation :
+    ¬ Correct 9223372036854775808#u64 (.Err wrongError) := by
+  simp [Correct, unsupported, wrongError]
+
+theorem same_full_contract_rejected : ¬ FullDeadlineContract run := by
+  intro contract
+  have correct := contract 9223372036854775808#u64
+  rw [actual_overflow_wrong_error] at correct
+  simp only [WP.spec_ok] at correct
+  exact wrong_error_violates_complete_relation correct
+
+end SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.actual_zero_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.actual_overflow_wrong_error
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.wrong_error_violates_complete_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineWrongErrorCounter.same_full_contract_rejected

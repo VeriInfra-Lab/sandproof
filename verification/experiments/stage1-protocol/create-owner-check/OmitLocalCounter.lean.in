@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckEquality
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckValues
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCore
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+open OwnerMapping OwnerMapping.Values CreateOwnerSuccessor.Values Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner
+abbrev scan := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop
+abbrev body := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop.body
+
+theorem scan_unfold (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64) (index : Usize) :
+    scan inbox owner localOwner index = (do
+      let step ← body inbox owner localOwner index
+      match step with
+      | .done value => .ok value
+      | .cont next => scan inbox owner localOwner next) := by
+  unfold scan sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (body inbox owner localOwner index))
+  funext step
+  cases step <;> rfl
+
+theorem observed : run repeatedOwner "alpha" 9#u64 = .ok (.Ok true) := by
+  have first : body repeatedOwner "alpha" 9#u64 0#usize = .ok (.done true) := by
+    simp [      body, sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop.body,
+      alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, repeatedOwner, inbox,
+      alloc.vec.Vec.len, tenant_eq, internal_ne]
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner
+  change (do let b ← scan repeatedOwner "alpha" 9#u64 0#usize; Result.ok (core.result.Result.Ok (E := sandproof_controller_service.JournalError) b)) = _
+  rw [scan_unfold, first]
+  simp only [bind_tc_ok]
+
+theorem violates_full_contract : ¬ FullExistingContract run := by
+  intro contract
+  have required := contract repeatedOwner "alpha" 9#u64
+  rw [observed] at required
+  simp [Values.existing_first_conflict] at required
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.scan_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.Counter.violates_full_contract

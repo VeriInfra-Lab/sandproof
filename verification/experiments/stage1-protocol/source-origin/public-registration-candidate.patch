@@ -1,0 +1,91 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -324,12 +324,13 @@
+     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
+       if name != 'inbox-record-total'),
+     *CREATE_NATIVE_DRIVERS,
++    ('stage1-protocol-source-origin', str(HERE/'source-origin/native.py'), False),
+ )
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+     'stage1-protocol-'+name for name in CRATE_CASES)
+-AUDIT_TEMPLATE_COUNT = 419
+-AUDIT_DECLARATION_COUNT = 1723
++AUDIT_TEMPLATE_COUNT = 427
++AUDIT_DECLARATION_COUNT = 1764
+
+
+ def native_labels(profile='full'):
+@@ -580,7 +581,7 @@
+     """Fail before execution if a required native case or Rust mutant was lost."""
+     check_profile(profile)
+     create_profile(root)
+-    if len(NATIVE_CASES) != 53 or len(set(NATIVE_CASES)) != 53:
++    if len(NATIVE_CASES) != 54 or len(set(NATIVE_CASES)) != 54:
+         raise ValueError('duplicate native registration')
+     if profile == 'full':
+         for name, variants in INBOX_CASES.items():
+@@ -791,6 +792,13 @@
+         for variant in variants:
+             add(name+'-'+variant, HERE/name/'formal.py', ['--require-native', '--variant', variant],
+                 native=labels, cases=(variant,))
++    data = _read(root/HERE/'source-origin/inventory.json')
++    add('source-origin', HERE/'source-origin/formal.py',
++        native=('stage1-protocol-source-origin',), cases=tuple(data['views']))
++    jobs[-1].update(expected_kind='source-origin-formal-development',
++        inventory_sha256=_sha(root/HERE/'source-origin/inventory.json'),
++        views={case: dict(files=data['files'][case], audits=data['audits'][case],
++                         property_rejected=case != 'correct', generated=data['generated'][case]) for case in data['views']})
+     return _append_create_jobs(jobs, output, root, profile)
+
+
+@@ -805,6 +813,30 @@
+ def _check_actual(result, job):
+     if result.get('complete') is not True:
+         raise ValueError('original formal driver incomplete: ' + job['name'])
++    if job['name'] == 'source-origin':
++        if (result.get('kind') != job['expected_kind'] or result.get('prepare_only')
++                or result.get('selected_variant') is not None
++                or result.get('all_four_views_complete') is not True
++                or result.get('source_tools_library_and_log_postguards_complete') is not True
++                or tuple(result.get('cases', {})) != tuple(job['cases'])):
++            raise ValueError('incomplete original source-origin batch')
++        for case, recipe in job['views'].items():
++            row = result['cases'][case]
++            actual = row.get('actual', {})
++            if (row.get('complete') is not True
++                    or row.get('property_rejected') is not recipe['property_rejected']
++                    or not row.get('llbc') or not row.get('llbc_sha256')
++                    or not row.get('source_inputs') or not row.get('source_input_modes')
++                    or row.get('generated') != recipe['generated']
++                    or row.get('seeded_from_public_correct_entry') is not True
++                    or set(row.get('files', {})) != set(recipe['files'])
++                    or actual.get('files') != row.get('files')
++                    or not actual.get('service_log_sha256')
++                    or row.get('service_log_sha256') != actual.get('service_log_sha256')
++                    or sorted(row.get('audits', [])) != recipe['audits']
++                    or sorted(actual.get('audits', [])) != recipe['audits']):
++                raise ValueError('incomplete original source-origin view: '+case)
++        return
+     if 'create_package' in job:
+         if (result.get('kind') != job['expected_kind'] or result.get('prepare_only')
+                 or result.get('selected_variant') is not None):
+@@ -1415,7 +1447,7 @@
+         seed_sha256 = hashlib.sha256(content).hexdigest()
+     args = list(job['args'])
+     pass_fds = ()
+-    if 'create_package' in job:
++    if 'create_package' in job or job['name'] == 'source-origin':
+         fd, lock = inherited_lock()
+         pass_fds = (fd,)
+         args += ['--lock', lock['path'], '--lock-fd', str(fd)]
+--- a/lakefile.toml
++++ b/lakefile.toml
+@@ -93,3 +93,7 @@
+ [[lean_lib]]
+ name = "SandproofStage1Manifest"
+ srcDir = "verification/aeneas/stage1-protocol/manifest"
++
++[[lean_lib]]
++name = "SandproofSourceOrigin"
++srcDir = "verification/aeneas/stage1-protocol/source-origin/correct"

@@ -1,0 +1,155 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadCapacityBounds
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.capacity
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadMaintenance
+noncomputable section
+open scoped Classical
+open InboxLoadCapacity
+
+theorem indexed_reject_loop {α β : Type} (values : Slice α) (invalid : α → Bool)
+    (rejected : β) (finish : Result β) (body : Usize → Result (ControlFlow Usize β))
+    (at_end : ∀ index, values.val.length ≤ index.val →
+      body index = (do let result ← finish; .ok (.done result)))
+    (at_step : ∀ index next, ∀ inside : index.val < values.val.length,
+      next.val = index.val + 1 → body index = .ok
+        (if invalid values.val[index.val] then .done rejected else .cont next)) (index : Usize) :
+    loop body index =
+      if (values.val.drop index.val).any invalid then .ok rejected else finish := by
+  induction remaining : values.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    conv_lhs => rw [loop]
+    by_cases inside : index.val < values.val.length
+    · let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+      have added : next.val = index.val + 1 := by rfl
+      rw [at_step index next inside added, List.drop_eq_getElem_cons inside, List.any_cons]
+      cases hit : invalid values.val[index.val] with
+      | true => simp only [↓reduceIte, Bool.true_or, bind_ok]
+      | false =>
+        have later := ih (values.val.length - next.val) (by omega) next rfl
+        simp only [Bool.false_eq_true, ↓reduceIte, Bool.false_or, bind_ok, later, added]
+    · rw [at_end index (by omega)]
+      simp only [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index.val),
+        List.any_nil, Bool.false_eq_true, ↓reduceIte]
+      have binding (source : Result (ControlFlow Usize β))
+          (continuation : ControlFlow Usize β → Result β) :
+          Std.bind source continuation = Bind.bind source continuation := by rfl
+      rw [binding]
+      simp only [bind_assoc_eq, bind_tc_ok]
+      change (finish >>= pure) = finish
+      simp
+
+def tail (config : MaintenanceConfig) : Result (core.result.Result Unit JournalError) :=
+  if config.max_input_bytes.val > config.max_tail_bytes.val then .ok (.Err .UnsupportedStore)
+  else match config.capacity with
+    | none => .ok (.Err .UnsupportedStore)
+    | some capacity => CapacityConfig.validate capacity config
+
+def scanBody (config : MaintenanceConfig) (values : Array U64 8#usize) (index : Usize) :=
+  MaintenanceConfig.validate_loop.body config.max_operations_per_sandbox config.capacity
+    config.retention_ms config.max_checkpoint_bytes config.max_records config.max_references
+    config.max_tail_inputs config.max_tail_bytes config.max_input_bytes config.prune_batch_rows values index
+
+def scan (config : MaintenanceConfig) (values : Array U64 8#usize) (index : Usize) :=
+  MaintenanceConfig.validate_loop config.max_operations_per_sandbox config.capacity
+    config.retention_ms config.max_checkpoint_bytes config.max_records config.max_references
+    config.max_tail_inputs config.max_tail_bytes config.max_input_bytes config.prune_batch_rows values index
+
+theorem maintenance_body_end (config : MaintenanceConfig) (values : Array U64 8#usize) (index : Usize)
+    (outside : values.val.length ≤ index.val) :
+    scanBody config values index = (do let result ← tail config; .ok (.done result)) := by
+  have bound : 8 ≤ index.val := by simpa using outside
+  simp [scanBody, MaintenanceConfig.validate_loop.body, lift, Slice.len, UScalar.lt_equiv,
+    Nat.not_lt.mpr bound, tail]
+  by_cases inputs : config.max_input_bytes.val > config.max_tail_bytes.val
+  · simp [inputs]
+  · simp only [inputs, ↓reduceIte]
+    cases capacity : config.capacity with
+    | none => simp [core.option.Option.as_ref, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some cap =>
+      simp [core.option.Option.as_ref, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch]
+      apply congrArg (fun continuation => Bind.bind (CapacityConfig.validate cap config) continuation)
+      funext validated
+      cases validated with
+      | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok value => cases value; simp
+
+theorem maintenance_body_step (config : MaintenanceConfig) (values : Array U64 8#usize)
+    (index next : Usize) (inside : index.val < values.val.length) (added : next.val = index.val + 1) :
+    scanBody config values index = .ok
+      (if ¬ScalarValid values.val[index.val] then .done (.Err .UnsupportedStore) else .cont next) := by
+  have bound : index.val < 8 := by simpa using inside
+  have indexed : Array.index_usize values index = .ok values.val[index.val] := by
+    simp [Array.index_usize, bound]
+  simp only [scanBody, MaintenanceConfig.validate_loop.body, lift, bind_tc_ok, Slice.len,
+    UScalar.lt_equiv, Array.val_to_slice, indexed,
+    signed_max_cast, usize_max_cast, SessionShape.index_add_one index next added]
+  unfold ScalarValid
+  split_ifs <;> simp_all <;> omega
+
+theorem maintenance_loop_refines (config : MaintenanceConfig) (values : Array U64 8#usize) (index : Usize) :
+    scan config values index =
+      if (values.val.drop index.val).any (fun value => decide (¬ScalarValid value))
+      then .ok (.Err .UnsupportedStore) else tail config := by
+  unfold scan MaintenanceConfig.validate_loop
+  have proof := indexed_reject_loop (Array.to_slice values)
+    (fun value => decide (¬ScalarValid value)) (.Err .UnsupportedStore) (tail config) (scanBody config values)
+    (by intro i outside; exact maintenance_body_end config values i (by simpa only [Array.val_to_slice] using outside))
+    (by
+      intro i next inside added
+      have bound : i.val < values.val.length := by simpa only [Array.val_to_slice] using inside
+      have actual := maintenance_body_step config values i next bound added
+      by_cases good : ScalarValid values.val[i.val] <;> simpa [Array.val_to_slice, good] using actual) index
+  unfold scanBody at proof
+  simpa only [Array.val_to_slice] using proof
+
+def fields (config : MaintenanceConfig) : List U64 :=
+  [config.retention_ms, config.max_checkpoint_bytes, config.max_records,
+    config.max_references, config.max_tail_inputs, config.max_tail_bytes,
+    config.max_input_bytes, config.prune_batch_rows]
+
+def maintenanceView (config : MaintenanceConfig) : Result (core.result.Result Unit JournalError) :=
+  if 3 ≤ config.max_operations_per_sandbox.val ∧ config.max_operations_per_sandbox.val ≤ 128 then
+    if ∀ value ∈ fields config, ScalarValid value then tail config
+    else .ok (.Err .UnsupportedStore)
+  else .ok (.Err .UnsupportedStore)
+
+theorem range_u64_refines (lo hi value : U64) :
+    core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU64 core.cmp.PartialOrdU64
+      core.cmp.PartialOrdU64 ⟨lo, hi, false⟩ value =
+      .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  simp [core.ops.range.RangeInclusive.contains, core.ops.range.RangeBounds.contains.default,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    core.cmp.impls.PartialOrdU64.le]
+  split <;> simp_all
+
+theorem maintenance_refines (config : MaintenanceConfig) :
+    MaintenanceConfig.validate config = maintenanceView config := by
+  unfold MaintenanceConfig.validate
+  simp only [core.ops.range.RangeInclusive.new, bind_tc_ok, range_u64_refines]
+  change (if decide (3 ≤ config.max_operations_per_sandbox.val ∧
+      config.max_operations_per_sandbox.val ≤ 128) then
+    scan config (Array.make 8#usize (fields config) (by simp [fields])) 0#usize
+    else Result.ok (.Err .UnsupportedStore)) = _
+  rw [maintenance_loop_refines]
+  simp [maintenanceView, Array.make_val]
+  split_ifs <;> aesop
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadMaintenance
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.indexed_reject_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.maintenance_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.maintenance_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.maintenance_loop_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.range_u64_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadMaintenance.maintenance_refines

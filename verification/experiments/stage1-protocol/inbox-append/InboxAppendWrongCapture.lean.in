@@ -1,0 +1,64 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendWitnessSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxAppend.WrongCapture
+open Values InboxRecord
+
+theorem different_capture_inserted :
+    ∃ (entries : alloc.vec.Vec Entry) (index : Usize),
+      (withSession afterUnload).record_existing 0#usize (resume 2#u64 2#u64) =
+        .ok (.Ok (0#usize, index), replaceSession (withSession afterUnload) 0#usize
+          (appendedSession afterUnload (resume 2#u64 2#u64) false entries)) ∧
+      index.val = 2 ∧ entries.val = afterUnload.entries.val ++ [pendingEntry (resume 2#u64 2#u64)] := by
+  obtain ⟨entries, index, pushed, subtracted, indexval, contents⟩ :=
+    append_push_outcome afterUnload (resume 2#u64 2#u64) 8#u16 (by decide)
+  obtain ⟨next, added, nextval⟩ := reserve_add_total afterUnload 8#u16 (by decide)
+  refine ⟨entries, index, ?_, indexval, contents⟩
+  dsimp [pendingEntry] at pushed
+  simp [afterUnload, runningSession, InboxLookup.Witness.singleton,
+    resume, unload, operationIntent, EnvelopeValues.intent, createEntry, pendingEntry,
+    InboxRecord.Values.createIntent] at added nextval pushed
+  unfold Inbox.record_existing
+  rw [alloc.vec.Vec.index_mut_slice_index, fixture_mutable_zero]
+  have checked : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [withSession, afterUnload, runningSession, InboxLookup.Witness.session,
+    resume, unload, operationIntent, EnvelopeValues.intent,
+    InboxLookup.Witness.inbox, InboxLookup.Witness.singleton,
+    last_entry_spec, sdk_renewal_spec, sdkRenewal, createEntry, pendingEntry,
+    InboxRecord.Values.createIntent, added, nextval, pushed, subtracted, replaceSession,
+    appendedSession, lift, UScalar.le_equiv, checked, core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.is_some_and,
+    Inbox.record_existing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+theorem different_capture_violates_post :
+    ¬ ((withSession afterUnload).record_existing 0#usize (resume 2#u64 2#u64) ⦃ out =>
+      ExistingPost (withSession afterUnload) 0#usize afterUnload (resume 2#u64 2#u64)
+        (existingDecision (withSession afterUnload) afterUnload (resume 2#u64 2#u64)) out ⦄) := by
+  intro contract
+  obtain ⟨entries, index, actual, _, _⟩ := different_capture_inserted
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  rw [actual] at returned
+  have same : out = (.Ok (0#usize, index), replaceSession (withSession afterUnload) 0#usize
+      (appendedSession afterUnload (resume 2#u64 2#u64) false entries)) := by simpa using returned.symm
+  rw [same] at post
+  simp [resume_decisions.2.1, ExistingPost] at post
+
+theorem rejects_same_full_existing_contract : ¬ FullExistingContract Inbox.record_existing := by
+  intro contract
+  exact different_capture_violates_post (contract (withSession afterUnload) 0#usize (resume 2#u64 2#u64) (by decide))
+
+theorem rejects_same_full_record_contract : ¬ FullRecordExistingContract Inbox.record := by
+  intro contract
+  have post := contract (withSession afterUnload) (resume 2#u64 2#u64) 0#usize (resume_selection 2#u64 2#u64)
+  rw [record_existing_path _ _ _ (resume_selection 2#u64 2#u64)] at post
+  exact different_capture_violates_post post
+
+end SandboxModel.Stage1Protocol.InboxAppend.WrongCapture
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongCapture.different_capture_inserted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongCapture.different_capture_violates_post
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongCapture.rejects_same_full_existing_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.WrongCapture.rejects_same_full_record_contract

@@ -24,6 +24,27 @@ mod status_admission;
 pub use driver::{DriveReport, DriverConfig, TemplateSource};
 pub use facade::HostFacade;
 
+// Closed categories only; the finite sink never controls admission or retries.
+fn create_observation_failure(category: &'static str) {
+    use std::{io::Write, sync::atomic::Ordering};
+    static EMITTED: AtomicUsize = AtomicUsize::new(0);
+    if EMITTED
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+            (n < 64).then_some(n + 1)
+        })
+        .is_ok()
+    {
+        let unix_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_millis());
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "host_create_observation unix_ms={unix_ms:?} cause={category}"
+        );
+    }
+}
+
 /// Separate bounded budgets for control, observation, normal work and cleanup.
 /// A canceled caller retains its permit until actual blocking work has exited.
 pub struct HostLifecycle<H: ControllerHost> {
@@ -32,6 +53,7 @@ pub struct HostLifecycle<H: ControllerHost> {
     status: Arc<Semaphore>,
     control: Arc<Semaphore>,
     observations: Arc<Semaphore>,
+    observation_waiters: Arc<Semaphore>,
     cleanup: Arc<Semaphore>,
     max_work: usize,
     scan_cursor: Arc<AtomicUsize>,
@@ -44,6 +66,7 @@ impl<H: ControllerHost> Clone for HostLifecycle<H> {
             status: Arc::clone(&self.status),
             control: Arc::clone(&self.control),
             observations: Arc::clone(&self.observations),
+            observation_waiters: Arc::clone(&self.observation_waiters),
             cleanup: Arc::clone(&self.cleanup),
             max_work: self.max_work,
             scan_cursor: Arc::clone(&self.scan_cursor),
@@ -60,6 +83,7 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
             status: Arc::new(Semaphore::new(1)),
             control: Arc::new(Semaphore::new(2)),
             observations: Arc::new(Semaphore::new(2)),
+            observation_waiters: Arc::new(Semaphore::new(2)),
             cleanup: Arc::new(Semaphore::new(1)),
             max_work: 4,
             scan_cursor: Arc::new(AtomicUsize::new(0)),
@@ -135,8 +159,8 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         node: NodeIdentity,
         cache: sandproof_controller_service::physical_storage::PhysicalTemplateCache,
     ) -> Result<(), ApplicationError> {
-        let permit = Arc::clone(&self.observations)
-            .try_acquire_owned()
+        let permit = status_admission::observe(&self.observations, &self.observation_waiters)
+            .await
             .map_err(|_| ApplicationError::Busy)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
@@ -218,6 +242,28 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
     }
 }
 impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> {
+    async fn observe_unload(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, ReceiveError> {
+        let permit = status_admission::observe(&self.observations, &self.observation_waiters)
+            .await
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.observe_lifecycle_unloaded(&intent, &context)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+
     async fn confirm_renewal(
         &self,
         result: sandproof_protocol::lifecycle::RenewalConfirmation,
@@ -289,8 +335,8 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::TerminalLifecycleObservation, ReceiveError> {
-        let permit = Arc::clone(&self.observations)
-            .try_acquire_owned()
+        let permit = status_admission::observe(&self.observations, &self.observation_waiters)
+            .await
             .map_err(|_| ReceiveError::Capacity)?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
@@ -322,20 +368,53 @@ impl<H: ControllerHost + Send + 'static> LifecycleReceiver for HostLifecycle<H> 
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
         context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::CreateObservation, ReceiveError> {
-        let permit = Arc::clone(&self.observations)
-            .try_acquire_owned()
-            .map_err(|_| ReceiveError::Capacity)?;
+        let permit = status_admission::observe(&self.observations, &self.observation_waiters)
+            .await
+            .map_err(|_| {
+                create_observation_failure("AdmissionCapacity");
+                ReceiveError::Capacity
+            })?;
         let app = Arc::clone(&self.application);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let view =
                 app.observe_lifecycle_create(&intent, &context)
                     .map_err(|error| match error {
-                        JournalError::Conflict => ReceiveError::Conflict,
-                        JournalError::MaintenanceCapacity => ReceiveError::Capacity,
-                        _ => ReceiveError::Unavailable,
+                        JournalError::Conflict => {
+                            create_observation_failure("JournalConflict");
+                            ReceiveError::Conflict
+                        }
+                        JournalError::MaintenanceCapacity => {
+                            create_observation_failure("JournalCapacity");
+                            ReceiveError::Capacity
+                        }
+                        _ => {
+                            create_observation_failure("JournalUnavailable");
+                            ReceiveError::Unavailable
+                        }
                     })?;
             Ok(observation::project(view))
+        })
+        .await
+        .map_err(|_| ReceiveError::Unavailable)?
+    }
+    async fn observe_resume(
+        &self,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        let permit = status_admission::observe(&self.observations, &self.observation_waiters)
+            .await
+            .map_err(|_| ReceiveError::Capacity)?;
+        let app = Arc::clone(&self.application);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            app.observe_lifecycle_resume(&intent, &context)
+                .map_err(|error| match error {
+                    JournalError::Conflict => ReceiveError::Conflict,
+                    JournalError::MaintenanceCapacity => ReceiveError::Capacity,
+                    _ => ReceiveError::Unavailable,
+                })
         })
         .await
         .map_err(|_| ReceiveError::Unavailable)?

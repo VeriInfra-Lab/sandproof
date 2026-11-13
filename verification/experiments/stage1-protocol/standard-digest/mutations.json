@@ -1,0 +1,12 @@
+{
+  "input-empty": {
+    "method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        super::sha256::digest(&bytes[..0])\n    }",
+    "same_full_digest_contract": true,
+    "compilation_failure_is_property_rejection": false
+  },
+  "nonempty-tail-zero": {
+    "method": "    fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {\n        let mut digest = super::sha256::digest(bytes);\n        if !bytes.is_empty() {\n            digest[31] = 0;\n        }\n        digest\n    }",
+    "same_full_digest_contract": true,
+    "compilation_failure_is_property_rejection": false
+  }
+}

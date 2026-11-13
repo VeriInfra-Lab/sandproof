@@ -3,7 +3,10 @@ use super::{
     LifecycleCreateObservation, LifecycleReadyBasis, LifecycleReadyObservation,
     NativeCreateSnapshot, SourceProcessIdentity, core,
 };
-use crate::controller::lifecycle_inbox::{authenticated, codec};
+use crate::controller::lifecycle_inbox::{
+    authenticated, codec,
+    model::{Entry, Session},
+};
 use crate::controller::{
     admission, allocators, capture, data_credentials, identity, internal_inbox, storage,
 };
@@ -20,6 +23,10 @@ use sha2::{Digest, Sha256};
 pub(crate) struct ReadyCandidate {
     pub view: LifecycleCreateObservation,
     pub actions: Vec<WorkAction<core::EffectId>>,
+    pub continuation: Option<crate::capture::OriginalContinueWorkRequest>,
+    // Existing SQL revision advances for every native write to this sandbox.
+    // Unlike the global input cursor, unrelated sandboxes do not change it.
+    native_revision: Option<u64>,
     receipts: Vec<Vec<u8>>,
     source: Option<SourceProcessIdentity>,
     credential: Option<(core::Generation, [u8; 32])>,
@@ -28,8 +35,9 @@ pub(crate) struct ReadyCandidate {
 }
 impl ReadyCandidate {
     pub(crate) fn can_probe(&self) -> bool {
-        self.actions.len() == 5
+        (self.actions.len() == if self.continuation.is_some() { 1 } else { 5 })
             && self.source.is_some()
+            && self.native_revision.is_some()
             && self.credential.is_some()
             && self.view.readiness
                 == CreateReadiness::Pending(CreateReadinessPending::HostUnobserved)
@@ -55,9 +63,41 @@ fn expected_commands(
     if !plan.sealed
         || plan.vm != Some(vm)
         || plan.slot != Some(slot)
-        || plan.epoch != record.epoch
+        || (plan.epoch != record.epoch
+            && !record.current_operation.is_some_and(|op| {
+                op.kind == core::OperationKind::Pause
+                    && matches!(op.status, core::OperationStatus::Failed(_))
+                    && world
+                        .operation_plan(core::OperationKey {
+                            sandbox: local.sandbox,
+                            operation: op.id,
+                        })
+                        .is_some_and(|p| {
+                            p.epoch == record.epoch
+                                && p.generation == record.generation
+                                && p.capture
+                                    .and_then(core::capture::CaptureHandoff::original_continuation)
+                                    .is_some_and(|c| c.vm == vm)
+                                && core::effect::effect_succeeded_check(
+                                    world,
+                                    &core::capture::OriginalContinueIdentity {
+                                        key: p.key,
+                                        epoch: p.epoch,
+                                        generation: p.generation,
+                                        vm,
+                                    }
+                                    .activation_command(),
+                                )
+                        })
+            }))
         || plan.generation != record.generation
-        || plan.restore_from.is_some()
+        || world
+            .operation_record(key)
+            .is_none_or(|ledger| match ledger.operation.kind {
+                core::OperationKind::Create => plan.restore_from.is_some(),
+                core::OperationKind::Resume => plan.restore_from.is_none(),
+                _ => true,
+            })
     {
         return Err(JournalError::CorruptStore);
     }
@@ -73,7 +113,7 @@ fn expected_commands(
             generation: plan.generation,
             vm,
             slot,
-            source: None,
+            source: plan.restore_from,
         },
         core::Command::ConfigureNetwork {
             sandbox: local.sandbox,
@@ -100,6 +140,105 @@ fn expected_commands(
 }
 
 pub(in crate::controller) type StartupEvidence = (Vec<WorkAction<core::EffectId>>, Vec<Vec<u8>>);
+type StartupActionReceipt = (WorkAction<core::EffectId>, Vec<u8>);
+type StartupSlots = [Option<StartupActionReceipt>; 5];
+
+// expected_commands returns exactly the five fixed startup commands.
+fn startup_command_index(commands: &[core::Command], command: &core::Command) -> Option<usize> {
+    if commands.len() != 5 {
+        return None;
+    }
+    if commands[0] == *command {
+        Some(0)
+    } else if commands[1] == *command {
+        Some(1)
+    } else if commands[2] == *command {
+        Some(2)
+    } else if commands[3] == *command {
+        Some(3)
+    } else if commands[4] == *command {
+        Some(4)
+    } else {
+        None
+    }
+}
+
+fn accept_startup_row<E: HostEvidence + DeserializeOwned>(
+    row: rusqlite::Result<(Vec<u8>, Vec<u8>)>,
+    world: &core::World,
+    namespace: &str,
+    local: InternalLocalBinding,
+    commands: &[core::Command],
+    plan: &core::OperationPlan,
+    found: &mut [Option<StartupActionReceipt>],
+) -> Result<(), JournalError> {
+    let (action_bytes, receipt_bytes) = row?;
+    let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
+    let Some(index) = startup_command_index(commands, action.command.command()) else {
+        return Ok(());
+    };
+    let logical = world
+        .logical_effect(&action.command.logical)
+        .ok_or(JournalError::CorruptStore)?;
+    if logical.current_attempt != action.command.attempt {
+        return Ok(());
+    }
+    let key = core::OperationKey {
+        sandbox: local.sandbox,
+        operation: local.operation,
+    };
+    if logical.origin != core::EffectOrigin::Operation(key)
+        || !core::effect::effect_succeeded_check(world, action.command.command())
+        || action.identity.owner != identity::owner_id(local.owner)?
+        || action.identity.sandbox != identity::sandbox_id(namespace, local.sandbox)?
+        || action.identity.operation != identity::operation_id(namespace, key)?
+        || action.identity.epoch != plan.epoch
+        || action.identity.generation != plan.generation
+        || action.identity.attempt != action.command.attempt
+        || action.identity.resource != identity::resource(namespace, action.command.command())?
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
+    receipt.validate_for(&action)?;
+    let WorkOutcome::ObservedSuccess(ref evidence) = receipt.outcome else {
+        return Err(JournalError::CorruptStore);
+    };
+    if !evidence.validates(action.command.command()) {
+        return Err(JournalError::CorruptStore);
+    }
+    if found[index].is_some() {
+        return Err(JournalError::CorruptStore);
+    }
+    found[index] = Some((action, receipt_bytes));
+    Ok(())
+}
+
+// Each step owns its returned slots. A rejected row stops the same lazy scan.
+fn accept_startup_rows<I, F>(
+    rows: I,
+    mut state: StartupSlots,
+    mut accept: F,
+) -> (Result<(), JournalError>, StartupSlots)
+where
+    I: Iterator,
+    F: FnMut(I::Item, StartupSlots) -> (Result<(), JournalError>, StartupSlots),
+{
+    let mut row_error = None;
+    for row in rows {
+        let (result, next_state) = accept(row, state);
+        state = next_state;
+        if let Err(error) = result {
+            row_error = Some(error);
+            break;
+        }
+    }
+    let result = match row_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    };
+    (result, state)
+}
 
 pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>(
     tx: &Transaction<'_>,
@@ -115,54 +254,59 @@ pub(in crate::controller) fn startup_records<E: HostEvidence + DeserializeOwned>
     let plan = world
         .operation_plan(key)
         .ok_or(JournalError::CorruptStore)?;
-    let mut found: Vec<Option<(WorkAction<core::EffectId>, Vec<u8>)>> = vec![None; 5];
+    let found: StartupSlots = [None, None, None, None, None];
     let mut query = tx.prepare("SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id")?;
-    for row in query.query_map(
+    let rows = query.query_map(
         [identity::sandbox_id(namespace, local.sandbox)?.as_str()],
         |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Vec<u8>>(1)?)),
-    )? {
-        let (action_bytes, receipt_bytes) = row?;
-        let action: WorkAction<core::EffectId> = serde_json::from_slice(&action_bytes)?;
-        let Some(index) = commands
-            .iter()
-            .position(|command| command == action.command.command())
-        else {
-            continue;
-        };
-        let logical = world
-            .logical_effect(&action.command.logical)
-            .ok_or(JournalError::CorruptStore)?;
-        if logical.current_attempt != action.command.attempt {
-            continue;
-        }
-        if logical.origin != core::EffectOrigin::Operation(key)
-            || !core::effect::effect_succeeded_check(world, action.command.command())
-            || action.identity.owner != identity::owner_id(local.owner)?
-            || action.identity.sandbox != identity::sandbox_id(namespace, local.sandbox)?
-            || action.identity.operation != identity::operation_id(namespace, key)?
-            || action.identity.epoch != plan.epoch
-            || action.identity.generation != plan.generation
-            || action.identity.attempt != action.command.attempt
-            || action.identity.resource != identity::resource(namespace, action.command.command())?
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        let receipt: WorkReceipt<E> = serde_json::from_slice(&receipt_bytes)?;
-        receipt.validate_for(&action)?;
-        if !matches!(receipt.outcome, WorkOutcome::ObservedSuccess(ref evidence) if evidence.validates(action.command.command()))
-            || found[index].is_some()
-        {
-            return Err(JournalError::CorruptStore);
-        }
-        found[index] = Some((action, receipt_bytes));
-    }
-    let Some(found) = found.into_iter().collect::<Option<Vec<_>>>() else {
+    )?;
+    let (result, found) = accept_startup_rows(rows, found, move |row, mut found| {
+        let result =
+            accept_startup_row::<E>(row, world, namespace, local, &commands, plan, &mut found);
+        (result, found)
+    });
+    result?;
+    let mut found = found;
+    let Some((action0, receipt0)) = found[0].take() else {
         return Err(JournalError::UnresolvedAction);
     };
-    Ok(found.into_iter().unzip())
+    let Some((action1, receipt1)) = found[1].take() else {
+        return Err(JournalError::UnresolvedAction);
+    };
+    let Some((action2, receipt2)) = found[2].take() else {
+        return Err(JournalError::UnresolvedAction);
+    };
+    let Some((action3, receipt3)) = found[3].take() else {
+        return Err(JournalError::UnresolvedAction);
+    };
+    let Some((action4, receipt4)) = found[4].take() else {
+        return Err(JournalError::UnresolvedAction);
+    };
+    Ok((
+        vec![action0, action1, action2, action3, action4],
+        vec![receipt0, receipt1, receipt2, receipt3, receipt4],
+    ))
 }
 
-fn native_snapshot(
+fn native_uncertain_actions(
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Vec<core::EffectId> {
+    world
+        .effect_ids()
+        .iter()
+        .filter(|effect| {
+            effect.command().sandbox() == local.sandbox
+                && matches!(
+                    world.effect_status(effect),
+                    Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
+                )
+        })
+        .cloned()
+        .collect()
+}
+
+pub(in crate::controller) fn native_snapshot(
     tx: &Transaction<'_>,
     namespace: &str,
     world: &core::World,
@@ -182,64 +326,77 @@ fn native_snapshot(
         current_operation: record.current_operation,
         lifetime: admission::read_lifetime(tx, namespace, local.sandbox, local.owner)
             .map_err(|_| JournalError::CorruptStore)?,
-        uncertain_actions: world
-            .effect_ids()
-            .iter()
-            .filter(|effect| {
-                effect.command().sandbox() == local.sandbox
-                    && matches!(
-                        world.effect_status(effect),
-                        Some(core::EffectStatus::Dispatched | core::EffectStatus::OutcomeUnknown)
-                    )
-            })
-            .cloned()
-            .collect(),
+        uncertain_actions: native_uncertain_actions(world, local),
     })
 }
 
-pub(in crate::controller) fn base_snapshot(
-    tx: &Transaction<'_>,
-    namespace: &str,
+fn original_result(
     world: &core::World,
-    intent: &AcceptedLifecycleIntent,
-    context: &AuthenticatedCenterContext,
-) -> Result<ReadyCandidate, JournalError> {
-    let inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
-    authenticated(&inbox, intent, context)?;
-    let (s, _) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
-    if !matches!(intent.request.operation, LifecycleOperation::Create { .. }) {
-        return Err(JournalError::UnsupportedInput);
+    local: InternalLocalBinding,
+) -> Result<Option<core::OperationResult>, JournalError> {
+    if let Some(record) = world.operation_record(core::OperationKey {
+        sandbox: local.sandbox,
+        operation: local.operation,
+    }) {
+        return Ok(record.result);
     }
-    let session = &inbox.sessions[s];
-    let current_entry = session
-        .entries
-        .iter()
-        .find(|entry| entry.intent.accepted_version == session.current_version)
-        .ok_or(JournalError::CorruptStore)?;
-    let current_request = current_entry.intent.clone();
-    let local = session.local;
-    let native = local
-        .and_then(|local| {
-            world
-                .sandbox_record(local.sandbox)
-                .map(|record| (local, record))
-        })
-        .map(|(local, record)| native_snapshot(tx, namespace, world, local, record))
-        .transpose()?;
-    let historical_result = local
-        .and_then(|local| {
-            world.operation_record(core::OperationKey {
-                sandbox: local.sandbox,
-                operation: local.operation,
-            })
-        })
-        .and_then(|record| record.result);
+    // Native Retire removes detailed rows, but its finite results remain
+    // queryable. Reuse the original owner/expiry checks only on this missing-row
+    // path; ordinary Ready queries need no extra World clone.
+    match core::handle_query(
+        world,
+        core::QueryRequest {
+            actor: core::Actor::Tenant(local.owner),
+            sandbox: local.sandbox,
+            operation: local.operation,
+        },
+    ) {
+        Ok(core::Decision {
+            event: core::Event::QueryOperation { result, .. },
+            ..
+        }) => Ok(result),
+        Err(
+            core::Reject::ResultExpired
+            | core::Reject::SandboxNotFound
+            | core::Reject::OperationUnavailable,
+        ) => Ok(None),
+        _ => Err(JournalError::CorruptStore),
+    }
+}
+
+#[expect(
+    clippy::manual_find,
+    reason = "fixed Aeneas does not support slice find HRTB; preserve ordered borrowed lookup"
+)]
+fn first_entry_at_version(entries: &[Entry], version: u64) -> Option<&Entry> {
+    for entry in entries {
+        if entry.intent.accepted_version == version {
+            return Some(entry);
+        }
+    }
+    None
+}
+
+#[expect(
+    clippy::ref_option,
+    reason = "keep the shared Option borrow used by the fixed Aeneas extraction"
+)]
+fn base_snapshot_readiness(
+    intent: &AcceptedLifecycleIntent,
+    current_request: &AcceptedLifecycleIntent,
+    current_entry: &Entry,
+    session: &Session,
+    native: &Option<NativeCreateSnapshot>,
+) -> CreateReadiness {
     let applied_renewal = match (
         &intent.request.operation,
         &current_request.request.operation,
     ) {
         (
             LifecycleOperation::Create {
+                target_incarnation, ..
+            }
+            | LifecycleOperation::Resume {
                 target_incarnation, ..
             },
             LifecycleOperation::Renew { incarnation, .. },
@@ -253,12 +410,62 @@ pub(in crate::controller) fn base_snapshot(
         }
         _ => false,
     };
-    let readiness = if let Some(reason) = session.refusal {
+    if let Some(reason) = session.refusal {
         CreateReadiness::Refused { reason }
-    } else if current_request == *intent || applied_renewal {
+    } else if *current_request == *intent
+        || applied_renewal
+        || (current_entry.unload_resolution.is_some()
+            && session
+                .current_execution_origin()
+                .is_some_and(|entry| entry.intent == *intent))
+    {
         CreateReadiness::Pending(CreateReadinessPending::NoLocalMapping)
     } else {
         CreateReadiness::NotCurrent
+    }
+}
+
+pub(in crate::controller) fn base_snapshot(
+    tx: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<ReadyCandidate, JournalError> {
+    let inbox = codec::load(tx)?.ok_or(JournalError::UnsupportedStore)?;
+    authenticated(&inbox, intent, context)?;
+    let (s, _) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
+    match intent.request.operation {
+        LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. } => {}
+        _ => return Err(JournalError::UnsupportedInput),
+    }
+    let session = &inbox.sessions[s];
+    let current_entry = first_entry_at_version(&session.entries, session.current_version)
+        .ok_or(JournalError::CorruptStore)?;
+    let current_request = current_entry.intent.clone();
+    let local = session.local;
+    let native = match local {
+        Some(local) => match world.sandbox_record(local.sandbox) {
+            Some(record) => Some(native_snapshot(tx, namespace, world, local, record)?),
+            None => None,
+        },
+        None => None,
+    };
+    let historical_result = local
+        .map(|local| original_result(world, local))
+        .transpose()?
+        .flatten();
+    let readiness =
+        base_snapshot_readiness(intent, &current_request, current_entry, session, &native);
+    let native_revision = if let Some(local) = local.filter(|_| native.is_some()) {
+        let revision: i64 = tx.query_row(
+            "SELECT revision FROM sandboxes WHERE sandbox_id=?1",
+            [identity::sandbox_id(namespace, local.sandbox)?.as_str()],
+            |row| row.get(0),
+        )?;
+        Some(u64::try_from(revision).map_err(|_| JournalError::CorruptStore)?)
+    } else {
+        None
     };
     Ok(ReadyCandidate {
         view: LifecycleCreateObservation {
@@ -271,6 +478,8 @@ pub(in crate::controller) fn base_snapshot(
             readiness,
         },
         actions: vec![],
+        continuation: None,
+        native_revision,
         receipts: vec![],
         source: None,
         credential: None,
@@ -312,7 +521,14 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
         candidate.view.readiness = CreateReadiness::Pending(CreateReadinessPending::WorkUnknown);
         return Ok(());
     }
-    if !native.has_completed_original_create(local)
+    let continued = if native.has_completed_original_execution(local) {
+        None
+    } else {
+        super::super::source_work::full::continued_ready_records::<E>(
+            tx, world, namespace, local, native,
+        )?
+    };
+    if (!native.has_completed_original_execution(local) && continued.is_none())
         || candidate.view.historical_result
             != Some(core::OperationResult::Running(native.generation))
     {
@@ -333,12 +549,28 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
             CreateReadiness::Pending(CreateReadinessPending::OriginalEvidenceMissing);
         return Ok(());
     }
-    candidate.ready_fact = internal_inbox::native_ready_fact(tx, namespace, world, local)?;
-    let observed =
+    candidate.ready_fact = if continued.is_some() {
+        let facts = super::super::unload_resolution::ready_facts(lifetime, now_ms)?;
+        Some(
+            sandproof_protocol::internal::lifecycle::LifecycleFact::Ready {
+                started_at_ms: facts.started_at_ms,
+                end_at_ms: facts.end_at_ms,
+                max_end_at_ms: facts.max_end_at_ms,
+            },
+        )
+    } else {
+        internal_inbox::native_ready_fact(tx, namespace, world, local)?
+    };
+    let observed = if let Some((work, action, receipt)) = continued {
+        let source = work.source().source.clone();
+        candidate.continuation = Some(work);
+        Ok((source, vec![action], vec![receipt]))
+    } else {
         capture::original_source::<E>(tx, namespace, world, local.sandbox).and_then(|source| {
             startup_records::<E>(tx, namespace, world, local)
                 .map(|(actions, receipts)| (source, actions, receipts))
-        });
+        })
+    };
     let (source, actions, receipts) = match observed {
         Ok(found) => found,
         Err(JournalError::UnresolvedAction) => {
@@ -351,6 +583,22 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
     candidate.source = Some(source);
     candidate.actions = actions;
     candidate.receipts = receipts;
+    fill_host_credentials(candidate, tx, namespace, world, local)
+}
+
+fn fill_host_credentials(
+    candidate: &mut ReadyCandidate,
+    tx: &Transaction<'_>,
+    namespace: &str,
+    world: &core::World,
+    local: InternalLocalBinding,
+) -> Result<(), JournalError> {
+    let expected_generation = candidate
+        .view
+        .native
+        .as_ref()
+        .ok_or(JournalError::CorruptStore)?
+        .generation;
     candidate.options = Some(
         admission::read_create_options(tx, namespace, local.sandbox)
             .map_err(|_| JournalError::CorruptStore)?,
@@ -364,7 +612,7 @@ fn fill_candidate<E: HostEvidence + DeserializeOwned>(
     candidate.view.readiness = CreateReadiness::Pending(
         if candidate
             .credential
-            .is_some_and(|(generation, _)| generation == native.generation)
+            .is_some_and(|(generation, _)| generation == expected_generation)
         {
             CreateReadinessPending::HostUnobserved
         } else {
@@ -408,7 +656,14 @@ impl ControllerJournal {
         if !after.can_probe() {
             return Ok(after.view);
         }
-        if after != *before {
+        // Keep all target fields, receipts and its monotonic SQL revision in
+        // the comparison. The global cursor also counts other sandboxes; it
+        // stays in the returned audit basis but is not this target's version.
+        let mut comparable = after.clone();
+        comparable.view.native_input_high_water = before.view.native_input_high_water;
+        if after.view.native_input_high_water < before.view.native_input_high_water
+            || comparable != *before
+        {
             after.view.readiness =
                 CreateReadiness::Pending(CreateReadinessPending::SnapshotChanged);
             return Ok(after.view);

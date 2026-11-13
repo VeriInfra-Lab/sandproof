@@ -163,7 +163,7 @@ mod tests {
                 accepted_version: version,
                 request: LifecycleRequest {
                     binding: OperationBinding {
-                        protocol_version: 3,
+                        protocol_version: super::super::PROTOCOL_VERSION,
                         node: node.clone(),
                         session: SessionId::try_from("sandbox-1").unwrap(),
                         key: OperationKey {

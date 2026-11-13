@@ -6,7 +6,11 @@ import subprocess
 import tempfile
 import unittest
 
-from tools.check_redis_diagnostics_binding import ROOT, STORE, DIAGNOSTICS, IO, check
+from tools.check_redis_diagnostics_binding import STORE, DIAGNOSTICS, IO, check
+
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class RedisDiagnosticBindingTests(unittest.TestCase):

@@ -1,0 +1,6 @@
+import SandproofBoundedWriter.TypesExternal
+namespace SandproofLifetimeRowRust
+abbrev core.io.error.Error := SandproofBoundedWriterRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofBoundedWriterRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofBoundedWriterRust.serde_json.error.Error
+end SandproofLifetimeRowRust

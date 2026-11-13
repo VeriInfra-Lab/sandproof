@@ -1,0 +1,31 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Values
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open Values
+noncomputable section
+
+theorem normal_expected (seed : Record) : Expected (base seed) (settled seed) = true := by
+  simp [Expected, Preserves, Retains, RetainsState, base, settled]
+
+theorem growth_expected (seed : Record) : Expected (empty seed) (base seed) = true := by
+  simp [Expected, Preserves, Retains, RetainsState, empty]
+
+theorem producer_expected (seed : Record) : Expected (base seed) (dropProducer seed) = false := by
+  simp [Expected, Preserves, Retains, RetainsState, base, dropProducer]
+
+theorem consumer_expected (seed : Record) : Expected (base seed) (dropConsumer seed) = false := by
+  simp [Expected, Preserves, Retains, RetainsState, base, dropConsumer]
+
+theorem plan_expected (seed : Record) : Expected (base seed) (changedPlan seed) = false := by
+  simp [Expected, Preserves, Retains, RetainsState, base, changedPlan, different_plans]
+
+theorem settled_expected (seed : Record) : Expected (settled seed) (base seed) = false := by
+  simp [Expected, Preserves, Retains, RetainsState, base, settled]
+end
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.growth_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.producer_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.consumer_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.plan_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.settled_expected

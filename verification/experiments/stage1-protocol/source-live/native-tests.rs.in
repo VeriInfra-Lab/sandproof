@@ -1,0 +1,143 @@
+#[cfg(test)]
+mod proof_source_live_contract_tests {
+    use super::live_native;
+    use crate::{InternalLocalBinding, Lifetime, NativeCreateSnapshot};
+    use sandbox_controller_core as core;
+
+    fn values() -> (NativeCreateSnapshot, InternalLocalBinding) {
+        (
+            NativeCreateSnapshot {
+                owner: core::TenantId(7),
+                phase: core::Phase::Running,
+                terminal: false,
+                epoch: 2,
+                generation: 3,
+                current_vm: Some(core::VmId(5)),
+                current_operation: None,
+                lifetime: Some(Lifetime {
+                    started_at_ms: Some(10),
+                    deadline_ms: 100,
+                    max_deadline_ms: 200,
+                    startup_deadline_ms: 20,
+                    disk_bytes: 4096,
+                }),
+                uncertain_actions: Vec::new(),
+            },
+            InternalLocalBinding {
+                sandbox: core::SandboxId(11),
+                owner: core::TenantId(7),
+                operation: core::OperationId(13),
+            },
+        )
+    }
+
+    #[test]
+    fn proof_source_live_normal() {
+        let (native, local) = values();
+        assert!(live_native(&native, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_version() {
+        let (native, local) = values();
+        assert!(!live_native(&native, local, 3, 4, 20));
+        assert!(!live_native(&native, local, 0, 4, 20));
+        assert!(!live_native(&native, local, 0, 0, 20));
+    }
+
+    #[test]
+    fn proof_source_live_deadline() {
+        let (native, local) = values();
+        assert!(live_native(&native, local, 4, 4, 99));
+        assert!(!live_native(&native, local, 4, 4, 100));
+        assert!(!live_native(&native, local, 4, 4, 101));
+    }
+
+    #[test]
+    fn proof_source_live_startup() {
+        let (mut native, local) = values();
+        native.lifetime.as_mut().unwrap().started_at_ms = Some(21);
+        assert!(!live_native(&native, local, 4, 4, 30));
+        native.lifetime.as_mut().unwrap().started_at_ms = Some(20);
+        assert!(live_native(&native, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_lifetime_vm_and_start_presence() {
+        let (native, local) = values();
+        let mut changed = native.clone();
+        changed.lifetime = None;
+        assert!(!live_native(&changed, local, 4, 4, 20));
+        changed = native.clone();
+        changed.current_vm = None;
+        assert!(!live_native(&changed, local, 4, 4, 20));
+        changed = native;
+        changed.lifetime.as_mut().unwrap().started_at_ms = None;
+        assert!(!live_native(&changed, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_owner() {
+        let (native, mut local) = values();
+        local.owner = core::TenantId(8);
+        assert!(!live_native(&native, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_generation_and_epoch() {
+        let (native, local) = values();
+        let mut changed = native.clone();
+        changed.generation = 0;
+        assert!(!live_native(&changed, local, 4, 4, 20));
+        changed = native;
+        changed.epoch = 0;
+        assert!(!live_native(&changed, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_phase() {
+        let (mut native, local) = values();
+        for phase in [
+            core::Phase::Starting,
+            core::Phase::Pausing,
+            core::Phase::Paused,
+            core::Phase::Revoking,
+            core::Phase::Destroyed,
+        ] {
+            native.phase = phase;
+            assert!(!live_native(&native, local, 4, 4, 20));
+        }
+    }
+
+    #[test]
+    fn proof_source_live_terminal() {
+        let (mut native, local) = values();
+        native.terminal = true;
+        assert!(!live_native(&native, local, 4, 4, 20));
+    }
+
+    #[test]
+    fn proof_source_live_clock_and_future_start() {
+        let (mut native, local) = values();
+        native.lifetime.as_mut().unwrap().started_at_ms = Some(-2);
+        assert!(!live_native(&native, local, 4, 4, -1));
+        native.lifetime.as_mut().unwrap().started_at_ms = Some(19);
+        assert!(!live_native(&native, local, 4, 4, 18));
+    }
+
+    #[test]
+    fn proof_source_live_permissive_boundary() {
+        let (mut native, mut local) = values();
+        native.owner = core::TenantId(0);
+        native.current_vm = Some(core::VmId(0));
+        local.owner = core::TenantId(0);
+        local.sandbox = core::SandboxId(0);
+        local.operation = core::OperationId(0);
+        let life = native.lifetime.as_mut().unwrap();
+        life.started_at_ms = Some(-1);
+        life.startup_deadline_ms = -1;
+        life.max_deadline_ms = -2;
+        life.disk_bytes = 0;
+        assert!(live_native(&native, local, 4, 4, 0));
+    }
+}

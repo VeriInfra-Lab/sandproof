@@ -1,0 +1,16 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+
+/- The same actual classifier and proof used by InboxRecordPredicates (#713). -/
+theorem sdk_renewal_spec (intent : AcceptedLifecycleIntent) :
+    renewal_confirmation.is_sdk_renewal intent = .ok (sdkRenewal intent) := by
+  unfold renewal_confirmation.is_sdk_renewal sdkRenewal
+  simp only [RequestWindowId.get, sandproof_protocol.internal.PositiveCounter.get, bind_tc_ok]
+  split <;> cases intent.request.operation <;> simp_all
+
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.sdk_renewal_spec

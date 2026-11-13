@@ -1,0 +1,124 @@
+import SandproofSqliteSession.ReadOps
+
+/-!
+Unchecked finite library providers for the four actual StandardConfigRead cuts.
+No actual generated trait universe, Connection, Self or JournalError is defined
+here. A supplies the actual wrappers and their complete Self poststates.
+-/
+
+open Aeneas Aeneas.Std
+namespace SandproofSqliteSession
+
+/-- rusqlite i64 FromSql accepts exactly the original signed Integer value. -/
+def i64Column (value : RawValue) :
+    Result (core.result.Result I64
+      SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Integer number => .ok (.Ok number)
+  | _ => .ok (.Err SandproofLoadBlobRust.invalidType)
+
+/-- rusqlite bool FromSql uses i64: zero is false, every nonzero signed
+integer (including negative integers) is true. Other SQL types stay errors. -/
+def boolColumn (value : RawValue) :
+    Result (core.result.Result Bool
+      SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError) := do
+  let reply ← i64Column value
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok number => .ok (.Ok (if number.val = 0 then false else true))
+
+/-- One callback on one original Row, left-to-right with first-error stop. -/
+def readI64Pair (row : Row) : Result (SqlReply (I64 × I64)) := do
+  let first ← rowGet index i64Column row 0#usize
+  match first with
+  | .Err error => .ok (.Err error)
+  | .Ok left =>
+    let second ← rowGet index i64Column row 1#usize
+    match second with
+    | .Err error => .ok (.Err error)
+    | .Ok right => .ok (.Ok (left, right))
+
+/-- The same single read view, full SQL and original unit Params enter the
+existing prepare/bind/expectedRow/callback pipeline. -/
+def queryI64 (view : SingleReadView) (sql : Str) (values : Unit) :
+    Result (SqlReply I64) :=
+  queryRow bindUnit (fun (_ : Unit) row => rowGet index i64Column row 0#usize)
+    view sql values ()
+
+def queryBytes (view : SingleReadView) (sql : Str) (values : Unit) :
+    Result (SqlReply (alloc.vec.Vec U8)) :=
+  queryRow bindUnit (fun (_ : Unit) row => rowGet index blobColumn row 0#usize)
+    view sql values ()
+
+def queryBool (view : SingleReadView) (sql : Str) (values : Unit) :
+    Result (SqlReply Bool) :=
+  queryRow bindUnit (fun (_ : Unit) row => rowGet index boolColumn row 0#usize)
+    view sql values ()
+
+def queryI64Pair (view : SingleReadView) (sql : Str) (values : Unit) :
+    Result (SqlReply (I64 × I64)) :=
+  queryRow bindUnit (fun (_ : Unit) row => readI64Pair row) view sql values ()
+
+theorem i64Column_integer (number : I64) :
+    i64Column (.Integer number) = .ok (.Ok number) := by
+  rfl
+
+/-- This covers all four non-Integer constructors without discarding their
+original payloads before the existing Row conversion-error wrapper sees them. -/
+theorem i64Column_nonInteger (value : RawValue)
+    (notInteger : ∀ number, value ≠ .Integer number) :
+    i64Column value = .ok (.Err SandproofLoadBlobRust.invalidType) := by
+  cases value with
+  | Integer number => exact False.elim (notInteger number rfl)
+  | Null => rfl
+  | Real _ => rfl
+  | Text _ => rfl
+  | Blob _ => rfl
+
+theorem boolColumn_integer (number : I64) :
+    boolColumn (.Integer number) =
+      .ok (.Ok (if number.val = 0 then false else true)) := by
+  simp [boolColumn, i64Column]
+
+theorem boolColumn_zero (number : I64) (zero : number.val = 0) :
+    boolColumn (.Integer number) = .ok (.Ok false) := by
+  simp [boolColumn, i64Column, zero]
+
+theorem boolColumn_nonzero (number : I64) (nonzero : number.val ≠ 0) :
+    boolColumn (.Integer number) = .ok (.Ok true) := by
+  simp [boolColumn, i64Column, nonzero]
+
+theorem boolColumn_nonInteger (value : RawValue)
+    (notInteger : ∀ number, value ≠ .Integer number) :
+    boolColumn value = .ok (.Err SandproofLoadBlobRust.invalidType) := by
+  simp [boolColumn, i64Column_nonInteger value notInteger]
+
+/-- Existing checked index and full original raw value are retained by the
+existing Row.conversionError, rather than returning a default numeric value. -/
+theorem rowGet_i64_type_error (row : Row) (position checked : Usize)
+    (located : index position row.statement = .ok (.Ok checked))
+    (notInteger : ∀ number, row.column checked ≠ .Integer number) :
+    rowGet index i64Column row position =
+      .ok (.Err (row.conversionError checked (row.column checked)
+        SandproofLoadBlobRust.invalidType)) := by
+  simp [rowGet, located, i64Column_nonInteger (row.column checked) notInteger]
+
+/-- No hypothesis about column 1: its index/conversion is never executed. -/
+theorem readI64Pair_first_error (row : Row) (error : SqlError)
+    (first : rowGet index i64Column row 0#usize = .ok (.Err error)) :
+    readI64Pair row = .ok (.Err error) := by
+  simp [readI64Pair, first]
+
+theorem readI64Pair_second_error (row : Row) (left : I64) (error : SqlError)
+    (first : rowGet index i64Column row 0#usize = .ok (.Ok left))
+    (second : rowGet index i64Column row 1#usize = .ok (.Err error)) :
+    readI64Pair row = .ok (.Err error) := by
+  simp [readI64Pair, first, second]
+
+theorem readI64Pair_values (row : Row) (left right : I64)
+    (first : rowGet index i64Column row 0#usize = .ok (.Ok left))
+    (second : rowGet index i64Column row 1#usize = .ok (.Ok right)) :
+    readI64Pair row = .ok (.Ok (left, right)) := by
+  simp [readI64Pair, first, second]
+
+end SandproofSqliteSession

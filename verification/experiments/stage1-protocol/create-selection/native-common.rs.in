@@ -1,0 +1,120 @@
+use super::super::*;
+use crate::NeverCrash;
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, ExpectedSession};
+
+fn loaded() -> (model::Inbox, AcceptedLifecycleIntent) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("selection.db");
+    let mut journal = super::initialize(&path);
+    let intent = super::create("owner", "session");
+    assert!(intent.validate(&super::context()).is_ok());
+    journal
+        .record_lifecycle_intent(&intent, &super::context(), &mut NeverCrash)
+        .unwrap();
+    let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
+    (inbox, intent)
+}
+
+#[test]
+fn proof_selection_normal() {
+    let (inbox, intent) = loaded();
+    assert_eq!(
+        create_attachment_selection(&inbox, &intent).unwrap(),
+        (0, 0, 1000)
+    );
+}
+
+#[test]
+fn proof_selection_first_position() {
+    let (mut inbox, intent) = loaded();
+    let mut earlier = inbox.sessions[0].clone();
+    earlier.id = "other".try_into().unwrap();
+    earlier.entries[0].intent.request.binding.session = earlier.id.clone();
+    earlier.entries[0].intent.request.binding.key.sequence = 2.try_into().unwrap();
+    inbox.sessions.insert(0, earlier);
+    assert_eq!(
+        create_attachment_selection(&inbox, &intent).unwrap(),
+        (1, 0, 1000)
+    );
+}
+
+#[test]
+fn proof_selection_terminal() {
+    let (mut inbox, intent) = loaded();
+    inbox.sessions[0].terminal = true;
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_refusal() {
+    let (mut inbox, intent) = loaded();
+    inbox.sessions[0].refusal = Some(sandproof_protocol::lifecycle::CreateRefusalReason::Capacity);
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_older_version() {
+    let (mut inbox, intent) = loaded();
+    inbox.sessions[0].current_version = 2;
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_existing_local() {
+    let (mut inbox, intent) = loaded();
+    inbox.sessions[0].local = Some(crate::InternalLocalBinding {
+        sandbox: core::SandboxId(10),
+        owner: core::TenantId(20),
+        operation: core::OperationId(30),
+    });
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_complete_intent() {
+    let (inbox, mut intent) = loaded();
+    let LifecycleOperation::Create { create, .. } = &mut intent.request.operation else {
+        panic!("fixture must be Create");
+    };
+    create.startup_deadline_ms = 1001;
+    assert!(intent.validate(&super::context()).is_ok());
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_absent() {
+    let (mut inbox, intent) = loaded();
+    inbox.sessions.clear();
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}
+
+#[test]
+fn proof_selection_non_create() {
+    let (mut inbox, mut intent) = loaded();
+    intent.request.operation = LifecycleOperation::Destroy {};
+    intent.request.binding.expected = ExpectedSession::Version(0);
+    assert!(intent.validate(&super::context()).is_ok());
+    inbox.sessions[0].entries[0].intent = intent.clone();
+    assert!(matches!(
+        create_attachment_selection(&inbox, &intent),
+        Err(JournalError::Conflict)
+    ));
+}

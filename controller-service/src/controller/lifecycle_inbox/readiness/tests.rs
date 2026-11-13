@@ -180,9 +180,15 @@ fn credential_failure_host_timeout_and_changed_source_only_make_current_observat
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
     let (app, state) = running(&path);
-    let original = state.lock().unwrap().configurations[&1].clone();
+    let original = state.lock().unwrap().configurations[&(1, 1)].clone();
     let calls = state.lock().unwrap().actions.len();
-    state.lock().unwrap().configurations.get_mut(&1).unwrap().0 = "0".repeat(64);
+    state
+        .lock()
+        .unwrap()
+        .configurations
+        .get_mut(&(1, 1))
+        .unwrap()
+        .0 = "0".repeat(64);
     let result = app
         .observe_lifecycle_create(&v3::request(), &v3::context())
         .unwrap();
@@ -194,8 +200,15 @@ fn credential_failure_host_timeout_and_changed_source_only_make_current_observat
         result.historical_result,
         Some(core::OperationResult::Running(1))
     );
-    assert_eq!(state.lock().unwrap().configurations[&1].0, "0".repeat(64));
-    state.lock().unwrap().configurations.insert(1, original);
+    assert_eq!(
+        state.lock().unwrap().configurations[&(1, 1)].0,
+        "0".repeat(64)
+    );
+    state
+        .lock()
+        .unwrap()
+        .configurations
+        .insert((1, 1), original);
     state.lock().unwrap().observe_unavailable = true;
     assert_eq!(
         app.observe_lifecycle_create(&v3::request(), &v3::context())
@@ -324,7 +337,7 @@ fn sql_only_lifetime_change_and_later_intent_invalidate_old_observation_basis() 
             local.sandbox,
             20,
             Some(120),
-            crate::controller::tests_support::limits(),
+            v3::limits(),
         )
         .unwrap();
     let after = journal
@@ -413,4 +426,50 @@ fn mapped_running_without_original_boot_source_is_not_current_physical_ready() {
         CreateReadiness::Pending(CreateReadinessPending::OriginalEvidenceMissing)
     );
     assert_eq!(state.lock().unwrap().recovery_observations, calls);
+}
+
+#[test]
+fn another_session_progress_during_observation_does_not_invalidate_the_original_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (app, state) = running(&path);
+    drop(app);
+    let journal = v3::open(&path);
+    let before = journal
+        .lifecycle_ready_candidate::<Evidence>(&v3::request(), &v3::context(), 10)
+        .unwrap();
+    assert!(before.can_probe());
+    let receipts = probes(&before);
+    drop(journal);
+    let app = v3::application(&path, state, false);
+    app.establish_lifecycle_host_epoch().unwrap();
+    let mut peer = v3::request();
+    peer.request.binding.session = "session-b".try_into().unwrap();
+    peer.request.binding.key.sequence = 2.try_into().unwrap();
+    peer.retention.slot = 2;
+    app.record_lifecycle_intent(&peer, &v3::context()).unwrap();
+    app.advance_lifecycle_create_with_verification(
+        &peer,
+        &v3::context(),
+        Some(v3::fixture::template()),
+        v3::fixture::compute(),
+        None,
+    )
+    .unwrap();
+    drop(app);
+    let journal = v3::open(&path);
+    let after = journal
+        .lifecycle_ready_candidate::<Evidence>(&v3::request(), &v3::context(), 10)
+        .unwrap();
+    assert!(after.view.native_input_high_water > before.view.native_input_high_water);
+    assert_eq!(after.view.native, before.view.native);
+    assert_eq!(after.actions, before.actions);
+    let result = journal
+        .finish_lifecycle_ready(&before, &v3::context(), &receipts, true, 10)
+        .unwrap();
+    assert!(
+        matches!(result.readiness, CreateReadiness::Observed(_)),
+        "unrelated native inputs: {:?}",
+        result.readiness
+    );
 }

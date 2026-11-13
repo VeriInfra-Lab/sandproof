@@ -61,6 +61,14 @@ impl RelayReaper {
 }
 
 impl TrackedRelayChild {
+    /// Read-only identity for the isolated debug acceptance barrier. This does
+    /// not observe exit, signal a PID or discharge ownership of the child.
+    #[cfg(debug_assertions)]
+    #[must_use]
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.as_ref().map(Child::id)
+    }
+
     #[must_use]
     pub fn take_stdin(&mut self) -> Option<ChildStdin> {
         self.child.as_mut()?.stdin.take()

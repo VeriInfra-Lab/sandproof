@@ -1,0 +1,22 @@
+import Aeneas
+import SandproofFoundations.TypesExternal
+
+open Aeneas Aeneas.Std
+namespace SandproofLoadBlobRust
+
+abbrev F64 := SandproofFoundationsRust.F64
+
+/-- [rusqlite::types::value_ref::ValueRef]
+    Source: '/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/types/value_ref.rs', lines 9:0-9:21
+    Name pattern: [rusqlite::types::value_ref::ValueRef]
+    Visibility: public -/
+@[discriminant isize, rust_type "rusqlite::types::value_ref::ValueRef"]
+inductive rusqlite.types.value_ref.ValueRef where
+| Null : rusqlite.types.value_ref.ValueRef
+| Integer : Std.I64 → rusqlite.types.value_ref.ValueRef
+| Real : F64 → rusqlite.types.value_ref.ValueRef
+| Text : Slice Std.U8 → rusqlite.types.value_ref.ValueRef
+| Blob : Slice Std.U8 → rusqlite.types.value_ref.ValueRef
+
+
+end SandproofLoadBlobRust

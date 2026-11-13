@@ -23,13 +23,13 @@ noncomputable section
 namespace SandproofSqliteRust
 
 /-- [sandproof_controller_service::JournalError::CommitUncertain]:
-    Source: 'controller-service/src/lib.rs', lines 98:4-98:32 -/
+    Source: 'controller-service/src/lib.rs', lines 108:4-108:32 -/
 def JournalError.CommitUncertain.constructor
   (e : rusqlite.error.Error) : Result JournalError := do
   ok (JournalError.CommitUncertain e)
 
 /-- [sandproof_controller_service::JournalError::{impl core::ops::function::FnOnce<(rusqlite::error::Error,), sandproof_controller_service::JournalError> for sandproof_controller_service::JournalError::CommitUncertain}::call_once]:
-    Source: 'controller-service/src/lib.rs', lines 98:4-98:32 -/
+    Source: 'controller-service/src/lib.rs', lines 108:4-108:32 -/
 def P.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError.call_once
   (state : rusqlite.error.Error → Result JournalError)
   (args : rusqlite.error.Error) :
@@ -38,7 +38,7 @@ def P.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError.call_once
   JournalError.CommitUncertain.constructor args
 
 /-- Trait implementation: [sandproof_controller_service::JournalError::{impl core::ops::function::FnOnce<(rusqlite::error::Error,), sandproof_controller_service::JournalError> for sandproof_controller_service::JournalError::CommitUncertain}]
-    Source: 'controller-service/src/lib.rs', lines 98:4-98:32 -/
+    Source: 'controller-service/src/lib.rs', lines 108:4-108:32 -/
 @[reducible]
 def P.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError :
   core.ops.function.FnOnce (rusqlite.error.Error → Result JournalError)

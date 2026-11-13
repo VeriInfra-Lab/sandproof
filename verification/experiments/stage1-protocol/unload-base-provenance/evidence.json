@@ -1,0 +1,51 @@
+{
+  "base_commit": "4d5c1db07c8f1b91504c2c7eb9efe5183b0f2421",
+  "base_tree": "fe02ad7eda2e253c95119348990b1a1369a9520a",
+  "rust_candidate_before_clippy_expectation_sha256": "ff2366d780f3f4f443f8b39928a08a7b9deb829b62e50fe7411cd9ccc6f21d0e",
+  "rust_candidate_sha256": "5cc85de3b87a8ca02df93e3b4f8bc7388640dd4fd434ad02885891d84a6420b0",
+  "llbc_sha256": {
+    "base_parent_original": "11d825f27567bababa62c6acfcc546213e9042aa4d5f0afb8c06e7ac4209a8da",
+    "base_parent_after_clippy_expectation": "4358bf3969f150d06018fbff2d763d4c6779c432e329ea3c44bf4815ab67739e",
+    "native": "618deb61488171632bd750ea13e61e6d2fbe5f78c85b9fbeadb1da78df0a62f1",
+    "ledger": "02541c7353fa503c765f5bb15d941693d084590540626875cca576741bec6be9",
+    "origin": "51f082ff6c09c809569104cf8be484271f31b473bb529dc45faa7a2fa46ee4a6"
+  },
+  "base_capture_comparison": {
+    "Types.lean": {
+      "old_sha256": "82a122725ccc61c985d82b9d412d002dfc91f2b94f053a652dbca22c9100516d",
+      "new_sha256": "75b58a002a825cd2bc630b4ce4a48756f1dd7df9411ef8ab7682647d273f0444",
+      "exact": false,
+      "same_excluding_location": true
+    },
+    "Funs.lean": {
+      "old_sha256": "a0b7e16694945b02360d8466e6d76d342110fcdfc11764eee6f1fc1897efdbf4",
+      "new_sha256": "dec53f4866bf12063f4557e3dd17c94a3baac5ced4b0388ae3988f55f927e799",
+      "exact": false,
+      "same_excluding_location": true
+    },
+    "TypesExternal_Template.lean": {
+      "old_sha256": "0de5614c8630a34057cb2264c82295cf7dfc7ed17d81d0e3bb2b5dece2a6949f",
+      "new_sha256": "0de5614c8630a34057cb2264c82295cf7dfc7ed17d81d0e3bb2b5dece2a6949f",
+      "exact": true,
+      "same_excluding_location": true
+    },
+    "FunsExternal_Template.lean": {
+      "old_sha256": "43c3a819daa68f740e7694b77a6222eb7af8ac17979039b076284eab8cc5bfe7",
+      "new_sha256": "380fc9bd9c2f8a98807f9c3033ca750bfcd768031895471bc82edebe183c6826",
+      "exact": false,
+      "same_excluding_location": true
+    }
+  },
+  "proof": {
+    "theorem": "actual_first_work_uses_refound_world_record_and_sealed_plan",
+    "source_sha256": "edf4149aa70e10e0b3eea5947645481a873720979acd81914fe827382b2f66fc",
+    "original_olean_sha256": "f7c761bbd04334897b0c645d540dc4222bd726aaba373801d385c459b58ec0d0",
+    "original_audit": "3 standard logical dependencies"
+  },
+  "ning": {
+    "original_inbox_tests_passed": 186,
+    "includes_actual_first_unload_fixture_from_771": true,
+    "candidate_clippy_tests_exit": 0,
+    "candidate_rustfmt_exit": 0
+  }
+}

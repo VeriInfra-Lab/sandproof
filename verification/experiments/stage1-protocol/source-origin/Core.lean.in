@@ -1,0 +1,122 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Epoch
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin
+open sandbox_controller_core
+theorem readAt_actual (values : alloc.vec.Vec T) (index : Usize) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice T) values index =
+      readAt values index := by
+  cases hit : values.val[index.val]? <;> simp [readAt, alloc.vec.Vec.index_usize, hit]
+
+theorem index_usize_actual (values : alloc.vec.Vec T) (index : Usize) :
+    alloc.vec.Vec.index_usize values index = readAt values index := by
+  cases hit : values.val[index.val]? <;> simp [readAt, alloc.vec.Vec.index_usize, hit]
+
+theorem kind_eq (left right : model.OperationKind) :
+    model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq left right =
+      .ok (decide (left = right)) := by
+  cases left <;> cases right <;>
+    simp [model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq, model.OperationKind.read_discriminant]
+
+theorem operation_ne (left right : Option ids.OperationId) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        ids.OperationId.Insts.CoreCmpPartialEqOperationId) left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+  all_goals scalar_tac
+
+theorem vm_eq (left right : Option ids.VmId) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      ids.VmId.Insts.CoreCmpPartialEqVmId left right = .ok (decide (left = right)) := by
+  cases left <;> cases right <;>
+    simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+
+theorem vm_ne (left right : Option ids.VmId) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        ids.VmId.Insts.CoreCmpPartialEqVmId) left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+  all_goals scalar_tac
+
+theorem actual (world : World) (inbox : Inbox) (anchor : Anchor) (session : Usize) :
+    run world inbox anchor session = Expected world inbox anchor session := by
+  classical
+  unfold run controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin Expected
+  apply congrArg (fun continuation =>
+    controller.lifecycle_inbox.model.Inbox.find inbox anchor.execution_origin >>= continuation)
+  funext found
+  cases found with
+  | Err error =>
+    simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError.call_once,
+      Reject]
+  | Ok found =>
+    cases found with
+    | none =>
+      simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        Reject]
+    | some pair =>
+      rcases pair with ⟨s, e⟩
+      simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        core.option.Option.ok_or, index_usize_actual, operation_ne]
+      by_cases same : s = session
+      · subst s
+        simp only [↓reduceIte]
+        apply congrArg (fun continuation => readAt inbox.sessions session >>= continuation)
+        funext selected
+        apply congrArg (fun continuation => readAt selected.entries e >>= continuation)
+        funext entry
+        by_cases local_matches : entry.local_operation = some anchor.local.operation
+        · simp [local_matches]
+          apply congrArg (fun continuation => model.World.operation_plan world
+            ⟨anchor.local.sandbox, anchor.local.operation⟩ >>= continuation)
+          funext plan
+          cases plan with
+          | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Reject]
+          | some plan =>
+            simp
+            apply congrArg (fun continuation => model.World.operation_record world
+              ⟨anchor.local.sandbox, anchor.local.operation⟩ >>= continuation)
+            funext row
+            cases row with
+            | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Reject]
+            | some row =>
+              simp
+              cases request : anchor.execution_origin.request.operation <;>
+                simp [originKind, Reject, epoch_actual]
+              all_goals
+                apply congrArg (fun continuation => EpochExpected world anchor plan >>= continuation)
+                funext epoch
+                simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, kind_eq, vm_eq, OriginFields]
+                split_ifs <;> simp_all
+                all_goals
+                  cases restore_shape : plan.restore_from <;> simp_all
+        · simp [local_matches, Reject]
+      · have different_values : s.val ≠ session.val := by
+          intro equal_values
+          apply same
+          scalar_tac
+        simp [different_values, Reject]
+
+theorem full_contract : FullOriginContract run := actual
+end SandboxModel.Stage1Protocol.SourceOrigin
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.readAt_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.index_usize_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.operation_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.vm_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.vm_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.full_contract

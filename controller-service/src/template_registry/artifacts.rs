@@ -8,6 +8,7 @@ use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
     path::Path,
+    sync::Mutex,
 };
 
 /// Artifact trust is rooted at a private directory checked by the deployment.
@@ -15,6 +16,7 @@ use std::{
 pub struct CandidateStore {
     pub(super) config: RegistryConfig,
     pub(super) trusted_uid: u32,
+    pub(super) verified_binding: Mutex<Option<CandidateVerification>>,
 }
 
 impl CandidateStore {
@@ -27,6 +29,7 @@ impl CandidateStore {
         let store = Self {
             config,
             trusted_uid,
+            verified_binding: Mutex::default(),
         };
         for path in [
             &store.config.root,
@@ -59,12 +62,28 @@ impl CandidateStore {
         if !binding.is_valid() {
             return Err(JournalError::Conflict);
         }
-        let evidence = CandidateVerification::check(self, binding)?;
+        let previous = self
+            .verified_binding
+            .lock()
+            .map_err(|_| JournalError::Conflict)?
+            .clone();
+        let evidence = match previous
+            .map(|evidence| evidence.recheck(self, binding))
+            .transpose()?
+            .flatten()
+        {
+            Some(evidence) => evidence,
+            None => CandidateVerification::check(self, binding)?,
+        };
         let mut rootfs = self.readonly_file(&binding.rootfs.path, binding.rootfs.size_bytes)?;
         let free = ext4_free_bytes(&mut rootfs, binding.resources.disk_bytes)?;
         if !evidence.matches(&binding.kernel) || !evidence.matches(&binding.rootfs) {
             return Err(JournalError::Conflict);
         }
+        *self
+            .verified_binding
+            .lock()
+            .map_err(|_| JournalError::Conflict)? = Some(evidence.clone());
         Ok((evidence, free))
     }
 

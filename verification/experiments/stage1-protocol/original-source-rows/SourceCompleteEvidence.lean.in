@@ -1,0 +1,143 @@
+import SourceRowEvidence
+import SourceRowSlots
+import SourceUsingRowInvariant
+import SandboxModel.ProofAuditCommand
+
+/-!
+Concrete instantiation. The row rule below is discharged by the
+actual handler theorem, rather than assumed as an adapter guarantee. Witnesses
+retain their own actual intermediate decoder states. SQLite, codec/JSON, Std
+source binding and the mechanical driver remain the separately stated library
+boundaries; this file does not establish physical process liveness.
+-/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceCompleteEvidence
+open SourceUsingRowInvariant
+open SourceRowEvidence
+open SandproofFoundationsRust.IdentifierLibrary
+
+abbrev Source := capture.SourceProcessIdentity
+abbrev Rows := controller.capture.OriginalSourceRows
+abbrev World := sandbox_controller_core.model.World
+abbrev Current := sandbox_controller_core.model.SandboxRecord
+abbrev Binding := sandbox_controller_core.ids.SandboxId ×
+  sandbox_controller_core.ids.VmId × sandproof_protocol.SandboxId
+abbrev RowInput := core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8)
+  rusqlite.error.Error
+
+def HasInstalledEvidence {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (slot : RowSlot) (installed : Source) : Prop :=
+  ∃ row before after codec afterCodec,
+    Nonempty (InstalledRowEvidence evidence ops row world ns current binding
+      before after codec afterCodec slot installed)
+
+/-- Existing full records are preserved by the actual handler; first
+installations get a concrete witness from that same actual handler. -/
+theorem actual_row_preserves_installed_evidence {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (row : RowInput) (world : World) (ns : Str) (current : Current) (binding : Binding)
+    (before after : Rows) (codec afterCodec : D)
+    (initial : RowsSatisfy
+      (HasInstalledEvidence evidence ops world ns current binding .prepared)
+      (HasInstalledEvidence evidence ops world ns current binding .activated) before)
+    (returned : controller.capture.accept_original_source_row evidence ops row world ns current
+      binding before codec = .ok ((.Ok (), after), afterCodec)) :
+    RowsSatisfy
+      (HasInstalledEvidence evidence ops world ns current binding .prepared)
+      (HasInstalledEvidence evidence ops world ns current binding .activated) after := by
+  have retained := SourceRowSlots.actual_handler_never_overwrites_existing_source
+    evidence ops row world ns current binding before after codec afterCodec (.Ok ()) returned
+  constructor
+  · intro installed present
+    cases previous : before.prepared with
+    | none =>
+      have witness := actual_new_slot_has_complete_row_evidence evidence ops row world ns current
+        binding before after codec afterCodec .prepared installed previous present returned
+      exact ⟨row, before, after, codec, afterCodec, witness⟩
+    | some source =>
+      have same : source = installed :=
+        Option.some.inj ((retained.1 source previous).symm.trans present)
+      simpa only [same] using initial.1 source previous
+  · intro installed present
+    cases previous : before.activated with
+    | none =>
+      have witness := actual_new_slot_has_complete_row_evidence evidence ops row world ns current
+        binding before after codec afterCodec .activated installed previous present returned
+      exact ⟨row, before, after, codec, afterCodec, witness⟩
+    | some source =>
+      have same : source = installed :=
+        Option.some.inj ((retained.2 source previous).symm.trans present)
+      simpa only [same] using initial.2 source previous
+
+/-- Both actual Prepare and Activate evidence histories reach the complete
+source returned by the actual caller. No row-correctness premise remains. -/
+theorem actual_source_success_has_both_installed_evidence {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source)
+    (returned : controller.capture.original_source_using evidence ops transaction ns world
+      sandbox codec = .ok (.Ok source)) :
+    ∃ current vm publicSandbox,
+      sandbox_controller_core.model.World.sandbox_record world sandbox = .ok (some current) ∧
+      current.phase = .Running ∧ current.terminal = false ∧ current.current_vm = some vm ∧
+      controller.identity.sandbox_id ns sandbox = .ok (.Ok publicSandbox) ∧
+      HasInstalledEvidence evidence ops world ns current
+        (sandbox, vm, publicSandbox) .prepared source ∧
+      HasInstalledEvidence evidence ops world ns current
+        (sandbox, vm, publicSandbox) .activated source := by
+  exact actual_source_success_inherits_both_row_properties evidence ops transaction ns world
+    sandbox codec
+    (fun current vm publicSandbox => HasInstalledEvidence evidence ops world ns current
+      (sandbox, vm, publicSandbox) .prepared)
+    (fun current vm publicSandbox => HasInstalledEvidence evidence ops world ns current
+      (sandbox, vm, publicSandbox) .activated)
+    (fun current vm publicSandbox row before after state afterState initial returned =>
+      actual_row_preserves_installed_evidence evidence ops row world ns current
+        (sandbox, vm, publicSandbox) before after state afterState initial returned)
+    source returned
+
+/-- A normal successful actual agree call entails the original pid/nonempty
+checks. Representability is derived from the actual String operation, rather
+than added as a business-domain premise. -/
+theorem actual_empty_agreement_success_is_valid
+    (observed installed : Source)
+    (returned : controller.capture.agree none observed = .ok (.Ok (), some installed)) :
+    SourceAgreement.ValidSource installed := by
+  by_cases zero : observed.pid = 0#u32
+  · simp [controller.capture.agree, zero] at returned
+  · by_cases bounded : StringRepresentable observed.boot_id
+    · obtain ⟨valid, after, _compatible⟩ :=
+        (SourceAgreement.actual_agreement_accepts_exactly_valid_compatible_source
+          none observed (some installed) bounded).mp returned
+      have same := Option.some.inj after
+      simpa only [same] using valid
+    · simp [controller.capture.agree, zero, alloc.string.String.is_empty,
+        alloc.string.String.Insts.CoreOpsDerefDerefStr.deref, bounded] at returned
+
+theorem actual_source_success_has_valid_full_identity {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : Source)
+    (returned : controller.capture.original_source_using evidence ops transaction ns world
+      sandbox codec = .ok (.Ok source)) :
+    SourceAgreement.ValidSource source := by
+  obtain ⟨current, vm, publicSandbox, _lookup, _phase, _terminal, _vm, _public,
+    prepared, _activated⟩ := actual_source_success_has_both_installed_evidence evidence ops
+      transaction ns world sandbox codec source returned
+  obtain ⟨row, before, after, state, afterState, ⟨witness⟩⟩ := prepared
+  exact actual_empty_agreement_success_is_valid witness.source source witness.agreement
+
+end SandproofOriginalSourceRowsRust.SourceCompleteEvidence
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_row_preserves_installed_evidence
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_source_success_has_both_installed_evidence
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_empty_agreement_success_is_valid
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_source_success_has_valid_full_identity

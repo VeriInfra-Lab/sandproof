@@ -1,0 +1,40 @@
+import SandproofParentCommit.Types
+import SandproofParentRead.WorldRead
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust.CurrentViews
+
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev Raw := rusqlite.transaction.Transaction
+abbrev SourceOwner := SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction
+abbrev SourceRaw := SandproofStage1RequestRust.rusqlite.transaction.Transaction
+abbrev ReadOwner := SandproofParentReadRust.controller.transaction.WorldTransaction
+
+def rawToSource (raw : Raw) : SourceRaw := {
+  conn := raw.conn.base
+  drop_behavior := raw.drop_behavior
+}
+
+-- Exact ordinary fields; the physical object correspondence is a separate
+-- original B2/B4 condition, never a consequence of equality of these values.
+def ownerToSource (owner : Owner) : SourceOwner := {
+  transaction := owner.transaction.map rawToSource
+  committed := {
+    value := owner.committed.value
+    data_version := owner.committed.data_version
+  }
+  candidate := owner.candidate
+  input_start := owner.input_start
+}
+
+def ownerToRead (owner : Owner) : ReadOwner :=
+  SandboxModel.InboxTransaction.CurrentWorldRead.ownerView (ownerToSource owner)
+
+-- Exact original Deref prefix, available before raw Funs to avoid an import
+-- cycle. Its equality to the actual generated Deref is checked after Funs.
+-- None uses the real expect panic; no V5 reply or raw object is fabricated.
+def liveRaw (owner : Owner) : Result Raw := do
+  let slot ← SandproofParentReadRust.core.option.Option.as_ref owner.transaction
+  core.option.Option.expect slot (SandproofParentReadRust.toStr "live transaction")
+
+end SandproofParentCommitRust.CurrentViews

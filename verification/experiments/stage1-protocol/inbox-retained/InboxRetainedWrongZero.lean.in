@@ -1,0 +1,22 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetainedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+namespace SandboxModel.Stage1Protocol.InboxRetained.WrongZero
+open Values
+
+theorem actual_return :
+    renewal_confirmation.follows_retained empty 0#u64 (renewal 1#u64 0#u64) = .ok true := by
+  simp [renewal_confirmation.follows_retained, renewal, EnvelopeValues.intent]
+
+theorem rejects_same_full_contract : ¬ FullRetainedContract renewal_confirmation.follows_retained := by
+  intro contract
+  have required := contract empty 0#u64 (renewal 1#u64 0#u64)
+  have rejected : expected empty 0#u64 (renewal 1#u64 0#u64) = false := by decide
+  rw [actual_return, rejected] at required
+  cases (Result.ok_injective required)
+
+end SandboxModel.Stage1Protocol.InboxRetained.WrongZero
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.WrongZero.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRetained.WrongZero.rejects_same_full_contract

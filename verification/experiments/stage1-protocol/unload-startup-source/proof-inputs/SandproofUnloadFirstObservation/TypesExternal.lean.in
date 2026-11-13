@@ -1,0 +1,110 @@
+import SandproofFoundations.TypesExternal
+
+open Aeneas Aeneas.Std
+namespace SandproofUnloadFirstObservation
+
+class Representations where
+  core_io_error_Error : Type
+  rusqlite_error_Error : Type
+  rusqlite_Connection : Type
+  rusqlite_transaction_Transaction : Type
+  sandbox_controller_core_capture_continuation_OriginalContinueIdentity : Type
+  sandbox_controller_core_controller_ControllerReject : Type
+  sandbox_controller_core_ids_SandboxId : Type
+  sandbox_controller_core_ids_OperationId : Type
+  sandbox_controller_core_ids_TenantId : Type
+  sandbox_controller_core_ids_VmId : Type
+  sandbox_controller_core_model_Phase : Type
+  sandbox_controller_core_model_RestoreSource : Type
+  sandbox_controller_core_model_FailureKind : Type
+  sandbox_controller_core_model_Operation : Type
+  sandbox_controller_core_model_Command : Type
+  sandbox_controller_core_model_EffectId : Type
+  sandbox_controller_core_model_World : Type
+  sandproof_protocol_internal_lifecycle_CreateBinding : Type
+  sandproof_protocol_internal_lifecycle_LifecycleFact : Type
+  sandproof_protocol_internal_NodeIdentity : Type
+  sandproof_protocol_ContractError : Type
+  sandproof_protocol_TenantId : Type
+  sandproof_protocol_SandboxId : Type
+  sandproof_protocol_OperationId : Type
+  sandproof_protocol_LogicalActionId : Type
+  sandproof_protocol_ResourceRef : Type
+  sandproof_protocol_lifecycle_authority_CenterIdentity : Type
+  sandproof_protocol_lifecycle_authority_AuthenticatedCenterContext : Type
+  sandproof_protocol_lifecycle_identity_CaptureId : Type
+  sandproof_protocol_lifecycle_identity_IncarnationId : Type
+  sandproof_protocol_lifecycle_digest_ContentDigest : Type
+  sandproof_protocol_lifecycle_identity_OperationBinding : Type
+  sandproof_protocol_lifecycle_identity_RetentionBinding : Type
+  sandproof_protocol_lifecycle_identity_SessionId : Type
+  sandproof_protocol_lifecycle_observation_CreateRefusalReason : Type
+  sandproof_protocol_lifecycle_renewal_RenewalConfirmation : Type
+  sandproof_protocol_lifecycle_terminal_TerminalLifecycleObservation : Type
+  serde_json_error_Error : Type
+  capture_continuation_OriginalContinueWorkRequest : Type
+  host_contract_AdmissionError : Type
+  host_contract_CreateOptions : Type
+  controller_admission_Lifetime : Type
+  CrashPoint : Type
+  controller_lifecycle_inbox_unload_resolution_UnloadResolution : Type
+  controller_lifecycle_inbox_native_retirement_NativeRetirementReceipt : Type
+  controller_lifecycle_inbox_model_LifecycleRetentionLane : Type
+  controller_lifecycle_inbox_model_Owner : Type
+  controller_lifecycle_inbox_readiness_CreateReadiness : Type
+
+abbrev core.io.error.Error [r : Representations] := r.core_io_error_Error
+abbrev rusqlite.error.Error [r : Representations] := r.rusqlite_error_Error
+abbrev rusqlite.Connection [r : Representations] := r.rusqlite_Connection
+abbrev rusqlite.transaction.Transaction [r : Representations] := r.rusqlite_transaction_Transaction
+abbrev sandbox_controller_core.capture.continuation.OriginalContinueIdentity [r : Representations] := r.sandbox_controller_core_capture_continuation_OriginalContinueIdentity
+abbrev sandbox_controller_core.controller.ControllerReject [r : Representations] := r.sandbox_controller_core_controller_ControllerReject
+abbrev sandbox_controller_core.ids.SandboxId [r : Representations] := r.sandbox_controller_core_ids_SandboxId
+abbrev sandbox_controller_core.ids.OperationId [r : Representations] := r.sandbox_controller_core_ids_OperationId
+abbrev sandbox_controller_core.ids.TenantId [r : Representations] := r.sandbox_controller_core_ids_TenantId
+abbrev sandbox_controller_core.ids.VmId [r : Representations] := r.sandbox_controller_core_ids_VmId
+abbrev sandbox_controller_core.model.Phase [r : Representations] := r.sandbox_controller_core_model_Phase
+abbrev sandbox_controller_core.model.RestoreSource [r : Representations] := r.sandbox_controller_core_model_RestoreSource
+abbrev sandbox_controller_core.model.FailureKind [r : Representations] := r.sandbox_controller_core_model_FailureKind
+abbrev sandbox_controller_core.model.Operation [r : Representations] := r.sandbox_controller_core_model_Operation
+abbrev sandbox_controller_core.model.Command [r : Representations] := r.sandbox_controller_core_model_Command
+abbrev sandbox_controller_core.model.EffectId [r : Representations] := r.sandbox_controller_core_model_EffectId
+abbrev sandbox_controller_core.model.World [r : Representations] := r.sandbox_controller_core_model_World
+abbrev sandproof_protocol.internal.lifecycle.CreateBinding [r : Representations] := r.sandproof_protocol_internal_lifecycle_CreateBinding
+abbrev sandproof_protocol.internal.lifecycle.LifecycleFact [r : Representations] := r.sandproof_protocol_internal_lifecycle_LifecycleFact
+abbrev sandproof_protocol.internal.NodeIdentity [r : Representations] := r.sandproof_protocol_internal_NodeIdentity
+abbrev sandproof_protocol.ContractError [r : Representations] := r.sandproof_protocol_ContractError
+abbrev sandproof_protocol.TenantId [r : Representations] := r.sandproof_protocol_TenantId
+abbrev sandproof_protocol.SandboxId [r : Representations] := r.sandproof_protocol_SandboxId
+abbrev sandproof_protocol.OperationId [r : Representations] := r.sandproof_protocol_OperationId
+abbrev sandproof_protocol.LogicalActionId [r : Representations] := r.sandproof_protocol_LogicalActionId
+abbrev sandproof_protocol.ResourceRef [r : Representations] := r.sandproof_protocol_ResourceRef
+abbrev sandproof_protocol.lifecycle.authority.CenterIdentity [r : Representations] := r.sandproof_protocol_lifecycle_authority_CenterIdentity
+abbrev sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext [r : Representations] := r.sandproof_protocol_lifecycle_authority_AuthenticatedCenterContext
+abbrev sandproof_protocol.lifecycle.identity.CaptureId [r : Representations] := r.sandproof_protocol_lifecycle_identity_CaptureId
+abbrev sandproof_protocol.lifecycle.identity.IncarnationId [r : Representations] := r.sandproof_protocol_lifecycle_identity_IncarnationId
+abbrev sandproof_protocol.lifecycle.digest.ContentDigest [r : Representations] := r.sandproof_protocol_lifecycle_digest_ContentDigest
+abbrev sandproof_protocol.lifecycle.identity.OperationBinding [r : Representations] := r.sandproof_protocol_lifecycle_identity_OperationBinding
+abbrev sandproof_protocol.lifecycle.identity.RetentionBinding [r : Representations] := r.sandproof_protocol_lifecycle_identity_RetentionBinding
+abbrev sandproof_protocol.lifecycle.identity.SessionId [r : Representations] := r.sandproof_protocol_lifecycle_identity_SessionId
+abbrev sandproof_protocol.lifecycle.observation.CreateRefusalReason [r : Representations] := r.sandproof_protocol_lifecycle_observation_CreateRefusalReason
+abbrev sandproof_protocol.lifecycle.renewal.RenewalConfirmation [r : Representations] := r.sandproof_protocol_lifecycle_renewal_RenewalConfirmation
+abbrev sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation [r : Representations] := r.sandproof_protocol_lifecycle_terminal_TerminalLifecycleObservation
+abbrev serde_json.error.Error [r : Representations] := r.serde_json_error_Error
+abbrev capture.continuation.OriginalContinueWorkRequest [r : Representations] := r.capture_continuation_OriginalContinueWorkRequest
+abbrev host_contract.AdmissionError [r : Representations] := r.host_contract_AdmissionError
+abbrev host_contract.CreateOptions [r : Representations] := r.host_contract_CreateOptions
+abbrev controller.admission.Lifetime [r : Representations] := r.controller_admission_Lifetime
+abbrev CrashPoint [r : Representations] := r.CrashPoint
+abbrev controller.lifecycle_inbox.unload_resolution.UnloadResolution [r : Representations] := r.controller_lifecycle_inbox_unload_resolution_UnloadResolution
+abbrev controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt [r : Representations] := r.controller_lifecycle_inbox_native_retirement_NativeRetirementReceipt
+abbrev controller.lifecycle_inbox.model.LifecycleRetentionLane [r : Representations] := r.controller_lifecycle_inbox_model_LifecycleRetentionLane
+abbrev controller.lifecycle_inbox.model.Owner [r : Representations] := r.controller_lifecycle_inbox_model_Owner
+abbrev controller.lifecycle_inbox.readiness.CreateReadiness [r : Representations] := r.controller_lifecycle_inbox_readiness_CreateReadiness
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Debug := SandproofFoundationsRust.core.fmt.Debug
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+
+end SandproofUnloadFirstObservation

@@ -1,0 +1,79 @@
+import SourceOptionsEncodedActual
+import SourceOptionsRead
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.SourceOptionsEncodedLink
+
+variable [SandproofCreateOptionsEncoded.Representations]
+variable [SandproofCreateOptionsEncoded.Operations]
+
+@[reducible] def readRepresentations (original : SandproofUnloadOptionsRead.Representations) :
+    SandproofUnloadOptionsRead.Representations :=
+  { original with
+    host_contract_CreateOptions := SandproofCreateOptionsEncoded.host_contract.CreateOptions }
+
+def checkedOptions (original : SandproofUnloadOptionsRead.Representations)
+    (options : SandproofCreateOptionsEncoded.host_contract.CreateOptions) :
+    Result (core.result.Result (alloc.vec.Vec U8)
+      (@SandproofUnloadOptionsRead.host_contract.AdmissionError (readRepresentations original))) := do
+  let result ← SandproofCreateOptionsEncoded.host_contract.CreateOptions.encoded options
+  .ok (match result with
+    | .Ok bytes => .Ok bytes
+    | .Err _ => .Err (@SandproofUnloadOptionsRead.host_contract.AdmissionError.InvalidCreateOptions
+      (readRepresentations original)))
+
+@[reducible] def install (original : SandproofUnloadOptionsRead.Representations)
+    (read : @SandproofUnloadOptionsRead.Operations (readRepresentations original)) :
+    @SandproofUnloadOptionsRead.Operations (readRepresentations original) :=
+  letI : SandproofUnloadOptionsRead.Representations := readRepresentations original
+  { read with checkedCanonicalOptions := checkedOptions original }
+
+/-- Install the actual extracted encoder on the very same option value decoded by the reader. -/
+theorem actual_encoder_supplies_checked_options
+    (original : SandproofUnloadOptionsRead.Representations)
+    (read : @SandproofUnloadOptionsRead.Operations (readRepresentations original))
+    (options : SandproofCreateOptionsEncoded.host_contract.CreateOptions) (bytes : alloc.vec.Vec U8)
+    (encoded : SandproofCreateOptionsEncoded.host_contract.CreateOptions.encoded options = .ok (.Ok bytes)) :
+    @SandproofUnloadOptionsRead.host_contract.CreateOptions.encoded (readRepresentations original)
+      (install original read) options = .ok (.Ok bytes) := by
+  change checkedOptions original options = .ok (.Ok bytes)
+  simp [checkedOptions, encoded]
+
+open SourceOptionsEncodedActual in
+/-- The old actual SQLite read now compares against bytes returned by the new
+actual Rust encoder, on the identical decoded value. -/
+theorem actual_read_uses_bounded_encoder
+    (original : SandproofUnloadOptionsRead.Representations)
+    (read : @SandproofUnloadOptionsRead.Operations (readRepresentations original))
+    (connection : @SandproofUnloadOptionsRead.rusqlite.Connection (readRepresentations original))
+    (ns : Str)
+    (sandbox : @SandproofUnloadOptionsRead.sandbox_controller_core.ids.SandboxId (readRepresentations original))
+    (options : SandproofCreateOptionsEncoded.host_contract.CreateOptions)
+    (stored rendered : alloc.vec.Vec U8)
+    (template : templateValid options = .ok true)
+    (env : representable options.env_vars) (metadata : representable options.metadata)
+    (envOK : options.env_vars.all (allowedField true) = true)
+    (metadataOK : options.metadata.all (allowedField false) = true)
+    (serialize : SandproofCreateOptionsEncoded.host_contract.serialize_create_options options = .ok (.Ok rendered))
+    (within : rendered.val.length ≤ 65536) :
+    letI := readRepresentations original
+    letI := install original read
+    ∀ id : SourceOptionsRead.Identified ns sandbox,
+      SourceOptionsRead.storedOptions connection id.text = .ok (.Ok stored) →
+      SandproofUnloadOptionsRead.serde_json.de.from_slice
+        SandproofUnloadOptionsRead.host_contract.CreateOptions.Insts.Serde_coreDeDeserialize
+        (alloc.vec.Vec.deref stored) = .ok (.Ok options) →
+      SandproofUnloadOptionsRead.controller.admission.read_create_options connection ns sandbox =
+        .ok (if rendered = stored then .Ok options else .Err .InvalidCreateOptions) := by
+  intro id row decode
+  have actual := actual_encode_returns_complete_serialized_value options template env metadata
+    envOK metadataOK rendered serialize within
+  exact @SourceOptionsRead.actual_read_compares_complete_options
+    (readRepresentations original) (install original read) connection ns sandbox id stored rendered
+    options row decode (actual_encoder_supplies_checked_options original read options rendered actual)
+
+end SandboxModel.Stage1Protocol.SourceOptionsEncodedLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedLink.actual_encoder_supplies_checked_options
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedLink.actual_read_uses_bounded_encoder

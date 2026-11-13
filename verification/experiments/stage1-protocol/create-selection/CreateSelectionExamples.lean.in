@@ -1,0 +1,49 @@
+import SandboxModel.Lifecycle.Protocol.CreateSelection
+import SandboxModel.Lifecycle.Protocol.CreateSelectionValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateSelection.Examples
+open Values
+
+theorem normal_actual : run normal intent = .ok (.Ok (0#usize, 0#usize, 2#u64)) := by
+  have checked := found normal intent 0#usize 0#usize (lookup_returns selected rfl)
+    (by simp [normal, withSession, InboxLookup.Witness.singleton])
+  simpa [forSession, normal, withSession, selected, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.session, InboxLookup.Witness.singleton,
+    intent, EnvelopeValues.intent, Validation.Examples.createPayload] using checked
+
+theorem terminal_actual : run terminal intent = .ok (.Err .Conflict) := by
+  have checked := found terminal intent 0#usize 0#usize
+    (lookup_returns { selected with terminal := true } rfl)
+    (by simp [terminal, withSession, InboxLookup.Witness.singleton])
+  simpa [forSession, terminal, withSession, selected, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.session, InboxLookup.Witness.singleton] using checked
+
+theorem refused_actual : run refused intent = .ok (.Err .Conflict) := by
+  have checked := found refused intent 0#usize 0#usize
+    (lookup_returns { selected with refusal := some .Capacity } rfl)
+    (by simp [refused, withSession, InboxLookup.Witness.singleton])
+  simpa [forSession, refused, withSession, selected, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.session, InboxLookup.Witness.singleton] using checked
+
+theorem older_actual : run older intent = .ok (.Err .Conflict) := by
+  have checked := found older intent 0#usize 0#usize
+    (lookup_returns { selected with current_version := 2#u64 } rfl)
+    (by simp [older, withSession, InboxLookup.Witness.singleton])
+  simpa [forSession, older, withSession, selected, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.session, InboxLookup.Witness.singleton, intent, EnvelopeValues.intent] using checked
+
+theorem mapped_actual : run mapped intent = .ok (.Err .Conflict) := by
+  have checked := found mapped intent 0#usize 0#usize
+    (lookup_returns { selected with «local» := some ⟨10#u64, 20#u64, 30#u64⟩ } rfl)
+    (by simp [mapped, withSession, InboxLookup.Witness.singleton])
+  simpa [forSession, mapped, withSession, selected, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.session, InboxLookup.Witness.singleton, intent, EnvelopeValues.intent] using checked
+
+end SandboxModel.Stage1Protocol.CreateSelection.Examples
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Examples.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Examples.terminal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Examples.refused_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Examples.older_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.Examples.mapped_actual

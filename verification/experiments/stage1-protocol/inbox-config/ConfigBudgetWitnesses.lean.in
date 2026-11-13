@@ -1,0 +1,20 @@
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetProofs
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigBudget
+noncomputable section
+
+theorem normal_returns :
+    LifecycleInboxConfig.required_bytes Values.small = .ok 106503#u64 ∧
+    LifecycleInboxConfig.required_bytes Values.fixture = .ok 286720#u64 ∧
+    LifecycleInboxConfig.required_bytes Values.emptyBudget = .ok 8192#u64 ∧
+    LifecycleInboxConfig.required_bytes Values.maximum = .ok 2005480217559047#u64 := by
+  simp only [required_bytes_iff]
+  decide
+
+end
+end SandboxModel.Stage1Protocol.ConfigBudget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.normal_returns

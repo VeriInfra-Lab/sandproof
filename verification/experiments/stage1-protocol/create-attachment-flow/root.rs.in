@@ -1,0 +1,15 @@
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_attach_create_using<
+    R: native_retirement::RetirementEncoding,
+    T: model::TerminalEncoding,
+    N: renewal_confirmation::RenewalEncoding,
+    U: unload_resolution::UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    E: CreateAttachmentEffects,
+>(
+    effects: &mut E,
+    namespace: &str,
+    a: &CreateAttachment,
+) -> Result<(), JournalError> {
+    attach_create_using::<R, T, N, U, B, E>(effects, namespace, a)
+}

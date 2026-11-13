@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater
+
+abbrev ExistingGuard := Inbox → sandproof_protocol.TenantId → U64 →
+  Result (core.result.Result Bool JournalError)
+abbrev NewGuard := Inbox → sandbox_controller_core.model.World → InternalLocalBinding →
+  Result (core.result.Result Unit JournalError)
+abbrev Install := Inbox → Usize → Usize → InternalLocalBinding → Result Inbox
+
+/-- One contract for the actual correct and mutated guard/install views.
+    It retains the original whole-value frame, and adds the high-water consequence.
+    The bound is definitionally the existing OwnerLimit predicate.
+    It supplies no authorization, physical-resource or durable-acceptance fact. -/
+def FullCheckedInstallContract (existing : ExistingGuard) (fresh : NewGuard) (install : Install) : Prop :=
+  ∀ (inbox : Inbox) (world : sandbox_controller_core.model.World) (binding : InternalLocalBinding)
+    (s e : Usize) (session : Session) (entry : Entry),
+    inbox.sessions.val[s.val]? = some session → session.entries.val[e.val]? = some entry →
+    inbox.owners.val.length ≤ inbox.config.max_sessions.val →
+    (existing inbox session.owner binding.owner = .ok (.Ok true) ∨
+      (existing inbox session.owner binding.owner = .ok (.Ok false) ∧
+       fresh inbox world binding = .ok (.Ok ()))) →
+    install inbox s e binding ⦃ result =>
+      CreateInstall.Installed inbox s e session entry binding result ∧
+      inbox.owner_high_water.val ≤ result.owner_high_water.val ⦄
+
+end SandboxModel.Stage1Protocol.CreateHighWater

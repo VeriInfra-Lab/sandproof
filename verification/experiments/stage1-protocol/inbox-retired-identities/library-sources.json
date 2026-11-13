@@ -1,0 +1,10 @@
+{
+  "production": {
+    "core/src/iter/traits/iterator.rs": "db43b7acc33fca53d85fef3ddea29ec9f8c1e768df428676fe2de160f21d5f6b",
+    "core/src/slice/iter/macros.rs": "0ac47d295999ba8847d0df93557292fbad65d256db0c6521c396798d2e37677d"
+  },
+  "extraction": {
+    "core/src/iter/traits/iterator.rs": "a6a1e6fb4032fa5b21376322c1b52f290b47d27944abbacb30c4fc3f9f4ada6f",
+    "core/src/slice/iter/macros.rs": "8db181ab6087b436dcc4c350efc7283ecc4912e34ca20d8bf7460fca5084c26c"
+  }
+}

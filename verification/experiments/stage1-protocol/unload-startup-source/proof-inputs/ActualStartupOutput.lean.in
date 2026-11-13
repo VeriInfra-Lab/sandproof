@@ -1,0 +1,148 @@
+import SandproofUnloadStartupJoint.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace UnloadFirstActualStartup
+open SandproofUnloadStartupJoint
+open SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot
+variable [Representations] [Operations]
+
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Bytes := alloc.vec.Vec U8
+abbrev Pair := Action × Bytes
+abbrev Slots := Array (Option Pair) 5#usize
+abbrev World := sandbox_controller_core.model.World
+abbrev Local := controller.internal_inbox.model.InternalLocalBinding
+abbrev Plan := sandbox_controller_core.model.OperationPlan
+abbrev Command := sandbox_controller_core.model.Command
+abbrev Cursor (E : Type) := rusqlite.row.MappedRows (startup_records.closure E)
+abbrev Output := alloc.vec.Vec Action × alloc.vec.Vec Bytes
+
+def startupSql : Str := Aeneas.Std.toStr
+  "SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id"
+  (by rw [U32.max_eq]; decide)
+
+abbrev decoder {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) :=
+  startup_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultPairVecU8VecU8Error host serde
+
+abbrev acceptor {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) :=
+  startup_records.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorArrayOptionPairWorkActionEffectIdVecU85PairResultTupleJournalErrorArrayOptionPairWorkActionEffectIdVecU85
+    host serde
+
+abbrev cursorIterator {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) :=
+  rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError (decoder host serde)
+
+def emptySlots : Slots := Array.make 5#usize [none, none, none, none, none]
+
+/-- Observations of the actual calls before iteration. The SQL, one bound
+text parameter, exact row decoder, and identity of the input handles are fixed
+by the generated caller. The shared SQLite read rules supply these observations. -/
+structure Opened {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (world : World) (localValue : Local) where
+  commands : alloc.vec.Vec Command
+  plan : Plan
+  connection : rusqlite.Connection
+  statement : rusqlite.statement.Statement
+  publicSandbox : sandproof_protocol.SandboxId
+  text : Str
+  cursor : Cursor E
+  after : rusqlite.statement.Statement
+  expected : expected_commands world localValue = .ok (.Ok commands)
+  selectedPlan : sandbox_controller_core.model.World.operation_plan world
+    { sandbox := localValue.sandbox, operation := localValue.operation } = .ok (some plan)
+  transaction : rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref tx =
+    .ok connection
+  prepared : rusqlite.Connection.prepare connection startupSql = .ok (.Ok statement)
+  identity : controller.identity.sandbox_id ns localValue.sandbox = .ok (.Ok publicSandbox)
+  boundText : sandproof_protocol.SandboxId.as_str publicSandbox = .ok text
+  query : rusqlite.statement.Statement.query_map
+    (ArrayT1.Insts.RusqliteParamsParams
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+    (decoder host serde) statement (Array.make 1#usize [text]) () = .ok (.Ok cursor, after)
+
+def Opened.drive {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {ns : Str} {world : World} {localValue : Local}
+    (calls : Opened host serde tx ns world localValue) :
+    Result (core.result.Result Unit JournalError × Slots) :=
+  accept_startup_rows (cursorIterator host serde) (acceptor host serde)
+    calls.cursor emptySlots (world, ns, localValue, calls.commands, calls.plan)
+
+omit [Representations] [Operations] in
+theorem normalBind {A B : Type} (call : Result A)
+    (next : A → Result B) (output : B)
+    (returned : (do let value ← call; next value) = .ok output) :
+    ∃ value, call = .ok value ∧ next value = .ok output := by
+  exact Result.cases
+    (motive := fun call =>
+      (do let value ← call; next value) = .ok output →
+        ∃ value, call = .ok value ∧ next value = .ok output)
+    call
+    (fun value returned => ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩)
+    (fun _ _ returned => by simp only [bind_tc_vis, vis_not_ok] at returned)
+    (fun returned => by simp only [bind_tc_div, div_not_ok] at returned)
+    returned
+
+omit [Representations] [Operations] in
+private theorem arrayFive {A : Type} (array : Array A 5#usize) :
+    ∃ a b c d e, array = Array.make 5#usize [a, b, c, d, e] := by
+  have len : array.val.length = 5 := by simp
+  generalize eq : array.val = values at len
+  rcases values with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, _ | ⟨e, _ | ⟨_, _⟩⟩⟩⟩⟩⟩ <;> simp at len
+  exact ⟨a, b, c, d, e, by apply Aeneas.Std.Array.ext; simpa using eq⟩
+
+def OrderedOutput (slots : Slots) (output : Output) (rows : List Pair) : Prop :=
+  slots.val = rows.map some ∧ output.1.val = rows.map Prod.fst ∧
+    output.2.val = rows.map Prod.snd ∧ rows.length = 5
+
+/-- Invert the generated normal return. The five `take` operations are
+evaluated from the actual buffer, and both generated vectors use those exact
+pairs. No slot contents, ordering, or driver success are assumed. -/
+theorem actual_startup_has_ordered_pairs {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : World) (localValue : Local)
+    (calls : Opened host serde tx ns world localValue) (output : Output)
+    (returned : startup_records host serde tx ns world localValue = .ok (.Ok output)) :
+    ∃ slots rows, calls.drive = .ok (.Ok (), slots) ∧ OrderedOutput slots output rows := by
+  have prepared := calls.prepared
+  unfold startupSql at prepared
+  have query := calls.query
+  unfold decoder at query
+  unfold startup_records at returned
+  unfold SandproofUnloadStartupJoint.toStr at returned
+  simp only [calls.expected, calls.selectedPlan, calls.transaction, prepared, calls.identity,
+    calls.boundText, core.option.Option.ok_or_some,
+    core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at returned
+  obtain ⟨⟨queryReply, _⟩, calledQuery, returned⟩ := normalBind _ _ _ returned
+  have queryEq : queryReply = .Ok calls.cursor :=
+    congrArg Prod.fst (Result.ok_injective (calledQuery.symm.trans query))
+  subst queryReply
+  simp [startup_records.closure_1] at returned
+  obtain ⟨⟨reply, slots⟩, driverReturned, returned⟩ := normalBind _ _ _ returned
+  change calls.drive = .ok (reply, slots) at driverReturned
+  cases reply with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      Result.ok.injEq] at returned
+  | Ok value =>
+    cases value
+    obtain ⟨a, b, c, d, e, rfl⟩ := arrayFive slots
+    rcases a with _ | ⟨action0, raw0⟩ <;>
+      rcases b with _ | ⟨action1, raw1⟩ <;>
+      rcases c with _ | ⟨action2, raw2⟩ <;>
+      rcases d with _ | ⟨action3, raw3⟩ <;>
+      rcases e with _ | ⟨action4, raw4⟩ <;>
+      simp [Array.index_mut_usize, Array.index_usize, Array.getElem?_Usize_eq,
+        Array.set_val_eq, lift, Result.ok.injEq] at returned
+    subst output
+    refine ⟨_, [(action0, raw0), (action1, raw1), (action2, raw2), (action3, raw3), (action4, raw4)],
+      driverReturned, ?_⟩
+    simp [OrderedOutput, alloc.slice.Slice.into_vec, alloc.vec.Vec.val, Array.to_slice]
+
+end UnloadFirstActualStartup
+
+#audit_controller_proof UnloadFirstActualStartup.actual_startup_has_ordered_pairs

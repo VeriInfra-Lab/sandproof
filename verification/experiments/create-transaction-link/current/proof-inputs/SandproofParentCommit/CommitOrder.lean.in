@@ -1,0 +1,56 @@
+import SandproofParentCommit.CommitOrderModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofParentCommitRust
+set_option autoImplicit false
+
+namespace SandproofParentCommitRust.CommitOrder
+open controller.transaction
+
+-- The same bind-continuation congruence used by the existing InboxLoad proof;
+-- it preserves every outer result, without inspecting its coinductive shape.
+private theorem continue_congr {α β : Type} (run : Result α) (left right : α → Result β)
+    (same : ∀ value, left value = right value) :
+    Bind.bind run left = Bind.bind run right :=
+  congrArg (fun next => Bind.bind run next) (funext same)
+
+theorem original_first_error_order : FullOrderContract validate_then_commit_using := by
+  intro E io state
+  change validate_then_commit_using io state = orderView io state
+  unfold validate_then_commit_using orderView continueAfter
+  apply continue_congr
+  rintro ⟨first, afterFirst⟩
+  simp only [uncurry_apply_pair]
+  cases first with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok first =>
+    cases first
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    apply continue_congr
+    rintro ⟨second, afterSecond⟩
+    simp only [uncurry_apply_pair]
+    cases second with
+    | Err error => simp [
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok second =>
+      cases second
+      simp only [bind_tc_ok]
+      apply continue_congr
+      rintro ⟨third, afterThird⟩
+      simp only [uncurry_apply_pair]
+      cases third with
+      | Err error => simp [
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok third =>
+        cases third
+        simp only [bind_tc_ok]
+        apply continue_congr
+        rintro ⟨fourth, afterFourth⟩
+        simp only [uncurry_apply_pair]
+        cases fourth with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok fourth => cases fourth; simp 
+
+end SandproofParentCommitRust.CommitOrder
+#audit_controller_proof SandproofParentCommitRust.CommitOrder.original_first_error_order

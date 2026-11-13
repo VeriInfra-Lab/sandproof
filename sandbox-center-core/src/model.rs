@@ -55,6 +55,8 @@ impl Bounds {
                     .saturating_add(RESULT_CONFIRMATION_BODY_BYTES)
                     // Full latest SDK checkpoint coexists with terminal ACK.
                     .saturating_add(RENEWAL_CONFIRMATION_BODY_BYTES)
+                    // Exact completed Unload plus fixed material/lifetime facts.
+                    .saturating_add(sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES)
                     // Actual deleted-version frontier and sampled-time maximum.
                     .saturating_add(256),
             )
@@ -131,6 +133,26 @@ pub struct Sandbox {
     pub compacted_sampled_acceptance_max_ms: Option<u64>,
 }
 impl Sandbox {
+    /// The latest execution-producing operation. Historical first Create is
+    /// retained for original configuration, never substituted for this origin.
+    #[must_use]
+    pub fn current_execution_origin(
+        &self,
+    ) -> Option<&sandproof_protocol::lifecycle::AcceptedLifecycleIntent> {
+        let mut index = self.operations.len();
+        let mut found = None;
+        while found.is_none() && index > 0 {
+            index -= 1;
+            if matches!(
+                self.operations[index].intent.request.operation,
+                LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+            ) {
+                found = Some(index);
+            }
+        }
+        Some(self.operations.get(found?)?.intent())
+    }
+
     #[must_use]
     pub fn terminating(&self) -> bool {
         self.operations.last().is_some_and(|operation| {
@@ -154,23 +176,23 @@ impl Sandbox {
     #[must_use]
     pub fn last_running(&self) -> Option<&CurrentReadyFacts> {
         let index = self.last_running_index()?;
-        self.operations.get(index)?.running.as_ref()
+        self.operations.get(index)?.running()
     }
     fn last_running_index(&self) -> Option<usize> {
         let mut index = self.operations.len();
         let mut found = None;
         while found.is_none() && index > 0 {
             index -= 1;
-            if self.operations[index].running.is_some() {
+            if self.operations[index].running().is_some() {
                 found = Some(index);
             }
         }
         found
     }
-    /// Only a result committed for the actual current Create/Renew can route.
+    /// Only a confirmed result for the current operation can route.
     #[must_use]
     pub fn current_running(&self) -> Option<&CurrentReadyFacts> {
-        self.operations.last()?.running.as_ref()
+        self.operations.last()?.running()
     }
     #[must_use]
     pub fn created_at_ms(&self) -> Option<u64> {
@@ -326,7 +348,26 @@ impl CenterState {
             {
                 sum = match (&op.intent().request.operation, sum) {
                     (LifecycleOperation::Create { create, .. }, Some(total)) => {
-                        total.checked_add(create.resources)
+                        let mut held = create.resources;
+                        if matches!(sandbox.phase(), crate::SessionPhase::Unloaded)
+                            || (sandbox.terminating()
+                                && sandbox
+                                    .operations()
+                                    .len()
+                                    .checked_sub(2)
+                                    .and_then(|index| sandbox.operations().get(index))
+                                    .is_some_and(|previous| {
+                                        previous
+                                            .unloaded()
+                                            .and_then(|o| o.outcome.unloaded())
+                                            .is_some()
+                                    }))
+                        {
+                            held.instances = 0;
+                            held.cpu = 0;
+                            held.memory_bytes = 0;
+                        }
+                        total.checked_add(held)
                     }
                     _ => None,
                 };

@@ -1,0 +1,44 @@
+import SandboxModel.Lifecycle.Protocol.OwnerMappingModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+open OwnerMapping
+
+def maximumWithout (sandbox : sandbox_controller_core.ids.SandboxId) (highest : Nat)
+    (records : List Record) : Nat :=
+  maximum highest (records.filter (fun row => decide (row.1 ≠ sandbox)))
+
+def expected (inbox : Inbox) (world : World) (sandbox : sandbox_controller_core.ids.SandboxId) :
+    core.result.Result U64 JournalError :=
+  allocation (maximumWithout sandbox inbox.owner_high_water.val world.sandboxes.entries.val)
+
+def FullSuccessorContract (run : Inbox → World → sandbox_controller_core.ids.SandboxId →
+    Result (core.result.Result U64 JournalError)) : Prop :=
+  ∀ inbox world sandbox, run inbox world sandbox = .ok (expected inbox world sandbox)
+
+theorem maximum_without_nil (sandbox : sandbox_controller_core.ids.SandboxId) (highest : Nat) :
+    maximumWithout sandbox highest [] = highest := rfl
+
+theorem maximum_without_cons (sandbox : sandbox_controller_core.ids.SandboxId) (highest : Nat)
+    (row : Record) (rest : List Record) :
+    maximumWithout sandbox highest (row :: rest) =
+      if row.1 = sandbox then maximumWithout sandbox highest rest
+      else maximumWithout sandbox (max highest row.2.owner.val) rest := by
+  by_cases same : row.1 = sandbox
+  · rw [if_pos same]
+    have predicate : decide (row.1 ≠ sandbox) = false := by
+      simp only [ne_eq, same, not_true_eq_false, decide_false]
+    unfold maximumWithout
+    rw [List.filter_cons, predicate]
+    rfl
+  · rw [if_neg same]
+    have predicate : decide (row.1 ≠ sandbox) = true := by
+      simp only [ne_eq, same, not_false_eq_true, decide_true]
+    unfold maximumWithout
+    rw [List.filter_cons, predicate]
+    rfl
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_nil
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.maximum_without_cons

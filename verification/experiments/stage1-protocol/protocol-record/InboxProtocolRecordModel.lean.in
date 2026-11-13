@@ -1,0 +1,146 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadModel
+import SandboxModel.Lifecycle.Protocol.InboxSaveModel
+import SandboxModel.Lifecycle.Protocol.InboxAppendFrame
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+
+namespace SandboxModel.Stage1Protocol.ProtocolRecord
+noncomputable section
+
+abbrev Outcome (E : Type) := Result (core.result.Result RecordOutcome JournalError × E)
+
+def destroy (intent : AcceptedLifecycleIntent) : Bool :=
+  match intent.request.operation with
+  | .Destroy => true
+  | _ => false
+
+-- The selector is the existing proved first-SessionId lookup, not a new lookup
+-- algorithm. These lower value operations remain unchanged in wiring mutants.
+def guardView {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (state : E) :
+    Result (core.result.Result Unit JournalError × E) := do
+  if destroy intent then
+    let found ← inbox.session_index intent.request.binding.session
+    match found with
+    | none => .ok (.Ok (), state)
+    | some index =>
+      let session ← alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+        inbox.sessions index
+      match session.local with
+      | none => .ok (.Ok (), state)
+      | some binding =>
+        let (releasing, after) ← io.releasing state binding
+        if releasing then .ok (.Err .UnresolvedAction, after) else .ok (.Ok (), after)
+  else .ok (.Ok (), state)
+
+-- Native calls can fail or change their own state. Their result does not itself
+-- assert authorization, durable acceptance or a physically stopped resource.
+-- The only owned Inbox update is the exact returned operation at (s,e).
+def attachView {E : Type} (io : RecordEffects E) (inbox : Inbox)
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (state : E) :
+    Result (core.result.Result Unit JournalError × E × Inbox) := do
+  if destroy intent then
+    let session ← alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      inbox.sessions s
+    match session.local with
+    | none => .ok (.Ok (), state, inbox)
+    | some binding =>
+      let (terminated, afterTerminate) ← io.terminate_local state binding
+      match terminated with
+      | .Err error => .ok (.Err error, afterTerminate, inbox)
+      | .Ok () =>
+        let (operation, afterCurrent) ← io.current_operation afterTerminate binding.sandbox
+        match operation with
+        | none => .ok (.Err .CorruptStore, afterCurrent, inbox)
+        | some operation =>
+          let entry ← alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Entry)
+            session.entries e
+          let updatedEntry := { entry with local_operation := some operation }
+          let updatedEntries := session.entries.set e updatedEntry
+          let updated := { session with entries := updatedEntries }
+          .ok (.Ok (), afterCurrent, InboxAppend.replaceSession inbox s updated)
+  else .ok (.Ok (), state, inbox)
+
+def saveThenState {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (inbox : Inbox) (s e : Usize) (state : E) : Outcome E := do
+  let (result, after) ← InboxSave.saveView saved terminal renewal unload
+    io.codecInboxSaveEffectsInst inbox state
+  match result with
+  | .Err error => .ok (.Err error, after)
+  | .Ok () =>
+    let value ← inbox.state s e
+    .ok (.Ok (.Recorded value), after)
+
+def recordThenSave {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (state : E) : Outcome E := do
+  let (recorded, post) ← inbox.record intent
+  match recorded with
+  | .Err error => .ok (.Err error, state)
+  | .Ok (s, e) =>
+    let (attached, after, final) ← attachView io post intent s e state
+    match attached with
+    | .Err error => .ok (.Err error, after)
+    | .Ok () => saveThenState saved terminal renewal unload io final s e after
+
+-- Existing proved auth/lookup/record/state value operations are composed with
+-- the existing FullLoad/FullSave models. No handler/transaction is an oracle.
+def loadedView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (state : E) : Outcome E := do
+  let accepted ← authenticated inbox intent context
+  match accepted with
+  | .Err error => .ok (.Err error, state)
+  | .Ok () =>
+    let found ← inbox.find intent
+    match found with
+    | .Err error => .ok (.Err error, state)
+    | .Ok (some (s, e)) =>
+      let value ← inbox.state s e
+      .ok (.Ok (.Replay value), state)
+    | .Ok none =>
+      let (guarded, after) ← guardView io inbox intent state
+      match guarded with
+      | .Err error => .ok (.Err error, after)
+      | .Ok () => recordThenSave saved terminal renewal unload io inbox intent after
+
+def flowView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : RecordEffects E) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (state : E) : Outcome E := do
+  let (loaded, after) ← InboxLoad.loadView io.codecInboxLoadEffectsInst
+    (InboxValidation.inboxView saved terminal renewal unload)
+    (fun config => .ok (InboxLoad.budgetValue config)) state
+  match loaded with
+  | .Err error => .ok (.Err error, after)
+  | .Ok none => .ok (.Err .UnsupportedStore, after)
+  | .Ok (some inbox) => loadedView saved terminal renewal unload io inbox intent context after
+
+abbrev Implementation := ∀ {R T N U B E : Type},
+  RetirementEncoding R → TerminalEncoding T → RenewalEncoding N → UnloadEncoding U →
+  GraphicBytes B → RecordEffects E → E → AcceptedLifecycleIntent → AuthenticatedCenterContext → Outcome E
+
+def FullFlowContract (run : Implementation) : Prop :=
+  ∀ {R T N U B E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : RecordEffects E),
+    ComposedConfig.FullGraphicContract graphic →
+    InboxLoad.DecodedStringsRepresentable io.codecInboxLoadEffectsInst →
+    ∀ intent context state, run saved terminal renewal unload graphic io state intent context =
+      flowView saved terminal renewal.encode unload.encode io intent context state
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord

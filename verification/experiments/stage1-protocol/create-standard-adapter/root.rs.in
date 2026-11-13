@@ -1,0 +1,14 @@
+
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_create_world(effects: &mut StandardCreateAttachment<'_, '_>) -> core::World {
+    CreateAttachmentEffects::world(effects)
+}
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_create_begin_lifetime_update(effects: &mut StandardCreateAttachment<'_, '_>) {
+    CreateAttachmentEffects::begin_lifetime_update(effects)
+}
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_standard_create_begin_inbox_save(effects: &mut StandardCreateAttachment<'_, '_>) {
+    CreateAttachmentEffects::begin_inbox_save(effects)
+}

@@ -11,7 +11,7 @@ def context : AuthenticatedCenterContext := ⟨center, node⟩
 def intent (capture : U64) : AcceptedLifecycleIntent := {
   request := {
     binding := {
-      protocol_version := 3#u16, node := node, session := "session",
+      protocol_version := 4#u16, node := node, session := "session",
       key := ⟨"deployment", "owner", 1#u64, 1#u64⟩,
       expected := .Version 0#u64 },
     operation := .Unload 1#u64 capture },

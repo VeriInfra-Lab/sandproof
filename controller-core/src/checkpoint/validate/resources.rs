@@ -1,4 +1,4 @@
-use super::{Reject, record, reserved_slot, reserved_vm, startup_plan, unique};
+use super::{Reject, history, record, reserved_slot, reserved_vm, startup_for_vm, unique};
 use crate::{Command, EffectOutcome, EffectStatus, Phase, SandboxId, Vm, VmId, VmStatus, World};
 
 pub(super) fn validate(world: &World) -> Result<(), Reject> {
@@ -42,12 +42,11 @@ fn prepared_or_aborted(world: &World, sandbox: SandboxId, vm: VmId) -> bool {
 fn machine_record(world: &World, vm: VmId, machine: &Vm) -> Result<(), Reject> {
     let row = record(world, machine.sandbox)?;
     reserved_vm(world, machine.sandbox, vm)?;
-    let slot_id = startup_plan(world, machine.sandbox)
-        .and_then(|plan| plan.slot)
-        .ok_or(Reject::InvalidReference)?;
+    let startup = startup_for_vm(world, machine.sandbox, vm).ok_or(Reject::InvalidReference)?;
+    let slot_id = startup.slot.ok_or(Reject::InvalidReference)?;
     let slot = world.slot_record(slot_id).ok_or(Reject::InvalidReference)?;
     if machine.owner != row.owner
-        || machine.generation != 1
+        || machine.generation != startup.generation
         || slot.vm != vm
         || !world.resource_index(machine.sandbox).vms.contains(&vm)
         || !prepared_or_aborted(world, machine.sandbox, vm)
@@ -93,7 +92,8 @@ fn networks(world: &World) -> Result<(), Reject> {
             .ok_or(Reject::InvalidReference)?;
         reserved_slot(world, network.sandbox, *slot)?;
         if network.owner != row.owner
-            || network.generation != 1
+            || network.generation == 0
+            || network.generation > row.generation
             || network.policy != row.policy
             || vm.sandbox != network.sandbox
             || vm.owner != network.owner
@@ -160,15 +160,18 @@ fn indexes(world: &World) -> Result<(), Reject> {
 fn policies_and_fences(world: &World) -> Result<(), Reject> {
     for (sandbox, applied) in world.applied_file_policies.entries() {
         let row = record(world, *sandbox)?;
+        let startup = history::startup(world, *sandbox, applied.generation)
+            .ok_or(Reject::InvalidReference)?;
         let command = Command::ApplyFilePolicy {
             sandbox: *sandbox,
-            epoch: 1,
+            epoch: startup.epoch,
             generation: applied.generation,
             workspace: applied.workspace,
             policy: applied.policy,
         };
         if applied.sandbox != *sandbox
-            || applied.generation != 1
+            || applied.generation == 0
+            || applied.generation > row.generation
             || applied.workspace != row.workspace
             || applied.policy != row.file_policy
             || !observed(world, |found| *found == command)

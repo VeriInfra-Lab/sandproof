@@ -1,0 +1,39 @@
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.capture
+open SandproofFoundationsRust.IdentifierLibrary
+namespace SandboxModel.Stage1Protocol.ConfigValidation
+noncomputable section
+
+def graphicByte (byte : U8) : Bool := decide (33 ≤ byte.val ∧ byte.val ≤ 126)
+def validHost (host : HostEpochRegistration) : Prop :=
+  host.version = 1#u16 ∧ 0 < (stringBytes host.boot_id).length ∧
+    (stringBytes host.boot_id).length ≤ 128 ∧ (stringBytes host.boot_id).all graphicByte = true
+instance (host : HostEpochRegistration) : Decidable (validHost host) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _))
+def hostAccepted : Option HostEpochRegistration → Prop
+  | none => True
+  | some host => validHost host
+instance (host : Option HostEpochRegistration) : Decidable (hostAccepted host) :=
+  match host with | none => inferInstanceAs (Decidable True) | some h => inferInstanceAs (Decidable (validHost h))
+def Representable (config : LifecycleInboxConfig) : Prop :=
+  ∀ host ∈ config.host_epoch, StringRepresentable host.boot_id
+
+def Valid (config : LifecycleInboxConfig) : Prop :=
+  config.center.deployment = config.node.deployment_id ∧ hostAccepted config.host_epoch ∧
+  1 ≤ config.max_sessions.val ∧ config.max_sessions.val ≤ 4096 ∧
+  8 ≤ config.max_operations_per_session.val ∧ config.max_operations_per_session.val ≤ 128 ∧
+  1 ≤ config.max_options_bytes.val ∧ config.max_options_bytes.val ≤ 65536 ∧
+  1 ≤ config.max_profile_bytes.val ∧ config.max_profile_bytes.val ≤ 65536 ∧
+  1 ≤ config.max_manifest_bytes.val ∧ config.max_manifest_bytes.val ≤ 262144 ∧
+  ConfigBudget.bytes config ≤ 16777216
+instance (config : LifecycleInboxConfig) : Decidable (Valid config) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _))
+
+def FullConfigContract (run : LifecycleInboxConfig → Result Bool) : Prop :=
+  ∀ config, Representable config → run config = .ok (decide (Valid config))
+
+end
+end SandboxModel.Stage1Protocol.ConfigValidation

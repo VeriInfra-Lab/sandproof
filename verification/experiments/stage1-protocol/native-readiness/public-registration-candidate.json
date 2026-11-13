@@ -1,0 +1,62 @@
+{
+  "kind": "unapplied-main-owned-registration-candidate",
+  "source_base_commit": "425172a2398fc75759b56b06a3c1cda16e2217be",
+  "not_for_current_frozen65cf8a33_window": true,
+  "native_case": {
+    "name": "stage1-protocol-native-readiness",
+    "command": [
+      "python3",
+      "verification/experiments/stage1-protocol/native-readiness/native.py",
+      "--output",
+      "<output>"
+    ],
+    "scope": "stage1-protocol",
+    "input_rules": "existing original all tracked snapshot/rules; workspace Cargo.lock registry; no rule exclusions"
+  },
+  "formal_tasks": [
+    {
+      "name": "native-readiness-correct",
+      "command": [
+        "python3",
+        "verification/experiments/stage1-protocol/native-readiness/formal.py",
+        "--variant",
+        "correct",
+        "--output",
+        "<output>",
+        "--require-native"
+      ],
+      "native_case": "stage1-protocol-native-readiness"
+    },
+    {
+      "name": "native-readiness-ignore-status",
+      "command": [
+        "python3",
+        "verification/experiments/stage1-protocol/native-readiness/formal.py",
+        "--variant",
+        "ignore-status",
+        "--output",
+        "<output>",
+        "--require-native"
+      ],
+      "native_case": "stage1-protocol-native-readiness"
+    }
+  ],
+  "retained_templates": [
+    "NativeCompletionModel",
+    "NativeCompletionValues",
+    "NativeCompletionProofs",
+    "NativeCompletionWrongStatus"
+  ],
+  "physical_library": {
+    "name": "SandproofNativeReadiness",
+    "srcDir": "verification/aeneas/stage1-protocol/native-readiness",
+    "isolated_generated_namespace": "SandproofNativeReadinessRust"
+  },
+  "public_lake_roots_freezes_coverage_applied": false,
+  "unclosed": [
+    "Ning ordinary/native original/wrong/restored",
+    "main public inventory/actual-file/native registration",
+    "actual snapshot/World/sandbox and complete Ready connection",
+    "shared seal and full V3"
+  ]
+}

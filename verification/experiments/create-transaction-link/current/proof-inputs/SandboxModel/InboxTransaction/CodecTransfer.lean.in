@@ -1,0 +1,180 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+set_option autoImplicit false
+
+/- Candidate only until original kernel/service checks pass.
+These statements concern the actual Rust owner and callback state. They do
+not infer a physical database frame or an active SQL transaction from a slot.
+Standard codec conformance/normal Drop remain separately named conditions. -/
+namespace SandboxModel.StandardRecordCodec
+noncomputable section
+
+abbrev Holder (D : Type) := StandardRecord D
+abbrev JsonReply (A : Type) := core.result.Result A serde_json.error.Error
+abbrev JournalReply (A : Type) := core.result.Result A JournalError
+
+def mapJson {A : Type} (reply : JsonReply A) : JournalReply A :=
+  match reply with
+  | .Ok value => .Ok value
+  | .Err error => .Err (.Json error)
+
+-- Exact original transaction dereferences before the callback. The callback
+-- receives the full original input and its complete state is put back in E.
+def callView {D X A : Type}
+    (call : D → rusqlite.Connection → X → Result (JsonReply A × D))
+    (before : Holder D) (input : X) : Result (JournalReply A × Holder D) := do
+  let raw ← controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref before.tx
+  let connection ← rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref raw
+  let (reply, after) ← call before.codec connection input
+  .ok (mapJson reply, { before with codec := after })
+
+def SameOwner {D : Type} (before after : Holder D) : Prop :=
+  after.tx = before.tx ∧ after.«namespace» = before.«namespace»
+
+theorem codec_update_preserves_original_owner {D : Type} (before : Holder D) (after : D) :
+    SameOwner before { before with codec := after } := ⟨rfl, rfl⟩
+
+theorem observed_call_returns_full_state {D X A : Type}
+    (call : D → rusqlite.Connection → X → Result (JsonReply A × D))
+    (before : Holder D) (input : X) (raw : rusqlite.transaction.Transaction)
+    (reply : JsonReply A) (after : D)
+    (slot : before.tx.transaction = some raw)
+    (returned : call before.codec raw.conn input = .ok (reply, after)) :
+    callView call before input = .ok (mapJson reply, { before with codec := after }) := by
+  simp [callView, controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, slot, returned]
+
+theorem actual_decode_maintenance_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance codec before input =
+      callView codec.decode_maintenance before input := by
+  unfold StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance callView
+  congr 1
+  funext raw
+  congr 1
+  funext connection
+  congr 1
+  funext pair
+  rcases pair with ⟨reply, after⟩
+  cases reply <;> simp [uncurry_apply_pair, mapJson, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromJson.from]
+
+theorem actual_decode_maintenance_returned_state {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) (raw : rusqlite.transaction.Transaction)
+    (reply : JsonReply (controller.checkpoint.config.MaintenanceConfig)) (after : D)
+    (slot : before.tx.transaction = some raw)
+    (returned : codec.decode_maintenance before.codec raw.conn input = .ok (reply, after)) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance codec before input =
+      .ok (mapJson reply, { before with codec := after }) := by
+  rw [actual_decode_maintenance_call_contract]
+  exact observed_call_returns_full_state _ _ _ _ _ _ slot returned
+
+theorem actual_decode_inbox_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox codec before input =
+      callView codec.decode_inbox before input := by
+  unfold StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox callView
+  congr 1
+  funext raw
+  congr 1
+  funext connection
+  congr 1
+  funext pair
+  rcases pair with ⟨reply, after⟩
+  cases reply <;> simp [uncurry_apply_pair, mapJson, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromJson.from]
+
+theorem actual_decode_inbox_returned_state {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) (raw : rusqlite.transaction.Transaction)
+    (reply : JsonReply (controller.lifecycle_inbox.model.Inbox)) (after : D)
+    (slot : before.tx.transaction = some raw)
+    (returned : codec.decode_inbox before.codec raw.conn input = .ok (reply, after)) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox codec before input =
+      .ok (mapJson reply, { before with codec := after }) := by
+  rw [actual_decode_inbox_call_contract]
+  exact observed_call_returns_full_state _ _ _ _ _ _ slot returned
+
+theorem actual_encode_for_load_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : controller.lifecycle_inbox.model.Inbox) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox codec before input =
+      callView codec.encode_inbox before input := by
+  unfold StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox callView
+  congr 1
+  funext raw
+  congr 1
+  funext connection
+  congr 1
+  funext pair
+  rcases pair with ⟨reply, after⟩
+  cases reply <;> simp [uncurry_apply_pair, mapJson, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromJson.from]
+
+theorem actual_encode_for_load_returned_state {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : controller.lifecycle_inbox.model.Inbox) (raw : rusqlite.transaction.Transaction)
+    (reply : JsonReply (alloc.vec.Vec U8)) (after : D)
+    (slot : before.tx.transaction = some raw)
+    (returned : codec.encode_inbox before.codec raw.conn input = .ok (reply, after)) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox codec before input =
+      .ok (mapJson reply, { before with codec := after }) := by
+  rw [actual_encode_for_load_call_contract]
+  exact observed_call_returns_full_state _ _ _ _ _ _ slot returned
+
+theorem actual_encode_for_save_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : controller.lifecycle_inbox.model.Inbox) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode codec before input =
+      callView codec.encode_inbox before input := by
+  unfold StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode callView
+  congr 1
+  funext raw
+  congr 1
+  funext connection
+  congr 1
+  funext pair
+  rcases pair with ⟨reply, after⟩
+  cases reply <;> simp [uncurry_apply_pair, mapJson, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromJson.from]
+
+theorem actual_encode_for_save_returned_state {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : controller.lifecycle_inbox.model.Inbox) (raw : rusqlite.transaction.Transaction)
+    (reply : JsonReply (alloc.vec.Vec U8)) (after : D)
+    (slot : before.tx.transaction = some raw)
+    (returned : codec.encode_inbox before.codec raw.conn input = .ok (reply, after)) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode codec before input =
+      .ok (mapJson reply, { before with codec := after }) := by
+  rw [actual_encode_for_save_call_contract]
+  exact observed_call_returns_full_state _ _ _ _ _ _ slot returned
+
+end
+end SandboxModel.StandardRecordCodec
+
+#audit_controller_proof SandboxModel.StandardRecordCodec.codec_update_preserves_original_owner
+#audit_controller_proof SandboxModel.StandardRecordCodec.observed_call_returns_full_state
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_decode_maintenance_call_contract
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_decode_maintenance_returned_state
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_decode_inbox_call_contract
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_decode_inbox_returned_state
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_encode_for_load_call_contract
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_encode_for_load_returned_state
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_encode_for_save_call_contract
+#audit_controller_proof SandboxModel.StandardRecordCodec.actual_encode_for_save_returned_state
+
+#audit_controller_proof SandproofSqliteSession.i64Column_integer
+#audit_controller_proof SandproofSqliteSession.i64Column_nonInteger
+#audit_controller_proof SandproofSqliteSession.boolColumn_integer
+#audit_controller_proof SandproofSqliteSession.boolColumn_zero
+#audit_controller_proof SandproofSqliteSession.boolColumn_nonzero
+#audit_controller_proof SandproofSqliteSession.boolColumn_nonInteger
+#audit_controller_proof SandproofSqliteSession.rowGet_i64_type_error
+#audit_controller_proof SandproofSqliteSession.readI64Pair_first_error
+#audit_controller_proof SandproofSqliteSession.readI64Pair_second_error
+#audit_controller_proof SandproofSqliteSession.readI64Pair_values

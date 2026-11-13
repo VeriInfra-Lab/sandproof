@@ -1,0 +1,129 @@
+import SandproofActualRecord.ActualRootLink
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.CreateRootLink
+noncomputable section
+
+open controller.lifecycle_inbox recording
+open SourceFlowLink CallerBranches ActualRootLink
+
+section
+variable {R T N U B D C : Type}
+variable (retirement : native_retirement.RetirementEncoding R)
+  (terminal : model.TerminalEncoding T)
+  (renewal : renewal_confirmation.RenewalEncoding N)
+  (unload : unload_resolution.UnloadEncoding U)
+  (graphic : capture.GraphicBytes B) (codecEffects : RecordCodec D)
+variable (crash : CrashInjector C) (intent : CallerBranches.Intent)
+  (context : CallerBranches.Context)
+
+theorem actual_create_root_commits_saved_owner
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
+    (crashes afterBefore afterAfter : C)
+    (afterLoad : StandardRecord D)
+    (inbox appended : model.Inbox) (session entry : Usize)
+    (binding : SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation)
+    (graphicLaw : SandboxModel.Stage1Protocol.ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : SandboxModel.Stage1Protocol.InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxLoadEffectsInst)
+    (loaded : loadPrefix retirement terminal renewal unload (actualEffects codecEffects).RecordEffectsInst
+      ⟨owner, namespaceName, codec⟩ = .ok (.Ok (some inbox), afterLoad))
+    (accepted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (notFound : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find
+      inbox intent = .ok (.Ok none))
+    (appendedReply : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.record
+      inbox intent = .ok (.Ok (session, entry), appended))
+    (saved : SandboxModel.Stage1Protocol.InboxSave.saveView (oldRetirement retirement)
+      (oldTerminal terminal) (oldRenewal renewal).encode (oldUnload unload).encode
+      (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxSaveEffectsInst
+      appended afterLoad = .ok (.Ok (), afterSave))
+    (stateReturned : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state
+      appended session entry = .ok value)
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (afterCommit : crash.hit afterBefore .AfterCommit = .ok (.Ok (), afterAfter))
+    (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
+    (actualObserved : Option SandproofParentCommitRust.World)
+    (live : afterSave.tx.parent.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead afterSave.tx.parent) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk afterSave.tx.parent raw world)
+    (committedAvailable : afterSave.tx.parent.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : afterSave.tx.parent.candidate.beforeBorrowCount = 0)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted actualObserved
+      (SandproofParentCommitRust.ActualFinish.memoInvocation afterSave.tx.parent) (fun output => output.2.2)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Ok value, afterAfter) ∧
+      actualObserved = afterSave.tx.parent.candidate.value := by
+  have recorded := actual_record_using_create retirement terminal renewal unload graphic
+    (actualEffects codecEffects).RecordEffectsInst graphicLaw represented
+    ⟨owner, namespaceName, codec⟩ afterLoad afterSave intent context
+    inbox appended session entry value binding incarnation create loaded accepted notFound
+    appendedReply saved stateReturned
+  exact actual_root_saved_owner_commits retirement terminal renewal unload graphic codecEffects crash
+    intent context owner namespaceName codec afterSave value crashes afterBefore afterAfter recorded beforeCommit afterCommit raw world actualObserved
+    live present checks committedAvailable candidateAvailable returned physical
+
+theorem actual_create_root_uncertain_on_saved_owner
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
+    (crashes afterBefore : C)
+    (afterLoad : StandardRecord D)
+    (inbox appended : model.Inbox) (session entry : Usize)
+    (binding : SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation)
+    (graphicLaw : SandboxModel.Stage1Protocol.ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : SandboxModel.Stage1Protocol.InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxLoadEffectsInst)
+    (loaded : loadPrefix retirement terminal renewal unload (actualEffects codecEffects).RecordEffectsInst
+      ⟨owner, namespaceName, codec⟩ = .ok (.Ok (some inbox), afterLoad))
+    (accepted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (notFound : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find
+      inbox intent = .ok (.Ok none))
+    (appendedReply : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.record
+      inbox intent = .ok (.Ok (session, entry), appended))
+    (saved : SandboxModel.Stage1Protocol.InboxSave.saveView (oldRetirement retirement)
+      (oldTerminal terminal) (oldRenewal renewal).encode (oldUnload unload).encode
+      (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxSaveEffectsInst
+      appended afterLoad = .ok (.Ok (), afterSave))
+    (stateReturned : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state
+      appended session entry = .ok value)
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
+    (error : SandproofParentCommitRust.rusqlite.error.Error)
+    (actualObserved : Option SandproofParentCommitRust.World)
+    (live : afterSave.tx.parent.transaction = some raw)
+    (present : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead afterSave.tx.parent) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk afterSave.tx.parent raw world)
+    (committedAvailable : afterSave.tx.parent.committed.value.beforeBorrowCount = 0)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Err error))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted actualObserved
+      (SandproofParentCommitRust.ActualFinish.memoInvocation afterSave.tx.parent) (fun output => output.2.2)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Err (.CommitUncertain error), afterBefore) ∧
+      actualObserved = none := by
+  have recorded := actual_record_using_create retirement terminal renewal unload graphic
+    (actualEffects codecEffects).RecordEffectsInst graphicLaw represented
+    ⟨owner, namespaceName, codec⟩ afterLoad afterSave intent context
+    inbox appended session entry value binding incarnation create loaded accepted notFound
+    appendedReply saved stateReturned
+  exact actual_root_saved_owner_commit_uncertain retirement terminal renewal unload graphic codecEffects crash
+    intent context owner namespaceName codec afterSave value crashes afterBefore recorded beforeCommit raw world error actualObserved
+    live present checks committedAvailable returned physical
+
+end
+end
+end SandproofActualRecordRust.CreateRootLink
+
+#audit_controller_proof SandproofActualRecordRust.CreateRootLink.actual_create_root_commits_saved_owner
+#audit_controller_proof SandproofActualRecordRust.CreateRootLink.actual_create_root_uncertain_on_saved_owner

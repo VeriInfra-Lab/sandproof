@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.InboxStateValues
+import SandboxModel.Lifecycle.Protocol.InboxRecordCloning
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxState.WrongOperation
+open Values
+
+theorem retained_loses_entry_operation : inbox.state 0#usize 0#usize =
+    .ok { workState session oldEntry with local_operation := none } := by
+  unfold Inbox.state
+  simp only [alloc.vec.Vec.index_slice_index, reads.1, bind_tc_ok, reads.2.1]
+  simp [InboxRecord.AcceptedLifecycleIntent_clone, workState]
+
+theorem rejects_same_full_state_contract : ¬ FullStateContract Inbox.state := by
+  intro contract
+  have result := contract inbox 0#usize 0#usize session_bound old_bound
+  rw [retained_loses_entry_operation] at result
+  have operation := congrArg LifecycleWorkState.local_operation (Result.ok_injective result)
+  simp [workState, inbox, session, oldEntry] at operation
+
+end SandboxModel.Stage1Protocol.InboxState.WrongOperation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.WrongOperation.retained_loses_entry_operation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxState.WrongOperation.rejects_same_full_state_contract
