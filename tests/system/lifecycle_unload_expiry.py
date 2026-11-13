@@ -152,6 +152,73 @@ def wait_expired_cleaned(client, deadline):
 
 class ExpiryPrepareProbe(CaptureHandoffProbe):
     """Reuse the exact pre-marker barrier; bind an observed internal expiry key."""
+    def _terminal_inventory(self,snapshot):
+        if snapshot['original']['local_operation'] == snapshot['terminal']['local_operation']:
+            if snapshot['resume_actions'] != snapshot['terminal_actions']:
+                raise ValueError('two reads of the same original operation differ')
+            rows = snapshot['resume_actions']
+        else:
+            rows = snapshot['resume_actions'] + snapshot['terminal_actions']
+        prepared = [r for r in rows if 'PrepareVm' in r[0]['command']['logical']['command']]
+        if len(prepared)!=1 or prepared[0][0]!=self.action:
+            raise ValueError('original expiry operation has a missing or second Prepare')
+        if any('ActivateVm' in r[0]['command']['logical']['command'] for r in rows):
+            raise ValueError('expired LoadPaused candidate gained activation')
+        if self._success_observation(prepared[0],'Prepared') is not None:
+            fences = [r for r in rows if r[0]['command']['logical']['command'].get('InstallFence',{}).get('terminal') is True]
+            if len(fences)!=1:
+                raise ValueError('one actual terminal fence required at the cleanup cut')
+            expected = dict(epoch=snapshot['native']['epoch'],terminal=True)
+            action=fences[0][0]
+            if (action['command']['logical']['command']['InstallFence'] != dict(
+                    sandbox=snapshot['local']['sandbox'],**expected)
+                    or action['identity']['epoch'] != expected['epoch']):
+                raise ValueError('terminal fence names a different sandbox or epoch')
+            if self._success_observation(fences[0],'Fence')!=expected:
+                raise ValueError('terminal fence has no complete successful receipt')
+            pool=self.runtime.services.native_pools[0]
+            if original_json(Path(pool['node_state_dir'])/'fences'/(self.config['sandbox']+'.json'),16384)!=expected:
+                raise ValueError('terminal fence file differs before cleanup settlement')
+        return prepared[0]
+
+    def _terminal_pause_barrier(self,snapshot):
+        native=snapshot['native'];operation=native['current_operation']
+        if operation is not None and operation['kind']=='Kill':
+            qualification=dict(kind='current-kill',fence=super()._terminal_pause_barrier(snapshot))
+        else:
+            prepared=self._terminal_inventory(snapshot)
+            if (operation is None or operation['kind']!='Resume'
+                    or operation['status']!={'Compensating':'DeadlineExceeded'}
+                    or operation['id']!=snapshot['original']['local_operation']
+                    or operation['id']!=snapshot['terminal']['local_operation']
+                    or operation['epoch']!=native['epoch'] or native['epoch']!=self.action['identity']['epoch']
+                    or native['generation']!=self.action['identity']['generation']
+                    or not native['terminal'] or native['phase']!='Revoking'
+                    or native['desired']!='Closed' or native['effective']!='Closed'
+                    or native['current_vm'] is not None or native['net_slot'] is not None
+                    or prepared[1:]!=('dispatched',None)):
+                raise ValueError('exact closed original Resume deadline compensation required')
+            pool=self.runtime.services.native_pools[0]
+            fence=original_json(Path(pool['node_state_dir'])/'fences'/(self.config['sandbox']+'.json'),16384)
+            if fence not in (dict(epoch=native['epoch'],terminal=False),dict(epoch=native['epoch'],terminal=True)):
+                raise ValueError('readonly recovery must retain the original exact fence')
+            qualification=dict(kind='same-resume-deadline-compensation',fence=fence,
+                scope='only clear the process observation fault; LoadPaused is not guest activation')
+        records=[r for r in snapshot['sources'] if r['restore'] is not None
+            and r['restore']['intent']==self.restore_entry['intent']]
+        if (len(records)!=1 or records[0]['work']!=self.restore_record['work']
+                or records[0]['capture']!=self.restore_record['capture']
+                or records[0]['restore']!=self.restore_record['restore']
+                or records[0]['retirement'] is not None
+                or records[0]['restore']['activation'] is not None
+                or records[0]['restore']['material_use'] is not True
+                or material_source_charge(records[0])!=material_source_charge(self.restore_record)
+                or material_source_charge(records[0])<=0):
+            raise ValueError('expiry lost the original unknown loader material responsibility')
+        material=self.runtime._materials(records[0]['capture']['full'],records[0]['capture'])
+        qualification['original_material_files_verified']=len(material['materials'])==3
+        return qualification
+
     def expire(self, resume, lifetime, deadline, *, observe_peer):
         deadline = min(deadline,self.deadline)
         require_before_expiry(lifetime)
@@ -163,6 +230,7 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
         # intents, local mapping, native fence, original pin and positive charge.
         recovery = self._continue_terminal_recovery(deadline,observe_peer=observe_peer)
         recovery['automatic_terminal_reached_host'] = recovery.pop('public_destroy_reached_host')
+        recovery['expiry_observation_authority'] = recovery.pop('terminal_fence_observed')
         return dict(expiry=expiry,recovery=recovery)
 
 

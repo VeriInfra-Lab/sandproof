@@ -85,4 +85,72 @@ class ExpiryObservationTests(unittest.TestCase):
         with self.assertRaises(ValueError):expiry.wait_expired_cleaned(client,time.monotonic()+1)
 
 
+class PrepareExpiryBarrierTests(unittest.TestCase):
+    def fixture(self):
+        probe=expiry.ExpiryPrepareProbe.__new__(expiry.ExpiryPrepareProbe)
+        probe.action=dict(identity=dict(epoch=3,generation=2,resource='vm'),
+                          command={'logical':{'command':{'PrepareVm':{'vm':2}}}})
+        row=(probe.action,'dispatched',None)
+        probe.config={'sandbox':'sandbox'}
+        probe.runtime=Mock();probe.runtime.services.native_pools=[{'node_state_dir':'/unused'}]
+        probe.runtime._materials.return_value={'materials':[1,2,3]}
+        probe.restore_record=dict(work='work',capture={'full':'full'},retirement=None,
+                                  restore=dict(intent='intent',activation=None,material_use=True))
+        probe.restore_entry=probe.restore_record['restore']
+        snapshot=dict(original={'local_operation':3},terminal={'local_operation':3},
+                      local={'sandbox':1},resume_actions=[row],terminal_actions=[row],
+                      sources=[copy.deepcopy(probe.restore_record)],
+                      native=dict(epoch=3,generation=2,terminal=True,phase='Revoking',
+                                  desired='Closed',effective='Closed',current_vm=None,net_slot=None,
+                                  current_operation=dict(id=3,epoch=3,kind='Resume',
+                                                         status={'Compensating':'DeadlineExceeded'})))
+        return probe,snapshot
+
+    def test_shared_operation_is_counted_once_but_real_duplicates_and_activation_fail(self):
+        probe,snapshot=self.fixture()
+        self.assertEqual(probe._terminal_inventory(snapshot),snapshot['resume_actions'][0])
+        duplicate=copy.deepcopy(snapshot)
+        duplicate['resume_actions']*=2;duplicate['terminal_actions']*=2
+        with self.assertRaises(ValueError):probe._terminal_inventory(duplicate)
+        inconsistent=copy.deepcopy(snapshot);inconsistent['terminal_actions']=[]
+        with self.assertRaises(ValueError):probe._terminal_inventory(inconsistent)
+        activation=(dict(command={'logical':{'command':{'ActivateVm':{}}}}),'ready',None)
+        snapshot['resume_actions'].append(activation);snapshot['terminal_actions'].append(activation)
+        with self.assertRaises(ValueError):probe._terminal_inventory(snapshot)
+
+    def test_only_closed_exact_deadline_compensation_allows_fault_withdrawal(self):
+        probe,snapshot=self.fixture()
+        with patch.object(expiry,'original_json',return_value=dict(epoch=3,terminal=False)), \
+                patch.object(expiry,'material_source_charge',return_value=42):
+            self.assertEqual(probe._terminal_pause_barrier(snapshot)['kind'],'same-resume-deadline-compensation')
+            for changes in ({'effective':'Open'},{'epoch':4},{'terminal':False},
+                            {'current_operation':dict(id=3,epoch=3,kind='Resume',status='Running')}):
+                bad=copy.deepcopy(snapshot);bad['native'].update(changes)
+                with self.subTest(changes=changes),self.assertRaises(ValueError):probe._terminal_pause_barrier(bad)
+            bad=copy.deepcopy(snapshot);bad['sources'][0]['restore']['material_use']=False
+            with self.assertRaises(ValueError):probe._terminal_pause_barrier(bad)
+        with patch.object(expiry,'original_json',return_value=dict(epoch=2,terminal=False)),self.assertRaises(ValueError):
+            probe._terminal_pause_barrier(snapshot)
+
+    def test_cleanup_cut_requires_real_matching_terminal_fence_receipt_and_file(self):
+        probe,snapshot=self.fixture()
+        def receipt(action,kind,value):
+            return (action,'receipted',dict(identity=action['identity'],outcome=dict(
+                status='observed_success',details=dict(resource=action['identity']['resource'],
+                command=action['command']['logical']['command'],result={kind:value}))))
+        prepared=receipt(probe.action,'Prepared',dict(pid=1,start_ticks=2,boot_id='boot'))
+        fence=dict(identity=dict(epoch=3,resource='fence'),command={'logical':{'command':{
+            'InstallFence':dict(sandbox=1,epoch=3,terminal=True)}}})
+        expected=dict(epoch=3,terminal=True)
+        snapshot['resume_actions']=snapshot['terminal_actions']=[prepared]
+        with self.assertRaises(ValueError):probe._terminal_inventory(snapshot)
+        snapshot['resume_actions'].append((fence,'dispatched',None))
+        with self.assertRaises(ValueError):probe._terminal_inventory(snapshot)
+        snapshot['resume_actions'][-1]=receipt(fence,'Fence',expected)
+        with patch.object(expiry,'original_json',return_value=expected):
+            self.assertEqual(probe._terminal_inventory(snapshot),prepared)
+        with patch.object(expiry,'original_json',return_value=dict(epoch=3,terminal=False)),self.assertRaises(ValueError):
+            probe._terminal_inventory(snapshot)
+
+
 if __name__=='__main__':unittest.main()
