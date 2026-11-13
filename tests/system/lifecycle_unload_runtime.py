@@ -1635,6 +1635,7 @@ class UnloadRuntime:
         self.services.storage_peaks()
         report['activation_gate_cleanup']=self.cleanup_restore_gate()
         report['capture_cancel_cleanup']=self.cleanup_capture_cancel_gate()
+        self.services.retire_private_templates()
         report['cleanup']='product-gc-settled-exact-runtime-free-managers-exited'
         # Actual host audit calls original observe_position_free, including
         # exact retirement of VMM/helpers/network. Product material references
