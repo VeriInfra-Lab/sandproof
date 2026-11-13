@@ -1,6 +1,8 @@
 """Controlled checks for expiry observations, not an alternative lifecycle model."""
 import copy
 import json
+import sqlite3
+import tempfile
 from pathlib import Path
 import sys
 import time
@@ -86,6 +88,26 @@ class ExpiryObservationTests(unittest.TestCase):
 
 
 class PrepareExpiryBarrierTests(unittest.TestCase):
+    def test_native_deadline_read_requires_original_operation_and_terminal_compensation(self):
+        probe,snapshot=self.fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            database=Path(directory)/'db'
+            probe.runtime.services.native_pools=[{'database':str(database),'namespace':'ns'}]
+            probe.runtime.services.host_configs=[{'native':{'maintenance':{'capacity':{'max_sql_value_bytes':16384}}}}]
+            probe.prior={'local':{'sandbox':1}}
+            probe.action['identity'].update(owner='owner',operation='op-ns-1-3')
+            with sqlite3.connect(database) as conn:
+                conn.execute('CREATE TABLE sandboxes(sandbox_id TEXT,state_blob TEXT,owner_id TEXT)')
+                conn.execute('INSERT INTO sandboxes VALUES(?,?,?)',('sandbox',json.dumps(snapshot['native']),'owner'))
+            with patch.object(expiry,'private_path',return_value=database):
+                self.assertEqual(probe._wait_native_expiry(time.monotonic()+1)['operation']['id'],3)
+                for changes in ({'id':4},{'kind':'Kill'},{'status':'Pending'}):
+                    state=copy.deepcopy(snapshot['native']);state['current_operation'].update(changes)
+                    with sqlite3.connect(database) as conn:
+                        conn.execute('UPDATE sandboxes SET state_blob=?',(json.dumps(state),))
+                    with self.subTest(changes=changes),self.assertRaises(ValueError):
+                        probe._wait_native_expiry(time.monotonic()+1)
+
     def fixture(self):
         probe=expiry.ExpiryPrepareProbe.__new__(expiry.ExpiryPrepareProbe)
         probe.action=dict(identity=dict(epoch=3,generation=2,resource='vm'),

@@ -152,6 +152,43 @@ def wait_expired_cleaned(client, deadline):
 
 class ExpiryPrepareProbe(CaptureHandoffProbe):
     """Reuse the exact pre-marker barrier; bind an observed internal expiry key."""
+    def _wait_native_expiry(self,deadline):
+        """Center is down: observe the original Host's own deadline compensation."""
+        pool=self.runtime.services.native_pools[0]
+        database=private_path(pool['database'])
+        before=database.stat()
+        capacity=self.runtime.services.host_configs[0]['native']['maintenance']['capacity']
+        while True:
+            with closing(sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,
+                                         timeout=min(2,remaining(deadline)))) as conn:
+                conn.execute('BEGIN')
+                size=conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?',
+                                  (self.config['sandbox'],)).fetchone()
+                if size is None or not 0<size[0]<=capacity['max_sql_value_bytes']:
+                    raise ValueError('bounded original native expiry row required')
+                raw,owner=conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?',
+                                      (self.config['sandbox'],)).fetchone()
+                state=json.loads(raw,object_pairs_hook=unique_keys)
+            after=database.stat()
+            if ((before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino)
+                    or owner!=self.action['identity']['owner']
+                    or state['generation']!=self.action['identity']['generation']
+                    or state['epoch']!=self.action['identity']['epoch']):
+                raise ValueError('native expiry changed original database, owner or candidate')
+            op=state['current_operation']
+            expected_operation='op-'+pool['namespace']+'-'+str(self.prior['local']['sandbox'])+'-'+str(op['id']) if op else None
+            if (op is None or op['kind']!='Resume' or op['epoch']!=state['epoch']
+                    or expected_operation!=self.action['identity']['operation']):
+                raise ValueError('Host expiry must retain the original Resume')
+            if state['terminal']:
+                if (op['status']!={'Compensating':'DeadlineExceeded'} or state['phase']!='Revoking'
+                        or state['desired']!='Closed' or state['effective']!='Closed'
+                        or state['current_vm'] is not None or state['net_slot'] is not None):
+                    raise ValueError('original Resume has not entered closed deadline compensation')
+                return dict(operation=op,epoch=state['epoch'],generation=state['generation'],
+                            terminal=True,center_stopped=True)
+            time.sleep(min(.05,remaining(deadline)))
+
     def _terminal_inventory(self,snapshot):
         if snapshot['original']['local_operation'] == snapshot['terminal']['local_operation']:
             if snapshot['resume_actions'] != snapshot['terminal_actions']:
@@ -224,6 +261,15 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
         require_before_expiry(lifetime)
         self._start_terminal_recovery(deadline)
         require_before_expiry(lifetime)
+        # Hold only the center manager, not the clock or either VM. This makes
+        # the Host deadline win deterministically; otherwise a center Kill can
+        # win and never exercise the missing-revocation regression.
+        self.runtime.services.processes.stop('center')
+        try:
+            wait_clock(lifetime,deadline)
+            native_expiry=self._wait_native_expiry(deadline)
+        finally:
+            self.runtime.services.processes.start('center')
         expiry = observe_center_expiry(self.runtime,self.client,resume,lifetime,deadline,host_delivered=True)
         self.terminal_accepted = copy.deepcopy(expiry['acceptance'])
         # The inherited reader still checks the full original Resume/Destroy
@@ -231,6 +277,9 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
         recovery = self._continue_terminal_recovery(deadline,observe_peer=observe_peer)
         recovery['automatic_terminal_reached_host'] = recovery.pop('public_destroy_reached_host')
         recovery['expiry_observation_authority'] = recovery.pop('terminal_fence_observed')
+        recovery['native_deadline_compensation'] = native_expiry
+        if recovery['expiry_observation_authority']['kind']!='same-resume-deadline-compensation':
+            raise ValueError('center Kill substituted for the required Host deadline compensation')
         return dict(expiry=expiry,recovery=recovery)
 
 
