@@ -384,7 +384,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 Some(receipt) => Some(receipt),
                 None => match self.continue_original_activation(host, &action)? {
                     Some(receipt) => Some(receipt),
-                    None => self.continue_restore_activation(host, &action)?,
+                    None => match self.continue_restore_activation(host, &action)? {
+                        Some(receipt) => Some(receipt),
+                        None => self.continue_current_terminal_stop(host, &action)?,
+                    },
                 },
             };
             if let Some(receipt) = receipt {
@@ -398,6 +401,34 @@ impl<H: ControllerHost> ControllerApplication<H> {
             }
         }
         Ok(())
+    }
+
+    // ActiveSandbox still owns this turn. Reuse the existing current-stop
+    // predicate and physical recovery provider; do not redispatch the outbox.
+    fn continue_current_terminal_stop(
+        &self,
+        host: &H,
+        action: &sandproof_protocol::WorkAction<core::EffectId>,
+    ) -> Result<Option<sandproof_protocol::WorkReceipt<H::Evidence>>, ApplicationError> {
+        if !matches!(action.command.command(), core::Command::StopVm { .. }) {
+            return Ok(None);
+        }
+        {
+            let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+            let world = inner.journal.world().map_err(map_journal)?;
+            if !inner
+                .journal
+                .matches_current_stop(&world, action)
+                .map_err(map_journal)?
+            {
+                return Ok(None);
+            }
+        }
+        // Host I/O is outside the journal lock. The provider rechecks the
+        // terminal fence, saved workspace and exact process identity/pidfd.
+        // Only the subsequent real stop observation may settle the old claim.
+        host.reclaim_incomplete_stop(action)?;
+        Ok(host.observe(action))
     }
 
     // The caller owns ActiveSandbox. All checks remain against original state;

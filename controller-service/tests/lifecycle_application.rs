@@ -545,18 +545,37 @@ fn bounded_recovery_completes_the_original_stop_after_pre_effect_crash() {
     drop(app);
     let original = open(&path).uncertain_actions().unwrap();
     assert_eq!(original.len(), 1);
-    assert!(matches!(original[0].command.command(), core::Command::StopVm { .. }));
+    assert!(matches!(
+        original[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
     let app = application(&path, state.clone(), false);
-    assert!(app.advance_current_workflow(local.sandbox).unwrap(),
-        "bounded production worker must finish the original uncertain Stop");
+    assert!(
+        app.advance_current_workflow(local.sandbox).unwrap(),
+        "bounded production worker must finish the original uncertain Stop"
+    );
     drop(app);
     let journal = open(&path);
     assert!(journal.uncertain_actions().unwrap().is_empty());
-    assert_eq!(journal.world().unwrap().sandbox_record(local.sandbox).unwrap().phase,
-        core::Phase::Destroyed);
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(local.sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
     let observed = state.lock().unwrap();
     assert_eq!(observed.reclaimed_stops, original);
-    assert_eq!(observed.actions.iter().filter(|a| matches!(a.command.command(),
-        core::Command::StopVm { .. })).count(), 1, "no new Stop dispatch identity");
+    assert_eq!(
+        observed
+            .actions
+            .iter()
+            .filter(|a| matches!(a.command.command(), core::Command::StopVm { .. }))
+            .count(),
+        1,
+        "no new Stop dispatch identity"
+    );
     assert_eq!(observed.released_slots.len(), 1);
 }
