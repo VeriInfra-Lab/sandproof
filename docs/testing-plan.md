@@ -81,6 +81,16 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
+E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario unload-receipt-restart`，默认 `normal` 不变；该选择器的状态为「入口存在但未执行实机」。它装配[一次性回执门](../tests/system/_internal_fault_relay.py)和[恢复观察器](../tests/system/lifecycle_unload_receipt_loss.py)，在原配置封存及服务初始化前接入同证书、固定回环地址的双向 mTLS relay，不改变预算、原库、身份或生产协议。回执门只在原 `/internal/lifecycle/unload-observation` 返回真实完整 `Unloaded` 时，在发送任何回复头之前挂起；`Pending`、`OriginalContinued`、其他路径和错误状态均不算完成回执。并发完成回执必须全文相同，显式丢弃、关闭后端并全部排空才提供证据；超时、503、回复尝试或 relay worker 失败不能代替该证据。原 Create/DK02 行为保持独立。
+
+该选择为原 SDK 后台 RAM 见证启用 relay 的数据回复流式透传，真实回复头/首帧不等待整个命令流结束；控制回执仍走原有限完整解析。两端保留原 mTLS 和固定路径检查，请求及回复仍各限 2 MiB、原 worker 上限 8，每个数据 worker 至多一个取消监视器，流不得延长原场景绝对截止时间。客户端取消、产品原数据撤销或停止夹具时关闭该调用拥有的后端连接；数据中止只表示该数据流结束为未知，不补发第二个 HTTP 回复，也不能作为 Unloaded 证据。此有限测试 relay 不提供通用大文件/无限输出代理。原生 `secure_data` 的 `original_stream_crosses_python_relay_before_eof_and_cancels_backend` 复用原 Rust 流提供方和两段真实 TLS，检查 EOF 前首帧及取消后的真实后端流关闭；该组件不执行来宾命令或 VM。
+
+观察器范围为同一原 Create→首次 Unload：在门武装前单独计划读取原中心审计取得 `create_identity`，原宿主运行证据提供四个寿命字段，公开 Unload 回执提供完整接受键/会话/版本；按 `hold → center_stopped → discarded → restarted → recovered` 顺序比对原中心审计和实际进程观察。`hold` 在门已截获真实完成回执时记录 `Processes.observe()`；随后只强停中心，原 `Processes.audit('center')` 必须仍显示完整接受的 Unload、尚未保存结果且未退额。`observe_survivors(processes)` 直接复用原 procfs/cgroup 观察器，要求中心已死、Host/Redis 的 PID/启动时钟/账号/二进制 inode 均未变化。丢弃后等待 `drained`，使用 `relay.unload_loss_evidence()`，再启动原中心并采样 `Processes.observe()` 交给 `restarted`。恢复后的原生中心审计只允许该操作增加同一完整 `unloaded` 结果及相位变为 `unloaded`；Create 历史、接受时刻、完整 intent/context/retention、源代/capture、摘要/材料字节、寿命及原资源预留均保持。节点身份与注册策略也保持；`NodeRegistration.refresh_node` 实际更新的健康租约和物理 `free` 可以刷新，`free` 仍须在原 limit 内，不能用物理空闲代替逻辑退额。
+
+中心原生审计需要停止其写者，因此故障窗口的重启后进程采样先完成，再做恢复后的计划审计；武装前及恢复后的计划停止在报告中分别记录，不能冒充全场只有一次重启。任何需要重启 Host 的离线审计也放在该窗口之外。Unload 已完成时原 VMM 应已退出，不能套用 DK02 要求旧 VMM 仍运行。该选择器继续复用原 `RuntimeServices`、受保护配置、HostLease、固定预算及同一个绝对截止时间，并执行原 normal 的 A/B/C 三代、另一 owner 实际位置复用、源材料回读、旧代退休及 Resume→Destroy→GC；relay 同时透传原 Resume 观察路径。仍须实机核对 Host 原持久 Unloaded/清单及材料、原 VMM 退出、重复观察的原捕获责任和最终精确收尾，不能仅凭字段相等断言物理事实。包括失败路径在内均停止本夹具拥有的 relay、等待原有限 worker；最终 relay 错误使报告失败，未知产品资源和 HostLease 按原路径保留。
+
+[自测](../tools/tests/test_lifecycle_unload_receipt_loss.py)覆盖正常记录、遗漏/变更字段、进程身份、共享计划审计和门/观察器的真实装配顺序、截止时间及失败关闭；原生 `secure_probe` 的 `original_unload_receipt_is_held_dropped_and_retried_across_double_mtls` 使用 Rust 真实请求/响应编解码及原双向 mTLS relay，并在显式丢弃/重试后实际传输原 Resume 观察请求，两端 CA/SAN/叶 pin/ALPN 保持原检查。其 receiver 是受控值提供者，不是持久收件、Redis 恢复或 VM 证据。这些组件检查不表示 E13 或 Linux/KVM 场景已验收。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、
@@ -196,6 +206,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
 | `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
+| `unload-receipt-restart` | 首次完整 Unloaded 回执在回复头之前截住；只强停中心、审计同一待办且未保存结果，再显式丢弃并恢复；故障窗口 Host/Redis 原进程保持，前后计划读取分列；接续原 A/B/C 三代、位置复用、材料与最终收尾（E13 的一个中心回执窗口，实机未执行） |
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、

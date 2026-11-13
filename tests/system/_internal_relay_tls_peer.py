@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import ssl
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -35,9 +36,29 @@ def main():
     materials.server.verify_flags |= ssl.VERIFY_X509_STRICT
     relay = InternalFaultRelay(listen=('127.0.0.1', value['listen_port']),
         backend=('127.0.0.1', value['backend_port']), node=value['node'], materials=materials)
-    relay.start()
+    unload_gate = value.get('unload_gate', False)
+    if type(unload_gate) is not bool:
+        raise ValueError('explicit component gate selection required')
+    if unload_gate:
+        relay.unload_barrier.arm()
+    stream_data = value.get('stream_data', False)
+    if type(stream_data) is not bool:
+        raise ValueError('explicit component data selection required')
+    relay.start(stream_deadline=time.monotonic()+30 if stream_data else None)
     try:
         print('READY', flush=True)
+        if unload_gate:
+            if sys.stdin.buffer.readline(65) != b'WAIT-UNLOAD\n':
+                raise ValueError('fixed Unload component wait required')
+            if not relay.unload_barrier.ready.wait(timeout=10):
+                raise ValueError('real completed Unload did not reach gate')
+            print(json.dumps(relay.unload_barrier.captured), flush=True)
+            if sys.stdin.buffer.readline(65) != b'DROP-UNLOAD\n':
+                raise ValueError('fixed Unload component discard required')
+            relay.unload_barrier.unblock(discard=True)
+            if not relay.unload_barrier.drained.wait(timeout=10):
+                raise ValueError('completed Unload workers did not drain')
+            print(json.dumps(relay.unload_loss_evidence()), flush=True)
         command = sys.stdin.buffer.readline(65)
         if command not in (b'', b'STOP\n'):
             raise ValueError('fixed component stop required')

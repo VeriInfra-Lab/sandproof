@@ -727,8 +727,10 @@ def exercise(args):
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
-    retirement_observation = args.scenario == 'normal' or retirement_restart
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
+    receipt_restart = args.scenario == 'unload-receipt-restart'
+    normal_chain = args.scenario == 'normal' or receipt_restart
+    retirement_observation = normal_chain or retirement_restart
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -743,10 +745,14 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
-    capture_probe = data_probe = cow_probe = retirement_probe = None
+    capture_probe = data_probe = cow_probe = retirement_probe = receipt_probe = None
     terminal_destroy_done = False
     failed = False
     try:
+        if receipt_restart:
+            receipt_probe = runtime.receipt_restart
+            if receipt_probe is None:
+                raise ValueError('original Unload receipt relay was not prepared')
         report['measurement_identity']=runtime.measurement_identity()
         report['registration'] = check_center_configuration(
             runtime.services, runtime.owner_key, runtime.foreign_key)
@@ -765,6 +771,10 @@ def exercise(args):
         client.operation_evidence_completed()
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
+        if receipt_probe is not None:
+            report['phase'] = 'unload-receipt-arm'
+            report['unload_receipt_restart'] = receipt_probe.arm(
+                client.create_acceptance, report['running'], deadline)
         if data_drain:
             from lifecycle_unload_data_drain import InflightDataDrain
             gate = runtime.arm_data_drain(deadline)
@@ -785,7 +795,13 @@ def exercise(args):
             report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
             data_probe.release()
         client.assert_data_closed()
+        if receipt_probe is not None:
+            report['phase'] = 'unload-receipt-center-interruption'
+            receipt_probe.interrupt(client.unload_acceptance, report['running'], deadline)
         saved = client.wait_unloaded()
+        if receipt_probe is not None:
+            report['phase'] = 'unload-receipt-recovered-native-center'
+            receipt_probe.recovered(saved, deadline)
         client.assert_owner_isolation()
         report['phase'] = 'original-physical-evidence'
         client.step('unload-physical-evidence')
@@ -834,7 +850,7 @@ def exercise(args):
             position=control_physical['context']['position'])
         report['cycles']=[]
         lost=None
-        restore_cycles = 3 if args.scenario == 'normal' else 2
+        restore_cycles = 3 if normal_chain else 2
         for cycle in range(1, restore_cycles + 1):
             report['phase']='public-resume-'+str(cycle)
             gate_receipt=None
@@ -1111,7 +1127,7 @@ def exercise(args):
             'E14':'old execution tokens rejected and new token accepted',
             'other_cases':'not claimed by this normal scenario',
         }
-        if args.scenario == 'normal':
+        if normal_chain:
             report['acceptance_cases']['E12'] = (
                 'two owners, two sessions and three complete restore cycles observed')
             report['acceptance_cases']['C6'] = (
@@ -1122,6 +1138,12 @@ def exercise(args):
                 'A/B/C complete sources and three restores; previous generations settled while '
                 'session live, old Resume acceptance/claim unchanged, current source charged and '
                 'restorable, exact old paths absent; logical settlement is not shared-block release')
+        if receipt_restart:
+            report['acceptance_cases']['E13'] = (
+                'first completed Unload observation explicitly discarded before reply headers; '
+                'center alone interrupted with the exact accepted operation still pending; '
+                'same Host/Redis, original result, material and lifetime recovered; '
+                'pre/post native-read center restarts recorded separately; not all E13 windows')
         if retirement_restart:
             report['acceptance_cases']['G7'] = (
                 'original durable plan observed Retiring after actual delete and before settlement; '
@@ -1238,14 +1260,23 @@ def exercise(args):
             if not failed:
                 raise
         finally:
-            if capture_probe is not None:
-                capture_probe.close()
-            if data_probe is not None:
-                data_probe.close()
-            runtime.close_restore_gate()
-            runtime.close_capture_cancel_gate()
-            report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
-            write_once(root / 'lifecycle-unload-report.json', report)
+            try:
+                if receipt_probe is not None:
+                    report['unload_receipt_relay_cleanup'] = receipt_probe.close()
+            except BaseException as error:
+                report['complete'] = False
+                report['unload_receipt_cleanup_failure_type'] = type(error).__name__
+                if not failed:
+                    raise
+            finally:
+                if capture_probe is not None:
+                    capture_probe.close()
+                if data_probe is not None:
+                    data_probe.close()
+                runtime.close_restore_gate()
+                runtime.close_capture_cancel_gate()
+                report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
+                write_once(root / 'lifecycle-unload-report.json', report)
     return report
 
 
@@ -1258,7 +1289,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart'),default='normal')
+        'material-retirement-restart','unload-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
