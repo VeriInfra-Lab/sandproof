@@ -37,7 +37,11 @@ cargo clippy --locked -p sandproof-center-service --all-targets --all-features -
       exit 2
     fi
   fi
-  cargo test --locked -p sandproof-center-service --features redis-tests --all-targets
+  # Independent cases each start a real fsync-backed Redis and use the original
+  # 200ms application reply budget. Bound fixture competition on shared runners;
+  # this does not serialize the threads/barriers inside a concurrency test or
+  # extend any application, transport or test deadline.
+  cargo test --locked -p sandproof-center-service --features redis-tests --all-targets -- --test-threads=2
 )
 cargo clippy --locked -p sandproof-center --all-targets -- -D warnings
 cargo test --locked -p sandproof-center --all-targets
