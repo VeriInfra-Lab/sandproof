@@ -620,9 +620,14 @@ class _Handler(BaseHTTPRequestHandler):
             unload_failed = True
             raise
         finally:
-            if unload_token is not None:
-                relay.unload_barrier.finish(unload_token, dropped=unload_dropped, failed=unload_failed)
-            backend.close()
+            try:
+                backend.close()
+            except BaseException:
+                unload_failed = True
+                raise
+            finally:
+                if unload_token is not None:
+                    relay.unload_barrier.finish(unload_token, dropped=unload_dropped, failed=unload_failed)
 
     def _reply(self, status, headers, body):
         self.close_connection = True

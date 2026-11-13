@@ -185,6 +185,24 @@ class UnloadReceiptGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             value.unload_loss_evidence()
 
+    def test_backend_cleanup_failure_cannot_finish_as_clean_discard(self):
+        handler, backend = self.handler()
+        gate = handler.server.relay.unload_barrier
+        gate.arm()
+        def close():
+            self.assertFalse(gate.drained.is_set())
+            raise OSError('controlled backend cleanup failure')
+        backend.close.side_effect = close
+        with patch.object(relay, '_Backend', return_value=backend), patch.object(
+                gate.release, 'wait', side_effect=lambda **_: (gate.unblock(discard=True) or True)):
+            with self.assertRaises(OSError):
+                handler._forward()
+        handler._reply.assert_not_called()
+        self.assertTrue(gate.drained.is_set())
+        self.assertTrue(gate.failed)
+        with self.assertRaises(ValueError):
+            gate.loss_evidence()
+
     def test_timeout_forwarding_and_worker_failure_are_not_explicit_loss(self):
         for disposition in ('timeout', 'forward', 'failure'):
             handler, backend = self.handler()
