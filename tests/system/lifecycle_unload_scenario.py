@@ -546,12 +546,30 @@ class PublicUnloadScenario:
 
     def assert_resume_replay(self, request, accepted, current):
         """The original full request returns its acceptance, preserving current view."""
-        self.step('retired-source-resume-replay', 202)
+        self.step('original-resume-replay', 202)
         replay = self.read_json('POST', self.path() + '/resume', key=self.owner_key,
             body=copy.deepcopy(request), status=202)
         assert replay == accepted, 'old Resume did not return its original acceptance'
-        self.step('retired-source-current-query', 200)
+        self.step('original-resume-current-query', 200)
         assert self.query() == current, 'old Resume replay changed current lifecycle state'
+
+    def assert_terminal_resume_replay(self, request, accepted, *, phase):
+        """Historical acceptance must not become permission after Destroy."""
+        assert phase in ('terminating', 'cleaned')
+        current = self.query()
+        self.check_view(current, self.current_acceptance)
+        assert current['phase'] == phase, 'exact terminal stage required before old Resume replay'
+        assert current['current_version'] > accepted['accepted_version']
+        self.assert_resume_replay(request, accepted, current)
+        changed = dict(request, expected_version=current['current_version'])
+        self.step('terminal-altered-resume-replay', 409)
+        assert self.call('POST', self.path() + '/resume', key=self.owner_key, body=changed)[0] == 409
+        assert self.query() == current, 'altered old Resume changed the terminal decision'
+        self.assert_data_closed()
+        self.assert_previous_tokens_closed()
+        return dict(phase=phase, original_acceptance_returned=True,
+                    altered_request_rejected=True, terminal_view_unchanged=True,
+                    data_access_closed=True)
 
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
@@ -846,6 +864,8 @@ def exercise(args):
                     assert pending['phase'] == 'resuming', 'pre-marker Prepare unexpectedly became Running'
                     client.assert_data_closed(); client.assert_previous_tokens_closed()
                     report['destroy'] = client.destroy(pending)
+                    report['terminal_resume_replays'] = [client.assert_terminal_resume_replay(
+                        original_resume_request, accepted, phase='terminating')]
                     report['phase'] = 'original-host-terminal-fence-before-process-continue'
                     def observe_original_peer():
                         assert control.query() == control_running, 'other owner lost its original Running observation'
@@ -860,6 +880,8 @@ def exercise(args):
                     client.wait_cleaned()
                     report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
                     client.operation_evidence_completed()
+                    report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
+                        original_resume_request, accepted, phase='cleaned'))
                     assert control.query() == control_running
                     report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
                         control.session, control_physical, deadline)
@@ -1136,6 +1158,7 @@ def exercise(args):
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
         if prepare_destroy:
             report['acceptance_cases'] = {
+                'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
                 'E6': 'original pre-marker LoadPaused stayed unknown until actual public Destroy reached Host and terminal fence; same candidate was observed, stopped and collected without another Prepare or Activate',
                 'E8': 'real public Destroy competed with the original unknown LoadPaused Prepare; actual Host terminal fencing preceded continuation of the same candidate',
                 'E12': 'other owner kept its original live candidate across the first owner terminal handoff, then explicit cleanup',
