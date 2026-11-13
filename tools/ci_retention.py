@@ -445,6 +445,10 @@ def main(argv=None):
     retire.add_argument('--id', required=True)
     retire.add_argument('--receipt', type=Path, required=True)
     retire.add_argument('--evidence', type=Path, required=True)
+    finish = commands.add_parser('finish', help='retire a confirmed terminal task and collect older retired copies')
+    finish.add_argument('--id', required=True)
+    finish.add_argument('--receipt', type=Path, required=True)
+    finish.add_argument('--evidence', type=Path, required=True)
     terminal = commands.add_parser('record-native-terminal')
     terminal.add_argument('--work', type=Path, required=True)
     terminal.add_argument('--exit-record', type=Path, required=True)
@@ -465,13 +469,17 @@ def main(argv=None):
             print(store.allocate(kind=args.kind, candidate=args.candidate))
         elif args.command == 'retire':
             store.retire(args.id, args.receipt, args.evidence, now=int(time.time()))
+        elif args.command == 'finish':
+            now = int(time.time())
+            store.retire(args.id, args.receipt, args.evidence, now=now)
+            print(json.dumps(store.collect(now=now, apply=True, keep_days=3,
+                max_count=5, max_bytes=25 * 1024**3, keep_latest=2)))
         elif args.command == 'record-native-terminal':
             print(record_native_terminal(args.work, args.exit_record))
         elif args.command == 'handoff-native':
             print(handoff_native_builds(store, args.manifest, args.receipt, args.evidence,
                 now=int(time.time())))
         else:
-            import json
             print(json.dumps(store.collect(now=int(time.time()), apply=args.apply,
                 keep_days=args.keep_days, max_count=args.max_count, max_bytes=args.max_bytes,
                 keep_latest=args.keep_latest)))

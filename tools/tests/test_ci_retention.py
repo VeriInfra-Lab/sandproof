@@ -48,6 +48,31 @@ class RetentionTests(unittest.TestCase):
         self.assertEqual(self.store.read(path.name)[2]['state'], 'removed')
         self.assertEqual(self.store.collect(now=self.now, apply=True), [])
 
+    def test_finish_hook_collects_old_copies_but_keeps_unknown_and_original_failure(self):
+        old = [self.allocate(age=8) for _ in range(4)]
+        active = self.allocate(retire=False)
+        current = self.allocate(retire=False)
+        with patch.object(gc.time, 'time', return_value=self.now):
+            gc.main(['--root', str(self.store.root), 'finish', '--id', current.name,
+                     '--receipt', str(self.receipt), '--evidence', str(self.evidence)])
+        self.assertTrue(active.exists())
+        self.assertTrue(current.exists())
+        self.assertEqual(sum(p.exists() for p in old), 1)
+        self.assertEqual(self.store.read(current.name)[2]['receipt']['status'], 'failed')
+        self.assertTrue(self.evidence.exists())
+
+    def test_finish_hook_unknown_receipt_does_not_collect_anything(self):
+        old = self.allocate(age=8)
+        current = self.allocate(retire=False)
+        receipt=json.loads(self.receipt.read_text())
+        receipt['resource_cleanup_confirmed']=False
+        self.receipt.write_text(json.dumps(receipt))
+        with patch.object(gc.time, 'time', return_value=self.now), self.assertRaises(ValueError):
+            gc.main(['--root', str(self.store.root), 'finish', '--id', current.name,
+                     '--receipt', str(self.receipt), '--evidence', str(self.evidence)])
+        self.assertTrue(old.exists())
+        self.assertTrue(current.exists())
+
     def test_active_unregistered_and_external_materials_are_never_collected(self):
         active = self.allocate(retire=False)
         orphan = self.store.root / 'payloads' / ('b' * 32)
