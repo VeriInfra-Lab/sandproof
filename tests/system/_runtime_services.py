@@ -331,6 +331,8 @@ class RuntimeServices:
         value.staging_identity={name:(layout[name].stat().st_dev,layout[name].stat().st_ino)
                                 for name in ('common','center','redis')}
         value.staging_owners=dict(center=ids['center'][0],redis=ids['redis'][0])
+        from tools.ci_private_templates import cache_identity
+        value.private_template_caches=[cache_identity(cache['root']) for cache in profile['host_template_caches']]
         value.expected_templates={node['registration']['identity']['node_id']:
             {item['template_id']+'-'+item['revision'] for item in catalog['templates']}
             for node,catalog in zip(center['nodes'],catalogs)}
@@ -485,6 +487,16 @@ class RuntimeServices:
         """Original sampler history only; cannot authorize staging removal."""
         return self.service_storage.diagnostics()
 
+    def retire_private_templates(self):
+        """Caller already confirmed VM cleanup; never remove SQL or snapshots."""
+        if (set(self.processes.children)!=set(self.processes.bindings)
+                or any(child.poll() is None for child in self.processes.children.values())
+                or not self.service_storage.closed):
+            raise RuntimeError('original services and storage sampler must exit before template retirement')
+        self.storage_peaks()
+        from tools.ci_private_templates import retire
+        return retire(self.private_template_caches,self.layout['logs']/'template-retirement.json')
+
     def cleanup_staging(self):
         """Remove only this generated staging AFTER independent VM cleanup.
 
@@ -510,6 +522,11 @@ class RuntimeServices:
         if not self.service_storage.closed:
             raise RuntimeError('original service storage sampler must exit before removal')
         self.storage_peaks()  # Never erase failed/unknown final capacity evidence.
+        # The existing caller has confirmed native resource cleanup, and all
+        # original service children and sampling have exited above. Retire only
+        # this fresh deployment's private template data; keep its manifests,
+        # host SQL/configuration and independent retirement evidence.
+        self.retire_private_templates()
         for name in ('center','redis'):
             remove_private_tree(self.layout[name],list(self.staging_identity[name]),
                                 owner_uid=self.staging_owners[name])
