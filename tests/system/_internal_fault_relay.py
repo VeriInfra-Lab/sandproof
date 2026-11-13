@@ -2,8 +2,9 @@
 
 No production hook, arbitrary URL, VM command or success synthesizer. Both
 legs verify the fixed operator CA/SAN and exact leaf. Only original internal
-paths are forwarded. This probe deliberately bounds complete short test bodies;
-it is not the product streaming implementation or a general network proxy.
+paths are forwarded. Control bodies remain finite complete values. Only the
+opt-in Unload scenario streams bounded data replies under its original absolute
+deadline, for the original SDK background witness; no general proxy is provided.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -18,13 +19,16 @@ import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import socket
+import select
 from socketserver import ThreadingMixIn
 import ssl
 import stat
 import threading
+import time
 
 from tools.runtime_create_recovery import LIFECYCLE_PROTOCOL_VERSION
 from tools.check_kvm_host import unique_keys
@@ -35,10 +39,12 @@ MATERIAL_BYTES = 512 * 1024
 LIFECYCLE = '/internal/lifecycle'
 CREATE_OBSERVATION = '/internal/lifecycle/create-observation'
 UNLOAD_OBSERVATION = '/internal/lifecycle/unload-observation'
+RESUME_OBSERVATION = '/internal/lifecycle/resume-observation'
 CONTROL_PATHS = frozenset((LIFECYCLE, '/internal/lifecycle/result-confirmation',
                           '/internal/lifecycle/window-close',
                           '/internal/lifecycle/create-observation',
                           UNLOAD_OBSERVATION,
+                          RESUME_OBSERVATION,
                           '/internal/lifecycle/terminal-observation',
                           '/internal/lifecycle/renewal-confirmation'))
 STATUS_PATH = '/internal/node-status'
@@ -47,6 +53,13 @@ PATHS = CONTROL_PATHS | frozenset((STATUS_PATH, '/internal/probe',
                                   '/internal/template-cache', '/internal/template-validation-evidence'))
 HOP_HEADERS = frozenset(('host', 'connection', 'transfer-encoding', 'content-length',
                          'proxy-connection', 'keep-alive', 'upgrade', 'trailer'))
+
+
+def tuple_address(address):
+    host, port = address.rsplit(':', 1)
+    if host != '127.0.0.1' or not port.isdecimal() or not 0 < int(port) < 65536:
+        raise ValueError('one fixed loopback host endpoint required')
+    return host, int(port)
 
 
 def allowed_path(path):
@@ -575,6 +588,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(503, [], b'')
             return
         backend = _Backend(relay.backend, relay.materials)
+        cancel_socket = None
         unload_token = None
         unload_dropped = unload_failed = False
         try:
@@ -582,7 +596,16 @@ class _Handler(BaseHTTPRequestHandler):
             headers['Content-Length'] = str(len(body))
             headers['Connection'] = 'close'
             backend.request(self.command, self.path, body=body, headers=headers)
+            stream = self.path.startswith(DATA_PREFIX) and relay.stream_deadline is not None
+            if stream:
+                # Own a duplicate of this authenticated connection solely for
+                # shutdown. No second TLS reader or unencrypted data handling.
+                stream_socket = backend.sock
+                cancel_socket = socket.socket(fileno=os.dup(stream_socket.fileno()))
             response = backend.getresponse()
+            if stream:
+                self._stream_data(response, cancel_socket, stream_socket)
+                return
             data = response.read(BODY_BYTES + 1)
             if len(data) > BODY_BYTES:
                 raise ValueError('test response exceeds finite budget')
@@ -626,8 +649,87 @@ class _Handler(BaseHTTPRequestHandler):
                 unload_failed = True
                 raise
             finally:
+                if cancel_socket is not None:
+                    cancel_socket.close()
                 if unload_token is not None:
                     relay.unload_barrier.finish(unload_token, dropped=unload_dropped, failed=unload_failed)
+
+    def _stream_data(self, response, cancel_socket, stream_socket):
+        """Opt-in finite test data forwarding; never a lifecycle receipt gate.
+
+        Forward headers/frames before EOF so the original background Start can
+        deliver its PID. Byte limits stay finite; the original absolute case
+        deadline bounds idle streams. A watcher only shuts down an owned socket
+        on caller cancellation/stop/deadline, without reading either TLS leg.
+        """
+        relay = self.server.relay
+        done = threading.Event()
+        def cancel():
+            try:
+                cancel_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        def watch():
+            try:
+                while not done.wait(.1):
+                    if time.monotonic() >= relay.stream_deadline:
+                        relay.failed.set()
+                        cancel()
+                        return
+                    try:
+                        # One complete incoming request with Connection: close.
+                        # More readable input is a close/alert, not another call.
+                        disconnected = bool(select.select([self.connection], [], [], 0)[0])
+                    except (OSError, ValueError):
+                        disconnected = True
+                    if relay.stopping.is_set() or disconnected:
+                        cancel()
+                        return
+            except BaseException:
+                relay.failed.set()
+                cancel()
+        watcher = threading.Thread(target=watch, name='e13-data-cancel')
+        watcher.start()
+        self.close_connection = True
+        try:
+            if response.length is not None and response.length > BODY_BYTES:
+                raise ValueError('test data response exceeds finite budget')
+            # Control requests retain their existing short RPC timeout. This
+            # stream's deadline is the same original scenario deadline, and
+            # the watcher makes cancellation interrupt the blocking read.
+            stream_socket.settimeout(None)
+            self.send_response(response.status)
+            for name, value in response.getheaders():
+                if name.lower() not in HOP_HEADERS:
+                    self.send_header(name, value)
+            self.send_header('Connection', 'close')
+            self.end_headers()  # EOF delimits the already dechunked response
+            total = 0
+            while True:
+                data = response.read1(min(65536, BODY_BYTES-total+1))
+                if not data:
+                    return
+                total += len(data)
+                if total > BODY_BYTES:
+                    raise ValueError('test data response exceeds finite budget')
+                self.wfile.write(data)
+        except (OSError, http.client.HTTPException):
+            # Caller cancellation and original Host revocation can end a data
+            # stream. Close it as unknown; never append a synthetic 503 after
+            # response headers or turn a data failure into Unloaded evidence.
+            pass
+        finally:
+            done.set()
+            try:
+                response.close()
+            except BaseException:
+                relay.failed.set()
+                raise ValueError('owned test data response did not close') from None
+            finally:
+                watcher.join(timeout=1)
+                if watcher.is_alive():
+                    relay.failed.set()
+                    raise RuntimeError('owned data cancellation watcher did not exit')
 
     def _reply(self, status, headers, body):
         self.close_connection = True
@@ -660,6 +762,8 @@ class InternalFaultRelay:
         self.partition = threading.Event()
         self.destroy_seen = threading.Event()
         self.failed = threading.Event()
+        self.stopping = threading.Event()
+        self.stream_deadline = None
         self.partition_requests = []
         self.lock = threading.Lock()
         self.server = _FiniteServer(listen, self)
@@ -677,7 +781,12 @@ class InternalFaultRelay:
         if path == LIFECYCLE and operation == {'kind': 'destroy'}:
             self.destroy_seen.set()
 
-    def start(self):
+    def start(self, *, stream_deadline=None):
+        if stream_deadline is not None:
+            if (type(stream_deadline) not in (int, float) or not math.isfinite(stream_deadline)
+                    or not 0 < stream_deadline-time.monotonic() <= 3600):
+                raise ValueError('original bounded absolute data deadline required')
+            self.stream_deadline = stream_deadline
         self.thread.start()
 
     def unload_loss_evidence(self):
@@ -686,6 +795,7 @@ class InternalFaultRelay:
         return self.unload_barrier.loss_evidence()
 
     def stop(self):
+        self.stopping.set()
         self.partition.clear()
         self.barrier.unblock(discard=True)
         self.unload_barrier.unblock(discard=True)

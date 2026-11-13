@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod fixture;
 
 type Captured = Arc<std::sync::Mutex<Vec<AcceptedLifecycleIntent>>>;
-struct Counted(Arc<AtomicUsize>, Captured);
+struct Counted(Arc<AtomicUsize>, Captured, bool);
 impl sandproof_internal::ValidationReceiver for Counted {
     async fn validation_evidence(
         &self,
@@ -49,10 +49,22 @@ impl LifecycleReceiver for Counted {
     }
     async fn observe_resume(
         &self,
-        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
-        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+        intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
     ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
-        Err(ReceiveError::Unavailable)
+        if !self.2 {
+            return Err(ReceiveError::Unavailable);
+        }
+        assert_eq!(context.center(), &center());
+        assert_eq!(context.expected_node(), &fixture::node("host-a"));
+        self.0.fetch_add(1, Ordering::SeqCst);
+        self.1.lock().unwrap().push(intent.clone());
+        // Transport fixture only: no restore, activation or Running result.
+        Ok(sandproof_protocol::lifecycle::ResumeObservation {
+            request: intent.clone(),
+            current_request: intent,
+            readiness: sandproof_protocol::lifecycle::CurrentResumeReadiness::Pending,
+        })
     }
     async fn record_lifecycle(
         &self,
@@ -105,7 +117,8 @@ async fn original_unload_receipt_is_held_dropped_and_retried_across_double_mtls(
     let certs = certificates_with_dual_roles();
     let count = Arc::new(AtomicUsize::new(0));
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let server = counted_server(&certs, Arc::clone(&count), Arc::clone(&captured));
+    let server =
+        counted_server_with_resume(&certs, Arc::clone(&count), Arc::clone(&captured), true);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let backend = listener.local_addr().unwrap();
     let (stop, shutdown) = oneshot::channel();
@@ -168,6 +181,27 @@ async fn original_unload_receipt_is_held_dropped_and_retried_across_double_mtls(
     );
     assert_eq!(count.load(Ordering::SeqCst), 2);
     assert_eq!(*captured.lock().unwrap(), vec![original.clone(), original]);
+    // Continue the original receipt relay into the actual Resume route. A
+    // relay-generated 400 cannot satisfy this Pending response or receiver log.
+    let mut resume = accepted(LifecycleOperation::Resume {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 3.try_into().unwrap(),
+        target_incarnation: 3.try_into().unwrap(),
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
+    });
+    resume.request.binding.key.sequence = 2.try_into().unwrap();
+    resume.request.binding.expected = ExpectedSession::Version(17);
+    resume.accepted_version = 18;
+    resume.retention.window = 7.try_into().unwrap();
+    let pending = caller.observe_lifecycle_resume(&resume).await.unwrap();
+    assert_eq!(pending.request, resume);
+    assert_eq!(pending.current_request, resume);
+    assert!(matches!(
+        pending.readiness,
+        sandproof_protocol::lifecycle::CurrentResumeReadiness::Pending
+    ));
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+    assert_eq!(captured.lock().unwrap().last(), Some(&resume));
     relay.stop();
     stop.send(()).unwrap();
     task.await.unwrap().unwrap();
@@ -217,6 +251,15 @@ fn counted_server(
     count: Arc<AtomicUsize>,
     captured: Captured,
 ) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Counted>> {
+    counted_server_with_resume(certs, count, captured, false)
+}
+
+fn counted_server_with_resume(
+    certs: &Certificates,
+    count: Arc<AtomicUsize>,
+    captured: Captured,
+    allow_resume: bool,
+) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Counted>> {
     InternalServer::new(
         ServerTls::new(
             certs.host.material(),
@@ -226,7 +269,11 @@ fn counted_server(
         .unwrap(),
         fixture::node("host-a"),
         limits(),
-        sandproof_internal::diagnostic::RejectTemplateCache::new(Counted(count, captured)),
+        sandproof_internal::diagnostic::RejectTemplateCache::new(Counted(
+            count,
+            captured,
+            allow_resume,
+        )),
     )
     .with_center_peer(
         CenterPeerRegistration::new(center(), fixture::node("host-a"), vec![certs.center.pin()])

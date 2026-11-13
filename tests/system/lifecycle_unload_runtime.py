@@ -579,6 +579,7 @@ class UnloadRuntime:
         self.gc_complete=False
         self.restore_gate=None
         self.capture_cancel_gate=None
+        self.receipt_restart=None
         self.continued_state=None
         self.deadline=None
         self.physical_complete=False
@@ -605,12 +606,17 @@ class UnloadRuntime:
             2,registry_config=self.inputs['registry'],
             extra_credentials=[dict(tenant=2,secret=self.foreign_key)],
             activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'])
+        if self.args.scenario == 'unload-receipt-restart':
+            from lifecycle_unload_receipt_loss import UnloadReceiptRestart
+            self.receipt_restart=UnloadReceiptRestart(self)
         self.configs={name:role_facts(Path(role['config']).parent,role['config'],
             uid=role['uid'],gid=role['gid']) for name,role in self.services.processes.bindings.items()}
 
     def start(self,deadline):
         remaining(deadline)
         self.deadline=deadline
+        if getattr(self, 'receipt_restart', None) is not None:
+            self.receipt_restart.start(deadline)
         self.services.start()
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=True)
 

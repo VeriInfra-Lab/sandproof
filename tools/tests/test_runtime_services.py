@@ -20,6 +20,51 @@ from tools.benchmark_ci import remove_private_tree
 from tools.template_physical_storage import activation_budget, envelope
 
 
+class FreshCenterSealTests(unittest.TestCase):
+    def fixture(self, root):
+        value = services.RuntimeServices.__new__(services.RuntimeServices)
+        path = root/'center.json'
+        path.write_text('{"original":true}')
+        path.chmod(0o600)
+        value.processes = SimpleNamespace(children={}, bindings={'center': {'config': path}})
+        value.center_config = dict(original=True, nodes=[dict(address='127.0.0.1:3456')])
+        return value, path
+
+    def test_seal_preserves_protected_inode_and_final_exact_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            value, path = self.fixture(Path(directory))
+            before = path.stat()
+            value.seal_fresh_center_config()
+            after = path.stat()
+            self.assertEqual((before.st_dev, before.st_ino, before.st_uid, before.st_gid, before.st_mode),
+                             (after.st_dev, after.st_ino, after.st_uid, after.st_gid, after.st_mode))
+            self.assertEqual(json.loads(path.read_text()), value.center_config)
+
+    def test_started_role_bad_mode_link_and_swapped_inode_are_refused(self):
+        for fault in ('started', 'mode', 'hardlink', 'symlink', 'swapped'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                value, path = self.fixture(root)
+                original = path.read_bytes()
+                if fault == 'started': value.processes.children['center'] = object()
+                if fault == 'mode': path.chmod(0o640)
+                if fault == 'hardlink': os.link(path, root/'other')
+                if fault == 'symlink':
+                    path.rename(root/'actual')
+                    path.symlink_to(root/'actual')
+                real_open = os.open
+                def swap(name, flags):
+                    if fault == 'swapped':
+                        incoming = root/'incoming'
+                        incoming.write_bytes(original)
+                        incoming.chmod(0o600)
+                        incoming.replace(path)
+                    return real_open(name, flags)
+                with patch.object(services.os, 'open', side_effect=swap), self.assertRaises((ValueError, OSError)):
+                    value.seal_fresh_center_config()
+                self.assertEqual(path.read_bytes(), original)
+
+
 class CaptureProvisionTests(unittest.TestCase):
     def fixture(self, root):
         control=root/'control';control.mkdir(mode=0o700)

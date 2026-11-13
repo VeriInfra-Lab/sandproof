@@ -1,4 +1,8 @@
 //! One owned Python child exercising the original relay against real Rust TLS.
+#![allow(
+    dead_code,
+    reason = "shared relay fixture; suites choose transport cases"
+)]
 use super::{Certificates, NodeIdentity, SocketAddr};
 use sha2::{Digest, Sha256};
 use std::{
@@ -22,7 +26,7 @@ pub(super) struct PythonRelay {
 
 impl PythonRelay {
     pub fn start(certs: &Certificates, backend: SocketAddr, node: &NodeIdentity) -> Self {
-        Self::start_gate(certs, backend, node, false)
+        Self::start_gate(certs, backend, node, false, false)
     }
 
     pub fn start_unload_gate(
@@ -30,7 +34,11 @@ impl PythonRelay {
         backend: SocketAddr,
         node: &NodeIdentity,
     ) -> Self {
-        Self::start_gate(certs, backend, node, true)
+        Self::start_gate(certs, backend, node, true, true)
+    }
+
+    pub fn start_streaming(certs: &Certificates, backend: SocketAddr, node: &NodeIdentity) -> Self {
+        Self::start_gate(certs, backend, node, false, true)
     }
 
     fn start_gate(
@@ -38,6 +46,7 @@ impl PythonRelay {
         backend: SocketAddr,
         node: &NodeIdentity,
         unload_gate: bool,
+        stream_data: bool,
     ) -> Self {
         let files = tempfile::tempdir().unwrap();
         // macOS /var is a symlink; the same original private_path contract
@@ -73,6 +82,7 @@ impl PythonRelay {
             "operator": operator, "control": control, "receipt": receipt,
             "listen_port": address.port(), "backend_port": backend.port(), "node": node,
             "unload_gate": unload_gate,
+            "stream_data": stream_data,
         });
         let input = peer.child.stdin.as_mut().unwrap();
         serde_json::to_writer(&mut *input, &value).unwrap();

@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import ssl
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -40,7 +41,10 @@ def main():
         raise ValueError('explicit component gate selection required')
     if unload_gate:
         relay.unload_barrier.arm()
-    relay.start()
+    stream_data = value.get('stream_data', False)
+    if type(stream_data) is not bool:
+        raise ValueError('explicit component data selection required')
+    relay.start(stream_deadline=time.monotonic()+30 if stream_data else None)
     try:
         print('READY', flush=True)
         if unload_gate:

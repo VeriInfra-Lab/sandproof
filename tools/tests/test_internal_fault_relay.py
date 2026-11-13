@@ -3,6 +3,9 @@ import copy
 from http.client import parse_headers
 import io
 import json
+import socket
+import time
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 import threading
@@ -52,6 +55,7 @@ class InternalFaultRelayTests(unittest.TestCase):
             '/internal/lifecycle', '/internal/lifecycle/result-confirmation',
             '/internal/lifecycle/window-close', '/internal/lifecycle/create-observation',
             '/internal/lifecycle/unload-observation',
+            '/internal/lifecycle/resume-observation',
             '/internal/lifecycle/terminal-observation', '/internal/lifecycle/renewal-confirmation',
             '/internal/node-status', '/internal/probe', '/internal/template-cache',
             '/internal/template-validation-evidence',
@@ -196,6 +200,7 @@ class InternalFaultRelayTests(unittest.TestCase):
         value = relay.InternalFaultRelay.__new__(relay.InternalFaultRelay)
         value.barrier = relay.ReceiptBarrier(node)
         value.unload_barrier = relay.UnloadReceiptBarrier(node)
+        value.stream_deadline = None
         value.partition_requests = []
         value.lock = threading.Lock()
         value.destroy_seen = threading.Event()
@@ -274,6 +279,7 @@ class InternalFaultRelayTests(unittest.TestCase):
         self.assertTrue(value.close_connection)
         value._reply.assert_not_called()
         backend.close.assert_called_once()
+
         self.assertEqual(json.loads(backend.request.call_args.kwargs['body']), request)
 
     def test_record_or_failed_observation_never_sets_ready(self):
@@ -385,6 +391,89 @@ class InternalFaultRelayTests(unittest.TestCase):
             value._forward()
         value._reply.assert_not_called()
         backend.close.assert_called_once()
+
+
+class StreamingDataRelayTests(unittest.TestCase):
+    def fixture(self, chunks):
+        handler = relay._Handler.__new__(relay._Handler)
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        handler.connection = left
+        state = SimpleNamespace(stream_deadline=time.monotonic()+5,
+                                failed=threading.Event(), stopping=threading.Event())
+        handler.server = SimpleNamespace(relay=state)
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        handler._reply = Mock()
+        handler.wfile = io.BytesIO()
+        response = Mock(length=None, status=200)
+        response.getheaders.return_value = [('Content-Type', 'application/connect+json'), ('Transfer-Encoding', 'chunked')]
+        response.read1.side_effect = chunks
+        return handler, state, response, Mock(), Mock(), right
+
+    def test_headers_and_first_frame_are_forwarded_without_waiting_for_eof(self):
+        handler, state, response, cancel, transport, _ = self.fixture([b'first', b'second', b''])
+        def read(_size):
+            handler.end_headers.assert_called_once_with()
+            return next(frames)
+        frames = iter([b'first', b'second', b''])
+        response.read1.side_effect = read
+        handler._stream_data(response, cancel, transport)
+        self.assertEqual(handler.wfile.getvalue(), b'firstsecond')
+        self.assertIn(unittest.mock.call('Connection', 'close'), handler.send_header.call_args_list)
+        self.assertNotIn(unittest.mock.call('Transfer-Encoding', 'chunked'), handler.send_header.call_args_list)
+        transport.settimeout.assert_called_once_with(None)
+        response.close.assert_called_once_with()
+        handler._reply.assert_not_called()
+        self.assertFalse(state.failed.is_set())
+
+    def test_existing_response_byte_budget_is_kept_for_declared_and_streamed_bodies(self):
+        for declared in (True, False):
+            chunks = [b'x'*65536]*(relay.BODY_BYTES//65536) + [b'x']
+            handler, _, response, cancel, transport, _ = self.fixture(chunks)
+            if declared: response.length = relay.BODY_BYTES+1
+            with self.subTest(declared=declared), self.assertRaises(ValueError):
+                handler._stream_data(response, cancel, transport)
+            self.assertLessEqual(len(handler.wfile.getvalue()), relay.BODY_BYTES)
+            if declared: handler.send_response.assert_not_called()
+            handler._reply.assert_not_called()
+            response.close.assert_called_once_with()
+
+    def test_original_data_transport_loss_never_appends_a_second_reply(self):
+        handler, state, response, cancel, transport, _ = self.fixture([])
+        response.read1.side_effect = OSError('controlled original Host data revocation')
+        handler._stream_data(response, cancel, transport)
+        handler.send_response.assert_called_once_with(200)
+        handler._reply.assert_not_called()
+        self.assertFalse(state.failed.is_set())
+        response.close.assert_called_once_with()
+
+    def test_disconnect_stop_and_absolute_deadline_interrupt_the_owned_backend(self):
+        for reason in ('disconnect', 'stop', 'deadline'):
+            handler, state, response, cancel, transport, peer = self.fixture([])
+            unblocked = threading.Event()
+            cancel.shutdown.side_effect = lambda _: unblocked.set()
+            def read(_size):
+                if not unblocked.wait(timeout=2):
+                    raise RuntimeError('owned backend was not interrupted')
+                return b''
+            response.read1.side_effect = read
+            if reason == 'disconnect': peer.close()
+            if reason == 'stop': state.stopping.set()
+            if reason == 'deadline': state.stream_deadline = time.monotonic()+.01
+            handler._stream_data(response, cancel, transport)
+            cancel.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+            self.assertEqual(state.failed.is_set(), reason == 'deadline')
+
+    def test_response_cleanup_error_marks_failure_without_another_http_reply(self):
+        handler, state, response, cancel, transport, _ = self.fixture([b''])
+        response.close.side_effect = OSError('controlled close error')
+        with self.assertRaises(ValueError):
+            handler._stream_data(response, cancel, transport)
+        self.assertTrue(state.failed.is_set())
+        handler._reply.assert_not_called()
 
 
 if __name__ == '__main__':
