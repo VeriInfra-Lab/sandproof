@@ -65,7 +65,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | 场景 / 主要性质 | 已有入口或组件定位 | 需要单独核对的覆盖范围 |
 | -- | -- | -- |
 | E1 / G1、G2、G3、G5 | [生命周期入口](../tests/system/lifecycle_unload_scenario.py) `normal`；[物理与账本观察](../tests/system/lifecycle_unload_runtime.py) | RAM-only 见证、同一进程/文件继续；另一会话实际复用旧位置；每次恢复的首条命令可用，不能只检查 Running。 |
-| E2 / G2、G4、G5 | 生命周期入口的请求重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 串行成功重放不覆盖同键并发、同键异文、过期、回包丢失的全部组合；同时核对实际实例和原操作结果。 |
+| E2 / G2、G4、G5 | 生命周期入口的同键屏障并发、重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 已有同键并发及异文拒绝代表；过期窗口、不同操作的并发重发和回包丢失组合仍须分别记录，同时核对实际实例和原操作结果。 |
 | E3 / G1、G4 | `capture-freeze-receipt`、`capture-measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
 | E4 / G1、G4 | `capture-seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
 | E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
