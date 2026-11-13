@@ -8,6 +8,9 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+#[path = "lifecycle_window_replay.rs"]
+mod expired_window;
+
 fn policy() -> LifecyclePolicy {
     LifecyclePolicy {
         max_timeout_secs: 5,
