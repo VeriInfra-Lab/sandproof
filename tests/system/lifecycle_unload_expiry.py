@@ -15,7 +15,7 @@ import time
 
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
 from lifecycle_unload_runtime import (checked_source_records, material_source_charge,
-    open_original_candidate_pidfd, original_process, pidfd_exited, remaining)
+    open_original_candidate_pidfd, original_json, original_process, pidfd_exited, remaining)
 from lifecycle_unload_retirement import read_records
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
@@ -155,6 +155,7 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
         # The inherited reader still checks the full original Resume/Destroy
         # intents, local mapping, native fence, original pin and positive charge.
         recovery = self._continue_terminal_recovery(deadline,observe_peer=observe_peer)
+        recovery['automatic_terminal_reached_host'] = recovery.pop('public_destroy_reached_host')
         return dict(expiry=expiry,recovery=recovery)
 
 
@@ -217,6 +218,17 @@ class RunningExpiryProbe:
                 or stops[0][0]['command']['logical']['command']['StopVm']!=expected
                 or stops[0][0]['identity']['epoch']!=state['epoch']):
             raise ValueError('exit87 was not the exact original unacknowledged Stop')
+        identity = stops[0][0]['identity']
+        original = self.before['restore']['activation']['identity']
+        if (identity['sandbox']!=native_id or identity['operation']!=opid
+                or identity['generation']!=vm['generation']
+                or identity['owner']!=original['owner']
+                or identity['protocol_version']!=original['protocol_version']
+                or identity['resource']!={'kind':'vm','id':self.running['source']['resource_id']}):
+            raise ValueError('Stop has a foreign complete work identity')
+        fence = original_json(Path(pool['node_state_dir'])/'fences'/(native_id+'.json'),16384)
+        if fence!={'epoch':state['epoch'],'terminal':True}:
+            raise ValueError('actual terminal fence not present before the held Stop')
         # Reuse the full original manifest/file verifier while the VMM is alive.
         physical = self.runtime._materials(source['capture']['full'],source['capture'])
         if any(physical[k]!=self.running['running_backing'][k] for k in ('materials','manifest','completion','material_paths')):
