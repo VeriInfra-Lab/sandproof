@@ -1,0 +1,169 @@
+import SharedParentCarriers
+import ParentCompleteDraft
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+@[reducible] def sourceAndOptionsCalls (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    (parent : SandproofUnloadFirstObservation.ParentCalls) →
+    (encode : SandproofCreateOptionsEncoded.Operations) →
+    (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options)) →
+    ({E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E →
+      SandproofOriginalSourceRowsRust.host_contract.HostEvidence E) →
+    ({E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E →
+      SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E) →
+    SandproofUnloadFirstObservation.ParentCalls :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  fun parent encode read host codec =>
+    bindSource base options (bindOptions encoding base options encode (bindJsonError base options parent) read) host codec
+
+section
+variable [SandproofUnloadFirstObservation.Representations] [SandproofUnloadFirstObservation.ParentCalls]
+
+def FirstWorkPost {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+    {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction} {ns : Str}
+    {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input) : Prop :=
+  ∀ (encoded : alloc.vec.Vec U8) (binding : Binding) (action : Action),
+    SandproofUnloadFirstObservation.ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded) →
+    SandproofUnloadFirstObservation.ParentCalls.digestCompleteBytes encoded.deref = .ok binding →
+    reads.actionIdentities.val[1]? = some action →
+    SandproofUnloadFirstObservation.ParentCalls.cloneResource action.resource = .ok action.resource →
+    SandproofUnloadFirstObservation.ParentCalls.cloneLimits input.limits = .ok input.limits →
+    SandproofUnloadFirstObservation.controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+      .ok (.Ok (workFor reads.expected input.limits binding action))
+
+theorem first_work_post {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+    {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction} {ns : Str}
+    {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input) : FirstWorkPost reads :=
+  actual_first_full_work reads
+end
+
+theorem actual_first_work_keeps_complete_source
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : SandproofUnloadOptionsRead.Operations)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E →
+        SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (codec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E →
+        SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E),
+    letI : SandproofCreateOptionsEncoded.Operations := encode
+    letI : SandproofUnloadOptionsRead.Operations := SourceOptionsEncodedLink.install (optionsBase options) read
+    letI : SandproofUnloadFirstObservation.ParentCalls := sourceAndOptionsCalls encoding base options parent encode read hostView codec
+    ∀ {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+      {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+      {tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction} {ns : Str}
+      {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstRead host serde tx ns intent now input),
+      FirstWorkPost reads ∧
+      SandproofOriginalSourceRowsRust.SourceObservedRows.CompleteSourceContract
+        (hostView host) (codec serde) tx ns input.world reads.localValue.sandbox () (sourceFromParent reads.source) := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+  intro parent encode read hostView codec
+  letI : SandproofUnloadFirstObservation.ParentCalls := sourceAndOptionsCalls encoding base options parent encode read hostView codec
+  intro E host serde tx ns intent now input reads
+  exact ⟨first_work_post reads,
+    @source_uses_same_transaction_and_world (encodingRepresentations encoding) base options
+      (bindOptions encoding base options encode parent read) hostView codec E host serde tx ns input.world
+      reads.localValue.sandbox reads.source reads.sourceRead⟩
+
+open SourceOptionsEncodedActual in
+/-- Both original reads are installed in the same actual parent dictionary.
+The source witness uses the original transaction and complete World. The
+option digest uses exactly the entire BLOB read through that transaction.
+The remaining FirstRead/JSON/Host conditions retain their existing providers. -/
+theorem actual_first_work_keeps_original_option_blob
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : SandproofUnloadOptionsRead.Operations)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E →
+        SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (codec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E →
+        SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E),
+    letI : SandproofCreateOptionsEncoded.Operations := encode
+    letI : SandproofUnloadOptionsRead.Operations := SourceOptionsEncodedLink.install (optionsBase options) read
+    letI : SandproofUnloadFirstObservation.ParentCalls := sourceAndOptionsCalls encoding base options parent encode read hostView codec
+    ∀ {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+      {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+      {tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction} {ns : Str}
+      {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstRead host serde tx ns intent now input)
+      (value : SandproofCreateOptionsEncoded.host_contract.CreateOptions)
+      (stored rendered : alloc.vec.Vec U8)
+      (identified : SourceOptionsRead.Identified ns reads.localValue.sandbox),
+      SourceOptionsRead.storedOptions tx.conn identified.text = .ok (.Ok stored) →
+      SandproofUnloadOptionsRead.serde_json.de.from_slice
+        SandproofUnloadOptionsRead.host_contract.CreateOptions.Insts.Serde_coreDeDeserialize
+        stored.deref = .ok (.Ok value) →
+      templateValid value = .ok true → representable value.env_vars → representable value.metadata →
+      value.env_vars.all (allowedField true) = true → value.metadata.all (allowedField false) = true →
+      encode.render value = .ok (.Ok rendered) → rendered.val.length ≤ 65536 →
+      FirstWorkPost reads ∧
+      SandproofOriginalSourceRowsRust.SourceObservedRows.CompleteSourceContract
+        (hostView host) (codec serde) tx ns input.world reads.localValue.sandbox () (sourceFromParent reads.source) ∧
+      reads.options = value ∧ rendered = stored ∧ reads.optionBytes = stored ∧
+      SandproofUnloadFirstObservation.ParentCalls.digestCompleteBytes stored.deref = .ok reads.optionsDigest := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+  intro parent encode read hostView codec
+  letI : SandproofCreateOptionsEncoded.Operations := encode
+  letI : SandproofUnloadOptionsRead.Operations := SourceOptionsEncodedLink.install (optionsBase options) read
+  letI : SandproofUnloadFirstObservation.ParentCalls := sourceAndOptionsCalls encoding base options parent encode read hostView codec
+  intro E host serde tx ns intent now input reads value stored rendered identified row decode
+    template env metadata envOK metadataOK serialized within
+  have source := source_uses_same_transaction_and_world base options
+    (bindOptions encoding base options encode parent read) hostView codec host serde tx ns input.world
+    reads.localValue.sandbox reads.source reads.sourceRead
+  have connection : reads.connection = tx.conn := by
+    exact (Result.ok_injective reads.sameTransaction).symm
+  have compared := parent_options_compare_complete_original_blob encoding base options encode parent read
+    tx ns reads.localValue.sandbox value stored rendered template env metadata envOK metadataOK
+    serialized within identified row decode
+  have readAt := reads.optionsRead
+  rw [connection] at readAt
+  have sameOutput := readAt.symm.trans compared
+  have sameBytes : rendered = stored := by
+    by_contra different
+    simp [different] at sameOutput
+  have sameOptions : reads.options = value := by
+    simpa [sameBytes] using sameOutput
+  have renderedOptions := reads.encodeOptions
+  rw [sameOptions] at renderedOptions
+  have sameRendered : reads.optionBytes = rendered := by
+    simpa using renderedOptions.symm.trans serialized
+  have bytes : reads.optionBytes = stored := sameRendered.trans sameBytes
+  have digest := reads.digestOptions
+  rw [bytes] at digest
+  exact ⟨first_work_post reads,
+    source, sameOptions, sameBytes, bytes, digest⟩
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.first_work_post
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.actual_first_work_keeps_complete_source
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.actual_first_work_keeps_original_option_blob

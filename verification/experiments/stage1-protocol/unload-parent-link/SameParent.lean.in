@@ -1,0 +1,124 @@
+import SharedInboxCarriers
+import LiveParentLink
+import RefoundWorldParent
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+theorem inbox_and_source_options_use_one_parent
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (sourceHost : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (sourceCodec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E),
+      bindInboxReads (sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options parent encode read sourceHost sourceCodec) (sharedInboxCarriers encoding base options startup) =
+      sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options (bindInboxReads parent (sharedInboxCarriers encoding base options startup)) encode read sourceHost sourceCodec := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intros
+  rfl
+
+theorem startup_and_source_options_use_one_parent
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ startupOps : SandproofUnloadStartupJoint.Operations,
+    letI : SandproofUnloadStartupJoint.Operations := startupOps
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (sourceHost : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (sourceCodec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+      (serdeView : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E),
+      bindStartupCall (sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options parent encode read sourceHost sourceCodec) (sharedStartupCarriers encoding (inboxParentBase base) options startup) (sharedStartupErrors encoding (inboxParentBase base) options startup) hostView serdeView =
+      sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options (bindStartupCall parent (sharedStartupCarriers encoding (inboxParentBase base) options startup) (sharedStartupErrors encoding (inboxParentBase base) options startup) hostView serdeView) encode read sourceHost sourceCodec := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intro startupOps
+  letI : SandproofUnloadStartupJoint.Operations := startupOps
+  intros
+  rfl
+
+theorem base_and_source_options_use_one_parent
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (sourceHost : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (sourceCodec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E) (ready : Type) (ops : BaseOps ready) (view : ReadyView ready),
+      bindActualBase (sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options parent encode read sourceHost sourceCodec) ops view =
+      sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options (bindActualBase parent ops view) encode read sourceHost sourceCodec := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intros
+  rfl
+
+private def propositionOf {P : Prop} (_ : P) : Prop := P
+
+/-- Specialize the original #772 result to concrete shared input carriers.
+All its original read/host/codec premises remain in the statement. The same
+parent also has the actual #770 source reader and #774 option reader installed. -/
+theorem refound_parent_accepts_actual_source_and_options
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) (R T N U B S : Type)
+    (nativeBase : SandproofUnloadNativeSnapshot.Representations)
+    (ledgerBase : SandproofUnloadOriginalLedger.Representations) (ready : Type) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (sourceHost : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (sourceCodec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E)
+      (startupOps : SandproofUnloadStartupJoint.Operations)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+      (serdeView : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E),
+      propositionOf (@actual_first_work_uses_refound_world_record_and_sealed_plan
+        (parentRepresentations (startupParentBase (inboxParentBase base) startup) options)
+        (startupRepresentations startup) R T N U B S nativeBase ledgerBase ready
+        (sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options (bindLive (startupParentBase (inboxParentBase base) startup) options parent) encode read sourceHost sourceCodec)
+        startupOps (sharedStartupCarriers encoding (inboxParentBase base) options startup)
+        (sharedStartupErrors encoding (inboxParentBase base) options startup) hostView serdeView) := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  intro parent encode read sourceHost sourceCodec startupOps hostView serdeView
+  exact @actual_first_work_uses_refound_world_record_and_sealed_plan
+    (parentRepresentations (startupParentBase (inboxParentBase base) startup) options)
+    (startupRepresentations startup) R T N U B S nativeBase ledgerBase ready
+    (sourceAndOptionsCalls encoding (startupParentBase (inboxParentBase base) startup) options (bindLive (startupParentBase (inboxParentBase base) startup) options parent) encode read sourceHost sourceCodec)
+    startupOps (sharedStartupCarriers encoding (inboxParentBase base) options startup)
+    (sharedStartupErrors encoding (inboxParentBase base) options startup) hostView serdeView
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.inbox_and_source_options_use_one_parent
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.startup_and_source_options_use_one_parent
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.base_and_source_options_use_one_parent
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.refound_parent_accepts_actual_source_and_options

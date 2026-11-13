@@ -1,0 +1,199 @@
+import SandproofSourceLive.Types
+import SourceObservedRows
+import ParentSuccess
+import ActualStartupParentRead
+import SourceOptionsEncodedLink
+
+open Aeneas Aeneas.Std
+
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+open SandproofOriginalSourceRowsRust
+
+/-- Select actual generated carriers, including the original transaction and
+entire World. No equality of two independently chosen World values is assumed. -/
+@[reducible] def optionsBase (base : SandproofUnloadOptionsRead.Representations) :
+    SandproofUnloadOptionsRead.Representations :=
+  { base with
+    core_io_error_Error := core.io.error.Error
+    rusqlite_error_Error := rusqlite.error.Error
+    rusqlite_Connection := rusqlite.Connection
+    sandbox_controller_core_controller_ControllerReject := sandbox_controller_core.controller.ControllerReject
+    sandbox_controller_core_ids_SandboxId := sandbox_controller_core.ids.SandboxId
+    sandproof_protocol_ContractError := sandproof_protocol.ContractError
+    sandproof_protocol_SandboxId := sandproof_protocol.SandboxId
+    serde_json_error_Error := serde_json.error.Error
+    CrashPoint := CrashPoint }
+
+@[reducible] def optionsRepresentations [SandproofCreateOptionsEncoded.Representations]
+    (base : SandproofUnloadOptionsRead.Representations) : SandproofUnloadOptionsRead.Representations :=
+  SourceOptionsEncodedLink.readRepresentations (optionsBase base)
+
+@[reducible] def parentRepresentations [SandproofCreateOptionsEncoded.Representations]
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    SandproofUnloadFirstObservation.Representations :=
+  { base with
+    core_io_error_Error := core.io.error.Error
+    rusqlite_error_Error := rusqlite.error.Error
+    rusqlite_Connection := rusqlite.Connection
+    rusqlite_transaction_Transaction := rusqlite.transaction.Transaction
+    sandbox_controller_core_capture_continuation_OriginalContinueIdentity := sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+    sandbox_controller_core_controller_ControllerReject := sandbox_controller_core.controller.ControllerReject
+    sandbox_controller_core_ids_SandboxId := sandbox_controller_core.ids.SandboxId
+    sandbox_controller_core_ids_OperationId := sandbox_controller_core.ids.OperationId
+    sandbox_controller_core_ids_TenantId := sandbox_controller_core.ids.TenantId
+    sandbox_controller_core_ids_VmId := sandbox_controller_core.ids.VmId
+    sandbox_controller_core_model_Phase := sandbox_controller_core.model.Phase
+    sandbox_controller_core_model_RestoreSource := sandbox_controller_core.model.RestoreSource
+    sandbox_controller_core_model_FailureKind := sandbox_controller_core.model.FailureKind
+    sandbox_controller_core_model_Operation := sandbox_controller_core.model.Operation
+    sandbox_controller_core_model_Command := sandbox_controller_core.model.Command
+    sandbox_controller_core_model_World := sandbox_controller_core.model.World
+    sandproof_protocol_ContractError := SandproofUnloadStartupJoint.sandproof_protocol.ContractError
+    sandproof_protocol_TenantId := sandproof_protocol.TenantId
+    sandproof_protocol_SandboxId := sandproof_protocol.SandboxId
+    sandproof_protocol_OperationId := sandproof_protocol.OperationId
+    sandproof_protocol_LogicalActionId := sandproof_protocol.LogicalActionId
+    sandproof_protocol_lifecycle_digest_ContentDigest := sandproof_protocol.lifecycle.digest.ContentDigest
+    serde_json_error_Error := serde_json.error.Error
+    host_contract_AdmissionError := @SandproofUnloadOptionsRead.host_contract.AdmissionError (optionsRepresentations options)
+    controller_admission_Lifetime := SandproofSourceLiveRust.controller.admission.Lifetime
+    host_contract_CreateOptions := SandproofCreateOptionsEncoded.host_contract.CreateOptions
+    CrashPoint := CrashPoint }
+
+section
+variable [SandproofCreateOptionsEncoded.Representations]
+variable (base : SandproofUnloadFirstObservation.Representations)
+variable (options : SandproofUnloadOptionsRead.Representations)
+
+abbrev ParentCallsAt := @SandproofUnloadFirstObservation.ParentCalls (parentRepresentations base options)
+abbrev ParentErrorAt := @SandproofUnloadFirstObservation.JournalError (parentRepresentations base options)
+abbrev ParentHostAt (E : Type) := @SandproofUnloadFirstObservation.host_contract.HostEvidence (parentRepresentations base options) E
+
+def sourceToParent (source : capture.SourceProcessIdentity) :
+    SandproofUnloadFirstObservation.capture.SourceProcessIdentity :=
+  { pid := source.pid, start_time_ticks := source.start_time_ticks, boot_id := source.boot_id }
+
+def sourceFromParent (source : SandproofUnloadFirstObservation.capture.SourceProcessIdentity) :
+    capture.SourceProcessIdentity :=
+  { pid := source.pid, start_time_ticks := source.start_time_ticks, boot_id := source.boot_id }
+
+omit [SandproofCreateOptionsEncoded.Representations] in
+@[simp] theorem source_roundtrip (source : capture.SourceProcessIdentity) :
+    sourceFromParent (sourceToParent source) = source := by
+  cases source
+  rfl
+
+def sourceContractToParent : sandproof_protocol.ContractError → SandproofUnloadStartupJoint.sandproof_protocol.ContractError
+  | .InvalidIdentifier => .InvalidIdentifier
+  | .UnsupportedVersion version => .UnsupportedVersion version
+  | .MismatchedIdentity => .MismatchedIdentity
+  | .MismatchedObservation => .MismatchedObservation
+
+def sourceErrorToParent : JournalError → ParentErrorAt base options :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  fun
+  | .Io error => .Io error
+  | .Sqlite error => .Sqlite error
+  | .CommitUncertain error => .CommitUncertain error
+  | .Json error => .Json error
+  | .Contract error => .Contract (sourceContractToParent error)
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash error => .InjectedCrash error
+  | .ControllerRejected error => .ControllerRejected error
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+/-- The full Host and concrete Codec are supplied for the same E. Their
+external resource and decoding semantics retain the registered conditions. -/
+@[reducible] def bindSource (parent : ParentCallsAt base options)
+    (host : {E : Type} → ParentHostAt base options E →
+      host_contract.HostEvidence E)
+    (codec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E →
+      controller.capture.OriginalRowCodec Unit E) : ParentCallsAt base options :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  { parent with
+    transactionConnection := fun tx => .ok tx.conn
+    readOriginalSource := fun h d tx ns world sandbox => do
+      let reply ← controller.capture.original_source_using (host h) (codec d) tx ns world sandbox ()
+      match reply with
+      | .Ok source => .ok (.Ok (sourceToParent source))
+      | .Err error => .ok (.Err (sourceErrorToParent base options error)) }
+
+theorem source_uses_same_transaction_and_world
+    (parent : ParentCallsAt base options)
+    (host : {E : Type} → ParentHostAt base options E → host_contract.HostEvidence E)
+    (codec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → controller.capture.OriginalRowCodec Unit E)
+    {E : Type} (h : ParentHostAt base options E)
+    (d : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : sandbox_controller_core.model.World)
+    (sandbox : sandbox_controller_core.ids.SandboxId)
+    (source : SandproofUnloadFirstObservation.capture.SourceProcessIdentity)
+    (returned : @SandproofUnloadFirstObservation.ParentCalls.readOriginalSource
+      (parentRepresentations base options) (bindSource base options parent host codec) E h d tx ns world sandbox =
+      .ok (.Ok source)) :
+    SourceObservedRows.CompleteSourceContract (host h) (codec d) tx ns world sandbox ()
+      (sourceFromParent source) := by
+  change (do
+    let reply ← controller.capture.original_source_using (host h) (codec d) tx ns world sandbox ()
+    match reply with
+    | .Ok value => Result.ok (core.result.Result.Ok (sourceToParent value))
+    | .Err error => Result.ok (core.result.Result.Err (sourceErrorToParent base options error))) = _ at returned
+  obtain ⟨reply, result, mapped⟩ := (SourceUsingSuccess.bind_normal_iff _ _ _).mp returned
+  cases reply with
+  | Err error => simp at mapped
+  | Ok value =>
+    have same : sourceToParent value = source := by simpa using mapped
+    subst source
+    rw [source_roundtrip]
+    exact SourceObservedRows.actual_source_success_complete_contract (host h) (codec d)
+      tx ns world sandbox () value result
+
+theorem transaction_connection_is_original
+    (parent : ParentCallsAt base options)
+    (host : {E : Type} → ParentHostAt base options E → host_contract.HostEvidence E)
+    (codec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → controller.capture.OriginalRowCodec Unit E)
+    (tx : rusqlite.transaction.Transaction) :
+    @SandproofUnloadFirstObservation.ParentCalls.transactionConnection
+      (parentRepresentations base options) (bindSource base options parent host codec) tx = .ok tx.conn := rfl
+
+@[reducible] def bindJsonError (parent : ParentCallsAt base options) : ParentCallsAt base options :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  { parent with
+    journalFromJsonError := fun error => do
+      let mapped ← SandproofOriginalSourceRowsRust.JournalErrorFromJson.from error
+      .ok (sourceErrorToParent base options mapped) }
+
+theorem actual_json_error_preserves_payload (parent : ParentCallsAt base options)
+    (error : serde_json.error.Error) :
+    @SandproofUnloadFirstObservation.ParentCalls.journalFromJsonError (parentRepresentations base options)
+      (bindJsonError base options parent) error =
+      .ok (@SandproofUnloadFirstObservation.JournalError.Json (parentRepresentations base options) error) := by
+  change (do
+    let mapped ← SandproofOriginalSourceRowsRust.JournalErrorFromJson.from error
+    Result.ok (sourceErrorToParent base options mapped)) = _
+  simp only [SandproofOriginalSourceRowsRust.JournalErrorFromJson.from,
+    bind_tc_ok, sourceErrorToParent]
+
+end
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.source_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.source_uses_same_transaction_and_world
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.transaction_connection_is_original
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.actual_json_error_preserves_payload

@@ -1,0 +1,87 @@
+{
+  "InboxParentCarriers.lean": {
+    "raw_sha256": "2182e8e8398a96b2cf95126d702ddf0374ee6de905cfdd9433ee1a3b1ecafaf1",
+    "view_sha256": "29d7352d59dc123f3a9e3e7ac46899dea577f60fe71fac4f0081ac86a25ca4e0",
+    "edits": [
+      {
+        "offset": 4384,
+        "before": "  contract : SandproofUnloadFirstObservation.sandproof_protocol.ContractError =\n    SandproofStage1RequestRust.sandproof_protocol.ContractError\n  crash : SandproofUnloadFirstObservation.CrashPoint =\n    SandproofStage1RequestRust.sandproof_controller_service.CrashPoint\n  reject : SandproofUnloadFirstObservation.sandbox_controller_core.controller.ControllerReject =\n    SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject\n",
+        "after": "  contract : SandproofStage1RequestRust.sandproof_protocol.ContractError \u2192\n    SandproofUnloadFirstObservation.sandproof_protocol.ContractError\n  crash : SandproofStage1RequestRust.sandproof_controller_service.CrashPoint \u2192\n    SandproofUnloadFirstObservation.CrashPoint\n  reject : SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject \u2192\n    SandproofUnloadFirstObservation.sandbox_controller_core.controller.ControllerReject\n"
+      },
+      {
+        "offset": 17677,
+        "before": "  | .Contract error => .Contract (cast c.contract.symm error)\n",
+        "after": "  | .Contract error => .Contract (c.contract error)\n"
+      },
+      {
+        "offset": 18209,
+        "before": "  | .InjectedCrash error => .InjectedCrash (cast c.crash.symm error)\n  | .ControllerRejected error => .ControllerRejected (cast c.reject.symm error)\n",
+        "after": "  | .InjectedCrash error => .InjectedCrash (c.crash error)\n  | .ControllerRejected error => .ControllerRejected (c.reject error)\n"
+      }
+    ]
+  },
+  "SandproofOriginalSourceRows/FunsExternal.lean": {
+    "raw_sha256": "394e78eeb22cdb3c2de93b2177d8440a633ea66698d1a6771cedc9664ad8ef98",
+    "view_sha256": "fc212ce04fc7b1b5a2581bee5ac6e333978d0db5c28374e1c9a63ecb81fb12f5",
+    "edits": [
+      {
+        "offset": 0,
+        "before": "",
+        "after": "import SourceDiscriminants\n"
+      }
+    ]
+  },
+  "SandproofSourceLive/FunsExternal.lean": {
+    "raw_sha256": "5708802b97e620e8c8b2050c77571a5d64776aa677b64728b96ce429eb02a570",
+    "view_sha256": "ae189fdbe7bc9e92d127264949e18879647f96f02afef2f64ca596321ef369df",
+    "edits": [
+      {
+        "offset": 0,
+        "before": "import SandproofFoundations.FunsExternal\n",
+        "after": "import SandproofStage1Request.SharedValueBindings\nimport LiveDiscriminants\n"
+      }
+    ]
+  },
+  "SandproofSourceLive/Types.lean": {
+    "edits": [
+      {
+        "offset": 3627,
+        "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Phase\"]\n",
+        "after": "@[rust_type \"sandbox_controller_core::model::Phase\"]\n"
+      },
+      {
+        "offset": 5465,
+        "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Protocol\"]\n",
+        "after": "@[rust_type \"sandbox_controller_core::model::Protocol\"]\n"
+      },
+      {
+        "offset": 6669,
+        "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::NetworkPolicy\"]\n",
+        "after": "@[rust_type\n  \"sandbox_controller_core::model::NetworkPolicy\"]\n"
+      },
+      {
+        "offset": 7381,
+        "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::FailureKind\"]\n",
+        "after": "@[rust_type \"sandbox_controller_core::model::FailureKind\"]\n"
+      },
+      {
+        "offset": 8090,
+        "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::OperationKind\"]\n",
+        "after": "@[rust_type\n  \"sandbox_controller_core::model::OperationKind\"]\n"
+      },
+      {
+        "offset": 8662,
+        "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::OperationStatus\"]\n",
+        "after": "@[rust_type\n  \"sandbox_controller_core::model::OperationStatus\"]\n"
+      },
+      {
+        "offset": 9896,
+        "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Command\"]\n",
+        "after": "@[rust_type \"sandbox_controller_core::model::Command\"]\n"
+      }
+    ],
+    "raw_sha256": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
+    "view_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145",
+    "isolated_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145"
+  }
+}
