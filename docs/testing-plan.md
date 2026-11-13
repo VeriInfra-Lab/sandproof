@@ -53,6 +53,40 @@
 
 E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确认，才能排除“重载旧快照也能通过”的伪测试。E10 包含 load 返回后、VMM 仍运行的时段；E1 包含旧 slot 被另一个会话实际复用。观测 oracle 接受临时两库差异，检查最终事实、责任和禁止状态，不要求每瞬间强一致。RAM/文件见证使用明确屏障或描述允许捕获点；不能把应用的两个非原子写入强行要求为永远相等，从而误报协议错误。
 
+### 从性质定位测试与缺口
+
+下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
+精确提交、入口/选择、实际命中的同步点、用户可观察结果、物理/持久证据、收尾结果，以及
+尚未检查的分支。状态使用「当前提交实跑」「历史证据已核对可复用」「仅组件通过」
+「入口存在但未执行」「失败/阻断」；一项同时包含不同状态时分别列出，不用一个绿色覆盖整行。
+历史报告仍保留原提交；源码相同只能支持明确输入范围的复用，不能把旧普通检查、单题成绩
+或一个故障代表写成当前完整生命周期/故障矩阵通过。LC-G 编号引用[现有性质定义](formal-verification-design.md)，不另造测试版业务规则。
+
+| 场景 / 主要性质 | 已有入口或组件定位 | 需要单独核对的覆盖范围 |
+| -- | -- | -- |
+| E1 / G1、G2、G3、G5 | [生命周期入口](../tests/system/lifecycle_unload_scenario.py) `normal`；[物理与账本观察](../tests/system/lifecycle_unload_runtime.py) | RAM-only 见证、同一进程/文件继续；另一会话实际复用旧位置；每次恢复的首条命令可用，不能只检查 Running。 |
+| E2 / G2、G4、G5 | 生命周期入口的同键屏障并发、重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 已有同键并发及异文拒绝代表；过期窗口、不同操作的并发重发和回包丢失组合仍须分别记录，同时核对实际实例和原操作结果。 |
+| E3 / G1、G4 | `capture-freeze-receipt`、`capture-measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
+| E4 / G1、G4 | `capture-seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
+| E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
+| E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
+| E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
+| E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
+| E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
+| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
+| E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
+| E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
+| E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |
+| E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
+| E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
+
+先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
+→ resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
+更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、
+SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之后才做测试环境回收，两个结果分别保存。
+本轮未做的故障窗口保持缺口，不因正常链通过关闭 E2–E15；有限时间内收尾也不是 G6 的全称证明。
+
 独立生命周期实机入口 `tests/system/lifecycle_unload_scenario.py` 使用两个保留会话、两个运行位置：第一会话卸载后让第二会话占用原位置，再恢复第一会话，核对另一会话未受影响，随后销毁第二会话。`normal` 在同一第一会话形成 A/B/C 三个保存点并各恢复，继续核对旧代回收；其它明确故障选择只按其原有限周期和到达点验收。会话保留数直接传给中心账本和宿主 inbox，不从任务数推算。该入口可使用已有基础模板；两题评测的 10 GiB 模板不是此场景的前提。按实际模板大小和 2 GiB VM 内存计算完整包络，继续检查原有限激活上限、实际可用字节/inode、同文件系统以及材料项目硬配额。该场景不代表两题评测或 E1–E16 全部通过；实际部署和结果绑定精确提交另行记录。实机服务使用优化构建（`opt-level=2`），显式保留调试断言和溢出检查，并记录构建输入与实际二进制摘要；基础单元测试仍走原入口。未优化程序在受限 CPU 下的超时不能直接当作产品性能结论。
 
 正常链复现与收尾按下列顺序记录，不能用测试环境卸载工作卷来代替产品回收：
