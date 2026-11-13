@@ -66,15 +66,15 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | -- | -- | -- |
 | E1 / G1、G2、G3、G5 | [生命周期入口](../tests/system/lifecycle_unload_scenario.py) `normal`；[物理与账本观察](../tests/system/lifecycle_unload_runtime.py) | RAM-only 见证、同一进程/文件继续；另一会话实际复用旧位置；每次恢复的首条命令可用，不能只检查 Running。 |
 | E2 / G2、G4、G5 | 生命周期入口的请求重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 串行成功重放不覆盖同键并发、同键异文、过期、回包丢失的全部组合；同时核对实际实例和原操作结果。 |
-| E3 / G1、G4 | `freeze-receipt`、`measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
-| E4 / G1、G4 | `seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
-| E5 / G3、G4 | `stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
+| E3 / G1、G4 | `capture-freeze-receipt`、`capture-measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
+| E4 / G1、G4 | `capture-seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
+| E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
 | E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
-| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
+| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |
