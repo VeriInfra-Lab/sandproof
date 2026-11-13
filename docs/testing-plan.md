@@ -140,6 +140,26 @@ Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成
 核对最终资源结算，不能只凭两次 HTTP 202 宣称不会复活。这只覆盖原保留窗口内的重放，
 不替代过期窗口、迟到物理删除或 TTL 竞争。
 
+`normal --expired-window-replay` 在完整原三轮正常链及产品结算之后，另检查 E2 的窗口边界。
+[窗口观察器](../tests/system/lifecycle_window_replay.py)只轮询原服务的当前窗口，等待产品按
+原保留期、确认和关窗协议自然退休，不改时钟、数据库、保留期或原场景绝对期限。
+退休后原 Create 原文和合法改参须明确冲突，旧 Unload/Resume/Destroy 及原/另一 owner
+查询须按实际接口返回 NotFound；旧数据令牌仍拒绝。原物理/账本结算须再次确认无新责任。
+同配置重开两个 manager 后重复这些检查，原窗口不得倒退。
+
+为排除“所有请求都拒绝”的伪通过，再用同一 owner、同一原序号和完整原参数，在原接口
+返回的新窗口创建一次新的会话，确认实际 Running、首条 SDK 工作和原 VMM 身份。新键原文
+重放须保持同一接受及同一 VMM，旧请求拒绝不能影响这个后继。最后通过原 Destroy、原
+物理观察和产品结算确认后继收尾，之后才允许回收测试部署。原正常链的三轮、两 owner、
+位置复用和材料检查均保留；附加创建/销毁的计时另列，不改写原三轮或第一次结算的时长。
+本扩展没有故障写重试，不以 Stale 推断旧请求历史上没有执行。
+
+[HTTP/Redis 组件](../sandbox-center-service/tests/business_authority/lifecycle_window_replay.rs)
+另覆盖确认/保留期限/准确关窗回执三个独立门、同一 owner 尚被保留的旧窗口请求、不同
+owner 的独立键域，以及原 Redis 权威重新打开后的拒绝前沿。其宿主终局证据是受控输入，
+不算真实 VM 退出或完整 E2 实机通过；观察器自测同样不代替实际运行。每个层次的执行提交、
+结果和未运行项分别在 issue/PR 记录。不同操作并发、丢回包及任意交错继续保留缺口。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full

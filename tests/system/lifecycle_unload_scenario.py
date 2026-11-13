@@ -728,6 +728,9 @@ def exercise(args):
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
     retirement_observation = args.scenario == 'normal' or retirement_restart
+    expired_window_replay = getattr(args, 'expired_window_replay', False)
+    if expired_window_replay and args.scenario != 'normal':
+        raise ValueError('expired-window replay extends only the original complete normal scenario')
     if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
@@ -1104,6 +1107,10 @@ def exercise(args):
         report['settlement_timing']=dict(check_seconds=settlement_completed-settlement_started,
             final_destroy_send_to_settled_seconds=settlement_completed-client.timings[-1]['sent_monotonic'],
             completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
+        if expired_window_replay:
+            from lifecycle_window_replay import exercise as exercise_expired_window
+            report['phase'] = 'expired-window-replay'
+            report['expired_window_replay'] = exercise_expired_window(client, runtime)
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
             'E2':'same-key barrier duplicate and altered replay observed; expired window not exercised',
@@ -1112,6 +1119,11 @@ def exercise(args):
             'other_cases':'not claimed by this normal scenario',
         }
         if args.scenario == 'normal':
+            if expired_window_replay:
+                report['acceptance_cases']['E2'] = (
+                    'original normal concurrency plus natural retired-window exact refusals, '
+                    'manager reopen, same owner/sequence fresh-window acceptance, one original '
+                    'successor VMM across replay/refusals and final product settlement')
             report['acceptance_cases']['E12'] = (
                 'two owners, two sessions and three complete restore cycles observed')
             report['acceptance_cases']['C6'] = (
@@ -1254,6 +1266,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
+    parser.add_argument('--expired-window-replay', action='store_true',
+        help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
