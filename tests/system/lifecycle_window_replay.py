@@ -5,8 +5,10 @@ The existing runtime supplies all physical/accounting evidence and cleanup.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
-_runpy.run_path(str(_GuardPath(__file__).with_name('_assertions_required.py')))[
-    'require_assertions']()
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
 
 import copy
 import time
