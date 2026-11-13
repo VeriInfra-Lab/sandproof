@@ -91,6 +91,12 @@ fn unknown_prepare_then_terminal(
         claim_terminal_fence_before_observation(&mut journal, sandbox, &prepare, &held);
     }
     finish_terminal(&mut journal, sandbox, &prepare, expiry);
+    let world = journal.world().unwrap();
+    assert_eq!(
+        core::maintenance::retirement::validate_terminal_cleanup(&world, sandbox),
+        Ok(()),
+        "completed terminal workflow must admit original runtime release: expiry={expiry}"
+    );
 }
 
 fn claim_terminal_fence_before_observation(
