@@ -550,6 +550,52 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
 }
 
 #[test]
+fn real_no_replace_publish_refusal_preserves_complete_stage_and_exact_target() {
+    let fixture = Fixture::new();
+    let key = [29; 32];
+    let stage = fixture.full_stage(key);
+    let measured = stage.measurements();
+    // Create only AFTER begin/copy: this reaches the original publication
+    // syscall rather than begin's existing-name preflight rejection.
+    let target = fixture.store.join(key_name("capture-", &key));
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, Permissions::from_mode(0o700)).unwrap();
+    let before = target.metadata().unwrap();
+    let stage_path = fixture.store.join(key_name("staging-", &key));
+    let original = stage_path.metadata().unwrap();
+    let result = stage.publish(b"original opaque storage manifest", &measured);
+    assert!(matches!(result, Err(RuntimeError::Io(ref error))
+        if error.raw_os_error() == Some(rustix::io::Errno::EXIST.raw_os_error())));
+    let after = target.metadata().unwrap();
+    assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+    assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+    assert_eq!(after.mode() & 0o777, 0o700);
+    let retained = stage_path.metadata().unwrap();
+    assert_eq!(
+        (retained.dev(), retained.ino()),
+        (original.dev(), original.ino())
+    );
+    assert_eq!(retained.mode() & 0o777, 0o500);
+    assert_eq!(
+        fs::read(stage_path.join("manifest.json")).unwrap(),
+        b"original opaque storage manifest"
+    );
+    for entry in &measured {
+        let path = stage_path.join(entry.artifact.relative_path());
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(entry.sha256, <[u8; 32]>::from(Sha256::digest(&bytes)));
+        assert_eq!(entry.length, bytes.len() as u64);
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o400);
+    }
+    assert!(!fixture.store.join(key_name("completed-", &key)).exists());
+    assert!(matches!(
+        fixture.open().begin(key),
+        Err(RuntimeError::AlreadyClaimed)
+    ));
+    // Storage facts only: this test grants no restore eligibility or VM permission.
+}
+
+#[test]
 fn real_parent_sync_error_after_publish_keeps_original_bundle_reopenable() {
     let fixture = Fixture::new();
     let key = [28; 32];

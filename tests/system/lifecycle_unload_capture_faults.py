@@ -751,6 +751,9 @@ class CaptureHandoffProbe:
                     cleanup_success_pre_sql_exit86=True, cleanup_sql_ack_pending_at_cut=True,
                     original_recovery_resumed=True, public_completion=False, capacity_released=False)
 
+    def _capture_gate_command(self):
+        return 'fail'
+
     def finish(self, deadline):
         if self.stage == 'restore-prepare-destroy':
             raise ValueError('terminal handoff requires recover_after_destroy with the exact Destroy acceptance')
@@ -761,7 +764,7 @@ class CaptureHandoffProbe:
             self._gate_unchanged()
             command = dict(schema_version=self.config['schema_version'], run_identity=self.config['run_identity'],
                 observation_sha256=self.question_digest,
-                full_work_binding=self.question['full_work_binding'], command='fail')
+                full_work_binding=self.question['full_work_binding'], command=self._capture_gate_command())
             gate_publish(self.fd, 'command.json', command)
             self._save_file('command.json')
             self.command_sent = True

@@ -721,6 +721,7 @@ def exercise(args):
         'capture-measurement-partial': 'measurement-partial',
         'capture-sync-before': 'sync-before',
         'capture-sync-after': 'sync-after',
+        'capture-publish-conflict': 'sync-after',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
     }
@@ -1048,8 +1049,12 @@ def exercise(args):
                                  else 'capture-sync-gate')
                     gate = (Path(runtime.quota['deployment_control']) / gate_name
                             if capture_stage in ('measurement-partial','sync-before','sync-after') else None)
-                    capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
-                        capture_stage, gate)
+                    if args.scenario == 'capture-publish-conflict':
+                        from lifecycle_capture_publish_conflict import PublishConflictProbe
+                        capture_probe = PublishConflictProbe(runtime, client, physical_running, gate)
+                    else:
+                        capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
+                            capture_stage, gate)
                     report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
                 report['phase']='public-unload-after-resume-'+str(cycle)
                 accepted_unload = client.unload(resumed)
@@ -1075,6 +1080,8 @@ def exercise(args):
                             same_candidate=report[prefix+'_same_candidate'],
                             original_returned_end=report['capture_handoff_recovery'],
                             retained_responsibility=capture_probe.assert_sync_continued(deadline))
+                        if args.scenario == 'capture-publish-conflict':
+                            report['publication_obstacle_removal'] = capture_probe.remove_after_continued(deadline)
                         accepted_unload = client.unload(resumed)
                         report['sync_recovery_unload_acceptance'] = copy.deepcopy(accepted_unload)
                 client.assert_data_closed()
@@ -1165,6 +1172,15 @@ def exercise(args):
                 'E12': 'two owners and actual slot reuse; no full fault matrix',
                 'other_cases': 'boundary error injection; not a failing fsync syscall, power-loss durability or complete E11',
             }
+            if args.scenario == 'capture-publish-conflict':
+                report['acceptance_cases']['E11'] = (
+                    'original Full callback released normally into an exact test-owned destination conflict; '
+                    'actual worker Returned End/kernel exit, unchanged empty target and complete staged files, '
+                    'original VM continued with positive charge; only then exact obstacle removed and '
+                    'new-key Unload/Resume and product GC completed')
+                report['acceptance_cases']['other_cases'] = (
+                    'one publication collision; original Runtime component checks EEXIST, '
+                    'system scene does not separately trace errno; no arbitrary I/O, power-loss or complete E11 claim')
         elif capture_stage == 'measurement-partial':
             report['acceptance_cases'] = {
                 'E3': 'actual complete Memory clone failed during SHA measurement; original RAM, disk, authorization and lifetime continued, then explicit Destroy/GC',
@@ -1200,6 +1216,10 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
+        if args.scenario == 'capture-publish-conflict' and capture_probe is not None:
+            obstacle = capture_probe.obstacle
+            report['publication_obstacle_failure_state'] = (
+                obstacle.evidence() if obstacle is not None else {'created':False})
         if prepare_destroy and capture_probe is not None:
             report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
@@ -1277,7 +1297,8 @@ def main():
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
+        'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-sync-before','capture-sync-after',
+        'capture-publish-conflict','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
