@@ -35,11 +35,15 @@ from tools.system_acceptance import private_path
 STAGES = {
     'freeze-receipt': ('freeze_vm', 'FreezeVm'),
     'measurement-partial': (None, 'SealSnapshot'),
+    'sync-before': (None, 'SealSnapshot'),
+    'sync-after': (None, 'SealSnapshot'),
     'seal-receipt': ('seal_snapshot', 'SealSnapshot'),
     'stop-receipt': ('stop_vm', 'StopVm'),
     'restore-prepare-receipt': ('prepare_vm', 'PrepareVm'),
     'restore-prepare-destroy': ('prepare_vm', 'PrepareVm'),
 }
+GATED_CAPTURE_STAGES = frozenset(('measurement-partial', 'sync-before', 'sync-after'))
+SYNC_PHASES = {'sync-before': 'memory-before-sync', 'sync-after': 'memory-after-sync'}
 RESTORE_STAGES = frozenset(('restore-prepare-receipt', 'restore-prepare-destroy'))
 
 
@@ -55,6 +59,18 @@ def validate_measurement_question(question, run_identity):
             or type(question['measured_bytes']) is not int or type(question['total_bytes']) is not int
             or not 0 < question['measured_bytes'] < question['total_bytes'] < 2**64):
         raise ValueError('actual incomplete SHA measurement of the original Memory clone required')
+    return question
+
+
+def validate_sync_question(question, run_identity, stage):
+    if (stage not in SYNC_PHASES or type(question) is not dict
+            or set(question) != {'schema_version', 'run_identity', 'action', 'full_work_binding',
+                                 'worker', 'source', 'phase', 'capture_key'}
+            or type(question['schema_version']) is not int or question['schema_version'] != 3
+            or question['run_identity'] != run_identity or question['phase'] != SYNC_PHASES[stage]
+            or type(question['capture_key']) is not str or len(question['capture_key']) != 64
+            or any(c not in '0123456789abcdef' for c in question['capture_key'])):
+        raise ValueError('exact original Memory sync boundary required; no byte or publication claim')
     return question
 
 
@@ -97,17 +113,22 @@ class CaptureHandoffProbe:
         self.deadline = min(deadline, time.monotonic() + timeout_ms / 1000)
         if self.stage not in RESTORE_STAGES:
             self.pidfd = open_original_candidate_pidfd(self.prior['source'])
-        if self.stage == 'measurement-partial':
-            self.config['schema_version'] = 2
+        if self.stage in GATED_CAPTURE_STAGES:
+            self.config['schema_version'] = 2 if self.stage == 'measurement-partial' else 3
+            if self.stage in SYNC_PHASES:
+                self.config['sync_phase'] = 'before-sync' if self.stage == 'sync-before' else 'after-sync'
             control = private_path(runtime.quota['deployment_control'], directory=True)
-            if self.path != control / 'capture-measurement-gate':
+            gate_name = 'capture-measurement-gate' if self.stage == 'measurement-partial' else 'capture-sync-gate'
+            if self.path != control / gate_name:
                 raise ValueError('exact private deployment measurement gate required')
             self.path.mkdir(mode=0o700)
             self.fd = os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
             self.directory = os.fstat(self.fd)
             gate_publish(self.fd, 'config.json', self.config)
             self._save_file('config.json')
-            fault = {'SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE': str(self.path)}
+            variable = ('SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE' if self.stage == 'measurement-partial'
+                        else 'SANDPROOF_TEST_CAPTURE_SYNC_GATE')
+            fault = {variable: str(self.path)}
         else:
             fault = {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
         runtime.services.processes.stop('host-0')
@@ -269,7 +290,7 @@ class CaptureHandoffProbe:
             raise ValueError('one original acceptance after arming required')
         self.accepted = copy.deepcopy(accepted)
         deadline = min(deadline, self.deadline)
-        if self.stage == 'measurement-partial':
+        if self.stage in GATED_CAPTURE_STAGES:
             while not (self.path / 'ready.json').exists():
                 self._gate_unchanged()
                 if self.host.poll() is not None:
@@ -279,7 +300,10 @@ class CaptureHandoffProbe:
             question, digest = self._save_file('observation.json')
             ready, _ = self._save_file('ready.json')
             validate_gate_ready(ready, digest)
-            validate_measurement_question(question, self.config['run_identity'])
+            if self.stage == 'measurement-partial':
+                validate_measurement_question(question, self.config['run_identity'])
+            else:
+                validate_sync_question(question, self.config['run_identity'], self.stage)
             self.question, self.question_digest = question, digest
         elif self.host.wait(timeout=remaining(deadline)) != 86:
             raise ValueError('original selected manager did not exit86')
@@ -345,12 +369,19 @@ class CaptureHandoffProbe:
                 if captured['completed'] is None:
                     raise ValueError('Stop before original SQL Full adoption')
                 self.materials = self.runtime._materials(captured['full'], captured)
-            if self.stage == 'measurement-partial':
+            if self.stage in GATED_CAPTURE_STAGES:
                 self.record = continued_capture_question(self.question, accepted, records, self.prior['source'])
                 if self.question['action'] != self.action or self.question['source'] != source:
                     raise ValueError('measurement question differs from complete original action/source')
                 self.worker_pidfd = open_original_candidate_pidfd(self.question['worker']['process'])
-                if question['total_bytes'] > captured['full']['memory_bytes']:
+                if self.stage in SYNC_PHASES and (captured['completed'] is not None or captured['end'] is not None):
+                    raise ValueError('sync cut must precede Full publication and worker End')
+                if self.stage in SYNC_PHASES:
+                    self.sync_material = self._sync_material(captured['full']['memory_bytes'])
+                    self.sync_reserved_bytes = material_source_charge(self.record)
+                    if self.sync_reserved_bytes <= 0:
+                        raise ValueError('sync cut must retain original positive material reservation')
+                if self.stage == 'measurement-partial' and question['total_bytes'] > captured['full']['memory_bytes']:
                     raise ValueError('measurement observation exceeds original Memory bound')
             if self.stage == 'stop-receipt':
                 if not pidfd_exited(self.pidfd):
@@ -360,6 +391,48 @@ class CaptureHandoffProbe:
         return dict(stage=self.stage, original_acceptance_matched=True,
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
+
+    def _sync_material(self, maximum):
+        # The key is emitted by Rust's original selector, not recomputed JSON or authority.
+        store = private_path(Path(self.runtime.captures[0]['layout_parent']) / 's', directory=True)
+        key = self.question['capture_key']
+        stage = private_path(store / ('staging-' + key), directory=True)
+        before = stage.stat()
+        if any((store / (prefix + key)).exists() for prefix in ('capture-', 'completed-')):
+            raise ValueError('sync boundary already has published material or completion')
+        if (stage / 'manifest.json').exists():
+            raise ValueError('sync boundary must precede manifest sealing')
+        fd = os.open(stage / 'memory.bin', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            meta = os.fstat(fd)
+            mode = 0o600 if self.stage == 'sync-before' else 0o400
+            if (not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != mode
+                    or meta.st_uid != before.st_uid or meta.st_nlink != 1
+                    or not 0 < meta.st_size <= maximum):
+                raise ValueError('original unsealed Memory metadata differs at sync boundary')
+            current = (stage / 'memory.bin').stat(follow_symlinks=False)
+            if (current.st_dev,current.st_ino) != (meta.st_dev,meta.st_ino):
+                raise ValueError('sync Memory replaced during observation')
+        finally:
+            os.close(fd)
+        if (stage.stat().st_dev,stage.stat().st_ino) != (before.st_dev,before.st_ino):
+            raise ValueError('original staging directory replaced')
+        return dict(capture_key=key, memory_bytes=meta.st_size, memory_mode=oct(mode),
+                    memory_identity=[meta.st_dev,meta.st_ino], published=False,
+                    phase=self.question['phase'], syscall_failure_claimed=False)
+
+    def assert_sync_continued(self, deadline):
+        if self.stage not in SYNC_PHASES or not self.recovered:
+            raise ValueError('one recovered original sync boundary required')
+        _, records, actions = self._read(min(deadline, self.deadline))
+        record = continued_capture_question(self.question, self.accepted, records, self.prior['source'])
+        if (record['capture']['completed'] is not None or record['capture']['end'] is None
+                or material_source_charge(record) != self.sync_reserved_bytes
+                or any('StopVm' in action['command']['logical']['command'] for action,_,_ in actions)):
+            raise ValueError('failed original Full must retain charge and forbid source Stop')
+        return dict(original_material_charge=self.sync_reserved_bytes,
+                    incomplete_full_not_adopted=True, source_stop_not_dispatched=True,
+                    capacity_released=False, material_at_cut=self.sync_material)
 
     def _prepare_candidate_state(self, deadline):
         remaining(deadline)
@@ -679,9 +752,9 @@ class CaptureHandoffProbe:
         if self.action is None or self.recovered:
             raise ValueError('one observed original handoff required')
         deadline = min(deadline, self.deadline)
-        if self.stage == 'measurement-partial':
+        if self.stage in GATED_CAPTURE_STAGES:
             self._gate_unchanged()
-            command = dict(schema_version=2, run_identity=self.config['run_identity'],
+            command = dict(schema_version=self.config['schema_version'], run_identity=self.config['run_identity'],
                 observation_sha256=self.question_digest,
                 full_work_binding=self.question['full_work_binding'], command='fail')
             gate_publish(self.fd, 'command.json', command)
@@ -702,7 +775,7 @@ class CaptureHandoffProbe:
                             or observation['outcome']['kind'] != 'returned'
                             or not 200 <= observation['outcome']['http_status'] <= 599
                             or record['capture']['completed'] is not None):
-                        raise ValueError('clone measurement failure must have its actual Returned End, never NoRequest')
+                        raise ValueError('materialization failure must have its actual Returned End, never NoRequest')
                     if pidfd_exited(self.worker_pidfd) and not original_process(self.question['worker']['process']):
                         break
                 time.sleep(min(.05, remaining(deadline)))
@@ -736,7 +809,7 @@ class CaptureHandoffProbe:
 
     def cleanup(self):
         """Only after original product GC: retire our exact consumed gate files."""
-        if self.stage != 'measurement-partial':
+        if self.stage not in GATED_CAPTURE_STAGES:
             return None
         expected = {'config.json', 'observation.json', 'ready.json', 'command.json', 'consumed.json'}
         if (not self.runtime.gc_complete or not self.runtime.physical_complete
