@@ -116,6 +116,32 @@ class SyncProtocolTests(unittest.TestCase):
                 reading.assert_called_once()
             self.assertEqual(memory.stat().st_mode & 0o777,0o400)
 
+    def test_raw_gate_archive_is_exact_private_no_clobber_and_rejects_changed_bytes(self):
+        import hashlib
+        for fault in ('none','changed'):
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);gate=root/'gate';gate.mkdir(mode=0o700)
+                p,_=self.probe('sync-before');p.runtime=NS(root=root)
+                p.fd=os.open(gate,os.O_RDONLY|os.O_DIRECTORY)
+                try:
+                    p.files={}
+                    for name in ('config.json','observation.json','ready.json','command.json','consumed.json'):
+                        path=gate/name;path.write_bytes(b'{"original":true}');path.chmod(0o600)
+                        m=path.stat();p.files[name]=(hashlib.sha256(path.read_bytes()).hexdigest(),
+                            (m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink))
+                    if fault=='changed':(gate/'observation.json').write_bytes(b'{"changed":true}')
+                    if fault=='none':
+                        result=p.archive_sync_gate();self.assertEqual(len(result['files']),5)
+                        for item in result['files']:
+                            exported=root/result['directory']/item['name']
+                            self.assertEqual(exported.read_bytes(),(gate/item['name']).read_bytes())
+                            self.assertEqual(exported.stat().st_mode & 0o777,0o600)
+                        with self.assertRaises(FileExistsError):p.archive_sync_gate()
+                    else:
+                        with self.assertRaises(ValueError):p.archive_sync_gate()
+                        self.assertTrue((gate/'observation.json').exists())
+                finally:os.close(p.fd)
+
     def test_continued_observation_preserves_charge_and_rejects_source_stop(self):
         for fault in ('none','adopted','missing-end','charge','stop'):
             p,record=self.probe('sync-after');p.recovered=True;p.sync_reserved_bytes=100;p.sync_material={}

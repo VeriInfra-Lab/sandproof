@@ -388,9 +388,13 @@ class CaptureHandoffProbe:
                     raise ValueError('original Stop did not close the exact source process')
             elif pidfd_exited(self.pidfd) or not original_process(self.prior['source']):
                 raise ValueError('original source changed before selected capture boundary')
-        return dict(stage=self.stage, original_acceptance_matched=True,
+        result = dict(stage=self.stage, original_acceptance_matched=True,
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
+        if self.stage in SYNC_PHASES:
+            result.update(question=copy.deepcopy(self.question), observation_sha256=self.question_digest,
+                          material_at_cut=self.sync_material, material_charge_at_cut=self.sync_reserved_bytes)
+        return result
 
     def _sync_material(self, maximum):
         # The key is emitted by Rust's original selector, not recomputed JSON or authority.
@@ -785,8 +789,11 @@ class CaptureHandoffProbe:
                 raise ValueError('original measurement failure command not consumed exactly')
             self._gate_unchanged()
             self.recovered = True
-            return dict(stage=self.stage, actual_worker_end=True, no_request_inferred=False,
+            result = dict(stage=self.stage, actual_worker_end=True, no_request_inferred=False,
                         public_completion=False, capacity_released=False)
+            if self.stage in SYNC_PHASES:
+                result.update(returned_end=copy.deepcopy(end), consumed_command=copy.deepcopy(consumed))
+            return result
         self._configuration()
         process = self.runtime.services.processes.start('host-0')
         if process is self.host or process.pid == self.host.pid:
@@ -808,6 +815,39 @@ class CaptureHandoffProbe:
             raise ValueError('recovery replaced the original pre-marker loaded candidate')
         return dict(same_loaded_candidate=True, new_load_inferred=False)
 
+    def archive_sync_gate(self):
+        """Retain exact bounded original bytes before successful gate retirement."""
+        if self.stage not in SYNC_PHASES:
+            return None
+        root = private_path(self.runtime.root, directory=True) / 'capture-sync-evidence'
+        root.mkdir(mode=0o700)
+        evidence = []
+        for name in ('config.json','observation.json','ready.json','command.json','consumed.json'):
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=self.fd)
+            try:
+                before = os.fstat(fd)
+                raw = os.read(fd, 16385)
+                after = os.fstat(fd)
+                identity = lambda m:(m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink)
+                expected_hash,expected_identity = self.files[name]
+                if (len(raw) > 16384 or len(raw) != before.st_size
+                        or identity(before) != expected_identity or identity(after) != expected_identity
+                        or hashlib.sha256(raw).hexdigest() != expected_hash):
+                    raise ValueError('original sync gate bytes changed before evidence export')
+                target = os.open(root/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+                with os.fdopen(target,'wb') as out:
+                    out.write(raw);out.flush();os.fsync(out.fileno())
+                evidence.append(dict(name=name,bytes=len(raw),sha256=expected_hash))
+            finally:
+                os.close(fd)
+        directory = os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:os.fsync(directory)
+        finally:os.close(directory)
+        parent = os.open(self.runtime.root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:os.fsync(parent)
+        finally:os.close(parent)
+        return dict(directory='capture-sync-evidence',files=evidence)
+
     def cleanup(self):
         """Only after original product GC: retire our exact consumed gate files."""
         if self.stage not in GATED_CAPTURE_STAGES:
@@ -819,6 +859,7 @@ class CaptureHandoffProbe:
         self._gate_unchanged()
         if set(os.listdir(self.fd)) != expected:
             raise ValueError('unknown gate entries retain original responsibility')
+        archive = self.archive_sync_gate()
         parent = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
             for name in ('consumed.json', 'command.json', 'ready.json', 'observation.json', 'config.json'):
@@ -846,7 +887,7 @@ class CaptureHandoffProbe:
             os.fsync(parent)
         finally:
             os.close(parent)
-        return dict(exact_consumed_gate_removed=True)
+        return dict(exact_consumed_gate_removed=True, original_gate_evidence=archive)
 
     def terminal_failure_state(self):
         """Preserve exact stopped-process identity; never signal or infer GC."""
