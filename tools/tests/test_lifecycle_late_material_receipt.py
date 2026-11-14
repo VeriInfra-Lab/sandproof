@@ -32,10 +32,10 @@ class LateMaterialFixture(unittest.TestCase):
         self.occupant = dict(session='other-owner-session', context=context,
             local=dict(owner=2, sandbox=2), source=dict(resource_id='vm-original-2',
                 pid=42, start_time_ticks=17, boot_id='original-boot'))
-        native = dict(database=str(self.database), namespace='original',
-            bounded_host=dict(maintenance=dict(capacity=dict(max_sql_value_bytes=16384))))
+        native = dict(database=str(self.database), namespace='original')
         self.runtime = SimpleNamespace(services=SimpleNamespace(native_pools=[native],
-            host_configs=[{}], processes=Mock()))
+            host_configs=[dict(native=dict(maintenance=dict(
+                capacity=dict(max_sql_value_bytes=16384))))], processes=Mock()))
         self.state = dict(owner=2, phase='Running', terminal=False, generation=1, current_vm=2)
         with sqlite3.connect(self.database) as connection:
             connection.executescript('CREATE TABLE controller_host_slots(position,context_json);'

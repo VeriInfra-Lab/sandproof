@@ -77,7 +77,7 @@ class LateMaterialReceiptObserver:
         if (local['sandbox'] != binding['sandbox'] or local['owner'] != binding['owner']):
             raise ValueError('original occupant local binding differs')
         ident = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-        limit = native['bounded_host']['maintenance']['capacity']['max_sql_value_bytes']
+        limit = self.host_config['native']['maintenance']['capacity']['max_sql_value_bytes']
         saved_context = _bounded_json(connection, 'controller_host_slots', 'context_json',
             'position', context['position'], limit)
         state = _bounded_json(connection, 'sandboxes', 'state_blob', 'sandbox_id', ident, limit)
