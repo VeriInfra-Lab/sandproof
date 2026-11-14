@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # These groups exercise original Linux production primitives, rather than a
 # substitute Mach-O helper, sendfile API or filesystem accounting algorithm.
 LINUX_GROUPS = {
+    'test_lifecycle_capture_publish_conflict.EmptyTargetTests': 'original Linux publication directory inode and link counts',
+    'test_lifecycle_capture_publish_conflict.PublishConflictTests': 'held Linux publication target plus original staging inode observations',
     'test_ci_retention.RetentionTests': 'Linux mountinfo and same-filesystem bind-mount refusal',
     'test_ci_private_templates.PrivateTemplateTests': 'Linux mountinfo before private template retirement',
     'test_guest_probe.LinuxResourceSnapshotTests': 'real Linux procfs status and smaps_rollup reads',
