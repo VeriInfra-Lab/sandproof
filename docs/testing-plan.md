@@ -72,7 +72,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
 | E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
-| E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
+| E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[只读复用观察器](../tests/system/lifecycle_late_material_receipt.py) | 组合用例经过真实 SQLite、双 owner 位置复用与重开，但物理提供方受控。观察器尚未接入实机场景选择；真实迟到 stop/delete/回执仍需分别到达和验收，不能以组件拒绝或观察器存在代替。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
