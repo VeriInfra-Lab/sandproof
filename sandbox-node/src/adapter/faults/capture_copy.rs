@@ -9,6 +9,7 @@ use sandproof_protocol::{WorkAction, lifecycle::ContentDigest};
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
+    fmt::Write,
     fs::File,
     os::unix::fs::MetadataExt,
     path::PathBuf,
@@ -27,10 +28,16 @@ enum SyncPhase {
 /// The helper inherits no environment; this one path enters its original job digest.
 #[cfg(debug_assertions)]
 pub(crate) fn configured_path() -> Result<Option<PathBuf>> {
-    match (
+    select_paths(
         std::env::var_os("SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE"),
         std::env::var_os("SANDPROOF_TEST_CAPTURE_SYNC_GATE"),
-    ) {
+    )
+}
+fn select_paths(
+    measurement: Option<std::ffi::OsString>,
+    sync: Option<std::ffi::OsString>,
+) -> Result<Option<PathBuf>> {
+    match (measurement, sync) {
         (Some(_), Some(_)) => Err("one capture observation gate required".into()),
         (Some(path), None) | (None, Some(path)) => Ok(Some(path.into())),
         (None, None) => Ok(None),
@@ -165,12 +172,11 @@ impl CaptureCopyGate {
             worker,
             (measured_bytes, total_bytes),
             if self.config.sync_phase.is_some() {
-                Some(
-                    crate::full_snapshot::capture_directory_key(&full.pause.binding)?
-                        .iter()
-                        .map(|byte| format!("{byte:02x}"))
-                        .collect(),
-                )
+                let mut key = String::with_capacity(64);
+                for byte in crate::full_snapshot::capture_directory_key(&full.pause.binding)? {
+                    write!(&mut key, "{byte:02x}")?;
+                }
+                Some(key)
             } else {
                 None
             },

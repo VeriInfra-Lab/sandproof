@@ -100,6 +100,20 @@ class SyncProtocolTests(unittest.TestCase):
                     else:
                         with self.assertRaises((ValueError,OSError)):p._sync_material(1 if fault=='oversize' else 100)
 
+    def test_same_inode_mode_change_during_metadata_read_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);work=root/'s'/('staging-'+'d'*64)
+            work.mkdir(mode=0o700,parents=True)
+            memory=work/'memory.bin';memory.write_bytes(b'original');memory.chmod(0o600)
+            p,_=self.probe('sync-before');p.runtime=NS(captures=[dict(layout_parent=str(root))])
+            original_fstat=os.fstat
+            def changed(fd):
+                result=original_fstat(fd)
+                memory.chmod(0o400)  # same original inode; never a path-only replacement
+                return result
+            with patch.object(capture.os,'fstat',side_effect=changed),self.assertRaises(ValueError):
+                p._sync_material(100)
+
     def test_continued_observation_preserves_charge_and_rejects_source_stop(self):
         for fault in ('none','adopted','missing-end','charge','stop'):
             p,record=self.probe('sync-after');p.recovered=True;p.sync_reserved_bytes=100;p.sync_material={}

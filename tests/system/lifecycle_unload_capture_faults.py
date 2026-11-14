@@ -411,8 +411,9 @@ class CaptureHandoffProbe:
                     or not 0 < meta.st_size <= maximum):
                 raise ValueError('original unsealed Memory metadata differs at sync boundary')
             current = (stage / 'memory.bin').stat(follow_symlinks=False)
-            if (current.st_dev,current.st_ino) != (meta.st_dev,meta.st_ino):
-                raise ValueError('sync Memory replaced during observation')
+            fields = ('st_dev','st_ino','st_mode','st_uid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')
+            if tuple(getattr(current,k) for k in fields) != tuple(getattr(meta,k) for k in fields):
+                raise ValueError('sync Memory changed during observation')
         finally:
             os.close(fd)
         if (stage.stat().st_dev,stage.stat().st_ino) != (before.st_dev,before.st_ino):

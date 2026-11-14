@@ -351,3 +351,17 @@ fn sync_config_and_missing_key_are_rejected_without_a_question() {
     }
     assert!(!path.join("ready.json").exists());
 }
+
+#[test]
+fn one_original_gate_path_only_without_ambient_helper_environment() {
+    assert!(select_paths(None, None).unwrap().is_none());
+    assert_eq!(
+        select_paths(Some("measurement".into()), None).unwrap(),
+        Some(PathBuf::from("measurement"))
+    );
+    assert_eq!(
+        select_paths(None, Some("sync".into())).unwrap(),
+        Some(PathBuf::from("sync"))
+    );
+    assert!(select_paths(Some("measurement".into()), Some("sync".into())).is_err());
+}
