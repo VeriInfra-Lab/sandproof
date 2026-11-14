@@ -149,6 +149,35 @@ class FrozenFactsTests(unittest.TestCase):
                     else:
                         with self.assertRaises((ValueError,capture._AwaitTerminal)):p._stop_barrier(s)
 
+    def test_original_never_released_end_is_allowed_without_inventing_an_api_no_request(self):
+        for fault in ('none','initial-end','binding','seal','worker','completed','material','returned','full-changed'):
+            with tempfile.TemporaryDirectory() as directory:
+                f=fixture(Path(directory));p=f.probe;s=copy.deepcopy(f.snapshot)
+                full=dict(pause=dict(binding=dict(operation=f.unload['request']['binding'],source_incarnation=7,capture=5),
+                    source_work_binding=[1]*32,node=f.node,source_resource=f.freeze['identity']['resource'],
+                    source={k:p.prior['source'][k] for k in ('pid','start_time_ticks','boot_id')}),
+                    compatibility={'original':'saved profile'},state_bytes=1,memory_bytes=2,disk_bytes=3,api_timeout_ms=1000,worker_timeout_ms=1000)
+                captured=dict(full=full,operation=4,reserved_material_bytes=589836,action=None,worker=None,completed=None,material_bytes=None,end=None)
+                p.initial_sources[1]['capture']=copy.deepcopy(captured)
+                s['sources'][1]['capture']=copy.deepcopy(captured);c=s['sources'][1]['capture']
+                digest=list(hashlib.sha256(json.dumps(full,ensure_ascii=False,separators=(',',':')).encode()).digest())
+                c['end']=dict(state='never_released',full_work_binding=digest,seal_action=None)
+                if fault=='binding':c['end']['full_work_binding'][0]^=1
+                if fault=='seal':c['end']['seal_action']=f.freeze
+                if fault=='worker':c['worker']={'unknown':'worker'}
+                if fault=='completed':c['completed']=[7]*32
+                if fault=='material':c['material_bytes']=6
+                if fault=='returned':c['end']={'state':'worker_ended','observation':{'outcome':'no_request'}}
+                if fault=='full-changed':c['full']['memory_bytes']+=1
+                with patch.object(frozen,'original_json',return_value=dict(epoch=4,terminal=True)),self.subTest(fault=fault):
+                    if fault=='none':
+                        self.assertTrue(p._stop_barrier(s)['terminal'])
+                        self.assertEqual(s['sources'][1]['capture']['end']['state'],'never_released')
+                    elif fault=='initial-end':
+                        with self.assertRaises(ValueError):p._no_full(s['sources'])
+                    else:
+                        with self.assertRaises(ValueError):p._stop_barrier(s)
+
     def test_cleanup_needs_original_stop_receipt_kernel_exit_and_pending_cleanup(self):
         for fault in ('none','pid','no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
             with tempfile.TemporaryDirectory() as directory:

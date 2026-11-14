@@ -147,7 +147,9 @@ Freeze 成功但 SQL 回执未入库的退出点。通过原 VMM 的 Unix API �
 Destroy/Kill、成功终止围栏、唯一对应的全局在途 Stop，以及原 VM、寿命和 backing
 pin/正材料额度。另一 owner 的原来宾 RAM/文件工作负载须继续推进，期间复核原材料
 及责任不变。只有此后才继续同一进程，重新读取实际 `Paused`，放行原 Stop；OS `T`、
-SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或可释放资源。
+SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或可释放资源。终止后允许
+原账本将尚未授权工作器的 Full 登记为匹配完整工作摘要的 `NeverReleased`；这不是
+实际 API 的 `NoRequest` 回执，不能要求该合法责任终结字段永远为空。
 
 随后在原 Cleanup 成功、SQL 尚无回执的退出点，核对原 Stop 完整回执及同一 pidfd 的
 内核退出；旧 Freeze 可仍未知或已获同源迟到观察，不伪造成功。重开后经原 Cleanup/GC

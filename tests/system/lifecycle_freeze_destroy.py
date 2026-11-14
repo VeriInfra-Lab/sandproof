@@ -13,6 +13,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import copy
+import hashlib
 import http.client
 import json
 import os
@@ -95,16 +96,28 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
 
     def _responsibilities(self,rows):
         # Source observation samples may refresh; immutable work and all
-        # material/pin/retirement duties remain exact.
-        return [{k:v for k,v in row.items() if k!='observation'} for row in self._target_sources(rows)]
+        # material/pin/retirement duties remain exact. _no_full first checks
+        # the one legal new end: the journal's original NeverReleased fact.
+        result=copy.deepcopy(self._target_sources(rows))
+        for row in result:
+            row.pop('observation')
+            if equal(row['work']['anchor']['request'],self.unload_entry['intent']) and row['capture'] is not None:
+                row['capture']['end']=None
+        return result
 
-    def _no_full(self,rows):
+    def _no_full(self,rows,*,terminal=False):
         matches=[row for row in rows if equal(row['work']['anchor']['request'],self.unload_entry['intent'])]
         if len(matches)!=1 or not equal(matches[0]['work'],self.record['work']):
             raise ValueError('one immutable original frozen Unload work required')
         capture=matches[0]['capture']
-        if capture is not None and any(capture[name] is not None for name in ('action','worker','completed','end')):
-            raise ValueError('pre-Full terminal branch acquired a producer or material result')
+        if capture is not None:
+            if any(capture[name] is not None for name in ('action','worker','completed')) or capture.get('material_bytes') is not None:
+                raise ValueError('pre-Full terminal branch acquired a producer or material result')
+            end=capture['end']
+            if end is not None:
+                digest=list(hashlib.sha256(json.dumps(capture['full'],ensure_ascii=False,separators=(',',':')).encode()).digest())
+                if not terminal or not equal(end,dict(state='never_released',full_work_binding=digest,seal_action=None)):
+                    raise ValueError('only the original journal NeverReleased end may close this unissued Full')
         return matches[0]
 
     def _backing(self,rows):
@@ -226,7 +239,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if len(freeze)!=1 or not equal(freeze[0][0],self.action):raise ValueError('original Freeze missing or replaced')
         if any(set(r[0]['command']['logical']['command']) & {'SealSnapshot','CommitSnapshot','PrepareVm','ActivateVm'} for r in all_rows):
             raise ValueError('terminal frozen Unload scheduled new capture or execution')
-        self._no_full(snapshot['sources'])
+        self._no_full(snapshot['sources'],terminal=True)
         observed=self._success_observation(freeze[0],'Frozen')
         if observed is not None and not equal(observed,dict(pid=self.prior['source']['pid'],
                 start_ticks=self.prior['source']['start_time_ticks'],boot_id=self.prior['source']['boot_id'])):
