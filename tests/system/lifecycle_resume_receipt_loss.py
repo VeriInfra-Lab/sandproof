@@ -172,7 +172,9 @@ def observe_candidate(runtime,intent,deadline):
     def ticks(pid):
         return int((Path('/proc')/str(pid)/'stat').read_text().rsplit(')',1)[1].split()[19])
     physical=live_identity(native,contexts[0],ticks)
-    if not original_process(source):raise ValueError('restored VMM changed during observation')
+    if (any(not same_json(physical[k],source[k]) for k in ('resource_id','pid','start_time_ticks'))
+            or not original_process(source)):
+        raise ValueError('restored VMM changed during observation')
     return copy.deepcopy(dict(claim=claim,context=contexts[0],source=source,physical=physical,
         manifest=record['capture']['completed'],scope='one live original candidate and pin snapshot; not a complete API invocation trace'))
 

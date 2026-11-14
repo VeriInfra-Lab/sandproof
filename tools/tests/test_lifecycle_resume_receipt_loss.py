@@ -241,7 +241,7 @@ class ResumeWiringTests(unittest.TestCase):
 class ResumeCandidateTests(unittest.TestCase):
     def test_original_readonly_sql_mapping_pin_and_activation_bind_the_same_candidate(self):
         f=fixture()
-        for fault in ('none','pin','pin-type','activation','intent','owner','context','resource','operation','attempt','dead'):
+        for fault in ('none','pin','pin-type','activation','intent','owner','context','resource','operation','attempt','dead','physical-resource','physical-pid','physical-start'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 root=Path(directory);database=root/'state.db'
                 context=dict(position=1,expected_previous=None,binding=dict(owner=1,sandbox=4,generation=2,vm=9,network=10))
@@ -269,7 +269,11 @@ class ResumeCandidateTests(unittest.TestCase):
                 stack.enter_context(patch.object(resume,'original_json',return_value=dict(resource_id='vm-0123456789abcdef-9',pid=123,start_time_ticks=456,boot_id='owned')))
                 stack.enter_context(patch.object(resume,'original_process',return_value=fault!='dead'))
                 import server_bounded_churn
-                live=stack.enter_context(patch.object(server_bounded_churn,'live_identity',return_value={'original':'physical'}))
+                physical=dict(resource_id='vm-0123456789abcdef-9',pid=123,start_time_ticks=456)
+                if fault=='physical-resource':physical['resource_id']='vm-replaced'
+                if fault=='physical-pid':physical['pid']+=1
+                if fault=='physical-start':physical['start_time_ticks']+=1
+                live=stack.enter_context(patch.object(server_bounded_churn,'live_identity',return_value=physical))
                 if fault=='none':
                     value=resume.observe_candidate(runner,f.request,time.monotonic()+5)
                     self.assertEqual(value['claim'],claim);live.assert_called_once();reader.assert_called_once()
