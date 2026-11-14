@@ -81,6 +81,15 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
+[调和回复期限组件](../sandbox-center-service/tests/business_authority/lifecycle_ready.rs)
+复用原真实 Redis/应用夹具、200ms 回复期限和同一 Create 工作。持有一条已进入的
+Host 观察回复，同伴先由原 worker 提交 Running，再检查其公开查询；只在记录的剩余
+预算加采样时刻这一保守期限上界之后放行完整原 Ready。原扫描只完成同伴，原接受的
+完整 Sandbox、编号前沿和在途责任保持；下一次调和继续同一原工作，不能新建 Create
+或释放未确认责任。既有 `Ok(2)` 并发用例和全部预算/断言保持。此处跨越的是回复期限，
+没有推进业务时钟或制造 TTL 到期；Host 物理事实为受控输入，无 KVM/新 Lean 结论，
+也不能把该确定性分支直接认作任何旧计数失败的根因。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、
