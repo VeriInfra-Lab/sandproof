@@ -752,8 +752,9 @@ def exercise(args):
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
     retirement_late_receipt = args.scenario == 'material-retirement-late-receipt'
+    late_stop_delete = args.scenario == 'slot-reuse-late-stop-delete'
     retirement_observation = args.scenario == 'normal' or retirement_restart or retirement_late_receipt
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or retirement_late_receipt):
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or retirement_late_receipt or late_stop_delete):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -762,6 +763,10 @@ def exercise(args):
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 < seconds <= 3600:
         raise ValueError('explicit finite scenario deadline at most one hour required')
     deadline = time.monotonic() + seconds
+    helper = None
+    if late_stop_delete:
+        from lifecycle_late_host_actions import approved_probe
+        helper = approved_probe(args)
     runtime = prepare(args)
     root = private_path(runtime.root, directory=True)
     report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
@@ -847,6 +852,10 @@ def exercise(args):
         report['phase']='actual-slot-reuse'
         control=PublicUnloadScenario(runtime.services.sdk_url,runtime.foreign_key,
             runtime.owner_key,report['registration']['deployment'],deadline,owner='2')
+        if late_stop_delete:
+            from lifecycle_late_host_actions import exercise_late_stop_delete
+            exercise_late_stop_delete(runtime, client, control, saved, deadline, report, helper)
+            return report  # The common finally still preserves both sessions and finishes the runtime.
         control.create(runtime.create_parameters(owner=2))
         control_running=control.wait_running()
         control.assert_owner_isolation()
@@ -1301,7 +1310,10 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart','material-retirement-late-receipt'),default='normal')
+        'material-retirement-restart','material-retirement-late-receipt',
+        'slot-reuse-late-stop-delete'),default='normal')
+    parser.add_argument('--stale-probe',type=Path)
+    parser.add_argument('--stale-probe-sha256')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

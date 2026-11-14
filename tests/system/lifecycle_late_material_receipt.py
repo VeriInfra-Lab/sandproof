@@ -52,26 +52,13 @@ def _bounded_json(connection, table, column, key, value, limit):
     return json.loads(raw, object_pairs_hook=unique_keys)
 
 
-class LateMaterialReceiptObserver:
-    """Freeze A's Retiring plan after another owner B reuses its position.
-
-    B may be a fresh execution or a restored execution. A restored B also needs
-    its original manifest-backed files and open use pin. Verification accepts
-    only A remaining Retiring or settling that same plan, while all other saved
-    sources and B's running identity/reservations stay unchanged.
-    """
-    def __init__(self, runtime, *, session, original, occupant, deadline):
-        old, new = original['original_position'], occupant['context']
-        if (old['position'] != new['position']
-                or old['binding']['owner'] == new['binding']['owner']
-                or old['binding']['sandbox'] == new['binding']['sandbox']
-                or old['binding']['vm'] == new['binding']['vm']
-                or new['expected_previous'] != old['binding']['vm']):
-            raise ValueError('another owner must occupy the exact original position')
-        self.runtime, self.session, self.deadline = runtime, session, deadline
+class SlotOccupantObserver:
+    """Read-only current occupant, backing sources and resource reservations."""
+    def __init__(self, runtime, *, occupant, deadline):
+        self.runtime, self.deadline = runtime, deadline
         self.native = copy.deepcopy(runtime.services.native_pools[0])
         self.host_config = copy.deepcopy(runtime.services.host_configs[0])
-        self.original, self.occupant = copy.deepcopy(original), copy.deepcopy(occupant)
+        self.occupant = copy.deepcopy(occupant)
         self.baseline = None
 
     def _native(self, connection):
@@ -160,14 +147,48 @@ class LateMaterialReceiptObserver:
             connection.execute('BEGIN')
             records = checked_source_records(connection, self.host_config, self.deadline)
             current = self._native(connection)
-            old = source_record(records, self.session, self.original)
             physical = self._physical(records)
         after = database.stat()
         if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
             raise ValueError('original database replaced during late receipt observation')
-        return dict(database=(before.st_dev, before.st_ino),
-            old=old, others=[row for row in records if row is not old],
-            current=current, physical=physical, charge=material_source_charge(old))
+        return dict(database=(before.st_dev, before.st_ino), records=records,
+            current=current, physical=physical)
+
+    def freeze(self):
+        if self.baseline is not None:
+            raise ValueError('original occupant baseline cannot be refreshed')
+        self.baseline = copy.deepcopy(self._snapshot())
+
+    def verify(self):
+        if self.baseline is None or self._snapshot() != self.baseline:
+            raise ValueError('original occupant, backing or reservations changed')
+        return dict(occupant_context=copy.deepcopy(self.baseline['current']['context']),
+            occupant_source=copy.deepcopy(self.baseline['physical']['source']))
+
+
+class LateMaterialReceiptObserver(SlotOccupantObserver):
+    """Freeze A's Retiring plan while another owner B keeps its reused position.
+
+    B may be fresh or restored, with its original backing files and open use pin.
+    Only A remaining Retiring or settling that same plan may change.
+    """
+    def __init__(self, runtime, *, session, original, occupant, deadline):
+        old, new = original['original_position'], occupant['context']
+        if (old['position'] != new['position']
+                or old['binding']['owner'] == new['binding']['owner']
+                or old['binding']['sandbox'] == new['binding']['sandbox']
+                or old['binding']['vm'] == new['binding']['vm']
+                or new['expected_previous'] != old['binding']['vm']):
+            raise ValueError('another owner must occupy the exact original position')
+        super().__init__(runtime, occupant=occupant, deadline=deadline)
+        self.session, self.original = session, copy.deepcopy(original)
+
+    def _snapshot(self):
+        snapshot = super()._snapshot()
+        records = snapshot.pop('records')
+        old = source_record(records, self.session, self.original)
+        return dict(snapshot, old=old, others=[row for row in records if row is not old],
+            charge=material_source_charge(old))
 
     def freeze(self):
         if self.baseline is not None:
