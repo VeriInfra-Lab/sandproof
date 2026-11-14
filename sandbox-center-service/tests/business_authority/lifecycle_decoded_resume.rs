@@ -1,6 +1,7 @@
 //! Actual mTLS/JSON value followed by the original Redis authority CAS.
 //! Physical facts are controlled; this is not a deployed center/VM race.
 use super::*;
+use crate::{envelope, wire};
 use sandproof_center_service::AuthorityPort;
 use sandproof_internal::{
     ClientTls, InternalClient, InternalServer, LifecycleReceiver, Limits, ReceiveError,
