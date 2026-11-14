@@ -30,6 +30,12 @@ REJECTION_REASONS = {
 }
 
 
+def used_volume_bytes(descriptor):
+    """Original open filesystem's allocated blocks, including other writers."""
+    space = os.fstatvfs(descriptor)
+    return (space.f_blocks - space.f_bfree) * space.f_frsize
+
+
 @contextmanager
 def observe_volume_storage(directory, *, commit):
     """Sample used filesystem blocks during one run on its original volume."""
@@ -44,8 +50,7 @@ def observe_volume_storage(directory, *, commit):
     def sample():
         nonlocal samples, failures, peak
         try:
-            space = os.fstatvfs(fd)
-            used = (space.f_blocks - space.f_bfree) * space.f_frsize
+            used = used_volume_bytes(fd)
         except OSError:
             failures += 1
             return None

@@ -79,7 +79,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |
 | E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
-| E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
+| E16 / 实用性 | 生命周期入口的 `operation_timings`、显式 `--measure-resources`；[只读资源采样](../tests/system/lifecycle_resource_sampling.py)、[原始流核对与报告](../tools/lifecycle_measurement_report.py)、同伴采样与既有 Harbor 入口 | 采集入口存在不表示已实机测得性能。公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
@@ -88,6 +88,42 @@ SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之�
 本轮未做的故障窗口保持缺口，不因正常链通过关闭 E2–E15；有限时间内收尾也不是 G6 的全称证明。
 
 独立生命周期实机入口 `tests/system/lifecycle_unload_scenario.py` 使用两个保留会话、两个运行位置：第一会话卸载后让第二会话占用原位置，再恢复第一会话，核对另一会话未受影响，随后销毁第二会话。`normal` 在同一第一会话形成 A/B/C 三个保存点并各恢复，继续核对旧代回收；其它明确故障选择只按其原有限周期和到达点验收。会话保留数直接传给中心账本和宿主 inbox，不从任务数推算。该入口可使用已有基础模板；两题评测的 10 GiB 模板不是此场景的前提。按实际模板大小和 2 GiB VM 内存计算完整包络，继续检查原有限激活上限、实际可用字节/inode、同文件系统以及材料项目硬配额。该场景不代表两题评测或 E1–E16 全部通过；实际部署和结果绑定精确提交另行记录。实机服务使用优化构建（`opt-level=2`），显式保留调试断言和溢出检查，并记录构建输入与实际二进制摘要；基础单元测试仍走原入口。未优化程序在受限 CPU 下的超时不能直接当作产品性能结论。
+
+显式资源测量在原 argv 上增加 `--measure-resources`，不改原两 owner、三轮、工作负载、
+部署预算和期限；默认不开启。`--resource-sample-interval-ms` 默认 500，允许 500–5000。
+观察从原服务 ready 后到产品结果/额度检查结束，位于最终管理服务退出之前；只读
+原 Popen 的 PID/start/可执行 inode/账号/cgroup，以及原 `record_running` 登记的 VM。
+管理服务重开单列新进程序段，不按相同角色名称拼接 CPU；失效 PID 不被同号新进程接管。
+资源流最多 8192 行、64 MiB、64 个进程序段，达到边界明确失败，不无界积累。
+原批准的证据/磁盘余量须能容纳该有界流，空间不足明确失败，不自动扩大配额。
+行时间是采样开始，逐项读取不是原子全机快照；整卷也包含本采集文件的写入。
+
+CPU 使用 `/proc/PID/stat` 的 utime+stime 及原 `SC_CLK_TCK`；utime 已含 guest time，
+不再次累加 guest/子进程时间（[字段定义](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)）。
+RSS 复用原 `smaps_rollup` 有界读取，采样峰值与内核报告的进程全生命周期 VmHWM 分列；
+原服务 cgroup 的 CPU、内存计费和内核 memory.peak 单列，不能当成 RSS 或相加各进程峰值。
+整卷复用原 `fstatvfs` 观察，包含同卷其它写者，不能分摊成各沙箱的 CoW 块或配额结论；
+原服务目录 sampler 的已观察峰值/未知历史继续保留。未知值为 null/unknown，不记零；
+采样间隙、进程首次登记之前和退出尾部未观察，不声称瞬时峰值或完整生命周期 CPU。
+
+`lifecycle-resource-samples.jsonl` 与原 `lifecycle-unload-report.json` 一起保存在本轮私有
+run root；后者的 `resource_measurements` 含原始流摘要、各序段有效/未知样本、CPU 差、
+RSS 峰值、服务 cgroup、整卷及采集开销。采样器身份/证据/退出失败使本轮失败并保留原责任；
+正常停止窗口或读取缺失单列，资源覆盖仍可能为 partial，不能据此称 E16 已验收。
+独立报告器先核对原流摘要/长度/顺序、完整 PID/start 身份及 CPU/RSS/磁盘汇总，再从原
+公开完成样本重算最近秩 p50/p95；不合并候选、伪补未完成样本或复制异常/配置/凭据：
+
+```sh
+bash scripts/python-entry.sh -m tools.lifecycle_measurement_report \
+  --report /本轮私有目录/lifecycle-unload-report.json \
+  --samples /本轮私有目录/lifecycle-resource-samples.jsonl \
+  --output /新的报告目录/lifecycle-measurements.md
+```
+
+reporter 的一致性检查不是实际物理事实的证明。实机还须记录精确候选、工具/CPU/内核/
+镜像/文件系统、原部署参数、覆盖缺口、观察开销和实际收尾；冷/热缓存、材料规模及内部
+freeze/capture/copy/sync/stop/load/activate/ready 分段未另取得时保持 unknown。采样、
+一份报告或有限原正常链不代表完整 E16，实机测量与完整阶段结论另记。
 
 正常链复现与收尾按下列顺序记录，不能用测试环境卸载工作卷来代替产品回收：
 
