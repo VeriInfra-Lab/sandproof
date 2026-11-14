@@ -252,7 +252,8 @@ class OriginalScenarioTests(unittest.TestCase):
                     unload_evidence=Mock(return_value=dict(facts=lifetime,original_position={'position':0},original_capture_responsibilities=1)),
                     restart_managers=Mock(return_value={'original_unload_operation':{}}),confirm_running=Mock(return_value={}),
                     destroy_evidence=Mock(return_value={}),settlement_evidence=Mock(return_value={}),
-                    finish=Mock(),fail_resume_gate=Mock(),close_restore_gate=Mock(),close_capture_cancel_gate=Mock())
+                    finish=Mock(),fail_resume_gate=Mock(return_value='original responsibility preserved'),
+                    close_restore_gate=Mock(),close_capture_cancel_gate=Mock())
                 source=Mock();source.verify_after_guest_write.return_value={}
                 sources=stack.enter_context(patch.object(cow,'SealedSourceProbe',return_value=source))
                 settled=stack.enter_context(patch.object(retirement,'wait_settled',return_value={'snapshot':{},'receipt':{}}))
