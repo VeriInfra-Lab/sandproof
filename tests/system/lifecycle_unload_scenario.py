@@ -571,6 +571,16 @@ class PublicUnloadScenario:
                     altered_request_rejected=True, terminal_view_unchanged=True,
                     data_access_closed=True)
 
+    def assert_terminal_unload_replay(self, *, phase):
+        """Keep the original Create/Unload acceptance and the later Destroy."""
+        assert phase in ('terminating','cleaned')
+        current=self.query();self.check_view(current,self.current_acceptance)
+        assert current['phase']==phase and current['current_version']>self.unload_acceptance['accepted_version']
+        self.assert_original_replay(current)
+        self.assert_data_closed();self.assert_previous_tokens_closed()
+        return dict(phase=phase,original_create_unload_acceptance_returned=True,
+                    altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -723,12 +733,13 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    freeze_destroy = args.scenario == 'capture-freeze-destroy'
     prepare_destroy = args.scenario == 'restore-prepare-destroy'
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
     retirement_observation = args.scenario == 'normal' or retirement_restart
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or freeze_destroy):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -832,6 +843,8 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
+        if freeze_destroy:
+            report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         lost=None
         restore_cycles = 3 if args.scenario == 'normal' else 2
@@ -1029,10 +1042,45 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                control.destroy(control_running)
-                control.wait_cleaned()
+                if not freeze_destroy:
+                    control.destroy(control_running)
+                    control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
+            if cycle == 1 and freeze_destroy:
+                from lifecycle_freeze_destroy import FreezeDestroyProbe
+                capture_probe=FreezeDestroyProbe(runtime,client,physical_running)
+                report['phase']='arm-original-freeze-before-destroy'
+                report['freeze_destroy_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
+                accepted_unload=client.unload(resumed)
+                report['phase']='original-freeze-success-before-sql-receipt'
+                report['freeze_destroy_observation']=capture_probe.after_acceptance(accepted_unload,deadline)
+                pending=client.query();client.check_view(pending,accepted_unload)
+                assert pending['phase']=='unloading', 'frozen original Unload unexpectedly completed'
+                client.assert_data_closed();client.assert_previous_tokens_closed()
+                report['phase']='public-destroy-with-original-freeze-receipt-pending'
+                report['destroy']=client.destroy(pending)
+                report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                def observe_frozen_peer():
+                    assert control.query()==control_running
+                    return control.assert_continued_workload(control_running,control_physical['lifetime'])
+                report['phase']='original-terminal-stop-held-with-backing-and-peer'
+                report['freeze_destroy_recovery']=capture_probe.recover_after_destroy(
+                    report['destroy'],deadline,observe_peer=observe_frozen_peer)
+                report['phase']='original-stop-and-cleanup-pre-sql-receipt'
+                report['freeze_destroy_terminal']=capture_probe.assert_terminal_before_gc(deadline)
+                report['phase']='public-frozen-destroy-cleaned-and-product-gc'
+                client.wait_cleaned();report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+                client.operation_evidence_completed()
+                report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                assert control.query()==control_running
+                report['slot_reuse']['occupant_after_frozen_destroy']=runtime.confirm_running(control.session,control_physical,deadline)
+                report['slot_reuse']['peer_after_frozen_destroy']=control.assert_continued_workload(control_running,control_physical['lifetime'])
+                control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+                report['cycles'][-1]['frozen_unload_destroyed']=True
+                terminal_destroy_done=True;break
             if cycle < restore_cycles:
                 if retirement_restart:
                     from lifecycle_unload_retirement import RetirementRestartProbe
@@ -1156,6 +1204,14 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if freeze_destroy:
+            report['acceptance_cases'] = {
+                'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
+                'E8':'actual Freeze success before SQL receipt, then public Destroy; exact current fence/Stop with same paused source and backing pin/charge, then original exit/Cleanup/GC',
+                'E12':'original other owner actually reused the old position, made guest progress while terminal Stop was held, and retained its same candidate before explicit cleanup',
+                'E14':'old execution tokens remained rejected; peer continued with its original authorization',
+                'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
+            }
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
@@ -1179,8 +1235,8 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
-        if prepare_destroy and capture_probe is not None:
-            report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if (prepare_destroy or freeze_destroy) and capture_probe is not None:
+            report['freeze_destroy_failure_state' if freeze_destroy else 'prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1256,7 +1312,7 @@ def main():
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','capture-freeze-receipt','capture-freeze-destroy','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
