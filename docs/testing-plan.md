@@ -71,7 +71,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
-| E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-freeze-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中或冻结卸载中 Destroy 的有限代表不等于全部 Destroy/到期竞争；必须继续观察剩余责任最终收尾，新入口仍须实机验收。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
@@ -140,6 +140,23 @@ Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成
 核对最终资源结算，不能只凭两次 HTTP 202 宣称不会复活。这只覆盖原保留窗口内的重放，
 不替代过期窗口、迟到物理删除或 TTL 竞争。
 
+`capture-freeze-destroy` 在实际一次 Unload/Resume 和另一 owner 复用旧位置后，复用原
+Freeze 成功但 SQL 回执未入库的退出点。通过原 VMM 的 Unix API 连接核对进程身份及
+当前 `Paused`，再持同一 pidfd 发送 SIGSTOP，仅用于阻止旧 Freeze 对账先于终止意图。
+经公开接口接受 Destroy，重开原 Host 并持原 Stop 门；同一 SQL 快照必须包含当前
+Destroy/Kill、成功终止围栏、唯一对应的全局在途 Stop，以及原 VM、寿命和 backing
+pin/正材料额度。另一 owner 的原来宾 RAM/文件工作负载须继续推进，期间复核原材料
+及责任不变。只有此后才继续同一进程，重新读取实际 `Paused`，放行原 Stop；OS `T`、
+SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或可释放资源。
+
+随后在原 Cleanup 成功、SQL 尚无回执的退出点，核对原 Stop 完整回执及同一 pidfd 的
+内核退出；旧 Freeze 可仍未知或已获同源迟到观察，不伪造成功。重开后经原 Cleanup/GC
+达到公开 Cleaned，分别在 Terminating/Cleaned 重放原 Create/Unload 并拒绝同键改写，
+另一 owner 保持原候选和来宾进展后才显式收尾，最后核对原产品资源结算。未决、超时或
+错身份保留原接受、材料责任及 HostLease，不重发业务请求或自动继续进程来掩盖失败。
+该入口与观察器有受控组件自测，KVM 实机验收另行执行；只覆盖一个恢复周期后的冻结
+卸载 Destroy 顺序，不认领正常三周期、所有 E8 交错或形式证明。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
@@ -190,6 +207,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 |---|---|
 | `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
+| `capture-freeze-destroy` | 原 Freeze 成功、回执未入库时接受 Destroy；先核实际 Paused、当前终止围栏、同源 Stop、backing pin/正额度及另一 owner 来宾进展，再确认原退出及产品 GC（E8；实机待验收） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
