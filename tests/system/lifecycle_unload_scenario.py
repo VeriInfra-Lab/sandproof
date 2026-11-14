@@ -714,7 +714,8 @@ class PublicUnloadScenario:
 def exercise(args):
     """Only the sibling helper can start/restart or inspect original resources."""
     from lifecycle_unload_runtime import prepare
-    restore_fault=args.scenario in ('restore-activation-loss','restore-candidate-exit')
+    activation_destroy=args.scenario=='restore-activation-destroy'
+    restore_fault=args.scenario in ('restore-activation-loss','restore-candidate-exit','restore-activation-destroy')
     continued_exit=args.scenario in ('continued-after-capture-exit','continued-before-admission-exit')
     capture_stages = {
         'capture-freeze-receipt': 'freeze-receipt',
@@ -849,6 +850,8 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
+        if activation_destroy:
+            report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         lost=None
         restore_cycles = 3 if normal_chain else 2
@@ -918,6 +921,38 @@ def exercise(args):
                 gate_receipt=runtime.wait_resume_gate(client.session,accepted,
                     copy.deepcopy(client.witness),deadline)
                 report['activation_gate_observation']=gate_receipt
+                if activation_destroy:
+                    from lifecycle_activation_destroy import ActivationDestroyProbe
+                    capture_probe=ActivationDestroyProbe(runtime,client,accepted,gate_receipt,deadline)
+                    report['phase']='public-destroy-after-actual-activation-before-sql-receipt'
+                    pending=client.query();client.check_view(pending,accepted)
+                    assert pending['phase']=='resuming', 'gated activation unexpectedly published Running'
+                    client.assert_data_closed();client.assert_previous_tokens_closed()
+                    report['destroy']=client.destroy(pending)
+                    report['terminal_resume_replays']=[client.assert_terminal_resume_replay(
+                        original_resume_request,accepted,phase='terminating')]
+                    def observe_activated_peer():
+                        assert control.query()==control_running
+                        return control.assert_continued_workload(control_running,control_physical['lifetime'])
+                    report['phase']='original-activated-candidate-terminal-stop-held'
+                    report['activation_destroy_recovery']=capture_probe.recover_after_destroy(
+                        report['destroy'],deadline,observe_peer=observe_activated_peer)
+                    report['phase']='original-activated-candidate-stop-and-cleanup-cut'
+                    report['activation_destroy_terminal']=capture_probe.assert_terminal_before_gc(deadline)
+                    report['phase']='activated-destroy-cleaned-and-original-product-gc'
+                    client.wait_cleaned();report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+                    client.operation_evidence_completed()
+                    report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
+                        original_resume_request,accepted,phase='cleaned'))
+                    assert control.query()==control_running
+                    report['slot_reuse']['occupant_after_activation_destroy']=runtime.confirm_running(control.session,control_physical,deadline)
+                    report['slot_reuse']['peer_after_activation_destroy']=control.assert_continued_workload(control_running,control_physical['lifetime'])
+                    control.destroy(control_running);control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
+                    report['cycles'].append(dict(cycle=cycle,resume=accepted,destroyed_before_public_running=True,
+                        actual_activation_ram_observed=True,original_candidate_terminal_handoff=True))
+                    terminal_destroy_done=True;break
                 if args.scenario=='restore-candidate-exit':
                     report['phase']='original-restore-candidate-pidfd-exit'
                     report['activation_gate_recovery']=runtime.exit_resume_gate(gate_receipt,accepted,deadline)
@@ -1199,6 +1234,14 @@ def exercise(args):
                 'E14': 'original data access and prior execution tokens remained closed during unknown Resume and Destroy',
                 'other_cases': 'one pre-marker cancellation branch; no resumed Running, second Resume, full matrix or formal proof claim',
             }
+        if activation_destroy:
+            report['acceptance_cases']={
+                'E2':'original full Resume replays historical acceptance in Terminating and Cleaned; changed full request conflicts',
+                'E8':'actual original activation and latest RAM observed before SQL receipt; public Destroy, current terminal fence, same candidate/pin/charge, original Stop/Cleanup/GC',
+                'E12':'other owner actually reused old position and made guest progress while terminal Stop was held, then retained same candidate before explicit cleanup',
+                'E14':'old execution credentials and terminal data access remain closed; other owner keeps original authorization',
+                'other_cases':'one activated terminal branch, no public resumed Running or normal three cycles; not all E7/E8 interleavings or formal proof',
+            }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
         if capture_probe is not None:
@@ -1213,8 +1256,8 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
-        if prepare_destroy and capture_probe is not None:
-            report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if (prepare_destroy or activation_destroy) and capture_probe is not None:
+            report['activation_destroy_failure_state' if activation_destroy else 'prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1297,7 +1340,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arguments(parser)
     parser.add_argument('--scenario-timeout', type=float, default=600)
-    parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
+    parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',

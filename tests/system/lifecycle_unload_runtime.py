@@ -1221,7 +1221,12 @@ class UnloadRuntime:
         gate['command_sent']=True
         gate['command']=command
 
-    def recover_resume_gate(self,receipt,deadline):
+    def finish_resume_gate(self,receipt,deadline):
+        """Finish the original activation cut; leave Host stopped for inspection.
+
+        This supplies no public Running, terminal authority or resource release.
+        The caller must restart only the original configured manager.
+        """
         gate=self.restore_gate
         self.release_resume_gate('continue')
         process=gate['host']
@@ -1234,13 +1239,18 @@ class UnloadRuntime:
         role=self.services.processes.bindings['host-0']
         if role_facts(Path(role['config']).parent,role['config'],uid=role['uid'],gid=role['gid'])!=self.configs['host-0']:
             raise ValueError('original product configuration changed across lost acknowledgement')
+        gate['exit86_observed']=True
+        return process
+
+    def recover_resume_gate(self,receipt,deadline):
+        gate=self.restore_gate
+        process=self.finish_resume_gate(receipt,deadline)
         # No initialize, new product config, inherited environment or fault
         # variables. The original Processes owner alone restarts this child.
         recovered=self.services.processes.start('host-0')
         if recovered is process or recovered.pid==process.pid:
             raise ValueError('original fault host was not replaced by an actual fresh manager')
         self.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
-        gate['exit86_observed']=True
         return dict(exit_code=86,fault_manager_pid=process.pid,recovered_manager_pid=recovered.pid,
             same_product_configuration=True,fault_environment_removed=True,
             observation_sha256=gate['observation_sha256'],public_authorization_proven=False)
