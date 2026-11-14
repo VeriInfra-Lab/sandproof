@@ -195,6 +195,15 @@ class LifecycleResources:
                 if epoch is not None: epoch['unknown_samples'] += 1
                 rows.append(dict(role=name, epoch=None if epoch is None else epoch['index'], state='unknown'))
             except ValueError:
+                if child.poll() is not None:
+                    # process_facts also rejects a child that exits during
+                    # its final identity check. Preserve the gap, never adopt
+                    # another PID or turn that incomplete read into zero.
+                    self.unknown += 1
+                    if epoch is not None: epoch['unknown_samples'] += 1
+                    rows.append(dict(role=name, epoch=None if epoch is None else epoch['index'],
+                        state='exited_during_sample'))
+                    continue
                 if epoch is not None: raise
                 # A newly launched wrapper has not necessarily exec'd/dropped
                 # privileges yet. It does not create an accepted identity.

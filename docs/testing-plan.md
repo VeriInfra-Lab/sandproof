@@ -95,6 +95,8 @@ SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之�
 原 Popen 的 PID/start/可执行 inode/账号/cgroup，以及原 `record_running` 登记的 VM。
 管理服务重开单列新进程序段，不按相同角色名称拼接 CPU；失效 PID 不被同号新进程接管。
 资源流最多 8192 行、64 MiB、64 个进程序段，达到边界明确失败，不无界积累。
+原批准的证据/磁盘余量须能容纳该有界流，空间不足明确失败，不自动扩大配额。
+行时间是采样开始，逐项读取不是原子全机快照；整卷也包含本采集文件的写入。
 
 CPU 使用 `/proc/PID/stat` 的 utime+stime 及原 `SC_CLK_TCK`；utime 已含 guest time，
 不再次累加 guest/子进程时间（[字段定义](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)）。

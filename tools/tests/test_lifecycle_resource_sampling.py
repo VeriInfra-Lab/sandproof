@@ -120,6 +120,22 @@ class LifecycleSamplerTests(SamplerFixture):
         self.assertEqual(result['failure'],'ValueError')
         self.assertEqual(len(result['epochs']),3)
 
+    def test_original_service_exit_during_check_is_a_gap_without_rebinding(self):
+        self.probe.sample();original=self.facts.side_effect
+        def exited(child,*args,**kwargs):
+            if child is self.children['center']:
+                child.poll.return_value=0
+                raise ValueError('original service exited during identity check')
+            return original(child,*args,**kwargs)
+        self.facts.side_effect=exited
+        self.probe.sample();result=self.probe.close()
+        self.assertIsNone(result['failure'])
+        self.assertGreater(result['unknown_observations'],0)
+        self.assertEqual(len(result['epochs']),3)
+        self.assertEqual(result['epochs'][0]['samples'],1)
+        row=json.loads(self.probe.path.read_text().splitlines()[1])
+        self.assertEqual(row['services'][0]['state'],'exited_during_sample')
+
     def test_original_cgroup_and_boot_changes_fail_the_sampler(self):
         self.probe.sample();self.group['identity']['inode']=3
         result=self.probe.close();self.assertEqual(result['failure'],'ValueError')
