@@ -114,7 +114,7 @@ pub(super) fn setup_with_operation_limit(
 // compare the complete durable representation and assert all five actual
 // RegistryMetadata fields are present; neither type has a serde skip/custom
 // serializer. Also independently check the original protected registration.
-fn assert_same_business_state(
+pub(super) fn assert_same_business_state(
     actual: &BusinessEnvelope<RegistryMetadata>,
     expected: &BusinessEnvelope<RegistryMetadata>,
 ) {

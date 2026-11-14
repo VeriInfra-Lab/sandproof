@@ -15,6 +15,9 @@ mod renewed_continued;
 #[path = "unloaded_query_confirmation.rs"]
 mod query_confirmation;
 
+#[path = "lifecycle_decoded_resume.rs"]
+mod decoded_resume_terminal;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,
