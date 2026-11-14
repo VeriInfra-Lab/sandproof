@@ -158,11 +158,12 @@ class SyncSceneTests(unittest.TestCase):
                 with self.assertRaises(ValueError):scene.exercise(NS(scenario='capture-'+stage,scenario_timeout=60,activation_gate_timeout_ms=60000))
                 self.assertFalse(runner.finish.call_args.args[0]['complete'])
                 self.assertNotIn('destroy-1',events)
+                self.assertEqual(events.count('unload-1'),2)
             else:
                 result=scene.exercise(NS(scenario='capture-'+stage,scenario_timeout=60,activation_gate_timeout_ms=60000))
                 self.assertTrue(result['complete']);self.assertEqual(len(result['cycles']),2)
                 factory.assert_called_once();self.assertEqual(factory.call_args.args[3],stage)
-                self.assertEqual(events.count('unload-1'),2)
+                self.assertEqual(events.count('unload-1'),3)  # original, failed, then new-key recovery
                 self.assertLess(events.index('sync-fail'),len(events)-1-events[::-1].index('unload-1'))
                 self.assertEqual(events.count('destroy-1'),1);self.assertEqual(events.count('destroy-2'),1)
                 self.assertIn('E11',result['acceptance_cases']);probe.assert_sync_continued.assert_called_once()
