@@ -1,8 +1,9 @@
-"""Read-only E9 observations around an externally scheduled late receipt.
+"""Read-only E9 observations and the original post-delete receipt gate.
 
-No action is replayed, manager stopped, pin closed or quota released here. The
-caller must independently establish the actual late-effect window. These
-observations alone cannot attest a physical delete or complete E9 acceptance.
+The observer never stops managers or changes business state. The explicitly
+selected probe reuses the gate's preparatory Host restart, observes the other
+owner, then releases the original receipt. This is not late stop/delete or
+complete E9 acceptance; actual execution still needs independent KVM evidence.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -17,10 +18,11 @@ import json
 from pathlib import Path
 import sqlite3
 import stat
+import time
 
-from lifecycle_unload_retirement import source_record
+from lifecycle_unload_retirement import RetirementRestartProbe, source_record
 from lifecycle_unload_runtime import (
-    checked_source_records, material_source_charge, original_json,
+    checked_source_records, gate_publish, material_source_charge, original_json,
     original_process, remaining,
 )
 from server_process_crash import process_start_ticks
@@ -193,3 +195,87 @@ class LateMaterialReceiptObserver:
         return dict(state=state['state'], held_material_bytes=after['charge'],
             occupant_context=copy.deepcopy(after['current']['context']),
             occupant_source=copy.deepcopy(after['physical']['source']))
+
+
+class LateMaterialReceiptProbe(RetirementRestartProbe):
+    """Delay an original receipt after deletion while the other owner is live.
+
+    Arm reuses the existing preparatory Host restart. Between the reached cut
+    and settlement this probe only observes and releases that exact gate. It
+    does not inject a late stop/delete or restart a manager in the held window.
+    """
+    def __init__(self, runtime, session, original, occupant, deadline):
+        super().__init__(runtime, session, original, deadline)
+        self.observer = LateMaterialReceiptObserver(runtime, session=session,
+            original=original, occupant=occupant, deadline=deadline)
+        self.occupant_session = occupant['session']
+
+    def _same_host(self):
+        if (self.runtime.services.processes.children['host-0'] is not self.host
+                or self.host.poll() is not None):
+            raise ValueError('original Host changed during delayed receipt window')
+        self._configuration()
+
+    def _workload(self, observe, previous=None):
+        value = observe()
+        flags = ('same_ram_and_activation', 'same_guest_process', 'same_authorization')
+        if (type(value) is not dict or value.get('session') != self.occupant_session
+                or any(value.get(key) is not True for key in flags)
+                or any(type(value.get(key)) is not int or not 0 < value[key] < 2**64
+                    for key in ('counter', 'guest_pid', 'guest_start_time_ticks'))
+                or type(value.get('metadata_generation')) is not int
+                or not 0 <= value['metadata_generation'] < 2**64
+                or any(type(value.get(key)) is not str or len(value[key]) != 64
+                    or any(c not in '0123456789abcdef' for c in value[key])
+                    for key in ('ram_nonce_sha256', 'activation_nonce_sha256'))):
+            raise ValueError('original other-owner guest continuity required')
+        if previous is not None and (value['counter'] != previous['counter'] + 1
+                or {k:v for k,v in value.items() if k != 'counter'}
+                    != {k:v for k,v in previous.items() if k != 'counter'}):
+            raise ValueError('other-owner guest identity changed across receipt delivery')
+        return copy.deepcopy(value)
+
+    def release_after_delete(self, successor_acceptance, observe_occupant):
+        if self.recovered:
+            raise ValueError('original delayed receipt gate is already completed')
+        cut = self.observe_deletion(successor_acceptance)
+        self._same_host()
+        self.observer.freeze()
+        if self.observer.baseline['old'] != cut['original']:
+            raise ValueError('original SQL responsibility changed between gate and observer')
+        if self.observer.verify()['state'] != 'retiring':
+            raise ValueError('original receipt settled before the held-window observation')
+        before = self._workload(observe_occupant)
+        if self.observer.verify()['state'] != 'retiring':
+            raise ValueError('original receipt was not held throughout the guest workload')
+        self._same_host()
+        self._unchanged()
+        gate_publish(self.fd, 'command.json', dict(schema_version=1,
+            run_identity=self.runtime.lease.identity, observation_sha256=cut['digest'],
+            material=cut['material'], command='release'))
+        self._save('command.json')
+        while True:
+            remaining(self.deadline)
+            self._same_host()
+            self._unchanged()
+            settled = self.observer.verify()
+            if settled['state'] == 'settled':
+                break
+            if settled['state'] != 'retiring':
+                raise ValueError('unexpected original retirement state after gate release')
+            time.sleep(min(0.05, remaining(self.deadline)))
+        after = self._workload(observe_occupant, before)
+        final = self.observer.verify()
+        self._same_host()
+        self._unchanged()
+        if final != settled:
+            raise ValueError('original settled receipt or occupant identity changed')
+        self.recovered = True
+        return dict(phase=cut['observation']['phase'], material=cut['material'],
+            original_retiring_material_bytes=cut['original']['capture']['reserved_material_bytes'],
+            settled_material_bytes=final['held_material_bytes'],
+            occupant_context=final['occupant_context'], occupant_source=final['occupant_source'],
+            occupant_before=before, occupant_after=after,
+            receipt_delayed_after_actual_delete=True, same_plan_settled=True,
+            same_host_manager_during_receipt_window=True,
+            late_stop_or_delete_not_exercised=True)

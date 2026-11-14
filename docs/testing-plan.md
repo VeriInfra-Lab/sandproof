@@ -72,7 +72,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
 | E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
-| E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[只读复用观察器](../tests/system/lifecycle_late_material_receipt.py) | 组合用例经过真实 SQLite、双 owner 位置复用与重开，但物理提供方受控。观察器尚未接入实机场景选择；真实迟到 stop/delete/回执仍需分别到达和验收，不能以组件拒绝或观察器存在代替。 |
+| E9 / G2、G3、G4 | `normal` 的实际位置复用、`material-retirement-late-receipt`；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[复用观察器与回执门](../tests/system/lifecycle_late_material_receipt.py) | 新选择器接原删除后、结算前门，保留复用位置的另一 owner，核对真实 guest 连续性后放行原回执；入口已接、自测通过不表示实机已验收。迟到 stop/delete 仍须独立到达，不能据此把整行改为完成。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
@@ -196,6 +196,22 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
 | `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
+| `material-retirement-late-receipt` | 另一 owner 保持占用旧位置；旧材料实际删除后，压住原回执并验证占用者的原 guest RAM/进程/凭据和文件读写，放行后同一计划结算，再沿两会话原 Destroy/GC 退额（E9 的回执代表） |
+
+迟到材料回执代表沿原两会话与两位置预算执行：来源会话恢复到另一位置后再次卸载，
+另一 owner 一直保持原占用。原门先核对实际删除完成、完整 work/plan、已采纳的后继材料
+及仍为 Retiring 的完整额度；只读观察器在此时固定基线。门内和原回执结算后分别通过
+同一 SDK 读回并推进原 RAM-only 见证、读写原磁盘标记，核对 guest PID/start、RAM/激活
+见证、凭据及公开 Running 不变；同时比较原宿主 PID/start/boot、运行代、磁盘/网络/
+cgroup 身份、其它材料记录与账本预留。只有原完整命令放行后的 SQL Settled 才算结算，
+门的命中、发出 release 或路径缺失均不单独算通过。两会话最终须由产品 Destroy/GC
+完成物理与额度收尾，之后才退休本次精确门文件。
+
+该门的基线位于实际删除之后，证明范围限于后续迟到回执；不声称已经覆盖迟到 stop、
+迟到 delete、B 在删除前后的全部物理变化、项目配额的任意交错或完整 E9。安装测试门
+会在进入该窗口前按原实现重启 Host；门内保持同一 Host 进程与配置，不把这次准备重启
+写作 E13 故障恢复。未知、身份变化或期限耗尽保留失败报告、原责任和未确认的资源，
+不能刷新基线、放大预算或替换为一次正常场景。实机结果按精确候选和原批准输入另记。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
