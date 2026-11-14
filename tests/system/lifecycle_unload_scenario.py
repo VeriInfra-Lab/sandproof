@@ -737,6 +737,8 @@ def exercise(args):
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 < seconds <= 3600:
         raise ValueError('explicit finite scenario deadline at most one hour required')
     deadline = time.monotonic() + seconds
+    from lifecycle_resource_sampling import options as resource_options
+    measure_resources, resource_interval = resource_options(args)
     runtime = prepare(args)
     root = private_path(runtime.root, directory=True)
     report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
@@ -744,14 +746,23 @@ def exercise(args):
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
     capture_probe = data_probe = cow_probe = retirement_probe = None
+    resource_probe = None
     terminal_destroy_done = False
     failed = False
+    if measure_resources:
+        report['resource_sampling_request'] = dict(interval_ms=resource_interval, started=False)
     try:
         report['measurement_identity']=runtime.measurement_identity()
         report['registration'] = check_center_configuration(
             runtime.services, runtime.owner_key, runtime.foreign_key)
         report['phase'] = 'original-services-start'
         runtime.start(deadline)
+        if measure_resources:
+            from lifecycle_resource_sampling import LifecycleResources
+            resource_probe = LifecycleResources(runtime, phase=lambda:report['phase'],
+                interval_ms=resource_interval, deadline=deadline)
+            resource_probe.start()
+            report['resource_sampling_request']['started'] = True
         client = PublicUnloadScenario(runtime.services.sdk_url, runtime.owner_key,
             runtime.foreign_key, report['registration']['deployment'], deadline)
         report['phase'] = 'public-create'
@@ -1215,6 +1226,19 @@ def exercise(args):
             cpu_rss_disk_peak='unknown:not sampled by this timing instrumentation',
             e16_complete=False)
         try:
+            if resource_probe is not None:
+                try:
+                    report['resource_measurements'] = (resource_probe.summary() if resource_probe.closed
+                        else resource_probe.close())
+                except BaseException as resource_error:
+                    report['complete'] = False
+                    report['resource_measurements'] = dict(sampler_exited=resource_probe.closed,
+                        failure=type(resource_error).__name__, coverage='partial')
+                if report['resource_measurements'].get('failure') is not None:
+                    report['complete'] = False
+                    if not failed:report['phase'] = 'resource-measurement-failed'
+                report['timing_scope']['cpu_rss_disk_peak'] = (
+                    'resource_measurements: bounded samples; lifetime kernel peaks and missing windows separately reported')
             if cow_probe is not None:
                 # Close read-only source anchors before product cleanup/settlement,
                 # including failures before the original guest-write observation.
@@ -1244,6 +1268,13 @@ def exercise(args):
                 data_probe.close()
             runtime.close_restore_gate()
             runtime.close_capture_cancel_gate()
+            if resource_probe is not None:
+                try:
+                    report['resource_measurements']['service_storage'] = runtime.services.storage_diagnostics()
+                except BaseException as storage_error:
+                    report['complete'] = False
+                    report['resource_measurements']['storage_failure'] = type(storage_error).__name__
+                    if not failed:report['phase'] = 'resource-measurement-failed'
             report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
             write_once(root / 'lifecycle-unload-report.json', report)
     return report
@@ -1260,6 +1291,8 @@ def main():
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
+    parser.add_argument('--measure-resources',action='store_true')
+    parser.add_argument('--resource-sample-interval-ms',type=int,default=500)
     args = parser.parse_args()
     try:
         report = exercise(args)
