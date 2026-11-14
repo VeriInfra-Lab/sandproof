@@ -233,7 +233,7 @@ async fn original_mtls_decoded_resume_can_commit_only_while_its_full_intent_is_c
     for terminate_after_decode in [false, true] {
         let engine = Engine::new();
         let proxy = reply_loss::ReplyLoss::new(engine.address);
-        let authority = lifecycle_public::setup_with_operation_limit(&engine, proxy.address, 5);
+        let authority = lifecycle_public::setup(&engine, &proxy);
         let (app, host, _) = application(&authority);
         let (session, original) = pending_resume(&app, &host);
         let decoded = decode_original(&original).await;
