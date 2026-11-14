@@ -82,6 +82,15 @@ class CaptureHandoffProbe:
                       uid=role['uid'], gid=role['gid']) != self.runtime.configs['host-0']:
             raise ValueError('original Host configuration changed')
 
+    def _fault_environment(self):
+        return {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
+
+    def _cut_exit_code(self):
+        return 86
+
+    def _cut_stage_label(self):
+        return self.stage
+
     def arm(self, deadline, timeout_ms):
         if self.host is not None:
             raise ValueError('one arm per original handoff')
@@ -109,7 +118,7 @@ class CaptureHandoffProbe:
             self._save_file('config.json')
             fault = {'SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE': str(self.path)}
         else:
-            fault = {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
+            fault = self._fault_environment()
         runtime.services.processes.stop('host-0')
         self._configuration()
         self.host = runtime.services.processes.start('host-0', env=fault)
@@ -281,8 +290,8 @@ class CaptureHandoffProbe:
             validate_gate_ready(ready, digest)
             validate_measurement_question(question, self.config['run_identity'])
             self.question, self.question_digest = question, digest
-        elif self.host.wait(timeout=remaining(deadline)) != 86:
-            raise ValueError('original selected manager did not exit86')
+        elif self.host.wait(timeout=remaining(deadline)) != self._cut_exit_code():
+            raise ValueError('original selected manager did not reach its exact exit cut')
         self._configuration()
         entry, records, actions = self._read(deadline)
         expected_kind = 'resume' if self.stage in RESTORE_STAGES else 'unload'
@@ -357,7 +366,7 @@ class CaptureHandoffProbe:
                     raise ValueError('original Stop did not close the exact source process')
             elif pidfd_exited(self.pidfd) or not original_process(self.prior['source']):
                 raise ValueError('original source changed before selected capture boundary')
-        return dict(stage=self.stage, original_acceptance_matched=True,
+        return dict(stage=self._cut_stage_label(), original_acceptance_matched=True,
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
 
@@ -725,7 +734,7 @@ class CaptureHandoffProbe:
         self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
         self._configuration()
         self.recovered = True
-        return dict(stage=self.stage, exit_code=86, fault_environment_removed=True,
+        return dict(stage=self._cut_stage_label(), exit_code=self._cut_exit_code(), fault_environment_removed=True,
                     same_product_configuration=True, public_completion=False)
 
     def assert_restored_candidate(self, physical_running):

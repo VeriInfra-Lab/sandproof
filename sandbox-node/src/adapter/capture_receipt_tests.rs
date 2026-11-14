@@ -108,6 +108,74 @@ fn capture_receipt_cuts_only_the_selected_success_before_journal_storage() {
 }
 
 #[test]
+#[ignore = "subprocess fixture, explicitly executed by the dispatch regression"]
+fn capture_dispatch_cut_child() {
+    let mode = std::env::var("SANDPROOF_UNIT_CAPTURE_DISPATCH_MODE")
+        .expect("original dispatch subprocess context required");
+    assert!(matches!(mode.as_str(), "execute" | "observe"));
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("SANDPROOF_UNIT_CAPTURE_DISPATCH_MARKERS").unwrap(),
+    );
+    pause_action_observation(
+        &action("freeze_vm"),
+        mode == "observe",
+        || {
+            std::fs::write(
+                directory.join("execute"),
+                b"original effect closure reached",
+            )?;
+            Ok(())
+        },
+        || {
+            std::fs::write(
+                directory.join("observe"),
+                b"original readonly closure reached",
+            )?;
+            Ok(())
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn freeze_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
+    for (mode, selector) in [
+        ("execute", "freeze_vm"),
+        ("observe", "freeze_vm"),
+        ("execute", "freeze_vm-other"),
+        ("execute", "stop_vm"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "adapter::capture_receipt_tests::capture_dispatch_cut_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("SANDPROOF_UNIT_CAPTURE_DISPATCH_MODE", mode)
+            .env("SANDPROOF_UNIT_CAPTURE_DISPATCH_MARKERS", directory.path())
+            .env("SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION", selector)
+            .env_remove("SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION")
+            .env_remove("SANDPROOF_TEST_STOP_GATE")
+            .output()
+            .unwrap();
+        let cut = cfg!(debug_assertions) && mode == "execute" && selector == "freeze_vm";
+        assert_eq!(
+            output.status.code(),
+            Some(if cut { 87 } else { 0 }),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            directory.path().join("execute").exists(),
+            !cut && mode == "execute"
+        );
+        assert_eq!(directory.path().join("observe").exists(), mode == "observe");
+    }
+}
+
+#[test]
 fn missing_preparation_file_is_not_an_unknown_pause_but_request_errors_are() {
     use std::cell::Cell;
     let temporary = tempfile::tempdir().unwrap();

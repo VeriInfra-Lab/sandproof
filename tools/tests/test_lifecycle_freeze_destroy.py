@@ -247,7 +247,7 @@ class OriginalSourceHoldTests(unittest.TestCase):
 
 class OriginalUnixPauseTests(unittest.TestCase):
     @contextmanager
-    def endpoint(self,fault='none'):
+    def endpoint(self,fault='none',*,state='Paused'):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);namespace='0123456789abcdef';resource='vm-'+namespace+'-9'
             jail=root/'firecracker'/resource/'root';jail.mkdir(parents=True)
@@ -262,7 +262,7 @@ class OriginalUnixPauseTests(unittest.TestCase):
             finally:os.close(descriptor)
             server.listen(1);server.settimeout(2)
             seen=[];errors=[]
-            value=dict(app_name='Firecracker',id=resource,state='Paused',vmm_version='1.16.1')
+            value=dict(app_name='Firecracker',id=resource,state=state,vmm_version='1.16.1')
             if fault=='running':value['state']='Running'
             if fault=='version':value['vmm_version']='other'
             if fault=='resource':value['id']='vm-other'
@@ -355,7 +355,8 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False):
+    def exercise(self,fault=False,*,dispatch=False):
+        import lifecycle_freeze_dispatch as dispatched
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
         for owner in ('1','2'):
             c=Mock(spec=scene.PublicUnloadScenario);c.owner=owner;c.session='session-'+owner
@@ -373,7 +374,7 @@ class SceneAndReplayTests(unittest.TestCase):
             nonlocal calls
             if session=='session-1':calls+=1
             return dict(session=session,lifetime=lifetime,context={'position':0 if session=='session-2' or calls==1 else 1})
-        p=Mock(spec=frozen.FreezeDestroyProbe)
+        p=Mock(spec=dispatched.FreezeDispatchDestroyProbe if dispatch else frozen.FreezeDestroyProbe)
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
         def recovery(*_,observe_peer,**__):
@@ -393,8 +394,10 @@ class SceneAndReplayTests(unittest.TestCase):
             stack.enter_context(patch.object(runtime,'prepare',return_value=runner))
             stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
-            stack.enter_context(patch.object(frozen,'FreezeDestroyProbe',return_value=p))
-            args=NS(scenario='capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
+            stack.enter_context(patch.object(dispatched if dispatch else frozen,
+                'FreezeDispatchDestroyProbe' if dispatch else 'FreezeDestroyProbe',return_value=p))
+            args=NS(scenario='capture-freeze-before-destroy' if dispatch else 'capture-freeze-destroy',
+                scenario_timeout=60,activation_gate_timeout_ms=60000)
             if fault:
                 with self.assertRaisesRegex(ValueError,'unknown original Stop'):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -405,7 +408,7 @@ class SceneAndReplayTests(unittest.TestCase):
                 self.assertIn('freeze_destroy_failure_state',report)
             else:
                 report=scene.exercise(args);self.assertTrue(report['complete']);self.assertEqual(len(report['cycles']),1)
-                self.assertTrue(report['cycles'][0]['frozen_unload_destroyed'])
+                self.assertTrue(report['cycles'][0]['dispatched_unload_destroyed' if dispatch else 'frozen_unload_destroyed'])
                 self.assertLess(events.index('after_acceptance'),events.index('destroy-1'))
                 self.assertLess(events.index('destroy-1'),events.index('recover'))
                 self.assertLess(events.index('assert_continued_workload-2'),events.index('release-stop'))
