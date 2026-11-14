@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # These groups exercise original Linux production primitives, rather than a
 # substitute Mach-O helper, sendfile API or filesystem accounting algorithm.
 LINUX_GROUPS = {
+    'test_lifecycle_late_material_receipt.LinuxLateMaterialPhysicalReaderTests': 'real Linux procfs process/start/boot observations',
     'test_ci_retention.RetentionTests': 'Linux mountinfo and same-filesystem bind-mount refusal',
     'test_ci_private_templates.PrivateTemplateTests': 'Linux mountinfo before private template retirement',
     'test_guest_probe.LinuxResourceSnapshotTests': 'real Linux procfs status and smaps_rollup reads',

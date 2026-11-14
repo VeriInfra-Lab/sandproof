@@ -58,6 +58,33 @@ def validate_measurement_question(question, run_identity):
     return question
 
 
+def terminal_outbox(runtime, conn, local, operation, capacity, expected_identity):
+    native = runtime.services.native_pools[0]
+    sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+    op = 'op-' + native['namespace'] + '-' + str(local['sandbox']) + '-' + str(operation)
+    count, largest, receipt_size = conn.execute(
+        'SELECT count(*),max(length(action_json)),max(length(receipt_json)) FROM outbox '
+        'WHERE sandbox_id=? AND operation_id=?', (sandbox, op)).fetchone()
+    if (not 0 < count <= capacity['max_sql_rows'] or largest > capacity['max_sql_value_bytes']
+            or (receipt_size is not None and receipt_size > capacity['max_sql_value_bytes'])):
+        raise ValueError('original bounded actions missing or retired before terminal evidence')
+    result = []
+    for raw, state, receipt in conn.execute('SELECT action_json,dispatch_state,receipt_json '
+            'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
+        action = json.loads(raw, object_pairs_hook=unique_keys)
+        identity = action['identity']; command = action['command']
+        if (identity['sandbox'] != sandbox or identity['operation'] != op
+                or identity['owner'] != expected_identity['owner']
+                or identity['protocol_version'] != expected_identity['protocol_version']
+                or identity['generation'] != expected_identity['generation']
+                or identity['attempt'] != command['attempt']):
+            raise ValueError('terminal observation action has a foreign complete identity')
+        result.append((action, state, None if receipt is None else
+                       json.loads(receipt, object_pairs_hook=unique_keys)))
+    return result
+
+
+
 class _AwaitTerminal(Exception):
     """An identified original operation is still pending; never success."""
 
@@ -442,29 +469,8 @@ class CaptureHandoffProbe:
         return original[0], entry, session['local']
 
     def _terminal_outbox(self, conn, local, operation, capacity):
-        native = self.runtime.services.native_pools[0]
-        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-        op = 'op-' + native['namespace'] + '-' + str(local['sandbox']) + '-' + str(operation)
-        count, largest, receipt_size = conn.execute(
-            'SELECT count(*),max(length(action_json)),max(length(receipt_json)) FROM outbox '
-            'WHERE sandbox_id=? AND operation_id=?', (sandbox, op)).fetchone()
-        if (not 0 < count <= capacity['max_sql_rows'] or largest > capacity['max_sql_value_bytes']
-                or (receipt_size is not None and receipt_size > capacity['max_sql_value_bytes'])):
-            raise ValueError('original bounded actions missing or retired before terminal evidence')
-        result = []
-        for raw, state, receipt in conn.execute('SELECT action_json,dispatch_state,receipt_json '
-                'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
-            action = json.loads(raw, object_pairs_hook=unique_keys)
-            identity = action['identity']; command = action['command']
-            if (identity['sandbox'] != sandbox or identity['operation'] != op
-                    or identity['owner'] != self.action['identity']['owner']
-                    or identity['protocol_version'] != self.action['identity']['protocol_version']
-                    or identity['generation'] != self.action['identity']['generation']
-                    or identity['attempt'] != command['attempt']):
-                raise ValueError('terminal observation action has a foreign complete identity')
-            result.append((action, state, None if receipt is None else
-                           json.loads(receipt, object_pairs_hook=unique_keys)))
-        return result
+        return terminal_outbox(self.runtime, conn, local, operation, capacity,
+                               self.action['identity'])
 
     def _read_terminal(self, deadline):
         """Separate terminal-only SQL snapshot; the five old stages stay strict."""

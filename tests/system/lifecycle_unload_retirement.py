@@ -315,7 +315,8 @@ class RetirementRestartProbe:
                 continue
             return ready
 
-    def restart_after_delete(self, successor_acceptance):
+    def observe_deletion(self, successor_acceptance):
+        """Check the original reached cut; this does not deliver its receipt."""
         runtime = self.runtime
         ready = self._wait_ready()
         observation,digest = self._save('observation.json')
@@ -345,6 +346,14 @@ class RetirementRestartProbe:
             raise ValueError('real original delete has not completed at the selected gate')
         self._unchanged()
         self._configuration()
+        return dict(original=original, successor=successor, material=material,
+            digest=digest, observation=observation, complete=complete)
+
+    def restart_after_delete(self, successor_acceptance):
+        runtime = self.runtime
+        cut = self.observe_deletion(successor_acceptance)
+        original, successor = cut['original'], cut['successor']
+        material, observation, complete = cut['material'], cut['observation'], cut['complete']
         def observe_stopped():
             self._unchanged()
             stopped=source_record(read_records(runtime,self.deadline),self.session,self.original)
