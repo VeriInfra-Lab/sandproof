@@ -85,6 +85,25 @@ fn raced_unload(
     raced_unload_with_deadline(late_request, fence_after_winner, false)
 }
 
+fn establish_running_before_unload_race(app: &Application, session: &SessionId) {
+    // Create acceptance does not promise immediate Running. Finish setup via
+    // original background work before installing the race barrier; each call
+    // keeps the original 200ms reply budget. The tested race is not retried.
+    let setup_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let phase = app.query_lifecycle("8", session).unwrap().phase;
+        if phase != PublicSessionPhase::Creating {
+            assert_eq!(phase, PublicSessionPhase::Running);
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < setup_deadline,
+            "Create setup did not reach Running"
+        );
+        app.reconcile_once().unwrap();
+    }
+}
+
 fn raced_unload_with_deadline(
     late_request: PublicUnloadRequest,
     fence_after_winner: bool,
@@ -100,10 +119,10 @@ fn raced_unload_with_deadline(
     let created = app
         .create_lifecycle("8", &lifecycle_public::request())
         .unwrap();
-    assert_eq!(
-        app.query_lifecycle("8", &created.session).unwrap().phase,
-        PublicSessionPhase::Running
-    );
+    // Exercise the legal intermediate observation deterministically, instead
+    // of depending on host load to expose the incorrect setup assumption.
+    host.pending_once.store(true, Ordering::SeqCst);
+    establish_running_before_unload_race(&app, &created.session);
     let request = PublicUnloadRequest {
         window: 1.try_into().unwrap(),
         sequence: 2.try_into().unwrap(),

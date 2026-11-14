@@ -95,6 +95,8 @@ pub struct State {
     pub source: Option<sandproof_controller_service::capture::SourceProcessIdentity>,
     pub observe_unavailable: bool,
     pub lose_stop: Option<core::SandboxId>,
+    pub stop_before_effect: Option<core::SandboxId>,
+    pub reclaimed_stops: Vec<WorkAction<core::EffectId>>,
     pub observe_hook: Option<Box<dyn FnOnce() + Send>>,
     pub restore_exit:
         Option<sandproof_controller_service::capture::RestoreCandidateExitObservation>,
@@ -200,7 +202,7 @@ impl WorkExecution for TestHost {
             return Err(WorkerTransportError::ReplyLost);
         }
         if matches!(action.command.command(), core::Command::StopVm { sandbox, .. }
-            if state.lose_stop == Some(*sandbox))
+            if state.lose_stop == Some(*sandbox) || state.stop_before_effect == Some(*sandbox))
         {
             return Err(WorkerTransportError::ReplyLost);
         }
@@ -298,7 +300,9 @@ impl WorkRecovery for TestHost {
         if let Some(hook) = state.observe_hook.take() {
             hook();
         }
-        (state.actions.contains(action) && !state.observe_unavailable).then(|| {
+        let stop_pending = matches!(action.command.command(), core::Command::StopVm { sandbox, .. }
+            if state.stop_before_effect == Some(*sandbox));
+        (state.actions.contains(action) && !state.observe_unavailable && !stop_pending).then(|| {
             let mut receipt = workflow::success(action);
             if let sandproof_protocol::WorkOutcome::ObservedSuccess(evidence) = &mut receipt.outcome
             {
@@ -312,6 +316,21 @@ impl WorkRecovery for TestHost {
         _: &WorkAction<core::EffectId>,
     ) -> Result<(), ApplicationError> {
         Err(ApplicationError::Busy)
+    }
+    fn reclaim_incomplete_stop(
+        &self,
+        action: &WorkAction<core::EffectId>,
+    ) -> Result<(), ApplicationError> {
+        let mut state = self.0.lock().unwrap();
+        if !state.actions.contains(action)
+            || !matches!(action.command.command(), core::Command::StopVm { sandbox, .. }
+                if state.stop_before_effect == Some(*sandbox))
+        {
+            return Err(ApplicationError::Busy);
+        }
+        state.reclaimed_stops.push(action.clone());
+        state.stop_before_effect = None;
+        Ok(())
     }
     fn reclaim_incomplete_activation(
         &self,

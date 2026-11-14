@@ -521,3 +521,61 @@ fn mapped_destroy_revokes_routes_and_restarted_cleanup_needs_no_startup_epoch() 
     );
     assert_eq!(state.lock().unwrap().epoch_checks, 1);
 }
+
+#[test]
+fn bounded_recovery_completes_the_original_stop_after_pre_effect_crash() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(State {
+        epoch: TestEpoch::Matching,
+        ..State::default()
+    }));
+    let app = application(&path, state.clone(), true);
+    app.record_lifecycle_intent(&request(), &context()).unwrap();
+    app.establish_lifecycle_host_epoch().unwrap();
+    let local = advance(&app).unwrap().local.unwrap();
+    let mut destroy = request();
+    destroy.accepted_version = 2;
+    destroy.request.binding.expected = ExpectedSession::Version(1);
+    destroy.request.binding.key.sequence = 2.try_into().unwrap();
+    destroy.request.operation = LifecycleOperation::Destroy {};
+    app.record_lifecycle_intent(&destroy, &context()).unwrap();
+    state.lock().unwrap().stop_before_effect = Some(local.sandbox);
+    assert!(!app.advance_current_workflow(local.sandbox).unwrap());
+    drop(app);
+    let original = open(&path).uncertain_actions().unwrap();
+    assert_eq!(original.len(), 1);
+    assert!(matches!(
+        original[0].command.command(),
+        core::Command::StopVm { .. }
+    ));
+    let app = application(&path, state.clone(), false);
+    assert!(
+        app.advance_current_workflow(local.sandbox).unwrap(),
+        "bounded production worker must finish the original uncertain Stop"
+    );
+    drop(app);
+    let journal = open(&path);
+    assert!(journal.uncertain_actions().unwrap().is_empty());
+    assert_eq!(
+        journal
+            .world()
+            .unwrap()
+            .sandbox_record(local.sandbox)
+            .unwrap()
+            .phase,
+        core::Phase::Destroyed
+    );
+    let observed = state.lock().unwrap();
+    assert_eq!(observed.reclaimed_stops, original);
+    assert_eq!(
+        observed
+            .actions
+            .iter()
+            .filter(|a| matches!(a.command.command(), core::Command::StopVm { .. }))
+            .count(),
+        1,
+        "no new Stop dispatch identity"
+    );
+    assert_eq!(observed.released_slots.len(), 1);
+}

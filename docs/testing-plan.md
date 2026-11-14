@@ -78,7 +78,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |
-| E15 / G3、G4、G6 | [生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs)、[恢复观察](../tests/system/lifecycle_unload_runtime.py) | TTL 与 loader、运行 backing、回收中的实际交错须另跑；普通 Destroy 和寿命不重置不能代替到期验收。 |
+| E15 / G3、G4、G6 | `restore-prepare-expiry`、`restored-running-expiry`；[到期观察](../tests/system/lifecycle_unload_expiry.py)、[生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs) | 分别核对加载中到期和运行 backing 到期；实际结果绑定精确提交，回收中及其它交错仍须另跑。普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
@@ -139,6 +139,25 @@ Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成
 前一重放之后继续检查原 Prepared/Stop 与没有第二次 Prepare/Activate，后一重放之后继续
 核对最终资源结算，不能只凭两次 HTTP 202 宣称不会复活。这只覆盖原保留窗口内的重放，
 不替代过期窗口、迟到物理删除或 TTL 竞争。
+
+到期代表使用 `restore-prepare-expiry` 与 `restored-running-expiry`，第一会话初始寿命明确
+为 75 秒，另一 owner 保持原部署寿命。不得改宿主时钟或发送第一会话的 Destroy；若到期前
+未达到指定加载/运行位置，场景失败而不是跳过。依据原 Rust 中心审计中的实际内部终止键、
+原寿命和完整操作历史确认后台到期，不能从经过了某段等待或公开查询自触发到期推断。
+内部终止没有采样接受时刻，报告必须保留 Unsampled，不能伪造一个到期接受时间。
+
+前者复用原 LoadPaused 候选暂停，在后台终止已到达时确认原材料使用登记与正额度仍保留。
+为确定性覆盖原缺陷，加载中代表在期限到达前停止中心，观察宿主独立进入原 Resume 的
+期限补偿后再恢复中心；不得用中心先发 Kill 的另一合法交错替代。中心的暂停只影响管理
+服务，不暂停宿主时钟或修改寿命。到期加入原 Resume 的期限补偿，而不是另建 Kill；同一原生操作只能计数一次，但真实
+重复 Prepare 或任何 Activate 仍须拒绝。仅在原操作已关闭运行资格且完整身份一致时撤去
+进程暂停，让原只读 Prepare 观察完成；这不执行来宾激活。原终止围栏必须在 Stop 前生效，
+并在 Cleanup 已完成、SQL 回执尚未写入的固定位置核对其成功回执及文件，再完成实际回收。
+后者在原 Stop 派发后、物理效果前
+让宿主管理服务退出，稳定核对到期后的原 VMM 和另一 owner VMM 仍在、来源文件完整、
+使用登记和额度未提前清除，再重开原管理服务完成 Stop/GC。管理服务退出期间不承诺另一
+会话的管理请求持续可用；恢复后仍须确认它保持原实例且可用。两者最后分别记录自动终止
+完成与全局资源归零，不把它计入主动 Destroy 的操作耗时，也不替代其它到期/回收交错。
 
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
