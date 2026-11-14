@@ -102,8 +102,8 @@ class SyncProtocolTests(unittest.TestCase):
 
     def test_same_inode_mode_change_during_metadata_read_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);work=root/'s'/('staging-'+'d'*64)
-            work.mkdir(mode=0o700,parents=True)
+            root=Path(directory);store=root/'s';store.mkdir(mode=0o700)
+            work=store/('staging-'+'d'*64);work.mkdir(mode=0o700)
             memory=work/'memory.bin';memory.write_bytes(b'original');memory.chmod(0o600)
             p,_=self.probe('sync-before');p.runtime=NS(captures=[dict(layout_parent=str(root))])
             original_fstat=os.fstat
@@ -111,8 +111,10 @@ class SyncProtocolTests(unittest.TestCase):
                 result=original_fstat(fd)
                 memory.chmod(0o400)  # same original inode; never a path-only replacement
                 return result
-            with patch.object(capture.os,'fstat',side_effect=changed),self.assertRaises(ValueError):
-                p._sync_material(100)
+            with patch.object(capture.os,'fstat',side_effect=changed) as reading:
+                with self.assertRaises(ValueError):p._sync_material(100)
+                reading.assert_called_once()
+            self.assertEqual(memory.stat().st_mode & 0o777,0o400)
 
     def test_continued_observation_preserves_charge_and_rejects_source_stop(self):
         for fault in ('none','adopted','missing-end','charge','stop'):
