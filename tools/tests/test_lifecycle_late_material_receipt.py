@@ -253,6 +253,12 @@ class LateReceiptGateTests(LateMaterialFixture):
             self.records[0]['retirement']['state'] = 'retiring'
             self.counter = 1
             self.events.clear()
+            # Independent fault histories need fresh observers; reusing the
+            # first failed baseline would reject before reaching later faults.
+            self.gate.observer = late.LateMaterialReceiptObserver(self.runtime,
+                session='original',original=self.original,occupant=self.occupant,
+                deadline=time.monotonic()+20)
+            self.gate.observer._physical = Mock(side_effect=lambda _:copy.deepcopy(self.physical))
             def observe():
                 value = self.workload()
                 if fault == 'guest-failure': raise AssertionError('controlled guest failure')
@@ -261,6 +267,7 @@ class LateReceiptGateTests(LateMaterialFixture):
                 return value
             with self.subTest(fault=fault),self.assertRaises((ValueError,AssertionError)):
                 self.gate.release_after_delete({},observe)
+            self.assertEqual(self.events,['guest-2'])
             self.publish.assert_not_called()
             self.assertFalse(self.gate.recovered)
 
