@@ -241,7 +241,7 @@ class ResumeWiringTests(unittest.TestCase):
 class ResumeCandidateTests(unittest.TestCase):
     def test_original_readonly_sql_mapping_pin_and_activation_bind_the_same_candidate(self):
         f=fixture()
-        for fault in ('none','pin','pin-type','activation','intent','owner','context','resource','operation','attempt','dead','physical-resource','physical-pid','physical-start'):
+        for fault in ('none','pin','pin-type','activation','intent','manifest','owner','context','resource','operation','attempt','dead','physical-resource','physical-pid','physical-start'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 root=Path(directory);database=root/'state.db'
                 context=dict(position=1,expected_previous=None,binding=dict(owner=1,sandbox=4,generation=2,vm=9,network=10))
@@ -265,7 +265,7 @@ class ResumeCandidateTests(unittest.TestCase):
                 native=dict(database=str(database),namespace='0123456789abcdef',chroot_base=str(root),bounded_host={'maintenance':{'max_host_slots':2}})
                 config=dict(native={'maintenance':{'capacity':{'max_sql_value_bytes':8192}}})
                 runner=NS(services=NS(native_pools=[native],host_configs=[config]))
-                reader=stack.enter_context(patch.object(resume,'checked_source_records',return_value=[dict(restore=claim,capture={'completed':[7]*32})]))
+                reader=stack.enter_context(patch.object(resume,'checked_source_records',return_value=[dict(restore=claim,capture={'completed':[9 if fault=='manifest' else 7]*32})]))
                 stack.enter_context(patch.object(resume,'original_json',return_value=dict(resource_id='vm-0123456789abcdef-9',pid=123,start_time_ticks=456,boot_id='owned')))
                 stack.enter_context(patch.object(resume,'original_process',return_value=fault!='dead'))
                 import server_bounded_churn

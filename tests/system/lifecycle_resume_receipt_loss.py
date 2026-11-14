@@ -137,7 +137,8 @@ def observe_candidate(runtime,intent,deadline):
         matched=[r for r in records if r['restore'] is not None and same_json(r['restore']['intent'],intent)]
         if len(matched)!=1:raise ValueError('one complete original Resume claim required')
         record=matched[0];claim=record['restore'];activation=claim['activation']
-        if claim['material_use'] is not True or activation is None or record['capture']['completed'] is None:
+        if (claim['material_use'] is not True or activation is None
+                or not same_json(record['capture']['completed'],intent['request']['operation']['manifest_digest'])):
             raise ValueError('actual activation marker and original backing pin required')
         action=activation['command']['logical']['command']
         if set(action)!={'ActivateVm'}:raise ValueError('original activation marker kind differs')
