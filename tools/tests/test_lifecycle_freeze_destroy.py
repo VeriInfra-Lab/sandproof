@@ -250,7 +250,14 @@ class OriginalUnixPauseTests(unittest.TestCase):
                         connection.sendall(headers+b'\r\n'+data)
                 except BaseException as error:errors.append(type(error).__name__)
             thread=threading.Thread(target=serve);thread.start()
-            try:yield runner,prior,seen
+            # The protected root-owned claim is an explicit controlled
+            # provider here; Unix framing/peer credentials and procfs are real.
+            # Ordinary tool tests must not require or simulate root ownership.
+            def claim_provider(path,limit):
+                self.assertEqual(path,claim/'record.json');self.assertEqual(limit,16384)
+                return json.loads(path.read_bytes())
+            try:
+                with patch.object(frozen,'original_json',side_effect=claim_provider):yield runner,prior,seen
             finally:thread.join(3);server.close();self.assertFalse(thread.is_alive());self.assertEqual(errors,[])
 
     def test_actual_unix_peer_and_single_get_bind_original_paused_source(self):
