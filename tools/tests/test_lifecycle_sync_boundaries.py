@@ -40,7 +40,8 @@ class SyncProtocolTests(unittest.TestCase):
         accepted,source,record,question=original_fixture.ContinuedExitConsumerTests().fixture()
         question.update(self.question(stage));question.update(action=record['capture']['action'],
             worker=record['capture']['worker'],source=record['work']['requirement']['source'])
-        record['capture']['end']['observation'].update(outcome={'kind':'returned','http_status':500})
+        record['capture']['end']['observation'].update(outcome={'kind':'returned','http_status':500},
+            full_work_binding=question['full_work_binding'])
         p=capture.CaptureHandoffProbe(NS(),NS(session='original'),dict(session='original',source=source),stage)
         p.action=question['action'];p.accepted=accepted;p.question=question;p.question_digest='c'*64
         p.config=dict(schema_version=3,run_identity='a'*64);p.deadline=time.monotonic()+5
@@ -131,7 +132,7 @@ class SyncSceneTests(unittest.TestCase):
             nonlocal calls
             if session=='session-1':calls+=1
             return dict(session=session,lifetime=lifetime,context=dict(position=0 if session=='session-2' or calls==1 else 1))
-        probe=Mock()
+        probe=Mock(spec=capture.CaptureHandoffProbe)
         def cut(*_):
             events.append('sync-fail')
             if fail:raise ValueError('unconfirmed original End')
