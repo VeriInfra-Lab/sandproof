@@ -22,6 +22,35 @@ class SyncProtocolTests(unittest.TestCase):
         return dict(schema_version=3,run_identity='a'*64,action={},worker={},source={},
                     full_work_binding=[1]*32,capture_key='d'*64,phase=capture.SYNC_PHASES[stage])
 
+    def test_real_arm_uses_original_host_variable_allowlist_and_selected_schema(self):
+        import _center_host_services as services
+        for stage in capture.SYNC_PHASES:
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);processes=NS(stop=Mock())
+                def start(name,*,env):
+                    self.assertEqual(name,'host-0')
+                    self.assertEqual(services.fault_environment(env),
+                        {'SANDPROOF_TEST_CAPTURE_SYNC_GATE':str(root/'capture-sync-gate')})
+                    return NS(pid=101)
+                processes.start=Mock(side_effect=start)
+                runner=NS(lease=NS(identity='a'*64),quota={'deployment_control':str(root)},
+                    services=NS(native_pools=[dict(namespace='0123456789abcdef')],
+                                processes=processes,wait_ready=Mock()))
+                prior=dict(session='original',context={'binding':{'generation':2}},
+                           local={'sandbox':4},source={})
+                p=capture.CaptureHandoffProbe(runner,NS(session='original'),prior,stage,root/'capture-sync-gate')
+                p._configuration=Mock();p._save_file=Mock()
+                try:
+                    with patch.object(capture,'open_original_candidate_pidfd',return_value=None):
+                        result=p.arm(time.monotonic()+5,1000)
+                    self.assertTrue(result['armed']);processes.start.assert_called_once()
+                    import json
+                    config=json.loads((root/'capture-sync-gate/config.json').read_bytes())
+                    self.assertEqual(config['schema_version'],3)
+                    self.assertEqual(config['sync_phase'],'before-sync' if stage=='sync-before' else 'after-sync')
+                    processes.stop.assert_called_once_with('host-0')
+                finally:p.close()
+
     def test_each_sync_question_rejects_other_phase_measurement_extra_and_invalid_key(self):
         for stage in capture.SYNC_PHASES:
             question=self.question(stage)
