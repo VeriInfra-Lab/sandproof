@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod fixture;
 
 type Captured = Arc<std::sync::Mutex<Vec<AcceptedLifecycleIntent>>>;
-struct Counted(Arc<AtomicUsize>, Captured, bool);
+struct Counted(Arc<AtomicUsize>, Captured, bool, bool);
 impl sandproof_internal::ValidationReceiver for Counted {
     async fn validation_evidence(
         &self,
@@ -59,11 +59,23 @@ impl LifecycleReceiver for Counted {
         assert_eq!(context.expected_node(), &fixture::node("host-a"));
         self.0.fetch_add(1, Ordering::SeqCst);
         self.1.lock().unwrap().push(intent.clone());
-        // Transport fixture only: no restore, activation or Running result.
+        // Controlled decoded readiness only; no restore, activation, journal or VM fact.
         Ok(sandproof_protocol::lifecycle::ResumeObservation {
             request: intent.clone(),
             current_request: intent,
-            readiness: sandproof_protocol::lifecycle::CurrentResumeReadiness::Pending,
+            readiness: if self.3 {
+                sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed {
+                    facts: sandproof_protocol::lifecycle::CurrentReadyFacts {
+                        started_at_ms: 900,
+                        end_at_ms: 1000,
+                        max_end_at_ms: 1100,
+                        startup_deadline_ms: 1000,
+                        observed_at_ms: 950,
+                    },
+                }
+            } else {
+                sandproof_protocol::lifecycle::CurrentResumeReadiness::Pending
+            },
         })
     }
     async fn record_lifecycle(
@@ -208,6 +220,86 @@ async fn original_unload_receipt_is_held_dropped_and_retried_across_double_mtls(
     assert_eq!(server.active_connections(), 0);
 }
 
+/// The original Rust codecs and two original authenticated TLS legs; values are synthetic.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_observed_resume_receipt_is_held_dropped_then_read_again() {
+    let certs = certificates_with_dual_roles();
+    let count = Arc::new(AtomicUsize::new(0));
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server = counted_server_with_readiness(
+        &certs,
+        Arc::clone(&count),
+        Arc::clone(&captured),
+        true,
+        true,
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let backend = listener.local_addr().unwrap();
+    let (stop, shutdown) = oneshot::channel();
+    let run = server.clone();
+    let task = tokio::spawn(async move { run.serve(listener, shutdown).await });
+    let mut relay = super::python_relay::PythonRelay::start_resume_gate(
+        &certs,
+        backend,
+        &fixture::node("host-a"),
+    );
+    let caller = InternalClient::new(
+        ClientTls::new(
+            certs.center.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(relay.address, "host.test".into(), fixture::node("host-a"))
+            .unwrap(),
+        limits(),
+    );
+    let mut original = accepted(LifecycleOperation::Resume {
+        source_incarnation: 1.try_into().unwrap(),
+        capture: 3.try_into().unwrap(),
+        target_incarnation: 7.try_into().unwrap(),
+        manifest_digest: sandproof_protocol::lifecycle::ContentDigest::from_sha256([7; 32]),
+    });
+    original.retention.window = 7.try_into().unwrap();
+    let request = original.clone();
+    let call = tokio::spawn(async move {
+        let result = caller.observe_lifecycle_resume(&request).await;
+        (caller, result)
+    });
+    let held: sandproof_protocol::lifecycle::ResumeObservation =
+        serde_json::from_value(relay.wait_resume()).unwrap();
+    assert_eq!(held.request, original);
+    assert_eq!(held.current_request, original);
+    assert!(matches!(
+        held.readiness,
+        sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { .. }
+    ));
+    assert!(
+        !call.is_finished(),
+        "observed Resume escaped the original gate"
+    );
+    let loss = relay.discard_resume();
+    assert_eq!(loss["observation"], serde_json::to_value(&held).unwrap());
+    assert_eq!(loss["held"], 1);
+    assert_eq!(loss["dropped"], 1);
+    assert_eq!(loss["response_attempts"], 0);
+    assert_eq!(loss["observed_at_ms"], serde_json::json!([950]));
+    let (caller, result) = call.await.unwrap();
+    assert!(result.is_err());
+    assert_eq!(caller.active_calls(), 0);
+    assert_eq!(
+        caller.observe_lifecycle_resume(&original).await.unwrap(),
+        held
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    assert_eq!(*captured.lock().unwrap(), vec![original.clone(), original]);
+    relay.stop();
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(server.active_connections(), 0);
+}
+
 fn center() -> CenterIdentity {
     CenterIdentity {
         deployment: fixture::node("host-a").deployment_id,
@@ -260,6 +352,15 @@ fn counted_server_with_resume(
     captured: Captured,
     allow_resume: bool,
 ) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Counted>> {
+    counted_server_with_readiness(certs, count, captured, allow_resume, false)
+}
+fn counted_server_with_readiness(
+    certs: &Certificates,
+    count: Arc<AtomicUsize>,
+    captured: Captured,
+    allow_resume: bool,
+    observed: bool,
+) -> InternalServer<sandproof_internal::diagnostic::RejectTemplateCache<Counted>> {
     InternalServer::new(
         ServerTls::new(
             certs.host.material(),
@@ -273,6 +374,7 @@ fn counted_server_with_resume(
             count,
             captured,
             allow_resume,
+            observed,
         )),
     )
     .with_center_peer(

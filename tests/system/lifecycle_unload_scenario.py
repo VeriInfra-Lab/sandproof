@@ -728,7 +728,8 @@ def exercise(args):
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
     receipt_restart = args.scenario == 'unload-receipt-restart'
-    normal_chain = args.scenario == 'normal' or receipt_restart
+    resume_receipt_restart = args.scenario == 'resume-receipt-restart'
+    normal_chain = args.scenario == 'normal' or receipt_restart or resume_receipt_restart
     retirement_observation = normal_chain or retirement_restart
     if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
         raise ValueError('one explicit existing lifecycle scenario required')
@@ -749,10 +750,10 @@ def exercise(args):
     terminal_destroy_done = False
     failed = False
     try:
-        if receipt_restart:
+        if receipt_restart or resume_receipt_restart:
             receipt_probe = runtime.receipt_restart
             if receipt_probe is None:
-                raise ValueError('original Unload receipt relay was not prepared')
+                raise ValueError('original lifecycle receipt relay was not prepared')
         report['measurement_identity']=runtime.measurement_identity()
         report['registration'] = check_center_configuration(
             runtime.services, runtime.owner_key, runtime.foreign_key)
@@ -771,7 +772,7 @@ def exercise(args):
         client.operation_evidence_completed()
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
-        if receipt_probe is not None:
+        if receipt_restart:
             report['phase'] = 'unload-receipt-arm'
             report['unload_receipt_restart'] = receipt_probe.arm(
                 client.create_acceptance, report['running'], deadline)
@@ -795,11 +796,11 @@ def exercise(args):
             report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
             data_probe.release()
         client.assert_data_closed()
-        if receipt_probe is not None:
+        if receipt_restart:
             report['phase'] = 'unload-receipt-center-interruption'
             receipt_probe.interrupt(client.unload_acceptance, report['running'], deadline)
         saved = client.wait_unloaded()
-        if receipt_probe is not None:
+        if receipt_restart:
             report['phase'] = 'unload-receipt-recovered-native-center'
             receipt_probe.recovered(saved, deadline)
         client.assert_owner_isolation()
@@ -866,6 +867,9 @@ def exercise(args):
                 from lifecycle_unload_cow import SealedSourceProbe
                 cow_probe = SealedSourceProbe(physical, session=client.session,
                     witness_before=client.witness, deadline=deadline)
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-arm'
+                report['resume_receipt_restart']=receipt_probe.arm(client.create_acceptance,saved,deadline)
             accepted=client.resume(saved)
             original_physical = copy.deepcopy(physical)
             original_resume_request = copy.deepcopy(client.resume_request)
@@ -948,9 +952,17 @@ def exercise(args):
                     break
                 report['phase']='original-activation-manager-lost-receipt'
                 report['activation_gate_recovery']=runtime.recover_resume_gate(gate_receipt,deadline)
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-center-interruption'
+                receipt_probe.interrupt(accepted,report['running'],deadline)
             resumed=client.wait_running()
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-recovered-native-center'
+                receipt_probe.recovered(resumed,deadline)
             physical_running=runtime.record_running(client.session,deadline,
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
+            if cycle == 1 and resume_receipt_restart:
+                report['resume_receipt_same_candidate']=receipt_probe.assert_candidate(physical_running)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
             cow_receipt = None
@@ -1138,9 +1150,9 @@ def exercise(args):
                 'A/B/C complete sources and three restores; previous generations settled while '
                 'session live, old Resume acceptance/claim unchanged, current source charged and '
                 'restorable, exact old paths absent; logical settlement is not shared-block release')
-        if receipt_restart:
+        if receipt_restart or resume_receipt_restart:
             report['acceptance_cases']['E13'] = (
-                'first completed Unload observation explicitly discarded before reply headers; '
+                'first completed '+('Resume' if resume_receipt_restart else 'Unload')+' observation explicitly discarded before reply headers; '
                 'center alone interrupted with the exact accepted operation still pending; '
                 'same Host/Redis, original result, material and lifetime recovered; '
                 'pre/post native-read center restarts recorded separately; not all E13 windows')
@@ -1262,10 +1274,10 @@ def exercise(args):
         finally:
             try:
                 if receipt_probe is not None:
-                    report['unload_receipt_relay_cleanup'] = receipt_probe.close()
+                    report['resume_receipt_relay_cleanup' if resume_receipt_restart else 'unload_receipt_relay_cleanup'] = receipt_probe.close()
             except BaseException as error:
                 report['complete'] = False
-                report['unload_receipt_cleanup_failure_type'] = type(error).__name__
+                report['resume_receipt_cleanup_failure_type' if resume_receipt_restart else 'unload_receipt_cleanup_failure_type'] = type(error).__name__
                 if not failed:
                     raise
             finally:
@@ -1289,7 +1301,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart','unload-receipt-restart'),default='normal')
+        'material-retirement-restart','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

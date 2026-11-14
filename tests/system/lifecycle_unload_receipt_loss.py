@@ -239,6 +239,24 @@ class UnloadReceiptRestart:
     This adapter only seals the fresh test endpoint and interrupts the center
     at an actual Unloaded receipt. No Host audit occurs in that fault window.
     """
+    barrier_name = 'unload_barrier'
+
+    def _gate(self):
+        return getattr(self.relay,self.barrier_name)
+
+    def _make_observer(self,acceptance,running):
+        return UnloadRestartObserver(node=self.node,acceptance=acceptance,
+            create_identity=self.create_identity,lifetime=running['lifetime'])
+
+    def _loss_evidence(self):
+        return self.relay.unload_loss_evidence()
+
+    def _held(self,acceptance,deadline):
+        pass
+
+    def _restarted(self,acceptance,deadline):
+        pass
+
     def __init__(self, runtime):
         from server_process_crash import free_loopback_port
         self.runtime, self.services = runtime, runtime.services
@@ -336,17 +354,17 @@ class UnloadReceiptRestart:
             kind='planned-center-native-read-before-fault-window')
         self._healthy()
         self._remaining(deadline)
-        self.relay.unload_barrier.arm()
+        self._gate().arm()
         return self.evidence
 
     def interrupt(self, acceptance, running, deadline):
         if self.closed or self.observer is not None or 'preparation' not in self.evidence:
             raise ValueError('one armed Unload receipt fault required')
-        gate, processes = self.relay.unload_barrier, self.services.processes
+        gate, processes = self._gate(), self.services.processes
         self._wait(gate.ready, deadline)
-        self.observer = UnloadRestartObserver(node=self.node, acceptance=acceptance,
-            create_identity=self.create_identity, lifetime=running['lifetime'])
+        self.observer = self._make_observer(acceptance,running)
         self.observer.hold(gate.captured, processes.observe())
+        self._held(acceptance,deadline)
         self._configs()
         self._remaining(deadline)
         processes.stop('center', force=True)
@@ -355,19 +373,19 @@ class UnloadReceiptRestart:
         self.evidence['pending'] = copy.deepcopy(self.observer.pending)
         gate.unblock(discard=True)
         self._wait(gate.drained, deadline)
-        self.observer.discarded(self.relay.unload_loss_evidence())
+        self._healthy()
+        self.observer.discarded(self._loss_evidence())
         self._configs()
         self._remaining(deadline)
         processes.start('center')
         self._ready(deadline)
         self.observer.restarted(processes.observe())
+        self._restarted(acceptance,deadline)
         self.evidence['fault_window'] = dict(before=self.observer.before,
             after=self.observer.after, loss=self.observer.loss, center_force_stopped=True)
         return self.evidence
 
-    def recovered(self, public, deadline):
-        if self.closed or self.observer is None or self.observer.phase != 'restarted':
-            raise ValueError('original center fault must precede recovered observation')
+    def _validate_public(self, public):
         _fields(public, 'session operation current_version phase unload_outcome create_refusal')
         expected = self.observer.acceptance
         if (public['phase'] != 'unloaded' or public['create_refusal'] is not None
@@ -375,6 +393,10 @@ class UnloadReceiptRestart:
                                       accepted_version=public['current_version']), expected)
                 or not same_json(public['unload_outcome'], self.observer.observation['outcome'])):
             raise ValueError('public Unloaded changed original acceptance or complete outcome')
+    def recovered(self, public, deadline):
+        if self.closed or self.observer is None or self.observer.phase != 'restarted':
+            raise ValueError('original center fault must precede recovered observation')
+        self._validate_public(public)
         self._healthy()
         self._configs()
         before = self.services.processes.observe()
