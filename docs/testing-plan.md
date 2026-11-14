@@ -53,6 +53,28 @@
 
 E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确认，才能排除“重载旧快照也能通过”的伪测试。E10 包含 load 返回后、VMM 仍运行的时段；E1 包含旧 slot 被另一个会话实际复用。观测 oracle 接受临时两库差异，检查最终事实、责任和禁止状态，不要求每瞬间强一致。RAM/文件见证使用明确屏障或描述允许捕获点；不能把应用的两个非原子写入强行要求为永远相等，从而误报协议错误。
 
+E11 的 Full 同步边界入口为 `--scenario capture-sync-before` 与
+`--scenario capture-sync-after`，沿用原生命周期入口的完整批准参数。二者先完成原
+Create/Unload/双管理重开/另一 owner 复用位置/首次 Resume，再在第二次 Unload 的
+Memory 克隆、全文 SHA 读取之后，分别在 `sync_all` 之前或成功之后尚未封存时失败。
+调试门只接受当前 schema 3 与精确 `sync_phase`；原 schema 2 的摘要读取门保持独立。
+原 helper 不继承环境，门路径仍进入原 job digest；同时配置两种门拒绝。
+
+观察器核对实际回调、原 action/Full/worker/source、当前接受版本及 Rust 发出的存储键；
+原 staging Memory 长度/身份/模式与尚无 manifest、published bundle、completion 分别核对。
+同步后的只读模式表示已到达该回调，不证明断电耐久性。故障命令不构成 End：必须取得
+原 Returned End、确认该 helper 退出，并经公开 Running 和原物理身份核对 RAM/进程/
+授权/寿命继续、未完成 Full 未采用、正材料预留保持且原 Stop 未派发。随后使用新操作键
+正常 Unload/Resume，最后由产品 Destroy/GC/额度结算收尾；失败时保留原责任，不删除材料
+或主动停止原 VM 来补造成功。两个选择均为原两 owner、两轮恢复的有限代表。
+
+本入口与自测不表示已经执行 KVM。精确候选的实机与独立环境收尾交由验收者记录；
+成功收尾在精确删除门之前，将五份有界原始门字节和摘要保存到私有 run root 的
+`capture-sync-evidence/`，最多 80 KiB，须纳入原批准证据余量；不覆盖旧证据，
+归档失败不删除原门，不自动扩大配额。
+这里注入的是同步**边界返回错误**，不是内核 `fsync` 返回 EIO/ENOSPC、断电、rename/delete
+故障或完整 E11。普通发布构建没有这些调试门，不新增协议权限或 Lean 结论。
+
 ### 从性质定位测试与缺口
 
 下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
@@ -74,7 +96,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
-| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
+| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`、`capture-sync-before/after`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |

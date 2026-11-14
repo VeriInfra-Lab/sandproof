@@ -139,6 +139,7 @@ fn copy_gate_binds_original_question_and_only_consumes_exact_release_or_failure(
             &source(),
             &worker(),
             (65_536, 131_072),
+            None,
         );
         thread.join().unwrap();
         assert_eq!(result.is_ok(), mode == "release");
@@ -161,7 +162,8 @@ fn copy_gate_rejects_zero_or_finished_measurement_before_publishing_a_question()
                 ContentDigest::from_sha256([3; 32]),
                 &source(),
                 &worker(),
-                progress
+                progress,
+                None,
             )
             .is_err()
         );
@@ -182,4 +184,184 @@ fn old_copy_config_is_rejected_instead_of_becoming_a_measurement_gate() {
     .unwrap();
     assert!(CaptureCopyGate::select(directory(&path), &action()).is_err());
     assert!(!path.join("ready.json").exists());
+}
+
+fn sync_fixture(phase: &str) -> (tempfile::TempDir, PathBuf) {
+    let (root, path) = fixture();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&disk::read(path.join("config.json")).unwrap()).unwrap();
+    config["schema_version"] = serde_json::json!(3);
+    config["sync_phase"] = serde_json::json!(phase);
+    disk::write(
+        path.join("config.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    (root, path)
+}
+
+#[test]
+fn sync_gate_selects_only_original_memory_event_and_has_no_byte_progress_claim() {
+    use sandbox_runtime::snapshot_store::{SnapshotArtifact as A, SnapshotArtifactEvent as E};
+    for (phase, selected, other) in [
+        ("before-sync", E::BeforeSync, E::Synced),
+        ("after-sync", E::Synced, E::BeforeSync),
+    ] {
+        let (_root, path) = sync_fixture(phase);
+        let gate = CaptureCopyGate::select(directory(&path), &action())
+            .unwrap()
+            .unwrap();
+        assert_eq!(gate.progress(A::Memory, selected), Some((0, 0)));
+        for artifact in [A::State, A::Disk(0)] {
+            assert_eq!(gate.progress(artifact, selected), None);
+        }
+        for event in [
+            E::BeforeClone,
+            E::Cloned,
+            other,
+            E::Measuring {
+                measured_bytes: 1,
+                total_bytes: 2,
+            },
+        ] {
+            assert_eq!(gate.progress(A::Memory, event), None);
+        }
+        assert!(!path.join("ready.json").exists());
+    }
+}
+
+#[test]
+fn sync_gate_binds_phase_action_worker_source_and_exact_command_before_consumption() {
+    for phase in ["before-sync", "after-sync"] {
+        for mode in [
+            "release",
+            "fail",
+            "wrong-run",
+            "wrong-work",
+            "wrong-question",
+            "wrong-schema",
+            "wrong-command",
+        ] {
+            let (_root, path) = sync_fixture(phase);
+            let gate = CaptureCopyGate::select(directory(&path), &action())
+                .unwrap()
+                .unwrap();
+            let control = path.clone();
+            let expected_phase = format!("memory-{phase}");
+            let thread = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while !control.join("ready.json").exists() {
+                    assert!(Instant::now() < deadline);
+                    std::thread::yield_now();
+                }
+                let bytes = disk::read(control.join("observation.json")).unwrap();
+                let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(value["schema_version"], 3);
+                assert_eq!(value["phase"], expected_phase);
+                assert_eq!(value["capture_key"], "d".repeat(64));
+                assert_eq!(value["action"], serde_json::to_value(action()).unwrap());
+                assert_eq!(value["worker"], serde_json::to_value(worker()).unwrap());
+                assert_eq!(value["source"], serde_json::to_value(source()).unwrap());
+                assert!(value.get("measured_bytes").is_none());
+                assert!(value.get("total_bytes").is_none());
+                let mut command = serde_json::json!({"schema_version":3,"run_identity":"a".repeat(64),
+                    "observation_sha256":hex_digest(&bytes),"full_work_binding":ContentDigest::from_sha256([3;32]),
+                    "command":if mode=="fail" {"fail"} else {"release"}});
+                match mode {
+                    "wrong-run" => command["run_identity"] = serde_json::json!("b".repeat(64)),
+                    "wrong-work" => {
+                        command["full_work_binding"] =
+                            serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap();
+                    }
+                    "wrong-question" => {
+                        command["observation_sha256"] = serde_json::json!("c".repeat(64));
+                    }
+                    "wrong-schema" => command["schema_version"] = serde_json::json!(2),
+                    "wrong-command" => command["command"] = serde_json::json!("published"),
+                    _ => {}
+                }
+                directory(&control)
+                    .create("command.json", &serde_json::to_vec(&command).unwrap())
+                    .unwrap();
+            });
+            let result = gate.wait_question(
+                &action(),
+                ContentDigest::from_sha256([3; 32]),
+                &source(),
+                &worker(),
+                (0, 0),
+                Some("d".repeat(64)),
+            );
+            thread.join().unwrap();
+            assert_eq!(result.is_ok(), mode == "release");
+            assert_eq!(
+                path.join("consumed.json").exists(),
+                matches!(mode, "release" | "fail")
+            );
+            if matches!(mode, "release" | "fail") {
+                assert!(
+                    CaptureCopyGate::select(directory(&path), &action())
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn sync_config_and_missing_key_are_rejected_without_a_question() {
+    for (version, phase) in [
+        (2, Some("before-sync")),
+        (3, None),
+        (3, Some("synced")),
+        (4, Some("after-sync")),
+    ] {
+        let (_root, path) = fixture();
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&disk::read(path.join("config.json")).unwrap()).unwrap();
+        config["schema_version"] = serde_json::json!(version);
+        if let Some(phase) = phase {
+            config["sync_phase"] = serde_json::json!(phase);
+        }
+        disk::write(
+            path.join("config.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        assert!(CaptureCopyGate::select(directory(&path), &action()).is_err());
+        assert!(!path.join("ready.json").exists());
+    }
+    let (_root, path) = sync_fixture("before-sync");
+    let gate = CaptureCopyGate::select(directory(&path), &action())
+        .unwrap()
+        .unwrap();
+    for key in [None, Some("wrong".into())] {
+        assert!(
+            gate.wait_question(
+                &action(),
+                ContentDigest::from_sha256([3; 32]),
+                &source(),
+                &worker(),
+                (0, 0),
+                key
+            )
+            .is_err()
+        );
+    }
+    assert!(!path.join("ready.json").exists());
+}
+
+#[test]
+fn one_original_gate_path_only_without_ambient_helper_environment() {
+    assert!(select_paths(None, None).unwrap().is_none());
+    assert_eq!(
+        select_paths(Some("measurement".into()), None).unwrap(),
+        Some(PathBuf::from("measurement"))
+    );
+    assert_eq!(
+        select_paths(None, Some("sync".into())).unwrap(),
+        Some(PathBuf::from("sync"))
+    );
+    assert!(select_paths(Some("measurement".into()), Some("sync".into())).is_err());
 }

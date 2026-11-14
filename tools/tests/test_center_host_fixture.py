@@ -607,6 +607,25 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(launched.call_args.kwargs['env'],
                              {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', **faults})
 
+    def test_capture_sync_gate_reaches_only_explicit_original_host_environment(self):
+        faults={'SANDPROOF_TEST_CAPTURE_SYNC_GATE':'/approved/private-capture-sync'}
+        self.assertEqual(fixture.fault_environment(faults),faults)
+        with tempfile.TemporaryDirectory() as temporary,patch.object(fixture,'launch') as launched:
+            assembly=fixture.Processes(**self.process_inputs(Path(temporary)))
+            for role in ('center','redis'):
+                with self.assertRaises(ValueError):assembly.start(role,env=faults)
+            launched.assert_not_called()
+            assembly.start('host-0',env=faults)
+            self.assertEqual(launched.call_args.kwargs['env'],faults)
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(fixture.service_cgroup,'prefix',return_value=['approved']), \
+                patch.object(fixture.subprocess,'Popen') as launched, \
+                patch.dict(os.environ,{'API_KEY':'secret-canary','HTTPS_PROXY':'secret-canary'}):
+            fixture.launch('/approved/sandproof-host','/approved/host.json',
+                           Path(temporary)/'host.log','/approved/record',env=faults)
+            self.assertEqual(launched.call_args.kwargs['env'],
+                             {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8',**faults})
+
     def test_capture_cancel_gate_is_one_explicit_host_only_control(self):
         faults={'SANDPROOF_TEST_CAPTURE_CANCEL_GATE':'/approved/private-capture-cancel'}
         self.assertEqual(fixture.fault_environment(faults),faults)
