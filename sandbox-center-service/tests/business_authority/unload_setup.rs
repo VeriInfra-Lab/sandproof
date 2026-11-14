@@ -109,8 +109,7 @@ fn prepared_unload_known_busy_confirms_absence_before_same_request() {
     assert_eq!(host.observation_budgets.lock().unwrap().len(), 2);
 }
 
-#[test]
-fn prepared_unload_late_ready_uses_same_request_after_confirmed_busy() {
+fn late_ready(change_authority: bool) {
     let fixture = Engine::new();
     let proxy = reply_loss::ReplyLoss::new(fixture.address);
     let authority = lifecycle_public::setup(&fixture, &proxy);
@@ -141,14 +140,37 @@ fn prepared_unload_late_ready_uses_same_request_after_confirmed_busy() {
     assert_eq!(blocked_intent, original);
     assert!(!remaining.is_zero() && remaining <= Duration::from_millis(200));
     assert_eq!(app.snapshot().unwrap(), before);
+    if change_authority {
+        app.create_lifecycle("9", &lifecycle_public::request())
+            .unwrap();
+    }
+    let expected = app.snapshot().unwrap();
     let expired_by = sampled_at.checked_add(remaining).unwrap();
     while Instant::now() < expired_by {
         std::thread::park_timeout(expired_by.saturating_duration_since(Instant::now()));
     }
     release.complete();
+    if change_authority {
+        let failure = prepared.join().unwrap_err();
+        let message = failure.downcast_ref::<String>().unwrap();
+        assert!(message.contains("Unload setup Busy changed authority"));
+        assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+        assert_eq!(app.snapshot().unwrap(), expected);
+        return;
+    }
     let accepted = prepared.join().unwrap().unwrap();
     assert_single_unload(&app, &session, &request(), &accepted);
     assert_eq!(host.observation_budgets.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn prepared_unload_late_ready_uses_same_request_after_confirmed_busy() {
+    late_ready(false);
+}
+
+#[test]
+fn prepared_unload_changed_authority_stops_after_busy() {
+    late_ready(true);
 }
 
 #[test]
