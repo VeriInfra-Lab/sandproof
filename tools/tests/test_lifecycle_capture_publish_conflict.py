@@ -84,6 +84,9 @@ def fixture(root):
     p=publish.PublishConflictProbe.__new__(publish.PublishConflictProbe)
     p.obstacle=obstacle;p.conflict=None;p.record={'capture':{'full':full}}
     p.stage='sync-after';p.recovered=True;p.question={'capture_key':'a'*64};p.worker_pidfd=999999
+    p.stage_identity=stage.stat().st_dev,stage.stat().st_ino
+    memory=(stage/'memory.bin').stat()
+    p.sync_material=dict(memory_identity=[memory.st_dev,memory.st_ino],memory_bytes=memory.st_size)
     p.prior={'source':{'original':'VMM'}};p.assert_sync_continued=Mock(return_value={'capacity_released':False})
     return NS(probe=p,obstacle=obstacle,stage=stage,manifest=manifest,store=store)
 
@@ -96,7 +99,7 @@ class PublishConflictTests(unittest.TestCase):
                 original,record=sync.SyncProtocolTests().probe('sync-after')
                 p=publish.PublishConflictProbe.__new__(publish.PublishConflictProbe)
                 p.__dict__.update(original.__dict__)
-                p.obstacle=publish.EmptyCaptureTarget(Path(temporary),'a'*64);p.obstacle.create();p.conflict=None
+                p.obstacle=publish.EmptyCaptureTarget(Path(temporary),p.question['capture_key']);p.obstacle.create();p.conflict=None
                 p._save_file.side_effect=None
                 p._save_file.return_value=(dict(schema_version=3,run_identity='a'*64,observation_sha256='c'*64,
                     full_work_binding=p.question['full_work_binding'],command='fail' if fault=='consumption' else 'release'),None)
@@ -116,12 +119,15 @@ class PublishConflictTests(unittest.TestCase):
             try:
                 self.assertEqual(f.probe._capture_gate_command(),'release')
                 self.assertEqual(capture.CaptureHandoffProbe._capture_gate_command(f.probe),'fail')
+                f.probe.question['capture_key']='b'*64
+                with self.assertRaises(ValueError):f.probe._capture_gate_command()
+                f.probe.question['capture_key']='a'*64
                 (f.store/f.obstacle.name/'unknown').write_bytes(b'preserve')
                 with self.assertRaises(ValueError):f.probe._capture_gate_command()
             finally:f.obstacle.close();f.stage.chmod(0o700)
 
     def test_complete_original_stage_is_checked_after_worker_end_without_claiming_errno_trace(self):
-        for fault in ('none','binding','digest','mode','extra','completion','obstacle'):
+        for fault in ('none','binding','digest','mode','memory-inode','stage-inode','extra','completion','obstacle'):
             with tempfile.TemporaryDirectory() as temporary,ExitStack() as stack,self.subTest(fault=fault):
                 f=fixture(Path(temporary));p=f.probe;f.stage.chmod(0o700)
                 if fault=='binding':f.manifest['binding']={}
@@ -129,6 +135,10 @@ class PublishConflictTests(unittest.TestCase):
                 if fault in ('binding','digest'):
                     (f.stage/'manifest.json').chmod(0o600);(f.stage/'manifest.json').write_text(json.dumps(f.manifest));(f.stage/'manifest.json').chmod(0o400)
                 if fault=='mode':(f.stage/'memory.bin').chmod(0o600)
+                if fault=='memory-inode':
+                    memory=f.stage/'memory.bin';raw=memory.read_bytes();memory.rename(f.stage/'old-memory')
+                    memory.write_bytes(raw);memory.chmod(0o400);(f.stage/'old-memory').unlink()
+                if fault=='stage-inode':p.stage_identity=(0,0)
                 if fault=='extra':(f.stage/'extra').write_bytes(b'not allowed')
                 if fault=='completion':(f.store/('completed-'+'a'*64)).write_bytes(b'unknown completion')
                 if fault=='obstacle':(f.store/f.obstacle.name/'unknown').write_bytes(b'preserve')

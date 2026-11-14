@@ -105,6 +105,9 @@ class PublishConflictProbe(CaptureHandoffProbe):
 
     def after_acceptance(self, accepted, deadline):
         result = super().after_acceptance(accepted, deadline)
+        stage = Path(self.runtime.captures[0]['layout_parent']) / 's' / ('staging-' + self.question['capture_key'])
+        staged = stage.lstat()
+        self.stage_identity = staged.st_dev, staged.st_ino
         self.obstacle = EmptyCaptureTarget(
             Path(self.runtime.captures[0]['layout_parent']) / 's', self.question['capture_key'])
         result['publication_obstacle'] = self.obstacle.create()
@@ -113,6 +116,8 @@ class PublishConflictProbe(CaptureHandoffProbe):
     def _capture_gate_command(self):
         if self.stage != 'sync-after' or self.obstacle is None:
             raise ValueError('one original post-sync publication obstacle required')
+        if self.obstacle.name != 'capture-' + self.question['capture_key']:
+            raise ValueError('obstacle differs from the original Rust capture selector')
         self.obstacle.unchanged()
         return 'release'  # The callback succeeds; this is not gate failure injection.
 
@@ -123,7 +128,8 @@ class PublishConflictProbe(CaptureHandoffProbe):
         full = self.record['capture']['full']
         stage = self.obstacle.store / ('staging-' + self.question['capture_key'])
         before = stage.lstat()
-        if (not stat.S_ISDIR(before.st_mode) or before.st_uid != 0
+        if ((before.st_dev, before.st_ino) != self.stage_identity
+                or not stat.S_ISDIR(before.st_mode) or before.st_uid != 0
                 or stat.S_IMODE(before.st_mode) != 0o500
                 or set(os.listdir(stage)) != {'state.bin', 'memory.bin', 'disk-0.img', 'manifest.json'}):
             raise ValueError('complete original stage must remain after publication refusal')
@@ -138,6 +144,10 @@ class PublishConflictProbe(CaptureHandoffProbe):
             measured = checked_file(stage / name, limit, mode=0o400)
             if entry['relative_path'] != name or entry['length'] != measured['bytes'] or entry['digest'] != measured['sha256']:
                 raise ValueError('original refused stage differs from its complete file table')
+            if name == 'memory.bin' and (
+                    [measured['device'], measured['inode']] != self.sync_material['memory_identity']
+                    or measured['bytes'] != self.sync_material['memory_bytes']):
+                raise ValueError('original Memory clone identity changed after the held sync cut')
             files.append(dict(name=name, **measured))
         if ((stage.stat().st_dev, stage.stat().st_ino) != (before.st_dev, before.st_ino)
                 or (self.obstacle.store / ('completed-' + self.question['capture_key'])).exists()):
