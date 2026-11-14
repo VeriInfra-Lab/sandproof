@@ -143,7 +143,11 @@ class ActivationFactsTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 f=fixture(Path(directory));p=f.probe;s=copy.deepcopy(f.snapshot)
                 if fault=='old-end':s['sources'][0]['capture']['end']={'state':'worker_ended','observation':{'controlled':'original end'}}
-                if fault=='producer-release':s['sources'][0]['material_release']['producer']={'context':s['sources'][0]['restore']['local'],'input_sequence':1}
+                if fault=='producer-release':
+                    s['sources'][0]['material_release']['producer']={
+                        'context':dict(position=0,expected_previous=None,binding=dict(owner=1,sandbox=4,generation=1,vm=2,network=3)),
+                        'input_sequence':88}
+                    runtime.checked_material_release(s['sources'][0]['material_release'])
                 if fault=='pin':s['sources'][0]['restore']['material_use']=False
                 if fault=='charge':s['sources'][0]['capture']['reserved_material_bytes']-=1
                 if fault=='source':s['sources'][0]['work']['anchor']['local']['operation']+=1
