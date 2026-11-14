@@ -8,7 +8,7 @@ fn request() -> PublicUnloadRequest {
 
 /// At most two public calls with exactly the same input and original budgets.
 /// A second call is allowed only after a known Busy and a confirmed, completely
-/// unchanged CenterState containing just the original Running Create. Unknown
+/// unchanged `CenterState` containing just the original Running Create. Unknown
 /// storage/host outcomes and every other error return without another call.
 pub(super) fn accept(
     app: &Application,
