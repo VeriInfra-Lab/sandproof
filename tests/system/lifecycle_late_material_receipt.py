@@ -6,8 +6,10 @@ observations alone cannot attest a physical delete or complete E9 acceptance.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
-_runpy.run_path(str(_GuardPath(__file__).with_name('_assertions_required.py')))[
-    'require_assertions']()
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
 
 from contextlib import closing
 import copy
