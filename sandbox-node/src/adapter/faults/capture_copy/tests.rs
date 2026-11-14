@@ -271,10 +271,10 @@ fn sync_gate_binds_phase_action_worker_source_and_exact_command_before_consumpti
                     "wrong-run" => command["run_identity"] = serde_json::json!("b".repeat(64)),
                     "wrong-work" => {
                         command["full_work_binding"] =
-                            serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap()
+                            serde_json::to_value(ContentDigest::from_sha256([4; 32])).unwrap();
                     }
                     "wrong-question" => {
-                        command["observation_sha256"] = serde_json::json!("c".repeat(64))
+                        command["observation_sha256"] = serde_json::json!("c".repeat(64));
                     }
                     "wrong-schema" => command["schema_version"] = serde_json::json!(2),
                     "wrong-command" => command["command"] = serde_json::json!("published"),
