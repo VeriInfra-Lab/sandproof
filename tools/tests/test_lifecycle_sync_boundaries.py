@@ -185,7 +185,8 @@ class SyncProtocolTests(unittest.TestCase):
 
 
 class SyncSceneTests(unittest.TestCase):
-    def run_scene(self,stage,fail=False):
+    def run_scene(self,stage,fail=False,*,publication=False):
+        import lifecycle_capture_publish_conflict as publication_probe
         events=[];lifetime=dict(started_at_ms=1,end_at_ms=100,max_end_at_ms=200,startup_deadline_ms=20)
         clients={}
         for owner in ('1','2'):
@@ -204,7 +205,12 @@ class SyncSceneTests(unittest.TestCase):
             nonlocal calls
             if session=='session-1':calls+=1
             return dict(session=session,lifetime=lifetime,context=dict(position=0 if session=='session-2' or calls==1 else 1))
-        probe=Mock(spec=capture.CaptureHandoffProbe)
+        probe_type=publication_probe.PublishConflictProbe if publication else capture.CaptureHandoffProbe
+        probe=Mock(spec=probe_type)
+        if publication:
+            probe.obstacle=None
+            probe.remove_after_continued.side_effect=lambda *_:events.append('remove-owned-obstacle') or {}
+            clients['1'].assert_continued_workload.side_effect=lambda *_:events.append('original-continued') or {}
         for name in ('arm','after_acceptance','cleanup'):
             getattr(probe,name).return_value={}
         def cut(*_):
@@ -224,16 +230,27 @@ class SyncSceneTests(unittest.TestCase):
             stack.enter_context(patch.object(runtime,'prepare',return_value=runner))
             stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
-            factory=stack.enter_context(patch.object(capture,'CaptureHandoffProbe',return_value=probe))
+            factory=stack.enter_context(patch.object(publication_probe if publication else capture,
+                'PublishConflictProbe' if publication else 'CaptureHandoffProbe',return_value=probe))
+            scenario='capture-publish-conflict' if publication else 'capture-'+stage
             if fail:
-                with self.assertRaises(ValueError):scene.exercise(NS(scenario='capture-'+stage,scenario_timeout=60,activation_gate_timeout_ms=60000))
+                with self.assertRaises(ValueError):scene.exercise(NS(scenario=scenario,scenario_timeout=60,activation_gate_timeout_ms=60000))
                 self.assertFalse(runner.finish.call_args.args[0]['complete'])
                 self.assertNotIn('destroy-1',events)
                 self.assertEqual(events.count('unload-1'),2)
+                if publication:probe.remove_after_continued.assert_not_called()
             else:
-                result=scene.exercise(NS(scenario='capture-'+stage,scenario_timeout=60,activation_gate_timeout_ms=60000))
+                result=scene.exercise(NS(scenario=scenario,scenario_timeout=60,activation_gate_timeout_ms=60000))
                 self.assertTrue(result['complete']);self.assertEqual(len(result['cycles']),2)
-                factory.assert_called_once();self.assertEqual(factory.call_args.args[3],stage)
+                factory.assert_called_once()
+                if publication:
+                    self.assertEqual(factory.call_args.args[3],Path(directory)/'capture-sync-gate')
+                    probe.remove_after_continued.assert_called_once()
+                    self.assertLess(events.index('sync-fail'),events.index('original-continued'))
+                    self.assertLess(events.index('original-continued'),events.index('remove-owned-obstacle'))
+                    self.assertLess(events.index('remove-owned-obstacle'),len(events)-1-events[::-1].index('unload-1'))
+                    self.assertIn('publication_obstacle_removal',result)
+                else:self.assertEqual(factory.call_args.args[3],stage)
                 self.assertEqual(events.count('unload-1'),3)  # original, failed, then new-key recovery
                 self.assertLess(events.index('sync-fail'),len(events)-1-events[::-1].index('unload-1'))
                 self.assertEqual(events.count('destroy-1'),1);self.assertEqual(events.count('destroy-2'),1)
