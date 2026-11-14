@@ -261,6 +261,7 @@ class ResumeCandidateTests(unittest.TestCase):
                 with sqlite3.connect(database) as conn:
                     conn.execute('CREATE TABLE controller_host_slots(position INTEGER,context_json BLOB)')
                     conn.execute('INSERT INTO controller_host_slots VALUES(?,?)',(1,json.dumps(context).encode()))
+                database.chmod(0o600)
                 native=dict(database=str(database),namespace='0123456789abcdef',chroot_base=str(root),bounded_host={'maintenance':{'max_host_slots':2}})
                 config=dict(native={'maintenance':{'capacity':{'max_sql_value_bytes':8192}}})
                 runner=NS(services=NS(native_pools=[native],host_configs=[config]))
@@ -308,7 +309,7 @@ class ResumeSceneTests(unittest.TestCase):
                 record_running=Mock(side_effect=physical),unload_evidence=Mock(return_value=dict(facts=f.lifetime,original_position={'position':0},original_capture_responsibilities=1)),
                 restart_managers=Mock(return_value={'original_unload_operation':{}}),confirm_running=Mock(return_value={}),
                 destroy_evidence=Mock(return_value={}),settlement_evidence=Mock(return_value={}),finish=Mock(side_effect=lambda _:events.append('finish')),
-                fail_resume_gate=Mock(),close_restore_gate=Mock(),close_capture_cancel_gate=Mock())
+                fail_resume_gate=Mock(return_value='unknown-preserved'),close_restore_gate=Mock(),close_capture_cancel_gate=Mock())
             stack.enter_context(patch.object(runtime,'prepare',return_value=runner))
             stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))

@@ -644,7 +644,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(400, [], b'')
             return
         body = read_body(self.rfile, self.headers)
-        request = json.loads(body, object_pairs_hook=unique_keys) if self.path in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION) else None
+        request = json.loads(body, object_pairs_hook=unique_keys) if self.path in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION, RESUME_OBSERVATION) else None
         if self.path in CONTROL_PATHS and relay.partition.is_set():
             if request is not None:
                 relay.note_partition(request, path=self.path)
