@@ -733,7 +733,8 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    freeze_destroy = args.scenario == 'capture-freeze-destroy'
+    freeze_dispatch_destroy = args.scenario == 'capture-freeze-before-destroy'
+    freeze_destroy = args.scenario == 'capture-freeze-destroy' or freeze_dispatch_destroy
     prepare_destroy = args.scenario == 'restore-prepare-destroy'
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
     data_drain = args.scenario == 'data-drain'
@@ -1049,14 +1050,19 @@ def exercise(args):
                     control.operation_evidence_completed()
             if cycle == 1 and freeze_destroy:
                 from lifecycle_freeze_destroy import FreezeDestroyProbe
-                capture_probe=FreezeDestroyProbe(runtime,client,physical_running)
+                if freeze_dispatch_destroy:
+                    from lifecycle_freeze_dispatch import FreezeDispatchDestroyProbe
+                    capture_probe=FreezeDispatchDestroyProbe(runtime,client,physical_running)
+                else:
+                    capture_probe=FreezeDestroyProbe(runtime,client,physical_running)
                 report['phase']='arm-original-freeze-before-destroy'
                 report['freeze_destroy_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
                 accepted_unload=client.unload(resumed)
-                report['phase']='original-freeze-success-before-sql-receipt'
+                report['phase']=('original-freeze-dispatched-before-pause' if freeze_dispatch_destroy
+                                 else 'original-freeze-success-before-sql-receipt')
                 report['freeze_destroy_observation']=capture_probe.after_acceptance(accepted_unload,deadline)
                 pending=client.query();client.check_view(pending,accepted_unload)
-                assert pending['phase']=='unloading', 'frozen original Unload unexpectedly completed'
+                assert pending['phase']=='unloading', 'original Unload unexpectedly completed at selected Freeze cut'
                 client.assert_data_closed();client.assert_previous_tokens_closed()
                 report['phase']='public-destroy-with-original-freeze-receipt-pending'
                 report['destroy']=client.destroy(pending)
@@ -1069,17 +1075,19 @@ def exercise(args):
                     report['destroy'],deadline,observe_peer=observe_frozen_peer)
                 report['phase']='original-stop-and-cleanup-pre-sql-receipt'
                 report['freeze_destroy_terminal']=capture_probe.assert_terminal_before_gc(deadline)
-                report['phase']='public-frozen-destroy-cleaned-and-product-gc'
+                report['phase']=('public-dispatched-freeze-destroy-cleaned-and-product-gc' if freeze_dispatch_destroy
+                                 else 'public-frozen-destroy-cleaned-and-product-gc')
                 client.wait_cleaned();report['final_resources']=runtime.destroy_evidence(client.session,deadline)
                 client.operation_evidence_completed()
                 report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
                 assert control.query()==control_running
-                report['slot_reuse']['occupant_after_frozen_destroy']=runtime.confirm_running(control.session,control_physical,deadline)
-                report['slot_reuse']['peer_after_frozen_destroy']=control.assert_continued_workload(control_running,control_physical['lifetime'])
+                terminal_prefix='dispatched' if freeze_dispatch_destroy else 'frozen'
+                report['slot_reuse']['occupant_after_'+terminal_prefix+'_destroy']=runtime.confirm_running(control.session,control_physical,deadline)
+                report['slot_reuse']['peer_after_'+terminal_prefix+'_destroy']=control.assert_continued_workload(control_running,control_physical['lifetime'])
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
-                report['cycles'][-1]['frozen_unload_destroyed']=True
+                report['cycles'][-1]['dispatched_unload_destroyed' if freeze_dispatch_destroy else 'frozen_unload_destroyed']=True
                 terminal_destroy_done=True;break
             if cycle < restore_cycles:
                 if retirement_restart:
@@ -1212,6 +1220,18 @@ def exercise(args):
                 'E14':'old execution tokens remained rejected; peer continued with its original authorization',
                 'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
             }
+            if freeze_dispatch_destroy:
+                report['acceptance_cases']['E3']=(
+                    'exact original dispatched Freeze exit87 before the original Pause call; '
+                    'current same-peer Running source observed, old Freeze remains unknown; '
+                    'not a NoRequest proof or ordinary failed-Unload continuation')
+                report['acceptance_cases']['E8']=(
+                    'public Destroy at the original pre-Pause dispatch cut; '
+                    'current terminal fence/unique Stop, original live source/backing/pin/charge and peer progress, '
+                    'then original Stop/kernel exit/Cleanup/GC; observer sends no VM signal')
+                report['acceptance_cases']['other_cases']=(
+                    'one pre-Pause terminal branch; no successful second Unload, normal three cycles, '
+                    'all unknown Pause recovery, API invocation trace or formal proof claim')
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
@@ -1312,7 +1332,8 @@ def main():
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','capture-freeze-receipt','capture-freeze-destroy','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-before-destroy',
+        'capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)

@@ -71,7 +71,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
-| E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-freeze-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中或冻结卸载中 Destroy 的有限代表不等于全部 Destroy/到期竞争；必须继续观察剩余责任最终收尾，新入口仍须实机验收。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-freeze-destroy`、`capture-freeze-before-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中、Freeze 派发后尚未 Pause、实际冻结后的 Destroy 是不同窗口；有限代表不等于全部 Destroy/到期竞争，须观察剩余责任最终收尾，新入口仍须实机验收。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
@@ -159,6 +159,25 @@ SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或�
 该入口与观察器有受控组件自测，KVM 实机验收另行执行；只覆盖一个恢复周期后的冻结
 卸载 Destroy 顺序，不认领正常三周期、所有 E8 交错或形式证明。
 
+`capture-freeze-before-destroy` 复用同一 Unload/Destroy/终止围栏/Stop/backing/GC
+合同和同伴编排，仅把首个切点移到原 Freeze 已持久派发、原 Pause 调用前的退出 87。
+原 Freeze 走专用捕获执行路径：调试出口接在实际执行闭包前，只读恢复选择原观察闭包，
+不经过退出门，也不重发 Pause；原通用 execute 中新增一个选择字符串不足以接通此场景。
+普通发布构建省略调试出口；实际测试构建继续保留原调试断言和优化设置。
+
+观察器先核同一完整在途 Freeze/原接受记录、尚无 Full producer、当前源/材料责任，
+再经原 Unix API 的同一 PID/UID peer、完整 claim 与 socket 身份读取当前 `Running`。
+此分支不发送 SIGSTOP/SIGCONT、不伪造 Frozen，不从退出 87、Running 或缺少记录推断
+NoRequest。原 Freeze 始终按未知保留；若恢复造成新的 Frozen 成功观察则失败。
+公开 Destroy 后仍须核当前终止围栏、全局唯一同源 Stop、正 backing 预留/pin 和同伴
+进展，才释放原 Stop 门；确认原 Stop 回执与 pidfd 内核退出后，由原 Cleanup/GC 收尾。
+相同工作摘要的合法 NeverReleased 终结仍按原合同处理，不能冒充实际 API NoRequest。
+
+报告用 `original_dispatched_unload`、`dispatched_unload_destroyed` 区分这个窗口，
+当前 pause/观察器 stop/continue 标志保持为假；完整接受历史、重放、终止否决及原物理
+收尾要求不换成另一份弱合同。本切片状态为「入口存在但未执行实机」，不声称普通失败
+卸载已能继续原 VM、没有任何 API 调用的完整轨迹、所有未知 Pause 收敛或新增形式证明。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
@@ -210,6 +229,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
 | `capture-freeze-destroy` | 原 Freeze 成功、回执未入库时接受 Destroy；先核实际 Paused、当前终止围栏、同源 Stop、backing pin/正额度及另一 owner 来宾进展，再确认原退出及产品 GC（E8；实机待验收） |
+| `capture-freeze-before-destroy` | 原 Freeze 持久派发、Pause 调用前退出 87；同源当前 Running，原 Freeze 保持未知，不从此推 NoRequest；接受 Destroy 后沿同一终止/Stop/backing/同伴/GC 合同收尾（E3/E8 终止分支；实机待验收） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
