@@ -117,7 +117,14 @@ async fn decode_original(observation: &ResumeObservation) -> ResumeObservation {
 }
 
 fn pending_resume(app: &Application, host: &Host) -> (SessionId, ResumeObservation) {
-    let (session, _, unloaded) = accept_unload(app);
+    let created = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    // Exercise the legal Creating view, then reuse the ORIGINAL bounded setup
+    // barrier before the tested decode/Destroy/CAS ordering begins.
+    host.pending_once.store(true, Ordering::SeqCst);
+    establish_running_before_unload_race(app, &created.session);
+    let (session, _, unloaded) = accept_unload_after_create(app, created);
     let source = unloaded.outcome.unloaded().unwrap().clone();
     *host.unloaded.lock().unwrap() = Some(unloaded);
     app.reconcile_once().unwrap();
