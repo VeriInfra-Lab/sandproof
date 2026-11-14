@@ -37,28 +37,31 @@ def main():
     relay = InternalFaultRelay(listen=('127.0.0.1', value['listen_port']),
         backend=('127.0.0.1', value['backend_port']), node=value['node'], materials=materials)
     unload_gate = value.get('unload_gate', False)
-    if type(unload_gate) is not bool:
-        raise ValueError('explicit component gate selection required')
-    if unload_gate:
-        relay.unload_barrier.arm()
+    resume_gate = value.get('resume_gate', False)
+    if type(unload_gate) is not bool or type(resume_gate) is not bool or (unload_gate and resume_gate):
+        raise ValueError('one explicit component gate selection required')
+    gate = relay.resume_barrier if resume_gate else relay.unload_barrier
+    kind = b'RESUME' if resume_gate else b'UNLOAD'
+    if unload_gate or resume_gate:
+        gate.arm()
     stream_data = value.get('stream_data', False)
     if type(stream_data) is not bool:
         raise ValueError('explicit component data selection required')
     relay.start(stream_deadline=time.monotonic()+30 if stream_data else None)
     try:
         print('READY', flush=True)
-        if unload_gate:
-            if sys.stdin.buffer.readline(65) != b'WAIT-UNLOAD\n':
+        if unload_gate or resume_gate:
+            if sys.stdin.buffer.readline(65) != b'WAIT-'+kind+b'\n':
                 raise ValueError('fixed Unload component wait required')
-            if not relay.unload_barrier.ready.wait(timeout=10):
+            if not gate.ready.wait(timeout=10):
                 raise ValueError('real completed Unload did not reach gate')
-            print(json.dumps(relay.unload_barrier.captured), flush=True)
-            if sys.stdin.buffer.readline(65) != b'DROP-UNLOAD\n':
+            print(json.dumps(gate.captured), flush=True)
+            if sys.stdin.buffer.readline(65) != b'DROP-'+kind+b'\n':
                 raise ValueError('fixed Unload component discard required')
-            relay.unload_barrier.unblock(discard=True)
-            if not relay.unload_barrier.drained.wait(timeout=10):
+            gate.unblock(discard=True)
+            if not gate.drained.wait(timeout=10):
                 raise ValueError('completed Unload workers did not drain')
-            print(json.dumps(relay.unload_loss_evidence()), flush=True)
+            print(json.dumps(relay.resume_loss_evidence() if resume_gate else relay.unload_loss_evidence()), flush=True)
         command = sys.stdin.buffer.readline(65)
         if command not in (b'', b'STOP\n'):
             raise ValueError('fixed component stop required')

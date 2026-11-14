@@ -609,6 +609,9 @@ class UnloadRuntime:
         if self.args.scenario == 'unload-receipt-restart':
             from lifecycle_unload_receipt_loss import UnloadReceiptRestart
             self.receipt_restart=UnloadReceiptRestart(self)
+        elif self.args.scenario == 'resume-receipt-restart':
+            from lifecycle_resume_receipt_loss import ResumeReceiptRestart
+            self.receipt_restart=ResumeReceiptRestart(self)
         self.configs={name:role_facts(Path(role['config']).parent,role['config'],
             uid=role['uid'],gid=role['gid']) for name,role in self.services.processes.bindings.items()}
 

@@ -91,6 +91,14 @@ E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario u
 
 [自测](../tools/tests/test_lifecycle_unload_receipt_loss.py)覆盖正常记录、遗漏/变更字段、进程身份、共享计划审计和门/观察器的真实装配顺序、截止时间及失败关闭；原生 `secure_probe` 的 `original_unload_receipt_is_held_dropped_and_retried_across_double_mtls` 使用 Rust 真实请求/响应编解码及原双向 mTLS relay，并在显式丢弃/重试后实际传输原 Resume 观察请求，两端 CA/SAN/叶 pin/ALPN 保持原检查。其 receiver 是受控值提供者，不是持久收件、Redis 恢复或 VM 证据。这些组件检查不表示 E13 或 Linux/KVM 场景已验收。
 
+E13 首次 Resume 的中心回执窗口使用同一入口的 `--scenario resume-receipt-restart`，状态同样为「入口存在但未执行实机」。该选择复用上述双 mTLS、有限流、固定配置/预算/绝对截止时间和中心独立重启流程，保留原 normal 的两 owner、实际位置复用及 A/B/C 三代。它在首次 Unload 已完成、原来源物理证据取得之后计划读取中心审计，随后只武装 Resume 门；不会同时丢弃 Unload 回执。`/internal/lifecycle/resume-observation` 只有 HTTP 200、完整当前请求相同的 `Observed` 才在回复头前被保持；Pending、NotCurrent、NotRunning、Expired、StateLost 均不触发。全部 binding、操作参数、center、retention、接受版本与独立原 Unload 来源关联，目标代允许大于来源代的空洞，不要求加一，也不要求 key window 等于 retention window。
+
+并发只读 Resume 观察的 `observed_at_ms` 可以变化；每次实际合法时间单独保留，完整意图和另外四个寿命字段必须相同。门终身最多保持八份完成回执，显式丢弃、后端关闭并排空后，才允许 `held == dropped > 0` 且 `response_attempts == 0` 的丢失证据。超时、503、回复尝试、工作者失败和未知收尾不能代替它。中心停止后的原账本必须仍为同一 Resuming、当前操作尚无 Running 结果，原 Create/Unload 历史及预留不变；重开后只允许同一 Resume 增加原寿命的 Running 结果和更新 `last_running`，新的合法只读观察时间不冻结。
+
+[Resume 观察器](../tests/system/lifecycle_resume_receipt_loss.py)在强停中心之前、以及原中心重开就绪之后，短暂只读原宿主 SQLite，按完整意图核对同一 restore claim、可能执行标记和 backing 使用 pin，并复用原受保护进程记录、procfs、netns、磁盘、cgroup 及位置 UID 观察器核对同一活候选；不停止或重开 Host/Redis 来取得该窗口的证据。故障后原计划 Host 审计另核对同一 context/source/pin，原 RAM/进程/文件继续与材料未写坏仍由正常链独立检查。候选未知或换代使本轮失败并保留原责任；两次快照相同不证明窗口内没有任何 API 调用，也不替代 E7 激活后新 RAM 的独立故障证据。中心计划审计重启、原双管理重启和故障后 Host 计划审计分别记录，不能说全场只重启了一次中心或 Host 始终未重启。
+
+[Resume 自测](../tools/tests/test_lifecycle_resume_receipt_loss.py)覆盖完整字段关联、原来源独立寿命、合法时间变化与限额、未知/替换候选拒绝及原编排顺序；原生 `secure_probe` 的 `original_observed_resume_receipt_is_held_dropped_then_read_again` 通过真实 Rust 编解码和两段原 mTLS 运行保持、显式丢弃及重读。其事实提供方仍是受控值，不能当作宿主接受、持久收件或 VM 运行证明。实机须在独立新部署上运行此选择，核对报告 `resume_receipt_restart` 的 pending/fault_window/candidate/recovery、`resume_receipt_same_candidate`、三轮正常记录与最终产品 Destroy/GC/额度、relay 和环境收尾；任何必需观察缺失仍未验收。该有限代表不关闭全部 E13。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、

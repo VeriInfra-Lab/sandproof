@@ -26,7 +26,7 @@ pub(super) struct PythonRelay {
 
 impl PythonRelay {
     pub fn start(certs: &Certificates, backend: SocketAddr, node: &NodeIdentity) -> Self {
-        Self::start_gate(certs, backend, node, false, false)
+        Self::start_gate(certs, backend, node, None, false)
     }
 
     pub fn start_unload_gate(
@@ -34,18 +34,26 @@ impl PythonRelay {
         backend: SocketAddr,
         node: &NodeIdentity,
     ) -> Self {
-        Self::start_gate(certs, backend, node, true, true)
+        Self::start_gate(certs, backend, node, Some("unload"), true)
+    }
+
+    pub fn start_resume_gate(
+        certs: &Certificates,
+        backend: SocketAddr,
+        node: &NodeIdentity,
+    ) -> Self {
+        Self::start_gate(certs, backend, node, Some("resume"), true)
     }
 
     pub fn start_streaming(certs: &Certificates, backend: SocketAddr, node: &NodeIdentity) -> Self {
-        Self::start_gate(certs, backend, node, false, true)
+        Self::start_gate(certs, backend, node, None, true)
     }
 
     fn start_gate(
         certs: &Certificates,
         backend: SocketAddr,
         node: &NodeIdentity,
-        unload_gate: bool,
+        gate: Option<&str>,
         stream_data: bool,
     ) -> Self {
         let files = tempfile::tempdir().unwrap();
@@ -81,7 +89,8 @@ impl PythonRelay {
         let value = serde_json::json!({
             "operator": operator, "control": control, "receipt": receipt,
             "listen_port": address.port(), "backend_port": backend.port(), "node": node,
-            "unload_gate": unload_gate,
+            "unload_gate": gate == Some("unload"),
+            "resume_gate": gate == Some("resume"),
             "stream_data": stream_data,
         });
         let input = peer.child.stdin.as_mut().unwrap();
@@ -124,6 +133,14 @@ impl PythonRelay {
 
     pub fn discard_unload(&mut self) -> serde_json::Value {
         self.gate_command(b"DROP-UNLOAD\n")
+    }
+
+    pub fn wait_resume(&mut self) -> serde_json::Value {
+        self.gate_command(b"WAIT-RESUME\n")
+    }
+
+    pub fn discard_resume(&mut self) -> serde_json::Value {
+        self.gate_command(b"DROP-RESUME\n")
     }
 
     pub fn stop(&mut self) {

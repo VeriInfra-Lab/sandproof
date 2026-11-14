@@ -260,6 +260,37 @@ def unloaded_observation(request, response, node):
     return True
 
 
+def resumed_observation(request, response, node):
+    """Only this exact current Resume's Observed value can open this test cut."""
+    operation = accepted_request(request, node)
+    if operation['kind'] != 'resume':
+        raise ValueError('original Resume request required')
+    _fields(response, 'request current_request readiness')
+    accepted_request(response['request'], node)
+    accepted_request(response['current_request'], node)
+    if not same_json(request,response['request']):
+        raise ValueError('Resume observation changed complete original request')
+    current=response['current_request'];binding=request['request']['binding'];actual=current['request']['binding']
+    if (not same_json(current['center'],request['center'])
+            or not same_json(current['retention'],request['retention'])
+            or any(not same_json(actual[k],binding[k]) for k in ('node','session'))
+            or any(actual['key'][k]!=binding['key'][k] for k in ('owner','deployment'))):
+        raise ValueError('Resume current context changed')
+    readiness=response['readiness']
+    if type(readiness) is not dict:raise ValueError('typed Resume readiness required')
+    state=readiness.get('state')
+    if state in ('pending','not_current','not_running','expired','state_lost'):
+        _fields(readiness,'state');return False
+    _fields(readiness,'state facts')
+    if state!='observed':raise ValueError('unknown Resume readiness')
+    facts=_fields(readiness['facts'],'started_at_ms end_at_ms max_end_at_ms startup_deadline_ms observed_at_ms')
+    for value in facts.values():_u64(value)
+    if not (facts['started_at_ms']<=facts['startup_deadline_ms']
+            and facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']<=facts['max_end_at_ms']):
+        raise ValueError('valid original Resume lifetime required')
+    return same_json(current,request)
+
+
 class UnloadReceiptBarrier:
     """Dormant, one-shot gate on real completed Unload replies, before headers.
 
@@ -267,6 +298,14 @@ class UnloadReceiptBarrier:
     A timeout, forwarding attempt or failed worker cannot produce loss evidence.
     It never generates a lifecycle result or issues a Host operation.
     """
+    validator = staticmethod(unloaded_observation)
+
+    def equivalent(self, response):
+        return same_json(self.captured,response)
+
+    def record_sample(self, response):
+        pass
+
     def __init__(self, node):
         self.node = copy.deepcopy(node)
         self.lock = threading.Lock()
@@ -294,13 +333,15 @@ class UnloadReceiptBarrier:
             if not self.armed:
                 return None
             try:
-                if not unloaded_observation(request, response, self.node):
+                if not self.validator(request, response, self.node):
                     return None
-                if self.captured is not None and not same_json(self.captured, response):
+                if self.captured is not None and not self.equivalent(response):
                     raise ValueError('repeated Unload changed complete receipt')
-                if len(self.active) >= 8:
+                if len(self.active) >= 8 or self.held >= 8:
                     raise ValueError('finite Unload receipt gate exhausted')
-                self.captured = copy.deepcopy(response)
+                if self.captured is None:
+                    self.captured = copy.deepcopy(response)
+                self.record_sample(response)
                 self.held += 1
                 token = self.held
                 self.active.add(token)
@@ -343,6 +384,28 @@ class UnloadReceiptBarrier:
                 raise ValueError('explicit, fully drained zero-reply loss required')
             return copy.deepcopy(dict(observation=self.captured, held=self.held,
                                       dropped=self.dropped, response_attempts=self.response_attempts))
+
+
+class ResumeReceiptBarrier(UnloadReceiptBarrier):
+    """Same bounded zero-reply mechanism; only observation time may vary."""
+    validator=staticmethod(resumed_observation)
+
+    def __init__(self,node):
+        super().__init__(node)
+        self.observed_at_ms=[]
+
+    def equivalent(self,response):
+        prior=copy.deepcopy(self.captured)
+        prior['readiness']['facts']['observed_at_ms']=response['readiness']['facts']['observed_at_ms']
+        return same_json(prior,response)
+
+    def record_sample(self,response):
+        self.observed_at_ms.append(response['readiness']['facts']['observed_at_ms'])
+
+    def loss_evidence(self):
+        value=super().loss_evidence()
+        with self.lock:value['observed_at_ms']=copy.deepcopy(self.observed_at_ms)
+        return value
 
 
 class ReceiptBarrier:
@@ -581,7 +644,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(400, [], b'')
             return
         body = read_body(self.rfile, self.headers)
-        request = json.loads(body, object_pairs_hook=unique_keys) if self.path in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION) else None
+        request = json.loads(body, object_pairs_hook=unique_keys) if self.path in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION, RESUME_OBSERVATION) else None
         if self.path in CONTROL_PATHS and relay.partition.is_set():
             if request is not None:
                 relay.note_partition(request, path=self.path)
@@ -590,6 +653,7 @@ class _Handler(BaseHTTPRequestHandler):
         backend = _Backend(relay.backend, relay.materials)
         cancel_socket = None
         unload_token = None
+        receipt_gate = None
         unload_dropped = unload_failed = False
         try:
             headers = {name: value for name, value in self.headers.items() if name.lower() not in HOP_HEADERS}
@@ -619,17 +683,18 @@ class _Handler(BaseHTTPRequestHandler):
                     self.close_connection = True
                     return  # not a single response byte forwarded centerward
                 relay.barrier.forwarded += 1
-            if self.path == UNLOAD_OBSERVATION and response.status == 200:
-                unload_token = relay.unload_barrier.observe(
+            if self.path in (UNLOAD_OBSERVATION,RESUME_OBSERVATION) and response.status == 200:
+                receipt_gate = relay.unload_barrier if self.path == UNLOAD_OBSERVATION else relay.resume_barrier
+                unload_token = receipt_gate.observe(
                     request, json.loads(data, object_pairs_hook=unique_keys))
                 if unload_token is not None:
-                    if not relay.unload_barrier.release.wait(timeout=60):
+                    if not receipt_gate.release.wait(timeout=60):
                         raise TimeoutError('Unload receipt gate not explicitly released')
-                    if relay.unload_barrier.discard:
+                    if receipt_gate.discard:
                         self.close_connection = True
                         unload_dropped = True
                         return
-                    relay.unload_barrier.reply_attempt(unload_token)
+                    receipt_gate.reply_attempt(unload_token)
             self._reply(response.status, outgoing, data)
         except (OSError, http.client.HTTPException):
             # Original fault cases deliberately stop the fixed host while an
@@ -637,7 +702,7 @@ class _Handler(BaseHTTPRequestHandler):
             # never a fabricated lifecycle fact or a relay-parser failure.
             if unload_token is not None:
                 unload_failed = True
-                relay.unload_barrier.reply_attempt(unload_token)
+                receipt_gate.reply_attempt(unload_token)
             self._reply(503, [], b'')
         except BaseException:
             unload_failed = True
@@ -652,7 +717,7 @@ class _Handler(BaseHTTPRequestHandler):
                 if cancel_socket is not None:
                     cancel_socket.close()
                 if unload_token is not None:
-                    relay.unload_barrier.finish(unload_token, dropped=unload_dropped, failed=unload_failed)
+                    receipt_gate.finish(unload_token, dropped=unload_dropped, failed=unload_failed)
 
     def _stream_data(self, response, cancel_socket, stream_socket):
         """Opt-in finite test data forwarding; never a lifecycle receipt gate.
@@ -759,6 +824,7 @@ class InternalFaultRelay:
         self.backend, self.materials = backend, materials
         self.barrier = ReceiptBarrier(node)
         self.unload_barrier = UnloadReceiptBarrier(node)
+        self.resume_barrier = ResumeReceiptBarrier(node)
         self.partition = threading.Event()
         self.destroy_seen = threading.Event()
         self.failed = threading.Event()
@@ -771,7 +837,7 @@ class InternalFaultRelay:
 
     def note_partition(self, request, *, path):
         operation = accepted_request(request, self.barrier.node)
-        if path not in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION):
+        if path not in (LIFECYCLE, CREATE_OBSERVATION, UNLOAD_OBSERVATION, RESUME_OBSERVATION):
             raise ValueError('partition evidence requires an original request path')
         with self.lock:
             if request not in self.partition_requests:
@@ -794,11 +860,16 @@ class InternalFaultRelay:
             raise ValueError('relay worker failure cannot establish receipt loss')
         return self.unload_barrier.loss_evidence()
 
+    def resume_loss_evidence(self):
+        if self.failed.is_set():raise ValueError('relay worker failure cannot establish receipt loss')
+        return self.resume_barrier.loss_evidence()
+
     def stop(self):
         self.stopping.set()
         self.partition.clear()
         self.barrier.unblock(discard=True)
         self.unload_barrier.unblock(discard=True)
+        self.resume_barrier.unblock(discard=True)
         self.server.shutdown()
         self.thread.join(timeout=10)
         if self.thread.is_alive():
