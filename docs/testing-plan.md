@@ -84,8 +84,9 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 E13 解码后终止组件使用原 `InternalClient`/`InternalServer`、独立登记的 mTLS peer、
 有界 JSON 解码与完整 `matches_request`，在客户端原调用已成功返回后持有同一 Resume
 观察值，再经公开接口接受 Destroy，交给原 `AuthorityPort` 的真实 Redis CAS。
-它同时要求正常当前 Resume 可提交，终止后旧值按 Stale 拒绝、完整业务状态与 Redis
-revision 不变，重开原 Redis 账本后仍如此；同会话改 center/retention/node/version 的
+它同时要求正常当前 Resume 经原确认加状态提交接受；终止后旧值按 Stale 拒绝，只有原
+持久确认的一次 revision 递增，完整业务状态及 Redis 原 payload 字节保持，重开原
+Redis 账本后仍如此；同会话改 center/retention/node/version 的
 反例使用同一完整合同。反例是解码后主动构造的值，不声称原客户端接受了错误字节。
 物理就绪与材料事实由受控 Host 提供，原接收方提供匹配观察；实际 TLS、HTTP、JSON、
 公开接受与 Redis 路径原样执行。客户端返回是已解码的组件屏障，不能换成 relay flush

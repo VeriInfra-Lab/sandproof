@@ -186,7 +186,7 @@ fn reject_changed_intents(
         );
         assert!(!changed.matches_request(&decoded.request));
         let before = authority.snapshot().unwrap();
-        let revision = engine.revision();
+        let block = durable_block(engine);
         assert_eq!(
             authority
                 .clone()
@@ -195,9 +195,31 @@ fn reject_changed_intents(
                 sandproof_center_core::DecisionError::Stale
             ))
         );
+        assert_reaffirm_only(engine, &block);
         lifecycle_public::assert_same_business_state(&authority.snapshot().unwrap(), &before);
-        assert_eq!(engine.revision(), revision);
+        let after = durable_block(engine);
+        assert_eq!(after.0, block.0 + 2); // reject confirmation + explicit snapshot
+        assert_eq!(after.1, block.1);
     }
+}
+
+fn durable_block(engine: &Engine) -> (u64, Vec<u8>) {
+    // One original Redis read captures the revision and EXACT payload together.
+    // It does not perform an authority confirmation or replace its contract.
+    let (revision, bytes): (String, Vec<u8>) = redis::cmd("HMGET")
+        .arg(crate::engine::KEY)
+        .arg("revision")
+        .arg("payload")
+        .query(&mut crate::engine::connect(engine.address))
+        .unwrap();
+    (revision.parse().unwrap(), bytes)
+}
+
+fn assert_reaffirm_only(engine: &Engine, before: &(u64, Vec<u8>)) {
+    let after = durable_block(engine);
+    // Original reaffirm durably advances ONE revision with unchanged bytes.
+    assert_eq!(after.0, before.0 + 1);
+    assert_eq!(after.1, before.1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -227,11 +249,19 @@ async fn original_mtls_decoded_resume_can_commit_only_while_its_full_intent_is_c
             assert_eq!(destroyed.accepted_version, 4);
         }
         let before = authority.snapshot().unwrap();
-        let revision = engine.revision();
+        let block = durable_block(&engine);
         let outcome = authority
             .clone()
             .accept_lifecycle_resume_observation(&decoded);
+        let accepted_block = durable_block(&engine);
+        assert_eq!(
+            accepted_block.0,
+            block.0 + if terminate_after_decode { 1 } else { 2 }
+        );
         let after = authority.snapshot().unwrap();
+        let confirmed_block = durable_block(&engine);
+        assert_eq!(confirmed_block.0, accepted_block.0 + 1);
+        assert_eq!(confirmed_block.1, accepted_block.1);
         let record = after
             .center
             .lifecycle_session(&"8".try_into().unwrap(), &session)
@@ -244,7 +274,7 @@ async fn original_mtls_decoded_resume_can_commit_only_while_its_full_intent_is_c
                 ))
             );
             lifecycle_public::assert_same_business_state(&after, &before);
-            assert_eq!(engine.revision(), revision);
+            assert_eq!(accepted_block.1, block.1);
             assert_eq!(
                 record.phase(),
                 sandproof_center_core::SessionPhase::Terminating
@@ -266,22 +296,24 @@ async fn original_mtls_decoded_resume_can_commit_only_while_its_full_intent_is_c
             let mut reopened =
                 SharedBusinessAuthority::new(crate::CenterAuthority::attach(ledger).unwrap());
             lifecycle_public::assert_same_business_state(&reopened.snapshot().unwrap(), &after);
+            let reopened_block = durable_block(&engine);
+            assert_eq!(reopened_block.1, block.1);
             assert_eq!(
                 reopened.accept_lifecycle_resume_observation(&decoded),
                 Err(sandproof_center_store::authority::AuthorityError::Decision(
                     sandproof_center_core::DecisionError::Stale
                 ))
             );
+            assert_reaffirm_only(&engine, &reopened_block);
             lifecycle_public::assert_same_business_state(&reopened.snapshot().unwrap(), &after);
-            assert_eq!(engine.revision(), revision);
+            let final_block = durable_block(&engine);
+            assert_eq!(final_block.0, reopened_block.0 + 2);
+            assert_eq!(final_block.1, block.1);
         } else {
             assert_eq!(outcome, Ok(()));
             assert_eq!(record.phase(), sandproof_center_core::SessionPhase::Running);
             assert_eq!(record.current_version(), Some(3));
-            assert_eq!(
-                engine.revision().parse::<u64>().unwrap(),
-                revision.parse::<u64>().unwrap() + 1
-            );
+            assert_ne!(accepted_block.1, block.1);
         }
     }
 }
