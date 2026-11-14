@@ -10,7 +10,6 @@ use sandproof_internal::{
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, CenterIdentity};
 use tokio::{net::TcpListener, sync::oneshot};
 
-#[allow(dead_code, reason = "shared original certificate fixture")]
 #[path = "../../../sandbox-internal/tests/support/tls.rs"]
 mod tls;
 
