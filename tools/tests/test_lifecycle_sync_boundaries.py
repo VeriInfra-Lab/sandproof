@@ -124,6 +124,7 @@ class SyncSceneTests(unittest.TestCase):
             c.timings=[dict(sent_monotonic=time.monotonic())];c.timing_report.return_value=[]
             c.wait_running.return_value=dict(phase='running');c.wait_unloaded.return_value=dict(phase='unloaded')
             c.wait_phase.return_value=dict(phase='running');c.query.return_value=dict(phase='running')
+            c.assert_continued_workload.return_value={};c.last_http_status=None;c.failure_step='controlled'
             for name in ('create','unload','resume','destroy','run_public_workload','assert_resumed_workload','assert_original_replay'):
                 getattr(c,name).side_effect=lambda *_,o=owner,n=name,**__:events.append(n+'-'+o) or {}
             clients[owner]=c
@@ -133,6 +134,8 @@ class SyncSceneTests(unittest.TestCase):
             if session=='session-1':calls+=1
             return dict(session=session,lifetime=lifetime,context=dict(position=0 if session=='session-2' or calls==1 else 1))
         probe=Mock(spec=capture.CaptureHandoffProbe)
+        for name in ('arm','after_acceptance','cleanup'):
+            getattr(probe,name).return_value={}
         def cut(*_):
             events.append('sync-fail')
             if fail:raise ValueError('unconfirmed original End')

@@ -1059,19 +1059,20 @@ def exercise(args):
                     report['capture_handoff_recovery'] = capture_probe.finish(deadline)
                     if capture_stage in ('measurement-partial','sync-before','sync-after'):
                         resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
-                        report['measurement_partial_continued'] = client.assert_continued_workload(resumed, lifetime)
-                        report['measurement_partial_same_candidate'] = runtime.confirm_running(
+                        prefix = 'measurement_partial' if capture_stage == 'measurement-partial' else 'sync_failure'
+                        report[prefix+'_continued'] = client.assert_continued_workload(resumed, lifetime)
+                        report[prefix+'_same_candidate'] = runtime.confirm_running(
                             client.session, physical_running, deadline)
                         client.operation_evidence_completed()
                         client.assert_original_replay(resumed)
-                        report['cycles'][-1]['continued_after_measurement_error'] = copy.deepcopy(resumed)
+                        report['cycles'][-1]['continued_after_'+('measurement' if capture_stage == 'measurement-partial' else 'sync')+'_error'] = copy.deepcopy(resumed)
                         if capture_stage == 'measurement-partial':
                             break
                         # Consumed one-shot fault: keep the failed request's history, then
                         # submit a new operation and require ordinary Unloaded/Resume below.
                         report['sync_failure_continuity'] = dict(
                             stage=capture_stage, original_running=resumed,
-                            same_candidate=report['measurement_partial_same_candidate'],
+                            same_candidate=report[prefix+'_same_candidate'],
                             original_returned_end=report['capture_handoff_recovery'],
                             retained_responsibility=capture_probe.assert_sync_continued(deadline))
                         accepted_unload = client.unload(resumed)
