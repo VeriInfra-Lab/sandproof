@@ -75,6 +75,33 @@ Memory 克隆、全文 SHA 读取之后，分别在 `sync_all` 之前或成功�
 这里注入的是同步**边界返回错误**，不是内核 `fsync` 返回 EIO/ENOSPC、断电、rename/delete
 故障或完整 E11。普通发布构建没有这些调试门，不新增协议权限或 Lean 结论。
 
+E8 的同步门终止代表为 `--scenario capture-sync-before-destroy` 和
+`--scenario capture-sync-after-destroy`，每种选择使用独立新部署，完整批准参数和期限不变。
+二者保留同一正常前缀、首次 Resume 与另一 owner 的原实例，在第二次 Unload 持有上述
+Memory 同步门时经公开接口接受 Destroy。只有完整终止意图及本地 Kill 已在原 Host 入库、
+当前权限关闭、原 Full/来源/worker 不变、backing pin 和两份正材料责任保留、同伴使用原
+Running 接受及授权实际推进原 RAM/进程/文件见证后，才发送同一原门的 `fail`。
+Full 持有执行权时，Kill 可以尚无终止动作；收件不等于围栏已安装或来源已经退出。
+
+[终止观察器](../tests/system/lifecycle_unload_sync_destroy.py)复用原 Cleanup 成功、SQL 回执
+未入库的退出86切点，同一 SQLite 快照核对原 Unload/当前 Destroy、完整动作与原生逻辑
+登记、全局唯一同源 Cleanup，以及成功终止围栏和 Stop。Seal 绑定目标 snapshot，来源、
+Stop/Cleanup 绑定同一 VM，各自核对原生资源映射。原 End 必须为 `Terminated`，
+其 `prior` 保存完整原 `WorkerEnded/Returned`，覆盖精确 Full/action/worker/source；Stop
+覆盖中的 result 必须关联原回执的 outbox 行。另核原两个 pidfd 的正面退出、受保护围栏文件，
+以及终止 drain 引用的 helper gate 与故障前原槽位文件为同一 device/inode/内容。摘要值
+或文件缺席不提供 OS 事实，不能将已经进入材料化的请求改写成 NoRequest。
+
+原 Rust audit 接受同一持久状态及当前 Destroy 绑定后，按原配置重开管理服务，由产品完成
+Cleaned/GC/额度结算；在 Terminating/Cleaned 重放历史 Create/Unload，终止决定不变。
+在原最终结算观察完成后，另核原 Rust 存储键对应的 staging/bundle/completion 路径全部
+缺席（含悬空链接），再封存并退休五份原门字节；不把公开 Cleaned 提前当作材料已删除。
+同伴在恢复后再次核同一原实例并推进见证，之后才显式 Destroy。一个实际 Resume 不计为
+正常两轮；不发布原失败 Unload 为 Continued，不换新键重做。命令发布发生未知时分别保存
+尝试和已确认发送状态，禁止重发或自动放行；未知 End/audit/同伴结果保留原责任和门文件。
+这些是场景、观察器与受控回归入口，精确组合普通/CI及实机和独立环境收尾仍待验收，
+不表示完整 E8/E11、内核同步故障、断电耐久性或新增形式证明。
+
 ### 从性质定位测试与缺口
 
 下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
@@ -93,7 +120,7 @@ Memory 克隆、全文 SHA 读取之后，分别在 `sync_all` 之前或成功�
 | E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
-| E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-sync-before/after-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 各有限代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`、`capture-sync-before/after`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
@@ -213,6 +240,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
+| `capture-sync-before-destroy` / `capture-sync-after-destroy` | 在原 Memory 同步门持有期间接受 Destroy；核完整终止收件、原 Returned End、同源 Stop/drain 与 Cleanup-success/pre-SQL，再由产品 Cleaned/GC 收尾（E8/E11；实机待验收） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
