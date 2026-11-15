@@ -571,6 +571,16 @@ class PublicUnloadScenario:
                     altered_request_rejected=True, terminal_view_unchanged=True,
                     data_access_closed=True)
 
+    def assert_terminal_unload_replay(self, *, phase):
+        """Keep the original Create/Unload acceptance and the later Destroy."""
+        assert phase in ('terminating','cleaned')
+        current=self.query();self.check_view(current,self.current_acceptance)
+        assert current['phase']==phase and current['current_version']>self.unload_acceptance['accepted_version']
+        self.assert_original_replay(current)
+        self.assert_data_closed();self.assert_previous_tokens_closed()
+        return dict(phase=phase,original_create_unload_acceptance_returned=True,
+                    altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -721,8 +731,10 @@ def exercise(args):
         'capture-measurement-partial': 'measurement-partial',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
+        'capture-stopped-destroy': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    stopped_destroy = args.scenario == 'capture-stopped-destroy'
     expiry_prepare = args.scenario == 'restore-prepare-expiry'
     expiry_running = args.scenario == 'restored-running-expiry'
     expiry_case = expiry_prepare or expiry_running
@@ -1088,10 +1100,11 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                control.destroy(control_running)
-                control.wait_cleaned()
-                report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
-                control.operation_evidence_completed()
+                if not stopped_destroy:
+                    control.destroy(control_running)
+                    control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
             if cycle < restore_cycles:
                 if retirement_restart:
                     from lifecycle_unload_retirement import RetirementRestartProbe
@@ -1101,16 +1114,43 @@ def exercise(args):
                     report['material_retirement_arm'] = retirement_probe.arm(args.activation_gate_timeout_ms)
                 if capture_stage is not None:
                     from lifecycle_unload_capture_faults import CaptureHandoffProbe
-                    gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
-                            if capture_stage == 'measurement-partial' else None)
-                    capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
-                        capture_stage, gate)
+                    if stopped_destroy:
+                        from lifecycle_unload_stopped_destroy import StoppedUnloadDestroyProbe
+                        capture_probe = StoppedUnloadDestroyProbe(runtime, client, physical_running)
+                    else:
+                        gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
+                                if capture_stage == 'measurement-partial' else None)
+                        capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
+                            capture_stage, gate)
                     report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
                 report['phase']='public-unload-after-resume-'+str(cycle)
                 accepted_unload = client.unload(resumed)
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    if stopped_destroy:
+                        pending = client.query();client.check_view(pending, accepted_unload)
+                        assert pending['phase'] == 'unloading' and pending['unload_outcome'] == {'state':'pending'}
+                        client.assert_data_closed();client.assert_previous_tokens_closed()
+                        report['phase'] = 'public-destroy-after-original-source-exit-before-stop-sql'
+                        report['destroy'] = client.destroy(pending)
+                        report['terminal_unload_replays'] = [client.assert_terminal_unload_replay(phase='terminating')]
+                        report['phase'] = 'original-stopped-source-destroy-cleanup-cut'
+                        report['stopped_destroy_recovery'] = capture_probe.recover_after_destroy(report['destroy'], deadline)
+                        report['phase'] = 'public-stopped-source-cleaned-and-product-gc'
+                        client.wait_cleaned()
+                        report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
+                        client.operation_evidence_completed()
+                        report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                        assert control.query() == control_running
+                        report['slot_reuse']['occupant_after_stopped_destroy'] = runtime.confirm_running(control.session, control_physical, deadline)
+                        report['slot_reuse']['peer_after_stopped_destroy'] = control.assert_continued_workload(control_running, control_physical['lifetime'])
+                        control.destroy(control_running);control.wait_cleaned()
+                        report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+                        control.operation_evidence_completed()
+                        report['cycles'][-1]['stopped_unload_destroyed'] = True
+                        terminal_destroy_done = True
+                        break
                     report['capture_handoff_recovery'] = capture_probe.finish(deadline)
                     if capture_stage == 'measurement-partial':
                         resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
@@ -1218,6 +1258,14 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if stopped_destroy:
+            report['acceptance_cases'] = {
+                'E2': 'original Create/Unload replay kept historical acceptance during Terminating/Cleaned; altered replay conflicted without reviving the terminal decision',
+                'E8': 'public Destroy accepted after the original source pidfd exited and before its Stop SQL receipt; original Unload or terminal Kill cleanup cut observed, then product GC',
+                'E12': 'other owner kept its original candidate; guest progress confirmed after manager recovery, not while the Host was exited',
+                'E14': 'original and previous data credentials stayed closed; no replacement Prepare/Activate in the selected Unload/Destroy actions',
+                'other_cases': 'one restored source and selected Stop/Destroy window; no second Resume, complete fault matrix or formal proof',
+            }
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
@@ -1260,6 +1308,8 @@ def exercise(args):
         report.update(failure_details(error, client, report['phase']))
         if prepare_destroy and capture_probe is not None:
             report['prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if stopped_destroy and capture_probe is not None:
+            report['stopped_destroy_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1342,7 +1392,7 @@ def main():
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
-        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stopped-destroy','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # These groups exercise original Linux production primitives, rather than a
 # substitute Mach-O helper, sendfile API or filesystem accounting algorithm.
 LINUX_GROUPS = {
+    'test_lifecycle_unload_stopped_destroy.LinuxExitTests': 'actual Linux procfs and positive original pidfd exit without signals',
     'test_lifecycle_command_disconnect.LinuxRelayTests': 'actual Linux procfs identity and pidfd relay exit',
     'test_ci_retention.RetentionTests': 'Linux mountinfo and same-filesystem bind-mount refusal',
     'test_ci_private_templates.PrivateTemplateTests': 'Linux mountinfo before private template retirement',

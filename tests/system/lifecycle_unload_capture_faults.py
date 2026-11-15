@@ -138,7 +138,10 @@ class CaptureHandoffProbe:
             if (digest, identity) != expected:
                 raise ValueError('original sealed measurement gate file changed')
 
-    def _read(self, deadline):
+    def _read(self, deadline, *, current_version=None, extra=None):
+        expected_version = self.accepted['accepted_version'] if current_version is None else current_version
+        if type(expected_version) is not int or not 0 < expected_version < 2**64:
+            raise ValueError('one exact current version required')
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
         identity = (database.stat().st_dev, database.stat().st_ino)
@@ -155,7 +158,7 @@ class CaptureHandoffProbe:
                 raise ValueError('original inbox checksum differs')
             inbox = json.loads(raw, object_pairs_hook=unique_keys)
             sessions = [s for s in inbox['sessions'] if s['id'] == self.accepted['session']]
-            if len(sessions) != 1 or sessions[0]['current_version'] != self.accepted['accepted_version']:
+            if len(sessions) != 1 or sessions[0]['current_version'] != expected_version:
                 raise ValueError('exact current accepted session required')
             entries = [e for e in sessions[0]['entries'] if
                 e['intent']['accepted_version'] == self.accepted['accepted_version']
@@ -188,9 +191,11 @@ class CaptureHandoffProbe:
             actions = [(json.loads(raw, object_pairs_hook=unique_keys), state, receipt)
                        for raw, state, receipt in rows]
             records = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
+            additional = extra(conn, local, capacity) if extra is not None else None
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during boundary observation')
-        return entry, records, actions
+        result = entry, records, actions
+        return result if extra is None else (*result, additional)
 
     def _original_action(self, actions, entry):
         command = STAGES[self.stage][1]
@@ -397,6 +402,10 @@ class CaptureHandoffProbe:
         if (self.stage != 'restore-prepare-destroy' or self.accepted is None
                 or self.terminal_accepted is not None or not self.candidate_paused):
             raise ValueError('one paused original Prepare and one public Destroy required')
+        self._bind_next_destroy(accepted)
+
+    def _bind_next_destroy(self, accepted):
+        """Shared full public successor binding; callers supply their own cut facts."""
         if (type(accepted) is not dict or set(accepted) != {'session', 'key', 'accepted_version'}
                 or accepted != self.client.current_acceptance
                 or accepted['session'] != self.accepted['session']
@@ -412,6 +421,10 @@ class CaptureHandoffProbe:
     def _terminal_entries(self, inbox):
         if self.stage != 'restore-prepare-destroy' or self.terminal_accepted is None:
             raise ValueError('terminal-specific original acceptance required')
+        return self._terminal_entries_for(inbox, self.restore_entry)
+
+    def _terminal_entries_for(self, inbox, original_entry, *, require_admitted=True):
+        """The same immutable original entry and complete accepted Destroy relation."""
         accepted = self.terminal_accepted
         sessions = [row for row in inbox['sessions'] if row['id'] == self.accepted['session']]
         if len(sessions) != 1:
@@ -421,15 +434,15 @@ class CaptureHandoffProbe:
             raise _AwaitTerminal('public Destroy has not reached the original Host session')
         if session['current_version'] != accepted['accepted_version'] or session['terminal'] is not True:
             raise ValueError('another current Host version or nonterminal state')
-        original = [entry for entry in session['entries'] if entry['intent'] == self.restore_entry['intent']]
+        original = [entry for entry in session['entries'] if entry['intent'] == original_entry['intent']]
         terminal = [entry for entry in session['entries'] if
             entry['intent']['accepted_version'] == accepted['accepted_version']
             and entry['intent']['request']['binding']['key'] == accepted['key']]
-        if (len(original) != 1 or original[0] != self.restore_entry or len(terminal) != 1
+        if (len(original) != 1 or original[0] != original_entry or len(terminal) != 1
                 or any(session['local'][k] != self.prior['local'][k] for k in ('sandbox', 'owner'))):
             raise ValueError('original Resume, public Destroy or native mapping changed')
         entry = terminal[0]; intent = entry['intent']; binding = intent['request']['binding']
-        prior = self.restore_entry['intent']
+        prior = original_entry['intent']
         if (intent['request']['operation'] != {'kind': 'destroy'}
                 or binding['session'] != self.accepted['session']
                 or binding['node'] != prior['request']['binding']['node']
@@ -437,7 +450,7 @@ class CaptureHandoffProbe:
                 or binding['expected'] != {'state': 'version', 'version': self.accepted['accepted_version']}
                 or intent['center'] != prior['center'] or intent['retention'] != prior['retention']):
             raise ValueError('complete original Destroy intent differs from the accepted successor')
-        if entry['local_operation'] is None:
+        if require_admitted and entry['local_operation'] is None:
             raise _AwaitTerminal('Host received Destroy but native Kill is not yet admitted')
         return original[0], entry, session['local']
 
@@ -483,14 +496,7 @@ class CaptureHandoffProbe:
             if hashlib.sha256(raw).digest() != checksum:
                 raise ValueError('original terminal inbox checksum differs')
             original, terminal, local = self._terminal_entries(json.loads(raw, object_pairs_hook=unique_keys))
-            sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-            size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
-                raise ValueError('original native terminal row missing or retired before evidence')
-            raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            state = json.loads(raw, object_pairs_hook=unique_keys)
-            if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
-                raise ValueError('original native terminal owner changed')
+            state = self._read_native(conn, local, capacity)
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
@@ -498,6 +504,18 @@ class CaptureHandoffProbe:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
                     sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions)
+
+    def _read_native(self, conn, local, capacity):
+        native = self.runtime.services.native_pools[0]
+        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+        size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
+            raise ValueError('original native terminal row missing or retired before evidence')
+        raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        state = json.loads(raw, object_pairs_hook=unique_keys)
+        if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
+            raise ValueError('original native terminal owner changed')
+        return state
 
     def _terminal_inventory(self, snapshot):
         rows = snapshot['resume_actions'] + snapshot['terminal_actions']
