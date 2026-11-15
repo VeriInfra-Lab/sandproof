@@ -85,7 +85,8 @@ Full 持有执行权时，Kill 可以尚无终止动作；收件不等于围栏�
 
 [终止观察器](../tests/system/lifecycle_unload_sync_destroy.py)复用原 Cleanup 成功、SQL 回执
 未入库的退出86切点，同一 SQLite 快照核对原 Unload/当前 Destroy、完整动作与原生逻辑
-登记、全局唯一同源 Cleanup，以及成功终止围栏和 Stop。原 End 必须为 `Terminated`，
+登记、全局唯一同源 Cleanup，以及成功终止围栏和 Stop。Seal 绑定目标 snapshot，来源、
+Stop/Cleanup 绑定同一 VM，各自核对原生资源映射。原 End 必须为 `Terminated`，
 其 `prior` 保存完整原 `WorkerEnded/Returned`，覆盖精确 Full/action/worker/source；Stop
 覆盖中的 result 必须关联原回执的 outbox 行。另核原两个 pidfd 的正面退出、受保护围栏文件，
 以及终止 drain 引用的 helper gate 与故障前原槽位文件为同一 device/inode/内容。摘要值

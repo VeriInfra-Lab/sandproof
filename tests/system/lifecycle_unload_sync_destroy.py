@@ -48,6 +48,7 @@ class SyncDestroyProbe(CaptureHandoffProbe):
         entry, _, _ = self._read(min(deadline, self.deadline))
         accepted_request(entry['intent'], self.runtime.services.host_configs[0]['inbox']['node'])
         self.original_entry = copy.deepcopy(entry)
+        self._capture_resources(self.record)
         self.slot_gate = self._slot_gate()
         store = Path(self.runtime.captures[0]['layout_parent'])/'s'
         self.incomplete_material_paths = [str(store/(prefix+self.question['capture_key']))
@@ -157,6 +158,7 @@ class SyncDestroyProbe(CaptureHandoffProbe):
                 or material_source_charge(record) != self.sync_reserved_bytes
                 or self.sync_reserved_bytes <= 0):
             raise ValueError('complete original Full and positive material responsibility changed')
+        self._capture_resources(record)
         rows = snapshot['old_actions'] + snapshot['terminal_actions']
         seals = [row for row in rows if 'SealSnapshot' in row[0]['command']['logical']['command']]
         if len(seals) != 1 or not equal(seals[0][0], self.action):
@@ -165,6 +167,23 @@ class SyncDestroyProbe(CaptureHandoffProbe):
                    for kind in ('CommitSnapshot', 'PrepareVm', 'ActivateVm')) for row in rows):
             raise ValueError('terminal Full must not commit, prepare or activate a replacement')
         return record
+
+    def _capture_resources(self, record):
+        # controller::identity::resource maps Seal to Snapshot, while the
+        # work requirement, terminal Stop and cleanup name the source VM.
+        fields = _fields(self.action['command']['logical']['command']['SealSnapshot'],
+                         'sandbox epoch generation vm workspace snapshot manifest')
+        for value in fields.values():
+            _u64(value)
+        namespace = self.runtime.services.native_pools[0]['namespace']
+        vm = dict(kind='vm', id='vm-'+namespace+'-'+str(fields['vm']))
+        snapshot = dict(kind='snapshot', id='snapshot-'+namespace+'-'+str(fields['snapshot']))
+        if (not equal(self.action['identity']['resource'], snapshot)
+                or vm['id'] != self.prior['source']['resource_id']
+                or not equal(record['work']['requirement']['resource'], vm)
+                or not equal(record['capture']['full']['pause']['source_resource'], vm)):
+            raise ValueError('original Snapshot Seal and distinct source VM resource relation required')
+        return vm
 
     def _closed(self, snapshot):
         native = snapshot['native']; op = native['current_operation']
@@ -290,7 +309,7 @@ class SyncDestroyProbe(CaptureHandoffProbe):
             expected_identity = dict(self.action['identity'], epoch=native['epoch'],
                 operation='op-'+self.runtime.services.native_pools[0]['namespace']+'-'+str(vm['sandbox'])+'-'+str(self.terminal_entry['local_operation']),
                 logical_action=identity['logical_action'], attempt=action['command']['attempt'],
-                resource=dict(kind='sandbox', id=self.config['sandbox']) if kind=='InstallFence' else self.action['identity']['resource'])
+                resource=dict(kind='sandbox', id=self.config['sandbox']) if kind=='InstallFence' else record['work']['requirement']['resource'])
             if (not equal(action['command']['logical']['command'], {kind:fields})
                     or not equal(identity, expected_identity)):
                 raise ValueError('terminal action differs from original complete source command')
@@ -302,8 +321,8 @@ class SyncDestroyProbe(CaptureHandoffProbe):
             raise ValueError('actual protected terminal fence required')
         source_stop = self._success_observation(stop, 'Stopped')
         if (not equal(source_stop, dict(pid=self.prior['source']['pid'], start_ticks=self.prior['source']['start_time_ticks']))
-                or not equal(stop[0]['identity']['resource'], self.action['identity']['resource'])
-                or not equal(cleanup[0]['identity']['resource'], self.action['identity']['resource'])
+                or not equal(stop[0]['identity']['resource'], record['work']['requirement']['resource'])
+                or not equal(cleanup[0]['identity']['resource'], record['work']['requirement']['resource'])
                 or cleanup[1:] != ('dispatched', None)
                 or not equal(snapshot['global_cleanups'], [cleanup[0]])):
             raise ValueError('same-source Stop and unique global pending Cleanup required to bind exit86')

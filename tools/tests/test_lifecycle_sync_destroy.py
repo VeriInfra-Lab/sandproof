@@ -52,7 +52,8 @@ def fixture(root, stage='sync-before'):
         return dict(identity=dict(protocol_version=1, owner='tenant-1', sandbox='sb-'+namespace+'-4',
             operation='op-'+namespace+'-4-'+str(operation), epoch=epoch, generation=2,
             logical_action='effect-'+str(logical), attempt=0,
-            resource=dict(kind='sandbox',id='sb-'+namespace+'-4') if kind=='InstallFence' else copy.deepcopy(resource)),
+            resource=(dict(kind='sandbox',id='sb-'+namespace+'-4') if kind=='InstallFence' else
+                      dict(kind='snapshot',id='snapshot-'+namespace+'-12') if kind=='SealSnapshot' else copy.deepcopy(resource))),
             command=dict(attempt=0, logical=dict(command={kind:fields})))
     def receipt(value, kind, result):
         return dict(identity=copy.deepcopy(value['identity']), outcome=dict(status='observed_success', details=dict(
@@ -175,6 +176,15 @@ class SyncDestroyFactsTests(unittest.TestCase):
                 self.assertEqual(result['original_end']['prior']['observation']['outcome'],dict(kind='returned',http_status=500))
                 self.assertEqual(result['original_end']['stop']['result'],52)
                 self.assertTrue(result['cleanup_sql_ack_pending']);self.assertFalse(result['capacity_released'])
+                self.assertEqual(f.seal['identity']['resource']['kind'],'snapshot')
+                self.assertEqual(f.stop['identity']['resource']['kind'],'vm')
+
+    def test_snapshot_seal_must_not_be_relabelled_as_vm_or_a_foreign_snapshot(self):
+        for resource in (dict(kind='vm',id='vm-0123456789abcdef-9'),
+                         dict(kind='snapshot',id='snapshot-0123456789abcdef-13')):
+            with self.subTest(resource=resource),tempfile.TemporaryDirectory() as directory:
+                f=fixture(Path(directory));f.probe.action['identity']['resource']=resource
+                with self.assertRaises(ValueError):f.probe._capture_resources(f.held['sources'][1])
 
     def test_terminal_source_coordinates_attempts_resources_and_forbidden_commands(self):
         for kind in ('fence','stop','cleanup'):
