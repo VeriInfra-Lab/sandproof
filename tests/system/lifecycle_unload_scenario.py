@@ -679,12 +679,23 @@ class PublicUnloadScenario:
         assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
         assert uint(facts['observed_at_ms'])
         assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
+        return dict(self._assert_execution_workload(running), same_lifetime=True)
+
+    def assert_running_workload(self, running):
+        """Advance a normal Running execution using its current authorization."""
+        self.step('original-running-workload')
+        self.check_view(running, self.current_acceptance)
+        assert running['phase'] == 'running' and running['unload_outcome'] is None
+        return self._assert_execution_workload(running)
+
+    def _assert_execution_workload(self, running):
+        """Shared original RAM/process/file witness; no lifecycle fact inferred."""
         previous=copy.deepcopy(self.witness)
         token=self.data_token
         sandbox=self.sdk()
         assert self.data_token==token, 'original continuation changed execution authorization'
         observed=self.witness_command(sandbox,'read')
-        assert observed==previous, 'failed Unload changed the continued RAM or activation state'
+        assert observed==previous, 'original live execution changed its RAM or activation state'
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(previous['counter'])
         current=self.witness_command(sandbox,'advance')
         assert {key:current[key] for key in current if key!='counter'}=={
@@ -695,7 +706,7 @@ class PublicUnloadScenario:
         self.witness=current
         assert self.query()==running
         return dict(same_ram_and_activation=True,same_guest_process=True,
-            same_authorization=True,same_lifetime=True,counter=current['counter'])
+            same_authorization=True,counter=current['counter'])
 
     def assert_data_closed(self):
         import httpx
@@ -933,7 +944,8 @@ def exercise(args):
                         original_resume_request,accepted,phase='terminating')]
                     def observe_activated_peer():
                         assert control.query()==control_running
-                        return control.assert_continued_workload(control_running,control_physical['lifetime'])
+                        report['phase']='activation-destroy-peer-progress-before-stop'
+                        return control.assert_running_workload(control_running)
                     report['phase']='original-activated-candidate-terminal-stop-held'
                     report['activation_destroy_recovery']=capture_probe.recover_after_destroy(
                         report['destroy'],deadline,observe_peer=observe_activated_peer)
@@ -946,7 +958,8 @@ def exercise(args):
                         original_resume_request,accepted,phase='cleaned'))
                     assert control.query()==control_running
                     report['slot_reuse']['occupant_after_activation_destroy']=runtime.confirm_running(control.session,control_physical,deadline)
-                    report['slot_reuse']['peer_after_activation_destroy']=control.assert_continued_workload(control_running,control_physical['lifetime'])
+                    report['phase']='activation-destroy-peer-progress-after-cleaned'
+                    report['slot_reuse']['peer_after_activation_destroy']=control.assert_running_workload(control_running)
                     control.destroy(control_running);control.wait_cleaned()
                     report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                     control.operation_evidence_completed()

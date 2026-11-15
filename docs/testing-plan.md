@@ -174,6 +174,11 @@ cgroup 及 backing pin；不能把旧 Unloaded VMM 登记为这次清理对象�
 入口及受控自测不代表 KVM 已执行；本分支终止在首次恢复的公共 Running 之前，不认领
 正常三周期、E7 存活恢复或全部 E8 交错。未知/失败保留原工作、材料、首错及 HostLease。
 
+正常同伴在 Stop 门持有时及原会话 Cleaned 后，都按当前 Running 接受核对同一 RAM、
+进程、前后文件和执行授权，并各推进一次计数；同伴寿命仍由原物理观察核对。
+受控编排回归实际执行共享 Running 检查器：门持有期间停滞时不放行 Stop，Cleaned 后
+授权变化时不自动 Destroy 同伴。失败 Unload 的原接受、结果及寿命检查继续保留。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full

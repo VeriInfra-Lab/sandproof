@@ -267,7 +267,7 @@ class ActivationExitTests(unittest.TestCase):
 
 
 class ActualSceneTests(unittest.TestCase):
-    def exercise(self,fault=False):
+    def exercise(self,fault=False,peer_fault='none'):
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
         for owner in ('1','2'):
             c=Mock(spec=scene.PublicUnloadScenario);c.owner=owner;c.session='session-'+owner
@@ -279,6 +279,24 @@ class ActualSceneTests(unittest.TestCase):
             for name in ('create','unload','resume','destroy','wait_cleaned','run_public_workload','assert_continued_workload'):
                 getattr(c,name).side_effect=lambda *_,n=name,o=owner,**__:events.append(n+'-'+o) or {}
             clients[owner]=c
+        from tools.tests.test_lifecycle_running_witness import RunningWitnessTests
+        peer,peer_running=RunningWitnessTests().fixture()
+        previous=copy.deepcopy(peer.witness);peer.witness=None;peer.data_token=None
+        other=clients['2'];other.session=peer.session
+        other.create_acceptance=copy.deepcopy(peer.create_acceptance)
+        other.current_acceptance=copy.deepcopy(peer.current_acceptance);other.unload_acceptance=None
+        other.wait_running.return_value=peer_running;other.query.return_value=peer_running
+        def initialize(view):
+            self.assertEqual(view,peer_running);events.append('run_public_workload-2')
+            peer.witness=copy.deepcopy(previous);peer.data_token='same-execution'
+            return dict(counter=previous['counter'])
+        other.run_public_workload.side_effect=initialize
+        real_running=peer.assert_running_workload;real_continued=peer.assert_continued_workload
+        def running(view):
+            events.append('assert_running_workload-2');return real_running(view)
+        other.assert_running_workload.side_effect=running
+        # An old wrong call must execute the real failed-Unload preconditions.
+        other.assert_continued_workload.side_effect=real_continued
         probe=Mock(spec=active.ActivationDestroyProbe)
         for name in ('assert_terminal_before_gc','cleanup','close'):
             getattr(probe,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
@@ -288,6 +306,19 @@ class ActualSceneTests(unittest.TestCase):
             observe_peer();events.append('release-stop');return {}
         probe.recover_after_destroy.side_effect=recover;probe.terminal_failure_state.return_value={'original':'preserved'}
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            sandbox=Mock();sandbox.files.read.side_effect=['disk-counter:3','disk-counter:4','disk-counter:4','disk-counter:5']
+            sdk_calls=0
+            def sdk():
+                nonlocal sdk_calls
+                sdk_calls+=1
+                if peer_fault=='after-cleaned-token' and sdk_calls==2:peer.data_token='other-execution'
+                return sandbox
+            first=dict(previous,counter=3 if peer_fault=='held-counter' else 4)
+            second=dict(previous,counter=5)
+            stack.enter_context(patch.object(peer,'sdk',side_effect=sdk))
+            witness=stack.enter_context(patch.object(peer,'witness_command',side_effect=[copy.deepcopy(previous),first,dict(previous,counter=4),second]))
+            stack.enter_context(patch.object(peer,'query',return_value=peer_running))
+            stack.enter_context(patch.object(peer,'assert_previous_tokens_closed'))
             runner=NS(root=Path(directory),owner_key='original',foreign_key='peer',services=NS(sdk_url='http://127.0.0.1:1'),
                 measurement_identity=lambda:{},start=lambda _:None,create_parameters=lambda **_:{},
                 record_running=Mock(side_effect=lambda session,*_,**__:dict(session=session,lifetime=lifetime,context={'position':0})),
@@ -301,25 +332,55 @@ class ActualSceneTests(unittest.TestCase):
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
             stack.enter_context(patch.object(active,'ActivationDestroyProbe',return_value=probe))
             args=NS(scenario='restore-activation-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if fault:
+            if peer_fault!='none':
+                with self.assertRaises(AssertionError):scene.exercise(args)
+                result=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(result['complete']);self.assertEqual(result['failure_type'],'AssertionError')
+                self.assertEqual(len(result['known_sessions']),2);other.destroy.assert_not_called()
+                self.assertEqual(clients['1'].destroy.call_count,1);self.assertEqual(clients['1'].resume.call_count,1)
+                runner.settlement_evidence.assert_not_called()
+                if peer_fault=='held-counter':
+                    self.assertNotIn('release-stop',events);probe.assert_terminal_before_gc.assert_not_called()
+                    clients['1'].wait_cleaned.assert_not_called()
+                    self.assertEqual(other.assert_running_workload.call_count,1)
+                    self.assertEqual(result['phase'],'activation-destroy-peer-progress-before-stop')
+                else:
+                    self.assertIn('release-stop',events);clients['1'].wait_cleaned.assert_called_once()
+                    self.assertEqual(other.assert_running_workload.call_count,2)
+                    self.assertEqual(result['phase'],'activation-destroy-peer-progress-after-cleaned')
+                other.assert_continued_workload.assert_not_called()
+            elif fault:
                 with self.assertRaisesRegex(ValueError,'unknown original activated Stop'):scene.exercise(args)
                 result=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(result['complete']);self.assertEqual(len(result['known_sessions']),2)
                 self.assertIn('activation_destroy_failure_state',result);clients['2'].destroy.assert_not_called()
                 runner.settlement_evidence.assert_not_called();probe.assert_terminal_before_gc.assert_not_called()
+                other.assert_running_workload.assert_not_called();witness.assert_not_called()
             else:
                 result=scene.exercise(args);self.assertTrue(result['complete']);self.assertEqual(len(result['cycles']),1)
                 self.assertTrue(result['cycles'][0]['destroyed_before_public_running'])
                 self.assertLess(events.index('actual-RAM'),events.index('destroy-1'))
                 self.assertLess(events.index('destroy-1'),events.index('recover'))
-                self.assertLess(events.index('assert_continued_workload-2'),events.index('release-stop'))
+                self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('assert_terminal_before_gc'),events.index('wait_cleaned-1'))
                 self.assertLess(events.index('wait_cleaned-1'),events.index('destroy-2'))
                 self.assertEqual([r['phase'] for r in result['terminal_resume_replays']],['terminating','cleaned'])
                 self.assertNotIn('E7',result['acceptance_cases'])
+                self.assertEqual(other.assert_running_workload.call_count,2)
+                other.assert_continued_workload.assert_not_called()
+                self.assertEqual([c.args[1] for c in witness.call_args_list],['read','advance','read','advance'])
+                self.assertEqual(peer.witness,dict(previous,counter=5))
+                self.assertEqual(result['slot_reuse']['peer_after_activation_destroy']['counter'],5)
+            other.run_public_workload.assert_called_once_with(peer_running)
             self.assertEqual(clients['1'].wait_running.call_count,1);clients['1'].assert_resumed_workload.assert_not_called()
             self.assertEqual(clients['1'].unload.call_count,1);self.assertEqual(clients['1'].resume.call_count,1)
             runner.finish.assert_called_once();probe.close.assert_called_once()
 
     def test_original_scene_reaches_activation_ram_then_destroy_stop_and_exact_gc(self):self.exercise()
     def test_unknown_stop_preserves_both_original_sessions_without_a_new_business_operation(self):self.exercise(fault=True)
+
+    def test_stalled_peer_before_stop_does_not_release_original_stop_or_destroy_peer(self):
+        self.exercise(peer_fault='held-counter')
+
+    def test_changed_peer_authorization_after_original_cleaned_does_not_destroy_peer(self):
+        self.exercise(peer_fault='after-cleaned-token')
