@@ -316,9 +316,10 @@ class UnloadRestartObserverTests(unittest.TestCase):
         observer.restarted(processes)
         return observer, audit, processes, result
 
-    def test_original_unload_recovers_in_full_without_refund_or_new_capture(self):
+    def test_completed_unload_releases_only_running_quota_without_new_capture(self):
         observer, audit, _, result = self.restarted()
         audit['revision'] += 1
+        audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
         audit['sandboxes'][0]['phase'] = 'unloaded'
         audit['sandboxes'][0]['operations'][-1]['unloaded'] = result
         evidence = observer.recovered(audit)
@@ -327,6 +328,26 @@ class UnloadRestartObserverTests(unittest.TestCase):
         self.assertEqual(evidence['before']['host-0'], evidence['after']['host-0'])
         evidence['observation']['outcome']['facts']['capture'] += 1
         self.assertEqual(observer.observation['outcome']['facts']['capture'], 3)
+
+    def test_unload_keeps_pending_reservations_and_releases_exact_running_amount(self):
+        for name in ('instances', 'cpu', 'memory_bytes', 'disk_bytes'):
+            observer, pending, processes, _ = self.held()
+            pending['reserved_resources'][name] = 0
+            with self.subTest(phase='pending', field=name), self.assertRaises(ValueError):
+                observer.center_stopped(pending, {k: v for k, v in processes.items() if k != 'center'})
+            observer, audit, _, result = self.restarted()
+            audit['sandboxes'][0]['phase'] = 'unloaded'
+            audit['sandboxes'][0]['operations'][-1]['unloaded'] = result
+            audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
+            audit['reserved_resources'][name] += 1
+            with self.subTest(phase='completed', field=name), self.assertRaises(ValueError):
+                observer.recovered(audit)
+        observer, audit, _, result = self.restarted()
+        audit['sandboxes'][0]['phase'] = 'unloaded'
+        audit['sandboxes'][0]['operations'][-1]['unloaded'] = result
+        audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0, disk_bytes=0)
+        with self.assertRaises(ValueError):
+            observer.recovered(audit)
 
     def test_no_completion_or_changed_original_public_acceptance_lifetime(self):
         for path, replacement in ((('acceptance', 'session'), 'other'),
@@ -406,6 +427,7 @@ class UnloadRestartObserverTests(unittest.TestCase):
         for path, value in mutations:
             observer, audit, _, result = self.restarted()
             row = audit['sandboxes'][0]
+            audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
             row['phase'] = 'unloaded'
             row['operations'][-1]['unloaded'] = fixtures.InternalFaultRelayTests().changed(result, path, value)
             with self.subTest(path=path), self.assertRaises(ValueError):
@@ -413,6 +435,7 @@ class UnloadRestartObserverTests(unittest.TestCase):
         for mutation in ('reservation', 'acceptance-time', 'history', 'metadata', 'release', 'owner'):
             observer, audit, _, result = self.restarted()
             row = audit['sandboxes'][0]
+            audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
             row['phase'] = 'unloaded'
             row['operations'][-1]['unloaded'] = result
             if mutation == 'reservation': audit['reserved_resources']['cpu'] += 1
@@ -440,12 +463,14 @@ class UnloadRestartObserverTests(unittest.TestCase):
         observer, audit, _, result = self.restarted()
         audit['nodes'][0]['healthy_until_ms'] += 1000
         audit['nodes'][0]['free'] = copy.deepcopy(audit['nodes'][0]['limit'])
+        audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
         audit['sandboxes'][0]['phase'] = 'unloaded'
         audit['sandboxes'][0]['operations'][-1]['unloaded'] = result
         self.assertEqual(observer.recovered(audit)['observation'], result)
         for fault in ('identity', 'limit', 'templates', 'mode', 'free-beyond-limit', 'untyped-health'):
             observer, audit, _, result = self.restarted()
             node = audit['nodes'][0]
+            audit['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
             audit['sandboxes'][0]['phase'] = 'unloaded'
             audit['sandboxes'][0]['operations'][-1]['unloaded'] = result
             if fault == 'identity': node['identity']['node_generation'] += 1
@@ -483,6 +508,7 @@ class UnloadReceiptWiringTests(unittest.TestCase):
         create['sandboxes'][0]['phase'] = 'running'
         create['sandboxes'][0]['operations'] = create['sandboxes'][0]['operations'][:1]
         recovered = copy.deepcopy(pending)
+        recovered['reserved_resources'].update(instances=0, cpu=0, memory_bytes=0)
         recovered['sandboxes'][0]['phase'] = 'unloaded'
         recovered['sandboxes'][0]['operations'][-1]['unloaded'] = observation
         # Actual refresh_node is allowed to refresh its physical/time veto.

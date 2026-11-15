@@ -65,6 +65,30 @@ def _intent(row):
                 accepted_version=row['accepted_version'])
 
 
+def execution_reservation(total, original, *, acquire):
+    """Expected single-session delta from CenterState::reserved (model.rs).
+
+    Completed Unload releases instances/CPU/RAM; accepted Resume reacquires
+    those same quantities. Disk remains reserved in both phases. This is an
+    assertion oracle, never a change to the product ledger.
+    """
+    names = 'instances cpu memory_bytes disk_bytes'
+    _fields(total, names)
+    _fields(original, names)
+    if type(acquire) is not bool:
+        raise ValueError('explicit execution reservation transition required')
+    result = copy.deepcopy(total)
+    for name in names.split():
+        _u64(total[name])
+        _u64(original[name], positive=True)
+        if name != 'disk_bytes':
+            result[name] += original[name] if acquire else -original[name]
+        _u64(result[name])
+    if result['disk_bytes'] < original['disk_bytes']:
+        raise ValueError('original disk reservation must remain held')
+    return result
+
+
 class UnloadRestartObserver:
     """Correlate one original Create -> Unload, with every envelope field pinned.
 
@@ -155,7 +179,7 @@ class UnloadRestartObserver:
                 or any(current[name] is not None for name in ('running', 'terminal', 'create_refusal'))):
             raise ValueError('original running history or Unload result shape changed')
         for value in _fields(audit['reserved_resources'], 'instances cpu memory_bytes disk_bytes').values():
-            _u64(value, positive=True)
+            _u64(value)
         return row
 
     def center_stopped(self, audit, survivors):
@@ -171,6 +195,8 @@ class UnloadRestartObserver:
         # original resource/identity facts must not change or refund early.
         names = 'schema_version versions deployment sandbox_highwater operation_highwater reserved_resources'.split()
         self.center_facts = copy.deepcopy({name: audit[name] for name in names})
+        self.unloaded_resources = execution_reservation(
+            audit['reserved_resources'], row['create']['resources'], acquire=False)
         self.node_facts = self._stable_nodes(audit)
         self.phase = 'stopped'
 
@@ -221,8 +247,10 @@ class UnloadRestartObserver:
         expected = copy.deepcopy(self.pending)
         expected['phase'] = 'unloaded'
         expected['operations'][-1]['unloaded'] = self.observation
+        expected_center = copy.deepcopy(self.center_facts)
+        expected_center['reserved_resources'] = self.unloaded_resources
         if (not same_json(row, expected)
-                or not same_json({name: audit[name] for name in self.center_facts}, self.center_facts)
+                or not same_json({name: audit[name] for name in expected_center}, expected_center)
                 or not same_json(self._stable_nodes(audit), self.node_facts)):
             raise ValueError('recovery changed the original obligation, result or reservation')
         self.phase = 'recovered'

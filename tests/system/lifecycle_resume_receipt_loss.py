@@ -17,7 +17,7 @@ from pathlib import Path
 import sqlite3
 
 from _internal_fault_relay import _fields, _u64, accepted_request, resumed_observation, unloaded_observation, same_json
-from lifecycle_unload_receipt_loss import UnloadRestartObserver, UnloadReceiptRestart, _intent, _processes
+from lifecycle_unload_receipt_loss import UnloadRestartObserver, UnloadReceiptRestart, _intent, _processes, execution_reservation
 from lifecycle_unload_runtime import checked_source_records, original_json, original_process, remaining
 from tools.check_kvm_host import unique_keys
 from tools.runtime_create_recovery import CURRENT_VERSIONS, original_create_identity
@@ -49,6 +49,8 @@ class ResumeRestartObserver(UnloadRestartObserver):
         if not unloaded_observation(_intent(row['operations'][-1]),source,node):
             raise ValueError('complete native original Unload binding required')
         self.baseline=copy.deepcopy(baseline);self.source=copy.deepcopy(source['outcome']['facts'])
+        self.resuming_resources=execution_reservation(
+            baseline['reserved_resources'],row['create']['resources'],acquire=True)
         if not same_json({k:self.source[k] for k in lifetime},lifetime):raise ValueError('source lifetime changed')
         if not same_json(original_create_identity(row),create_identity):raise ValueError('original Create changed')
 
@@ -86,7 +88,7 @@ class ResumeRestartObserver(UnloadRestartObserver):
         peers=[r for r in audit['sandboxes'] if r['create']['binding']['session']!=self.acceptance['session']]
         expected=[r for r in self.baseline['sandboxes'] if r['create']['binding']['session']!=self.acceptance['session']]
         if not same_json(peers,expected):raise ValueError('another session changed inside center-only window')
-        if not same_json(audit['reserved_resources'],self.baseline['reserved_resources']):
+        if not same_json(audit['reserved_resources'],self.resuming_resources):
             raise ValueError('original running/material obligations refunded or changed')
         return row
 

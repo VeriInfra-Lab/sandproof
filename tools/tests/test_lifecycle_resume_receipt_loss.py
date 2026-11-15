@@ -27,6 +27,7 @@ def fixture():
     old,audit,processes,unloaded=previous.audit_fixture()
     baseline=copy.deepcopy(audit);row=baseline['sandboxes'][0]
     row['phase']='unloaded';row['operations'][-1]['unloaded']=copy.deepcopy(unloaded)
+    baseline['reserved_resources'].update(instances=0,cpu=0,memory_bytes=0)
     request=copy.deepcopy(unloaded['request']);request['accepted_version']=3
     request['request']['binding']['key']['sequence']=3
     request['request']['binding']['expected']['version']=2
@@ -35,6 +36,7 @@ def fixture():
     facts=dict(old.lifetime,observed_at_ms=971)
     result=dict(request=copy.deepcopy(request),current_request=copy.deepcopy(request),readiness=dict(state='observed',facts=facts))
     pending=copy.deepcopy(baseline);pending['operation_highwater']+=1
+    pending['reserved_resources']=copy.deepcopy(row['create']['resources'])
     current=copy.deepcopy(row['operations'][-1]);current.update(
         binding=request['request']['binding'],operation=request['request']['operation'],center=request['center'],
         retention=request['retention'],accepted_version=3,acceptance_time={'kind':'sampled','at_ms':970},unloaded=None)
@@ -175,6 +177,18 @@ class ResumeObserverTests(unittest.TestCase):
             if fault=='extra-op':row['operations'].append(copy.deepcopy(row['operations'][-1]))
             if fault=='retention':row['operations'][-1]['retention']['window']+=1
             with self.subTest(fault=fault),self.assertRaises(ValueError):f.observer.center_stopped(bad,{k:v for k,v in f.processes.items() if k!='center'})
+
+    def test_resume_reacquires_running_quota_once_and_preserves_disk(self):
+        f=fixture()
+        self.assertEqual(f.baseline['reserved_resources'],dict(instances=0,cpu=0,memory_bytes=0,
+            disk_bytes=f.pending['sandboxes'][0]['create']['resources']['disk_bytes']))
+        self.assertEqual(f.pending['reserved_resources'],f.pending['sandboxes'][0]['create']['resources'])
+        for name in ('instances','cpu','memory_bytes','disk_bytes'):
+            for wrong in (0, f.pending['reserved_resources'][name]*2):
+                case=fixture();case.observer.hold(case.result,case.processes)
+                bad=copy.deepcopy(case.pending);bad['reserved_resources'][name]=wrong
+                with self.subTest(field=name,value=wrong),self.assertRaises(ValueError):
+                    case.observer.center_stopped(bad,{k:v for k,v in case.processes.items() if k!='center'})
 
     def test_recovery_rejects_changed_result_history_peer_and_logical_resources(self):
         for fault in ('lifetime','history','manifest','reservation','context','peer'):
