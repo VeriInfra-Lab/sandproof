@@ -1,5 +1,6 @@
 //! Preparing an Unloaded test is separate from asserting a one-call result.
 use super::*;
+use crate::engine;
 use sandproof_protocol::lifecycle::PublicAcceptance;
 
 fn request() -> PublicUnloadRequest {
@@ -188,5 +189,90 @@ fn prepared_unload_unknown_stops_without_a_second_call_or_new_key() {
         Err(PortError::OutcomeUnknown)
     );
     assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+    assert_eq!(app.snapshot().unwrap(), before);
+}
+
+#[test]
+fn prepared_unload_busy_confirmation_unknown_stops_before_second_call() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let session = running(&app);
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    host.create_requests.lock().unwrap().clear();
+    *host.observation_error_once.lock().unwrap() = Some(PortError::Busy);
+    let mut engine = engine::connect(fixture.address);
+    let record: std::collections::BTreeMap<String, Vec<u8>> = redis::cmd("HGETALL")
+        .arg(engine::KEY)
+        .query(&mut engine)
+        .unwrap();
+    let revision = std::str::from_utf8(&record["revision"])
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    // Six real reaffirmations precede the helper's post-Busy snapshot:
+    // its initial snapshot, then the public call's initial replay, current
+    // intent, execution origin, Create source and final confirmed absence.
+    // Lose only that seventh actual Redis reply, not the Busy call's replay.
+    proxy.lose_after(6);
+    assert_eq!(
+        accept(&app, &session, &request()),
+        Err(PortError::OutcomeUnknown)
+    );
+    assert_eq!(proxy.armed.load(Ordering::SeqCst), 0);
+    assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+    let original = before
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .operations()[0]
+        .intent();
+    assert_eq!(*host.create_requests.lock().unwrap(), [original.clone()]);
+    assert_eq!(app.snapshot(), Err(PortError::OutcomeUnknown));
+    // The exact +7 distinguishes a lost confirmation from a fault during
+    // the first public call. Every other durable byte remains unchanged.
+    let mut after: std::collections::BTreeMap<String, Vec<u8>> = redis::cmd("HGETALL")
+        .arg(engine::KEY)
+        .query(&mut engine)
+        .unwrap();
+    assert_eq!(after["revision"], (revision + 7).to_string().as_bytes());
+    after.insert("revision".into(), record["revision"].clone());
+    assert_eq!(after, record);
+    app.recover_authority().unwrap();
+    assert_eq!(app.snapshot().unwrap(), before);
+    assert_eq!(host.observation_budgets.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn prepared_unload_second_busy_returns_without_a_third_call() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, clock) = application(&authority);
+    let session = running(&app);
+    let before = app.snapshot().unwrap();
+    host.observation_budgets.lock().unwrap().clear();
+    host.create_requests.lock().unwrap().clear();
+    // With zero allowed clock skew, an observation one millisecond ahead
+    // is a known Host Busy, not Pending or an unknown authority write.
+    *host.observed_at_override.lock().unwrap() = Some(clock.0.load(Ordering::SeqCst) + 1);
+    assert_eq!(accept(&app, &session, &request()), Err(PortError::Busy));
+    let budgets = host.observation_budgets.lock().unwrap();
+    assert_eq!(budgets.len(), 2);
+    assert!(
+        budgets
+            .iter()
+            .all(|b| !b.is_zero() && *b <= Duration::from_millis(200))
+    );
+    let original = before
+        .lifecycle_session(&"8".try_into().unwrap(), &session)
+        .unwrap()
+        .operations()[0]
+        .intent();
+    assert_eq!(
+        *host.create_requests.lock().unwrap(),
+        [original.clone(), original.clone()]
+    );
     assert_eq!(app.snapshot().unwrap(), before);
 }
