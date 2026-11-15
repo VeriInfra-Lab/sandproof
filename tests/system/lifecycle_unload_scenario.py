@@ -907,7 +907,7 @@ def exercise(args):
                         original_resume_request, accepted, phase='terminating')]
                     report['phase'] = 'original-host-terminal-fence-before-process-continue'
                     def observe_original_peer():
-                        assert control.query() == control_running, 'other owner lost its original Running observation'
+                        assert equal(control.query(), control_running), 'other owner lost its original Running observation'
                         return dict(session=control.session, original_public_running_query_completed=True,
                                     scope='one existing peer query while original loaded process is stopped')
                     report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
@@ -921,7 +921,7 @@ def exercise(args):
                     client.operation_evidence_completed()
                     report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
                         original_resume_request, accepted, phase='cleaned'))
-                    assert control.query() == control_running
+                    assert equal(control.query(), control_running)
                     report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
                         control.session, control_physical, deadline)
                     control.destroy(control_running); control.wait_cleaned()
@@ -950,15 +950,15 @@ def exercise(args):
                     client.step('original-lost-resume-replay',202)
                     replay=client.read_json('POST',client.path()+'/resume',key=client.owner_key,
                         body=client.resume_request,status=202)
-                    assert replay==accepted, 'original Resume replay created another acceptance'
-                    assert client.query()==lost, 'original Resume replay revived lost state'
+                    assert equal(replay,accepted), 'original Resume replay created another acceptance'
+                    assert equal(client.query(),lost), 'original Resume replay revived lost state'
                     report['phase']='lost-state-same-manager-config-reopen'
                     report['lost_manager_restart']=runtime.restart_managers(deadline)
-                    assert client.query()==lost, 'manager restart changed original StateLost result'
+                    assert equal(client.query(),lost), 'manager restart changed original StateLost result'
                     report['lost_candidate_after_restart']=runtime.lost_candidate_evidence(gate_receipt,accepted,deadline)
                     client.assert_data_closed()
                     client.assert_previous_tokens_closed()
-                    assert control.query()==control_running
+                    assert equal(control.query(),control_running)
                     report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(
                         control.session,control_physical,deadline)
                     assert report['activation_gate_recovery']['candidate_position']!=control_physical['context']['position']
@@ -1043,7 +1043,7 @@ def exercise(args):
                     continued_acceptance,continued,stage,deadline)
                 report['phase']='public-continued-state-lost'
                 lost=client.wait_phase(continued_acceptance,waiting={'running'},complete='state_lost')
-                assert lost['unload_outcome']==continued['unload_outcome'], 'loss rewrote historical continued result'
+                assert equal(lost['unload_outcome'],continued['unload_outcome']), 'loss rewrote historical continued result'
                 client.assert_data_closed();client.assert_previous_tokens_closed();client.assert_owner_isolation()
                 report['continued_lost']=runtime.continued_lost_evidence(continued_acceptance,lost,stage,deadline)
                 client.assert_original_replay(lost)
@@ -1053,7 +1053,7 @@ def exercise(args):
                 report['continued_lost_after_restart']=runtime.continued_lost_evidence(
                     continued_acceptance,lost,stage,deadline)
                 client.assert_data_closed();client.assert_previous_tokens_closed()
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(control.session,control_physical,deadline)
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
@@ -1064,7 +1064,7 @@ def exercise(args):
             if cycle==1:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
