@@ -94,6 +94,15 @@ Redis 账本后仍如此；同会话改 center/retention/node/version 的
 或 EOF；本入口不声称截住已部署父调用的同一次 CAS，也不代表真实 VM、独立服务重启
 故障、全部乱序、系统 E13 或形式证明完成。
 
+[普通恢复竞争组件](../sandbox-center-service/tests/business_authority/lifecycle_resume_races.rs)
+分别从原 `reconcile_once` 和公开查询应用方法进入，沿真实 Redis 保存路径处理同一
+Resume。既有受控 Host 先保留完整成功回复，原 Destroy 接受后才放行；查询必须明确
+返回 Conflict，后台不得完成旧恢复，完整终止状态与未完成 Destroy 责任保持，不能提前
+退额。两条入口各有不插入 Destroy 的正常对照，必须采纳同一回复并进入 Running。
+从启动该调用之前计时到调用返回，须小于夹具原 200ms 回复预算；否则测试失败，不能把
+超时拒绝当成终止检查通过。没有新增生产控制点；Host 物理事实受控，没有执行外层
+HTTP、真实 VM 或中心进程重启，不能据此声称全部 E8/E13 或形式证明完成。
+
 [调和回复期限组件](../sandbox-center-service/tests/business_authority/lifecycle_ready.rs)
 复用原真实 Redis/应用夹具、200ms 回复期限和同一 Create 工作。持有一条已进入的
 Host 观察回复，同伴先由原 worker 提交 Running，再检查其公开查询；只在记录的剩余

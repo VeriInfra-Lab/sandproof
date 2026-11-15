@@ -116,7 +116,7 @@ async fn decode_original(observation: &ResumeObservation) -> ResumeObservation {
     decoded
 }
 
-fn pending_resume(app: &Application, host: &Host) -> (SessionId, ResumeObservation) {
+pub(super) fn pending_resume(app: &Application, host: &Host) -> (SessionId, ResumeObservation) {
     let created = app
         .create_lifecycle("8", &lifecycle_public::request())
         .unwrap();
