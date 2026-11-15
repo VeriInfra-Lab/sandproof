@@ -40,7 +40,7 @@ fn resume_reply(entry: Entry, destroy: bool) {
     await_observation(&entered);
     assert_eq!(
         &host.resume_requests.lock().unwrap()[prior_observations..],
-        &[ready.request.clone()]
+        std::slice::from_ref(&ready.request)
     );
     let termination = destroy.then(|| {
         app.destroy_lifecycle(
@@ -73,25 +73,13 @@ fn resume_reply(entry: Entry, destroy: bool) {
         started.elapsed() < REPLY_TIMEOUT,
         "race exceeded original reply budget; cannot count timeout as stale rejection"
     );
-    match outcome {
-        Outcome::Background(result) => assert_eq!(result, Ok(usize::from(!destroy))),
-        Outcome::Query(result) => {
-            if destroy {
-                assert_eq!(result, Err(PortError::Conflict));
-            } else {
-                let view = result.unwrap();
-                assert_eq!(view.phase, PublicSessionPhase::Running);
-                assert_eq!(view.operation, ready.current_request.request.binding.key);
-                assert_eq!(view.current_version, ready.current_request.accepted_version);
-            }
-        }
-    }
+    assert_outcome(outcome, destroy, &ready);
     let after = app.snapshot().unwrap();
     let current = after.lifecycle_session(&owner, &session).unwrap();
     assert_eq!(current.operations()[2].intent(), &ready.request);
     assert_eq!(
         &host.resume_requests.lock().unwrap()[prior_observations..],
-        &[ready.request.clone()]
+        std::slice::from_ref(&ready.request)
     );
     if let Some(termination) = termination {
         assert_eq!(after, before_release);
@@ -120,6 +108,22 @@ fn resume_reply(entry: Entry, destroy: bool) {
             unreachable!()
         };
         assert_eq!(current.last_running(), Some(facts));
+    }
+}
+
+fn assert_outcome(outcome: Outcome, destroy: bool, ready: &ResumeObservation) {
+    match outcome {
+        Outcome::Background(result) => assert_eq!(result, Ok(usize::from(!destroy))),
+        Outcome::Query(result) => {
+            if destroy {
+                assert_eq!(result, Err(PortError::Conflict));
+            } else {
+                let view = result.unwrap();
+                assert_eq!(view.phase, PublicSessionPhase::Running);
+                assert_eq!(view.operation, ready.current_request.request.binding.key);
+                assert_eq!(view.current_version, ready.current_request.accepted_version);
+            }
+        }
     }
 }
 
