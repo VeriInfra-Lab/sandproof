@@ -50,10 +50,12 @@ def rejected_original_requests(client):
     changed['parameters']['timeout_ms'] -= 1
     cases = [('original-create', PREFIX + '/create', original, 409),
              ('altered-create', PREFIX + '/create', changed, 409)]
-    for operation in ('unload', 'resume', 'destroy'):
+    # Unload looks up the current session before admission. Resume/Destroy
+    # enter the pure admission path, which rejects the retired window first.
+    for operation, expected in (('unload', 404), ('resume', 409), ('destroy', 409)):
         request = getattr(client, operation + '_request')
         cases.append(('original-' + operation, client.path() + '/' + operation,
-                      copy.deepcopy(request), 404))
+                      copy.deepcopy(request), expected))
     results = []
     for name, path, body, expected in cases:
         client.step('e2-expired-' + name, expected)

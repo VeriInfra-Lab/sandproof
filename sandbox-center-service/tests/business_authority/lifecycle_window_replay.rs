@@ -88,6 +88,34 @@ async fn replay_checks(
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_same_business_state(&business.snapshot().unwrap(), &before);
     }
+    // The retired row has forgotten all operation details. Unload looks up
+    // that row before admission; Resume/Destroy reject its old window first.
+    // Sequence 3 is the original Destroy key, distinct from the retained peer.
+    let followup = serde_json::to_value(PublicDestroyRequest {
+        window: original.window,
+        sequence: 3.try_into().unwrap(),
+        expected_version: 1,
+    })
+    .unwrap();
+    for (operation, expected) in [
+        ("unload", StatusCode::NOT_FOUND),
+        ("resume", StatusCode::CONFLICT),
+        ("destroy", StatusCode::CONFLICT),
+    ] {
+        assert_eq!(
+            send_public(
+                router,
+                "POST",
+                &format!("{}/{operation}", session_path(accepted)),
+                OWNER_KEY,
+                Some(&followup),
+            )
+            .await
+            .status(),
+            expected
+        );
+        assert_same_business_state(&business.snapshot().unwrap(), &before);
+    }
     // A retained operation in the old public window still replays. A window
     // mismatch alone must not erase it or reject its complete original input.
     assert_eq!(create(router, peer_secret, peer_request).await, *peer);

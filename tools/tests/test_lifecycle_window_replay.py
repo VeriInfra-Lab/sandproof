@@ -61,9 +61,9 @@ class WindowRetirementTests(unittest.TestCase):
     def test_exact_original_requests_and_one_valid_alteration_are_checked(self):
         value = client()
         original = copy.deepcopy(value.create_request)
-        value.call.side_effect = [(code, b'private response not copied') for code in [409,409,404,404,404,404,404]]
+        value.call.side_effect = [(code, b'private response not copied') for code in [409,409,404,409,409,404,404]]
         result = probe.rejected_original_requests(value)
-        self.assertEqual([item['status'] for item in result], [409,409,404,404,404,404,404])
+        self.assertEqual([item['status'] for item in result], [409,409,404,409,409,404,404])
         self.assertNotIn('private response', repr(result))
         self.assertEqual(value.call.call_args_list[0].kwargs['body'], original)
         changed = value.call.call_args_list[1].kwargs['body']
@@ -75,14 +75,15 @@ class WindowRetirementTests(unittest.TestCase):
         value.assert_previous_tokens_closed.assert_called_once_with()
 
     def test_acceptance_wrong_classification_or_foreign_query_never_passes(self):
+        expected=[409,409,404,409,409,404,404]
         for index in range(7):
-            with self.subTest(index=index):
-                codes=[409,409,404,404,404,404,404]
-                codes[index]=202 if index<5 else 200
-                value=client()
-                value.call.side_effect=[(code,b'') for code in codes]
-                with self.assertRaises(ValueError):
-                    probe.rejected_original_requests(value)
+            for wrong in {200,202,400,401,403,404,409,500,503}-{expected[index]}:
+                with self.subTest(index=index,status=wrong):
+                    codes=expected.copy();codes[index]=wrong
+                    value=client()
+                    value.call.side_effect=[(code,b'') for code in codes]
+                    with self.assertRaises(ValueError):
+                        probe.rejected_original_requests(value)
 
     def test_new_window_requires_distinct_session_and_complete_original_key(self):
         original=dict(session='old',key=dict(deployment='d',owner='1',window=1,sequence=9),accepted_version=8)
