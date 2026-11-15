@@ -729,9 +729,11 @@ def exercise(args):
     prepare_destroy = args.scenario == 'restore-prepare-destroy' or expiry_prepare
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy') or expiry_prepare
     data_drain = args.scenario == 'data-drain'
+    command_disconnect = args.scenario == 'command-disconnect'
+    normal_chain = args.scenario == 'normal' or command_disconnect
     retirement_restart = args.scenario == 'material-retirement-restart'
-    retirement_observation = args.scenario == 'normal' or retirement_restart
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case):
+    retirement_observation = normal_chain or retirement_restart
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -747,7 +749,7 @@ def exercise(args):
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
     capture_probe = data_probe = cow_probe = retirement_probe = None
-    expiry_probe = None
+    expiry_probe = command_probe = None
     terminal_destroy_done = False
     failed = False
     try:
@@ -770,6 +772,11 @@ def exercise(args):
         client.step('running-native-evidence')
         report['running'] = runtime.record_running(client.session, deadline)
         client.operation_evidence_completed()
+        if command_disconnect:
+            from lifecycle_command_disconnect import CommandDisconnectProbe
+            command_probe = CommandDisconnectProbe(runtime, client)
+            report['phase'] = 'original-command-subscription-disconnect'
+            report['command_disconnect'] = [command_probe.observe(running, report['running'], cycle=0)]
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
         if data_drain:
@@ -841,7 +848,7 @@ def exercise(args):
             position=control_physical['context']['position'])
         report['cycles']=[]
         lost=None
-        restore_cycles = 3 if args.scenario == 'normal' else 2
+        restore_cycles = 3 if normal_chain else 2
         for cycle in range(1, restore_cycles + 1):
             report['phase']='public-resume-'+str(cycle)
             gate_receipt=None
@@ -973,6 +980,9 @@ def exercise(args):
                 report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
             if cycle == 1 and data_probe is not None:
                 report['data_drain_resumed'] = data_probe.assert_resumed()
+            if command_probe is not None:
+                report['phase'] = 'original-command-reconnect-' + str(cycle)
+                report['command_disconnect'].append(command_probe.observe(resumed, physical_running, cycle=cycle))
             client.operation_evidence_completed()
             client.assert_owner_isolation()
             cycle_report = dict(cycle=cycle,resume=accepted,
@@ -1163,7 +1173,7 @@ def exercise(args):
             'E14':'old execution tokens rejected and new token accepted',
             'other_cases':'not claimed by this normal scenario',
         }
-        if args.scenario == 'normal':
+        if normal_chain:
             report['acceptance_cases']['E12'] = (
                 'two owners, two sessions and three complete restore cycles observed')
             report['acceptance_cases']['C6'] = (
@@ -1226,6 +1236,16 @@ def exercise(args):
             }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
+        if command_probe is not None:
+            report['acceptance_cases']['E14'] = (
+                'four original SDK Connect subscriptions to one RAM-only guest PID; '
+                'single-owner disconnect and exact host-relay kernel exit before Unload '
+                'and after each of three restores; same guest RAM/disk/process advances, '
+                'old tokens refused and new tokens accepted; quiet Start streams only, '
+                'not arbitrary mid-output disconnection or TCP/vsock continuity')
+            report['command_disconnect_close'] = command_probe.close()
+            if report['command_disconnect_close']['cleanup_unknown']:
+                raise RuntimeError('original command observer close remains unknown')
         if capture_probe is not None:
             report['capture_handoff_gate_cleanup'] = capture_probe.cleanup()
         if retirement_probe is not None:
@@ -1281,6 +1301,10 @@ def exercise(args):
                 cow_probe = None
             if retirement_probe is not None:
                 retirement_probe.close()
+            if command_probe is not None:
+                report['command_disconnect_close'] = command_probe.close()
+                if report['command_disconnect_close']['cleanup_unknown']:
+                    report['complete'] = False
             if data_probe is not None:
                 # Withdraw only this observer's exact relay pause before the
                 # original product failure cleanup. Record uncertainty rather
@@ -1317,7 +1341,7 @@ def main():
     parser.add_argument('--scenario-timeout', type=float, default=600)
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
