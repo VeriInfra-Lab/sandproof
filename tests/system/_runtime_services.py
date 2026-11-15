@@ -345,6 +345,28 @@ class RuntimeServices:
             for row in profile['service_data']])
         return value
 
+    def seal_fresh_center_config(self):
+        """Seal the fresh test endpoint before initialization, on its same inode.
+
+        Shared by DK and the Unload receipt probe; never rewrites a live role.
+        """
+        if self.processes.children:
+            raise ValueError('fresh center configuration must precede service starts')
+        path = Path(self.processes.bindings['center']['config'])
+        old = path.stat()
+        if not stat.S_ISREG(old.st_mode) or old.st_nlink != 1 or old.st_mode&0o7777 != 0o600:
+            raise ValueError('fresh protected center input changed before initialization')
+        raw = json.dumps(self.center_config,separators=(',',':'),ensure_ascii=False).encode()
+        fd = os.open(path,os.O_WRONLY|os.O_NOFOLLOW)
+        with os.fdopen(fd,'wb') as output:
+            opened = os.fstat(output.fileno())
+            if (opened.st_dev,opened.st_ino)!=(old.st_dev,old.st_ino):
+                raise ValueError('fresh center input inode changed')
+            output.write(raw)
+            output.truncate()
+            output.flush()
+            os.fsync(output.fileno())
+
     def start(self, *, host_envs=None):
         self.service_storage.start()
         self.processes.start('redis')
