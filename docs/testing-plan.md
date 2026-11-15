@@ -71,7 +71,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
-| E8 / G2、G4、G6 | `restore-prepare-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中 Destroy 的代表不等于卸载/恢复与 Destroy/到期的全部竞争；必须继续观察剩余责任最终收尾。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-stopped-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 后者覆盖原 VMM 已退出、Stop 回执未入库时接受 Destroy 的有限顺序，实机待验收；各代表不等于全部卸载/恢复与终止竞争，必须继续观察剩余责任收尾。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
@@ -235,9 +235,33 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
+| `capture-stopped-destroy` | 在同一原 Stop-success/pre-SQL 退出点确认原 pidfd 的内核退出、完整 Full 与 backing pin/正材料额度，再经公开接口接受 Destroy；观察原 Unload 或当前 Kill 的 Cleanup-success/pre-SQL 顺序，随后产品完成终止与 GC（E8；实机待验收） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
 | `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
+
+`capture-stopped-destroy` 保留首轮保存、双管理重开、另一 owner 实际占用原位置及首次
+恢复的 RAM/进程/文件见证；第二次 Unload 的原 Host 退出86且同一 Stop 尚无 SQL 回执时，
+必须有原 pidfd 的正面退出观察、同一 SQL 快照内唯一全局在途 Stop、完整原 Full/来源及
+两份材料责任；故障开关只按 Stop 类型选择，额外在途 Stop 不能混作当前退出点。PID 身份可能暂留为
+zombie，不能因此推断 PID/额度已释放，也不能用 PID 缺席代替内核退出。读回原材料，
+确认公开 unloading/pending 后接受 Destroy，保留历史 Create/Unload 接受与改参冲突；
+不重新加载来源、不发送信号或修改 SQL。
+
+中心 Terminating 可先于 Host 收到 Destroy。原 `cleanup_vm` 成功/SQL 未入库故障点可能
+先落在旧 Unload，也可能落在当前 Kill；报告分别记录 `old-unload-cleanup` 和
+`terminal-kill-cleanup`，不强求瞬间两库一致。两者都须核全局唯一在途 Cleanup 与同一
+SQL 事务内的原逻辑动作登记、同一原 VM/代数/完整动作、
+匹配原进程的停止回执、原 pidfd 退出和 Cleanup 无 SQL 回执；当前 Kill 分支还核实际
+完整终止意图、同源 Stop、成功围栏回执及受保护的真实围栏文件。旧 Unload 的本地提交
+不能恢复中心已终止的资格；有限公共快照不代表完整调用轨迹。确认切片后仅按原配置
+重开管理服务，产品完成当前 Cleaned、原材料路径/使用登记/资源额度与历史收尾。
+其它未知 Pause/Stop 交错和完整形式证明仍未覆盖。
+
+该分支保留另一 owner 至终止收尾后，原 Host 退出期间不承诺其管理/数据请求可用；
+重开后用原授权核同一实例的来宾进展再显式 Destroy。一个实际恢复周期不计为正常三轮
+或第二次 Resume。失败保留原接受、已知退出及未知资源责任，不重发业务请求、替换键、
+自动 Destroy 同伴或清理未知资源。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
