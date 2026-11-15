@@ -1003,7 +1003,7 @@ def exercise(args):
                 from lifecycle_unload_runtime import original_process
                 assert original_process(control_physical['source']), 'expiry stopped the other owner VMM'
                 report['expiry_held_material']['other_owner_original_vmm_live'] = True
-                report['expiry'] = observe_center_expiry(runtime,client,accepted,lifetime,deadline,host_delivered=False)
+                report['expiry'] = observe_center_expiry(runtime,client,expiry_probe.resume,lifetime,deadline,host_delivered=False)
                 expiry_probe.recover(deadline)
                 client.assert_data_closed();client.assert_previous_tokens_closed()
                 report['expired_cleaned'] = wait_expired_cleaned(client,deadline)
