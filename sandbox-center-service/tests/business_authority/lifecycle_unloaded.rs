@@ -18,6 +18,9 @@ mod query_confirmation;
 #[path = "lifecycle_decoded_resume.rs"]
 mod decoded_resume_terminal;
 
+#[path = "lifecycle_resume_races.rs"]
+mod resume_races;
+
 #[path = "unload_setup.rs"]
 mod setup;
 

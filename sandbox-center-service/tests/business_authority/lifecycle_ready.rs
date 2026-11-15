@@ -340,6 +340,7 @@ type Application = CenterApplication<
     Host,
     BusinessTemplates<templates::Candidates, templates::Evidence>,
 >;
+const REPLY_TIMEOUT: Duration = Duration::from_millis(200);
 fn application(authority: &SharedBusinessAuthority) -> (Arc<Application>, Host, Arc<Time>) {
     let clock = Arc::new(Time(AtomicU64::new(100)));
     let host = Host::new(Arc::clone(&clock));
@@ -352,7 +353,7 @@ fn application(authority: &SharedBusinessAuthority) -> (Arc<Application>, Host, 
             max_timeout_secs: 300,
             max_lifetime_secs: 300,
             startup_timeout_secs: 1,
-            reply_timeout: Duration::from_millis(200),
+            reply_timeout: REPLY_TIMEOUT,
             poll_interval: Duration::from_millis(1),
             public_ipv4_enabled: false,
         },
