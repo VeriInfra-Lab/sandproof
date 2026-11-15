@@ -68,7 +68,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E2 / G2、G4、G5 | 生命周期入口的同键屏障并发、重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 已有同键并发及异文拒绝代表；过期窗口、不同操作的并发重发和回包丢失组合仍须分别记录，同时核对实际实例和原操作结果。 |
 | E3 / G1、G4 | `capture-freeze-receipt`、`capture-measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
 | E4 / G1、G4 | `capture-seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
-| E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
+| E5 / G3、G4 | `capture-stop-receipt`、`capture-stop-pending`；生命周期物理观察 | 后者在原物理 Stop 门放行前核对同源 Paused、公开 unloading、完整 Stop 及材料责任，再接原退出/回执丢失恢复；实机待验收。观察未知及其它交错仍分别保留；Unloaded 与释放位置必须有原对象依据。 |
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
 | E8 / G2、G4、G6 | `restore-prepare-destroy`、`capture-freeze-destroy`、`capture-freeze-before-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 恢复中、Freeze 派发后尚未 Pause、实际冻结后的 Destroy 是不同窗口；有限代表不等于全部 Destroy/到期竞争，须观察剩余责任最终收尾，新入口仍须实机验收。 |
@@ -233,9 +233,19 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
+| `capture-stop-pending` | 第二次 Unload 的原物理 Stop 门保持时，核对同一 SQL 快照的唯一全局 Stop/逻辑动作登记、原 VM 的实际 Paused、公开 unloading 及完整 Full/原 backing pin/正材料额度；随后放行同一 Stop，接原退出86/SQL 回执丢失重开及两轮恢复/产品 GC（E5；实机待验收） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
 | `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
+
+`capture-stop-pending` 在调试构建的专用捕获 Stop 执行分支复用既有门；只读恢复绕过门，
+普通发布构建不包含该调试出口。门未放行时只读原 SQL、同一 VMM API 和公开状态，不停止或
+审计 manager，不向 VMM 发送信号。Paused 来自原 socket/peer 的实际 GET，不用 OS 的 T
+状态替代；两次快照不代表完整 API 轨迹。任何未知或身份/材料不一致都保留已接受责任，不
+发送 `g`、重发业务请求或自动 Destroy；关闭观察 peer 可能使原门读取失败，不能推断
+物理退出。放行后仍须原退出86、同一 Stop 无 SQL 回执及原 pidfd 退出检查，再按原配置
+重开并完成公开 Unloaded、恢复、Destroy/GC/退额。该分支不完成全部未知 Pause/Stop 恢复，
+NodeHost I/O 接线也未因组件测试通过而成为已证明。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、

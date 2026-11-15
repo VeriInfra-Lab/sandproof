@@ -125,6 +125,9 @@ class CaptureHandoffProbe:
         runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
         return dict(stage=self.stage, armed=True, public_completion=False)
 
+    def _before_observation(self, deadline):
+        """Default has no effects; selected consumers can inspect an earlier gate."""
+
     def _save_file(self, name):
         value, digest, identity = gate_json(self.path / name,
             16384 if name == 'observation.json' else 1024, directory_fd=self.fd)
@@ -147,7 +150,7 @@ class CaptureHandoffProbe:
             if (digest, identity) != expected:
                 raise ValueError('original sealed measurement gate file changed')
 
-    def _read(self, deadline):
+    def _read(self, deadline, *, extra=None):
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
         identity = (database.stat().st_dev, database.stat().st_ino)
@@ -197,9 +200,11 @@ class CaptureHandoffProbe:
             actions = [(json.loads(raw, object_pairs_hook=unique_keys), state, receipt)
                        for raw, state, receipt in rows]
             records = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
+            additional = extra(conn, local, capacity) if extra is not None else None
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during boundary observation')
-        return entry, records, actions
+        result = entry, records, actions
+        return result if extra is None else (*result, additional)
 
     def _original_action(self, actions, entry):
         command = STAGES[self.stage][1]
@@ -278,6 +283,7 @@ class CaptureHandoffProbe:
             raise ValueError('one original acceptance after arming required')
         self.accepted = copy.deepcopy(accepted)
         deadline = min(deadline, self.deadline)
+        self._before_observation(deadline)
         if self.stage == 'measurement-partial':
             while not (self.path / 'ready.json').exists():
                 self._gate_unchanged()

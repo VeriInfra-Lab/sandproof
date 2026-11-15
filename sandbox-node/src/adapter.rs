@@ -1182,7 +1182,7 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
     }
 }
 
-fn pause_action_observation<T>(
+fn capture_effect_observation<T>(
     action: &WorkAction<core::EffectId>,
     observe_only: bool,
     execute: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
@@ -1194,7 +1194,7 @@ fn pause_action_observation<T>(
         observe()
     } else {
         // The original durable dispatch reaches this specialized route. The
-        // generic WorkExecution::execute hook is not on the Freeze path.
+        // generic WorkExecution::execute hook is not on these capture paths.
         #[cfg(debug_assertions)]
         faults::before_execute(action);
         execute()
@@ -1212,7 +1212,7 @@ impl NodeHost {
         observe_only: bool,
     ) -> Result<HostObservation, Box<dyn std::error::Error>> {
         match action.command.command() {
-            core::Command::FreezeVm { .. } => pause_action_observation(
+            core::Command::FreezeVm { .. } => capture_effect_observation(
                 action,
                 observe_only,
                 || self.pause_original(action, &full.pause, source),
@@ -1244,13 +1244,12 @@ impl NodeHost {
                 source,
                 committed.ok_or("missing durable original Seal expectation")?,
             ),
-            core::Command::StopVm { .. } => {
-                if observe_only {
-                    self.observe_unload_source_stopped(action, full, source)
-                } else {
-                    self.stop_unload_source(action, full, source)
-                }
-            }
+            core::Command::StopVm { .. } => capture_effect_observation(
+                action,
+                observe_only,
+                || self.stop_unload_source(action, full, source),
+                || self.observe_unload_source_stopped(action, full, source),
+            ),
             core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. } => {
                 let expected = committed.ok_or("missing original adopted capture expectation")?;
                 if expected.work() != full {

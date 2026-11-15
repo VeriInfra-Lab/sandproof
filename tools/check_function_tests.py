@@ -30,6 +30,7 @@ LINUX_GROUPS = {
     'test_lifecycle_freeze_destroy.OriginalSourceHoldTests': 'real Linux procfs and pidfd source hold',
     'test_lifecycle_freeze_destroy.OriginalUnixPauseTests': 'real Linux procfs and Unix SO_PEERCRED pause query',
     'test_lifecycle_freeze_destroy.FreezeStopWiringTests': 'real Linux Unix SO_PEERCRED on the original Stop gate',
+    'test_lifecycle_unload_stop_pending.OriginalStopPeerTests': 'real Linux Unix SO_PEERCRED before the original physical Stop',
 }
 
 
