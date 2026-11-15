@@ -396,7 +396,7 @@ class LinuxExitTests(unittest.TestCase):
 
 
 class OriginalScenarioTests(unittest.TestCase):
-    def exercise(self,*,failure=False):
+    def exercise(self,*,failure=False,real_peer=False):
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
         for owner in ('1','2'):
             client=Mock(spec=scene.PublicUnloadScenario);client.owner=owner;client.session='session-'+owner
@@ -408,9 +408,37 @@ class OriginalScenarioTests(unittest.TestCase):
             client.wait_unloaded.return_value={'phase':'unloaded'}
             client.query.return_value=({'phase':'unloading','unload_outcome':{'state':'pending'}} if owner=='1' else {'phase':'running'})
             client.assert_terminal_unload_replay.side_effect=lambda *,phase:dict(phase=phase)
-            for name in ('create','unload','resume','destroy','wait_cleaned','run_public_workload','assert_resumed_workload','assert_continued_workload'):
+            for name in ('create','unload','resume','destroy','wait_cleaned','run_public_workload','assert_resumed_workload','assert_running_workload'):
                 getattr(client,name).side_effect=lambda *_,n=name,o=owner,**__:events.append(n+'-'+o) or {}
             clients[owner]=client
+        if real_peer:
+            peer = clients['2']
+            accepted = dict(session=peer.session, key=dict(deployment='original',owner='2',window=1,sequence=1),accepted_version=1)
+            peer.current_acceptance = peer.create_acceptance = accepted
+            peer.unload_acceptance = None
+            peer.wait_running.return_value = dict(session=peer.session,operation=accepted['key'],current_version=1,
+                phase='running',unload_outcome=None,create_refusal=None)
+            peer.query.return_value = peer.wait_running.return_value
+            state = {}
+            def initialize_peer(*_):
+                events.append('run_public_workload-2')
+                state.update(nonce='a'*64,activation_nonce='b'*64,metadata_generation=1,counter=1,pid=41,start_time_ticks=7)
+                peer.witness = copy.deepcopy(state);peer.data_token = 'original-peer-token'
+                return {}
+            peer.run_public_workload.side_effect = initialize_peer
+            sdk = Mock();sdk.files.read.side_effect = lambda _: 'disk-counter:'+str(state['counter'])
+            peer.sdk.return_value = sdk
+            def witness(_, command):
+                if command == 'advance':state['counter'] += 1
+                return copy.deepcopy(state)
+            peer.witness_command.side_effect = witness
+            for method in ('check_view','_assert_execution_workload'):
+                setattr(peer,method,getattr(scene.PublicUnloadScenario,method).__get__(peer))
+            check_running = scene.PublicUnloadScenario.assert_running_workload.__get__(peer)
+            def observe_running(*args):
+                events.append('assert_running_workload-2')
+                return check_running(*args)
+            peer.assert_running_workload.side_effect = observe_running
         calls=0
         def running(session,*_,**__):
             nonlocal calls
@@ -448,8 +476,11 @@ class OriginalScenarioTests(unittest.TestCase):
                 self.assertTrue(report['complete']);self.assertEqual(len(report['cycles']),1)
                 self.assertTrue(report['cycles'][0]['stopped_unload_destroyed'])
                 self.assertIn('E8',report['acceptance_cases']);self.assertEqual(clients['1'].resume.call_count,1)
-                self.assertLess(events.index('recover_after_destroy'),events.index('assert_continued_workload-2'))
+                self.assertLess(events.index('recover_after_destroy'),events.index('assert_running_workload-2'))
                 self.assertLess(events.index('recover_after_destroy'),events.index('destroy-2'))
+                self.assertLess(events.index('run_public_workload-2'), events.index('arm'))
+                self.assertLess(events.index('run_public_workload-2'), events.index('assert_running_workload-2'))
+                clients['2'].assert_continued_workload.assert_not_called()
                 clients['2'].destroy.assert_called_once();probe.cleanup.assert_called_once()
             self.assertEqual(clients['1'].unload.call_count,2);clients['1'].destroy.assert_called_once()
             probe.finish.assert_not_called();constructor.assert_called_once();runner.finish.assert_called_once()
@@ -457,6 +488,9 @@ class OriginalScenarioTests(unittest.TestCase):
 
     def test_actual_scene_preserves_peer_until_original_destroy_recovery_and_finishes_product_gc(self):
         self.exercise()
+
+    def test_original_scene_calls_real_running_checker_after_peer_workload_setup(self):
+        self.exercise(real_peer=True)
 
     def test_unknown_cleanup_keeps_both_acceptances_without_retry_or_peer_destroy(self):
         self.exercise(failure=True)
