@@ -1,0 +1,149 @@
+#[cfg(test)]
+mod json_call_contract {
+    use super::*;
+    use crate::host_contract::{CreateNetwork, CreateNetworking, CreateOptions};
+    use serde_json::Value;
+    use std::collections::BTreeMap;
+
+    fn change_leaf(value: &mut Value) -> bool {
+        match value {
+            Value::String(text) => {
+                text.push('x');
+                true
+            }
+            Value::Number(number) => {
+                *number = (number.as_u64().unwrap() + 1).into();
+                true
+            }
+            Value::Bool(value) => {
+                *value = !*value;
+                true
+            }
+            Value::Array(values) => values.iter_mut().any(change_leaf),
+            Value::Object(values) => values.values_mut().any(change_leaf),
+            Value::Null => false,
+        }
+    }
+
+    fn anchor_contract(anchor: &SourceAnchor) -> Vec<u8> {
+        let bytes = encode_source_anchor(anchor).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<SourceAnchor>(&bytes).unwrap(),
+            *anchor,
+            "complete original anchor must roundtrip without replacing execution_origin"
+        );
+        let fields: Value = serde_json::from_slice(&bytes).unwrap();
+        let expected = [
+            "request",
+            "execution_origin",
+            "local",
+            "native",
+            "continued_from",
+            "node",
+            "host_bootstrap",
+            "source",
+            "options_sha256",
+            "credential",
+            "original_actions",
+            "original_receipts",
+        ];
+        assert_eq!(fields.as_object().unwrap().len(), expected.len());
+        assert!(expected.iter().all(|name| fields.get(name).is_some()));
+        assert_eq!(bytes, serde_json::to_vec(anchor).unwrap());
+        bytes
+    }
+
+    #[test]
+    fn full_anchor_contract() {
+        let mut anchor = super::super::tests::json_call_original_anchor();
+        assert_ne!(anchor.request, anchor.execution_origin);
+        assert!(!anchor.original_actions.is_empty());
+        assert!(!anchor.original_receipts.is_empty());
+        assert!(anchor.continued_from.is_none());
+        anchor_contract(&anchor);
+        anchor.continued_from = Some(core::capture::OriginalContinueIdentity {
+            key: core::OperationKey {
+                sandbox: anchor.local.sandbox,
+                operation: anchor.local.operation,
+            },
+            epoch: anchor.native.epoch,
+            generation: anchor.native.generation,
+            vm: anchor.native.current_vm.unwrap(),
+        });
+        let original = anchor_contract(&anchor);
+        let value = serde_json::to_value(&anchor).unwrap();
+        for field in value.as_object().unwrap().keys() {
+            let mut changed = value.clone();
+            assert!(change_leaf(changed.get_mut(field).unwrap()), "{field}");
+            let changed: SourceAnchor = serde_json::from_value(changed).unwrap();
+            assert_ne!(changed, anchor, "{field}");
+            assert_ne!(anchor_contract(&changed), original, "{field}");
+        }
+        let mut missing = value;
+        missing.as_object_mut().unwrap().remove("continued_from");
+        assert!(serde_json::from_value::<SourceAnchor>(missing).is_err());
+    }
+
+    fn options_contract(options: &CreateOptions) -> Vec<u8> {
+        let bytes = encode_source_options(options).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<CreateOptions>(&bytes).unwrap(),
+            *options,
+            "complete original create options must roundtrip without dropping metadata"
+        );
+        assert_eq!(bytes, serde_json::to_vec(options).unwrap());
+        bytes
+    }
+
+    #[test]
+    fn full_options_contract() {
+        let template = serde_json::from_value(serde_json::json!({
+            "template_id": "guest", "revision": "r1", "owner": 9,
+            "kernel": {"path": "/vm/kernel", "sha256": "a".repeat(64), "size_bytes": 1},
+            "rootfs": {"path": "/vm/rootfs", "sha256": "b".repeat(64), "size_bytes": 4096},
+            "resources": {"cpu_count": 1, "memory_mib": 128, "disk_bytes": 4096,
+                          "host_memory_bytes": 135_270_400},
+            "envd_version": "1"
+        }))
+        .unwrap();
+        let mut options = CreateOptions {
+            env_vars: BTreeMap::from([("z".into(), "a=b".into()), ("a＝".into(), "值".into())]),
+            metadata: BTreeMap::from([("role=worker".into(), "x\n\"y".into())]),
+            networking: Some(CreateNetworking {
+                allow_internet_access: Some(false),
+                network: Some(CreateNetwork {
+                    allow_public_traffic: None,
+                    allow_out: Some(vec!["192.0.2.1".into()]),
+                    deny_out: None,
+                }),
+            }),
+            template: Some(template),
+        };
+        let original = options_contract(&options);
+        let value = serde_json::to_value(&options).unwrap();
+        assert_eq!(value.as_object().unwrap().len(), 4);
+        for field in ["env_vars", "metadata", "networking", "template"] {
+            let mut changed = value.clone();
+            assert!(change_leaf(changed.get_mut(field).unwrap()), "{field}");
+            let changed: CreateOptions = serde_json::from_value(changed).unwrap();
+            assert_ne!(changed, options, "{field}");
+            assert_ne!(options_contract(&changed), original, "{field}");
+        }
+        for (networking, template) in [(false, false), (true, false), (false, true)] {
+            let mut partial = options.clone();
+            if !networking {
+                partial.networking = None;
+            }
+            if !template {
+                partial.template = None;
+            }
+            let bytes = options_contract(&partial);
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value.get("networking").is_some(), networking);
+            assert_eq!(value.get("template").is_some(), template);
+        }
+        options.env_vars.clear();
+        options.metadata.clear();
+        options_contract(&options);
+    }
+}
