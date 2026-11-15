@@ -28,6 +28,7 @@ from lifecycle_unload_runtime import (
 from server_process_crash import process_start_ticks
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 
 def _identity(path, *, directory=False):
@@ -77,10 +78,10 @@ class SlotOccupantObserver:
         lifetime = connection.execute('SELECT owner_id,disk_bytes,started_at_ms,deadline_ms,'
             'max_deadline_ms,startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?',
             (ident,)).fetchone()
-        if (saved_context != context or state['phase'] != 'Running'
-                or state['terminal'] is not False or state['owner'] != binding['owner']
-                or state['generation'] != binding['generation']
-                or state['current_vm'] != binding['vm']
+        if (not equal(saved_context, context) or state['phase'] != 'Running'
+                or state['terminal'] is not False
+                or not equal({key:state[key] for key in ('owner','generation','current_vm')},
+                    dict(owner=binding['owner'],generation=binding['generation'],current_vm=binding['vm']))
                 or credential is None or credential[0] != str(binding['generation'])
                 or not isinstance(credential[1], bytes) or len(credential[1]) != 32
                 or connection.execute('SELECT poisoned FROM '
@@ -98,14 +99,15 @@ class SlotOccupantObserver:
         source, binding = self.occupant['source'], self.occupant['context']['binding']
         resource = 'vm-' + native['namespace'] + '-' + str(binding['vm'])
         claims = Path(native['chroot_base']) / '.claims' / resource
-        if (source['resource_id'] != resource or original_json(claims/'record.json', 16384) != source
+        if (source['resource_id'] != resource or not equal(original_json(claims/'record.json', 16384), source)
                 or not original_process(source)
                 or process_start_ticks(source['pid']) != source['start_time_ticks']):
             raise ValueError('exact live occupant PID/start/boot required')
         namespace = _identity(Path('/run/netns')/resource)
         network = original_json(claims/'network.json', 16384)
-        if (network['resource_id'] != resource or network['namespace_inode'] != namespace['inode']
-                or network['namespace_device'] != namespace['device']):
+        if (network['resource_id'] != resource
+                or not equal((network['namespace_inode'],network['namespace_device']),
+                             (namespace['inode'],namespace['device']))):
             raise ValueError('original occupant network identity differs')
         group = Path(native['host_resources']['cgroup_parent'])/resource
         cgroup = _identity(group, directory=True)
@@ -122,12 +124,12 @@ class SlotOccupantObserver:
         if 'running_backing' in self.occupant:
             expected = self.occupant['running_backing']
             if (len(restored) != 1 or restored[0]['capture'] is None
-                    or restored[0]['capture']['completed'] != expected['manifest']['sha256']
+                    or not equal(restored[0]['capture']['completed'], expected['manifest']['sha256'])
                     or restored[0]['restore']['activation'] is None
                     or restored[0]['restore']['material_use'] is not True):
                 raise ValueError('original restored occupant backing pin required')
             backing = self.runtime._materials(restored[0]['capture']['full'], restored[0]['capture'])
-            if backing != expected:
+            if not equal(backing, expected):
                 raise ValueError('original occupant backing files changed')
         if not original_process(source) or process_start_ticks(source['pid']) != source['start_time_ticks']:
             raise ValueError('occupant exited during read-only resource observation')
@@ -137,8 +139,8 @@ class SlotOccupantObserver:
 
     def _snapshot(self):
         native = self.native
-        if (self.runtime.services.native_pools[0] != native
-                or self.runtime.services.host_configs[0] != self.host_config):
+        if (not equal(self.runtime.services.native_pools[0], native)
+                or not equal(self.runtime.services.host_configs[0], self.host_config)):
             raise ValueError('original deployment configuration changed')
         database = private_path(native['database'])
         before = database.stat()
@@ -160,7 +162,7 @@ class SlotOccupantObserver:
         self.baseline = copy.deepcopy(self._snapshot())
 
     def verify(self):
-        if self.baseline is None or self._snapshot() != self.baseline:
+        if self.baseline is None or not equal(self._snapshot(), self.baseline):
             raise ValueError('original occupant, backing or reservations changed')
         return dict(occupant_context=copy.deepcopy(self.baseline['current']['context']),
             occupant_source=copy.deepcopy(self.baseline['physical']['source']))
@@ -206,10 +208,10 @@ class LateMaterialReceiptObserver(SlotOccupantObserver):
         before, after = self.baseline, self._snapshot()
         old, current = before['old'], after['old']
         state = current['retirement']
-        if (any(before[key] != after[key] for key in ('database', 'others', 'current', 'physical'))
-                or {k:v for k,v in old.items() if k != 'retirement'}
-                    != {k:v for k,v in current.items() if k != 'retirement'}
-                or state is None or state['plan'] != old['retirement']['plan']
+        if (any(not equal(before[key], after[key]) for key in ('database', 'others', 'current', 'physical'))
+                or not equal({k:v for k,v in old.items() if k != 'retirement'},
+                             {k:v for k,v in current.items() if k != 'retirement'})
+                or state is None or not equal(state['plan'], old['retirement']['plan'])
                 or state['state'] not in ('retiring', 'settled')
                 or after['charge'] != (before['charge'] if state['state'] == 'retiring' else 0)):
             raise ValueError('late receipt changed the fixed plan, current occupant or another reservation')

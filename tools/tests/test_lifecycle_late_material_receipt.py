@@ -169,6 +169,73 @@ class LateMaterialReceiptTests(LateMaterialFixture):
             self.probe.verify()
 
 
+class OccupantJsonIdentityTests(LateMaterialFixture):
+    def observer(self, delayed):
+        if delayed:
+            probe=late.LateMaterialReceiptObserver(self.runtime,session='original',
+                original=self.original,occupant=self.occupant,deadline=time.monotonic()+20)
+        else:
+            probe=late.SlotOccupantObserver(self.runtime,occupant=self.occupant,
+                deadline=time.monotonic()+20)
+        probe._physical=Mock(side_effect=lambda _:copy.deepcopy(self.physical))
+        return probe
+
+    def save_native(self, value):
+        self.update('UPDATE sandboxes SET state_blob=?',(json.dumps(value),))
+
+    def save_context(self, value):
+        self.update('UPDATE controller_host_slots SET context_json=?',(json.dumps(value),))
+
+    def test_native_identity_requires_integer_json_types_before_baseline(self):
+        for delayed in (False,True):
+            for field,value in (('generation',True),('generation',1.0),
+                                ('owner',2.0),('current_vm',2.0)):
+                with self.subTest(delayed=delayed,field=field,value=value):
+                    self.save_native(dict(self.state,**{field:value}))
+                    probe=self.observer(delayed)
+                    with self.assertRaises(ValueError):probe.freeze()
+                    self.assertIsNone(probe.baseline)
+        self.save_native(self.state)
+
+    def test_slot_context_requires_integer_json_types_before_baseline(self):
+        for delayed in (False,True):
+            for field,value in (('position',False),('position',0.0),
+                                ('expected_previous',True),('expected_previous',1.0),
+                                ('owner',2.0),('sandbox',2.0),('generation',True),
+                                ('generation',1.0),('vm',2.0)):
+                context=copy.deepcopy(self.occupant['context'])
+                (context if field in context else context['binding'])[field]=value
+                self.save_context(context);probe=self.observer(delayed)
+                with self.subTest(delayed=delayed,field=field,value=value):
+                    with self.assertRaises(ValueError):probe.freeze()
+                    self.assertIsNone(probe.baseline)
+        self.save_context(self.occupant['context'])
+
+    def test_json_type_changes_after_baseline_are_not_unchanged_occupants(self):
+        for delayed in (False,True):
+            baseline=dict(self.state,epoch=1);self.save_native(baseline)
+            probe=self.observer(delayed);probe.freeze()
+            for kind,value in (('native',True),('native',1.0),('epoch',True),('epoch',1.0),('slot',False),('slot',0.0)):
+                if kind=='native':self.save_native(dict(baseline,generation=value))
+                elif kind=='epoch':self.save_native(dict(baseline,epoch=value))
+                else:self.save_context(dict(self.occupant['context'],position=value))
+                with self.subTest(delayed=delayed,kind=kind,value=value):
+                    with self.assertRaises(ValueError):probe.verify()
+                self.save_native(baseline);self.save_context(self.occupant['context'])
+                probe.verify()  # Original baseline survives; it is never refreshed.
+        self.save_native(self.state)
+
+    def test_valid_json_key_order_and_whitespace_preserve_the_original_value(self):
+        for delayed in (False,True):
+            probe=self.observer(delayed);probe.freeze()
+            state=dict(reversed(list(self.state.items())))
+            context=dict(reversed(list(self.occupant['context'].items())))
+            context['binding']=dict(reversed(list(context['binding'].items())))
+            self.update('UPDATE sandboxes SET state_blob=?',(json.dumps(state,indent=2),))
+            self.update('UPDATE controller_host_slots SET context_json=?',(json.dumps(context,indent=2),))
+            self.assertEqual(probe.verify()['occupant_context'],self.occupant['context'])
+
+
 class LateReceiptGateTests(LateMaterialFixture):
     """Real readonly SQL/publication with a controlled reached-cut provider."""
     def setUp(self):
@@ -272,6 +339,20 @@ class LateReceiptGateTests(LateMaterialFixture):
         self.publish.assert_not_called();self.assertFalse(self.gate.recovered)
         self.assertEqual(self.records[0]['retirement']['state'],'retiring')
         self.assertEqual(client.witness['counter'],1)
+
+    def test_native_json_type_change_during_guest_progress_never_releases_receipt(self):
+        def changed():
+            result=self.workload()
+            self.update('UPDATE sandboxes SET state_blob=?',
+                (json.dumps(dict(self.state,generation=True)),))
+            return result
+        self.observe.side_effect=changed
+        with self.assertRaises(ValueError):
+            self.gate.release_after_delete({'accepted_version':4},self.observe)
+        self.assertEqual(self.events,['guest-2']);self.publish.assert_not_called()
+        self.assertFalse(self.gate.recovered)
+        self.assertEqual(self.records[0]['retirement']['state'],'retiring')
+        self.assertFalse((Path(self.directory.name)/'command.json').exists())
 
     def test_already_settled_or_replaced_host_never_releases_the_gate(self):
         for fault in ('settled','replaced','exited','cut-mismatch'):
