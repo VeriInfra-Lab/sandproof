@@ -55,6 +55,14 @@ SDK 来宾中的中心服务 Redis 组件测试单独在 runner 私有的 ext4 `
 固定 Redis、AOF 同步、测试并行度和请求期限均保持原设置。
 其他组件继续使用原临时目录，普通非 Actions 调用也沿用调用方的设置。
 
+普通完整入口同时包含 Redis 和 XFS 保存包测试时，可显式设置
+`SANDPROOF_REDIS_TEST_TMPDIR`，指向本轮账号独占、已存在的绝对目录，放在支持真实
+持久写入的宿主磁盘上（例如 ext4，不用 tmpfs）。只有共享 Redis 测试夹具在其下
+创建私有 AOF/写者目录，其它临时文件仍使用原 `TMPDIR`。显式目录不可用即失败，
+不回退；未设置时保持原临时目录行为。固定 Redis、`appendfsync always`、并行度、
+断言与期限均不变。执行者记录两个目录的实际文件系统，结束后确认本轮私有目录
+为空再删除；环境对照通过不能覆盖原失败或代替同候选的完整入口结果。
+
 中心/宿主的[双产物清单](../tools/ci_e2e_artifacts.py)复用唯一[离线准备入口](../tools/ci_e2e_prepare.py)：同一干净候选离线构建 `sandproof-center`、`sandproof-host`、原窗口工具及原迟到动作检查助手，实际执行两个服务的 `contract-versions` 并核对一致。准备不带 App 凭据，不运行 VM，缺固定材料立即失败。固定验收构建使用 `--release` 并明确开启 `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`，让原受控故障点可实际触发；DK 和两题使用同一对真实产物，不另编译一套宿主。这是测试构建，不是普通部署 release 或证明证据。助手必须来自该候选构建目录，其摘要在准备完成后固化，DK 启动前和实际使用前再次核对。监督器源码已拒绝旧 `server` 配置、单服务报告和旧运行状态；工具自测不是已安装或已执行双服务的证据。真实运行、DK 故障组和两题报告仍须同候选组合验收，成功/故意失败/取消收尾完成后才可受控切换原 App 必需检查。不得用现役单服务成功满足新架构验收。
 
 普通 PR 的 SDK、Harbor、标题和分支规则四项任务保持并行、独立检查名称和原测试命令，通过 `sandproof-ci-sdk/harbor/title/policy` 标签分别调度。`sandproof-ci-rust` 仅供 main/test 推送与手动基础检查，迁移中的旧任务仍按原身份收尾。每项任务使用一台全新 Ubuntu 24.04 QEMU 虚拟机和一次性 GitHub JIT 执行器；执行后注销执行器、停止该虚拟机并删除本轮 seed/工作盘，不把前一轮工作盘用于后续任务。模板为只读基线，Ubuntu、执行器、rustup 与 uv 下载指纹由[构建输入](../tools/ci_image_pins.json)记录，Rust 版本仍以 `rust-toolchain.toml` 为准。[uv 安装入口](../tools/ci_install_uv.sh)只从固定官方 PyPI 制品下载 uv 0.11.31，核对 SHA256 后以 root/0555 安装到 `/usr/local/bin/uv`；SDK/Harbor 工作流直接检查 `uv --version`，版本缺失或不符即失败。工具或执行器更新时重新准备基线并重新验收，不能静默沿用旧证据。
