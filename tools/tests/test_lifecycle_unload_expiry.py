@@ -175,4 +175,129 @@ class PrepareExpiryBarrierTests(unittest.TestCase):
             probe._terminal_inventory(snapshot)
 
 
+class RunningExpiryStopAttributionTests(unittest.TestCase):
+    """Real readonly SQLite; process/material/root-fence facts are controlled."""
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name);self.database=self.root/'native.sqlite3'
+        self.native_id='sb-expiry-1';self.operation_id='op-expiry-1-4'
+        self.action=self.stop_action(sandbox=1,operation=4,generation=2,vm=2,epoch=5)
+        state=dict(terminal=True,epoch=5,current_operation=dict(id=4,kind='Kill'))
+        with sqlite3.connect(self.database) as conn:
+            conn.executescript('CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,state_blob BLOB);'
+                'CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT NOT NULL,owner_id TEXT NOT NULL,'
+                'operation_id TEXT NOT NULL,logical_action_id TEXT NOT NULL,attempt INTEGER NOT NULL CHECK(attempt>=0),'
+                'action_json BLOB NOT NULL,dispatch_state TEXT NOT NULL CHECK(dispatch_state IN '
+                "('ready','dispatched','receipted')),receipt_json BLOB,"
+                'UNIQUE(sandbox_id,logical_action_id,attempt),'
+                "CHECK((dispatch_state='receipted')=(receipt_json IS NOT NULL)));")
+            conn.execute('INSERT INTO sandboxes VALUES(?,?)',(self.native_id,json.dumps(state).encode()))
+        self.database.chmod(0o600)
+        self.insert_action(self.action)
+        self.material=dict(materials=[{'original':n} for n in range(3)],manifest={'original':'manifest'},
+                           completion={'original':'completion'},material_paths=['state','memory','disk'])
+        services=SimpleNamespace(native_pools=[dict(database=str(self.database),namespace='expiry',
+            node_state_dir=str(self.root))],host_configs=[dict(native=dict(maintenance=dict(
+            capacity=dict(max_sql_value_bytes=16384))))],processes=Mock())
+        self.probe=expiry.RunningExpiryProbe.__new__(expiry.RunningExpiryProbe)
+        self.probe.runtime=SimpleNamespace(services=services,_materials=Mock(return_value=copy.deepcopy(self.material)))
+        self.probe.client=SimpleNamespace(session='original-session')
+        self.probe.running=dict(source=dict(resource_id='vm-expiry-2',pid=41,start_time_ticks=7,boot_id='boot'),
+            local=dict(sandbox=1),context=dict(binding=dict(generation=2,vm=2)),
+            running_backing=copy.deepcopy(self.material))
+        self.probe.before=dict(capture=dict(full={'original':'source'}),restore=dict(activation=dict(
+            identity=dict(owner='tenant-1',protocol_version=1)),material_use=True))
+        self.probe._source=Mock(side_effect=lambda _:copy.deepcopy(self.probe.before))
+        self.probe.lifetime=dict(end_at_ms=1);self.probe.pidfd=41
+        self.probe.host=Mock();self.probe.host.wait.return_value=87
+        for patcher in [patch.object(expiry,'pidfd_exited',return_value=False),
+                        patch.object(expiry,'original_process',return_value=True),
+                        patch.object(expiry,'material_source_charge',return_value=100),
+                        patch.object(expiry,'original_json',return_value=dict(epoch=5,terminal=True))]:
+            patcher.start();self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def stop_action(*,sandbox,operation,generation,vm,epoch):
+        native_id='sb-expiry-'+str(sandbox);opid='op-expiry-'+str(sandbox)+'-'+str(operation)
+        return dict(identity=dict(protocol_version=1,owner='tenant-'+str(sandbox),sandbox=native_id,
+            operation=opid,epoch=epoch,generation=generation,logical_action='stop-'+opid,attempt=0,
+            resource=dict(kind='vm',id='vm-expiry-'+str(vm))),command=dict(logical=dict(command=dict(
+            StopVm=dict(sandbox=sandbox,generation=generation,vm=vm,epoch=epoch))),attempt=0))
+
+    def insert_action(self,action,state='dispatched'):
+        identity=action['identity']
+        # Historical receipt content is not used as a gate-arrival fact.
+        receipt=json.dumps(dict(identity=identity,outcome=dict(status='observed_success',details=dict(
+            resource=identity['resource'],command=action['command']['logical']['command'],
+            result=dict(Stopped=dict(pid=51,start_ticks=17)))))).encode() if state=='receipted' else None
+        with sqlite3.connect(self.database) as conn:
+            row=conn.execute('INSERT INTO outbox(sandbox_id,owner_id,operation_id,logical_action_id,attempt,'
+                'action_json,dispatch_state,receipt_json) VALUES(?,?,?,?,?,?,?,?)',
+                (identity['sandbox'],identity['owner'],identity['operation'],identity['logical_action'],
+                 identity['attempt'],json.dumps(action).encode(),state,receipt))
+            return row.lastrowid
+
+    def remove_action(self,row):
+        with sqlite3.connect(self.database) as conn:conn.execute('DELETE FROM outbox WHERE id=?',(row,))
+
+    def observe(self):
+        return self.probe.held_after_expiry(time.monotonic()+10)
+
+    def test_one_original_dispatched_stop_certifies_the_held_cut_without_writes(self):
+        before=self.database.read_bytes()
+        result=self.observe()
+        self.assertTrue(result['original_stop_dispatched_without_receipt'])
+        self.assertTrue(result['original_vmm_live']);self.assertFalse(result['physical_exit'])
+        self.assertEqual(result['material_charge'],100)
+        self.assertEqual(self.database.read_bytes(),before)
+        self.probe.runtime.services.processes.assert_not_called()
+
+    def test_another_dispatched_stop_cannot_be_attributed_to_the_original_exit87(self):
+        actions=[self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4),
+                 self.stop_action(sandbox=1,operation=3,generation=1,vm=1,epoch=4)]
+        for action in actions:
+            row=self.insert_action(action)
+            try:
+                with self.subTest(identity=action['identity']),self.assertRaises(ValueError):self.observe()
+                self.probe.runtime.services.processes.assert_not_called()
+            finally:self.remove_action(row)
+
+    def test_unclaimed_historical_or_nonstop_work_does_not_create_a_false_ambiguity(self):
+        other=self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4)
+        for state in ('ready','receipted'):
+            row=self.insert_action(other,state)
+            try:
+                with self.subTest(state=state):self.assertTrue(self.observe()['original_vmm_live'])
+            finally:self.remove_action(row)
+        freeze=copy.deepcopy(other)
+        freeze['command']['logical']['command']={'FreezeVm':freeze['command']['logical']['command']['StopVm']}
+        row=self.insert_action(freeze)
+        try:self.assertTrue(self.observe()['original_vmm_live'])
+        finally:self.remove_action(row)
+
+    def replace_original_action(self,action):
+        with sqlite3.connect(self.database) as conn:
+            conn.execute('UPDATE outbox SET action_json=? WHERE sandbox_id=? AND operation_id=?',
+                (json.dumps(action).encode(),self.native_id,self.operation_id))
+
+    def test_full_original_stop_parameters_preserve_integer_json_types(self):
+        for field,value in [('sandbox',True),('generation',2.0),('vm',2.0),('epoch',5.0)]:
+            action=copy.deepcopy(self.action);action['command']['logical']['command']['StopVm'][field]=value
+            self.replace_original_action(action)
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.observe()
+        self.replace_original_action(self.action)
+
+    def test_original_wire_identity_preserves_protocol_generation_and_epoch_types(self):
+        for field,value in [('protocol_version',True),('protocol_version',1.0),('generation',2.0),('epoch',5.0)]:
+            action=copy.deepcopy(self.action);action['identity'][field]=value
+            self.replace_original_action(action)
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.observe()
+        self.replace_original_action(self.action)
+
+    def test_protected_terminal_fence_preserves_epoch_and_boolean_types(self):
+        for fence in [dict(epoch=5.0,terminal=True),dict(epoch=5,terminal=1),dict(epoch=5,terminal=1.0)]:
+            with self.subTest(fence=fence),patch.object(expiry,'original_json',return_value=fence), \
+                    self.assertRaises(ValueError):self.observe()
+
+
 if __name__=='__main__':unittest.main()
