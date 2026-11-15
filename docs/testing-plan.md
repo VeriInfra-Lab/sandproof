@@ -76,10 +76,23 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
-| E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
+| E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart`；[解码后终止组件](../sandbox-center-service/tests/business_authority/lifecycle_decoded_resume.rs) | 实际 mTLS/JSON 解码后到原 Redis CAS 的有限交错是组件边界；一次双重启不覆盖中心/宿主各自持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`、`command-disconnect`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py)、[命令订阅观察](../tests/system/lifecycle_command_disconnect.py) | 在途上传只有已写前缀见证，不表示完整上传成功；命令切片检查同一原 PID 的静默 Start 订阅关闭、relay 内核退出与恢复后重新订阅，不覆盖任意输出中断点；不承诺旧 TCP/vsock 连续或命令重放。 |
 | E15 / G3、G4、G6 | `restore-prepare-expiry`、`restored-running-expiry`；[到期观察](../tests/system/lifecycle_unload_expiry.py)、[生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs) | 分别核对加载中到期和运行 backing 到期；实际结果绑定精确提交，回收中及其它交错仍须另跑。普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
+
+E13 解码后终止组件使用原 `InternalClient`/`InternalServer`、独立登记的 mTLS peer、
+有界 JSON 解码与完整 `matches_request`，在客户端原调用已成功返回后持有同一 Resume
+观察值，再经原公开 Destroy 应用入口接受终止，交给原 `AuthorityPort` 的真实 Redis CAS。
+该 Destroy 调用直接进入应用方法，不经过外层公开 HTTP 路由；实际传输检查位于前面的内部 mTLS 调用。
+它同时要求正常当前 Resume 经原确认加状态提交接受；终止后旧值按 Stale 拒绝，只有原
+持久确认的一次 revision 递增，完整业务状态及 Redis 原 payload 字节保持，重开原
+Redis 账本后仍如此；同会话改 center/retention/node/version 的
+反例使用同一完整合同。反例是解码后主动构造的值，不声称原客户端接受了错误字节。
+物理就绪与材料事实由受控 Host 提供，原接收方提供匹配观察；实际 TLS、HTTP、JSON、
+公开接受与 Redis 路径原样执行。客户端返回是已解码的组件屏障，不能换成 relay flush
+或 EOF；本入口不声称截住已部署父调用的同一次 CAS，也不代表真实 VM、独立服务重启
+故障、全部乱序、系统 E13 或形式证明完成。
 
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成

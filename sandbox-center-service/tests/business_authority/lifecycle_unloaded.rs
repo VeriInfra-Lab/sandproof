@@ -15,6 +15,9 @@ mod renewed_continued;
 #[path = "unloaded_query_confirmation.rs"]
 mod query_confirmation;
 
+#[path = "lifecycle_decoded_resume.rs"]
+mod decoded_resume_terminal;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,
@@ -31,6 +34,13 @@ fn accept_unload_with_create(
     create: &sandproof_protocol::lifecycle::PublicCreateRequest,
 ) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
     let accepted = app.create_lifecycle("8", create).unwrap();
+    accept_unload_after_create(app, accepted)
+}
+
+fn accept_unload_after_create(
+    app: &Application,
+    accepted: sandproof_protocol::lifecycle::PublicAcceptance,
+) -> (SessionId, PublicUnloadRequest, UnloadObservation) {
     assert_eq!(
         app.query_lifecycle("8", &accepted.session).unwrap().phase,
         PublicSessionPhase::Running
