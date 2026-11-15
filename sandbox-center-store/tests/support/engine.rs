@@ -85,7 +85,10 @@ impl Engine {
         // without changing the workspace TMPDIR or any request deadline.
         let root = if let Some(parent) = std::env::var_os("SANDPROOF_REDIS_TEST_TMPDIR") {
             let parent = std::path::PathBuf::from(parent);
-            assert!(parent.is_absolute(), "Redis fixture parent must be absolute");
+            assert!(
+                parent.is_absolute(),
+                "Redis fixture parent must be absolute"
+            );
             tempfile::tempdir_in(parent).expect("explicit Redis fixture parent must be usable")
         } else {
             tempfile::tempdir().unwrap()
