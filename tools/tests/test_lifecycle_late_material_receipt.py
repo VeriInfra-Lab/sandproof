@@ -234,6 +234,45 @@ class LateReceiptGateTests(LateMaterialFixture):
             self.gate.cleanup()
         self.assertTrue((Path(self.directory.name)/'command.json').exists())
 
+    def test_real_running_consumer_supplies_the_full_original_receipt_gate_contract(self):
+        client,sdk,running=OtherOwnerWorkloadTests().client(session=self.occupant['session'])
+        def observe():
+            value=client.assert_running_workload(running)
+            self.events.append('guest-'+str(value['counter']))
+            return value
+        result=self.gate.release_after_delete({'accepted_version':4},observe)
+        self.assertEqual(self.events,['guest-2','release','guest-3'])
+        before,after=result['occupant_before'],result['occupant_after']
+        self.assertEqual(before['session'],self.occupant['session'])
+        self.assertEqual((before['counter'],after['counter']),(2,3))
+        self.assertEqual(before['guest_pid'],71)
+        self.assertEqual(before['guest_start_time_ticks'],123)
+        self.assertEqual(before['metadata_generation'],0)
+        self.assertEqual({k:v for k,v in before.items() if k!='counter'},
+                         {k:v for k,v in after.items() if k!='counter'})
+        self.assertEqual(sdk.commands.run.call_count,4)
+        self.assertTrue(result['same_plan_settled'])
+
+    def test_noncurrent_running_view_stops_before_sdk_or_receipt_release(self):
+        client,_,running=OtherOwnerWorkloadTests().client(session=self.occupant['session'])
+        running['current_version']+=1
+        with self.assertRaises(AssertionError):
+            self.gate.release_after_delete({'accepted_version':4},
+                lambda:client.assert_running_workload(running))
+        client.sdk.assert_not_called();self.publish.assert_not_called()
+        self.assertEqual(self.events,[]);self.assertFalse(self.gate.recovered)
+        self.assertEqual(self.records[0]['retirement']['state'],'retiring')
+
+    def test_changed_real_ram_witness_keeps_the_original_receipt_held(self):
+        client,sdk,running=OtherOwnerWorkloadTests().client('ram',session=self.occupant['session'])
+        with self.assertRaises(AssertionError):
+            self.gate.release_after_delete({'accepted_version':4},
+                lambda:client.assert_running_workload(running))
+        self.assertEqual(sdk.commands.run.call_count,1)
+        self.publish.assert_not_called();self.assertFalse(self.gate.recovered)
+        self.assertEqual(self.records[0]['retirement']['state'],'retiring')
+        self.assertEqual(client.witness['counter'],1)
+
     def test_already_settled_or_replaced_host_never_releases_the_gate(self):
         for fault in ('settled','replaced','exited','cut-mismatch'):
             self.records[0]['retirement']['state'] = 'retiring'
@@ -343,10 +382,12 @@ class LateReceiptGateTests(LateMaterialFixture):
 
 
 class OtherOwnerWorkloadTests(unittest.TestCase):
-    def client(self, fault=None):
-        client = scene.PublicUnloadScenario('http://127.0.0.1:1','owner','foreign',
-            'deployment',time.monotonic()+20,owner='2')
-        client.session, client.data_token = 'occupant','original-credential'
+    def client(self, fault=None, *, session='occupant'):
+        from tools.tests.test_lifecycle_unload_runtime import RepeatedLifecycleRequestTests
+        fixture=RepeatedLifecycleRequestTests()
+        client=fixture.client(owner='2')
+        client.session=client.create_acceptance['session']=session
+        client.data_token='original-credential'
         client.witness = dict(nonce='1'*64,activation_nonce='2'*64,
             metadata_generation=0,counter=1,pid=71,start_time_ticks=123)
         current = copy.deepcopy(client.witness)
@@ -365,7 +406,7 @@ class OtherOwnerWorkloadTests(unittest.TestCase):
             if fault == 'credential': client.data_token = 'replacement-credential'
             return sdk
         client.sdk = Mock(side_effect=connect)
-        running = dict(phase='running',session=client.session)
+        running = fixture.view(client,'running')
         client.query = Mock(return_value=running)
         client.assert_previous_tokens_closed = Mock()
         return client, sdk, running
