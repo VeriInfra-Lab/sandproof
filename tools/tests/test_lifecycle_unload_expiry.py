@@ -198,7 +198,7 @@ class RunningExpiryStopAttributionTests(unittest.TestCase):
                            completion={'original':'completion'},material_paths=['state','memory','disk'])
         services=SimpleNamespace(native_pools=[dict(database=str(self.database),namespace='expiry',
             node_state_dir=str(self.root))],host_configs=[dict(native=dict(maintenance=dict(
-            capacity=dict(max_sql_value_bytes=16384))))],processes=Mock())
+            capacity=dict(max_sql_rows=64,max_sql_value_bytes=16384))))],processes=Mock())
         self.probe=expiry.RunningExpiryProbe.__new__(expiry.RunningExpiryProbe)
         self.probe.runtime=SimpleNamespace(services=services,_materials=Mock(return_value=copy.deepcopy(self.material)))
         self.probe.client=SimpleNamespace(session='original-session')
@@ -279,6 +279,21 @@ class RunningExpiryStopAttributionTests(unittest.TestCase):
         with sqlite3.connect(self.database) as conn:
             conn.execute('UPDATE outbox SET action_json=? WHERE sandbox_id=? AND operation_id=?',
                 (json.dumps(action).encode(),self.native_id,self.operation_id))
+
+    def test_global_pending_inventory_respects_existing_sql_capacity(self):
+        capacity=self.probe.runtime.services.host_configs[0]['native']['maintenance']['capacity']
+        other=self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4)
+        other['command']['logical']['command']={'FreezeVm':other['command']['logical']['command']['StopVm']}
+        row=self.insert_action(other)
+        try:
+            for field,value in [('max_sql_rows',1),
+                                ('max_sql_value_bytes',len(json.dumps(self.action).encode())-1)]:
+                old=capacity[field];capacity[field]=value
+                try:
+                    with self.subTest(field=field),self.assertRaises(ValueError):self.observe()
+                    self.probe.runtime.services.processes.assert_not_called()
+                finally:capacity[field]=old
+        finally:self.remove_action(row)
 
     def test_full_original_stop_parameters_preserve_integer_json_types(self):
         for field,value in [('sandbox',True),('generation',2.0),('vm',2.0),('epoch',5.0)]:

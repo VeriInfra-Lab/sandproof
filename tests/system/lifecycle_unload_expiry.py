@@ -336,6 +336,9 @@ class RunningExpiryProbe:
             opid = 'op-'+pool['namespace']+'-'+str(self.running['local']['sandbox'])+'-'+str(op['id'])
             rows = conn.execute('SELECT action_json,dispatch_state,receipt_json FROM outbox WHERE sandbox_id=? AND operation_id=?',(native_id,opid)).fetchall()
             actions = [(json.loads(a,object_pairs_hook=unique_keys),s,r) for a,s,r in rows]
+            count,largest = conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchone()
+            if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
+                raise ValueError('bounded global pending actions required before Stop attribution')
             dispatched = conn.execute("SELECT action_json FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchall()
         stops = [r for r in actions if 'StopVm' in r[0]['command']['logical']['command']]
         vm = self.running['context']['binding']
