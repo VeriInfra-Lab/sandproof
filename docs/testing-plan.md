@@ -94,6 +94,15 @@ Redis 账本后仍如此；同会话改 center/retention/node/version 的
 或 EOF；本入口不声称截住已部署父调用的同一次 CAS，也不代表真实 VM、独立服务重启
 故障、全部乱序、系统 E13 或形式证明完成。
 
+[调和回复期限组件](../sandbox-center-service/tests/business_authority/lifecycle_ready.rs)
+复用原真实 Redis/应用夹具、200ms 回复期限和同一 Create 工作。持有一条已进入的
+Host 观察回复，同伴先由原 worker 提交 Running，再检查其公开查询；只在记录的剩余
+预算加采样时刻这一保守期限上界之后放行完整原 Ready。原扫描只完成同伴，原接受的
+完整 Sandbox、编号前沿和在途责任保持；下一次调和继续同一原工作，不能新建 Create
+或释放未确认责任。既有 `Ok(2)` 并发用例和全部预算/断言保持。此处跨越的是回复期限，
+没有推进业务时钟或制造 TTL 到期；Host 物理事实为受控输入，无 KVM/新 Lean 结论，
+也不能把该确定性分支直接认作任何旧计数失败的根因。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、
