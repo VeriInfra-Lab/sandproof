@@ -135,5 +135,32 @@
     "Retain every original native normal/mutant/restored assertion and consume only complete current-source native evidence; coordinate functional and verify-controller once.",
     "Use exact per-file provenance in input-closure.json and prepare.py; no partial imports, stale receipts, regenerated historical LLBC relabels or hash-only migration.",
     "Global roots, Lake/Cargo, native/module registration and coverage remain coordinator-owned; review this candidate before applying the public report diff."
-  ]
+  ],
+  "warning_cleanup": {
+    "baseline_pr": 779,
+    "baseline_commit": "22bf77f0d3a45a53efad3d82cbdbb7bd6bb1f5be",
+    "handwritten_modules": [
+      "ActualStartupParentCompose.lean",
+      "BaseSecondInbox.lean",
+      "ContinuedDriverCaller.lean",
+      "InboxParentCarriers.lean",
+      "NativeSnapshotFields.lean",
+      "RefoundWorldParent.lean",
+      "SandproofUnloadBaseSnapshot/Provider.lean",
+      "StartupParentBound.lean",
+      "StartupReadAgreement.lean",
+      "WorldParentConclusion.lean"
+    ],
+    "inherited_warning_reduction": 68,
+    "preserved_foreign_name_warnings": 4,
+    "public_zero_warning": false,
+    "verifier": "check_warnings.py",
+    "required_checks": [
+      "all279 physical files",
+      "registered declaration types",
+      "full dependency audits",
+      "original generated bodies",
+      "current native and ordinary acceptance"
+    ]
+  }
 }

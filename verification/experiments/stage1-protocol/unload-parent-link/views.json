@@ -1,7 +1,7 @@
 {
   "InboxParentCarriers.lean": {
     "raw_sha256": "2182e8e8398a96b2cf95126d702ddf0374ee6de905cfdd9433ee1a3b1ecafaf1",
-    "view_sha256": "29d7352d59dc123f3a9e3e7ac46899dea577f60fe71fac4f0081ac86a25ca4e0",
+    "view_sha256": "3c3f485c97a02ed443c5cd788d691d737ea845727ec74781bd4ee13418959622",
     "edits": [
       {
         "offset": 4384,
@@ -17,6 +17,126 @@
         "offset": 18209,
         "before": "  | .InjectedCrash error => .InjectedCrash (cast c.crash.symm error)\n  | .ControllerRejected error => .ControllerRejected (cast c.reject.symm error)\n",
         "after": "  | .InjectedCrash error => .InjectedCrash (c.crash error)\n  | .ControllerRejected error => .ControllerRejected (c.reject error)\n"
+      },
+      {
+        "offset": 18615,
+        "before": "",
+        "after": "omit [SandproofUnloadFirstObservation.Representations] in\n"
+      },
+      {
+        "offset": 18869,
+        "before": "",
+        "after": "omit [SandproofUnloadFirstObservation.Representations] in\n"
+      },
+      {
+        "offset": 19280,
+        "before": "  cases value <;> simp [toOperation, fromOperation, Function.comp_def]\n",
+        "after": "  cases value <;> simp [toOperation, fromOperation]\n"
+      },
+      {
+        "offset": 19546,
+        "before": "  cases value <;> simp [toLocal, fromLocal, Function.comp_def]\n",
+        "after": "  cases value; simp [toLocal, fromLocal]\n"
+      },
+      {
+        "offset": 19811,
+        "before": "  cases value <;> simp [toRequest, fromRequest, Function.comp_def]\n",
+        "after": "  cases value; simp [toRequest, fromRequest]\n"
+      },
+      {
+        "offset": 20086,
+        "before": "  cases value <;> simp [toIntent, fromIntent, Function.comp_def]\n",
+        "after": "  cases value; simp [toIntent, fromIntent]\n"
+      },
+      {
+        "offset": 20332,
+        "before": "  cases value <;> simp [toEntry, fromEntry, Function.comp_def]\n",
+        "after": "  cases value; simp [toEntry, fromEntry, Function.comp_def]\n"
+      },
+      {
+        "offset": 20584,
+        "before": "  cases value <;> simp [toSession, fromSession, Function.comp_def, mapVec_cancel _ _ (from_to_Entry c)]\n",
+        "after": "  cases value; simp [toSession, fromSession, Function.comp_def, mapVec_cancel _ _ (from_to_Entry c)]\n"
+      },
+      {
+        "offset": 20881,
+        "before": "  cases value <;> simp [toRegistration, fromRegistration, Function.comp_def]\n",
+        "after": "  cases value; simp [toRegistration, fromRegistration]\n"
+      },
+      {
+        "offset": 21147,
+        "before": "  cases value <;> simp [toObservation, fromObservation, Function.comp_def]\n",
+        "after": "  cases value; simp [toObservation, fromObservation]\n"
+      },
+      {
+        "offset": 21421,
+        "before": "  cases value <;> simp [toConfig, fromConfig, Function.comp_def]\n",
+        "after": "  cases value; simp [toConfig, fromConfig, Function.comp_def]\n"
+      },
+      {
+        "offset": 21667,
+        "before": "  cases value <;> simp [toInbox, fromInbox, Function.comp_def, mapVec_cancel _ _ (from_to_Session c)]\n",
+        "after": "  cases value; simp [toInbox, fromInbox, Function.comp_def, mapVec_cancel _ _ (from_to_Session c)]\n"
+      },
+      {
+        "offset": 21963,
+        "before": "  cases value <;> simp [toState, fromState, Function.comp_def]\n",
+        "after": "  cases value; simp [toState, fromState, Function.comp_def]\n"
+      },
+      {
+        "offset": 22231,
+        "before": "  cases value <;> simp [fromOperation, toOperation, Function.comp_def]\n",
+        "after": "  cases value <;> simp [fromOperation, toOperation]\n"
+      },
+      {
+        "offset": 22521,
+        "before": "  cases value <;> simp [fromLocal, toLocal, Function.comp_def]\n",
+        "after": "  cases value; simp [fromLocal, toLocal]\n"
+      },
+      {
+        "offset": 22781,
+        "before": "  cases value <;> simp [fromRequest, toRequest, Function.comp_def]\n",
+        "after": "  cases value; simp [fromRequest, toRequest]\n"
+      },
+      {
+        "offset": 23051,
+        "before": "  cases value <;> simp [fromIntent, toIntent, Function.comp_def]\n",
+        "after": "  cases value; simp [fromIntent, toIntent]\n"
+      },
+      {
+        "offset": 23321,
+        "before": "  cases value <;> simp [fromEntry, toEntry, Function.comp_def]\n",
+        "after": "  cases value; simp [fromEntry, toEntry, Function.comp_def]\n"
+      },
+      {
+        "offset": 23597,
+        "before": "  cases value <;> simp [fromSession, toSession, Function.comp_def, mapVec_cancel _ _ (to_from_Entry c)]\n",
+        "after": "  cases value; simp [fromSession, toSession, Function.comp_def, mapVec_cancel _ _ (to_from_Entry c)]\n"
+      },
+      {
+        "offset": 23918,
+        "before": "  cases value <;> simp [fromRegistration, toRegistration, Function.comp_def]\n",
+        "after": "  cases value; simp [fromRegistration, toRegistration]\n"
+      },
+      {
+        "offset": 24208,
+        "before": "  cases value <;> simp [fromObservation, toObservation, Function.comp_def]\n",
+        "after": "  cases value; simp [fromObservation, toObservation]\n"
+      },
+      {
+        "offset": 24506,
+        "before": "  cases value <;> simp [fromConfig, toConfig, Function.comp_def]\n",
+        "after": "  cases value; simp [fromConfig, toConfig, Function.comp_def]\n"
+      },
+      {
+        "offset": 24776,
+        "before": "  cases value <;> simp [fromInbox, toInbox, Function.comp_def, mapVec_cancel _ _ (to_from_Session c)]\n",
+        "after": "  cases value; simp [fromInbox, toInbox, Function.comp_def, mapVec_cancel _ _ (to_from_Session c)]\n"
+      },
+      {
+        "offset": 25096,
+        "before": "  cases value <;> simp [fromState, toState, Function.comp_def]\n",
+        "after": "  cases value; simp [fromState, toState, Function.comp_def]\n"
       }
     ]
   },
@@ -83,5 +203,169 @@
     "raw_sha256": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
     "view_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145",
     "isolated_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145"
+  },
+  "ActualStartupParentCompose.lean": {
+    "raw_sha256": "26e71ebd7be9a8ea3bae6a4f86af0ddd4ca1b58ca0a34b352d0b11e3bacd9236",
+    "view_sha256": "bf88aeb739b6d80b31b9662f2e85fcbe28ba0ce67d2a61c2058e4c90453d8fda",
+    "edits": [
+      {
+        "offset": 3583,
+        "before": "    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n",
+        "after": "    (_ : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n"
+      },
+      {
+        "offset": 3926,
+        "before": "    (linked : ParentStartupLinked host serde startupHost startupSerde tx ns input.world reads.localValue\n",
+        "after": "    (_ : ParentStartupLinked host serde startupHost startupSerde tx ns input.world reads.localValue\n"
+      },
+      {
+        "offset": 4108,
+        "before": "    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (normalReceiptBytes : \u2200 raw \u2208 reads.originalReceipts.val,\n",
+        "after": "    (_ : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (_ : \u2200 raw \u2208 reads.originalReceipts.val,\n"
+      },
+      {
+        "offset": 4378,
+        "before": "    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (cloneResource : \u2200 resource : sandproof_protocol.ResourceRef,\n",
+        "after": "    (_ : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (_ : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (_ : \u2200 resource : sandproof_protocol.ResourceRef,\n"
+      },
+      {
+        "offset": 4695,
+        "before": "    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "    (_ : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      }
+    ]
+  },
+  "BaseSecondInbox.lean": {
+    "raw_sha256": "54de54e8dd199584e59f0df60ebd74d37331ea91531d6367f9681009ea720e21",
+    "view_sha256": "807b4aec074b90ca5e0ec6c00e6eb8cc2a7b79c2d4ba355fb2d87306705f58d9",
+    "edits": [
+      {
+        "offset": 2931,
+        "before": "      (atSession : (fromInbox c left).sessions.val[s.val]? = some session)\n      (atState : SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state)\n      (picked : SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin))\n      (localRead : state.\u00ablocal\u00bb = some binding),\n",
+        "after": "      (_ : (fromInbox c left).sessions.val[s.val]? = some session)\n      (_ : SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state)\n      (_ : SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin))\n      (_ : state.\u00ablocal\u00bb = some binding),\n"
+      }
+    ]
+  },
+  "ContinuedDriverCaller.lean": {
+    "raw_sha256": "b07322caf5d558c8f273b25c862593669f09dc3eb2be694334cac05ea2c9dd12",
+    "view_sha256": "3debd540b21cb4640fb2560830286cde313b373d7addd09842e260f4e026b5dd",
+    "edits": [
+      {
+        "offset": 5614,
+        "before": "    cases reads.sources <;> rfl\n",
+        "after": "    cases reads.sources; rfl\n"
+      }
+    ]
+  },
+  "NativeSnapshotFields.lean": {
+    "raw_sha256": "91607fd4c845350658a55d79a545bc9b0cc8cb617c2c0816416919499a49bb09",
+    "view_sha256": "4bff47cd5c67ed7c96acfe3b6dfb6354bb803869fa47a05486a0ba36a94a54fc",
+    "edits": [
+      {
+        "offset": 2107,
+        "before": "    core.cmp.PartialEq.ne.default, sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId,\n",
+        "after": "    core.cmp.PartialEq.ne.default,\n"
+      },
+      {
+        "offset": 2901,
+        "before": "    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId, owner, bind_tc_ok]\n",
+        "after": "    owner, bind_tc_ok]\n"
+      }
+    ]
+  },
+  "RefoundWorldParent.lean": {
+    "raw_sha256": "edf4149aa70e10e0b3eea5947645481a873720979acd81914fe827382b2f66fc",
+    "view_sha256": "b634198a6966663afeb32fc18259800218ce03c3ca435e86bed990d049db64a4",
+    "edits": [
+      {
+        "offset": 6058,
+        "before": "      (firstInbox : input.inbox = fromInbox inboxViews left)\n      (found : left.find (toIntent inboxViews intent) = .ok (.Ok (some (reads.sessionIndex, reads.entryIndex))))\n",
+        "after": "      (_ : input.inbox = fromInbox inboxViews left)\n      (_ : left.find (toIntent inboxViews intent) = .ok (.Ok (some (reads.sessionIndex, reads.entryIndex))))\n"
+      },
+      {
+        "offset": 6805,
+        "before": "      (read\u2082 : load_using saved terminal renewal unload graphic io (stateForConnection before.connection) =\n",
+        "after": "      (_ : load_using saved terminal renewal unload graphic io (stateForConnection before.connection) =\n"
+      },
+      {
+        "offset": 6957,
+        "before": "      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n",
+        "after": "      (_ : actualNativeRead carriers nv nativeOps tx ns input.world\n"
+      }
+    ]
+  },
+  "SandproofUnloadBaseSnapshot/Provider.lean": {
+    "raw_sha256": "ac3af69518cb8ddfad10945f47db94651e28ccc319024c1d208e8be898bd17b8",
+    "view_sha256": "f9b7599c9307ed45e09281f0bc090513cf9fb9e0b697e705f7c923295ffd24fa",
+    "edits": [
+      {
+        "offset": 5807,
+        "before": "",
+        "after": "omit ops in\n"
+      },
+      {
+        "offset": 7334,
+        "before": "theorem firstEntryOrdered (entries : Slice Entry) (version : U64) :\n",
+        "after": "omit ops in\ntheorem firstEntryOrdered [_ops : Operations] (entries : Slice Entry) (version : U64) :\n"
+      }
+    ]
+  },
+  "StartupParentBound.lean": {
+    "raw_sha256": "3a17f486cac9103a3c6b5d215627366c3aaa4ab3107b057f48ce2875615490fa",
+    "view_sha256": "4fdcd4ad956473400eadcb2d6aa63b036847f16c0c5434bf4c7c2ecd7b303e56",
+    "edits": [
+      {
+        "offset": 1840,
+        "before": "    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n",
+        "after": "    (_ : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n"
+      },
+      {
+        "offset": 2167,
+        "before": "    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (normalReceiptBytes : \u2200 raw \u2208 reads.originalReceipts.val,\n",
+        "after": "    (_ : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (_ : \u2200 raw \u2208 reads.originalReceipts.val,\n"
+      },
+      {
+        "offset": 2437,
+        "before": "    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (cloneResource : \u2200 resource : sandproof_protocol.ResourceRef,\n",
+        "after": "    (_ : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (_ : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (_ : \u2200 resource : sandproof_protocol.ResourceRef,\n"
+      },
+      {
+        "offset": 2754,
+        "before": "    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "    (_ : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      }
+    ]
+  },
+  "StartupReadAgreement.lean": {
+    "raw_sha256": "b5c546fdc8b6846eedbb5f0acb61e9705d2394ec6ce539dba156b6482f041983",
+    "view_sha256": "70a34d37964a665a1b8c17785cfae66045a63046085a8b76cfd8875cda1c6bbd",
+    "edits": [
+      {
+        "offset": 1652,
+        "before": "      simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,\n",
+        "after": "      simp [core.option.Option.ok_or,\n"
+      }
+    ]
+  },
+  "WorldParentConclusion.lean": {
+    "raw_sha256": "33dd368af6648e1b73cdb67e58b0251cccb550d6c4e587c918d52ed6dd094068",
+    "view_sha256": "6594df6a35a0102eb7f97af057bc06f9b1b06627218b3654ff960bf25a3ea2be",
+    "edits": [
+      {
+        "offset": 2172,
+        "before": "      (baseRead : @BaseInput.Reads (BaseReps ready) (installBaseReads carriers nv nativeOps lv ledgerOps ops)\n",
+        "after": "      (_ : @BaseInput.Reads (BaseReps ready) (installBaseReads carriers nv nativeOps lv ledgerOps ops)\n"
+      },
+      {
+        "offset": 2438,
+        "before": "      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n",
+        "after": "      (_ : actualNativeRead carriers nv nativeOps tx ns input.world\n"
+      },
+      {
+        "offset": 2687,
+        "before": "      (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))\n      (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue)\n      (slot : reads.actionIdentities.val[1]? = some startupAction)\n      (cloneResource : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)\n      (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "      (_ : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))\n      (_ : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue)\n      (_ : reads.actionIdentities.val[1]? = some startupAction)\n      (_ : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)\n      (_ : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      }
+    ]
   }
 }
