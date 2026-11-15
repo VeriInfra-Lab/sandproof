@@ -340,6 +340,24 @@ class LateReceiptGateTests(LateMaterialFixture):
         self.assertEqual(self.records[0]['retirement']['state'],'retiring')
         self.assertEqual(client.witness['counter'],1)
 
+    def test_type_changed_public_query_keeps_receipt_held_after_real_guest_consumer(self):
+        client,sdk,running=OtherOwnerWorkloadTests().client(session=self.occupant['session'])
+        changed=copy.deepcopy(running);changed['current_version']=True
+        del client.query
+        def observe():
+            result=client.assert_running_workload(running)
+            self.events.append('guest-'+str(result['counter']))
+            return result
+        with patch.object(client,'call',return_value=(200,json.dumps(changed).encode())), \
+                self.assertRaises(AssertionError):
+            self.gate.release_after_delete({'accepted_version':4},observe)
+        self.assertEqual(sdk.commands.run.call_count,2)
+        self.publish.assert_not_called();self.assertFalse(self.gate.recovered)
+        self.assertEqual(self.events,[])
+        self.assertEqual(self.records[0]['retirement']['state'],'retiring')
+        self.assertEqual(charge(self.records[0]),100)
+        self.assertFalse((Path(self.directory.name)/'command.json').exists())
+
     def test_native_json_type_change_during_guest_progress_never_releases_receipt(self):
         def changed():
             result=self.workload()
