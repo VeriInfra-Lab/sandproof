@@ -96,12 +96,18 @@ fn resume_reply(entry: Entry, destroy: bool) {
     if let Some(termination) = termination {
         assert_eq!(after, before_release);
         assert_eq!(current.phase(), SessionPhase::Terminating);
-        assert_eq!(current.current_version(), Some(termination.accepted_version));
+        assert_eq!(
+            current.current_version(),
+            Some(termination.accepted_version)
+        );
         assert!(!current.released());
         let pending = after.pending_lifecycle();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].request.binding.key, termination.key);
-        assert!(matches!(pending[0].request.operation, LifecycleOperation::Destroy {}));
+        assert!(matches!(
+            pending[0].request.operation,
+            LifecycleOperation::Destroy {}
+        ));
         let public = app.query_lifecycle("8", &session).unwrap();
         assert_eq!(public.phase, PublicSessionPhase::Terminating);
         assert_eq!(public.operation, termination.key);
