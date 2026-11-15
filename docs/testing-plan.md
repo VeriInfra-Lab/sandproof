@@ -77,7 +77,7 @@ E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart` | 一次双重启不覆盖中心/宿主各自在持久化、发送和接收确认窗口的独立中断及消息乱序。 |
-| E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py) | 在途上传只有已写前缀见证，不表示完整上传成功；不承诺旧连接连续或命令自动重放。 |
+| E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`、`command-disconnect`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py)、[命令订阅观察](../tests/system/lifecycle_command_disconnect.py) | 在途上传只有已写前缀见证，不表示完整上传成功；命令切片检查同一原 PID 的静默 Start 订阅关闭、relay 内核退出与恢复后重新订阅，不覆盖任意输出中断点；不承诺旧 TCP/vsock 连续或命令重放。 |
 | E15 / G3、G4、G6 | `restore-prepare-expiry`、`restored-running-expiry`；[到期观察](../tests/system/lifecycle_unload_expiry.py)、[生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs) | 分别核对加载中到期和运行 backing 到期；实际结果绑定精确提交，回收中及其它交错仍须另跑。普通 Destroy 和寿命不重置不能代替到期验收。 |
 | E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
 
@@ -88,6 +88,8 @@ SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之�
 本轮未做的故障窗口保持缺口，不因正常链通过关闭 E2–E15；有限时间内收尾也不是 G6 的全称证明。
 
 独立生命周期实机入口 `tests/system/lifecycle_unload_scenario.py` 使用两个保留会话、两个运行位置：第一会话卸载后让第二会话占用原位置，再恢复第一会话，核对另一会话未受影响，随后销毁第二会话。`normal` 在同一第一会话形成 A/B/C 三个保存点并各恢复，继续核对旧代回收；其它明确故障选择只按其原有限周期和到达点验收。会话保留数直接传给中心账本和宿主 inbox，不从任务数推算。该入口可使用已有基础模板；两题评测的 10 GiB 模板不是此场景的前提。按实际模板大小和 2 GiB VM 内存计算完整包络，继续检查原有限激活上限、实际可用字节/inode、同文件系统以及材料项目硬配额。该场景不代表两题评测或 E1–E16 全部通过；实际部署和结果绑定精确提交另行记录。实机服务使用优化构建（`opt-level=2`），显式保留调试断言和溢出检查，并记录构建输入与实际二进制摘要；基础单元测试仍走原入口。未优化程序在受限 CPU 下的超时不能直接当作产品性能结论。
+
+E14 的显式 `--scenario command-disconnect` 保留同一正常链的两 owner、实际位置复用、三轮保存/恢复、源文件核对、旧代材料回收与最终 Destroy/结算，状态为「入口存在但未执行实机」。它只对原 RAM witness 的唯一公开 PID 调用固定 SDK 2.51.0 的 `commands.connect`，在首个 Start 事件返回后由同一线程单次 `handle.disconnect`；不并发关闭正在执行的生成器，不调用 kill/close_stdin，也不重发未知 Connect 或改用 Start。首次 Unload 前及每次 Resume 后各执行一次，并用原受保护 helper route 和原 pidfd 确认对应 host relay 的内核退出，再经独立有限命令确认原 guest PID/start ticks/RAM nonce 不变、RAM counter 与磁盘标记继续进展。每轮恢复仍先由原场景核对新元数据/激活 RAM 与旧凭据拒绝，再用新授权连接原 PID。客户端关闭返回不等于内核退出，relay 退出也不表示 guest 退出或全部服务端登记已退休。报告不保存 bearer 或原 RAM nonce。这一静默命令订阅代表不覆盖任意 stdout/stderr 中断、卸载撤销时仍持有的命令流或网络连接连续性；普通自测的 SDK/受保护 route 提供方是受控输入，真实 Linux 子进程与 pidfd 检查也不代替 KVM 验收。
 
 正常链复现与收尾按下列顺序记录，不能用测试环境卸载工作卷来代替产品回收：
 
