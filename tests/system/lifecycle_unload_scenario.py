@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path, write_once
+from tools.template_build_guest import equal
 from server_process_crash import fetch
 
 PREFIX = '/sandproof/lifecycle'
@@ -271,8 +272,9 @@ class PublicUnloadScenario:
         if sample['operation']=='unload':
             if (sample['accepted_monotonic'] is None or sample['completed_monotonic'] is not None
                     or view is None or acceptance is None
-                    or acceptance!=sample['acceptance'] or acceptance!=self.current_acceptance
-                    or acceptance!=self.unload_acceptance):
+                    or not equal(acceptance,sample['acceptance'])
+                    or not equal(acceptance,self.current_acceptance)
+                    or not equal(acceptance,self.unload_acceptance)):
                 return
             self.check_view(view,acceptance)
             outcome=view['unload_outcome']
@@ -340,7 +342,7 @@ class PublicUnloadScenario:
 
     def acceptance(self, value, *, sequence, version):
         assert set(value) == {'session', 'key', 'accepted_version'}
-        assert value['key'] == self.key(sequence), 'acceptance changed the full original operation key'
+        assert equal(value['key'], self.key(sequence)), 'acceptance changed the full original operation key'
         assert type(value['session']) is str and value['session']
         assert uint(value['accepted_version'], positive=True)
         assert value['accepted_version'] == version
@@ -379,7 +381,7 @@ class PublicUnloadScenario:
 
     def check_view(self, view, acceptance):
         assert set(view) == {'session', 'operation', 'current_version', 'phase', 'unload_outcome', 'create_refusal'}
-        assert view['session'] == self.session and view['operation'] == acceptance['key']
+        assert view['session'] == self.session and equal(view['operation'], acceptance['key'])
         assert uint(view['current_version'], positive=True)
         assert view['current_version'] == acceptance['accepted_version']
         assert view['create_refusal'] is None
@@ -453,7 +455,7 @@ class PublicUnloadScenario:
                 barrier.wait(timeout=min(40,self.remaining()))
                 replies=[future.result(timeout=self.remaining()) for future in pending]
             self.remaining()
-            assert replies[0]==replies[1], 'concurrent original unload replies differ'
+            assert equal(replies[0],replies[1]), 'concurrent original unload replies differ'
             result=replies[0]
             self.concurrent_unload_replies=copy.deepcopy(replies)
         else:
@@ -507,7 +509,7 @@ class PublicUnloadScenario:
         facts = view['unload_outcome']['facts']
         assert type(facts) is dict and set(facts) == FACT_FIELDS
         assert type(independent_facts) is dict and set(independent_facts) == FACT_FIELDS
-        assert facts == independent_facts, 'public result differs from original journal/material/lifetime evidence'
+        assert equal(facts, independent_facts), 'public result differs from original journal/material/lifetime evidence'
         assert all(uint(facts[name], positive=True) for name in (
             'source_incarnation', 'capture', 'material_bytes'))
         assert all(uint(facts[name]) for name in (
@@ -525,21 +527,21 @@ class PublicUnloadScenario:
         self.step('replay-unload', 202)
         unload = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                body=self.unload_request, status=202)
-        assert create == self.create_acceptance and unload == self.unload_acceptance
+        assert equal(create, self.create_acceptance) and equal(unload, self.unload_acceptance)
         self.step('replay-query', 200)
-        assert self.query() == saved
+        assert equal(self.query(), saved)
         changed = dict(self.unload_request, expected_version=self.unload_acceptance['accepted_version'])
         self.step('altered-unload-replay', 409)
         assert self.call('POST', self.path() + '/unload', key=self.owner_key, body=changed)[0] == 409
         self.step('altered-replay-query', 200)
-        assert self.query() == saved, 'rejected altered replay changed the saved result'
+        assert equal(self.query(), saved), 'rejected altered replay changed the saved result'
 
     def assert_reopened(self, saved):
         self.step('reopened-query', 200)
-        assert self.query() == saved, 'manager reopen changed the original complete public result'
+        assert equal(self.query(), saved), 'manager reopen changed the original complete public result'
         self.step('request-window', 200)
         window = self.read_json('GET', PREFIX + '/request-window', key=self.owner_key)
-        assert window == {'window': self.window}
+        assert equal(window, {'window': self.window})
         self.assert_owner_isolation()
         self.assert_original_replay(saved)
         self.remaining()
@@ -549,9 +551,9 @@ class PublicUnloadScenario:
         self.step('original-resume-replay', 202)
         replay = self.read_json('POST', self.path() + '/resume', key=self.owner_key,
             body=copy.deepcopy(request), status=202)
-        assert replay == accepted, 'old Resume did not return its original acceptance'
+        assert equal(replay, accepted), 'old Resume did not return its original acceptance'
         self.step('original-resume-current-query', 200)
-        assert self.query() == current, 'old Resume replay changed current lifecycle state'
+        assert equal(self.query(), current), 'old Resume replay changed current lifecycle state'
 
     def assert_terminal_resume_replay(self, request, accepted, *, phase):
         """Historical acceptance must not become permission after Destroy."""
@@ -564,7 +566,7 @@ class PublicUnloadScenario:
         changed = dict(request, expected_version=current['current_version'])
         self.step('terminal-altered-resume-replay', 409)
         assert self.call('POST', self.path() + '/resume', key=self.owner_key, body=changed)[0] == 409
-        assert self.query() == current, 'altered old Resume changed the terminal decision'
+        assert equal(self.query(), current), 'altered old Resume changed the terminal decision'
         self.assert_data_closed()
         self.assert_previous_tokens_closed()
         return dict(phase=phase, original_acceptance_returned=True,
@@ -625,7 +627,7 @@ class PublicUnloadScenario:
         assert self.witness['pid']==process.pid and self.witness['counter']==1
         disk=sandbox.files.read('/tmp/sandproof-unload-marker')
         assert disk=='disk-counter:1'
-        assert self.query()==running
+        assert equal(self.query(),running)
         return dict(sdk='2.51.0',entry='owner-detail/original-sdk-constructor/public-gateway',
             path='/tmp/sandproof-unload-marker',ram_nonce_sha256=hashlib.sha256(
                 self.witness['nonce'].encode()).hexdigest(),guest_pid=process.pid,
@@ -655,7 +657,7 @@ class PublicUnloadScenario:
         assert current['activation_nonce']==observed['activation_nonce']
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.witness=current
-        assert self.query()==running
+        assert equal(self.query(),running)
         return dict(ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
             guest_pid=current['pid'],guest_start_time_ticks=current['start_time_ticks'],
             counter=current['counter'],metadata_generation=current['metadata_generation'],
@@ -676,7 +678,7 @@ class PublicUnloadScenario:
         assert running['phase']=='running'
         facts=running['unload_outcome']['facts']
         assert set(facts)==set(lifetime)|{'observed_at_ms'}
-        assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
+        assert equal({key:facts[key] for key in lifetime},lifetime), 'failed Unload changed original lifetime'
         assert uint(facts['observed_at_ms'])
         assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
         current = self._advance_same_running_workload(running)
@@ -711,7 +713,7 @@ class PublicUnloadScenario:
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.assert_previous_tokens_closed()
         self.witness=current
-        assert self.query()==running
+        assert equal(self.query(),running)
         return current
 
     def assert_data_closed(self):
@@ -905,7 +907,7 @@ def exercise(args):
                         original_resume_request, accepted, phase='terminating')]
                     report['phase'] = 'original-host-terminal-fence-before-process-continue'
                     def observe_original_peer():
-                        assert control.query() == control_running, 'other owner lost its original Running observation'
+                        assert equal(control.query(), control_running), 'other owner lost its original Running observation'
                         return dict(session=control.session, original_public_running_query_completed=True,
                                     scope='one existing peer query while original loaded process is stopped')
                     report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
@@ -919,7 +921,7 @@ def exercise(args):
                     client.operation_evidence_completed()
                     report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
                         original_resume_request, accepted, phase='cleaned'))
-                    assert control.query() == control_running
+                    assert equal(control.query(), control_running)
                     report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
                         control.session, control_physical, deadline)
                     control.destroy(control_running); control.wait_cleaned()
@@ -948,15 +950,15 @@ def exercise(args):
                     client.step('original-lost-resume-replay',202)
                     replay=client.read_json('POST',client.path()+'/resume',key=client.owner_key,
                         body=client.resume_request,status=202)
-                    assert replay==accepted, 'original Resume replay created another acceptance'
-                    assert client.query()==lost, 'original Resume replay revived lost state'
+                    assert equal(replay,accepted), 'original Resume replay created another acceptance'
+                    assert equal(client.query(),lost), 'original Resume replay revived lost state'
                     report['phase']='lost-state-same-manager-config-reopen'
                     report['lost_manager_restart']=runtime.restart_managers(deadline)
-                    assert client.query()==lost, 'manager restart changed original StateLost result'
+                    assert equal(client.query(),lost), 'manager restart changed original StateLost result'
                     report['lost_candidate_after_restart']=runtime.lost_candidate_evidence(gate_receipt,accepted,deadline)
                     client.assert_data_closed()
                     client.assert_previous_tokens_closed()
-                    assert control.query()==control_running
+                    assert equal(control.query(),control_running)
                     report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(
                         control.session,control_physical,deadline)
                     assert report['activation_gate_recovery']['candidate_position']!=control_physical['context']['position']
@@ -1041,7 +1043,7 @@ def exercise(args):
                     continued_acceptance,continued,stage,deadline)
                 report['phase']='public-continued-state-lost'
                 lost=client.wait_phase(continued_acceptance,waiting={'running'},complete='state_lost')
-                assert lost['unload_outcome']==continued['unload_outcome'], 'loss rewrote historical continued result'
+                assert equal(lost['unload_outcome'],continued['unload_outcome']), 'loss rewrote historical continued result'
                 client.assert_data_closed();client.assert_previous_tokens_closed();client.assert_owner_isolation()
                 report['continued_lost']=runtime.continued_lost_evidence(continued_acceptance,lost,stage,deadline)
                 client.assert_original_replay(lost)
@@ -1051,7 +1053,7 @@ def exercise(args):
                 report['continued_lost_after_restart']=runtime.continued_lost_evidence(
                     continued_acceptance,lost,stage,deadline)
                 client.assert_data_closed();client.assert_previous_tokens_closed()
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(control.session,control_physical,deadline)
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
@@ -1062,7 +1064,7 @@ def exercise(args):
             if cycle==1:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']

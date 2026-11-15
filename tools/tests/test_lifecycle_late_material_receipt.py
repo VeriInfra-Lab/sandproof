@@ -340,6 +340,24 @@ class LateReceiptGateTests(LateMaterialFixture):
         self.assertEqual(self.records[0]['retirement']['state'],'retiring')
         self.assertEqual(client.witness['counter'],1)
 
+    def test_type_changed_public_query_keeps_receipt_held_after_real_guest_consumer(self):
+        client,sdk,running=OtherOwnerWorkloadTests().client(session=self.occupant['session'])
+        changed=copy.deepcopy(running);changed['current_version']=True
+        del client.query
+        def observe():
+            result=client.assert_running_workload(running)
+            self.events.append('guest-'+str(result['counter']))
+            return result
+        with patch.object(client,'call',return_value=(200,json.dumps(changed).encode())), \
+                self.assertRaises(AssertionError):
+            self.gate.release_after_delete({'accepted_version':4},observe)
+        self.assertEqual(sdk.commands.run.call_count,2)
+        self.publish.assert_not_called();self.assertFalse(self.gate.recovered)
+        self.assertEqual(self.events,[])
+        self.assertEqual(self.records[0]['retirement']['state'],'retiring')
+        self.assertEqual(charge(self.records[0]),100)
+        self.assertFalse((Path(self.directory.name)/'command.json').exists())
+
     def test_native_json_type_change_during_guest_progress_never_releases_receipt(self):
         def changed():
             result=self.workload()
@@ -511,12 +529,12 @@ class OtherOwnerWorkloadTests(unittest.TestCase):
 
 class LateReceiptScenarioWiringTests(unittest.TestCase):
     """Drive the actual selector with controlled public/physical providers."""
-    def run_scene(self, scenario, *, fail_gate=False):
+    def run_scene(self, scenario, *, fail_gate=False, query_version=None):
         import lifecycle_unload_cow as cow
         import lifecycle_unload_retirement as retirement
         import lifecycle_unload_runtime as runtime
         events, destroyed = [], set()
-        running = dict(phase='running')
+        running = dict(phase='running',current_version=1)
         lifetime = dict(started_at_ms=1,end_at_ms=100,max_end_at_ms=200,startup_deadline_ms=20)
         clients = {}
         for owner in ('1','2'):
@@ -532,6 +550,8 @@ class LateReceiptScenarioWiringTests(unittest.TestCase):
             client.wait_running.return_value = running
             client.wait_unloaded.return_value = dict(phase='unloaded')
             client.query.return_value = running
+            if owner=='2' and query_version is not None:
+                client.query.return_value = dict(running,current_version=query_version)
             client.create.side_effect = lambda _,o=owner:events.append('create-'+o) or {}
             client.resume.side_effect = lambda _,o=owner:events.append('resume-'+o) or {'accepted_version':3}
             client.unload.side_effect = lambda *_,o=owner,**__:events.append('unload-'+o) or {'accepted_version':4}
@@ -594,7 +614,17 @@ class LateReceiptScenarioWiringTests(unittest.TestCase):
             # physical certificates. The real observer/guest checks are above.
             runner.confirm_running = Mock(return_value={})
             args = SimpleNamespace(scenario=scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if fail_gate:
+            if query_version is not None:
+                with self.assertRaises(AssertionError): scene.exercise(args)
+                report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(report['complete'])
+                self.assertEqual(report['failure_type'],'AssertionError')
+                self.assertEqual(len(report['known_sessions']),2)
+                self.assertEqual(destroyed,set())
+                runner.settlement_evidence.assert_not_called()
+                gate.release_after_delete.assert_not_called()
+                self.assertNotIn('source-settled',events)
+            elif fail_gate:
                 with self.assertRaises(ValueError): scene.exercise(args)
                 report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete'])
@@ -627,6 +657,12 @@ class LateReceiptScenarioWiringTests(unittest.TestCase):
 
     def test_failed_new_window_preserves_report_and_never_claims_cleanup_or_acceptance(self):
         self.run_scene('material-retirement-late-receipt',fail_gate=True)
+
+    def test_type_changed_peer_query_stops_actual_selector_before_destroy_or_settlement(self):
+        for scenario in ('normal','material-retirement-restart','material-retirement-late-receipt'):
+            for version in (True,1.0):
+                with self.subTest(scenario=scenario,version=version):
+                    self.run_scene(scenario,query_version=version)
 
     def test_invalid_gate_budget_is_rejected_before_preparing_resources(self):
         import lifecycle_unload_runtime as runtime
