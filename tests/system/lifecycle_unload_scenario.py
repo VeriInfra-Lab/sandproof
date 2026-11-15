@@ -685,8 +685,9 @@ class PublicUnloadScenario:
 
     def assert_running_workload(self,running):
         """Read/advance the original guest witness without rotating credentials."""
-        self.step('same-running-workload')
-        assert running['phase']=='running'
+        self.step('original-running-workload')
+        self.check_view(running,self.current_acceptance)
+        assert running['phase']=='running' and running['unload_outcome'] is None
         current = self._advance_same_running_workload(running)
         return dict(session=self.session, same_ram_and_activation=True,
             same_guest_process=True, same_authorization=True, counter=current['counter'],
