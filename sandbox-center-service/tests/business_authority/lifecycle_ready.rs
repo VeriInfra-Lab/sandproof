@@ -16,7 +16,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[path = "lifecycle_unloaded.rs"]
@@ -32,6 +32,7 @@ struct Block {
     session: SessionId,
     entered: mpsc::Sender<()>,
     continue_work: mpsc::Receiver<()>,
+    create_reply_budget: Option<mpsc::Sender<(AcceptedLifecycleIntent, Instant, Duration)>>,
 }
 struct Release(Option<mpsc::Sender<()>>);
 impl Release {
@@ -96,6 +97,7 @@ impl Host {
             session,
             entered,
             continue_work: wait,
+            create_reply_budget: None,
         });
         (observed, Release(Some(continue_work)))
     }
@@ -293,6 +295,13 @@ impl HostPort for Host {
             }
         };
         if let Some(blocked) = blocked {
+            if let Some(notice) = &blocked.create_reply_budget {
+                // This is later than the caller's time_left sample, so this
+                // instant plus budget is a conservative expiry upper bound.
+                notice
+                    .send((intent.clone(), Instant::now(), budget))
+                    .unwrap();
+            }
             blocked.entered.send(()).unwrap();
             blocked
                 .continue_work
@@ -524,6 +533,120 @@ fn blocked_original_dispatch_allows_other_pending_record_and_current_query() {
     assert_eq!(scan.join().unwrap(), Ok(2));
     assert!(app.snapshot().unwrap().pending_lifecycle().is_empty());
     assert_eq!(app.snapshot().unwrap().sandboxes().len(), 2);
+}
+
+fn wait_for_original_peer_worker(
+    app: &Application,
+    before: &sandproof_center_core::CenterState,
+    first: &SessionId,
+    second: &SessionId,
+) {
+    let owner = "8".try_into().unwrap();
+    let original = before.lifecycle_session(&owner, first).unwrap();
+    let intent = original.operations()[0].intent().clone();
+    // The original worker must commit the peer BEFORE a public query can help.
+    // This waits on a durable predicate, not an arbitrary sleep or replay.
+    let setup_limit = Instant::now() + Duration::from_secs(5);
+    loop {
+        let state = app.snapshot().unwrap();
+        assert_eq!(state.lifecycle_session(&owner, first), Some(original));
+        if state.lifecycle_session(&owner, second).unwrap().phase() == SessionPhase::Running {
+            assert_eq!(state.pending_lifecycle(), vec![intent.clone()]);
+            break;
+        }
+        assert!(
+            Instant::now() < setup_limit,
+            "peer worker did not publish its original result"
+        );
+        std::thread::park_timeout(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn dispatch_reply_deadline_keeps_original_pending_while_peer_completes() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let first = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    let mut request = lifecycle_public::request();
+    request.sequence = 2.try_into().unwrap();
+    let second = app.create_lifecycle("8", &request).unwrap();
+    let before = app.snapshot().unwrap();
+    let owner = "8".try_into().unwrap();
+    let original = before.lifecycle_session(&owner, &first.session).unwrap();
+    let intent = original.operations()[0].intent().clone();
+    let peer_intent = before
+        .lifecycle_session(&owner, &second.session)
+        .unwrap()
+        .operations()[0]
+        .intent()
+        .clone();
+    let (entered, release) = host.block_next(first.session.clone());
+    let (notice, budget) = mpsc::channel();
+    host.blocked
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .create_reply_budget = Some(notice);
+    let run = Arc::clone(&app);
+    let scan = std::thread::spawn(move || run.reconcile_once());
+    await_observation(&entered);
+    let (blocked_intent, sampled_at, remaining_budget) =
+        budget.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(blocked_intent, intent);
+    assert!(!remaining_budget.is_zero() && remaining_budget <= Duration::from_millis(200));
+    wait_for_original_peer_worker(&app, &before, &first.session, &second.session);
+    assert_eq!(
+        app.query_lifecycle("8", &second.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 2);
+    let expired_by = sampled_at.checked_add(remaining_budget).unwrap();
+    while Instant::now() < expired_by {
+        std::thread::park_timeout(expired_by.saturating_duration_since(Instant::now()));
+    }
+    assert!(Instant::now() >= expired_by);
+    release.complete();
+    // A controlled Ready returned AFTER the original caller deadline cannot
+    // publish Running. The same accepted work stays available for observation.
+    assert_eq!(scan.join().unwrap(), Ok(1));
+    let pending = app.snapshot().unwrap();
+    assert_eq!(
+        pending.lifecycle_session(&owner, &first.session),
+        Some(original)
+    );
+    assert_eq!(pending.pending_lifecycle(), vec![intent.clone()]);
+    assert_eq!(pending.identity_frontiers(), before.identity_frontiers());
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 2);
+    assert_eq!(app.reconcile_once(), Ok(1));
+    let settled = app.snapshot().unwrap();
+    assert!(settled.pending_lifecycle().is_empty());
+    assert_eq!(settled.identity_frontiers(), before.identity_frontiers());
+    assert_eq!(settled.sandboxes().len(), 2);
+    for session in [&first.session, &second.session] {
+        assert_eq!(
+            settled.lifecycle_session(&owner, session).unwrap().phase(),
+            SessionPhase::Running
+        );
+    }
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 3);
+    let observed = host.create_requests.lock().unwrap();
+    assert_eq!(
+        observed
+            .iter()
+            .filter(|request| **request == intent)
+            .count(),
+        2
+    );
+    assert!(
+        observed
+            .iter()
+            .all(|request| *request == intent || *request == peer_intent)
+    );
 }
 
 #[test]
