@@ -1,0 +1,264 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_controller_service",
+  "functions": [
+    {
+      "def_id": 23,
+      "lean_name": "sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone",
+      "lean_file": "SandproofUnloadFirstCollections/FunsExternal_Template.lean",
+      "rust_name": "sandproof_protocol::{impl core::clone::Clone for sandproof_protocol::ActionIdentity}::clone",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 206,
+        "end_line": 206
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "controller.lifecycle_inbox.source_work.digest",
+      "lean_file": "SandproofUnloadFirstCollections/FunsExternal_Template.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+        "begin_line": 180,
+        "end_line": 182
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities_loop.body",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_action_identities",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 179,
+        "end_line": 182
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities"
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities_loop",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_action_identities",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 179,
+        "end_line": 182
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities"
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_action_identities",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 176,
+        "end_line": 184
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests_loop.body",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_receipt_digests",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 189,
+        "end_line": 192
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": true },
+      "parent_lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests"
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests_loop",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_receipt_digests",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 189,
+        "end_line": 192
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": false,
+      "loop": { "id": 0, "pos": [ 0 ], "is_body": false },
+      "parent_lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests"
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests",
+      "lean_file": "SandproofUnloadFirstCollections/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_receipt_digests",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+        "begin_line": 186,
+        "end_line": 194
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": true,
+      "is_rec": false,
+      "reducible": true
+    }
+  ],
+  "types": [
+    {
+      "def_id": 3,
+      "lean_name": "sandbox_controller_core.model.EffectId",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandbox_controller_core::model::EffectId",
+      "is_local": false,
+      "source": {
+        "file": "controller-core/src/model.rs",
+        "begin_line": 357,
+        "end_line": 357
+      }
+    },
+    {
+      "def_id": 12,
+      "lean_name": "sandproof_protocol.TenantId",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::TenantId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 13,
+      "lean_name": "sandproof_protocol.SandboxId",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::SandboxId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 14,
+      "lean_name": "sandproof_protocol.OperationId",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::OperationId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "sandproof_protocol.LogicalActionId",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::LogicalActionId",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 73,
+        "end_line": 73
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "sandproof_protocol.ResourceRef",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::ResourceRef",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 200,
+        "end_line": 200
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "sandproof_protocol.lifecycle.digest.ContentDigest",
+      "lean_file": "SandproofUnloadFirstCollections/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::lifecycle::digest::ContentDigest",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lifecycle/digest.rs",
+        "begin_line": 11,
+        "end_line": 11
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "SandproofUnloadFirstCollections.sandproof_protocol.ActionIdentity",
+      "lean_file": "SandproofUnloadFirstCollections/Types.lean",
+      "rust_name": "sandproof_protocol::ActionIdentity",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 208,
+        "end_line": 208
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofUnloadFirstCollections.sandproof_protocol.WorkAction",
+      "lean_file": "SandproofUnloadFirstCollections/Types.lean",
+      "rust_name": "sandproof_protocol::WorkAction",
+      "is_local": false,
+      "source": {
+        "file": "sandbox-protocol/src/lib.rs",
+        "begin_line": 239,
+        "end_line": 239
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

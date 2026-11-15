@@ -1,0 +1,15 @@
+import SandproofUnloadFirstCollections.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandproofUnloadFirstCollections
+
+/-- One full contract for the correct and field-omission generated functions.
+No field projection, finite input restriction or key-only equality is used. -/
+def CompleteIdentityContract : Prop :=
+  ∀ values : Slice (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId),
+    controller.lifecycle_inbox.source_work.snapshot.original_action_identities values
+      ⦃ output => output.val = values.val.map (·.identity) ⦄
+
+end SandboxModel.Stage1Protocol.UnloadCollectionLink

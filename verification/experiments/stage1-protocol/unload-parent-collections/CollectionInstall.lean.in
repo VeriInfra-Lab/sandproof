@@ -1,0 +1,123 @@
+import CollectionCarriers
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+
+section
+variable (encoding : SandproofCreateOptionsEncoded.Representations)
+variable (base : SandproofUnloadFirstObservation.Representations)
+variable (options : SandproofUnloadOptionsRead.Representations)
+variable (startup : SandproofUnloadStartupJoint.Representations)
+
+abbrev CallsAt := @SandproofUnloadFirstObservation.ParentCalls
+  (parentView encoding base options startup)
+abbrev PBinding := @SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.digest.ContentDigest
+  (parentView encoding base options startup)
+
+def actionSlice (values : Slice (PAction encoding base options startup)) :
+    Slice (SandproofUnloadFirstCollections.sandproof_protocol.WorkAction QEffect) :=
+  .from (values.val.map (toAction encoding base options startup))
+    (by simpa only [List.length_map] using values.property)
+
+def restoreIdentities
+    (values : alloc.vec.Vec SandproofUnloadFirstCollections.sandproof_protocol.ActionIdentity) :
+    alloc.vec.Vec (PIdentity encoding base options startup) :=
+  alloc.vec.Vec.from (values.val.map (fromIdentity encoding base options startup))
+    (by simpa only [List.length_map] using values.property)
+
+def collectActions (values : Slice (PAction encoding base options startup)) :
+    Result (alloc.vec.Vec (PIdentity encoding base options startup)) := do
+  let collected ← SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_action_identities
+    (actionSlice encoding base options startup values)
+  .ok (restoreIdentities encoding base options startup collected)
+
+def collectReceipts (values : Slice (alloc.vec.Vec U8)) :
+    Result (alloc.vec.Vec (PBinding encoding base options startup)) :=
+  SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests values
+
+@[reducible] def installCollections (parent : CallsAt encoding base options startup) :
+    CallsAt encoding base options startup :=
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  { parent with
+    originalActionIdentities := collectActions encoding base options startup
+    originalReceiptDigests := collectReceipts encoding base options startup }
+
+theorem actual_actions_complete (values : Slice (PAction encoding base options startup)) :
+    letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+    ∃ output, collectActions encoding base options startup values = .ok output ∧
+      output.val = values.val.map (·.identity) := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  obtain ⟨computed, returned, complete⟩ := WP.spec_imp_exists
+    (SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_action_identities_complete
+      (actionSlice encoding base options startup values))
+  refine ⟨restoreIdentities encoding base options startup computed, ?_, ?_⟩
+  · simp only [collectActions, returned, bind_tc_ok]
+  · simp [restoreIdentities, complete, actionSlice, List.map_map, Function.comp_def,
+      toAction, identity_from_to]
+
+theorem actual_receipts_complete (values : Slice (alloc.vec.Vec U8))
+    (normal : ∀ receipt ∈ values.val, receipt.deref.val.length < 2^61) :
+    ∃ output, collectReceipts encoding base options startup values = .ok output ∧
+      output.val = values.val.map (fun receipt => referenceOutput receipt.deref) := by
+  exact WP.spec_imp_exists
+    (SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_receipt_digests_complete
+      values normal)
+
+theorem installed_actions_complete (parent : CallsAt encoding base options startup)
+    (values : Slice (PAction encoding base options startup)) :
+    letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+    ∃ output,
+      (installCollections encoding base options startup parent).originalActionIdentities values = .ok output ∧
+      output.val = values.val.map (·.identity) := by
+  exact actual_actions_complete encoding base options startup values
+
+theorem installed_receipts_complete (parent : CallsAt encoding base options startup)
+    (values : Slice (alloc.vec.Vec U8))
+    (normal : ∀ receipt ∈ values.val, receipt.deref.val.length < 2^61) :
+    letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+    ∃ output,
+      (installCollections encoding base options startup parent).originalReceiptDigests values = .ok output ∧
+      output.val = values.val.map (fun receipt => referenceOutput receipt.deref) := by
+  exact actual_receipts_complete encoding base options startup values normal
+
+theorem installed_receipts_linked (parent : CallsAt encoding base options startup)
+    (receipts : alloc.vec.Vec (alloc.vec.Vec U8)) :
+    letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+    letI : SandproofUnloadFirstObservation.ParentCalls := installCollections encoding base options startup parent
+    LinkedReceiptDigests rfl receipts := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadFirstObservation.ParentCalls := installCollections encoding base options startup parent
+  unfold LinkedReceiptDigests
+  change collectReceipts encoding base options startup receipts.deref = _
+  unfold collectReceipts
+  have transport (value : alloc.vec.Vec Sha256Array) :
+      transportReceiptDigests (show Sha256Array = PBinding encoding base options startup from rfl) value = value := by
+    apply alloc.vec.Vec.ext
+    simp only [transportReceiptDigests, alloc.vec.Vec.from_val]
+    change value.val.map (fun x : Sha256Array => x) = value.val
+    exact List.map_id _
+  simp only [transport]
+  exact (bind_pure _).symm
+
+theorem installed_keeps_source_and_options (parent : CallsAt encoding base options startup) :
+    letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+    ∀ E : Type,
+    (installCollections encoding base options startup parent).readOriginalSource (E := E) = parent.readOriginalSource (E := E) ∧
+    (installCollections encoding base options startup parent).readCreateOptions = parent.readCreateOptions ∧
+    (installCollections encoding base options startup parent).readOriginalStartupRecords (E := E) = parent.readOriginalStartupRecords (E := E) ∧
+    (installCollections encoding base options startup parent).readBaseSnapshot = parent.readBaseSnapshot ∧
+    (installCollections encoding base options startup parent).readContinuedRecords (E := E) = parent.readContinuedRecords (E := E) := by
+  intro E
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+end
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.actual_actions_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.actual_receipts_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_actions_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_receipts_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_receipts_linked
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_keeps_source_and_options

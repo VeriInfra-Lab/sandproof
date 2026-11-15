@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "development_only": true,
+  "public_acceptance": false,
+  "source_base": "b6c0190bc92de8dc2476d776264b394fe9a7232a",
+  "parent_pr": 802,
+  "source": "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs",
+  "source_sha256": "aa886d2cb586fa1e142bf3f6875f671634bd3b2de136e4bc2a3e89cf2c3bb288",
+  "configuration": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_action_identities",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_receipt_digests"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_action_identities",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::original_receipt_digests",
+      "sandproof_protocol::ActionIdentity",
+      "sandproof_protocol::WorkAction"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadFirstCollections",
+    "subdir": "SandproofUnloadFirstCollections"
+  },
+  "mutation": {
+    "before": "        identities.push(actions[index].identity.clone());",
+    "after": "        let mut identity = actions[index].identity.clone();\n        identity.attempt = 0;\n        identities.push(identity);",
+    "omitted_field": "ActionIdentity.attempt",
+    "isolation": "only the newly archived source; production remains read-only"
+  }
+}

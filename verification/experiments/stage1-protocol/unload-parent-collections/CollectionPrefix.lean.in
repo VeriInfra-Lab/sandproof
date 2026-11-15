@@ -1,0 +1,239 @@
+import CollectionInstall
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+
+section
+variable [Representations] [ParentCalls]
+
+/-- The exact original FirstRead before, projected before its two computed
+collection outputs and three collection assertions. The result still uses
+FirstRead and its original complete contract. -/
+structure BeforeCollections {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (namespaceId : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) where
+  sessionIndex : Usize
+  entryIndex : Usize
+  session : Session
+  entry : Entry
+  state : WorkState
+  localValue : Local
+  originEntry : Entry
+  sourceIncarnation : sandproof_protocol.lifecycle.identity.IncarnationId
+  captureId : sandproof_protocol.lifecycle.identity.CaptureId
+  boot : HostEpoch
+  context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+  base : Ready
+  native : Native
+  source : Process
+  originalActions : Actions
+  originalReceipts : Receipts
+  connection : SandproofUnloadFirstObservation.rusqlite.Connection
+  options : host_contract.CreateOptions
+  optionBytes : alloc.vec.Vec U8
+  optionsDigest : Binding
+  credential : Credential
+  find : ParentCalls.inboxFindCompleteRequest input.inbox intent =
+    .ok (.Ok (some (sessionIndex, entryIndex)))
+  getSession : input.inbox.sessions.val[sessionIndex.val]? = some session
+  getEntry : session.entries.val[entryIndex.val]? = some entry
+  stateRead : ParentCalls.inboxState input.inbox sessionIndex entryIndex = .ok state
+  isCurrent : state.current = true
+  nonterminal : state.terminal = false
+  noResolution : entry.unload_resolution = none
+  unload : intent.request.operation = .Unload sourceIncarnation captureId
+  bootObservation : input.inbox.host_epoch_observation = some boot
+  activeObservation : input.active = some boot
+  bootMatch : ParentCalls.equalHostObservation boot boot = .ok true
+  localBinding : state.«local» = some localValue
+  originRead : ParentCalls.sessionExecutionOrigin session = .ok (some originEntry)
+  cloneOrigin : ParentCalls.cloneCompleteIntent originEntry.intent = .ok originEntry.intent
+  cloneUnload : ParentCalls.cloneCompleteIntent intent = .ok intent
+  contextRead : ParentCalls.inboxContext input.inbox.config = .ok context
+  baseRead : ParentCalls.readBaseSnapshot tx namespaceId input.world originEntry.intent context =
+    .ok (.Ok base)
+  nativePresent : base.view.native = some native
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok true
+  historicalRunning : base.view.historical_result =
+    some (.Running native.generation)
+  historicalMatch : ParentCalls.equalOperationResult
+    (.Running native.generation) (.Running native.generation) = .ok true
+  live : ParentCalls.checkLiveNative native localValue intent.accepted_version session.current_version
+    now = .ok true
+  sourceRead : ParentCalls.readOriginalSource host serde tx namespaceId input.world localValue.sandbox =
+    .ok (.Ok source)
+  sameBoot : source.boot_id = boot.registration.boot_id
+  sameBootText : ParentCalls.equalBootText source.boot_id boot.registration.boot_id = .ok true
+  nonzeroPid : source.pid ≠ 0#u32
+  nonzeroTicks : source.start_time_ticks ≠ 0#u64
+  startupRead : ParentCalls.readOriginalStartupRecords host serde tx namespaceId input.world localValue =
+    .ok (.Ok (originalActions, originalReceipts))
+  sameTransaction : ParentCalls.transactionConnection tx = .ok connection
+  optionsRead : ParentCalls.readCreateOptions connection namespaceId localValue.sandbox =
+    .ok (.Ok options)
+  credentialRead : ParentCalls.readCredential connection input.world namespaceId localValue.sandbox true =
+    .ok (.Ok (some credential))
+  sameGeneration : credential.1 = native.generation
+  cloneNode : ParentCalls.cloneNode input.inbox.config.node = .ok input.inbox.config.node
+  cloneRegistration : ParentCalls.cloneHostRegistration boot.registration = .ok boot.registration
+  cloneSource : ParentCalls.cloneProcessIdentity source = .ok source
+  encodeOptions : ParentCalls.encodeCreateOptions options = .ok (.Ok optionBytes)
+  digestOptions : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref optionBytes) =
+    .ok optionsDigest
+
+def eraseFirstRead {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input) :
+    BeforeCollections host serde tx ns intent now input :=
+  { sessionIndex := reads.sessionIndex
+    entryIndex := reads.entryIndex
+    session := reads.session
+    entry := reads.entry
+    state := reads.state
+    localValue := reads.localValue
+    originEntry := reads.originEntry
+    sourceIncarnation := reads.sourceIncarnation
+    captureId := reads.captureId
+    boot := reads.boot
+    context := reads.context
+    base := reads.base
+    native := reads.native
+    source := reads.source
+    originalActions := reads.originalActions
+    originalReceipts := reads.originalReceipts
+    connection := reads.connection
+    options := reads.options
+    optionBytes := reads.optionBytes
+    optionsDigest := reads.optionsDigest
+    credential := reads.credential
+    find := reads.find
+    getSession := reads.getSession
+    getEntry := reads.getEntry
+    stateRead := reads.stateRead
+    isCurrent := reads.isCurrent
+    nonterminal := reads.nonterminal
+    noResolution := reads.noResolution
+    unload := reads.unload
+    bootObservation := reads.bootObservation
+    activeObservation := reads.activeObservation
+    bootMatch := reads.bootMatch
+    localBinding := reads.localBinding
+    originRead := reads.originRead
+    cloneOrigin := reads.cloneOrigin
+    cloneUnload := reads.cloneUnload
+    contextRead := reads.contextRead
+    baseRead := reads.baseRead
+    nativePresent := reads.nativePresent
+    completedOriginal := reads.completedOriginal
+    historicalRunning := reads.historicalRunning
+    historicalMatch := reads.historicalMatch
+    live := reads.live
+    sourceRead := reads.sourceRead
+    sameBoot := reads.sameBoot
+    sameBootText := reads.sameBootText
+    nonzeroPid := reads.nonzeroPid
+    nonzeroTicks := reads.nonzeroTicks
+    startupRead := reads.startupRead
+    sameTransaction := reads.sameTransaction
+    optionsRead := reads.optionsRead
+    credentialRead := reads.credentialRead
+    sameGeneration := reads.sameGeneration
+    cloneNode := reads.cloneNode
+    cloneRegistration := reads.cloneRegistration
+    cloneSource := reads.cloneSource
+    encodeOptions := reads.encodeOptions
+    digestOptions := reads.digestOptions }
+
+def attachCollections {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (before : BeforeCollections host serde tx ns intent now input)
+    (identities : alloc.vec.Vec Action) (digests : alloc.vec.Vec Binding)
+    (actions : ParentCalls.originalActionIdentities before.originalActions.deref = .ok identities)
+    (receipts : ParentCalls.originalReceiptDigests before.originalReceipts.deref = .ok digests)
+    (full : identities.val = before.originalActions.val.map (·.identity)) :
+    FirstRead host serde tx ns intent now input :=
+  { sessionIndex := before.sessionIndex
+    entryIndex := before.entryIndex
+    session := before.session
+    entry := before.entry
+    state := before.state
+    localValue := before.localValue
+    originEntry := before.originEntry
+    sourceIncarnation := before.sourceIncarnation
+    captureId := before.captureId
+    boot := before.boot
+    context := before.context
+    base := before.base
+    native := before.native
+    source := before.source
+    originalActions := before.originalActions
+    originalReceipts := before.originalReceipts
+    connection := before.connection
+    options := before.options
+    optionBytes := before.optionBytes
+    optionsDigest := before.optionsDigest
+    credential := before.credential
+    find := before.find
+    getSession := before.getSession
+    getEntry := before.getEntry
+    stateRead := before.stateRead
+    isCurrent := before.isCurrent
+    nonterminal := before.nonterminal
+    noResolution := before.noResolution
+    unload := before.unload
+    bootObservation := before.bootObservation
+    activeObservation := before.activeObservation
+    bootMatch := before.bootMatch
+    localBinding := before.localBinding
+    originRead := before.originRead
+    cloneOrigin := before.cloneOrigin
+    cloneUnload := before.cloneUnload
+    contextRead := before.contextRead
+    baseRead := before.baseRead
+    nativePresent := before.nativePresent
+    completedOriginal := before.completedOriginal
+    historicalRunning := before.historicalRunning
+    historicalMatch := before.historicalMatch
+    live := before.live
+    sourceRead := before.sourceRead
+    sameBoot := before.sameBoot
+    sameBootText := before.sameBootText
+    nonzeroPid := before.nonzeroPid
+    nonzeroTicks := before.nonzeroTicks
+    startupRead := before.startupRead
+    sameTransaction := before.sameTransaction
+    optionsRead := before.optionsRead
+    credentialRead := before.credentialRead
+    sameGeneration := before.sameGeneration
+    cloneNode := before.cloneNode
+    cloneRegistration := before.cloneRegistration
+    cloneSource := before.cloneSource
+    encodeOptions := before.encodeOptions
+    digestOptions := before.digestOptions
+    actionIdentities := identities
+    receiptDigests := digests
+    collectActions := actions
+    collectReceipts := receipts
+    actionsFull := full }
+
+theorem erase_attach {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (before : BeforeCollections host serde tx ns intent now input)
+    (identities : alloc.vec.Vec Action) (digests : alloc.vec.Vec Binding)
+    (actions : ParentCalls.originalActionIdentities before.originalActions.deref = .ok identities)
+    (receipts : ParentCalls.originalReceiptDigests before.originalReceipts.deref = .ok digests)
+    (full : identities.val = before.originalActions.val.map (·.identity)) :
+    eraseFirstRead (attachCollections before identities digests actions receipts full) = before := by
+  cases before
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.erase_attach

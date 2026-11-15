@@ -1,0 +1,184 @@
+import CollectionCompose
+import ContinuedCollectionCompose
+import QuestionErrors
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.UnloadParentLink.Continuation
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+
+section
+variable [Representations] [ParentCalls]
+
+def allIdentities (actions : Actions) : alloc.vec.Vec Action :=
+  alloc.vec.Vec.from (actions.val.map (·.identity))
+    (by simpa only [List.length_map] using actions.property)
+
+def allReceiptDigests (digest : Slice U8 → Binding) (receipts : Receipts) : alloc.vec.Vec Binding :=
+  alloc.vec.Vec.from (receipts.val.map (fun raw => digest raw.deref))
+    (by simpa only [List.length_map] using receipts.property)
+
+def firstAnchor (digest : Slice U8 → Binding) {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (before : BeforeCollections host serde tx ns intent now input) : Anchor :=
+  anchorFor intent before.originEntry.intent before.localValue before.native input.inbox before.boot
+    before.source before.optionsDigest before.credential
+    (allIdentities before.originalActions) (allReceiptDigests digest before.originalReceipts)
+
+def continuedAnchor (digest : Slice U8 → Binding) {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (before : BeforeContinuedCollections host serde tx ns intent now input) : Anchor :=
+  { anchorFor intent before.originEntry.intent before.localValue before.native input.inbox before.boot
+      before.source before.optionsDigest before.credential
+      (allIdentities before.expandedActions) (allReceiptDigests digest before.expandedReceipts) with
+    continued_from := some before.continuedIdentity }
+
+theorem first_anchor_complete (digest : Slice U8 → Binding) {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input)
+    (actions : reads.actionIdentities.val = reads.originalActions.val.map (·.identity))
+    (receipts : reads.receiptDigests.val = reads.originalReceipts.val.map
+      (fun raw => digest raw.deref)) :
+    reads.expected = firstAnchor digest (eraseFirstRead reads) := by
+  have identities : reads.actionIdentities = allIdentities reads.originalActions := by
+    apply alloc.vec.Vec.ext
+    simpa only [allIdentities, alloc.vec.Vec.from_val] using actions
+  have digests : reads.receiptDigests = allReceiptDigests digest reads.originalReceipts := by
+    apply alloc.vec.Vec.ext
+    simpa only [allReceiptDigests, alloc.vec.Vec.from_val] using receipts
+  change anchorFor intent reads.originEntry.intent reads.localValue reads.native input.inbox reads.boot
+    reads.source reads.optionsDigest reads.credential reads.actionIdentities reads.receiptDigests =
+    anchorFor intent reads.originEntry.intent reads.localValue reads.native input.inbox reads.boot
+      reads.source reads.optionsDigest reads.credential
+      (allIdentities reads.originalActions) (allReceiptDigests digest reads.originalReceipts)
+  rw [identities, digests]
+
+theorem continued_anchor_complete (digest : Slice U8 → Binding) {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : ContinuedRead host serde tx ns intent now input)
+    (actions : reads.actionIdentities.val = reads.expandedActions.val.map (·.identity))
+    (receipts : reads.receiptDigests.val = reads.expandedReceipts.val.map
+      (fun raw => digest raw.deref)) :
+    reads.expected = continuedAnchor digest (eraseContinuedRead reads) := by
+  have identities : reads.actionIdentities = allIdentities reads.expandedActions := by
+    apply alloc.vec.Vec.ext
+    simpa only [allIdentities, alloc.vec.Vec.from_val] using actions
+  have digests : reads.receiptDigests = allReceiptDigests digest reads.expandedReceipts := by
+    apply alloc.vec.Vec.ext
+    simpa only [allReceiptDigests, alloc.vec.Vec.from_val] using receipts
+  simp only [ContinuedRead.expected, continuedAnchor, eraseContinuedRead, identities, digests]
+
+end
+
+section
+variable (encoding : SandproofCreateOptionsEncoded.Representations)
+variable (base : SandproofUnloadFirstObservation.Representations)
+variable (options : SandproofUnloadOptionsRead.Representations)
+variable (startup : SandproofUnloadStartupJoint.Representations)
+
+theorem installed_anchor_json_error_skips_digest (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ (anchor : Anchor) (limits : Limits) (error : serde_json.error.Error) (journal : JournalError),
+      ParentCalls.encodeCompleteSourceAnchor anchor = .ok (.Err error) →
+      ParentCalls.journalFromJsonError error = .ok journal →
+      ∀ digest,
+        letI : ParentCalls := { installCollections encoding base options startup parent with
+          digestCompleteBytes := digest }
+        question anchor limits = .ok (.Err journal) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro anchor limits error journal failed converted
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.anchor_json_error_skips_digest
+    anchor limits error journal failed converted
+
+theorem installed_first_anchor_json_error (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (before : BeforeCollections host serde tx ns intent now input),
+      (∀ raw ∈ before.originalReceipts.val, raw.deref.val.length < 2^61) →
+      ∀ (error : serde_json.error.Error) (journal : JournalError),
+        ParentCalls.encodeCompleteSourceAnchor (firstAnchor referenceOutput before) = .ok (.Err error) →
+        ParentCalls.journalFromJsonError error = .ok journal →
+        controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+          .ok (.Err journal) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input before normal error journal failed converted
+  obtain ⟨reads, erased, actions, receipts⟩ :=
+    complete_first_read encoding base options startup parent before normal
+  have actionsFull : reads.actionIdentities.val = reads.originalActions.val.map (·.identity) := by
+    have original := congrArg (fun value => value.originalActions) erased
+    change reads.originalActions = before.originalActions at original
+    simpa only [original] using actions
+  have receiptsFull : reads.receiptDigests.val = reads.originalReceipts.val.map
+      (fun raw => referenceOutput raw.deref) := by
+    have original := congrArg (fun value => value.originalReceipts) erased
+    change reads.originalReceipts = before.originalReceipts at original
+    simpa only [original] using receipts
+  have exactAnchor := first_anchor_complete referenceOutput reads actionsFull receiptsFull
+  rw [erased] at exactAnchor
+  apply SandboxModel.Stage1Protocol.UnloadParentLink.Errors.actual_first_anchor_json_error
+    reads error journal
+  · rw [exactAnchor]
+    exact failed
+  · exact converted
+
+theorem installed_continued_anchor_json_error (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (before : BeforeContinuedCollections host serde tx ns intent now input),
+      (∀ raw ∈ before.expandedReceipts.val, raw.deref.val.length < 2^61) →
+      ∀ (error : serde_json.error.Error) (journal : JournalError),
+        ParentCalls.encodeCompleteSourceAnchor (continuedAnchor referenceOutput before) = .ok (.Err error) →
+        ParentCalls.journalFromJsonError error = .ok journal →
+        controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+          .ok (.Err journal) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input before normal error journal failed converted
+  obtain ⟨reads, erased, actions, receipts⟩ :=
+    complete_continued_read encoding base options startup parent before normal
+  have actionsFull : reads.actionIdentities.val = reads.expandedActions.val.map (·.identity) := by
+    have original := congrArg (fun value => value.expandedActions) erased
+    change reads.expandedActions = before.expandedActions at original
+    simpa only [original] using actions
+  have receiptsFull : reads.receiptDigests.val = reads.expandedReceipts.val.map
+      (fun raw => referenceOutput raw.deref) := by
+    have original := congrArg (fun value => value.expandedReceipts) erased
+    change reads.expandedReceipts = before.expandedReceipts at original
+    simpa only [original] using receipts
+  have exactAnchor := continued_anchor_complete referenceOutput reads actionsFull receiptsFull
+  rw [erased] at exactAnchor
+  apply SandboxModel.Stage1Protocol.UnloadParentLink.Errors.actual_continued_anchor_json_error
+    reads error journal
+  · rw [exactAnchor]
+    exact failed
+  · exact converted
+
+end
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.first_anchor_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.continued_anchor_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_anchor_json_error_skips_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_first_anchor_json_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_continued_anchor_json_error

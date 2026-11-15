@@ -1,0 +1,639 @@
+import CollectionInstall
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+
+theorem installed_base_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Selected host serde tx ns intent now input)
+      (error : JournalError)
+      (_ : ParentCalls.readBaseSnapshot tx ns input.world reads.originEntry.intent reads.context = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input error := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.base_error_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_source_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstBase host serde tx ns intent now input)
+      (error : JournalError)
+      (_ : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input error := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_error_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_startup_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstSource host serde tx ns intent now input)
+      (error : JournalError)
+      (_ : ParentCalls.readOriginalStartupRecords host serde tx ns input.world reads.localValue = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input error := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.startup_error_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_options_error_maps_to_corrupt_and_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Startup host serde tx ns intent now input)
+      (error : host_contract.AdmissionError)
+      (_ : ParentCalls.readCreateOptions reads.connection ns reads.localValue.sandbox = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.options_error_maps_to_corrupt_and_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_credential_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Options host serde tx ns intent now input)
+      (error : JournalError)
+      (_ : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input error := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_error_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_lookup_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (error : JournalError)
+      (_ : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input (error) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.lookup_error_skips_question (error := error) (failed := failed)
+
+theorem installed_lookup_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (_ : ParentCalls.inboxFindCompleteRequest input.inbox intent = .ok (.Ok none)),
+      NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.lookup_absent_skips_question (missing := missing)
+
+theorem installed_noncurrent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Found host serde tx ns intent now input)
+      (_ : reads.state.current = false),
+      NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads notCurrent
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.noncurrent_skips_question (reads := reads) (notCurrent := notCurrent)
+
+theorem installed_terminal_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Found host serde tx ns intent now input)
+      (_ : reads.state.current = true)
+      (_ : reads.state.terminal = true),
+      NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads current terminal
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.terminal_skips_question (reads := reads) (current := current) (terminal := terminal)
+
+theorem installed_missing_native_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Selected host serde tx ns intent now input)
+      (ready : Ready)
+      (_ : ParentCalls.readBaseSnapshot tx ns input.world reads.originEntry.intent reads.context = .ok (.Ok ready))
+      (_ : ready.view.native = none),
+      NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads ready base missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.missing_native_skips_question (reads := reads) (ready := ready) (base := base) (missing := missing)
+
+theorem installed_missing_history_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : NativeRead host serde tx ns intent now input)
+      (_ : ParentCalls.hasCompletedOriginalExecution reads.native reads.localValue = .ok true)
+      (_ : reads.base.view.historical_result = none),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads completed missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.missing_history_skips_question (reads := reads) (completed := completed) (missing := missing)
+
+theorem installed_live_rejection_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : BeforeLive host serde tx ns intent now input)
+      (_ : ParentCalls.checkLiveNative reads.native reads.localValue intent.accepted_version reads.session.current_version now = .ok false),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads rejected
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.live_rejection_skips_question (reads := reads) (rejected := rejected)
+
+theorem installed_continued_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Continued host serde tx ns intent now input)
+      (error : JournalError)
+      (_ : ParentCalls.readContinuedRecords host serde reads.connection input.world ns reads.localValue reads.native = .ok (.Err error)),
+      NoQuestion host serde tx ns intent now input (error) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error failed
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.continued_error_skips_question (reads := reads) (error := error) (failed := failed)
+
+theorem installed_continued_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Continued host serde tx ns intent now input)
+      (_ : ParentCalls.readContinuedRecords host serde reads.connection input.world ns reads.localValue reads.native = .ok (.Ok none)),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.continued_absent_skips_question (reads := reads) (missing := missing)
+
+theorem installed_source_boot_mismatch_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstBase host serde tx ns intent now input)
+      (source : Process)
+      (_ : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source))
+      (_ : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok false),
+      NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads source loaded different
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_boot_mismatch_skips_question (reads := reads) (source := source) (loaded := loaded) (different := different)
+
+theorem installed_source_zero_pid_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstBase host serde tx ns intent now input)
+      (source : Process)
+      (_ : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source))
+      (_ : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok true)
+      (_ : source.pid = 0#u32),
+      NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads source loaded sameBoot zero
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_zero_pid_skips_question (reads := reads) (source := source) (loaded := loaded) (sameBoot := sameBoot) (zero := zero)
+
+theorem installed_source_zero_ticks_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstBase host serde tx ns intent now input)
+      (source : Process)
+      (_ : ParentCalls.readOriginalSource host serde tx ns input.world reads.localValue.sandbox = .ok (.Ok source))
+      (_ : ParentCalls.equalBootText source.boot_id reads.boot.registration.boot_id = .ok true)
+      (_ : source.pid ≠ 0#u32)
+      (_ : source.start_time_ticks = 0#u64),
+      NoQuestion host serde tx ns intent now input (JournalError.InvalidHostEvidence) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads source loaded sameBoot pid zero
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.source_zero_ticks_skips_question (reads := reads) (source := source) (loaded := loaded) (sameBoot := sameBoot) (pid := pid) (zero := zero)
+
+theorem installed_credential_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Options host serde tx ns intent now input)
+      (_ : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Ok none)),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_absent_skips_question (reads := reads) (missing := missing)
+
+theorem installed_credential_generation_mismatch_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Options host serde tx ns intent now input)
+      (credential : Credential)
+      (_ : ParentCalls.readCredential reads.connection input.world ns reads.localValue.sandbox true = .ok (.Ok (some credential)))
+      (_ : credential.1 ≠ reads.native.generation),
+      NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads credential loaded different
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.credential_generation_mismatch_skips_question (reads := reads) (credential := credential) (loaded := loaded) (different := different)
+
+theorem installed_resolved_entry_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Found host serde tx ns intent now input)
+      (entry : Entry)
+      (_ : reads.state.current = true)
+      (_ : reads.state.terminal = false)
+      (_ : reads.session.entries.val[reads.e.val]? = some entry)
+      (_ : entry.unload_resolution.isSome = true),
+      NoQuestion host serde tx ns intent now input (JournalError.Conflict) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads entry current nonterminal indexed resolved
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.resolved_entry_skips_question (reads := reads) (entry := entry) (current := current) (nonterminal := nonterminal) (indexed := indexed) (resolved := resolved)
+
+theorem installed_bootstrap_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (_ : EntryReady host serde tx ns intent now input)
+      (_ : input.inbox.host_epoch_observation = none),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.bootstrap_absent_skips_question (reads := reads) (missing := missing)
+
+theorem installed_active_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (_ : EntryReady host serde tx ns intent now input)
+      (boot : HostEpoch)
+      (_ : input.inbox.host_epoch_observation = some boot)
+      (_ : input.active = none),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads boot observed missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.active_absent_skips_question (reads := reads) (boot := boot) (observed := observed) (missing := missing)
+
+theorem installed_active_mismatch_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (_ : EntryReady host serde tx ns intent now input)
+      (boot active : HostEpoch)
+      (_ : input.inbox.host_epoch_observation = some boot)
+      (_ : input.active = some active)
+      (_ : ParentCalls.equalHostObservation active boot = .ok false),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads boot active observed present different
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.active_mismatch_skips_question (reads := reads) (boot := boot) (active := active) (observed := observed) (present := present) (different := different)
+
+theorem installed_local_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : BootReady host serde tx ns intent now input)
+      (_ : reads.state.«local» = none),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.local_absent_skips_question (reads := reads) (missing := missing)
+
+theorem installed_execution_origin_absent_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : BootReady host serde tx ns intent now input)
+      (localValue : Local)
+      (_ : reads.state.«local» = some localValue)
+      (_ : ParentCalls.sessionExecutionOrigin reads.session = .ok none),
+      NoQuestion host serde tx ns intent now input (JournalError.CorruptStore) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads localValue localPresent missing
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.execution_origin_absent_skips_question (reads := reads) (localValue := localValue) (localPresent := localPresent) (missing := missing)
+
+theorem installed_option_json_error_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : BeforeEncoding host serde tx ns intent now input)
+      (error : serde_json.error.Error)
+      (journal : JournalError)
+      (_ : ParentCalls.encodeCreateOptions reads.options = .ok (.Err error))
+      (_ : ParentCalls.journalFromJsonError error = .ok journal),
+      NoQuestion host serde tx ns intent now input journal := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads error journal failed converted
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.option_json_error_skips_question (reads := reads) (error := error) (journal := journal) (failed := failed) (converted := converted)
+
+theorem installed_mismatched_history_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : NativeRead host serde tx ns intent now input)
+      (_ : ParentCalls.hasCompletedOriginalExecution reads.native reads.localValue = .ok true)
+      (previous : sandbox_controller_core.model.OperationResult)
+      (_ : reads.base.view.historical_result = some previous)
+      (_ : ParentCalls.equalOperationResult previous (.Running reads.native.generation) = .ok false),
+      NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads completed previous history rejected
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.mismatched_history_skips_question (reads := reads) (completed := completed) (previous := previous) (history := history) (rejected := rejected)
+
+theorem installed_non_unload_skips_question
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (parent : CallsAt encoding base options startup) :
+    letI : Representations := parentView encoding base options startup
+    letI : ParentCalls := installCollections encoding base options startup parent
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : Found host serde tx ns intent now input)
+      (entry : Entry)
+      (_ : reads.state.current = true)
+      (_ : reads.state.terminal = false)
+      (_ : reads.session.entries.val[reads.e.val]? = some entry)
+      (_ : ∀ source capture, intent.request.operation ≠ .Unload source capture),
+      NoQuestion host serde tx ns intent now input JournalError.Conflict := by
+  letI : Representations := parentView encoding base options startup
+  letI : ParentCalls := installCollections encoding base options startup parent
+  intro E host serde tx ns intent now input reads entry current terminal getEntry notUnload
+  exact SandboxModel.Stage1Protocol.UnloadParentLink.Errors.non_unload_skips_question (reads := reads) (entry := entry) (current := current) (terminal := terminal) (getEntry := getEntry) (notUnload := notUnload)
+
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_base_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_source_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_startup_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_options_error_maps_to_corrupt_and_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_credential_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_lookup_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_lookup_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_noncurrent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_terminal_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_missing_native_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_missing_history_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_live_rejection_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_continued_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_continued_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_source_boot_mismatch_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_source_zero_pid_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_source_zero_ticks_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_credential_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_credential_generation_mismatch_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_resolved_entry_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_bootstrap_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_active_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_active_mismatch_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_local_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_execution_origin_absent_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_option_json_error_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_mismatched_history_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.installed_non_unload_skips_question

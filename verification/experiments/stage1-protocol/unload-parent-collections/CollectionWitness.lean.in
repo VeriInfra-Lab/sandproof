@@ -1,0 +1,27 @@
+import CollectionContract
+import Collections
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandproofUnloadFirstCollections
+
+theorem actual_satisfies_same_full_contract : CompleteIdentityContract := by
+  intro values
+  exact SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_action_identities_complete values
+
+theorem nonempty_complete_identity_witness
+    (action : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    ∃ output,
+      controller.lifecycle_inbox.source_work.snapshot.original_action_identities
+        (Slice.from [action] (by simp; scalar_tac)) = .ok output ∧
+      output.val = [action.identity] := by
+  obtain ⟨output, returned, complete⟩ := WP.spec_imp_exists
+    (actual_satisfies_same_full_contract (Slice.from [action] (by simp; scalar_tac)))
+  refine ⟨output, returned, ?_⟩
+  change output.val = (Slice.from [action] (by simp; scalar_tac)).val.map (·.identity) at complete
+  simpa only [Slice.from_val, List.map_cons, List.map_nil] using complete
+
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.actual_satisfies_same_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.nonempty_complete_identity_witness
