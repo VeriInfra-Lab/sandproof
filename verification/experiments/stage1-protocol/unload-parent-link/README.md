@@ -45,6 +45,34 @@ integration `c265145f5614535c068c464bc37b6162edcdc45c`，复用 #768、#770–#7
 单独登记；生成函数体不编辑。`LiveDiscriminants` 使用固定后端的原 helper 生成定义，
 仅给实例明确命名，解决多个生成视图的全局辅助名冲突，不改变判别值或工具。
 
+### 手写证明警告的组合视图
+
+`views.json` 对十份上游手写适配／证明应用精确、可逆的改写：去掉未使用的 simp
+参数，单分支战术使用顺序连接，非依赖的 forall 前提只匿名化绑定名，三个私有辅助
+引理省去未用的 section 参数。公开 `firstEntryOrdered` 显式保留原 Operations 字典
+参数。原前提、顺序和结论没有删除；原手写来源及其冻结保持，生成函数体不编辑。
+
+这份组合视图将原 72 条诊断减少 68 条。四个外部绑定的固定 Rust 名称 `__bind_in`
+仍触发原命名风格警告；不改外部符号、不关闭 linter。其它上游包仍保留自己的原输入
+和验收范围，不能据此声称整库已无警告或公共零警告验收完成。
+
+`check_warnings.py` 从原服务读取登记的 86 个声明及公开扫描辅助引理的完整类型，
+仅擦除绑定名和 Expr metadata 后比较；它不展开／替换业务规范。比较入口要求完整
+279 文件诊断、原日志摘要、精确源闭包、十个手写模块差异以及四条原外部名称警告，
+并核对类型记录确由原服务输出。它不接受旧 72 警告报告充当本候选，也不签发普通、
+原生或公共证明封口。先各自 materialize/build 父 #779 和当前项目，再执行：
+
+```sh
+package=verification/experiments/stage1-protocol/unload-parent-link
+python3 "$package/check_warnings.py" snapshot --project <父项目> \
+  --output <新父类型证据目录> --lock "$SANDPROOF_LOCK_FILE"
+python3 "$package/check_warnings.py" snapshot --project <当前项目> \
+  --output <新当前类型证据目录> --lock "$SANDPROOF_LOCK_FILE"
+python3 "$package/check_warnings.py" compare --project <当前项目> \
+  --diagnostics <当前完整诊断目录> --before <父类型证据目录>/signatures.json \
+  --after <当前类型证据目录>/signatures.json --output <新对照目录>
+```
+
 ## 依赖与范围
 
 依赖只采用[逐符号合同](../../../../docs/formal/dependencies.md)及
