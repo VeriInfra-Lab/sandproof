@@ -1,0 +1,47 @@
+import CollectionContract
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink.Counter
+open SandproofUnloadFirstCollections
+abbrev WorkAction := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+
+def singleton (action : WorkAction) : Slice WorkAction :=
+  .from [action] (by simp; scalar_tac)
+
+def observed (action : WorkAction) : alloc.vec.Vec sandproof_protocol.ActionIdentity :=
+  alloc.vec.Vec.from [{ action.identity with attempt := 0#u64 }] (by simp; scalar_tac)
+
+theorem actual_attempt_zero (action : WorkAction) :
+    controller.lifecycle_inbox.source_work.snapshot.original_action_identities (singleton action) =
+      .ok (observed action) := by
+  have capacity : 1 ≤ U32.max ∨ 1 ≤ Usize.max := by
+    left
+    scalar_tac
+  have increment : (0#usize + 1#usize : Result Usize) = .ok 1#usize := by
+    obtain ⟨value, returned, exactValue⟩ := WP.spec_imp_exists
+      (Usize.add_spec (x := 0#usize) (y := 1#usize) (by scalar_tac))
+    have one : value = 1#usize := by scalar_tac
+    simpa only [one] using returned
+  unfold controller.lifecycle_inbox.source_work.snapshot.original_action_identities
+    controller.lifecycle_inbox.source_work.snapshot.original_action_identities_loop
+  unfold loop
+  simp only [controller.lifecycle_inbox.source_work.snapshot.original_action_identities_loop.body]
+  simp [singleton, Slice.len, Slice.index_usize, alloc.vec.Vec.new,
+    alloc.vec.Vec.push, capacity, increment, sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone]
+  unfold loop
+  simp [observed]
+
+theorem violates_same_full_contract (action : WorkAction) (nonzero : action.identity.attempt ≠ 0#u64) :
+    ¬ CompleteIdentityContract := by
+  intro contract
+  have post := contract (singleton action)
+  rw [actual_attempt_zero] at post
+  simp only [WP.spec_ok] at post
+  have omitted := congrArg (fun values => (values.head?).map (·.attempt)) post
+  simp [observed, singleton] at omitted
+  exact nonzero omitted.symm
+
+end SandboxModel.Stage1Protocol.UnloadCollectionLink.Counter
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.Counter.actual_attempt_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.Counter.violates_same_full_contract

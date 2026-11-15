@@ -1,0 +1,222 @@
+import UnloadParentLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadCollectionLink
+open SandboxModel.Stage1Protocol.UnloadParentLink
+
+@[reducible] def alignedStartup (base : SandproofUnloadStartupJoint.Representations) : SandproofUnloadStartupJoint.Representations :=
+  { base with
+    ty12 := SandproofSourceQuestionRust.sandbox_controller_core.model.NetworkPolicy
+    ty13 := SandproofSourceQuestionRust.sandbox_controller_core.model.RestoreSource
+    ty14 := SandproofSourceQuestionRust.sandbox_controller_core.model.SnapshotManifestRef
+    ty15 := SandproofSourceQuestionRust.sandbox_controller_core.model.FilePolicyRef
+    ty16 := SandproofSourceQuestionRust.sandbox_controller_core.ids.SnapshotId
+    ty17 := SandproofSourceQuestionRust.sandbox_controller_core.ids.FsId }
+
+abbrev SCommand (base : SandproofUnloadStartupJoint.Representations) :=
+  @SandproofUnloadStartupJoint.sandbox_controller_core.model.Command (startupRepresentations (alignedStartup base))
+abbrev SEffect (base : SandproofUnloadStartupJoint.Representations) :=
+  @SandproofUnloadStartupJoint.sandbox_controller_core.model.EffectId (startupRepresentations (alignedStartup base))
+abbrev QCommand := SandproofSourceQuestionRust.sandbox_controller_core.model.Command
+abbrev QEffect := SandproofSourceQuestionRust.sandbox_controller_core.model.EffectId
+
+def toCommand (base : SandproofUnloadStartupJoint.Representations) : SCommand base → QCommand :=
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  fun
+  | .InstallFence sandbox epoch terminal => .InstallFence sandbox epoch terminal
+  | .PrepareVm sandbox epoch generation vm slot restore => .PrepareVm sandbox epoch generation vm slot restore
+  | .ConfigureNetwork sandbox epoch generation vm slot policy => .ConfigureNetwork sandbox epoch generation vm slot policy
+  | .ActivateVm sandbox epoch generation vm => .ActivateVm sandbox epoch generation vm
+  | .FreezeVm sandbox epoch generation vm => .FreezeVm sandbox epoch generation vm
+  | .ApplyFilePolicy sandbox epoch generation fs policy => .ApplyFilePolicy sandbox epoch generation fs policy
+  | .SealSnapshot sandbox epoch generation vm fs snapshot manifest => .SealSnapshot sandbox epoch generation vm fs snapshot manifest
+  | .CommitSnapshot sandbox epoch generation snapshot manifest => .CommitSnapshot sandbox epoch generation snapshot manifest
+  | .StopVm sandbox epoch generation vm => .StopVm sandbox epoch generation vm
+  | .AbortPrepare sandbox epoch generation vm slot => .AbortPrepare sandbox epoch generation vm slot
+  | .CleanupVm sandbox epoch vm => .CleanupVm sandbox epoch vm
+  | .CleanupSlot sandbox epoch slot => .CleanupSlot sandbox epoch slot
+
+def fromCommand (base : SandproofUnloadStartupJoint.Representations) : QCommand → SCommand base :=
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  fun
+  | .InstallFence sandbox epoch terminal => .InstallFence sandbox epoch terminal
+  | .PrepareVm sandbox epoch generation vm slot restore => .PrepareVm sandbox epoch generation vm slot restore
+  | .ConfigureNetwork sandbox epoch generation vm slot policy => .ConfigureNetwork sandbox epoch generation vm slot policy
+  | .ActivateVm sandbox epoch generation vm => .ActivateVm sandbox epoch generation vm
+  | .FreezeVm sandbox epoch generation vm => .FreezeVm sandbox epoch generation vm
+  | .ApplyFilePolicy sandbox epoch generation fs policy => .ApplyFilePolicy sandbox epoch generation fs policy
+  | .SealSnapshot sandbox epoch generation vm fs snapshot manifest => .SealSnapshot sandbox epoch generation vm fs snapshot manifest
+  | .CommitSnapshot sandbox epoch generation snapshot manifest => .CommitSnapshot sandbox epoch generation snapshot manifest
+  | .StopVm sandbox epoch generation vm => .StopVm sandbox epoch generation vm
+  | .AbortPrepare sandbox epoch generation vm slot => .AbortPrepare sandbox epoch generation vm slot
+  | .CleanupVm sandbox epoch vm => .CleanupVm sandbox epoch vm
+  | .CleanupSlot sandbox epoch slot => .CleanupSlot sandbox epoch slot
+
+@[simp] theorem command_from_to (base : SandproofUnloadStartupJoint.Representations) (value : SCommand base) :
+    fromCommand base (toCommand base value) = value := by
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  cases value <;> rfl
+
+@[simp] theorem command_to_from (base : SandproofUnloadStartupJoint.Representations) (value : QCommand) :
+    toCommand base (fromCommand base value) = value := by
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  cases value <;> rfl
+
+def toEffect (base : SandproofUnloadStartupJoint.Representations) (value : SEffect base) : QEffect :=
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  { logical := { command := toCommand base value.logical.command }, attempt := value.attempt }
+
+def fromEffect (base : SandproofUnloadStartupJoint.Representations) (value : QEffect) : SEffect base :=
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  { logical := { command := fromCommand base value.logical.command }, attempt := value.attempt }
+
+@[simp] theorem effect_from_to (base : SandproofUnloadStartupJoint.Representations) (value : SEffect base) :
+    fromEffect base (toEffect base value) = value := by
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  cases value with
+  | mk logical attempt =>
+    cases logical
+    simp only [toEffect, fromEffect, command_from_to]
+
+@[simp] theorem effect_to_from (base : SandproofUnloadStartupJoint.Representations) (value : QEffect) :
+    toEffect base (fromEffect base value) = value := by
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup base)
+  cases value with
+  | mk logical attempt =>
+    cases logical
+    simp only [toEffect, fromEffect, command_to_from]
+
+def toKind : SandproofUnloadStartupJoint.sandproof_protocol.ResourceKind → SandproofSourceQuestionRust.sandproof_protocol.ResourceKind
+  | .Sandbox => .Sandbox
+  | .Vm => .Vm
+  | .Workspace => .Workspace
+  | .Snapshot => .Snapshot
+  | .NetworkSlot => .NetworkSlot
+
+def fromKind : SandproofSourceQuestionRust.sandproof_protocol.ResourceKind → SandproofUnloadStartupJoint.sandproof_protocol.ResourceKind
+  | .Sandbox => .Sandbox
+  | .Vm => .Vm
+  | .Workspace => .Workspace
+  | .Snapshot => .Snapshot
+  | .NetworkSlot => .NetworkSlot
+
+@[simp] theorem kind_from_to (value : SandproofUnloadStartupJoint.sandproof_protocol.ResourceKind) :
+    fromKind (toKind value) = value := by
+  cases value <;> rfl
+
+@[simp] theorem kind_to_from (value : SandproofSourceQuestionRust.sandproof_protocol.ResourceKind) :
+    toKind (fromKind value) = value := by
+  cases value <;> rfl
+
+def toResource (value : SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef) : SandproofSourceQuestionRust.sandproof_protocol.ResourceRef :=
+  { kind := toKind value.kind, id := value.id }
+
+def fromResource (value : SandproofSourceQuestionRust.sandproof_protocol.ResourceRef) : SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef :=
+  { kind := fromKind value.kind, id := value.id }
+
+@[simp] theorem resource_from_to (value : SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef) :
+    fromResource (toResource value) = value := by
+  cases value
+  simp only [toResource, fromResource, kind_from_to]
+
+@[simp] theorem resource_to_from (value : SandproofSourceQuestionRust.sandproof_protocol.ResourceRef) :
+    toResource (fromResource value) = value := by
+  cases value
+  simp only [toResource, fromResource, kind_to_from]
+
+section
+variable (encoding : SandproofCreateOptionsEncoded.Representations)
+variable (base : SandproofUnloadFirstObservation.Representations) (options : SandproofUnloadOptionsRead.Representations)
+variable (startup : SandproofUnloadStartupJoint.Representations)
+
+@[reducible] def parentView : SandproofUnloadFirstObservation.Representations :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  parentRepresentations (startupParentBase base (alignedStartup startup)) options
+
+abbrev PIdentity := @SandproofUnloadFirstObservation.sandproof_protocol.ActionIdentity (parentView encoding base options startup)
+abbrev PAction := @SandproofUnloadFirstObservation.sandproof_protocol.WorkAction (parentView encoding base options startup)
+  (@SandproofUnloadFirstObservation.sandbox_controller_core.model.EffectId (parentView encoding base options startup))
+
+def toIdentity (value : PIdentity encoding base options startup) : SandproofUnloadFirstCollections.sandproof_protocol.ActionIdentity :=
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  { protocol_version := value.protocol_version
+    owner := value.owner
+    sandbox := value.sandbox
+    operation := value.operation
+    epoch := value.epoch
+    generation := value.generation
+    logical_action := value.logical_action
+    attempt := value.attempt
+    resource := toResource value.resource }
+
+def fromIdentity (value : SandproofUnloadFirstCollections.sandproof_protocol.ActionIdentity) : PIdentity encoding base options startup :=
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  { protocol_version := value.protocol_version
+    owner := value.owner
+    sandbox := value.sandbox
+    operation := value.operation
+    epoch := value.epoch
+    generation := value.generation
+    logical_action := value.logical_action
+    attempt := value.attempt
+    resource := fromResource value.resource }
+
+@[simp] theorem identity_from_to (value : PIdentity encoding base options startup) :
+    fromIdentity encoding base options startup (toIdentity encoding base options startup value) = value := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  cases value
+  simp only [toIdentity, fromIdentity, resource_from_to]
+
+@[simp] theorem identity_to_from (value : SandproofUnloadFirstCollections.sandproof_protocol.ActionIdentity) :
+    toIdentity encoding base options startup (fromIdentity encoding base options startup value) = value := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  cases value
+  simp only [toIdentity, fromIdentity, resource_to_from]
+
+def toAction (value : PAction encoding base options startup) :
+    SandproofUnloadFirstCollections.sandproof_protocol.WorkAction QEffect :=
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  { identity := toIdentity encoding base options startup value.identity
+    command := toEffect startup value.command }
+
+def fromAction (value : SandproofUnloadFirstCollections.sandproof_protocol.WorkAction QEffect) :
+    PAction encoding base options startup :=
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  { identity := fromIdentity encoding base options startup value.identity
+    command := fromEffect startup value.command }
+
+@[simp] theorem action_from_to (value : PAction encoding base options startup) :
+    fromAction encoding base options startup (toAction encoding base options startup value) = value := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  cases value
+  simp only [toAction, fromAction, identity_from_to, effect_from_to]
+
+@[simp] theorem action_to_from (value : SandproofUnloadFirstCollections.sandproof_protocol.WorkAction QEffect) :
+    toAction encoding base options startup (fromAction encoding base options startup value) = value := by
+  letI : SandproofUnloadFirstObservation.Representations := parentView encoding base options startup
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations (alignedStartup startup)
+  cases value
+  simp only [toAction, fromAction, identity_to_from, effect_to_from]
+
+end
+end SandboxModel.Stage1Protocol.UnloadCollectionLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.command_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.command_to_from
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.effect_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.effect_to_from
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.kind_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.kind_to_from
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.resource_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.resource_to_from
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.identity_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.identity_to_from
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.action_from_to
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadCollectionLink.action_to_from

@@ -1,0 +1,16 @@
+{
+  "correct": {
+    "translation.json": "5c050ce6db174e8222024335cc9264cf98c23c0802e402f61c22175101c8d852",
+    "SandproofUnloadFirstCollections/FunsExternal_Template.lean": "70da725925fcefb1def80262c13e5280f15c7f2fe897d84074d5e2a1380d0980",
+    "SandproofUnloadFirstCollections/Types.lean": "0430f3aa29609b0fa97d5277afa27a5e63ea9fe73c2f8e2b7cd2d6ab14667814",
+    "SandproofUnloadFirstCollections/Funs.lean": "892d2486b8656f34b49330795119aa38cd269ea263b95532aa1b4a78363467b6",
+    "SandproofUnloadFirstCollections/TypesExternal_Template.lean": "874b1b93e02840d83f625718ca2455487ae6bc09b620b33c1ba2ed683acc0b37"
+  },
+  "attempt-zero": {
+    "translation.json": "26065b5c991c90beda8419410e19dbae7892070342c54aff66b0b9221692567d",
+    "SandproofUnloadFirstCollections/FunsExternal_Template.lean": "70da725925fcefb1def80262c13e5280f15c7f2fe897d84074d5e2a1380d0980",
+    "SandproofUnloadFirstCollections/Types.lean": "0430f3aa29609b0fa97d5277afa27a5e63ea9fe73c2f8e2b7cd2d6ab14667814",
+    "SandproofUnloadFirstCollections/Funs.lean": "2365435eaf32ba6b55da4da8e35b7ec792a52a1efa21742380c39cd45fa55e6f",
+    "SandproofUnloadFirstCollections/TypesExternal_Template.lean": "874b1b93e02840d83f625718ca2455487ae6bc09b620b33c1ba2ed683acc0b37"
+  }
+}
