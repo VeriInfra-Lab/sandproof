@@ -103,6 +103,16 @@ Host 观察回复，同伴先由原 worker 提交 Running，再检查其公开�
 没有推进业务时钟或制造 TTL 到期；Host 物理事实为受控输入，无 KVM/新 Lean 结论，
 也不能把该确定性分支直接认作任何旧计数失败的根因。
 
+[Unloaded 准备夹具](../sandbox-center-service/tests/business_authority/unload_setup.rs)
+仍走原公开 Unload 应用方法，不经过外层 HTTP 路由。正常 Ready 只调用一次；
+仅在返回 Busy 后，读取完整已确认
+CenterState 并断言与原 Running Create 状态相同，才允许用同一 session、完整请求及
+原 200ms 单次预算再准备一次。第二次仍失败就保留失败；OutcomeUnknown 和其它错误
+不补发，确认状态本身未知也停止。这是至多两次的测试准备，不能用于重试未知写入或
+承诺一条请求必然成功。原主体断言和单次期限测试不使用此准备策略。独立组件回归用
+真实 Redis 和受控 Host 检查一次成功、已知 Busy、实际跨期限的迟到 Ready 及未知结果
+停止；不把夹具调整称为旧 CI 超时根因修复或 KVM 验收。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、

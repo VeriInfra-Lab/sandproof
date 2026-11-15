@@ -18,6 +18,9 @@ mod query_confirmation;
 #[path = "lifecycle_decoded_resume.rs"]
 mod decoded_resume_terminal;
 
+#[path = "unload_setup.rs"]
+mod setup;
+
 fn unloaded_facts_mut(observation: &mut UnloadObservation) -> &mut UnloadedFacts {
     match &mut observation.outcome {
         UnloadOutcome::Unloaded { facts } => facts,
@@ -50,8 +53,7 @@ fn accept_unload_after_create(
         sequence: 2.try_into().unwrap(),
         expected_version: 1,
     };
-    app.unload_lifecycle("8", &accepted.session, &request)
-        .unwrap();
+    setup::accept(app, &accepted.session, &request).unwrap();
     let state = app.snapshot().unwrap();
     let record = state
         .lifecycle_session(&"8".try_into().unwrap(), &accepted.session)
