@@ -2,6 +2,25 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 恢复期限补偿关闭未来恢复资格（工程修复，尚未证明）
+
+Refs #14、#641。相对 integration `b60078c288a86a99219a4cd67bf2797dc36997ab`，
+`controller-core/src/transition.rs` 的非 Pause 终止补偿复用原 Kill 的捕获资格撤销逻辑。
+原 Resume 期限补偿不会创建新的 Kill，但进入终止后也必须撤销已有来源的未来恢复资格；
+否则原快照历史检查继续拒绝资源释放，出现原生 Destroyed 而材料使用和公开终止未完成。
+本修改不关闭材料使用登记、不提供物理退出或删除依据、不修改原退休检查；普通 Pause
+失败仍走原保留状态分支。工程正反回归及实机结果以本批 PR 的精确提交为准。
+
+本批不进行抽取或 Lean 验收。旧 `begin_compensation` / `begin_kill` 相关证明保留原适用
+源码，不能直接背书新增资格撤销调用及其与退休检查的组合；后续对应批次须重新核对生成体、
+状态对应和材料责任保留，不能仅更新冻结摘要宣称已证。
+
+同批 `application/coordinator/execution.rs` 的逐轮恢复入口，在原 Stop 观察仍缺失时，
+复用现有 `matches_current_stop` 与 `reclaim_incomplete_stop`：只继续当前 Create/Kill
+终止计划中的同一停止责任，宿主 I/O 在账本锁外；重新观察实际停止结果后才记录回执。
+该接线及锁外身份保持尚未证明，不由旧串行恢复入口的证明或普通测试自动背书。
+未扩展原谓词支持的操作种类；未知 Resume/Pause Stop 的其它交错不因此声称完成。
+
 ## 单机存储第一阶段整合与公共登记
 
 Refs #775、#776、#777、#778、#780、#781。本批功能代码与实机候选

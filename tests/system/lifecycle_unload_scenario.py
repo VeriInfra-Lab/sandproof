@@ -723,12 +723,15 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    prepare_destroy = args.scenario == 'restore-prepare-destroy'
-    prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy')
+    expiry_prepare = args.scenario == 'restore-prepare-expiry'
+    expiry_running = args.scenario == 'restored-running-expiry'
+    expiry_case = expiry_prepare or expiry_running
+    prepare_destroy = args.scenario == 'restore-prepare-destroy' or expiry_prepare
+    prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy') or expiry_prepare
     data_drain = args.scenario == 'data-drain'
     retirement_restart = args.scenario == 'material-retirement-restart'
     retirement_observation = args.scenario == 'normal' or retirement_restart
-    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart):
+    if args.scenario!='normal' and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -744,6 +747,7 @@ def exercise(args):
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
     capture_probe = data_probe = cow_probe = retirement_probe = None
+    expiry_probe = None
     terminal_destroy_done = False
     failed = False
     try:
@@ -755,7 +759,10 @@ def exercise(args):
         client = PublicUnloadScenario(runtime.services.sdk_url, runtime.owner_key,
             runtime.foreign_key, report['registration']['deployment'], deadline)
         report['phase'] = 'public-create'
-        report['create'] = client.create(runtime.create_parameters())
+        parameters = runtime.create_parameters()
+        if expiry_case:
+            parameters['timeout_ms'] = 75000
+        report['create'] = client.create(parameters)
         running = client.wait_running()
         client.assert_owner_isolation()
         report['phase'] = 'public-workload'
@@ -843,7 +850,12 @@ def exercise(args):
                 runtime.arm_restore_gate(client.session,deadline,args.activation_gate_timeout_ms)
             if cycle == 1 and prepare_fault:
                 from lifecycle_unload_capture_faults import CaptureHandoffProbe
-                capture_probe = CaptureHandoffProbe(runtime, client, report['running'],
+                if expiry_prepare:
+                    from lifecycle_unload_expiry import ExpiryPrepareProbe
+                    probe_class = ExpiryPrepareProbe
+                else:
+                    probe_class = CaptureHandoffProbe
+                capture_probe = probe_class(runtime, client, report['running'],
                     'restore-prepare-destroy' if prepare_destroy else 'restore-prepare-receipt')
                 report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
             if retirement_observation:
@@ -858,30 +870,44 @@ def exercise(args):
                 if prepare_destroy:
                     report['phase'] = 'hold-exact-pre-marker-loaded-process'
                     report['prepare_destroy_pause'] = capture_probe.pause_original_prepare(deadline)
-                    report['phase'] = 'public-destroy-while-original-resume-is-unknown'
-                    pending = client.query()
-                    client.check_view(pending, accepted)
-                    assert pending['phase'] == 'resuming', 'pre-marker Prepare unexpectedly became Running'
-                    client.assert_data_closed(); client.assert_previous_tokens_closed()
-                    report['destroy'] = client.destroy(pending)
-                    report['terminal_resume_replays'] = [client.assert_terminal_resume_replay(
-                        original_resume_request, accepted, phase='terminating')]
+                    if not expiry_prepare:
+                        report['phase'] = 'public-destroy-while-original-resume-is-unknown'
+                        pending = client.query()
+                        client.check_view(pending, accepted)
+                        assert pending['phase'] == 'resuming', 'pre-marker Prepare unexpectedly became Running'
+                        client.assert_data_closed(); client.assert_previous_tokens_closed()
+                        report['destroy'] = client.destroy(pending)
+                        report['terminal_resume_replays'] = [client.assert_terminal_resume_replay(
+                            original_resume_request, accepted, phase='terminating')]
                     report['phase'] = 'original-host-terminal-fence-before-process-continue'
                     def observe_original_peer():
+                        if expiry_prepare:
+                            client.assert_data_closed();client.assert_previous_tokens_closed()
                         assert control.query() == control_running, 'other owner lost its original Running observation'
                         return dict(session=control.session, original_public_running_query_completed=True,
                                     scope='one existing peer query while original loaded process is stopped')
-                    report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
-                        report['destroy'], deadline, observe_peer=observe_original_peer)
+                    if expiry_prepare:
+                        report['phase'] = 'background-expiry-while-original-prepare-is-held'
+                        expired = capture_probe.expire(accepted,lifetime,deadline,observe_peer=observe_original_peer)
+                        report['expiry'] = expired['expiry']
+                        report['prepare_destroy_recovery'] = expired['recovery']
+                    else:
+                        report['prepare_destroy_recovery'] = capture_probe.recover_after_destroy(
+                            report['destroy'], deadline, observe_peer=observe_original_peer)
                     report['phase'] = 'original-prepared-and-stop-receipts-before-gc'
                     report['prepare_destroy_terminal'] = capture_probe.assert_terminal_before_gc(deadline)
                     report['phase'] = 'public-destroy-cleaned-and-physical-gc'
                     client.assert_data_closed(); client.assert_previous_tokens_closed()
-                    client.wait_cleaned()
+                    if expiry_prepare:
+                        from lifecycle_unload_expiry import wait_expired_cleaned
+                        report['expired_cleaned'] = wait_expired_cleaned(client,deadline)
+                    else:
+                        client.wait_cleaned()
                     report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
-                    client.operation_evidence_completed()
-                    report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
-                        original_resume_request, accepted, phase='cleaned'))
+                    if not expiry_prepare:
+                        client.operation_evidence_completed()
+                        report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
+                            original_resume_request, accepted, phase='cleaned'))
                     assert control.query() == control_running
                     report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
                         control.session, control_physical, deadline)
@@ -889,7 +915,8 @@ def exercise(args):
                     report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
                     control.operation_evidence_completed()
                     report['cycles'].append(dict(cycle=cycle, resume=accepted,
-                        destroyed_before_public_running=True, original_prepare_then_stop_observed=True))
+                        destroyed_before_public_running=True, original_prepare_then_stop_observed=True,
+                        automatic_expiry=expiry_prepare))
                     terminal_destroy_done = True
                     break
                 report['capture_handoff_recovery'] = capture_probe.finish(deadline)
@@ -953,6 +980,28 @@ def exercise(args):
             if cow_receipt is not None:
                 cycle_report['cow_source_after_guest_write'] = cow_receipt
             report['cycles'].append(cycle_report)
+            if expiry_running:
+                from lifecycle_unload_expiry import RunningExpiryProbe, observe_center_expiry, wait_expired_cleaned
+                report['phase'] = 'arm-original-stop-before-expiry'
+                expiry_probe = RunningExpiryProbe(runtime,client,physical_running,accepted,lifetime,deadline)
+                expiry_probe.arm(deadline)
+                report['phase'] = 'expired-live-backing-before-stop'
+                report['expiry_held_material'] = expiry_probe.held_after_expiry(deadline)
+                from lifecycle_unload_runtime import original_process
+                assert original_process(control_physical['source']), 'expiry stopped the other owner VMM'
+                report['expiry_held_material']['other_owner_original_vmm_live'] = True
+                report['expiry'] = observe_center_expiry(runtime,client,accepted,lifetime,deadline,host_delivered=False)
+                expiry_probe.recover(deadline)
+                client.assert_data_closed();client.assert_previous_tokens_closed()
+                report['expired_cleaned'] = wait_expired_cleaned(client,deadline)
+                report['final_resources'] = runtime.destroy_evidence(client.session,deadline)
+                assert control.query() == control_running
+                report['slot_reuse']['occupant_after_expiry'] = runtime.confirm_running(control.session,control_physical,deadline)
+                control.destroy(control_running);control.wait_cleaned()
+                report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session,deadline)
+                control.operation_evidence_completed()
+                terminal_destroy_done = True
+                break
             if cycle==1 and continued_exit:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
@@ -1104,6 +1153,9 @@ def exercise(args):
         report['settlement_timing']=dict(check_seconds=settlement_completed-settlement_started,
             final_destroy_send_to_settled_seconds=settlement_completed-client.timings[-1]['sent_monotonic'],
             completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
+        if expiry_case:
+            del report['settlement_timing']['final_destroy_send_to_settled_seconds']
+            report['settlement_timing']['expiry_observed_to_settled_seconds'] = settlement_completed-report['expiry']['observed_monotonic']
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
             'E2':'same-key barrier duplicate and altered replay observed; expired window not exercised',
@@ -1164,6 +1216,13 @@ def exercise(args):
                 'E12': 'other owner kept its original live candidate across the first owner terminal handoff, then explicit cleanup',
                 'E14': 'original data access and prior execution tokens remained closed during unknown Resume and Destroy',
                 'other_cases': 'one pre-marker cancellation branch; no resumed Running, second Resume, full matrix or formal proof claim',
+            }
+        if expiry_case:
+            report['acceptance_cases'] = {
+                'E15': 'real unchanged deadline, original background internal terminal request, held material/pin before precise Stop, then original product GC and settlement',
+                'E8': 'expiry of the held pre-marker LoadPaused candidate' if expiry_prepare else 'expiry while restored VMM still uses its original backing',
+                'E12': 'other owner remained on its own candidate; both sessions finally reclaimed',
+                'other_cases': 'one selected expiry window; no manual Destroy for expired owner, no clock rewrite, no complete fault matrix or proof',
             }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
@@ -1240,6 +1299,8 @@ def exercise(args):
         finally:
             if capture_probe is not None:
                 capture_probe.close()
+            if expiry_probe is not None:
+                expiry_probe.close()
             if data_probe is not None:
                 data_probe.close()
             runtime.close_restore_gate()
@@ -1258,7 +1319,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart'),default='normal')
+        'material-retirement-restart','restore-prepare-expiry','restored-running-expiry'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

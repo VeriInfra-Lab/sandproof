@@ -579,6 +579,11 @@ class CaptureHandoffProbe:
     def recover_after_destroy(self, accepted, deadline, *, observe_peer):
         """Continue the same stopped process only after actual terminal fencing."""
         self._bind_terminal_acceptance(accepted)
+        self._start_terminal_recovery(deadline)
+        return self._continue_terminal_recovery(deadline, observe_peer=observe_peer)
+
+    def _start_terminal_recovery(self, deadline):
+        """Restart the original manager; the loaded candidate stays stopped."""
         deadline = min(deadline, self.deadline)
         if self._prepare_candidate_state(deadline) != 'T' or self.host.poll() != 86:
             raise ValueError('original exited manager and stopped loaded candidate required')
@@ -589,6 +594,9 @@ class CaptureHandoffProbe:
         if process is self.host or process.pid == self.host.pid:
             raise ValueError('fresh original Host required to receive public Destroy')
         self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
+
+    def _continue_terminal_recovery(self, deadline, *, observe_peer):
+        deadline = min(deadline, self.deadline)
         while True:
             if self._prepare_candidate_state(deadline) != 'T':
                 raise ValueError('candidate was externally continued before exact terminal barrier')

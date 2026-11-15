@@ -438,17 +438,7 @@ pub fn begin_kill(
     epoch: crate::Epoch,
 ) -> World {
     let mut next = world.clone();
-    // Destroy revokes future recovery, including old sources, without
-    // releasing any capture/loader/running-backing material responsibility.
-    for (key, stored) in world.operation_plans.entries() {
-        if key.sandbox == sandbox && stored.capture.is_some() {
-            let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.terminate());
-            }
-            next.operation_plans.put(*key, plan);
-        }
-    }
+    revoke_capture_eligibility(world, &mut next, sandbox);
     let operation = Operation {
         id: operation_id,
         epoch,
@@ -481,6 +471,20 @@ pub fn begin_kill(
         },
     );
     next
+}
+
+// Terminal authority revokes future recovery, including old sources, without
+// releasing capture, loader or running-backing material responsibility.
+fn revoke_capture_eligibility(world: &World, next: &mut World, sandbox: SandboxId) {
+    for (key, stored) in world.operation_plans.entries() {
+        if key.sandbox == sandbox && stored.capture.is_some() {
+            let mut plan = stored.clone();
+            if let Some(capture) = plan.capture {
+                plan.capture = Some(capture.terminate());
+            }
+            next.operation_plans.put(*key, plan);
+        }
+    }
 }
 
 /// Ordinary pause failure must preserve the original live/frozen VM. Only
@@ -521,6 +525,10 @@ pub fn begin_compensation(
         return next;
     }
 
+    // Expired/failed startup uses the original operation's compensation rather
+    // than begin_kill. It must still close future restore eligibility before
+    // terminal history can qualify for runtime release and material GC.
+    revoke_capture_eligibility(world, &mut next, sandbox);
     let mut updated = record.clone();
     updated.phase = Phase::Revoking;
     updated.terminal = true;
