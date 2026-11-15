@@ -80,7 +80,16 @@ impl Engine {
         let _startup = STARTUP.lock().expect("fixture startup lock");
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        let root = tempfile::tempdir().unwrap();
+        // Snapshot fixtures may require loop XFS, but this fsync-backed Redis
+        // fixture does not. Keep its private AOF on the operator-selected disk
+        // without changing the workspace TMPDIR or any request deadline.
+        let root = if let Some(parent) = std::env::var_os("SANDPROOF_REDIS_TEST_TMPDIR") {
+            let parent = std::path::PathBuf::from(parent);
+            assert!(parent.is_absolute(), "Redis fixture parent must be absolute");
+            tempfile::tempdir_in(parent).expect("explicit Redis fixture parent must be usable")
+        } else {
+            tempfile::tempdir().unwrap()
+        };
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(root.path().join("writer")).unwrap();
         fs::set_permissions(
