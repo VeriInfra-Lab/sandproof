@@ -116,8 +116,10 @@ fn capture_dispatch_cut_child() {
     let directory = std::path::PathBuf::from(
         std::env::var_os("SANDPROOF_UNIT_CAPTURE_DISPATCH_MARKERS").unwrap(),
     );
-    pause_action_observation(
-        &action("freeze_vm"),
+    let target = std::env::var("SANDPROOF_UNIT_CAPTURE_DISPATCH_TARGET")
+        .unwrap_or_else(|_| "freeze_vm".to_owned());
+    capture_effect_observation(
+        &action(&target),
         mode == "observe",
         || {
             std::fs::write(
@@ -137,14 +139,8 @@ fn capture_dispatch_cut_child() {
     .unwrap();
 }
 
-#[test]
-fn freeze_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
-    for (mode, selector) in [
-        ("execute", "freeze_vm"),
-        ("observe", "freeze_vm"),
-        ("execute", "freeze_vm-other"),
-        ("execute", "stop_vm"),
-    ] {
+fn assert_capture_dispatch_cut(target: &str, cases: &[(&str, &str)]) {
+    for &(mode, selector) in cases {
         let directory = tempfile::tempdir().unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
@@ -154,13 +150,14 @@ fn freeze_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
                 "--nocapture",
             ])
             .env("SANDPROOF_UNIT_CAPTURE_DISPATCH_MODE", mode)
+            .env("SANDPROOF_UNIT_CAPTURE_DISPATCH_TARGET", target)
             .env("SANDPROOF_UNIT_CAPTURE_DISPATCH_MARKERS", directory.path())
             .env("SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION", selector)
             .env_remove("SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION")
             .env_remove("SANDPROOF_TEST_STOP_GATE")
             .output()
             .unwrap();
-        let cut = cfg!(debug_assertions) && mode == "execute" && selector == "freeze_vm";
+        let cut = cfg!(debug_assertions) && mode == "execute" && selector == target;
         assert_eq!(
             output.status.code(),
             Some(if cut { 87 } else { 0 }),
@@ -173,6 +170,32 @@ fn freeze_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
         );
         assert_eq!(directory.path().join("observe").exists(), mode == "observe");
     }
+}
+
+#[test]
+fn freeze_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
+    assert_capture_dispatch_cut(
+        "freeze_vm",
+        &[
+            ("execute", "freeze_vm"),
+            ("observe", "freeze_vm"),
+            ("execute", "freeze_vm-other"),
+            ("execute", "stop_vm"),
+        ],
+    );
+}
+
+#[test]
+fn unload_stop_dispatch_cut_precedes_effect_and_never_crashes_readonly_recovery() {
+    assert_capture_dispatch_cut(
+        "stop_vm",
+        &[
+            ("execute", "stop_vm"),
+            ("observe", "stop_vm"),
+            ("execute", "stop_vm-other"),
+            ("execute", "freeze_vm"),
+        ],
+    );
 }
 
 #[test]

@@ -731,8 +731,10 @@ def exercise(args):
         'capture-measurement-partial': 'measurement-partial',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
+        'capture-stop-pending': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    stop_pending = args.scenario == 'capture-stop-pending'
     freeze_dispatch_destroy = args.scenario == 'capture-freeze-before-destroy'
     freeze_destroy = args.scenario == 'capture-freeze-destroy' or freeze_dispatch_destroy
     prepare_destroy = args.scenario == 'restore-prepare-destroy'
@@ -1097,11 +1099,15 @@ def exercise(args):
                     report['phase'] = 'arm-original-material-retirement-gate'
                     report['material_retirement_arm'] = retirement_probe.arm(args.activation_gate_timeout_ms)
                 if capture_stage is not None:
-                    from lifecycle_unload_capture_faults import CaptureHandoffProbe
-                    gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
-                            if capture_stage == 'measurement-partial' else None)
-                    capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
-                        capture_stage, gate)
+                    if stop_pending:
+                        from lifecycle_unload_stop_pending import PendingStopProbe
+                        capture_probe = PendingStopProbe(runtime, client, physical_running)
+                    else:
+                        from lifecycle_unload_capture_faults import CaptureHandoffProbe
+                        gate = (Path(runtime.quota['deployment_control']) / 'capture-measurement-gate'
+                                if capture_stage == 'measurement-partial' else None)
+                        capture_probe = CaptureHandoffProbe(runtime, client, physical_running,
+                            capture_stage, gate)
                     report['capture_handoff_arm'] = capture_probe.arm(deadline, args.activation_gate_timeout_ms)
                 report['phase']='public-unload-after-resume-'+str(cycle)
                 accepted_unload = client.unload(resumed)
@@ -1212,6 +1218,11 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if stop_pending:
+            report['acceptance_cases']['E5'] = (
+                'original live Paused VMM and pending public Unload, one complete global Stop and '
+                'adopted material/backing pin/positive charges checked before release; same original '
+                'Stop then exited before SQL receipt, recovered and settled; not all unknown Stop interleavings')
         if freeze_destroy:
             report['acceptance_cases'] = {
                 'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
@@ -1257,6 +1268,8 @@ def exercise(args):
         report.update(failure_details(error, client, report['phase']))
         if (prepare_destroy or freeze_destroy) and capture_probe is not None:
             report['freeze_destroy_failure_state' if freeze_destroy else 'prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if stop_pending and capture_probe is not None:
+            report['stop_pending_failure_state'] = capture_probe.failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1315,7 +1328,9 @@ def exercise(args):
                 raise
         finally:
             if capture_probe is not None:
-                capture_probe.close()
+                closed = capture_probe.close()
+                if stop_pending:
+                    report['stop_pending_observer_close'] = closed
             if data_probe is not None:
                 data_probe.close()
             runtime.close_restore_gate()
@@ -1334,7 +1349,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-before-destroy',
         'capture-measurement-partial','capture-seal-receipt',
-        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stop-pending','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
