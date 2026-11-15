@@ -228,7 +228,10 @@ fn prepared_unload_busy_confirmation_unknown_stops_before_second_call() {
         .unwrap()
         .operations()[0]
         .intent();
-    assert_eq!(*host.create_requests.lock().unwrap(), [original.clone()]);
+    assert_eq!(
+        host.create_requests.lock().unwrap().as_slice(),
+        std::slice::from_ref(original)
+    );
     assert_eq!(app.snapshot(), Err(PortError::OutcomeUnknown));
     // The exact +7 distinguishes a lost confirmation from a fault during
     // the first public call. Every other durable byte remains unchanged.
