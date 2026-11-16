@@ -280,8 +280,14 @@ async fn original_stream_completes_through_python_relay_without_truncated_http()
         .await
         .unwrap();
     let sender = f.senders.lock().unwrap().pop().unwrap();
-    sender.send(Ok(Frame::data(Bytes::from_static(b"started")))).await.unwrap();
-    sender.send(Ok(Frame::data(Bytes::from_static(b"finished")))).await.unwrap();
+    sender
+        .send(Ok(Frame::data(Bytes::from_static(b"started"))))
+        .await
+        .unwrap();
+    sender
+        .send(Ok(Frame::data(Bytes::from_static(b"finished"))))
+        .await
+        .unwrap();
     drop(sender);
     let collected = tokio::time::timeout(Duration::from_secs(2), response.into_body().collect())
         .await
