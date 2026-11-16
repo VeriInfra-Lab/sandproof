@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path, write_once
+from tools.template_build_guest import equal
 from server_process_crash import fetch
 
 PREFIX = '/sandproof/lifecycle'
@@ -379,7 +380,7 @@ class PublicUnloadScenario:
 
     def check_view(self, view, acceptance):
         assert set(view) == {'session', 'operation', 'current_version', 'phase', 'unload_outcome', 'create_refusal'}
-        assert view['session'] == self.session and view['operation'] == acceptance['key']
+        assert view['session'] == self.session and equal(view['operation'], acceptance['key'])
         assert uint(view['current_version'], positive=True)
         assert view['current_version'] == acceptance['accepted_version']
         assert view['create_refusal'] is None
@@ -676,9 +677,27 @@ class PublicUnloadScenario:
         assert running['phase']=='running'
         facts=running['unload_outcome']['facts']
         assert set(facts)==set(lifetime)|{'observed_at_ms'}
-        assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
+        assert equal({key:facts[key] for key in lifetime},lifetime), 'failed Unload changed original lifetime'
         assert uint(facts['observed_at_ms'])
         assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
+        current = self._advance_same_running_workload(running)
+        return dict(same_ram_and_activation=True,same_guest_process=True,
+            same_authorization=True,same_lifetime=True,counter=current['counter'])
+
+    def assert_running_workload(self,running):
+        """Read/advance the original guest witness without rotating credentials."""
+        self.step('original-running-workload')
+        self.check_view(running,self.current_acceptance)
+        assert running['phase']=='running' and running['unload_outcome'] is None
+        current = self._advance_same_running_workload(running)
+        return dict(session=self.session, same_ram_and_activation=True,
+            same_guest_process=True, same_authorization=True, counter=current['counter'],
+            guest_pid=current['pid'], guest_start_time_ticks=current['start_time_ticks'],
+            ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
+            activation_nonce_sha256=hashlib.sha256(current['activation_nonce'].encode()).hexdigest(),
+            metadata_generation=current['metadata_generation'])
+
+    def _advance_same_running_workload(self,running):
         previous=copy.deepcopy(self.witness)
         token=self.data_token
         sandbox=self.sdk()
@@ -693,9 +712,8 @@ class PublicUnloadScenario:
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.assert_previous_tokens_closed()
         self.witness=current
-        assert self.query()==running
-        return dict(same_ram_and_activation=True,same_guest_process=True,
-            same_authorization=True,same_lifetime=True,counter=current['counter'])
+        assert equal(self.query(),running)
+        return current
 
     def assert_data_closed(self):
         import httpx
@@ -730,8 +748,10 @@ def exercise(args):
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy') or expiry_prepare
     data_drain = args.scenario == 'data-drain'
     command_disconnect = args.scenario == 'command-disconnect'
-    normal_chain = args.scenario == 'normal' or command_disconnect
     retirement_restart = args.scenario == 'material-retirement-restart'
+    receipt_restart = args.scenario == 'unload-receipt-restart'
+    resume_receipt_restart = args.scenario == 'resume-receipt-restart'
+    normal_chain = args.scenario == 'normal' or command_disconnect or receipt_restart or resume_receipt_restart
     retirement_observation = normal_chain or retirement_restart
     expired_window_replay = getattr(args, 'expired_window_replay', False)
     if expired_window_replay and args.scenario != 'normal':
@@ -751,11 +771,15 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
-    capture_probe = data_probe = cow_probe = retirement_probe = None
+    capture_probe = data_probe = cow_probe = retirement_probe = receipt_probe = None
     expiry_probe = command_probe = None
     terminal_destroy_done = False
     failed = False
     try:
+        if receipt_restart or resume_receipt_restart:
+            receipt_probe = runtime.receipt_restart
+            if receipt_probe is None:
+                raise ValueError('original lifecycle receipt relay was not prepared')
         report['measurement_identity']=runtime.measurement_identity()
         report['registration'] = check_center_configuration(
             runtime.services, runtime.owner_key, runtime.foreign_key)
@@ -782,6 +806,10 @@ def exercise(args):
             report['command_disconnect'] = [command_probe.observe(running, report['running'], cycle=0)]
         lifetime = report['running']['lifetime']
         assert set(lifetime) == {'started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'}
+        if receipt_restart:
+            report['phase'] = 'unload-receipt-arm'
+            report['unload_receipt_restart'] = receipt_probe.arm(
+                client.create_acceptance, report['running'], deadline)
         if data_drain:
             from lifecycle_unload_data_drain import InflightDataDrain
             gate = runtime.arm_data_drain(deadline)
@@ -802,7 +830,13 @@ def exercise(args):
             report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
             data_probe.release()
         client.assert_data_closed()
+        if receipt_restart:
+            report['phase'] = 'unload-receipt-center-interruption'
+            receipt_probe.interrupt(client.unload_acceptance, report['running'], deadline)
         saved = client.wait_unloaded()
+        if receipt_restart:
+            report['phase'] = 'unload-receipt-recovered-native-center'
+            receipt_probe.recovered(saved, deadline)
         client.assert_owner_isolation()
         report['phase'] = 'original-physical-evidence'
         client.step('unload-physical-evidence')
@@ -850,6 +884,12 @@ def exercise(args):
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
         report['cycles']=[]
+        if resume_receipt_restart:
+            report['phase']='resume-receipt-peer-initialize'
+            report['resume_receipt_peer_progress']=dict(session=control.session,
+                initialized=False,complete=False)
+            report['resume_receipt_peer_progress']['before']=control.run_public_workload(control_running)
+            report['resume_receipt_peer_progress']['initialized']=True
         lost=None
         restore_cycles = 3 if normal_chain else 2
         for cycle in range(1, restore_cycles + 1):
@@ -872,6 +912,9 @@ def exercise(args):
                 from lifecycle_unload_cow import SealedSourceProbe
                 cow_probe = SealedSourceProbe(physical, session=client.session,
                     witness_before=client.witness, deadline=deadline)
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-arm'
+                report['resume_receipt_restart']=receipt_probe.arm(client.create_acceptance,saved,deadline)
             accepted=client.resume(saved)
             original_physical = copy.deepcopy(physical)
             original_resume_request = copy.deepcopy(client.resume_request)
@@ -969,9 +1012,20 @@ def exercise(args):
                     break
                 report['phase']='original-activation-manager-lost-receipt'
                 report['activation_gate_recovery']=runtime.recover_resume_gate(gate_receipt,deadline)
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-center-interruption'
+                receipt_probe.interrupt(accepted,report['running'],deadline)
             resumed=client.wait_running()
+            if cycle == 1 and resume_receipt_restart:
+                report['phase']='resume-receipt-recovered-native-center'
+                receipt_probe.recovered(resumed,deadline)
+                report['phase']='resume-receipt-peer-progress'
+                report['resume_receipt_peer_progress']['after']=control.assert_running_workload(control_running)
+                report['resume_receipt_peer_progress']['complete']=True
             physical_running=runtime.record_running(client.session,deadline,
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
+            if cycle == 1 and resume_receipt_restart:
+                report['resume_receipt_same_candidate']=receipt_probe.assert_candidate(physical_running)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
             cow_receipt = None
@@ -1198,6 +1252,12 @@ def exercise(args):
                 'A/B/C complete sources and three restores; previous generations settled while '
                 'session live, old Resume acceptance/claim unchanged, current source charged and '
                 'restorable, exact old paths absent; logical settlement is not shared-block release')
+        if receipt_restart or resume_receipt_restart:
+            report['acceptance_cases']['E13'] = (
+                'first completed '+('Resume' if resume_receipt_restart else 'Unload')+' observation explicitly discarded before reply headers; '
+                'center alone interrupted with the exact accepted operation still pending; '
+                'same Host/Redis, original result, material and lifetime recovered; '
+                'pre/post native-read center restarts recorded separately; not all E13 windows')
         if retirement_restart:
             report['acceptance_cases']['G7'] = (
                 'original durable plan observed Retiring after actual delete and before settlement; '
@@ -1335,16 +1395,25 @@ def exercise(args):
             if not failed:
                 raise
         finally:
-            if capture_probe is not None:
-                capture_probe.close()
-            if expiry_probe is not None:
-                expiry_probe.close()
-            if data_probe is not None:
-                data_probe.close()
-            runtime.close_restore_gate()
-            runtime.close_capture_cancel_gate()
-            report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
-            write_once(root / 'lifecycle-unload-report.json', report)
+            try:
+                if receipt_probe is not None:
+                    report['resume_receipt_relay_cleanup' if resume_receipt_restart else 'unload_receipt_relay_cleanup'] = receipt_probe.close()
+            except BaseException as error:
+                report['complete'] = False
+                report['resume_receipt_cleanup_failure_type' if resume_receipt_restart else 'unload_receipt_cleanup_failure_type'] = type(error).__name__
+                if not failed:
+                    raise
+            finally:
+                if capture_probe is not None:
+                    capture_probe.close()
+                if expiry_probe is not None:
+                    expiry_probe.close()
+                if data_probe is not None:
+                    data_probe.close()
+                runtime.close_restore_gate()
+                runtime.close_capture_cancel_gate()
+                report['elapsed_seconds'] = seconds - (deadline - time.monotonic())
+                write_once(root / 'lifecycle-unload-report.json', report)
     return report
 
 
@@ -1359,7 +1428,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart','restore-prepare-expiry','restored-running-expiry'),default='normal')
+        'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:

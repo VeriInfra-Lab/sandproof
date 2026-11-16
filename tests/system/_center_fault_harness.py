@@ -27,7 +27,7 @@ from tools.check_kvm_host import unique_keys
 from tools.runtime_create_recovery import find_runtime_create, original_create_identity, terminal_result
 from tools.system_acceptance import digest, json_file, private_path, write_once
 from _center_host_services import local_binding, process_facts
-from _internal_fault_relay import InternalFaultRelay, RelayMaterials
+from _internal_fault_relay import InternalFaultRelay, RelayMaterials, tuple_address
 from _runtime_services import MAX_ACTIVATION_BYTES
 from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 from server_process_crash import fetch, free_loopback_port, prepare_fault_services, process_start_ticks
@@ -232,7 +232,7 @@ class Harness:
         # One fresh test-only registered endpoint, before initialization and
         # before sealing the execution receipt. No live config is rewritten.
         self.services.center_config['nodes'][0]['address'] = ':'.join(map(str,relay_address))
-        self._seal_fresh_center_config()
+        self.services.seal_fresh_center_config()
         self._instrument_original_starts()
 
     def operator_checkpoint(self, report):
@@ -266,22 +266,6 @@ class Harness:
                 raise TimeoutError('armed operator fault was not observed before the original deadline')
             time.sleep(.1)  # Poll original process exit; never guess a fault time.
         raise RuntimeError('original host exited at the armed test barrier')
-
-    def _seal_fresh_center_config(self):
-        path = Path(self.services.processes.bindings['center']['config'])
-        old = path.stat()
-        if not stat.S_ISREG(old.st_mode) or old.st_nlink != 1 or old.st_mode&0o7777 != 0o600:
-            raise ValueError('fresh protected center input changed before initialization')
-        raw = json.dumps(self.services.center_config,separators=(',',':'),ensure_ascii=False).encode()
-        fd = os.open(path,os.O_WRONLY|os.O_NOFOLLOW)
-        with os.fdopen(fd,'wb') as output:
-            opened = os.fstat(output.fileno())
-            if (opened.st_dev,opened.st_ino)!=(old.st_dev,old.st_ino):
-                raise ValueError('fresh center input inode changed')
-            output.write(raw)
-            output.truncate()
-            output.flush()
-            os.fsync(output.fileno())
 
     def _instrument_original_starts(self):
         processes = self.services.processes
@@ -479,10 +463,3 @@ class Harness:
                                       expected_service_data=self.manifest['service_data'])
             self.materials.remove()
             self.services.cleanup_staging()
-
-
-def tuple_address(address):
-    host, port = address.rsplit(':',1)
-    if host!='127.0.0.1' or not port.isdecimal() or not 0<int(port)<65536:
-        raise ValueError('one fixed loopback host endpoint required')
-    return host,int(port)
