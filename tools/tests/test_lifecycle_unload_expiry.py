@@ -1,5 +1,6 @@
 """Controlled checks for expiry observations, not an alternative lifecycle model."""
 import copy
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -13,22 +14,57 @@ from unittest.mock import Mock,patch
 SYSTEM=Path(__file__).resolve().parents[2]/'tests/system'
 sys.path.insert(0,str(SYSTEM))
 import lifecycle_unload_expiry as expiry
+from tools.tests import test_internal_fault_relay as transport
+from _internal_fault_relay import accepted_request
 
 
 class ExpiryObservationTests(unittest.TestCase):
     def fixture(self):
-        key=dict(deployment='deployment',owner='1',window=1,sequence=3)
-        resume=dict(session='session',key=key,accepted_version=3)
+        node,create,_=transport.InternalFaultRelayTests.pair(None)
+        create['request']['binding'].update(session='session',key=dict(create['request']['binding']['key'],window=1))
+        binding=create['request']['operation']['create']
+        binding.update(timeout_ms=75000,max_lifetime_ms=600000,startup_deadline_ms=301000)
+        unload=copy.deepcopy(create);unload['accepted_version']=2
+        unload['request']['binding'].update(key=dict(create['request']['binding']['key'],sequence=2),
+            expected=dict(state='version',version=1))
+        unload['request']['operation']=dict(kind='unload',source_incarnation=1,capture=3)
+        original=copy.deepcopy(unload);original['accepted_version']=3
+        original['request']['binding'].update(key=dict(unload['request']['binding']['key'],sequence=3),
+            expected=dict(state='version',version=2))
+        original['request']['operation']=dict(kind='resume',source_incarnation=1,capture=3,
+            target_incarnation=7,manifest_digest=[7]*32)
+        key=copy.deepcopy(original['request']['binding']['key'])
+        resume=dict(session='session',key=key,accepted_version=3,original_intent=original,node=node)
         lifetime=dict(started_at_ms=1000,end_at_ms=76000,max_end_at_ms=601000,startup_deadline_ms=301000)
-        binding=dict(session='session',node={'node':'original'},protocol_version=2,
-                     key=key,expected={'state':'version','version':2})
-        prior=dict(binding=binding,accepted_version=3,center={'center':'original'},
-                   retention={'slot':1},operation={'kind':'resume'},acceptance_time={'kind':'sampled','at_ms':2000})
+        def operation(intent,at_ms):
+            # sandbox-center/src/audit.rs::OperationAudit: the real export
+            # omits user Create options and keeps complete Resume parameters.
+            op=copy.deepcopy(intent['request']['operation'])
+            if op['kind']=='create':op.pop('create')
+            return dict(binding=copy.deepcopy(intent['request']['binding']),
+                center=copy.deepcopy(intent['center']),retention=copy.deepcopy(intent['retention']),
+                accepted_version=intent['accepted_version'],operation=op,
+                acceptance_time=dict(kind='sampled',at_ms=at_ms),running=None,
+                create_refusal=None,terminal=None,unloaded=None)
+        first=operation(create,1000);first['running']=dict(lifetime,observed_at_ms=2000)
+        barrier=transport.relay.ReceiptBarrier(node);barrier.arm()
+        self.assertTrue(barrier.observe(create,dict(request=copy.deepcopy(create),current_request=copy.deepcopy(create),
+            historical_create_succeeded=True,readiness=dict(state='observed',facts=first['running']))))
+        barrier.unblock(discard=False)
+        second=operation(unload,3000)
+        second['unloaded']=dict(request=copy.deepcopy(unload),outcome=dict(state='unloaded',
+            facts=dict(lifetime,source_incarnation=1,capture=3,manifest_digest=[7]*32,material_bytes=6)))
+        prior=operation(original,4000);prior['running']=dict(lifetime,observed_at_ms=5000)
         terminal=copy.deepcopy(prior);terminal.update(accepted_version=4,operation={'kind':'destroy'},acceptance_time={'kind':'unsampled'})
+        terminal['running']=None
         terminal['binding'].update(key=dict(key,window=2,sequence=7),expected={'state':'version','version':3})
-        row=dict(create=dict(binding={'session':'session'},timeout_ms=75000),
-                 operations=[dict(operation={'kind':'create'}),dict(operation={'kind':'unload'}),prior,terminal],
-                 terminating=True,released=False,last_running=dict(lifetime,observed_at_ms=2000))
+        creation=dict(binding=copy.deepcopy(create['request']['binding']),
+            **{k:copy.deepcopy(v) for k,v in binding.items() if k!='options'},
+            options_sha256=hashlib.sha256(bytes(binding['options'])).hexdigest(),
+            metadata_sha256=hashlib.sha256(b'{}').hexdigest())
+        row=dict(create=creation,private=False,operations=[first,second,prior,terminal],
+            terminating=True,released=False,phase='terminating',last_running=copy.deepcopy(prior['running']),
+            terminal_confirmation=None)
         return {'sandboxes':[row]},resume,lifetime
 
     def test_only_observed_internal_terminal_key_is_returned(self):
@@ -85,6 +121,127 @@ class ExpiryObservationTests(unittest.TestCase):
         client=Mock();client.owner_key='key';client.path.return_value='/session'
         client.call.return_value=(200,b'{"phase":"running"}')
         with self.assertRaises(ValueError):expiry.wait_expired_cleaned(client,time.monotonic()+1)
+
+
+class ExpiryIntentCorrelationTests(unittest.TestCase):
+    fixture=ExpiryObservationTests.fixture
+
+    def test_every_original_resume_operation_parameter_is_preserved(self):
+        original,resume,lifetime=self.fixture()
+        for field,value in [('source_incarnation',2),('capture',4),('target_incarnation',8),('manifest_digest',[8]*32)]:
+            audit=copy.deepcopy(original);audit['sandboxes'][0]['operations'][-2]['operation'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+
+    def test_jointly_changed_audit_context_cannot_replace_the_independent_host_intent(self):
+        original,resume,lifetime=self.fixture()
+        for fault in ('node','node-generation','protocol','center','slot','retention-window','session','expected'):
+            audit=copy.deepcopy(original);prior,terminal=audit['sandboxes'][0]['operations'][-2:]
+            if fault=='node':
+                for op in (prior,terminal):op['binding']['node']['node_id']='another-host'
+            if fault=='node-generation':
+                for op in (prior,terminal):op['binding']['node']['node_generation']=2
+            if fault=='protocol':
+                for op in (prior,terminal):op['binding']['protocol_version']=3
+            if fault=='center':
+                for op in (prior,terminal):op['center']['center']='another-center'
+            if fault=='slot':
+                for op in (prior,terminal):op['retention']['slot']=2
+            if fault=='retention-window':
+                for op in (prior,terminal):op['retention']['window']=8
+            if fault=='session':prior['binding']['session']='another-session'
+            if fault=='expected':prior['binding']['expected']['version']=1
+            with self.subTest(fault=fault),self.assertRaises(ValueError):
+                expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+
+    def test_terminal_operation_is_the_complete_destroy_shape(self):
+        audit,resume,lifetime=self.fixture()
+        audit['sandboxes'][0]['operations'][-1]['operation']['capture']=3
+        with self.assertRaises(ValueError):expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+
+    def test_pending_history_with_another_resume_is_rejected_instead_of_polled(self):
+        audit,resume,lifetime=self.fixture();row=audit['sandboxes'][0]
+        row['operations'].pop();row.update(terminating=False,phase='running')
+        row['operations'][-1]['operation']['target_incarnation']=8
+        with self.assertRaises(ValueError):expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+
+    def test_missing_independent_intent_or_node_is_not_an_expiry_witness(self):
+        audit,original,lifetime=self.fixture()
+        for field in ('original_intent','node'):
+            resume=copy.deepcopy(original);resume.pop(field)
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+
+    def test_current_protocol_and_separate_retention_window_are_legal(self):
+        audit,resume,lifetime=self.fixture()
+        self.assertEqual(resume['original_intent']['request']['binding']['protocol_version'],4)
+        self.assertEqual(accepted_request(resume['original_intent'],resume['node'])['kind'],'resume')
+        self.assertNotEqual(resume['key']['window'],resume['original_intent']['retention']['window'])
+        accepted=expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+        self.assertEqual(accepted['key']['window'],2)
+        self.assertNotEqual(accepted['key']['window'],resume['original_intent']['retention']['window'])
+
+    def test_wrong_prior_intent_does_not_promote_the_observed_client_acceptance(self):
+        audit,resume,lifetime=self.fixture();audit['sandboxes'][0]['operations'][-2]['operation']['target_incarnation']=8
+        accepted={k:copy.deepcopy(resume[k]) for k in ('session','key','accepted_version')}
+        client=SimpleNamespace(session='session',current_acceptance=copy.deepcopy(accepted),destroy_request=None)
+        processes=Mock();processes.audit.return_value=audit
+        runtime=SimpleNamespace(services=SimpleNamespace(processes=processes))
+        with patch.object(expiry,'wait_clock'),patch.object(expiry,'now_ms',return_value=76000):
+            with self.assertRaises(ValueError):
+                expiry.observe_center_expiry(runtime,client,resume,lifetime,time.monotonic()+1,host_delivered=False)
+        self.assertEqual(client.current_acceptance,accepted)
+        processes.start.assert_called_once_with('center')
+
+    def test_missing_original_intent_fails_before_clock_or_manager_actions(self):
+        audit,resume,lifetime=self.fixture();resume.pop('original_intent')
+        client=SimpleNamespace(session='session',destroy_request=None)
+        runtime=Mock();runtime.services.processes.audit.return_value=audit
+        with patch.object(expiry,'wait_clock') as wait,patch.object(expiry,'now_ms',return_value=76000):
+            with self.assertRaises(ValueError):
+                expiry.observe_center_expiry(runtime,client,resume,lifetime,time.monotonic()+1,host_delivered=False)
+            wait.assert_not_called()
+        self.assertEqual(runtime.mock_calls,[])
+
+    def test_real_prepare_and_running_consumers_reject_wrong_original_intent(self):
+        for consumer in ('prepare','running'):
+            for wrong in (False,True):
+                audit,resume,lifetime=self.fixture()
+                if wrong:audit['sandboxes'][0]['operations'][-2]['operation']['capture']=4
+                accepted={k:copy.deepcopy(resume[k]) for k in ('session','key','accepted_version')}
+                client=SimpleNamespace(session='session',current_acceptance=copy.deepcopy(accepted),destroy_request=None)
+                processes=Mock();processes.audit.return_value=audit
+                runtime=SimpleNamespace(services=SimpleNamespace(processes=processes,wait_ready=Mock(),
+                    host_configs=[dict(inbox=dict(node=resume['node']))]))
+                clock={'now':1000};deadline=time.monotonic()+5
+                with patch.object(expiry,'now_ms',side_effect=lambda:clock['now']), \
+                        patch.object(expiry,'wait_clock',side_effect=lambda *_:clock.update(now=76000)), \
+                        patch.object(expiry,'read_host',return_value=dict(terminal=True)), \
+                        patch.object(expiry.RunningExpiryProbe,'_source',return_value=dict(
+                            restore=dict(intent=copy.deepcopy(resume['original_intent'])))), \
+                        patch.object(expiry,'open_original_candidate_pidfd',return_value=999999), \
+                        self.subTest(consumer=consumer,wrong=wrong):
+                    if consumer=='prepare':
+                        probe=expiry.ExpiryPrepareProbe.__new__(expiry.ExpiryPrepareProbe)
+                        probe.runtime=runtime;probe.client=client;probe.deadline=deadline;probe.terminal_accepted=None
+                        probe.restore_entry=dict(intent=copy.deepcopy(resume['original_intent']))
+                        probe._start_terminal_recovery=Mock();probe._wait_native_expiry=Mock(return_value={'original':'Resume'})
+                        probe._continue_terminal_recovery=Mock(return_value=dict(public_destroy_reached_host=True,
+                            terminal_fence_observed=dict(kind='same-resume-deadline-compensation')))
+                        observe=lambda:probe.expire(accepted,lifetime,deadline,observe_peer=lambda:None)
+                    else:
+                        probe=expiry.RunningExpiryProbe(runtime,client,dict(source={'original':'process'}),
+                            accepted,lifetime,deadline)
+                        observe=lambda:expiry.observe_center_expiry(runtime,client,probe.resume,lifetime,deadline,host_delivered=False)
+                    if wrong:
+                        with self.assertRaises(ValueError):observe()
+                        self.assertEqual(client.current_acceptance,accepted)
+                        if consumer=='prepare':
+                            self.assertIsNone(probe.terminal_accepted)
+                            probe._continue_terminal_recovery.assert_not_called()
+                    else:
+                        observe();self.assertEqual(client.current_acceptance['key']['window'],2)
+                        if consumer=='prepare':probe._continue_terminal_recovery.assert_called_once()
 
 
 class PrepareExpiryBarrierTests(unittest.TestCase):
@@ -173,6 +330,146 @@ class PrepareExpiryBarrierTests(unittest.TestCase):
             self.assertEqual(probe._terminal_inventory(snapshot),prepared)
         with patch.object(expiry,'original_json',return_value=dict(epoch=3,terminal=False)),self.assertRaises(ValueError):
             probe._terminal_inventory(snapshot)
+
+
+class RunningExpiryStopAttributionTests(unittest.TestCase):
+    """Real readonly SQLite; process/material/root-fence facts are controlled."""
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name);self.database=self.root/'native.sqlite3'
+        self.native_id='sb-expiry-1';self.operation_id='op-expiry-1-4'
+        self.action=self.stop_action(sandbox=1,operation=4,generation=2,vm=2,epoch=5)
+        state=dict(terminal=True,epoch=5,current_operation=dict(id=4,kind='Kill'))
+        with sqlite3.connect(self.database) as conn:
+            conn.executescript('CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,state_blob BLOB);'
+                'CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT NOT NULL,owner_id TEXT NOT NULL,'
+                'operation_id TEXT NOT NULL,logical_action_id TEXT NOT NULL,attempt INTEGER NOT NULL CHECK(attempt>=0),'
+                'action_json BLOB NOT NULL,dispatch_state TEXT NOT NULL CHECK(dispatch_state IN '
+                "('ready','dispatched','receipted')),receipt_json BLOB,"
+                'UNIQUE(sandbox_id,logical_action_id,attempt),'
+                "CHECK((dispatch_state='receipted')=(receipt_json IS NOT NULL)));")
+            conn.execute('INSERT INTO sandboxes VALUES(?,?)',(self.native_id,json.dumps(state).encode()))
+        self.database.chmod(0o600)
+        self.insert_action(self.action)
+        self.material=dict(materials=[{'original':n} for n in range(3)],manifest={'original':'manifest'},
+                           completion={'original':'completion'},material_paths=['state','memory','disk'])
+        services=SimpleNamespace(native_pools=[dict(database=str(self.database),namespace='expiry',
+            node_state_dir=str(self.root))],host_configs=[dict(native=dict(maintenance=dict(
+            capacity=dict(max_sql_rows=64,max_sql_value_bytes=16384))))],processes=Mock())
+        self.probe=expiry.RunningExpiryProbe.__new__(expiry.RunningExpiryProbe)
+        self.probe.runtime=SimpleNamespace(services=services,_materials=Mock(return_value=copy.deepcopy(self.material)))
+        self.probe.client=SimpleNamespace(session='original-session')
+        self.probe.running=dict(source=dict(resource_id='vm-expiry-2',pid=41,start_time_ticks=7,boot_id='boot'),
+            local=dict(sandbox=1),context=dict(binding=dict(generation=2,vm=2)),
+            running_backing=copy.deepcopy(self.material))
+        self.probe.before=dict(capture=dict(full={'original':'source'}),restore=dict(activation=dict(
+            identity=dict(owner='tenant-1',protocol_version=1)),material_use=True))
+        self.probe._source=Mock(side_effect=lambda _:copy.deepcopy(self.probe.before))
+        self.probe.lifetime=dict(end_at_ms=1);self.probe.pidfd=41
+        self.probe.host=Mock();self.probe.host.wait.return_value=87
+        for patcher in [patch.object(expiry,'pidfd_exited',return_value=False),
+                        patch.object(expiry,'original_process',return_value=True),
+                        patch.object(expiry,'material_source_charge',return_value=100),
+                        patch.object(expiry,'original_json',return_value=dict(epoch=5,terminal=True))]:
+            patcher.start();self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def stop_action(*,sandbox,operation,generation,vm,epoch):
+        native_id='sb-expiry-'+str(sandbox);opid='op-expiry-'+str(sandbox)+'-'+str(operation)
+        return dict(identity=dict(protocol_version=1,owner='tenant-'+str(sandbox),sandbox=native_id,
+            operation=opid,epoch=epoch,generation=generation,logical_action='stop-'+opid,attempt=0,
+            resource=dict(kind='vm',id='vm-expiry-'+str(vm))),command=dict(logical=dict(command=dict(
+            StopVm=dict(sandbox=sandbox,generation=generation,vm=vm,epoch=epoch))),attempt=0))
+
+    def insert_action(self,action,state='dispatched'):
+        identity=action['identity']
+        # Historical receipt content is not used as a gate-arrival fact.
+        receipt=json.dumps(dict(identity=identity,outcome=dict(status='observed_success',details=dict(
+            resource=identity['resource'],command=action['command']['logical']['command'],
+            result=dict(Stopped=dict(pid=51,start_ticks=17)))))).encode() if state=='receipted' else None
+        with sqlite3.connect(self.database) as conn:
+            row=conn.execute('INSERT INTO outbox(sandbox_id,owner_id,operation_id,logical_action_id,attempt,'
+                'action_json,dispatch_state,receipt_json) VALUES(?,?,?,?,?,?,?,?)',
+                (identity['sandbox'],identity['owner'],identity['operation'],identity['logical_action'],
+                 identity['attempt'],json.dumps(action).encode(),state,receipt))
+            return row.lastrowid
+
+    def remove_action(self,row):
+        with sqlite3.connect(self.database) as conn:conn.execute('DELETE FROM outbox WHERE id=?',(row,))
+
+    def observe(self):
+        return self.probe.held_after_expiry(time.monotonic()+10)
+
+    def test_one_original_dispatched_stop_certifies_the_held_cut_without_writes(self):
+        before=self.database.read_bytes()
+        result=self.observe()
+        self.assertTrue(result['original_stop_dispatched_without_receipt'])
+        self.assertTrue(result['original_vmm_live']);self.assertFalse(result['physical_exit'])
+        self.assertEqual(result['material_charge'],100)
+        self.assertEqual(self.database.read_bytes(),before)
+        self.probe.runtime.services.processes.assert_not_called()
+
+    def test_another_dispatched_stop_cannot_be_attributed_to_the_original_exit87(self):
+        actions=[self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4),
+                 self.stop_action(sandbox=1,operation=3,generation=1,vm=1,epoch=4)]
+        for action in actions:
+            row=self.insert_action(action)
+            try:
+                with self.subTest(identity=action['identity']),self.assertRaises(ValueError):self.observe()
+                self.probe.runtime.services.processes.assert_not_called()
+            finally:self.remove_action(row)
+
+    def test_unclaimed_historical_or_nonstop_work_does_not_create_a_false_ambiguity(self):
+        other=self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4)
+        for state in ('ready','receipted'):
+            row=self.insert_action(other,state)
+            try:
+                with self.subTest(state=state):self.assertTrue(self.observe()['original_vmm_live'])
+            finally:self.remove_action(row)
+        freeze=copy.deepcopy(other)
+        freeze['command']['logical']['command']={'FreezeVm':freeze['command']['logical']['command']['StopVm']}
+        row=self.insert_action(freeze)
+        try:self.assertTrue(self.observe()['original_vmm_live'])
+        finally:self.remove_action(row)
+
+    def replace_original_action(self,action):
+        with sqlite3.connect(self.database) as conn:
+            conn.execute('UPDATE outbox SET action_json=? WHERE sandbox_id=? AND operation_id=?',
+                (json.dumps(action).encode(),self.native_id,self.operation_id))
+
+    def test_global_pending_inventory_respects_existing_sql_capacity(self):
+        capacity=self.probe.runtime.services.host_configs[0]['native']['maintenance']['capacity']
+        other=self.stop_action(sandbox=2,operation=3,generation=1,vm=3,epoch=4)
+        other['command']['logical']['command']={'FreezeVm':other['command']['logical']['command']['StopVm']}
+        row=self.insert_action(other)
+        try:
+            for field,value in [('max_sql_rows',1),
+                                ('max_sql_value_bytes',len(json.dumps(self.action).encode())-1)]:
+                old=capacity[field];capacity[field]=value
+                try:
+                    with self.subTest(field=field),self.assertRaises(ValueError):self.observe()
+                    self.probe.runtime.services.processes.assert_not_called()
+                finally:capacity[field]=old
+        finally:self.remove_action(row)
+
+    def test_full_original_stop_parameters_preserve_integer_json_types(self):
+        for field,value in [('sandbox',True),('generation',2.0),('vm',2.0),('epoch',5.0)]:
+            action=copy.deepcopy(self.action);action['command']['logical']['command']['StopVm'][field]=value
+            self.replace_original_action(action)
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.observe()
+        self.replace_original_action(self.action)
+
+    def test_original_wire_identity_preserves_protocol_generation_and_epoch_types(self):
+        for field,value in [('protocol_version',True),('protocol_version',1.0),('generation',2.0),('epoch',5.0)]:
+            action=copy.deepcopy(self.action);action['identity'][field]=value
+            self.replace_original_action(action)
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.observe()
+        self.replace_original_action(self.action)
+
+    def test_protected_terminal_fence_preserves_epoch_and_boolean_types(self):
+        for fence in [dict(epoch=5.0,terminal=True),dict(epoch=5,terminal=1),dict(epoch=5,terminal=1.0)]:
+            with self.subTest(fence=fence),patch.object(expiry,'original_json',return_value=fence), \
+                    self.assertRaises(ValueError):self.observe()
 
 
 if __name__=='__main__':unittest.main()

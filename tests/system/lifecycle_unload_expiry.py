@@ -20,12 +20,14 @@ from pathlib import Path
 import sqlite3
 import time
 
+from _internal_fault_relay import _fields, accepted_request
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
 from lifecycle_unload_runtime import (checked_source_records, material_source_charge,
     open_original_candidate_pidfd, original_json, original_process, pidfd_exited, remaining)
 from lifecycle_unload_retirement import read_records
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 
 def now_ms():
@@ -46,32 +48,72 @@ def wait_clock(lifetime, deadline):
         time.sleep(min(.1,left,delay))
 
 
+def expiry_resume_witness(acceptance, original_intent, node):
+    """Correlate the original Host intent and independent configured node.
+
+    This is a test witness, not a new acceptance or authorization. The source
+    reader supplies the actual retained intent; the public response alone is
+    insufficient to identify its complete Resume parameters and context.
+    """
+    _fields(acceptance,'session key accepted_version')
+    operation=accepted_request(original_intent,node)
+    binding=original_intent['request']['binding']
+    if (operation['kind']!='resume' or not equal(binding['node'],node)
+            or not equal(acceptance,dict(session=binding['session'],key=binding['key'],
+                accepted_version=original_intent['accepted_version']))):
+        raise ValueError('one complete original Host Resume and public acceptance required')
+    return dict(copy.deepcopy(acceptance),original_intent=copy.deepcopy(original_intent),node=copy.deepcopy(node))
+
+
+def _checked_expiry_resume(resume):
+    _fields(resume,'session key accepted_version original_intent node')
+    return expiry_resume_witness({k:resume[k] for k in ('session','key','accepted_version')},
+        resume['original_intent'],resume['node'])
+
+
+def _audited_intent(operation):
+    # These two operation kinds are exported without redaction by the actual
+    # Rust OperationAudit. Create options remain outside this projection.
+    if operation['operation']['kind'] not in ('resume','destroy'):
+        raise ValueError('complete Resume or Destroy audit projection required')
+    return dict(request=dict(binding=operation['binding'],operation=operation['operation']),
+        accepted_version=operation['accepted_version'],center=operation['center'],retention=operation['retention'])
+
+
 def expiry_acceptance(audit, session, resume, lifetime, sampled_now):
     """Check actual Rust audit fields, never invent a public Destroy key/time."""
     if sampled_now < lifetime['end_at_ms']:
         raise ValueError('real persisted deadline has not arrived')
+    resume=_checked_expiry_resume(resume)
+    if session!=resume['session']:
+        raise ValueError('original Host Resume belongs to another observed session')
     rows = [r for r in audit['sandboxes'] if r['create']['binding']['session'] == session]
     if len(rows) != 1:
         raise ValueError('original session missing from center authority')
     row = rows[0]; operations = row['operations']
-    if len(operations) == 3 and operations[-1]['operation']['kind'] == 'resume' and not row['terminating']:
+    if (len(operations) not in (3,4)
+            or [o['operation']['kind'] for o in operations[:3]]!=['create','unload','resume']
+            or not equal(_audited_intent(operations[2]),resume['original_intent'])):
+        raise ValueError('center history replaced the complete original Host Resume')
+    if len(operations)==3 and row['terminating'] is False and row['released'] is False:
         return None
-    if (len(operations) != 4 or [o['operation']['kind'] for o in operations] !=
-            ['create', 'unload', 'resume', 'destroy'] or not row['terminating'] or row['released']):
+    if (len(operations)!=4 or operations[-1]['operation']['kind']!='destroy'
+            or row['terminating'] is not True or row['released'] is not False):
         raise ValueError('expiry must append only one terminal request while material is held')
-    prior, terminal = operations[-2:]
+    terminal = operations[-1]
     binding = terminal['binding']; key = binding['key']
-    if (prior['binding']['key'] != resume['key'] or prior['accepted_version'] != resume['accepted_version']
-            or binding['session'] != session or binding['node'] != prior['binding']['node']
-            or binding['protocol_version'] != prior['binding']['protocol_version']
-            or binding['expected'] != {'state':'version','version':resume['accepted_version']}
-            or terminal['accepted_version'] != resume['accepted_version'] + 1
-            or terminal['center'] != prior['center'] or terminal['retention'] != prior['retention']
-            or key['window'] != 2 or type(key['sequence']) is not int or key['sequence'] <= 0
-            or any(key[k] != resume['key'][k] for k in ('owner','deployment'))
-            or key == resume['key'] or terminal['acceptance_time'] != {'kind':'unsampled'}
-            or any(row['last_running'][k] != v for k,v in lifetime.items())
-            or row['create']['timeout_ms'] != lifetime['end_at_ms'] - lifetime['started_at_ms']):
+    actual=_audited_intent(terminal)
+    accepted_request(actual,resume['node'])
+    expected=copy.deepcopy(resume['original_intent'])
+    expected['accepted_version']=resume['accepted_version']+1
+    expected['request']['binding'].update(key=copy.deepcopy(key),
+        expected=dict(state='version',version=resume['accepted_version']))
+    expected['request']['operation']={'kind':'destroy'}
+    if (not equal(actual,expected) or key['window']!=2
+            or any(not equal(key[k],resume['key'][k]) for k in ('owner','deployment'))
+            or equal(key,resume['key']) or not equal(terminal['acceptance_time'],{'kind':'unsampled'})
+            or not equal({k:row['last_running'][k] for k in lifetime},lifetime)
+            or not equal(row['create']['timeout_ms'],lifetime['end_at_ms']-lifetime['started_at_ms'])):
         raise ValueError('automatic terminal request or original lifetime differs')
     return dict(session=session, key=copy.deepcopy(key), accepted_version=terminal['accepted_version'])
 
@@ -102,6 +144,7 @@ def observe_center_expiry(runtime, client, resume, lifetime, deadline, *, host_d
     """No public query until original background expiry is durable."""
     if getattr(client,'destroy_request',None) is not None:
         raise ValueError('explicit Destroy cannot certify automatic expiry')
+    resume=_checked_expiry_resume(resume)
     wait_clock(lifetime, deadline)
     if host_delivered:
         while True:
@@ -259,6 +302,8 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
     def expire(self, resume, lifetime, deadline, *, observe_peer):
         deadline = min(deadline,self.deadline)
         require_before_expiry(lifetime)
+        resume=expiry_resume_witness(resume,self.restore_entry['intent'],
+            self.runtime.services.host_configs[0]['inbox']['node'])
         self._start_terminal_recovery(deadline)
         require_before_expiry(lifetime)
         # Hold only the center manager, not the clock or either VM. This makes
@@ -288,6 +333,8 @@ class RunningExpiryProbe:
     def __init__(self,runtime,client,running,resume,lifetime,deadline):
         self.runtime,self.client,self.running,self.resume,self.lifetime = runtime,client,running,resume,lifetime
         self.before = self._source(deadline)
+        self.resume=expiry_resume_witness(resume,self.before['restore']['intent'],
+            self.runtime.services.host_configs[0]['inbox']['node'])
         require_before_expiry(lifetime)
         self.pidfd = open_original_candidate_pidfd(running['source'])
 
@@ -335,24 +382,34 @@ class RunningExpiryProbe:
             opid = 'op-'+pool['namespace']+'-'+str(self.running['local']['sandbox'])+'-'+str(op['id'])
             rows = conn.execute('SELECT action_json,dispatch_state,receipt_json FROM outbox WHERE sandbox_id=? AND operation_id=?',(native_id,opid)).fetchall()
             actions = [(json.loads(a,object_pairs_hook=unique_keys),s,r) for a,s,r in rows]
+            count,largest = conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchone()
+            if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
+                raise ValueError('bounded global pending actions required before Stop attribution')
+            dispatched = conn.execute("SELECT action_json FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchall()
         stops = [r for r in actions if 'StopVm' in r[0]['command']['logical']['command']]
         vm = self.running['context']['binding']
         expected = dict(sandbox=self.running['local']['sandbox'],generation=vm['generation'],vm=vm['vm'],epoch=state['epoch'])
         if (len(stops)!=1 or stops[0][1:]!=('dispatched',None)
-                or stops[0][0]['command']['logical']['command']['StopVm']!=expected
-                or stops[0][0]['identity']['epoch']!=state['epoch']):
+                or not equal(stops[0][0]['command']['logical']['command']['StopVm'],expected)
+                or not equal(stops[0][0]['identity']['epoch'],state['epoch'])):
             raise ValueError('exit87 was not the exact original unacknowledged Stop')
         identity = stops[0][0]['identity']
         original = self.before['restore']['activation']['identity']
         if (identity['sandbox']!=native_id or identity['operation']!=opid
-                or identity['generation']!=vm['generation']
+                or not equal(identity['generation'],vm['generation'])
                 or identity['owner']!=original['owner']
-                or identity['protocol_version']!=original['protocol_version']
+                or not equal(identity['protocol_version'],original['protocol_version'])
                 or identity['resource']!={'kind':'vm','id':self.running['source']['resource_id']}):
             raise ValueError('Stop has a foreign complete work identity')
         fence = original_json(Path(pool['node_state_dir'])/'fences'/(native_id+'.json'),16384)
-        if fence!={'epoch':state['epoch'],'terminal':True}:
+        if not equal(fence,{'epoch':state['epoch'],'terminal':True}):
             raise ValueError('actual terminal fence not present before the held Stop')
+        # The existing exit87 hook matches every StopVm on this Host. Bind
+        # its arrival to the full original action in the same SQL snapshot.
+        inflight = [json.loads(raw,object_pairs_hook=unique_keys) for (raw,) in dispatched]
+        global_stops = [a for a in inflight if 'StopVm' in a['command']['logical']['command']]
+        if len(global_stops)!=1 or not equal(global_stops[0],stops[0][0]):
+            raise ValueError('exit87 is not uniquely bound to the original dispatched Stop')
         # Reuse the full original manifest/file verifier while the VMM is alive.
         physical = self.runtime._materials(source['capture']['full'],source['capture'])
         if any(physical[k]!=self.running['running_backing'][k] for k in ('materials','manifest','completion','material_paths')):
