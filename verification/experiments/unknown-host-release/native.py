@@ -13,6 +13,7 @@ import tarfile
 import time
 import traceback
 from urllib.parse import unquote, urlparse
+from types import SimpleNamespace
 
 HERE = Path('verification/experiments/unknown-host-release')
 SOURCE = Path('controller-service/src/controller/bounded.rs')
@@ -26,10 +27,20 @@ CONTROLS = (
     'controller::bounded_tests::commit_uncertainty_reloads_exact_candidate_not_the_assumed_release_result',
 )
 TESTS = (PROPERTY, *CONTROLS)
+PACKAGE = 'sandproof-controller-service'
+PACKAGE_DIR = Path('controller-service')
+CRATE = 'sandproof_controller_service'
+MUTANT = 'ignore-host-error'
+KIND = 'unknown-host-release-native'
+FIXTURE_SCOPE = 'complete original Rust test file'
 
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def fixture_digest(project):
+    return sha(project / FIXTURE)
 
 
 def mutate(project):
@@ -51,7 +62,8 @@ def rejection_line(project):
     return text[:text.index(marker)].count('\n') + 1
 
 
-def checked_execution(stdout, stderr, code, name, rejected, line):
+def checked_execution(stdout, stderr, code, name, rejected, line, *,
+                      fixture=FIXTURE, assertion=b'release_host_slot(moved,'):
     text = stdout.decode(errors='replace')
     status = 'FAILED' if rejected else 'ok'
     if (code != (101 if rejected else 0)
@@ -61,14 +73,14 @@ def checked_execution(stdout, stderr, code, name, rejected, line):
         raise ValueError('The exact original assertion did not produce the required result')
     if rejected:
         combined = stdout + stderr
-        location = (str(FIXTURE) + ':' + str(line) + ':').encode()
+        location = (str(fixture) + ':' + str(line) + ':').encode()
         if (b'panicked at ' not in combined or location not in combined
                 or b'assertion failed:' not in combined
-                or b'release_host_slot(moved,' not in combined):
+                or assertion not in combined):
             raise ValueError('Wrong implementation failed outside the original rejection assertion')
 
 
-def checked_binary(data, project, target):
+def checked_binary(data, project, target, *, package_dir=PACKAGE_DIR, crate=CRATE):
     found = []
     for line in data.splitlines():
         try:
@@ -79,19 +91,29 @@ def checked_binary(data, project, target):
             continue
         package = row['package_id'].rsplit('#', 1)[0]
         executable = Path(row['executable'])
-        if (row['manifest_path'] != str(project / 'controller-service/Cargo.toml')
-                or row['target']['src_path'] != str(project / 'controller-service/src/lib.rs')
-                or row['target']['name'] != 'sandproof_controller_service'
+        if (row['manifest_path'] != str(project / package_dir / 'Cargo.toml')
+                or row['target']['src_path'] != str(project / package_dir / 'src/lib.rs')
+                or row['target']['name'] != crate
                 or row['target']['kind'] != ['lib'] or row['profile']['test'] is not True
                 or row['fresh'] is not False or not package.startswith('path+file:')
-                or Path(unquote(urlparse(package[5:]).path)) != project / 'controller-service'
+                or Path(unquote(urlparse(package[5:]).path)) != project / package_dir
                 or executable.is_symlink() or not executable.is_file()
                 or not executable.resolve().is_relative_to(target.resolve())):
-            raise ValueError('Require a fresh actual service libtest from this source and target')
+            raise ValueError('Require a fresh actual package libtest from this source and target')
         found.append(dict(path=str(executable), sha256=sha(executable), artifact=row))
     if len(found) != 1:
-        raise ValueError('Expected exactly one freshly compiled actual service libtest')
+        raise ValueError('Expected exactly one freshly compiled actual package libtest')
     return found[0]
+
+
+def preserve_binary(binary, output, variant):
+    path = output / (variant + '-actual-tests')
+    with Path(binary['path']).open('rb') as source, path.open('xb') as destination:
+        shutil.copyfileobj(source, destination)
+    os.chmod(path, 0o700)
+    if sha(path) != binary['sha256']:
+        raise ValueError('Preserved actual test binary differs from compiler admission')
+    return dict(path=str(path), sha256=sha(path))
 
 
 def unpack(archive, project, tree):
@@ -124,20 +146,20 @@ def unpack(archive, project, tree):
     return inputs
 
 
-def check_inputs(project, inputs, changed=None):
+def check_inputs(project, inputs, changed=None, *, source=SOURCE):
     for name, expected in inputs.items():
         path = project / name
         info = path.lstat()
-        digest = changed if name == str(SOURCE) and changed else expected['sha256']
+        digest = changed if name == str(source) and changed else expected['sha256']
         if (not stat.S_ISREG(info.st_mode) or sha(path) != digest
                 or stat.S_IMODE(info.st_mode) != expected['mode']):
             raise ValueError('Source inputs changed during the check: ' + name)
 
 
-def mark_actual_lib_for_rebuild(project):
+def mark_actual_lib_for_rebuild(project, *, package_dir=PACKAGE_DIR):
     # Cargo can reuse identical correct/restored sources across private paths.
     # Recompile this unit without deleting any shared cache or changing bytes.
-    path = project / 'controller-service/src/lib.rs'
+    path = project / package_dir / 'src/lib.rs'
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode):
         raise ValueError('Actual unit source must remain a regular file')
@@ -150,7 +172,10 @@ def mark_actual_lib_for_rebuild(project):
                 after_mtime_ns=after.st_mtime_ns)
 
 
-def run(args):
+def run(args, *, case=None):
+    # Two committed callers share source/archive, compiler and execution
+    # admission. A case changes neither Cargo flags nor the original tests.
+    case = SimpleNamespace(**globals()) if case is None else case
     os.umask(0o077)
     root = Path(__file__).resolve().parents[3]
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
@@ -180,10 +205,11 @@ def run(args):
         raise ValueError('Keep evidence, disposable sources and the original cache separate')
     out.mkdir(mode=0o700)
     started = time.monotonic()
-    result = dict(kind='unknown-host-release-native', head=head, complete=False, commands=[],
-                  variants=[], freshness_markers=[], archive_sha256=args.archive_sha256, tests=list(TESTS),
+    result = dict(kind=case.KIND, head=head, complete=False, commands=[],
+                  variants=[], freshness_markers=[], archive_sha256=args.archive_sha256, tests=list(case.TESTS),
                   KVM=False, Lean=False, whole_six_variants=False,
-                  mutation=dict(path=str(SOURCE), before=BEFORE, after=AFTER),
+                  mutation=dict(path=str(case.SOURCE), before=case.BEFORE, after=case.AFTER),
+                  fixture_source=str(case.FIXTURE), fixture_scope=case.FIXTURE_SCOPE,
                   environment={key: os.environ.get(key) for key in ('CARGO_HOME', 'CARGO_BUILD_JOBS',
                       'RUST_TEST_THREADS', 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS')})
 
@@ -226,9 +252,10 @@ def run(args):
         original = work / 'original'
         original.mkdir(mode=0o700)
         inputs = unpack(args.archive, original, tree)
-        if sha(original / HERE / 'native.py') != sha(Path(__file__)):
+        if sha(original / case.HERE / 'native.py') != sha(Path(case.__file__)):
             raise ValueError('Driver differs from archived candidate')
         result['inputs'] = inputs
+        original_fixture = case.fixture_digest(original)
         lock_fd = os.open(args.lock, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
         with os.fdopen(lock_fd, 'r+') as lock:
             lock_info = os.fstat(lock.fileno())
@@ -241,36 +268,42 @@ def run(args):
                 version = command(tool + '-version', [tool, '--version'], original, dict(os.environ))
                 if version.returncode or not version.stdout.startswith((tool + ' 1.97.0 ').encode()):
                     raise ValueError('Use the fixed Rust/Cargo 1.97.0 toolchain')
-            for variant in ('correct', 'ignore-host-error', 'restored'):
+            for variant in ('correct', case.MUTANT, 'restored'):
                 project = work / variant
                 shutil.copytree(original, project)
-                if variant == 'ignore-host-error':
-                    mutate(project)
-                changed = sha(project / SOURCE) if variant == 'ignore-host-error' else None
-                check_inputs(project, inputs, changed)
+                if variant == case.MUTANT:
+                    case.mutate(project)
+                changed = sha(project / case.SOURCE) if variant == case.MUTANT else None
+                check_inputs(project, inputs, changed, source=case.SOURCE)
+                if case.fixture_digest(project) != original_fixture:
+                    raise ValueError('The full original test fixture changed')
                 env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_NET_OFFLINE='true',
                            CARGO_INCREMENTAL='0')
                 result['freshness_markers'].append(dict(variant=variant,
-                    **mark_actual_lib_for_rebuild(project)))
+                    **mark_actual_lib_for_rebuild(project, package_dir=case.PACKAGE_DIR)))
                 save()
                 build = command(variant + '-build', ['cargo', 'test', '--locked', '--offline',
-                    '-p', 'sandproof-controller-service', '--lib', '--no-run', '--message-format=json'],
+                    '-p', case.PACKAGE, '--lib', '--no-run', '--message-format=json'],
                     project, env)
                 if build.returncode != 0:
                     raise ValueError('Compilation failed, not a property rejection: ' + variant)
-                binary = checked_binary(build.stdout, project, target)
-                line = rejection_line(project)
-                for index, name in enumerate(TESTS):
+                binary = checked_binary(build.stdout, project, target,
+                    package_dir=case.PACKAGE_DIR, crate=case.CRATE)
+                binary['preserved'] = preserve_binary(binary, out, variant)
+                line = case.rejection_line(project)
+                for index, name in enumerate(case.TESTS):
                     execution = command(variant + '-test-' + str(index),
                                         [binary['path'], name, '--exact'], project, env)
-                    checked_execution(execution.stdout, execution.stderr, execution.returncode,
-                                      name, variant == 'ignore-host-error' and name == PROPERTY, line)
+                    case.checked_execution(execution.stdout, execution.stderr, execution.returncode,
+                                           name, variant == case.MUTANT and name == case.PROPERTY, line)
                 if sha(binary['path']) != binary['sha256']:
                     raise ValueError('Actual libtest changed during execution')
-                check_inputs(project, inputs, changed)
+                check_inputs(project, inputs, changed, source=case.SOURCE)
+                if case.fixture_digest(project) != original_fixture:
+                    raise ValueError('The full original test fixture changed during execution')
                 result['variants'].append(dict(name=variant, binary=binary,
-                    source_sha256=sha(project / SOURCE), fixture_sha256=sha(project / FIXTURE),
-                    rejected=variant == 'ignore-host-error', expected_assertion_line=line))
+                    source_sha256=sha(project / case.SOURCE), fixture_sha256=case.fixture_digest(project),
+                    rejected=variant == case.MUTANT, expected_assertion_line=line))
                 save()
         check_inputs(original, inputs)
         if sha(args.archive) != args.archive_sha256:
@@ -283,13 +316,13 @@ def run(args):
     return result
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(*, case=None):
+    parser = argparse.ArgumentParser(description=__doc__ if case is None else case.__doc__)
     for name in ('archive', 'work-root', 'target', 'output', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--archive-sha256', required=True)
     parser.add_argument('--head', required=True)
-    result = run(parser.parse_args())
+    result = run(parser.parse_args(), case=case)
     print(json.dumps({key: result.get(key) for key in ('head', 'complete', 'seconds', 'error')}))
     raise SystemExit(0 if result['complete'] else 1)
 
