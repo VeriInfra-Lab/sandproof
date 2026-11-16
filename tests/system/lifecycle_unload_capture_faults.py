@@ -494,10 +494,15 @@ class CaptureHandoffProbe:
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
+            extra = self._terminal_extra(conn, local, capacity)
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
-                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions)
+                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **extra)
+
+    def _terminal_extra(self, conn, local, capacity):
+        """Optional read-only facts in the SAME original SQL snapshot."""
+        return {}
 
     def _terminal_inventory(self, snapshot):
         rows = snapshot['resume_actions'] + snapshot['terminal_actions']
