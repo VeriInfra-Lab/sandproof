@@ -18,6 +18,18 @@ from tools.tests import test_internal_fault_relay as transport
 from _internal_fault_relay import accepted_request
 
 
+def public_acceptance(intent):
+    binding=intent['request']['binding']
+    return dict(session=binding['session'],key=copy.deepcopy(binding['key']),
+                accepted_version=intent['accepted_version'])
+
+
+def host_history(resume):
+    return dict(id=resume['session'],current_version=resume['accepted_version'],terminal=False,
+        entries=[dict(intent=copy.deepcopy(resume[name]))
+                 for name in ('original_create','original_unload','original_intent')])
+
+
 class ExpiryObservationTests(unittest.TestCase):
     def fixture(self):
         node,create,_=transport.InternalFaultRelayTests.pair(None)
@@ -35,6 +47,7 @@ class ExpiryObservationTests(unittest.TestCase):
             target_incarnation=7,manifest_digest=[7]*32)
         key=copy.deepcopy(original['request']['binding']['key'])
         resume=dict(session='session',key=key,accepted_version=3,original_intent=original,node=node)
+        resume.update(original_create=copy.deepcopy(create),original_unload=copy.deepcopy(unload))
         lifetime=dict(started_at_ms=1000,end_at_ms=76000,max_end_at_ms=601000,startup_deadline_ms=301000)
         def operation(intent,at_ms):
             # sandbox-center/src/audit.rs::OperationAudit: the real export
@@ -167,7 +180,7 @@ class ExpiryIntentCorrelationTests(unittest.TestCase):
 
     def test_missing_independent_intent_or_node_is_not_an_expiry_witness(self):
         audit,original,lifetime=self.fixture()
-        for field in ('original_intent','node'):
+        for field in ('original_intent','node','original_create','original_unload'):
             resume=copy.deepcopy(original);resume.pop(field)
             with self.subTest(field=field),self.assertRaises(ValueError):
                 expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
@@ -209,15 +222,17 @@ class ExpiryIntentCorrelationTests(unittest.TestCase):
                 audit,resume,lifetime=self.fixture()
                 if wrong:audit['sandboxes'][0]['operations'][-2]['operation']['capture']=4
                 accepted={k:copy.deepcopy(resume[k]) for k in ('session','key','accepted_version')}
-                client=SimpleNamespace(session='session',current_acceptance=copy.deepcopy(accepted),destroy_request=None)
+                client=SimpleNamespace(session='session',current_acceptance=copy.deepcopy(accepted),destroy_request=None,
+                    create_acceptance=public_acceptance(resume['original_create']))
                 processes=Mock();processes.audit.return_value=audit
                 runtime=SimpleNamespace(services=SimpleNamespace(processes=processes,wait_ready=Mock(),
                     host_configs=[dict(inbox=dict(node=resume['node']))]))
                 clock={'now':1000};deadline=time.monotonic()+5
                 with patch.object(expiry,'now_ms',side_effect=lambda:clock['now']), \
                         patch.object(expiry,'wait_clock',side_effect=lambda *_:clock.update(now=76000)), \
-                        patch.object(expiry,'read_host',return_value=dict(terminal=True)), \
+                        patch.object(expiry,'read_host',side_effect=[host_history(resume),dict(terminal=True)]), \
                         patch.object(expiry.RunningExpiryProbe,'_source',return_value=dict(
+                            work=dict(anchor=dict(request=copy.deepcopy(resume['original_unload']))),
                             restore=dict(intent=copy.deepcopy(resume['original_intent'])))), \
                         patch.object(expiry,'open_original_candidate_pidfd',return_value=999999), \
                         self.subTest(consumer=consumer,wrong=wrong):
@@ -225,6 +240,7 @@ class ExpiryIntentCorrelationTests(unittest.TestCase):
                         probe=expiry.ExpiryPrepareProbe.__new__(expiry.ExpiryPrepareProbe)
                         probe.runtime=runtime;probe.client=client;probe.deadline=deadline;probe.terminal_accepted=None
                         probe.restore_entry=dict(intent=copy.deepcopy(resume['original_intent']))
+                        probe.restore_record=dict(work=dict(anchor=dict(request=copy.deepcopy(resume['original_unload']))))
                         probe._start_terminal_recovery=Mock();probe._wait_native_expiry=Mock(return_value={'original':'Resume'})
                         probe._continue_terminal_recovery=Mock(return_value=dict(public_destroy_reached_host=True,
                             terminal_fence_observed=dict(kind='same-resume-deadline-compensation')))
@@ -242,6 +258,192 @@ class ExpiryIntentCorrelationTests(unittest.TestCase):
                     else:
                         observe();self.assertEqual(client.current_acceptance['key']['window'],2)
                         if consumer=='prepare':probe._continue_terminal_recovery.assert_called_once()
+
+
+class ExpirySourceHistoryTests(unittest.TestCase):
+    """Exercise both unchanged consumer APIs, with independent Host history."""
+    fixture=ExpiryObservationTests.fixture
+
+    def consumer(self,consumer,*,mutate_audit=None,mutate_host=None,early=False,pending=False):
+        audit,resume,lifetime=self.fixture()
+        if pending:
+            audit['sandboxes'][0]['operations'].pop()
+            audit['sandboxes'][0].update(terminating=False,phase='running')
+        if mutate_audit is not None:mutate_audit(audit['sandboxes'][0])
+        accepted=public_acceptance(resume['original_intent'])
+        client=SimpleNamespace(session='session',current_acceptance=copy.deepcopy(accepted),
+            create_acceptance=public_acceptance(resume['original_create']),destroy_request=None)
+        processes=Mock();processes.audit.return_value=audit
+        runtime=SimpleNamespace(services=SimpleNamespace(processes=processes,wait_ready=Mock(),
+            host_configs=[dict(inbox=dict(node=resume['node']))]))
+        host=host_history(resume)
+        if mutate_host is not None:mutate_host(host)
+        source=dict(work=dict(anchor=dict(request=copy.deepcopy(resume['original_unload']))),
+                    restore=dict(intent=copy.deepcopy(resume['original_intent'])))
+        clock={'now':1000};deadline=time.monotonic()+5
+        with patch.object(expiry,'now_ms',side_effect=lambda:clock['now']), \
+                patch.object(expiry,'wait_clock',side_effect=lambda *_:clock.update(now=76000)) as wait, \
+                patch.object(expiry,'read_host',side_effect=[host,dict(terminal=True)]) as read, \
+                patch.object(expiry.RunningExpiryProbe,'_source',return_value=source), \
+                patch.object(expiry,'open_original_candidate_pidfd',return_value=999999) as opened:
+            if consumer=='prepare':
+                probe=expiry.ExpiryPrepareProbe.__new__(expiry.ExpiryPrepareProbe)
+                probe.runtime=runtime;probe.client=client;probe.deadline=deadline;probe.terminal_accepted=None
+                probe.restore_entry=dict(intent=copy.deepcopy(resume['original_intent']))
+                probe.restore_record=copy.deepcopy(source)
+                probe._start_terminal_recovery=Mock();probe._wait_native_expiry=Mock(return_value={'original':'Resume'})
+                probe._continue_terminal_recovery=Mock(return_value=dict(public_destroy_reached_host=True,
+                    terminal_fence_observed=dict(kind='same-resume-deadline-compensation')))
+                observe=lambda:probe.expire(accepted,lifetime,deadline,observe_peer=lambda:None)
+            else:
+                def observe():
+                    probe=expiry.RunningExpiryProbe(runtime,client,dict(source={'original':'process'}),
+                        accepted,lifetime,deadline)
+                    if pending:
+                        return expiry.expiry_acceptance(audit,client.session,probe.resume,lifetime,76000)
+                    return expiry.observe_center_expiry(runtime,client,probe.resume,lifetime,deadline,
+                        host_delivered=False)
+            if mutate_audit is not None or mutate_host is not None:
+                with self.assertRaises(ValueError):observe()
+                self.assertEqual(client.current_acceptance,accepted)
+                if consumer=='prepare':
+                    self.assertIsNone(probe.terminal_accepted)
+                    probe._continue_terminal_recovery.assert_not_called()
+                if early:
+                    wait.assert_not_called();self.assertEqual(processes.mock_calls,[])
+                    if consumer=='prepare':probe._start_terminal_recovery.assert_not_called()
+                    else:opened.assert_not_called()
+            else:
+                result=observe()
+                if pending:
+                    self.assertIsNone(result);self.assertEqual(client.current_acceptance,accepted)
+                else:self.assertEqual(client.current_acceptance['key']['window'],2)
+                if consumer=='prepare':probe._continue_terminal_recovery.assert_called_once()
+
+    def test_valid_prefix_reaches_both_original_consumers_with_incarnation_and_window_gaps(self):
+        for consumer in ('prepare','running'):
+            with self.subTest(consumer=consumer):self.consumer(consumer)
+
+    def test_distinct_legal_request_and_retention_windows_preserve_each_original_context(self):
+        audit,resume,lifetime=self.fixture();row=audit['sandboxes'][0]
+        for index,(name,window,sequence) in enumerate((('original_create',1,1),
+                ('original_unload',4,11),('original_intent',9,80))):
+            intent=resume[name];intent['request']['binding']['key'].update(window=window,sequence=sequence)
+            intent['retention'].update(slot=index+1,window=7+index*3)
+            row['operations'][index]['binding']=copy.deepcopy(intent['request']['binding'])
+            row['operations'][index]['retention']=copy.deepcopy(intent['retention'])
+        row['create']['binding']=copy.deepcopy(resume['original_create']['request']['binding'])
+        row['operations'][-1]['retention']=copy.deepcopy(resume['original_intent']['retention'])
+        resume['key']=copy.deepcopy(resume['original_intent']['request']['binding']['key'])
+        with patch.object(self,'fixture',return_value=(audit,resume,lifetime)):
+            for consumer in ('prepare','running'):
+                with self.subTest(consumer=consumer):self.consumer(consumer)
+
+    def test_wrong_earlier_intent_is_rejected_even_when_expiry_is_still_pending(self):
+        self.consumer('running',pending=True)
+        for mutate in (lambda r:r['operations'][0]['operation'].update(target_incarnation=2),
+                       lambda r:r['operations'][1]['operation'].update(capture=4)):
+            with self.subTest(mutate=mutate):self.consumer('running',mutate_audit=mutate,pending=True)
+
+    def test_metadata_digest_does_not_add_a_second_serde_or_authorization_contract(self):
+        audit,resume,lifetime=self.fixture()
+        audit['sandboxes'][0]['create']['metadata_sha256']='a'*64
+        result=expiry.expiry_acceptance(audit,'session',resume,lifetime,76000)
+        self.assertEqual(result['accepted_version'],4)
+
+    def test_changed_original_unload_fields_cannot_pass_either_real_consumer(self):
+        mutations={
+            'source':lambda r:r['operations'][1]['operation'].update(source_incarnation=2),
+            'capture':lambda r:r['operations'][1]['operation'].update(capture=4),
+            'node':lambda r:r['operations'][1]['binding']['node'].update(node_id='other'),
+            'node-generation':lambda r:r['operations'][1]['binding']['node'].update(node_generation=2),
+            'protocol':lambda r:r['operations'][1]['binding'].update(protocol_version=3),
+            'session':lambda r:r['operations'][1]['binding'].update(session='other'),
+            'key-owner':lambda r:r['operations'][1]['binding']['key'].update(owner='other'),
+            'key-window':lambda r:r['operations'][1]['binding']['key'].update(window=3),
+            'key-sequence':lambda r:r['operations'][1]['binding']['key'].update(sequence=9),
+            'expected':lambda r:r['operations'][1]['binding']['expected'].update(version=2),
+            'center':lambda r:r['operations'][1]['center'].update(center='other'),
+            'retention-slot':lambda r:r['operations'][1]['retention'].update(slot=2),
+            'retention-window':lambda r:r['operations'][1]['retention'].update(window=8),
+            'version':lambda r:r['operations'][1].update(accepted_version=4),
+            'integer-alias':lambda r:r['operations'][1]['operation'].update(source_incarnation=True),
+            'float-alias':lambda r:r['operations'][1]['operation'].update(capture=3.0),
+        }
+        for consumer in ('prepare','running'):
+            for name,mutate in mutations.items():
+                with self.subTest(consumer=consumer,field=name):self.consumer(consumer,mutate_audit=mutate)
+
+    def test_create_envelope_and_redacted_projection_cannot_be_replaced(self):
+        mutations={
+            'target':lambda r:r['operations'][0]['operation'].update(target_incarnation=2),
+            'center':lambda r:r['operations'][0]['center'].update(center='other'),
+            'retention':lambda r:r['operations'][0]['retention'].update(window=8),
+            'version':lambda r:r['operations'][0].update(accepted_version=2),
+            'template':lambda r:r['create'].update(template_revision='other'),
+            'template-digest':lambda r:r['create'].update(template_digest=[8]*32),
+            'resources':lambda r:r['create']['resources'].update(cpu=99),
+            'options-digest':lambda r:r['create'].update(options_sha256='0'*64),
+            'startup':lambda r:r['create'].update(startup_deadline_ms=301001),
+            'max-lifetime':lambda r:r['create'].update(max_lifetime_ms=600001),
+            'target-float':lambda r:r['operations'][0]['operation'].update(target_incarnation=1.0),
+            'resource-bool':lambda r:r['create']['resources'].update(instances=True),
+        }
+        def changed_binding(row):
+            for binding in (row['create']['binding'],row['operations'][0]['binding']):
+                binding['node']['node_id']='other'
+        mutations['joint-create-binding']=changed_binding
+        for consumer in ('prepare','running'):
+            for name,mutate in mutations.items():
+                with self.subTest(consumer=consumer,field=name):self.consumer(consumer,mutate_audit=mutate)
+
+    def test_unrelated_host_history_fails_before_clock_manager_or_new_pidfd(self):
+        mutations={
+            'current-version':lambda r:r.update(current_version=4),
+            'terminal':lambda r:r.update(terminal=True),
+            'missing':lambda r:r['entries'].pop(0),
+            'duplicate':lambda r:r['entries'].append(copy.deepcopy(r['entries'][0])),
+            'original-create-key':lambda r:r['entries'][0]['intent']['request']['binding']['key'].update(sequence=9),
+            'original-unload':lambda r:r['entries'][1]['intent']['request']['operation'].update(capture=4),
+            'original-resume':lambda r:r['entries'][2]['intent']['request']['operation'].update(target_incarnation=8),
+        }
+        for consumer in ('prepare','running'):
+            for name,mutate in mutations.items():
+                with self.subTest(consumer=consumer,field=name):self.consumer(consumer,mutate_host=mutate,early=True)
+
+
+class ExpiryHostHistoryReaderTests(unittest.TestCase):
+    def test_actual_readonly_sql_history_is_bound_to_original_source_without_writes(self):
+        audit,resume,lifetime=ExpiryObservationTests().fixture()
+        accepted=public_acceptance(resume['original_intent'])
+        client=SimpleNamespace(session='session',create_acceptance=public_acceptance(resume['original_create']))
+        source=dict(work=dict(anchor=dict(request=copy.deepcopy(resume['original_unload']))),
+            restore=dict(intent=copy.deepcopy(resume['original_intent'])))
+        with tempfile.TemporaryDirectory() as directory:
+            database=Path(directory)/'original.sqlite3';raw=json.dumps(dict(sessions=[host_history(resume)])).encode()
+            with sqlite3.connect(database) as conn:
+                conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
+                conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
+                    (raw,hashlib.sha256(raw).digest(),65536))
+            database.chmod(0o600)
+            runtime=SimpleNamespace(services=SimpleNamespace(native_pools=[dict(database=str(database))],
+                host_configs=[dict(inbox=dict(node=resume['node']))],processes=Mock()))
+            before=database.read_bytes()
+            with patch.object(expiry.RunningExpiryProbe,'_source',return_value=source), \
+                    patch.object(expiry,'now_ms',return_value=1000), \
+                    patch.object(expiry,'open_original_candidate_pidfd',return_value=999999) as opened:
+                probe=expiry.RunningExpiryProbe(runtime,client,dict(source={}),accepted,lifetime,time.monotonic()+2)
+                self.assertEqual(probe.resume['original_create'],resume['original_create'])
+                self.assertEqual(probe.resume['original_unload'],resume['original_unload'])
+                self.assertEqual(database.read_bytes(),before)
+                opened.assert_called_once_with({})
+                with sqlite3.connect(database) as conn:
+                    conn.execute('UPDATE controller_lifecycle_inbox SET sha256=?',(b'x'*32,))
+                opened.reset_mock()
+                with self.assertRaises(ValueError):
+                    expiry.RunningExpiryProbe(runtime,client,dict(source={}),accepted,lifetime,time.monotonic()+2)
+                opened.assert_not_called()
+            self.assertEqual(runtime.services.processes.mock_calls,[])
 
 
 class PrepareExpiryBarrierTests(unittest.TestCase):
