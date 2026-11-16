@@ -91,6 +91,37 @@ def fixture(root):
 
 
 class ActivationFactsTests(unittest.TestCase):
+    def test_initial_real_sql_receipt_bytes_reach_original_success_checks(self):
+        for fault in ('none', 'foreign', 'duplicate-key', 'malformed'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                f=fixture(Path(directory));p=f.probe
+                inbox=copy.deepcopy(f.inbox)
+                inbox['sessions'][0].update(current_version=3,terminal=False,entries=[p.restore_entry])
+                raw=json.dumps(inbox).encode();db=Path(f.runtime.services.native_pools[0]['database'])
+                with sqlite3.connect(db) as conn:
+                    conn.executescript('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER); CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB);')
+                    conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',(raw,hashlib.sha256(raw).digest(),65536))
+                    for i,(action,state,result) in enumerate(f.actions):
+                        encoded=None if result is None else json.dumps(result).encode()
+                        if result is not None:
+                            if fault=='foreign':
+                                changed=copy.deepcopy(result);changed['identity']['generation']+=1
+                                encoded=json.dumps(changed).encode()
+                            if fault=='duplicate-key':encoded=b'{"identity":{},"identity":{}}'
+                            if fault=='malformed':encoded=b'{'
+                        conn.execute('INSERT INTO outbox VALUES(?,?,?,?,?,?)',(i,p.config['sandbox'],action['identity']['operation'],json.dumps(action).encode(),state,encoded))
+                db.chmod(0o600)
+                with patch.object(capture,'checked_source_records',return_value=[f.record]):
+                    if fault=='none':
+                        entry,records,actions=p._read(p.deadline)
+                        self.assertEqual(entry,p.restore_entry);self.assertEqual(records,[f.record])
+                        p._resume_inventory(actions,initial=True)
+                        self.assertEqual(actions,f.actions)
+                    else:
+                        with self.assertRaises(ValueError):
+                            _,_,actions=p._read(p.deadline)
+                            p._resume_inventory(actions,initial=True)
+
     def test_constructor_correlates_gate_full_source_and_latest_ram_before_opening_pidfd(self):
         for fault in ('none','source','cpu-domain','marker','old-RAM','nonce','counter','guest','generation','pin','position','receipt'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
