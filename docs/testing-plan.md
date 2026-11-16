@@ -364,6 +364,13 @@ public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功
 
 隔离副本分别引入：捕获失败就杀原 VM；快照未提交先 stop；激活未知后重新 load 旧来源；检查引用后无保护删除；load 返回立即释放 backing pin；超时/进程查询缺席即退额度。负例必须通过语法/抽取并到达错误分支；预期证明目标不可满足或同一可执行性质产生反例，不能把编译失败、环境超时、改弱断言当拒绝成功。不把错误版本合入生产。
 
+[未提交快照 Stop 原生入口](../verification/experiments/uncommitted-stop/README.md)复用原
+capture 测试的真实 World/派发/worker：sealed 但尚未提交时必须拒绝 Stop。私有错误版
+旁路原 worker 整段快照 gate，仍保留先前的原来源、Frozen 和 fence 检查；同一原断言须
+实际拒绝错误成功的 StopVm 决定，不能把其它拒绝或编译失败当反例。已提交合法卸载和
+普通失败保原 VM 两个控制在三版均须通过。本入口不执行宿主效果、真实 VM 或新证明，
+不代替完整第二类跨层错误、六类矩阵或 KVM；实际三版结果绑定精确提交另行记录。
+
 [未知宿主释放原生入口](../verification/experiments/unknown-host-release/README.md)复用原协议 4
 两 owner/两轮恢复及位置重开测试，检查真实 journal 在 `ReplyLost` 时保留释放责任。
 正确、忽略回调错误、恢复三版使用同一原断言，错误版必须在准确断言位置失败。
