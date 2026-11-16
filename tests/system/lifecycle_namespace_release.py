@@ -143,14 +143,34 @@ class NamespaceReleaseProbe(PendingStopProbe):
             raise ValueError('foreign or nonolder release witness while original namespace held')
         return witness
 
+    def _held_extra(self, conn, local, capacity):
+        # Reuse the original bounded native/lifetime reader in this SAME SQL
+        # snapshot. A terminal path has a different release/diagnostic owner.
+        extra = super()._extra(conn, local, capacity)
+        extra['release_witness'] = self._witness(conn, local, capacity)
+        return extra
+
     def _held_state(self, deadline):
         self.namespace_reference.verify()
         if not pidfd_exited(self.pidfd):
             raise ValueError('the original VMM must have a positive kernel exit observation')
-        entry, records, _, witness = self._read(deadline, extra=self._witness)
+        entry, records, _, extra = self._read(deadline, extra=self._held_extra)
         if (not equal(entry['intent'], self.unload_entry['intent'])
                 or entry['unload_resolution'] is not None):
             raise ValueError('held namespace requires the same pending original Unload')
+        native = extra['native']
+        expected = dict(owner=self.prior['local']['owner'], terminal=False,
+            generation=self.prior['context']['binding']['generation'], epoch=self.action['identity']['epoch'])
+        operation = _fields(native['current_operation'], 'id kind epoch status')
+        if (not equal({name: native[name] for name in expected}, expected)
+                or not equal({name: operation[name] for name in ('id', 'kind', 'epoch')},
+                    dict(id=entry['local_operation'], kind='Pause', epoch=self.action['identity']['epoch']))
+                or operation['status'] not in ('Pending', 'OutcomeUnknown', 'Succeeded')
+                or native['phase'] not in ('Pausing', 'Paused')
+                or (native['phase'] == 'Paused' and (native['current_vm'] is not None
+                    or native['net_slot'] is not None or operation['status'] != 'Succeeded'))
+                or not equal(extra['lifetime'], self.prior['lifetime'])):
+            raise ValueError('same nonterminal native Pause and original lifetime required')
         selected = [record for record in records if equal(record['work'], self.record['work'])]
         if len(selected) != 1 or material_source_charge(selected[0]) <= 0:
             raise ValueError('original complete source and positive material responsibility required')
@@ -159,8 +179,8 @@ class NamespaceReleaseProbe(PendingStopProbe):
                 raise ValueError('original adopted Full identity changed while namespace held')
         backing = original_backing(self.runtime, self.running_acceptance, records)
         position = self.prior['context']['position']
-        native = self.runtime.services.native_pools[0]
-        stored = original_json(Path(native['node_state_dir']) / 'host-slots' / (str(position) + '.json'),
+        pool = self.runtime.services.native_pools[0]
+        stored = original_json(Path(pool['node_state_dir']) / 'host-slots' / (str(position) + '.json'),
                                self.runtime.services.host_configs[0]['native']['maintenance']['capacity']['max_sql_value_bytes'])
         _fields(stored, 'position helper_gate value')
         row = _fields(stored['value'], 'context phase retirement')
@@ -169,9 +189,10 @@ class NamespaceReleaseProbe(PendingStopProbe):
                 or row['phase'] not in ('Occupied', 'Releasing')):
             raise ValueError('original node position was released or rebound while namespace held')
         return dict(pending_original_intent=True, node_phase=row['phase'],
+                    native_phase=native['phase'],
                     material_charge=material_source_charge(selected[0]),
                     backing_charge=material_source_charge(backing),
-                    previous_release_witness=witness, original_vmm_exited=True,
+                    previous_release_witness=extra['release_witness'], original_vmm_exited=True,
                     held_namespace=self.namespace_reference.verify(), public_completion=False)
 
     def _log_mark(self):
@@ -208,18 +229,27 @@ class NamespaceReleaseProbe(PendingStopProbe):
                    r'vm=Some\(' + str(binding['vm']) + r'\) epoch=None command=None$')
         # Do not accept an unfinished trailing write as a complete fault event.
         complete = raw[:raw.rfind(b'\n') + 1]
-        return {match[1] for line in complete.decode('utf-8').splitlines()
-                if (match := re.fullmatch(pattern, line))}
+        return [match[1] for line in complete.decode('utf-8').splitlines()
+                if (match := re.fullmatch(pattern, line))]
 
     def _wait_attempt(self, mark, deadline, *, completed_parent):
-        required = {'IdentityMismatch', 'UnresolvedAction'} if completed_parent else {'IdentityMismatch'}
+        # Normal Unload uses release_current_slot: Node Busy propagates out of
+        # advance_current_workflow, with no journal UnresolvedAction diagnostic.
+        # ActiveSandbox serializes that whole call. Two distinct matching Node
+        # failures after this manager's mark prove the earlier call returned;
+        # rereading one physical line never counts as a second attempt.
+        required = 2 if completed_parent else 1
         while True:
             remaining(deadline)
             state = self._held_state(deadline)
-            if required <= self._faults(mark):
+            observed = self._faults(mark).count('IdentityMismatch')
+            if observed >= required:
                 state = self._held_state(deadline)
+                if state['native_phase'] != 'Paused':
+                    raise ValueError('original completed native Pause required at the actual release attempt')
                 return dict(state, actual_host_release_attempt=True,
-                            actual_journal_rejection_completed=completed_parent)
+                            matching_node_failures=observed,
+                            previous_release_attempt_returned=completed_parent)
             time.sleep(min(.05, remaining(deadline)))
 
     def _audit_held(self, deadline):

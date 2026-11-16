@@ -41,6 +41,9 @@ def fixture(root):
     f.probe = p
     f.node_record = dict(position=1, helper_gate={'controlled': 'original'},
                          value=dict(context=copy.deepcopy(p.prior['context']), phase='Occupied', retirement=None))
+    f.native = dict(owner=1, generation=2, epoch=3, terminal=False, phase='Paused',
+        current_vm=None, net_slot=None, current_operation=dict(id=4, kind='Pause', epoch=3, status='Succeeded'))
+    f.lifetime = copy.deepcopy(p.prior['lifetime'])
     return f
 
 
@@ -59,11 +62,17 @@ def database(f, saved=None):
     with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
         conn.executescript('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER);'
             'CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB);'
-            'CREATE TABLE controller_release_witnesses(sandbox_id TEXT PRIMARY KEY,witness_json BLOB);')
+            'CREATE TABLE controller_release_witnesses(sandbox_id TEXT PRIMARY KEY,witness_json BLOB);'
+            'CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,state_blob BLOB,owner_id TEXT);'
+            'CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT,started_at_ms INTEGER,deadline_ms INTEGER,max_deadline_ms INTEGER,startup_deadline_ms INTEGER);')
         conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,65536)', (raw, hashlib.sha256(raw).digest()))
         identity = f.stop['identity']
-        conn.execute('INSERT INTO outbox VALUES(1,?,?,?,\'receipted\',NULL)',
-                     (identity['sandbox'], identity['operation'], json.dumps(f.stop).encode()))
+        receipt = f.parent.receipt(f.stop, 'Stopped', dict(pid=p.prior['source']['pid'], start_ticks=p.prior['source']['start_time_ticks']))
+        conn.execute('INSERT INTO outbox VALUES(1,?,?,?,\'receipted\',?)',
+                     (identity['sandbox'], identity['operation'], json.dumps(f.stop).encode(), json.dumps(receipt).encode()))
+        conn.execute('INSERT INTO sandboxes VALUES(?,?,?)', (p.config['sandbox'], json.dumps(f.native).encode(), 'tenant-1'))
+        conn.execute('INSERT INTO sandbox_lifetimes VALUES(?,?,?,?,?,?)',
+            (p.config['sandbox'], 'tenant-1', *(f.lifetime[key] for key in ('started_at_ms', 'end_at_ms', 'max_end_at_ms', 'startup_deadline_ms'))))
         if saved is not None:
             conn.execute('INSERT INTO controller_release_witnesses VALUES(?,?)', (p.config['sandbox'], json.dumps(saved).encode()))
 
@@ -104,7 +113,8 @@ class ReadOnlyReleaseTests(unittest.TestCase):
                         with self.assertRaises(ValueError): p._witness(conn, p.prior['local'], capacity)
 
     def test_actual_read_only_pending_snapshot_requires_old_full_pin_charge_and_nonfree_position(self):
-        for failure in ('none', 'free', 'context', 'typed-position', 'full', 'charge', 'pin', 'intent'):
+        for failure in ('none', 'pausing', 'free', 'context', 'typed-position', 'full', 'charge', 'pin', 'intent',
+                        'terminal', 'phase', 'operation', 'typed-owner', 'lifetime'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
                 f = fixture(Path(directory)); p = f.probe
                 if failure == 'free': f.node_record['value']['phase'] = 'Free'
@@ -113,13 +123,21 @@ class ReadOnlyReleaseTests(unittest.TestCase):
                 if failure == 'full': f.rows[1]['capture']['completed'][0] += 1
                 if failure == 'charge': f.rows[1]['capture']['reserved_material_bytes'] = 0
                 if failure == 'pin': f.rows[0]['restore']['material_use'] = False
+                if failure == 'pausing':
+                    f.native.update(phase='Pausing', current_vm=9, net_slot=10)
+                    f.native['current_operation']['status'] = 'OutcomeUnknown'
+                if failure == 'terminal': f.native['terminal'] = True
+                if failure == 'phase': f.native['phase'] = 'Destroyed'
+                if failure == 'operation': f.native['current_operation']['id'] += 1
+                if failure == 'typed-owner': f.native['owner'] = True
+                if failure == 'lifetime': f.lifetime['end_at_ms'] += 1
                 database(f, witness(f))
                 if failure == 'intent': p.unload_entry['intent']['center']['center'] = 'different'
                 stack.enter_context(patch.object(capture, 'private_path', side_effect=lambda path, **_: Path(path)))
                 stack.enter_context(patch.object(capture, 'checked_source_records', return_value=f.rows))
                 stack.enter_context(patch.object(held, 'original_json', return_value=f.node_record))
                 stack.enter_context(patch.object(held, 'pidfd_exited', return_value=True))
-                if failure == 'none':
+                if failure in ('none', 'pausing'):
                     result = p._held_state(p.deadline)
                     self.assertFalse(result['public_completion'])
                     self.assertGreater(result['material_charge'], 0)
@@ -149,7 +167,7 @@ class ReadOnlyReleaseTests(unittest.TestCase):
 
 
 class HostLogTests(unittest.TestCase):
-    def test_complete_exact_context_faults_after_mark_distinguish_node_attempt_from_parent_rejection(self):
+    def test_complete_exact_context_faults_after_mark_ignore_foreign_and_partial_events(self):
         with tempfile.TemporaryDirectory() as directory:
             f = fixture(Path(directory)); p = f.probe; path = Path(directory) / 'host-0.log'
             path.write_bytes(fault(f, 'UnresolvedAction'))
@@ -158,12 +176,12 @@ class HostLogTests(unittest.TestCase):
                 output.write(fault(f, 'IdentityMismatch', generation=99))
                 output.write(fault(f, 'IdentityMismatch'))
                 output.write(fault(f, 'UnresolvedAction')[:-1])
-            self.assertEqual(p._faults(mark), {'IdentityMismatch'})
+            self.assertEqual(p._faults(mark), ['IdentityMismatch'])
             with path.open('ab') as output: output.write(b'\n')
-            self.assertEqual(p._faults(mark), {'IdentityMismatch', 'UnresolvedAction'})
+            self.assertEqual(p._faults(mark), ['IdentityMismatch', 'UnresolvedAction'])
             original_read = os.read
             with patch.object(held.os, 'read', side_effect=lambda fd, size: original_read(fd, min(size, 7))):
-                self.assertEqual(p._faults(mark), {'IdentityMismatch', 'UnresolvedAction'})
+                self.assertEqual(p._faults(mark), ['IdentityMismatch', 'UnresolvedAction'])
 
     def test_replaced_truncated_or_oversize_log_is_not_release_evidence(self):
         for failure in ('replaced', 'truncated', 'large'):
@@ -176,16 +194,42 @@ class HostLogTests(unittest.TestCase):
                     with path.open('ab') as output: output.truncate(mark['offset'] + 1024**2 + 1)
                 with self.assertRaises(ValueError): p._faults(mark)
 
-    def test_parent_rejection_wait_checks_current_sql_even_when_node_already_logged(self):
+    def test_normal_unload_wait_counts_distinct_node_attempts_without_a_terminal_journal_log(self):
         with tempfile.TemporaryDirectory() as directory:
             f = fixture(Path(directory)); p = f.probe
-            p._held_state = Mock(return_value={'original': 'pending'})
-            p._faults = Mock(side_effect=[{'IdentityMismatch'}, {'IdentityMismatch', 'UnresolvedAction'}])
-            with patch.object(held.time, 'sleep') as sleep:
-                result = p._wait_attempt({}, p.deadline, completed_parent=True)
+            p._held_state = Mock(return_value={'native_phase': 'Paused'})
+            mark = p._log_mark(); path = Path(directory) / 'host-0.log'
+            with path.open('ab') as output: output.write(fault(f, 'IdentityMismatch'))
+            def retry(_):
+                with path.open('ab') as output: output.write(fault(f, 'IdentityMismatch'))
+            with patch.object(held.time, 'sleep', side_effect=retry) as sleep:
+                result = p._wait_attempt(mark, p.deadline, completed_parent=True)
             self.assertEqual(p._held_state.call_count, 3)
             sleep.assert_called_once()
-            self.assertTrue(result['actual_journal_rejection_completed'])
+            self.assertTrue(result['previous_release_attempt_returned'])
+            self.assertEqual(result['matching_node_failures'], 2)
+
+    def test_rereading_one_node_failure_or_an_unrelated_journal_error_cannot_prove_a_returned_call(self):
+        for journal in (False, True):
+            with self.subTest(journal=journal), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                f = fixture(Path(directory)); p = f.probe
+                p._held_state = Mock(return_value={'native_phase': 'Paused'})
+                mark = p._log_mark()
+                with (Path(directory) / 'host-0.log').open('ab') as output:
+                    output.write(fault(f, 'IdentityMismatch'))
+                    if journal: output.write(fault(f, 'UnresolvedAction'))
+                stack.enter_context(patch.object(held.time, 'sleep'))
+                stack.enter_context(patch.object(held, 'remaining', side_effect=[1, 1, 1, 1, TimeoutError('bounded observer trace')]))
+                with self.assertRaises(TimeoutError): p._wait_attempt(mark, p.deadline, completed_parent=True)
+                p.namespace_reference.close.assert_not_called()
+
+    def test_actual_node_release_diagnostic_requires_completed_nonterminal_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory)); p = f.probe
+            p._held_state = Mock(return_value={'native_phase': 'Pausing'})
+            p._faults = Mock(return_value=['IdentityMismatch', 'IdentityMismatch'])
+            with self.assertRaisesRegex(ValueError, 'completed native Pause'):
+                p._wait_attempt({}, p.deadline, completed_parent=True)
 
 
 class ReopenAndCompletionTests(unittest.TestCase):
@@ -215,7 +259,7 @@ class ReopenAndCompletionTests(unittest.TestCase):
                     result, mark = p._audit_held(p.deadline)
                     self.assertEqual(result['original_sql_phase'], 'Releasing')
                     self.assertEqual(mark['offset'], 0)
-                    self.assertEqual(p._faults(mark), {'UnresolvedAction'})
+                    self.assertEqual(p._faults(mark), ['UnresolvedAction'])
                 else:
                     with self.assertRaises(ValueError): p._audit_held(p.deadline)
 
