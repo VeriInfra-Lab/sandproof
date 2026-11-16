@@ -107,7 +107,7 @@ class NamespaceInputTests(unittest.TestCase):
                 package_id=(project / native.PACKAGE_DIR).as_uri().replace('file:', 'path+file:') + '#sandbox-runtime@0.1.0',
                 manifest_path=str(project / native.PACKAGE_DIR / 'Cargo.toml'),
                 target=dict(src_path=str(project / native.PACKAGE_DIR / 'src/lib.rs'), name=native.CRATE, kind=['lib']),
-                profile=dict(test=True), fresh=False)
+                profile=dict(test=True, debug_assertions=True, overflow_checks=True), fresh=False)
             def admit(value):
                 return native.runner.checked_binary(json.dumps(value).encode(), project, target,
                     package_dir=native.PACKAGE_DIR, crate=native.CRATE)
