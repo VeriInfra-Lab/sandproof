@@ -134,6 +134,22 @@ def check_inputs(project, inputs, changed=None):
             raise ValueError('Source inputs changed during the check: ' + name)
 
 
+def mark_actual_lib_for_rebuild(project):
+    # Cargo can reuse identical correct/restored sources across private paths.
+    # Recompile this unit without deleting any shared cache or changing bytes.
+    path = project / 'controller-service/src/lib.rs'
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError('Actual unit source must remain a regular file')
+    digest = sha(path)
+    os.utime(path, None, follow_symlinks=False)
+    after = path.lstat()
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino) or sha(path) != digest:
+        raise ValueError('Actual unit source changed while marking it for recompilation')
+    return dict(path=str(path), sha256=digest, before_mtime_ns=before.st_mtime_ns,
+                after_mtime_ns=after.st_mtime_ns)
+
+
 def run(args):
     os.umask(0o077)
     root = Path(__file__).resolve().parents[3]
@@ -165,7 +181,7 @@ def run(args):
     out.mkdir(mode=0o700)
     started = time.monotonic()
     result = dict(kind='unknown-host-release-native', head=head, complete=False, commands=[],
-                  variants=[], archive_sha256=args.archive_sha256, tests=list(TESTS),
+                  variants=[], freshness_markers=[], archive_sha256=args.archive_sha256, tests=list(TESTS),
                   KVM=False, Lean=False, whole_six_variants=False,
                   mutation=dict(path=str(SOURCE), before=BEFORE, after=AFTER),
                   environment={key: os.environ.get(key) for key in ('CARGO_HOME', 'CARGO_BUILD_JOBS',
@@ -234,6 +250,9 @@ def run(args):
                 check_inputs(project, inputs, changed)
                 env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_NET_OFFLINE='true',
                            CARGO_INCREMENTAL='0')
+                result['freshness_markers'].append(dict(variant=variant,
+                    **mark_actual_lib_for_rebuild(project)))
+                save()
                 build = command(variant + '-build', ['cargo', 'test', '--locked', '--offline',
                     '-p', 'sandproof-controller-service', '--lib', '--no-run', '--message-format=json'],
                     project, env)

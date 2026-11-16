@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tarfile
 import tempfile
@@ -85,6 +86,20 @@ class UnknownReleaseExecutionTests(unittest.TestCase):
 
 
 class UnknownReleaseBinaryTests(unittest.TestCase):
+    def test_rebuild_marker_preserves_actual_source_inode_and_bytes_without_cache_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'controller-service/src/lib.rs'
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b'original actual unit source')
+            os.utime(source, (1, 1))
+            before = source.stat()
+            marker = native.mark_actual_lib_for_rebuild(root)
+            self.assertEqual(source.read_bytes(), b'original actual unit source')
+            self.assertEqual(source.stat().st_ino, before.st_ino)
+            self.assertGreater(marker['after_mtime_ns'], marker['before_mtime_ns'])
+            self.assertEqual(marker['sha256'], native.sha(source))
+
     def test_only_fresh_original_service_unit_binary_in_selected_target_is_accepted(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
