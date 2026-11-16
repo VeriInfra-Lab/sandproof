@@ -185,7 +185,8 @@ class CaptureHandoffProbe:
             cap = self.runtime.services.host_configs[0]['native']['maintenance']['capacity']['max_sql_value_bytes']
             if any(len(row[0]) > cap or (row[2] is not None and len(row[2]) > cap) for row in rows):
                 raise ValueError('original outbox exceeds configured value bound')
-            actions = [(json.loads(raw, object_pairs_hook=unique_keys), state, receipt)
+            actions = [(json.loads(raw, object_pairs_hook=unique_keys), state,
+                        None if receipt is None else json.loads(receipt, object_pairs_hook=unique_keys))
                        for raw, state, receipt in rows]
             records = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
         if (database.stat().st_dev, database.stat().st_ino) != identity:
@@ -494,10 +495,15 @@ class CaptureHandoffProbe:
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
+            extra = self._terminal_extra(conn, local, capacity)
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
-                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions)
+                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **extra)
+
+    def _terminal_extra(self, conn, local, capacity):
+        """Optional read-only facts in the SAME original SQL snapshot."""
+        return {}
 
     def _terminal_inventory(self, snapshot):
         rows = snapshot['resume_actions'] + snapshot['terminal_actions']
