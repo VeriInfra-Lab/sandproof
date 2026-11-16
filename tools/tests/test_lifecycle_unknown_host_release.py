@@ -113,7 +113,7 @@ class UnknownReleaseBinaryTests(unittest.TestCase):
                 manifest_path=str(project / 'controller-service/Cargo.toml'),
                 target=dict(src_path=str(project / 'controller-service/src/lib.rs'),
                             name='sandproof_controller_service', kind=['lib']),
-                profile=dict(test=True), fresh=False)
+                profile=dict(test=True, debug_assertions=True, overflow_checks=True), fresh=False)
             found = native.checked_binary(json.dumps(row).encode(), project, target)
             self.assertEqual(found['sha256'], native.sha(binary))
             for field, value in (('fresh', True), ('manifest_path', '/other/Cargo.toml'),
@@ -136,6 +136,29 @@ class UnknownReleaseBinaryTests(unittest.TestCase):
             row['executable'] = str(link)
             with self.assertRaises(ValueError):
                 native.checked_binary(json.dumps(row).encode(), project, target)
+
+    def test_actual_test_profile_requires_true_debug_assertions_and_overflow_checks_for_both_packages(self):
+        for package, crate in (('controller-service', 'sandproof_controller_service'),
+                               ('sandbox-runtime', 'sandbox_runtime')):
+            with self.subTest(package=package), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); project = root/'source'; target = root/'target'; target.mkdir()
+                binary = target/'actual-tests'; binary.write_bytes(b'controlled compiler metadata, never executed')
+                row = dict(reason='compiler-artifact', executable=str(binary),
+                    package_id=(project/package).as_uri().replace('file:', 'path+file:')+'#'+crate+'@0.1.0',
+                    manifest_path=str(project/package/'Cargo.toml'),
+                    target=dict(src_path=str(project/package/'src/lib.rs'), name=crate, kind=['lib']),
+                    profile=dict(test=True, debug_assertions=True, overflow_checks=True), fresh=False)
+                def admit(value):
+                    return native.checked_binary(json.dumps(value).encode(), project, target,
+                        package_dir=Path(package), crate=crate)
+                self.assertEqual(admit(row)['sha256'], native.sha(binary))
+                for flag in ('debug_assertions', 'overflow_checks'):
+                    for value in (False, 0, 1, None, 'true', 'missing'):
+                        with self.subTest(flag=flag, value=value):
+                            changed = copy.deepcopy(row)
+                            if value == 'missing': changed['profile'].pop(flag)
+                            else: changed['profile'][flag] = value
+                            with self.assertRaises(ValueError): admit(changed)
 
 
 class UnknownReleaseArchiveTests(unittest.TestCase):

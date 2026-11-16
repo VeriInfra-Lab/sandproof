@@ -95,6 +95,8 @@ def checked_binary(data, project, target, *, package_dir=PACKAGE_DIR, crate=CRAT
                 or row['target']['src_path'] != str(project / package_dir / 'src/lib.rs')
                 or row['target']['name'] != crate
                 or row['target']['kind'] != ['lib'] or row['profile']['test'] is not True
+                or row['profile'].get('debug_assertions') is not True
+                or row['profile'].get('overflow_checks') is not True
                 or row['fresh'] is not False or not package.startswith('path+file:')
                 or Path(unquote(urlparse(package[5:]).path)) != project / package_dir
                 or executable.is_symlink() or not executable.is_file()
@@ -173,7 +175,7 @@ def mark_actual_lib_for_rebuild(project, *, package_dir=PACKAGE_DIR):
 
 
 def run(args, *, case=None):
-    # Two committed callers share source/archive, compiler and execution
+    # Committed callers share source/archive, compiler and execution
     # admission. A case changes neither Cargo flags nor the original tests.
     case = SimpleNamespace(**globals()) if case is None else case
     os.umask(0o077)
