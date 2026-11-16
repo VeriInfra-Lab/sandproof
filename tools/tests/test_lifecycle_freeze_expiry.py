@@ -4,6 +4,7 @@ from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 import time
@@ -84,6 +85,169 @@ def fixture(root):
         create=p.client.create_acceptance,processes=processes,center=center,
         accepted=dict(session=p.client.session,key=copy.deepcopy(terminal['binding']['key']),accepted_version=5))
     return NS(**result)
+
+
+def host_history(f):
+    _, create, _ = transport.InternalFaultRelayTests.pair(None)
+    return dict(id=f.probe.client.session, current_version=4, terminal=False,
+                entries=[dict(intent=copy.deepcopy(i)) for i in [create]+f.intents])
+
+
+def write_history(f, row):
+    """Seed the provider before observation; the consumer opens it read-only."""
+    database=Path(f.probe.runtime.services.native_pools[0]['database'])
+    raw=json.dumps(dict(sessions=[row]),separators=(',',':')).encode()
+    with sqlite3.connect(database) as conn:
+        conn.execute('CREATE TABLE IF NOT EXISTS controller_lifecycle_inbox(id INTEGER PRIMARY KEY,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
+        conn.execute('INSERT OR REPLACE INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
+                     (raw,hashlib.sha256(raw).digest(),65536))
+    database.chmod(0o600)
+    return database
+
+
+class FrozenExpiryHistoryTests(unittest.TestCase):
+    """Same old/new after_acceptance contract, real SQLite, controlled facts."""
+    def fresh(self, root):
+        f=fixture(root)
+        del f.probe.expiry_baseline
+        f.history=host_history(f)
+        f.processes.audit.return_value=f.before
+        return f
+
+    def observe(self, f):
+        with patch.object(frozen.FreezeDestroyProbe,'after_acceptance',return_value={'original':'Freeze'}), \
+                patch.object(expiry,'now_ms',return_value=950):
+            return f.probe.after_acceptance(f.probe.accepted,f.probe.deadline)
+
+    def unchanged_responsibility(self, f, acceptance, sources, database, before):
+        self.assertEqual(f.probe.client.current_acceptance,acceptance)
+        self.assertEqual(f.probe.initial_sources,sources)
+        self.assertEqual(database.read_bytes(),before)
+        self.assertIsNone(f.probe.automatic_acceptance)
+        self.assertFalse(f.probe.stop_released)
+        self.assertFalse(f.probe.continue_sent)
+        self.assertIsNone(f.probe.terminal_accepted)
+        f.probe.client.query.assert_not_called()
+        f.probe.client.destroy.assert_not_called()
+
+    def test_original_four_operation_history_is_readonly_and_keeps_number_gaps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=self.fresh(Path(directory))
+            f.history['entries'].reverse()  # Ledger order is not version order.
+            database=write_history(f,f.history);before=database.read_bytes()
+            acceptance=copy.deepcopy(f.probe.client.current_acceptance)
+            sources=copy.deepcopy(f.probe.initial_sources)
+            result=self.observe(f)
+            self.assertTrue(result['boundary_before_real_expiry'])
+            self.assertEqual(f.probe.expiry_baseline,f.before['sandboxes'][0])
+            self.assertEqual(f.intents[1]['request']['operation']['target_incarnation'],7)
+            self.assertNotEqual(f.intents[1]['retention']['window'],f.intents[1]['request']['binding']['key']['window'])
+            self.unchanged_responsibility(f,acceptance,sources,database,before)
+            f.processes.audit.assert_called_once_with('center')
+
+    def test_each_original_context_and_raw_options_are_preserved_without_a_serde_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=self.fresh(Path(directory));create=f.history['entries'][0]['intent']
+            create['center']['center']='original-create-center'
+            create['retention'].update(slot=31,window=91)
+            payload=create['request']['operation']['create'];payload['options']=list(b'{ }')
+            first=f.before['sandboxes'][0]['operations'][0]
+            first['center']=copy.deepcopy(create['center']);first['retention']=copy.deepcopy(create['retention'])
+            f.before['sandboxes'][0]['create']['options_sha256']=hashlib.sha256(bytes(payload['options'])).hexdigest()
+            # A valid diagnostic metadata digest has no content-equality claim.
+            f.before['sandboxes'][0]['create']['metadata_sha256']='e'*64
+            database=write_history(f,f.history);before=database.read_bytes()
+            acceptance=copy.deepcopy(f.probe.client.current_acceptance);sources=copy.deepcopy(f.probe.initial_sources)
+            self.assertTrue(self.observe(f)['boundary_before_real_expiry'])
+            self.unchanged_responsibility(f,acceptance,sources,database,before)
+
+    def test_replaced_create_envelope_or_projection_cannot_become_the_expiry_baseline(self):
+        faults=('center','deployment','slot','retention-window','extra-context','extra-retention',
+                'slot-bool','slot-float','protocol','node-id','node-generation','node-deployment','expected',
+                'extra-binding','target-incarnation','extra-operation','template-revision','template-digest',
+                'instances','cpu','memory','disk','resource-bool','resource-float','options-digest',
+                'startup-deadline','max-lifetime','extra-create','metadata-shape')
+        for fault in faults:
+            with tempfile.TemporaryDirectory() as directory,self.subTest(fault=fault):
+                f=self.fresh(Path(directory));row=f.before['sandboxes'][0]
+                op=row['operations'][0];binding=op['binding'];shape=row['create']
+                if fault=='center':op['center']['center']='replaced'
+                if fault=='deployment':op['center']['deployment']='other'
+                if fault=='slot':op['retention']['slot']+=1
+                if fault=='retention-window':op['retention']['window']+=1
+                if fault=='extra-context':op['center']['extra']=1
+                if fault=='extra-retention':op['retention']['extra']=1
+                if fault=='slot-bool':op['retention']['slot']=True
+                if fault=='slot-float':op['retention']['slot']=float(op['retention']['slot'])
+                if fault=='protocol':binding['protocol_version']=3
+                if fault=='node-id':binding['node']['node_id']='other'
+                if fault=='node-generation':binding['node']['node_generation']+=1
+                if fault=='node-deployment':binding['node']['deployment_id']='other'
+                if fault=='expected':binding['expected']={'state':'version','version':0}
+                if fault=='extra-binding':binding['extra']=1
+                if fault=='target-incarnation':op['operation']['target_incarnation']=2
+                if fault=='extra-operation':op['operation']['capture']=3
+                if fault=='template-revision':shape['template_revision']='other'
+                if fault=='template-digest':shape['template_digest'][0]^=1
+                if fault in ('instances','cpu'):shape['resources'][fault]+=1
+                if fault=='memory':shape['resources']['memory_bytes']+=1
+                if fault=='disk':shape['resources']['disk_bytes']+=1
+                if fault=='resource-bool':shape['resources']['instances']=True
+                if fault=='resource-float':shape['resources']['cpu']=float(shape['resources']['cpu'])
+                if fault=='options-digest':shape['options_sha256']='a'*64
+                if fault=='startup-deadline':shape['startup_deadline_ms']+=1
+                if fault=='max-lifetime':shape['max_lifetime_ms']+=1
+                if fault=='extra-create':shape['extra']=1
+                if fault=='metadata-shape':shape['metadata_sha256']='unbounded-diagnostic'
+                shape['binding']=copy.deepcopy(binding)  # Joint replacement defeats self-correlation.
+                database=write_history(f,f.history);before=database.read_bytes()
+                acceptance=copy.deepcopy(f.probe.client.current_acceptance);sources=copy.deepcopy(f.probe.initial_sources)
+                with self.assertRaises(ValueError):self.observe(f)
+                self.assertFalse(hasattr(f.probe,'expiry_baseline'))
+                self.unchanged_responsibility(f,acceptance,sources,database,before)
+
+    def test_same_json_value_with_different_original_option_bytes_is_not_the_same_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=self.fresh(Path(directory))
+            f.history['entries'][0]['intent']['request']['operation']['create']['options']=list(b'{ }')
+            database=write_history(f,f.history);before=database.read_bytes()
+            acceptance=copy.deepcopy(f.probe.client.current_acceptance);sources=copy.deepcopy(f.probe.initial_sources)
+            with self.assertRaises(ValueError):self.observe(f)
+            self.assertFalse(hasattr(f.probe,'expiry_baseline'))
+            self.unchanged_responsibility(f,acceptance,sources,database,before)
+
+    def test_wrong_host_prefix_is_rejected_before_the_center_manager_is_touched(self):
+        faults=('missing','extra','duplicate','terminal','current-version','create-session','create-key',
+                'create-version','create-node','create-protocol','create-expected','create-source',
+                'old-unload-context','old-unload-capture','resume-context','resume-target','current-context','current-capture')
+        for fault in faults:
+            with tempfile.TemporaryDirectory() as directory,self.subTest(fault=fault):
+                f=self.fresh(Path(directory));row=f.history;entries=row['entries']
+                create,unload,resume,current=[e['intent'] for e in entries]
+                if fault=='missing':entries.pop(0)
+                if fault=='extra':entries.append(copy.deepcopy(entries[0]))
+                if fault=='duplicate':entries[1]=copy.deepcopy(entries[0])
+                if fault=='terminal':row['terminal']=True
+                if fault=='current-version':row['current_version']=3
+                if fault=='create-session':create['request']['binding']['session']='other'
+                if fault=='create-key':create['request']['binding']['key']['sequence']+=10
+                if fault=='create-version':create['accepted_version']=2
+                if fault=='create-node':create['request']['binding']['node']['node_id']='other'
+                if fault=='create-protocol':create['request']['binding']['protocol_version']=3
+                if fault=='create-expected':create['request']['binding']['expected']={'state':'version','version':0}
+                if fault=='create-source':create['request']['operation']['target_incarnation']=2
+                if fault=='old-unload-context':unload['center']['center']='other'
+                if fault=='old-unload-capture':unload['request']['operation']['capture']+=1
+                if fault=='resume-context':resume['retention']['window']+=1
+                if fault=='resume-target':resume['request']['operation']['target_incarnation']=8
+                if fault=='current-context':current['center']['center']='other'
+                if fault=='current-capture':current['request']['operation']['capture']+=1
+                database=write_history(f,row);before=database.read_bytes()
+                acceptance=copy.deepcopy(f.probe.client.current_acceptance);sources=copy.deepcopy(f.probe.initial_sources)
+                with self.assertRaises(ValueError):self.observe(f)
+                self.assertFalse(hasattr(f.probe,'expiry_baseline'))
+                f.processes.stop.assert_not_called();f.processes.start.assert_not_called();f.processes.audit.assert_not_called()
+                self.unchanged_responsibility(f,acceptance,sources,database,before)
 
 
 class FrozenExpiryAuditTests(unittest.TestCase):
@@ -187,6 +351,7 @@ class FrozenExpiryObservationTests(unittest.TestCase):
         for times in ([999,999],[1000],[999,1000]):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe
+                write_history(f,host_history(f))
                 f.processes.audit.return_value=f.before
                 stack.enter_context(patch.object(frozen.FreezeDestroyProbe,'after_acceptance',return_value={'original':'Freeze'}))
                 stack.enter_context(patch.object(expiry,'now_ms',side_effect=times))
