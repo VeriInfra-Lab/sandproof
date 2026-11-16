@@ -97,25 +97,37 @@ def expiry_history_witness(resume, original_create, original_unload):
                 original_unload=copy.deepcopy(original_unload))
 
 
-def read_expiry_history(runtime,client,resume,original_unload,deadline):
+def read_expiry_history(runtime,client,resume,original_unload,deadline,*,current_unload=None):
     """One original read-only Host snapshot before waiting or manager actions."""
+    version=resume['accepted_version']
+    if current_unload is not None:
+        operation=accepted_request(current_unload,resume['node'])
+        binding=current_unload['request']['binding']
+        if (operation['kind']!='unload' or binding['session']!=resume['session']
+                or current_unload['accepted_version']!=version+1
+                or operation['source_incarnation']!=resume['original_intent']['request']['operation']['target_incarnation']
+                or any(not equal(binding['key'][k],resume['key'][k]) for k in ('owner','deployment'))):
+            raise ValueError('original current Unload after Resume required')
+        version=current_unload['accepted_version']
     row=read_host(runtime,client.session,deadline)
     entries=row.get('entries')
     if (row.get('id')!=client.session or row.get('terminal') is not False
-            or not equal(row.get('current_version'),resume['accepted_version'])
-            or type(entries) is not list or len(entries)!=3):
-        raise ValueError('one original current three-operation Host history required')
+            or not equal(row.get('current_version'),version)
+            or type(entries) is not list or len(entries)!=(3 if current_unload is None else 4)):
+        raise ValueError('one original current finite Host history required')
     try:
         intents=[entry['intent'] for entry in entries]
         for intent in intents:accepted_request(intent,resume['node'])
         intents.sort(key=lambda intent:intent['accepted_version'])
-        create,unload,original_resume=intents
+        create,unload,original_resume=intents[:3]
         public_create=dict(session=create['request']['binding']['session'],
             key=create['request']['binding']['key'],accepted_version=create['accepted_version'])
         _fields(client.create_acceptance,'session key accepted_version')
         if (not equal(public_create,client.create_acceptance)
                 or not equal(unload,original_unload)
-                or not equal(original_resume,resume['original_intent'])):
+                or not equal(original_resume,resume['original_intent'])
+                or (current_unload is not None and (not equal(intents[3],current_unload)
+                    or any(equal(binding['key'],intent['request']['binding']['key']) for intent in intents[:3])))):
             raise ValueError('Host prefix differs from public Create or retained source work')
     except (KeyError,TypeError) as error:
         raise ValueError('complete original Host history required') from error

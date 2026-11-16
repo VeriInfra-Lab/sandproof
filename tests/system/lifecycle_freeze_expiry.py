@@ -19,6 +19,8 @@ import time
 
 from _internal_fault_relay import _fields, _u64, accepted_request
 from lifecycle_freeze_destroy import FreezeDestroyProbe
+from lifecycle_unload_expiry import (_check_audited_history, expiry_resume_witness,
+                                     read_expiry_history)
 from lifecycle_unload_runtime import remaining
 from tools.check_kvm_host import unique_keys
 from tools.template_build_guest import equal
@@ -158,9 +160,16 @@ class FreezeExpiryProbe(FreezeDestroyProbe):
         require_before_expiry(lifetime)
         backing = self._backing(self.initial_sources)
         intents = [backing['work']['anchor']['request'], backing['restore']['intent'], self.unload_entry['intent']]
-        self.expiry_baseline = frozen_baseline(self._audit(min(deadline, self.deadline)),
-            self.client.create_acceptance, intents, self.runtime.services.host_configs[0]['inbox']['node'], lifetime)
+        node = self.runtime.services.host_configs[0]['inbox']['node']
+        deadline = min(deadline, self.deadline)
+        resume = expiry_resume_witness(self.running_acceptance, intents[1], node)
+        history = read_expiry_history(self.runtime, self.client, resume, intents[0], deadline,
+                                      current_unload=intents[2])
+        baseline = frozen_baseline(self._audit(deadline), self.client.create_acceptance,
+                                   intents, node, lifetime)
+        _check_audited_history(baseline, history)
         require_before_expiry(lifetime)
+        self.expiry_baseline = baseline
         self.automatic_acceptance = None
         return dict(result, original_center_frozen_baseline=copy.deepcopy(self.expiry_baseline),
                     boundary_before_real_expiry=True)
