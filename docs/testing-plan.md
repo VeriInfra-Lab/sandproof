@@ -234,6 +234,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
 | `capture-stop-pending` | 第二次 Unload 的原物理 Stop 门保持时，核对同一 SQL 快照的唯一全局 Stop/逻辑动作登记、原 VM 的实际 Paused、公开 unloading 及完整 Full/原 backing pin/正材料额度；随后放行同一 Stop，接原退出86/SQL 回执丢失重开及两轮恢复/产品 GC（E5；实机待验收） |
+| `capture-namespace-release` | 沿同一原 Stop 门/退出86持有原网络命名空间 FD；核对 VMM 内核退出、实际释放拒绝、Host 重开后原 SQL Releasing 和外层 journal 拒绝，禁止出现同代释放见证；同伴进展后关闭 FD，由产品完成 Unloaded、两轮恢复及 Destroy/GC（有限释放代表；实机待验收） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
 | `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
@@ -246,6 +247,21 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 物理退出。放行后仍须原退出86、同一 Stop 无 SQL 回执及原 pidfd 退出检查，再按原配置
 重开并完成公开 Unloaded、恢复、Destroy/GC/退额。该分支不完成全部未知 Pause/Stop 恢复，
 NodeHost I/O 接线也未因组件测试通过而成为已证明。
+
+`capture-namespace-release` 在发送第二次 Unload 前，以原受保护 network 记录、
+同一 VMM 的 procfs 命名空间和 pidfd 身份核对只读、CLOEXEC 的命名句柄。
+原 Stop 门仍要求完整来源/动作/材料/公开 pending，再沿原 Stop-success/pre-SQL 退出点
+取得肯定的内核退出观察。FD 继续持有原命名空间，不能从 PID 退出推断物理释放。
+原 Host 的匹配上下文 ReleaseSlot 诊断证明实际尝试已到达；计划内只读 Rust 审计须见
+原 SQL 位置 Releasing，重开后须再等到外层 journal 的 UnresolvedAction，避免把回调内
+尚未返回的错误当作完整拒绝。持有期间每次原只读 SQL 快照均拒绝同代完整释放见证，
+保留原 Full、backing pin/正额度及非 Free 的 Node 位置。旧代释放见证仍可合法保留。
+同一 owner 之外的原来宾/候选完成进展后，才显式关闭此 FD；关闭不提供释放凭据，
+仍由原产品完成 Unloaded/物理检查、后续恢复及两会话 Destroy/GC/严格结算。
+失败关闭的只是观察器自有句柄，原失败和已接受责任继续保留；不补造回执、改库或强行
+Destroy 来通过。组件自测的网络记录/命名路径及产品审计提供方受控，真实 procfs/FD/
+pidfd、日志解析和只读 SQLite 分别检查；未执行 KVM，不认领任意外部引用、完整第六类
+错误版、完整故障矩阵或形式证明。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、

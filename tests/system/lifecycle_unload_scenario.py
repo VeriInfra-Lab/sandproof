@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path, write_once
+from tools.template_build_guest import equal
 from server_process_crash import fetch
 
 PREFIX = '/sandproof/lifecycle'
@@ -686,9 +687,27 @@ class PublicUnloadScenario:
         assert running['phase']=='running'
         facts=running['unload_outcome']['facts']
         assert set(facts)==set(lifetime)|{'observed_at_ms'}
-        assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
+        assert equal({key:facts[key] for key in lifetime},lifetime), 'failed Unload changed original lifetime'
         assert uint(facts['observed_at_ms'])
         assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
+        current = self._advance_same_running_workload(running)
+        return dict(same_ram_and_activation=True,same_guest_process=True,
+            same_authorization=True,same_lifetime=True,counter=current['counter'])
+
+    def assert_running_workload(self,running):
+        """Read/advance the original guest witness without rotating credentials."""
+        self.step('original-running-workload')
+        self.check_view(running,self.current_acceptance)
+        assert running['phase']=='running' and running['unload_outcome'] is None
+        current = self._advance_same_running_workload(running)
+        return dict(session=self.session, same_ram_and_activation=True,
+            same_guest_process=True, same_authorization=True, counter=current['counter'],
+            guest_pid=current['pid'], guest_start_time_ticks=current['start_time_ticks'],
+            ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
+            activation_nonce_sha256=hashlib.sha256(current['activation_nonce'].encode()).hexdigest(),
+            metadata_generation=current['metadata_generation'])
+
+    def _advance_same_running_workload(self,running):
         previous=copy.deepcopy(self.witness)
         token=self.data_token
         sandbox=self.sdk()
@@ -703,9 +722,8 @@ class PublicUnloadScenario:
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.assert_previous_tokens_closed()
         self.witness=current
-        assert self.query()==running
-        return dict(same_ram_and_activation=True,same_guest_process=True,
-            same_authorization=True,same_lifetime=True,counter=current['counter'])
+        assert equal(self.query(),running)
+        return current
 
     def assert_data_closed(self):
         import httpx
@@ -732,9 +750,11 @@ def exercise(args):
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
         'capture-stop-pending': 'stop-receipt',
+        'capture-namespace-release': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    stop_pending = args.scenario == 'capture-stop-pending'
+    namespace_release = args.scenario == 'capture-namespace-release'
+    stop_pending = args.scenario == 'capture-stop-pending' or namespace_release
     freeze_dispatch_destroy = args.scenario == 'capture-freeze-before-destroy'
     freeze_destroy = args.scenario == 'capture-freeze-destroy' or freeze_dispatch_destroy
     prepare_destroy = args.scenario == 'restore-prepare-destroy'
@@ -846,7 +866,7 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
-        if freeze_destroy:
+        if freeze_destroy or namespace_release:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         lost=None
@@ -1045,7 +1065,7 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                if not freeze_destroy:
+                if not (freeze_destroy or namespace_release):
                     control.destroy(control_running)
                     control.wait_cleaned()
                     report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
@@ -1099,7 +1119,15 @@ def exercise(args):
                     report['phase'] = 'arm-original-material-retirement-gate'
                     report['material_retirement_arm'] = retirement_probe.arm(args.activation_gate_timeout_ms)
                 if capture_stage is not None:
-                    if stop_pending:
+                    if namespace_release:
+                        from lifecycle_namespace_release import NamespaceReleaseProbe
+                        def observe_namespace_peer():
+                            assert equal(control.query(), control_running)
+                            return dict(physical=runtime.confirm_running(control.session,control_physical,deadline),
+                                        workload=control.assert_running_workload(control_running))
+                        capture_probe = NamespaceReleaseProbe(runtime,client,physical_running,
+                            observe_peer=observe_namespace_peer)
+                    elif stop_pending:
                         from lifecycle_unload_stop_pending import PendingStopProbe
                         capture_probe = PendingStopProbe(runtime, client, physical_running)
                     else:
@@ -1114,6 +1142,8 @@ def exercise(args):
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    if namespace_release:
+                        report['phase'] = 'original-namespace-held-release-and-reopen'
                     report['capture_handoff_recovery'] = capture_probe.finish(deadline)
                     if capture_stage == 'measurement-partial':
                         resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
@@ -1137,6 +1167,13 @@ def exercise(args):
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
+                if namespace_release:
+                    report['phase']='original-product-release-after-namespace-close'
+                    report['namespace_release']=copy.deepcopy(report['capture_handoff_recovery'])
+                    report['slot_reuse']['peer_after_namespace_close']=observe_namespace_peer()
+                    control.destroy(control_running);control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
                 if retirement_observation:
                     from lifecycle_unload_retirement import wait_settled, assert_replay_unchanged
                     report['phase'] = 'live-session-old-material-settlement-' + str(cycle)
@@ -1223,6 +1260,13 @@ def exercise(args):
                 'original live Paused VMM and pending public Unload, one complete global Stop and '
                 'adopted material/backing pin/positive charges checked before release; same original '
                 'Stop then exited before SQL receipt, recovered and settled; not all unknown Stop interleavings')
+        if namespace_release:
+            report['acceptance_cases']['G6'] = (
+                'original VMM kernel exit while the original network namespace descriptor remained held; '
+                'actual host release rejection, original Releasing journal across manager reopen and '
+                'completed parent rejection without a matching release witness; same peer progressed, '
+                'then explicit descriptor close followed by original product Unloaded/GC; '
+                'not all physical references, unknown replies or a formal proof')
         if freeze_destroy:
             report['acceptance_cases'] = {
                 'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
@@ -1349,7 +1393,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-before-destroy',
         'capture-measurement-partial','capture-seal-receipt',
-        'capture-stop-receipt','capture-stop-pending','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stop-pending','capture-namespace-release','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
