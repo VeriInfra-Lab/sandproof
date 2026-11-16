@@ -334,6 +334,15 @@ Resume 的 RAM/进程/磁盘连续性和第二次 Unload 均实际执行。必�
 Paused、Freeze 回执仍未知并持有原 pidfd，完成原中心审计基线及到期前的关闭访问检查；
 若未及时到达该窗口则失败，不改时钟、续期或重发请求来制造到期。
 
+基线采用前，复用[到期历史见证](../tests/system/lifecycle_unload_expiry.py)对原 Host
+收件箱做一次有界只读 SQLite 快照：恰有 Create/Unload/Resume/本次 Unload 四条完整
+意图，当前版本、公开 Create 接受和保留来源工作均对应；前三条复用既有前缀合同，
+第四条必须是该 Resume 目标代的原 Unload。缺失、替换或错来源在操作中心 manager 前
+拒绝。随后以同一见证核对中心审计的完整 Create 封套、非敏感投影与原 options 字节摘要；
+全部检查及到期前检查完成后才保存基线。metadata 摘要只检查有界诊断形状，不建立
+第二份 Serde 模型或全文 JSON 相等结论。请求编号、代次空洞和独立 retention 窗口保持；
+该消费者仅接受上述有限四操作前缀，不覆盖 Renew 或更多恢复周期。
+
 中心在真实 TTL 跨越期间保持运行；宿主 Pausing 不由本地 Running 到期扫描处理，不能
 停中心等宿主代替它生成本次终止。中心只为既有 writer-lease 审计短暂停止并以原配置重开。
 到期后的首次公开查询之前，必须从原 Rust 审计观察到恰好追加一个内部 Destroy：完整
