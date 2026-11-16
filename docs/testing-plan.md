@@ -364,6 +364,14 @@ public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功
 
 隔离副本分别引入：捕获失败就杀原 VM；快照未提交先 stop；激活未知后重新 load 旧来源；检查引用后无保护删除；load 返回立即释放 backing pin；超时/进程查询缺席即退额度。负例必须通过语法/抽取并到达错误分支；预期证明目标不可满足或同一可执行性质产生反例，不能把编译失败、环境超时、改弱断言当拒绝成功。不把错误版本合入生产。
 
+[未知激活后再次预留入口](../verification/experiments/unknown-activation-reservation/README.md)
+复用原 checkpoint 的 Resume/未知激活/Crash/Recover 历史及末尾再次预留拒绝断言。
+私有错误政策只对完整同源未知激活旁路原 sealed/VM/slot 三处门，保留其它首错、
+来源、新鲜性和算术检查；正常恢复、普通首错、两轮不同 VM 及未知激活终止四个控制
+在三版均须通过。该有限代表观察实际 reducer 的第二份资源决定，尚未应用该决定或
+执行第二次 Load，不代替第三类全部路径、六类矩阵、真实 VM 或新形式证明；精确
+结果另行记录，最终组合及实机验收交执行方。
+
 [恢复后材料 pin 原生入口](../verification/experiments/loaded-material-pin/README.md)复用原
 source-work 的 Running 后继与真实 journal 读取。私有错误版把 Load 后的激活登记当作
 使用结束，实际保存 false pin；相关工作/校验/重放门采用同一错误寿命政策，来源、
