@@ -364,6 +364,13 @@ public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功
 
 隔离副本分别引入：捕获失败就杀原 VM；快照未提交先 stop；激活未知后重新 load 旧来源；检查引用后无保护删除；load 返回立即释放 backing pin；超时/进程查询缺席即退额度。负例必须通过语法/抽取并到达错误分支；预期证明目标不可满足或同一可执行性质产生反例，不能把编译失败、环境超时、改弱断言当拒绝成功。不把错误版本合入生产。
 
+[普通 Pause 失败严格入口](../verification/experiments/ordinary-pause-failure/README.md)复用捕获
+交接既有 `terminal-pause` 定义/变异函数和同一原测试，补充当前严格产物检查、恢复版与
+三个正常控制。错误版必须实际经过原补偿，在原 helper 的阶段相等断言观察到 Revoking
+而非 Pausing；用例名失败、早期错误、编译/超时均不算拒绝。旧证明及历史结果保留。
+这是第一类的 Core 补偿决定代表，原断言先于终止 worker 或物理 VM 停止，不认领完整
+第一类、六类矩阵、KVM 或新定理；精确原生结果另行记录，最终组合交执行方复验。
+
 [未知激活后再次预留入口](../verification/experiments/unknown-activation-reservation/README.md)
 复用原 checkpoint 的 Resume/未知激活/Crash/Recover 历史及末尾再次预留拒绝断言。
 私有错误政策只对完整同源未知激活旁路原 sealed/VM/slot 三处门，保留其它首错、
