@@ -102,6 +102,95 @@ fn physical_release_does_not_hold_management_lock_or_publish_cleaned_early() {
 }
 
 #[test]
+fn next_release_attempt_requires_previous_application_call_to_return() {
+    use sandbox_controller_core::maintenance::slots::HostSlotPhase;
+    use sandproof_controller_service::ControllerJournal;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let state = Arc::new(Mutex::new(State {
+        epoch: TestEpoch::Matching,
+        ..State::default()
+    }));
+    let namespace = "0123456789abcdef";
+    let inbox = lifecycle::config();
+    let bounded = lifecycle::fixture::complete_fixture::host(
+        &path,
+        namespace,
+        64,
+        2 * 1024 * 1024,
+        lifecycle::CLEANUP_BYTES + 1000,
+    );
+    let app = Arc::new(lifecycle::application_with_host_configuration(
+        &path,
+        Arc::clone(&state),
+        true,
+        inbox.clone(),
+        bounded.clone(),
+    ));
+    let create = lifecycle::request();
+    app.record_lifecycle_intent(&create, &lifecycle::context())
+        .unwrap();
+    app.establish_lifecycle_host_epoch().unwrap();
+    let sandbox = lifecycle::advance(&app).unwrap().local.unwrap().sandbox;
+    let terminal = destroy(create);
+    app.record_lifecycle_intent(&terminal, &lifecycle::context())
+        .unwrap();
+    let audit = || {
+        ControllerJournal::audit_lifecycle_complete(
+            &path,
+            namespace,
+            &bounded,
+            &lifecycle::maintenance(),
+            &inbox,
+        )
+        .unwrap()
+        .host_slots
+    };
+    let context = audit()[0].0;
+    for _ in 0..2 {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let mut release = Release(Some(release_tx));
+        {
+            let mut host = state.lock().unwrap();
+            host.release_unknown = false;
+            host.block_release = Some((entered_tx, release_rx));
+        }
+        let worker_app = Arc::clone(&app);
+        let worker = std::thread::spawn(move || worker_app.advance_current_workflow(sandbox));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // If a second same-sandbox executor could enter the host here, its
+        // ungated successful response would expose Free before the first call.
+        assert_eq!(
+            app.advance_current_workflow(sandbox),
+            Err(ApplicationError::Busy)
+        );
+        assert!(state.lock().unwrap().released_slots.is_empty());
+        assert_eq!(audit(), vec![(context, HostSlotPhase::Releasing)]);
+        assert!(
+            !app.lifecycle_destroy_cleaned(&terminal, &lifecycle::context())
+                .unwrap()
+        );
+        state.lock().unwrap().release_unknown = true;
+        release.0.take().unwrap().send(()).unwrap();
+        assert_eq!(worker.join().unwrap(), Err(ApplicationError::Busy));
+        assert_eq!(audit(), vec![(context, HostSlotPhase::Releasing)]);
+        assert!(state.lock().unwrap().released_slots.is_empty());
+    }
+    // Each successor host entry follows the previous returned Busy, not a
+    // fabricated journal-fault event or an exit fact.
+    state.lock().unwrap().release_unknown = false;
+    assert!(app.advance_current_workflow(sandbox).unwrap());
+    assert_eq!(state.lock().unwrap().released_slots, vec![context]);
+    assert_eq!(audit(), vec![(context, HostSlotPhase::Free)]);
+    assert!(
+        app.lifecycle_destroy_cleaned(&terminal, &lifecycle::context())
+            .unwrap()
+    );
+}
+
+#[test]
 fn physical_health_sampling_does_not_block_terminal_intent_registration() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
