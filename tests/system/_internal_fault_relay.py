@@ -729,7 +729,9 @@ class _Handler(BaseHTTPRequestHandler):
         """
         relay = self.server.relay
         done = threading.Event()
+        interrupted = threading.Event()
         def cancel():
+            interrupted.set()
             try:
                 cancel_socket.shutdown(socket.SHUT_RDWR)
             except OSError:
@@ -767,17 +769,29 @@ class _Handler(BaseHTTPRequestHandler):
             for name, value in response.getheaders():
                 if name.lower() not in HOP_HEADERS:
                     self.send_header(name, value)
+            body_allowed = self.command != 'HEAD' and response.status >= 200 and response.status not in (204, 304)
+            if body_allowed:
+                # A plain SSLSocket close does not send TLS close_notify.
+                # Give the original Rust client an HTTP completion marker
+                # instead of relying on an ambiguous TLS EOF for framing.
+                self.send_header('Transfer-Encoding', 'chunked')
             self.send_header('Connection', 'close')
-            self.end_headers()  # EOF delimits the already dechunked response
+            self.end_headers()
+            if not body_allowed:
+                return
             total = 0
             while True:
                 data = response.read1(min(65536, BODY_BYTES-total+1))
                 if not data:
+                    if not interrupted.is_set():
+                        if response.length not in (None, 0):
+                            raise ValueError('truncated declared test data response')
+                        self.wfile.write(b'0\r\n\r\n')
                     return
                 total += len(data)
                 if total > BODY_BYTES:
                     raise ValueError('test data response exceeds finite budget')
-                self.wfile.write(data)
+                self.wfile.write(format(len(data), 'x').encode('ascii') + b'\r\n' + data + b'\r\n')
         except (OSError, http.client.HTTPException):
             # Caller cancellation and original Host revocation can end a data
             # stream. Close it as unknown; never append a synthetic 503 after

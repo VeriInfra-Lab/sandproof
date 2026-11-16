@@ -400,6 +400,7 @@ class StreamingDataRelayTests(unittest.TestCase):
         self.addCleanup(left.close)
         self.addCleanup(right.close)
         handler.connection = left
+        handler.command = 'POST'
         state = SimpleNamespace(stream_deadline=time.monotonic()+5,
                                 failed=threading.Event(), stopping=threading.Event())
         handler.server = SimpleNamespace(relay=state)
@@ -421,9 +422,9 @@ class StreamingDataRelayTests(unittest.TestCase):
         frames = iter([b'first', b'second', b''])
         response.read1.side_effect = read
         handler._stream_data(response, cancel, transport)
-        self.assertEqual(handler.wfile.getvalue(), b'firstsecond')
+        self.assertEqual(handler.wfile.getvalue(), b'5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n')
         self.assertIn(unittest.mock.call('Connection', 'close'), handler.send_header.call_args_list)
-        self.assertNotIn(unittest.mock.call('Transfer-Encoding', 'chunked'), handler.send_header.call_args_list)
+        self.assertIn(unittest.mock.call('Transfer-Encoding', 'chunked'), handler.send_header.call_args_list)
         transport.settimeout.assert_called_once_with(None)
         response.close.assert_called_once_with()
         handler._reply.assert_not_called()
@@ -436,7 +437,8 @@ class StreamingDataRelayTests(unittest.TestCase):
             if declared: response.length = relay.BODY_BYTES+1
             with self.subTest(declared=declared), self.assertRaises(ValueError):
                 handler._stream_data(response, cancel, transport)
-            self.assertLessEqual(len(handler.wfile.getvalue()), relay.BODY_BYTES)
+            expected = b'' if declared else (b'10000\r\n' + b'x'*65536 + b'\r\n')*(relay.BODY_BYTES//65536)
+            self.assertEqual(handler.wfile.getvalue(), expected)
             if declared: handler.send_response.assert_not_called()
             handler._reply.assert_not_called()
             response.close.assert_called_once_with()
@@ -449,6 +451,7 @@ class StreamingDataRelayTests(unittest.TestCase):
         handler._reply.assert_not_called()
         self.assertFalse(state.failed.is_set())
         response.close.assert_called_once_with()
+        self.assertEqual(handler.wfile.getvalue(), b'')
 
     def test_disconnect_stop_and_absolute_deadline_interrupt_the_owned_backend(self):
         for reason in ('disconnect', 'stop', 'deadline'):
@@ -465,7 +468,24 @@ class StreamingDataRelayTests(unittest.TestCase):
             if reason == 'deadline': state.stream_deadline = time.monotonic()+.01
             handler._stream_data(response, cancel, transport)
             cancel.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+            self.assertEqual(handler.wfile.getvalue(), b'')
             self.assertEqual(state.failed.is_set(), reason == 'deadline')
+
+    def test_truncated_declared_response_never_gets_successful_ending(self):
+        handler, _, response, cancel, transport, _ = self.fixture([b''])
+        response.length = 1
+        with self.assertRaises(ValueError):
+            handler._stream_data(response, cancel, transport)
+        self.assertEqual(handler.wfile.getvalue(), b'')
+
+    def test_bodyless_response_does_not_emit_a_chunk_body(self):
+        for method, status in [('HEAD', 200), ('GET', 204), ('GET', 304)]:
+            handler, _, response, cancel, transport, _ = self.fixture([])
+            handler.command, response.status = method, status
+            handler._stream_data(response, cancel, transport)
+            self.assertEqual(handler.wfile.getvalue(), b'')
+            self.assertNotIn(unittest.mock.call('Transfer-Encoding', 'chunked'), handler.send_header.call_args_list)
+            response.read1.assert_not_called()
 
     def test_response_cleanup_error_marks_failure_without_another_http_reply(self):
         handler, state, response, cancel, transport, _ = self.fixture([b''])
