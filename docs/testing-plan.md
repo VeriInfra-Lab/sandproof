@@ -379,6 +379,13 @@ source-work 的 Running 后继与真实 journal 读取。私有错误版把 Load
 与合法后继退休两个控制在三版均须通过。该入口不执行真实 Load/映射/删除/退额，
 不代替第五类全部路径、六类矩阵、KVM 或新证明；实际结果绑定精确候选另行记录。
 
+[删除许可持久边界入口](../verification/experiments/retirement-permit-commit/README.md)复用原
+journal 在许可返回后的使用关闭断言。私有错误版仅漏掉原退休方法的一次 source 保存，
+保留原 eligibility/校验/事务/commit 与故障点，须实际返回许可后在同一原断言拒绝；
+正确/恢复及三个正常控制通过。完整原测试与其它输入保持，不以更早错误充当反例。
+这是第四类的有限持久许可代表，没有执行删除、新 reader 或真实引用交错，不能认领
+完整第四类、E10、六类矩阵、KVM 或新形式证明；实际结果绑定精确候选另行记录。
+
 [未提交快照 Stop 原生入口](../verification/experiments/uncommitted-stop/README.md)复用原
 capture 测试的真实 World/派发/worker：sealed 但尚未提交时必须拒绝 Stop。私有错误版
 旁路原 worker 整段快照 gate，仍保留先前的原来源、Frozen 和 fence 检查；同一原断言须
