@@ -303,9 +303,21 @@ class OriginalUnixPauseTests(unittest.TestCase):
 
 class FreezeStopWiringTests(unittest.TestCase):
     def test_actual_stop_socket_is_released_only_after_checks_and_peer_progress(self):
-        for fault in ('none','peer-progress','global-stop'):
+        for fault in ('none','peer-progress','global-stop','automatic-none','automatic-peer-progress','automatic-global-stop'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
-                f=fixture(Path(directory));p=f.probe;events=[];received=[]
+                automatic=fault.startswith('automatic-')
+                if automatic:
+                    import lifecycle_freeze_expiry as automatic_expiry
+                    from tools.tests.test_lifecycle_freeze_expiry import fixture as automatic_fixture
+                    f=automatic_fixture(Path(directory));p=f.probe
+                    with patch.object(automatic_expiry,'now_ms',side_effect=[999,1000,1000,1000]):
+                        accepted=p.observe_expiry(p.deadline)['acceptance']
+                    recovery=p.recover_after_expiry
+                    fault=fault.removeprefix('automatic-')
+                else:
+                    f=fixture(Path(directory));p=f.probe;accepted=f.accepted(f.destroy)
+                    recovery=p.recover_after_destroy
+                events=[];received=[]
                 server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);server.bind(str(p.stop_path));server.listen(1);server.settimeout(2)
                 def serve():
                     connection,_=server.accept()
@@ -326,11 +338,14 @@ class FreezeStopWiringTests(unittest.TestCase):
                     return {'original':'progress'}
                 try:
                     if fault=='none':
-                        result=p.recover_after_destroy(f.accepted(f.destroy),p.deadline,observe_peer=progress)
+                        result=recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertTrue(result['original_pin_and_positive_charge_retained']);self.assertTrue(p.stop_released)
+                        if automatic:
+                            self.assertTrue(result['automatic_terminal_reached_host']);self.assertNotIn('public_destroy_reached_host',result)
+                            p.client.destroy.assert_not_called()
                         self.assertLess(events.index('peer'),events.index('continue'));self.assertLess(events.index('continue'),events.index('paused'))
                     else:
-                        with self.assertRaises(ValueError):p.recover_after_destroy(f.accepted(f.destroy),p.deadline,observe_peer=progress)
+                        with self.assertRaises(ValueError):recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
                         self.assertFalse(p.continue_sent);self.assertNotIn('continue',events)
                         self.assertFalse(p.terminal_failure_state()['capacity_released'])
@@ -356,7 +371,9 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none'):
+    def exercise(self,fault=False,peer_fault='none',expiry=False):
+        if expiry:
+            import lifecycle_freeze_expiry as automatic
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
         for owner in ('1','2'):
             c=Mock(spec=scene.PublicUnloadScenario);c.owner=owner;c.session='session-'+owner
@@ -392,7 +409,7 @@ class SceneAndReplayTests(unittest.TestCase):
             nonlocal calls
             if session=='session-1':calls+=1
             return dict(session=session,lifetime=lifetime,context={'position':0 if session=='session-2' or calls==1 else 1})
-        p=Mock(spec=frozen.FreezeDestroyProbe)
+        p=Mock(spec=automatic.FreezeExpiryProbe if expiry else frozen.FreezeDestroyProbe)
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
         def recovery(*_,observe_peer,**__):
@@ -400,6 +417,9 @@ class SceneAndReplayTests(unittest.TestCase):
             if fault:raise ValueError('unknown original Stop')
             observe_peer();events.append('release-stop');return {}
         p.recover_after_destroy.side_effect=recovery
+        if expiry:
+            p.recover_after_expiry.side_effect=recovery
+            p.observe_expiry.side_effect=lambda *_:events.append('automatic-expiry') or {'acceptance':{'observed':'internal'}}
         p.terminal_failure_state.return_value={'original':'preserved'}
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
             sandbox=Mock();sandbox.files.read.side_effect=['disk-counter:3','disk-counter:4','disk-counter:4','disk-counter:5']
@@ -426,37 +446,42 @@ class SceneAndReplayTests(unittest.TestCase):
             stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
             stack.enter_context(patch.object(frozen,'FreezeDestroyProbe',return_value=p))
-            args=NS(scenario='capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
+            if expiry:
+                stack.enter_context(patch.object(automatic,'FreezeExpiryProbe',return_value=p))
+                stack.enter_context(patch.object(automatic,'wait_expired_cleaned',side_effect=lambda *_:events.append('wait_cleaned-1')))
+            args=NS(scenario='capture-freeze-expiry' if expiry else 'capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
             if peer_fault!='none':
                 with self.assertRaises(AssertionError):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete']);self.assertEqual(report['failure_type'],'AssertionError')
                 self.assertEqual(len(report['known_sessions']),2);other.destroy.assert_not_called()
-                self.assertEqual(clients['1'].destroy.call_count,1)
+                self.assertEqual(clients['1'].destroy.call_count,0 if expiry else 1)
                 runner.settlement_evidence.assert_not_called()
                 if peer_fault=='held-counter':
                     self.assertNotIn('release-stop',events);p.assert_terminal_before_gc.assert_not_called()
                     clients['1'].wait_cleaned.assert_not_called()
                     self.assertEqual(other.assert_running_workload.call_count,1)
-                    self.assertEqual(report['phase'],'freeze-destroy-peer-progress-before-stop')
+                    self.assertEqual(report['phase'],'freeze-expiry-peer-progress-before-stop' if expiry else 'freeze-destroy-peer-progress-before-stop')
                 else:
-                    self.assertIn('release-stop',events);clients['1'].wait_cleaned.assert_called_once()
+                    self.assertIn('release-stop',events)
+                    if not expiry:clients['1'].wait_cleaned.assert_called_once()
                     self.assertEqual(other.assert_running_workload.call_count,2)
-                    self.assertEqual(report['phase'],'freeze-destroy-peer-progress-after-cleaned')
+                    self.assertEqual(report['phase'],'freeze-expiry-peer-progress-after-cleaned' if expiry else 'freeze-destroy-peer-progress-after-cleaned')
                 other.assert_continued_workload.assert_not_called()
             elif fault:
                 with self.assertRaisesRegex(ValueError,'unknown original Stop'):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete']);self.assertEqual(len(report['known_sessions']),2)
-                self.assertEqual(clients['1'].destroy.call_count,1);clients['2'].destroy.assert_not_called()
+                self.assertEqual(clients['1'].destroy.call_count,0 if expiry else 1);clients['2'].destroy.assert_not_called()
                 p.assert_terminal_before_gc.assert_not_called();runner.settlement_evidence.assert_not_called()
                 self.assertEqual(clients['1'].unload.call_count,2);self.assertEqual(clients['1'].resume.call_count,1)
-                self.assertIn('freeze_destroy_failure_state',report)
+                self.assertIn('freeze_expiry_failure_state' if expiry else 'freeze_destroy_failure_state',report)
             else:
                 report=scene.exercise(args);self.assertTrue(report['complete']);self.assertEqual(len(report['cycles']),1)
-                self.assertTrue(report['cycles'][0]['frozen_unload_destroyed'])
-                self.assertLess(events.index('after_acceptance'),events.index('destroy-1'))
-                self.assertLess(events.index('destroy-1'),events.index('recover'))
+                self.assertTrue(report['cycles'][0]['frozen_unload_expired' if expiry else 'frozen_unload_destroyed'])
+                terminal_event='automatic-expiry' if expiry else 'destroy-1'
+                self.assertLess(events.index('after_acceptance'),events.index(terminal_event))
+                self.assertLess(events.index(terminal_event),events.index('recover'))
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('release-stop'),events.index('assert_terminal_before_gc'))
                 self.assertLess(events.index('assert_terminal_before_gc'),events.index('wait_cleaned-1'))
@@ -469,7 +494,13 @@ class SceneAndReplayTests(unittest.TestCase):
                 other.assert_continued_workload.assert_not_called()
                 self.assertEqual([c.args[1] for c in witness.call_args_list],['read','advance','read','advance'])
                 self.assertEqual(peer.witness,dict(previous,counter=5))
-                self.assertEqual(report['slot_reuse']['peer_after_frozen_destroy']['counter'],5)
+                self.assertEqual(report['slot_reuse']['peer_after_frozen_expiry' if expiry else 'peer_after_frozen_destroy']['counter'],5)
+            if expiry:
+                clients['1'].destroy.assert_not_called();clients['1'].wait_cleaned.assert_not_called()
+                self.assertEqual(clients['1'].create.call_args.args[0],{'timeout_ms':75000})
+                self.assertEqual(other.create.call_args.args[0],{})
+                self.assertEqual(clients['1'].operation_evidence_completed.call_count,3)
+                self.assertNotIn('destroy',report)
             other.run_public_workload.assert_called_once_with(peer_running)
             self.assertEqual(clients['1'].unload.call_count,2);self.assertEqual(clients['1'].resume.call_count,1)
             runner.finish.assert_called_once();p.close.assert_called_once()
