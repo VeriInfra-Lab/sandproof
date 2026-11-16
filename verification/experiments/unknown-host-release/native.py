@@ -106,6 +106,16 @@ def checked_binary(data, project, target, *, package_dir=PACKAGE_DIR, crate=CRAT
     return found[0]
 
 
+def preserve_binary(binary, output, variant):
+    path = output / (variant + '-actual-tests')
+    with Path(binary['path']).open('rb') as source, path.open('xb') as destination:
+        shutil.copyfileobj(source, destination)
+    os.chmod(path, 0o700)
+    if sha(path) != binary['sha256']:
+        raise ValueError('Preserved actual test binary differs from compiler admission')
+    return dict(path=str(path), sha256=sha(path))
+
+
 def unpack(archive, project, tree):
     inputs = {}
     seen = set()
@@ -279,6 +289,7 @@ def run(args, *, case=None):
                     raise ValueError('Compilation failed, not a property rejection: ' + variant)
                 binary = checked_binary(build.stdout, project, target,
                     package_dir=case.PACKAGE_DIR, crate=case.CRATE)
+                binary['preserved'] = preserve_binary(binary, out, variant)
                 line = case.rejection_line(project)
                 for index, name in enumerate(case.TESTS):
                     execution = command(variant + '-test-' + str(index),

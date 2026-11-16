@@ -88,6 +88,17 @@ class NamespaceExecutionTests(unittest.TestCase):
 
 
 class NamespaceInputTests(unittest.TestCase):
+    def test_each_actual_binary_is_preserved_before_cache_reuse_and_never_overwrites_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); binary = root / 'compiled'; binary.write_bytes(b'actual binary bytes')
+            admitted = dict(path=str(binary), sha256=native.runner.sha(binary))
+            saved = native.runner.preserve_binary(admitted, root, 'correct')
+            binary.write_bytes(b'next variant overwrote the cache')
+            self.assertEqual(Path(saved['path']).read_bytes(), b'actual binary bytes')
+            self.assertEqual(Path(saved['path']).stat().st_mode & 0o777, 0o700)
+            with self.assertRaises(FileExistsError): native.runner.preserve_binary(admitted, root, 'correct')
+            with self.assertRaises(ValueError): native.runner.preserve_binary(admitted, root, 'wrong-digest')
+
     def test_runtime_libtest_must_be_fresh_and_bound_to_its_actual_package_target_and_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); project = root / 'source'; target = root / 'target'; target.mkdir()

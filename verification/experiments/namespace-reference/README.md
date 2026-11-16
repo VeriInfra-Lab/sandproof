@@ -44,6 +44,8 @@ bash scripts/python-entry.sh verification/experiments/namespace-reference/native
 Cargo fresh=false。保存全部输入、原编译JSON、实际stdout/stderr、退出、断言位置及
 二进制摘要。失败保留原状态；确认进程/资源收尾后由原操作者退休 payload，保留缓存、
 原始证据和源码宽限期。普通完整入口、CI、最终 ning 组合和 KVM 分别报告。
+本候选还在每版执行前保存通过编译准入的原测试程序副本，并核对其摘要，避免后继构建
+复用缓存路径后丢失错误版程序。历史仅记录摘要的回执保持原范围，不迁记为已有程序副本。
 
 不调用 Cargo 的检查器回归：
 
