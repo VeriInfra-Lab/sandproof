@@ -364,6 +364,13 @@ public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功
 
 隔离副本分别引入：捕获失败就杀原 VM；快照未提交先 stop；激活未知后重新 load 旧来源；检查引用后无保护删除；load 返回立即释放 backing pin；超时/进程查询缺席即退额度。负例必须通过语法/抽取并到达错误分支；预期证明目标不可满足或同一可执行性质产生反例，不能把编译失败、环境超时、改弱断言当拒绝成功。不把错误版本合入生产。
 
+[恢复后材料 pin 原生入口](../verification/experiments/loaded-material-pin/README.md)复用原
+source-work 的 Running 后继与真实 journal 读取。私有错误版把 Load 后的激活登记当作
+使用结束，实际保存 false pin；相关工作/校验/重放门采用同一错误寿命政策，来源、
+完整动作和真正退休闭合检查保持。同一原 pin 断言必须到达并拒绝，未知 Prepare 保留
+与合法后继退休两个控制在三版均须通过。该入口不执行真实 Load/映射/删除/退额，
+不代替第五类全部路径、六类矩阵、KVM 或新证明；实际结果绑定精确候选另行记录。
+
 [未提交快照 Stop 原生入口](../verification/experiments/uncommitted-stop/README.md)复用原
 capture 测试的真实 World/派发/worker：sealed 但尚未提交时必须拒绝 Stop。私有错误版
 旁路原 worker 整段快照 gate，仍保留先前的原来源、Frozen 和 fence 检查；同一原断言须
