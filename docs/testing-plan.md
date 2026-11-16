@@ -140,6 +140,13 @@ E13 首次 Resume 的中心回执窗口使用同一入口的 `--scenario resume-
 
 [Resume 自测](../tools/tests/test_lifecycle_resume_receipt_loss.py)覆盖完整字段关联、原来源独立寿命、合法时间变化与限额、未知/替换候选拒绝及原编排顺序；原生 `secure_probe` 的 `original_observed_resume_receipt_is_held_dropped_then_read_again` 通过真实 Rust 编解码和两段原 mTLS 运行保持、显式丢弃及重读。其事实提供方仍是受控值，不能当作宿主接受、持久收件或 VM 运行证明。实机须在独立新部署上运行此选择，核对报告 `resume_receipt_restart` 的 pending/fault_window/candidate/recovery、`resume_receipt_same_candidate`、三轮正常记录与最终产品 Destroy/GC/额度、relay 和环境收尾；任何必需观察缺失仍未验收。该有限代表不关闭全部 E13。
 
+该 Resume 选择另在武装故障门前建立正常同伴的原 SDK RAM/进程/文件见证，中心恢复后、
+计划 Host 审计前，用同一执行授权推进一次计数。`resume_receipt_peer_progress` 分别保存
+同伴 session、初始化状态、前后见证和完成状态；初始化未知或恢复后未推进使场景失败，
+保留两会话，不重发 Resume 或自动 Destroy。复用同一个正常 Running 消费者和受控 SDK
+自测，保留失败 Unload 的原结果/寿命判据。该观察不承诺中心停机期间公开 API 可用；
+默认 normal、三代流程、原预算和故障点保持，新增实机仍须由 ning 验收。
+
 先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
 → resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
 更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、

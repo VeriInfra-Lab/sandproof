@@ -296,7 +296,7 @@ class ResumeCandidateTests(unittest.TestCase):
 
 
 class ResumeSceneTests(unittest.TestCase):
-    def _exercise(self,fail=False):
+    def _exercise(self,fail=False,peer_fault='none'):
         import lifecycle_unload_cow as cow
         import lifecycle_unload_retirement as retirement
         f=fixture();events=[];clients={}
@@ -309,11 +309,32 @@ class ResumeSceneTests(unittest.TestCase):
             for name in ('create','unload','resume','destroy','run_public_workload','assert_resumed_workload'):
                 getattr(c,name).side_effect=lambda *_,o=owner,n=name,**__:events.append(n+'-'+o) or {}
             clients[owner]=c
+        # Use #810's real normal-Running consumer with controlled SDK data.
+        # The peer witness is absent until the actual scene initializes it.
+        from tools.tests.test_lifecycle_running_witness import RunningWitnessTests
+        peer,peer_running=RunningWitnessTests().fixture()
+        previous=copy.deepcopy(peer.witness);peer.witness=None;peer.data_token=None
+        peer_client=clients['2'];peer_client.session=peer.session
+        peer_client.create_acceptance=copy.deepcopy(peer.create_acceptance)
+        peer_client.current_acceptance=copy.deepcopy(peer.current_acceptance)
+        peer_client.unload_acceptance=None
+        peer_client.wait_running.return_value=peer_running;peer_client.query.return_value=peer_running
+        def initialize_peer(view):
+            self.assertEqual(view,peer_running);events.append('run_public_workload-2')
+            if peer_fault=='initialize':raise ValueError('unknown original peer initialization')
+            peer.witness=copy.deepcopy(previous);peer.data_token='same-execution'
+            return dict(counter=previous['counter'])
+        peer_client.run_public_workload.side_effect=initialize_peer
+        real_progress=peer.assert_running_workload
+        def advance_peer(view):
+            events.append('assert_running_workload-2')
+            return real_progress(view)
+        peer_client.assert_running_workload.side_effect=advance_peer
         calls=0
         def physical(session,*_,**__):
             nonlocal calls
             if session=='session-1':calls+=1
-            return dict(session=session,lifetime=f.lifetime,context=dict(position=0 if session=='session-2' or calls==1 else 1))
+            return dict(session=session,lifetime=f.lifetime,context=dict(position=0 if session==peer_client.session or calls==1 else 1))
         probe=Mock(spec=resume.ResumeReceiptRestart)
         for name in ('arm','interrupt','recovered','assert_candidate','close'):
             getattr(probe,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
@@ -322,6 +343,12 @@ class ResumeSceneTests(unittest.TestCase):
                 events.append('interrupt');raise ValueError('unknown original candidate')
             probe.interrupt.side_effect=unknown
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            sandbox=Mock();sandbox.files.read.side_effect=['disk-counter:3','disk-counter:4']
+            advanced=dict(previous,counter=previous['counter']+(peer_fault!='counter'))
+            stack.enter_context(patch.object(peer,'sdk',return_value=sandbox))
+            witness=stack.enter_context(patch.object(peer,'witness_command',side_effect=[copy.deepcopy(previous),advanced]))
+            stack.enter_context(patch.object(peer,'query',return_value=peer_running))
+            stack.enter_context(patch.object(peer,'assert_previous_tokens_closed'))
             runner=NS(root=Path(directory),owner_key='owner',foreign_key='foreign',receipt_restart=probe,
                 services=NS(sdk_url='http://127.0.0.1:1'),measurement_identity=lambda:{},start=lambda _:None,create_parameters=lambda **_:{},
                 record_running=Mock(side_effect=physical),unload_evidence=Mock(return_value=dict(facts=f.lifetime,original_position={'position':0},original_capture_responsibilities=1)),
@@ -336,6 +363,26 @@ class ResumeSceneTests(unittest.TestCase):
             stack.enter_context(patch.object(retirement,'wait_settled',return_value={'receipt':{},'snapshot':{}}))
             stack.enter_context(patch.object(retirement,'assert_replay_unchanged'))
             args=NS(scenario='resume-receipt-restart',scenario_timeout=60,activation_gate_timeout_ms=60000)
+            if peer_fault!='none':
+                error=ValueError if peer_fault=='initialize' else AssertionError
+                with self.assertRaises(error):scene.exercise(args)
+                result=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(result['complete']);self.assertEqual(result['failure_type'],error.__name__)
+                self.assertEqual(len(result['known_sessions']),2);self.assertEqual(result['cycles'],[])
+                progress=result['resume_receipt_peer_progress']
+                self.assertEqual(progress['session'],peer_client.session);self.assertFalse(progress['complete'])
+                clients['1'].destroy.assert_not_called();peer_client.destroy.assert_not_called()
+                peer_client.run_public_workload.assert_called_once_with(peer_running)
+                if peer_fault=='initialize':
+                    self.assertFalse(progress['initialized']);self.assertEqual(events.count('resume-1'),0)
+                    probe.arm.assert_not_called();peer_client.assert_running_workload.assert_not_called()
+                else:
+                    self.assertTrue(progress['initialized']);self.assertEqual(events.count('resume-1'),1)
+                    probe.recovered.assert_called_once();probe.assert_candidate.assert_not_called()
+                    peer_client.assert_running_workload.assert_called_once_with(peer_running)
+                    self.assertEqual([c.args[1] for c in witness.call_args_list],['read','advance'])
+                probe.close.assert_called_once();runner.finish.assert_called_once()
+                self.assertLess(events.index('finish'),events.index('close'));return
             if fail:
                 with self.assertRaisesRegex(ValueError,'unknown original candidate'):scene.exercise(args)
                 result=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -343,6 +390,8 @@ class ResumeSceneTests(unittest.TestCase):
                 self.assertEqual(len(result['known_sessions']),2);self.assertEqual(result['cycles'],[])
                 self.assertEqual(events.count('resume-1'),1)
                 clients['1'].destroy.assert_not_called();clients['2'].destroy.assert_not_called()
+                peer_client.run_public_workload.assert_called_once_with(peer_running)
+                peer_client.assert_running_workload.assert_not_called()
                 probe.recovered.assert_not_called();probe.assert_candidate.assert_not_called()
                 probe.close.assert_called_once();runner.finish.assert_called_once()
                 self.assertLess(events.index('finish'),events.index('close'));return
@@ -353,6 +402,15 @@ class ResumeSceneTests(unittest.TestCase):
             self.assertLess(events.index('resume-1'),events.index('interrupt'))
             self.assertLess(events.index('interrupt'),events.index('recovered'))
             self.assertLess(events.index('recovered'),events.index('assert_candidate'))
+            peer_client.run_public_workload.assert_called_once_with(peer_running)
+            peer_client.assert_running_workload.assert_called_once_with(peer_running)
+            self.assertLess(events.index('run_public_workload-2'),events.index('arm'))
+            self.assertLess(events.index('recovered'),events.index('assert_running_workload-2'))
+            self.assertLess(events.index('assert_running_workload-2'),events.index('assert_candidate'))
+            self.assertEqual([c.args[1] for c in witness.call_args_list],['read','advance'])
+            self.assertEqual(peer.witness,dict(previous,counter=4))
+            self.assertTrue(result['resume_receipt_peer_progress']['complete'])
+            self.assertEqual(result['resume_receipt_peer_progress']['after']['counter'],4)
             self.assertLess(events.index('finish'),events.index('close'))
             self.assertEqual(events.count('destroy-1'),1);self.assertEqual(events.count('destroy-2'),1)
             self.assertIn('Resume',result['acceptance_cases']['E13'])
@@ -362,3 +420,9 @@ class ResumeSceneTests(unittest.TestCase):
 
     def test_unknown_candidate_preserves_both_sessions_without_reissue_or_forced_destroy(self):
         self._exercise(fail=True)
+
+    def test_unknown_peer_initialization_stops_before_resume_and_preserves_both_sessions(self):
+        self._exercise(peer_fault='initialize')
+
+    def test_stalled_original_peer_after_center_recovery_is_not_success_or_automatic_destroy(self):
+        self._exercise(peer_fault='counter')

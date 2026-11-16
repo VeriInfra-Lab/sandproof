@@ -254,6 +254,45 @@ async fn original_stream_crosses_python_relay_before_eof_and_cancels_backend() {
     f.stop().await;
 }
 
+/// Normal completion must survive the relay's TLS close, not just first-frame
+/// forwarding and caller cancellation. The original client must observe EOF.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_stream_completes_through_python_relay_without_truncated_http() {
+    let f = Fixture::new().await;
+    let mut relay = python_relay::PythonRelay::start_streaming(
+        &f.certificates,
+        f.address,
+        &wire::node("host-a"),
+    );
+    let client = InternalClient::new(
+        ClientTls::new(
+            f.certificates.center.material(),
+            vec![f.certificates.ca.der().clone()],
+            vec![f.certificates.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(relay.address, "host.test".into(), wire::node("host-a")).unwrap(),
+        Limits::new(3, Duration::from_secs(1), Duration::from_secs(2)).unwrap(),
+    );
+    let response = client
+        .stream_data(&identity(), data_request(), Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    let sender = f.senders.lock().unwrap().pop().unwrap();
+    sender.send(Ok(Frame::data(Bytes::from_static(b"started")))).await.unwrap();
+    sender.send(Ok(Frame::data(Bytes::from_static(b"finished")))).await.unwrap();
+    drop(sender);
+    let collected = tokio::time::timeout(Duration::from_secs(2), response.into_body().collect())
+        .await
+        .expect("original body deadline")
+        .expect("complete response must not become an HTTP truncation");
+    assert_eq!(collected.to_bytes(), "startedfinished");
+    idle_client(&client).await;
+    relay.stop();
+    f.stop().await;
+}
+
 #[tokio::test]
 async fn command_stream_survives_management_deadline_and_keeps_bounded_socket_leases() {
     let f = Fixture::new().await;

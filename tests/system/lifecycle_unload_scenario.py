@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path, write_once
+from tools.template_build_guest import equal
 from server_process_crash import fetch
 
 PREFIX = '/sandproof/lifecycle'
@@ -379,7 +380,7 @@ class PublicUnloadScenario:
 
     def check_view(self, view, acceptance):
         assert set(view) == {'session', 'operation', 'current_version', 'phase', 'unload_outcome', 'create_refusal'}
-        assert view['session'] == self.session and view['operation'] == acceptance['key']
+        assert view['session'] == self.session and equal(view['operation'], acceptance['key'])
         assert uint(view['current_version'], positive=True)
         assert view['current_version'] == acceptance['accepted_version']
         assert view['create_refusal'] is None
@@ -676,9 +677,27 @@ class PublicUnloadScenario:
         assert running['phase']=='running'
         facts=running['unload_outcome']['facts']
         assert set(facts)==set(lifetime)|{'observed_at_ms'}
-        assert {key:facts[key] for key in lifetime}==lifetime, 'failed Unload changed original lifetime'
+        assert equal({key:facts[key] for key in lifetime},lifetime), 'failed Unload changed original lifetime'
         assert uint(facts['observed_at_ms'])
         assert facts['started_at_ms']<=facts['observed_at_ms']<facts['end_at_ms']
+        current = self._advance_same_running_workload(running)
+        return dict(same_ram_and_activation=True,same_guest_process=True,
+            same_authorization=True,same_lifetime=True,counter=current['counter'])
+
+    def assert_running_workload(self,running):
+        """Read/advance the original guest witness without rotating credentials."""
+        self.step('original-running-workload')
+        self.check_view(running,self.current_acceptance)
+        assert running['phase']=='running' and running['unload_outcome'] is None
+        current = self._advance_same_running_workload(running)
+        return dict(session=self.session, same_ram_and_activation=True,
+            same_guest_process=True, same_authorization=True, counter=current['counter'],
+            guest_pid=current['pid'], guest_start_time_ticks=current['start_time_ticks'],
+            ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
+            activation_nonce_sha256=hashlib.sha256(current['activation_nonce'].encode()).hexdigest(),
+            metadata_generation=current['metadata_generation'])
+
+    def _advance_same_running_workload(self,running):
         previous=copy.deepcopy(self.witness)
         token=self.data_token
         sandbox=self.sdk()
@@ -693,9 +712,8 @@ class PublicUnloadScenario:
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.assert_previous_tokens_closed()
         self.witness=current
-        assert self.query()==running
-        return dict(same_ram_and_activation=True,same_guest_process=True,
-            same_authorization=True,same_lifetime=True,counter=current['counter'])
+        assert equal(self.query(),running)
+        return current
 
     def assert_data_closed(self):
         import httpx
@@ -866,6 +884,12 @@ def exercise(args):
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
         report['cycles']=[]
+        if resume_receipt_restart:
+            report['phase']='resume-receipt-peer-initialize'
+            report['resume_receipt_peer_progress']=dict(session=control.session,
+                initialized=False,complete=False)
+            report['resume_receipt_peer_progress']['before']=control.run_public_workload(control_running)
+            report['resume_receipt_peer_progress']['initialized']=True
         lost=None
         restore_cycles = 3 if normal_chain else 2
         for cycle in range(1, restore_cycles + 1):
@@ -995,6 +1019,9 @@ def exercise(args):
             if cycle == 1 and resume_receipt_restart:
                 report['phase']='resume-receipt-recovered-native-center'
                 receipt_probe.recovered(resumed,deadline)
+                report['phase']='resume-receipt-peer-progress'
+                report['resume_receipt_peer_progress']['after']=control.assert_running_workload(control_running)
+                report['resume_receipt_peer_progress']['complete']=True
             physical_running=runtime.record_running(client.session,deadline,
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
             if cycle == 1 and resume_receipt_restart:
