@@ -191,9 +191,7 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
             found = true;
             continue;
         }
-        let Some(logical) = world.logical_effect(&id.logical) else {
-            return None;
-        };
+        let logical = world.logical_effect(&id.logical)?;
         let terminal = logical.origin == EffectOrigin::Operation(key)
             && logical.current_attempt == id.attempt
             && logical.result.is_none()
