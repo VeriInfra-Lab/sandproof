@@ -31,6 +31,7 @@ from lifecycle_unload_runtime import (
 )
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 STAGES = {
     'freeze-receipt': ('freeze_vm', 'FreezeVm'),
@@ -89,11 +90,11 @@ def terminal_outbox(runtime, conn, local, operation, capacity, expected_identity
             'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
         action = json.loads(raw, object_pairs_hook=unique_keys)
         identity = action['identity']; command = action['command']
-        if (identity['sandbox'] != sandbox or identity['operation'] != op
-                or identity['owner'] != expected_identity['owner']
-                or identity['protocol_version'] != expected_identity['protocol_version']
-                or identity['generation'] != expected_identity['generation']
-                or identity['attempt'] != command['attempt']):
+        if (not equal(identity['sandbox'], sandbox) or not equal(identity['operation'], op)
+                or not equal(identity['owner'], expected_identity['owner'])
+                or not equal(identity['protocol_version'], expected_identity['protocol_version'])
+                or not equal(identity['generation'], expected_identity['generation'])
+                or not equal(identity['attempt'], command['attempt'])):
             raise ValueError('terminal observation action has a foreign complete identity')
         result.append((action, state, None if receipt is None else
                        json.loads(receipt, object_pairs_hook=unique_keys)))
@@ -621,7 +622,7 @@ class CaptureHandoffProbe:
         if state in ('ready', 'dispatched') and receipt is None:
             return None
         if (state != 'receipted' or type(receipt) is not dict
-                or receipt['identity'] != action['identity']):
+                or not equal(receipt['identity'], action['identity'])):
             raise ValueError('complete original action receipt required')
         outcome = receipt['outcome']
         if outcome['status'] == 'unknown':
@@ -629,8 +630,8 @@ class CaptureHandoffProbe:
         if outcome['status'] != 'observed_success':
             raise ValueError('original action did not have an observed successful result')
         observation = outcome['details']
-        if (observation['resource'] != action['identity']['resource']
-                or observation['command'] != action['command']['logical']['command']
+        if (not equal(observation['resource'], action['identity']['resource'])
+                or not equal(observation['command'], action['command']['logical']['command'])
                 or set(observation['result']) != {result_kind}):
             raise ValueError('original command-specific receipt resource or kind differs')
         return observation['result'][result_kind]

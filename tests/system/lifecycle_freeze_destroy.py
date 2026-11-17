@@ -226,15 +226,15 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         rows=[r for r in inbox['sessions'] if r['id']==self.accepted['session']]
         if len(rows)!=1:raise ValueError('one original frozen session required')
         row=rows[0];accepted=self.terminal_accepted
-        if row['current_version']==self.accepted['accepted_version'] and row['terminal'] is False:
+        if equal(row['current_version'],self.accepted['accepted_version']) and row['terminal'] is False:
             raise _AwaitTerminal('Destroy has not reached original Host')
-        if row['current_version']!=accepted['accepted_version'] or row['terminal'] is not True:
+        if not equal(row['current_version'],accepted['accepted_version']) or row['terminal'] is not True:
             raise ValueError('another current terminal version')
         old=[e for e in row['entries'] if equal(e['intent'],self.unload_entry['intent'])]
         new=[e for e in row['entries'] if e['intent']['accepted_version']==accepted['accepted_version']
              and equal(e['intent']['request']['binding']['key'],accepted['key'])]
         if (len(old)!=1 or not equal(old[0],self.unload_entry) or len(new)!=1
-                or any(row['local'][k]!=self.prior['local'][k] for k in ('sandbox','owner'))):
+                or any(not equal(row['local'][k],self.prior['local'][k]) for k in ('sandbox','owner'))):
             raise ValueError('original Unload/history or native binding changed')
         intent=new[0]['intent'];prior=self.unload_entry['intent'];binding=intent['request']['binding']
         accepted_request(intent,self.runtime.services.host_configs[0]['inbox']['node'])
@@ -271,10 +271,11 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
     def _stop_barrier(self,snapshot):
         self._inventory(snapshot);native=snapshot['native'];operation=native['current_operation']
         binding=self.prior['context']['binding']
+        _u64(native['epoch'])
         if (native['terminal'] is not True or native['phase']!='Revoking'
-                or native['generation']!=binding['generation'] or native['current_vm']!=binding['vm']
-                or native['net_slot']!=binding['network'] or operation is None or operation['kind']!='Kill'
-                or operation['id']!=snapshot['terminal']['local_operation'] or operation['epoch']!=native['epoch']
+                or not equal(native['generation'],binding['generation']) or not equal(native['current_vm'],binding['vm'])
+                or not equal(native['net_slot'],binding['network']) or operation is None or operation['kind']!='Kill'
+                or not equal(operation['id'],snapshot['terminal']['local_operation']) or not equal(operation['epoch'],native['epoch'])
                 or not equal(snapshot['lifetime'],self.prior['lifetime'])):
             raise ValueError('original current Kill/source/lifetime not retained before Stop')
         if not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources)):
@@ -288,9 +289,9 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         expected=dict(sandbox=sandbox,generation=binding['generation'],vm=binding['vm'],epoch=epoch)
         if (not equal(stop['command']['logical']['command'],{'StopVm':expected})
                 or not equal(stop['identity']['resource'],self.action['identity']['resource'])
-                or stop['identity']['epoch']!=epoch or not equal(snapshot['global_pending_stops'],[stop])
+                or not equal(stop['identity']['epoch'],epoch) or not equal(snapshot['global_pending_stops'],[stop])
                 or not equal(fence['command']['logical']['command'],{'InstallFence':dict(sandbox=sandbox,epoch=epoch,terminal=True)})
-                or fence['identity']['epoch']!=epoch or epoch<=self.action['identity']['epoch']):
+                or not equal(fence['identity']['epoch'],epoch) or epoch<=self.action['identity']['epoch']):
             raise ValueError('generic Stop gate does not name the one exact original terminal Stop')
         observed=self._success_observation(fences[0],'Fence')
         if observed is None:raise _AwaitTerminal('terminal fence not yet successfully observed')
@@ -366,7 +367,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         cleanups=[r for r in snapshot['terminal_actions'] if 'CleanupVm' in r[0]['command']['logical']['command']]
         if len(stops)!=1 or len(cleanups)!=1 or cleanups[0][1:]!=('dispatched',None):raise ValueError('original Stop and pending Cleanup receipt required')
         for row,command in ((stops[0],{'StopVm':dict(expected,epoch=epoch)}),(cleanups[0],{'CleanupVm':expected})):
-            if (not equal(row[0]['command']['logical']['command'],command) or row[0]['identity']['epoch']!=epoch
+            if (not equal(row[0]['command']['logical']['command'],command) or not equal(row[0]['identity']['epoch'],epoch)
                     or not equal(row[0]['identity']['resource'],self.action['identity']['resource'])):
                 raise ValueError('terminal stop/cleanup changed original VM or epoch')
         stopped=self._success_observation(stops[0],'Stopped')
@@ -421,10 +422,11 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
             except _AwaitTerminal:
                 time.sleep(min(.01,remaining(deadline)))
         native=snapshot['native'];binding=self.prior['context']['binding'];operation=native['current_operation']
+        _u64(native['epoch'])
         if (native['terminal'] is not True or native['phase']!='Revoking' or operation is None
-                or operation['kind']!='Kill' or operation['id']!=snapshot['terminal']['local_operation']
-                or operation['epoch']!=native['epoch'] or native['generation']!=binding['generation']
-                or native['current_vm']!=binding['vm'] or native['net_slot']!=binding['network']):
+                or operation['kind']!='Kill' or not equal(operation['id'],snapshot['terminal']['local_operation'])
+                or not equal(operation['epoch'],native['epoch']) or not equal(native['generation'],binding['generation'])
+                or not equal(native['current_vm'],binding['vm']) or not equal(native['net_slot'],binding['network'])):
             raise ValueError('durable exact original Kill required before restoring VMM response')
         self._no_full(snapshot['sources'],terminal=True)
         backing=self._backing(snapshot['sources'])
