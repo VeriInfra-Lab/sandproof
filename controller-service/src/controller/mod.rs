@@ -724,36 +724,11 @@ impl ControllerJournal {
                     }) => core::terminal::activation_in_current_abort(&world, activation),
                     _ => false,
                 };
-        let terminal_freeze = match &input {
-            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
-                sandbox,
-                generation,
-                vm,
-            )) => {
-                let epoch = world
-                    .sandbox_record(*sandbox)
-                    .ok_or(JournalError::Conflict)?
-                    .epoch;
-                lifecycle_inbox::source_work::full::freeze_terminal::allows_command(
-                    &transaction,
-                    &world,
-                    &core::Command::StopVm {
-                        sandbox: *sandbox,
-                        epoch,
-                        generation: *generation,
-                        vm: *vm,
-                    },
-                )?
-            }
-            core::ControllerInput::Effect(core::EffectInput::RetireFreeze { freeze, .. }) => {
-                lifecycle_inbox::source_work::full::freeze_terminal::permits(
-                    &transaction,
-                    &world,
-                    freeze,
-                )?
-            }
-            _ => false,
-        };
+        let terminal_freeze = lifecycle_inbox::source_work::full::freeze_terminal::permits_input(
+            &transaction,
+            &world,
+            &input,
+        )?;
         if storage::unresolved(&world, sandbox)
             && !terminal_freeze
             && !terminal_prepare_abort
@@ -931,6 +906,8 @@ impl ControllerJournal {
     }
 
     /// The durable closed Full permit is required before deferring old API observation.
+    /// # Errors
+    /// Unavailable or malformed original source/ledger data produces no permission.
     pub fn terminal_freeze_pending(&self, freeze: &core::EffectId) -> Result<bool, JournalError> {
         let world = self.world()?;
         Ok(

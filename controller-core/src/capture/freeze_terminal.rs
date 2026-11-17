@@ -105,6 +105,7 @@ pub fn coverage_origin(world: &World, freeze: &EffectId, coverage: StopCoverage)
     };
     key != coverage.operation
         && ledger.sandbox == sandbox
+        && ledger.operation.id == coverage.operation.operation
         && ledger.operation.kind == OperationKind::Kill
         && ledger.operation.epoch == coverage.epoch
         && ledger.input == (OperationInput::Kill { generation })
@@ -134,6 +135,7 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
         operation: op.id,
     };
     let plan = world.operation_plan(key)?;
+    let ledger = world.operation_record(key)?;
     let old_plan = world.operation_plan(old)?;
     let machine = world.vm_record(vm)?;
     let slot = row.net_slot?;
@@ -151,6 +153,9 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
         || row.effective != Authority::Closed
         || op.kind != OperationKind::Kill
         || op.epoch != row.epoch
+        || ledger.operation != op
+        || ledger.result.is_some()
+        || world.logical_effect(&freeze.logical)?.result.is_some()
         || row.epoch <= epoch
         || !matches!(
             op.status,
@@ -182,6 +187,24 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
     {
         return None;
     }
+    let stop = stop_covered(freeze, coverage)?;
+    (old != key && only_original_unknown(world, freeze, key, &stop)).then_some(stop)
+}
+
+fn only_original_unknown(
+    world: &World,
+    freeze: &EffectId,
+    key: OperationKey,
+    stop: &Command,
+) -> bool {
+    let Command::StopVm { sandbox, epoch, .. } = *stop else {
+        return false;
+    };
+    let fence = Command::InstallFence {
+        sandbox,
+        epoch,
+        terminal: true,
+    };
     let mut found = false;
     for id in world.effect_ids() {
         if id.command().sandbox() != sandbox || !crate::effect::outcome_is_unresolved(world, id) {
@@ -191,31 +214,18 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
             found = true;
             continue;
         }
-        let logical = world.logical_effect(&id.logical)?;
-        let terminal = logical.origin == EffectOrigin::Operation(key)
-            && logical.current_attempt == id.attempt
-            && logical.result.is_none()
-            && (*id.command()
-                == Command::InstallFence {
-                    sandbox,
-                    epoch: row.epoch,
-                    terminal: true,
-                }
-                || *id.command()
-                    == Command::StopVm {
-                        sandbox,
-                        epoch: row.epoch,
-                        generation,
-                        vm,
-                    });
-        if !terminal {
-            return None;
+        let Some(logical) = world.logical_effect(&id.logical) else {
+            return false;
+        };
+        if logical.origin != EffectOrigin::Operation(key)
+            || logical.current_attempt != id.attempt
+            || logical.result.is_some()
+            || (*id.command() != fence && id.command() != stop)
+        {
+            return false;
         }
     }
-    if !found || old == key {
-        return None;
-    }
-    stop_covered(freeze, coverage)
+    found
 }
 
 #[must_use]

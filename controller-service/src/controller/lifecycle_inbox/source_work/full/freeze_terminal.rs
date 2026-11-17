@@ -52,7 +52,10 @@ pub(in crate::controller) fn permits(
         let plan = world
             .operation_plan(original)
             .ok_or(JournalError::CorruptStore)?;
-        return Ok(record.work.anchor.local.sandbox == sandbox
+        return Ok(world
+            .sandbox_record(sandbox)
+            .is_some_and(|row| row.owner == record.work.anchor.local.owner)
+            && record.work.anchor.local.sandbox == sandbox
             && record.work.anchor.native.generation == generation
             && record.work.anchor.native.current_vm == Some(vm)
             && plan.epoch == epoch
@@ -79,4 +82,33 @@ pub(in crate::controller) fn allows_command(
         }
     }
     Ok(false)
+}
+
+pub(in crate::controller) fn permits_input(
+    connection: &Connection,
+    world: &core::World,
+    input: &core::ControllerInput,
+) -> Result<bool, JournalError> {
+    match input {
+        core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(sandbox, generation, vm)) => {
+            let epoch = world
+                .sandbox_record(*sandbox)
+                .ok_or(JournalError::Conflict)?
+                .epoch;
+            allows_command(
+                connection,
+                world,
+                &core::Command::StopVm {
+                    sandbox: *sandbox,
+                    epoch,
+                    generation: *generation,
+                    vm: *vm,
+                },
+            )
+        }
+        core::ControllerInput::Effect(core::EffectInput::RetireFreeze { freeze, .. }) => {
+            permits(connection, world, freeze)
+        }
+        _ => Ok(false),
+    }
 }
