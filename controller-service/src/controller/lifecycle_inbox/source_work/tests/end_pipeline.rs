@@ -360,6 +360,103 @@ fn original_second_freeze_observation_precedes_current_terminal_fence_and_stop()
 }
 
 #[test]
+fn application_observes_original_second_freeze_before_executing_terminal_work() {
+    for unknown_receipt in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let PendingRestoredFreeze {
+            journal,
+            backing,
+            source,
+            freeze,
+        } = pending_restored_freeze(&path, unknown_receipt);
+        let sandbox = source.source_sandbox();
+        let ready_fence = ready_terminal_fence(&journal, sandbox);
+        let epoch = journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .epoch;
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            source: Some(source.work.requirement().source.clone()),
+            actions: vec![freeze.clone()],
+            observe_unavailable: true,
+            lose_stop: Some(sandbox),
+            ..State::default()
+        }));
+        drop(journal);
+        let app = v3::application(&path, state.clone(), false);
+        app.establish_lifecycle_host_epoch().unwrap();
+        let unavailable = app.recover_on_startup().unwrap();
+        assert_eq!(unavailable.receipts_recovered, 0);
+        drop(app);
+        {
+            let journal = v3::open(&path);
+            assert_eq!(journal.uncertain_actions().unwrap(), vec![freeze.clone()]);
+            assert_eq!(ready_terminal_fence(&journal, sandbox), ready_fence);
+            assert_original_backing_held(&journal, &backing);
+        }
+        {
+            let observed = state.lock().unwrap();
+            assert!(observed.recovery_observations > 0);
+            assert_eq!(observed.actions, vec![freeze.clone()]);
+            assert!(observed.released_slots.is_empty());
+        }
+        state.lock().unwrap().observe_unavailable = false;
+        let app = v3::application(&path, state.clone(), false);
+        app.establish_lifecycle_host_epoch().unwrap();
+        let available = app.recover_on_startup().unwrap();
+        assert!(available.receipts_recovered > 0);
+        drop(app);
+        let journal = v3::open(&path);
+        let world = journal.world().unwrap();
+        let row = world.sandbox_record(sandbox).unwrap();
+        assert!(
+            row.terminal && matches!(row.phase, core::Phase::Revoking | core::Phase::Destroyed)
+        );
+        assert_eq!(row.desired, core::Authority::Closed);
+        assert_eq!(row.effective, core::Authority::Closed);
+        let observed = state.lock().unwrap();
+        assert_eq!(
+            observed
+                .actions
+                .iter()
+                .filter(|action| *action == &freeze)
+                .count(),
+            1
+        );
+        let fence_position = observed
+            .actions
+            .iter()
+            .position(|action| action == &ready_fence)
+            .unwrap();
+        let core::Command::FreezeVm { generation, vm, .. } = *freeze.command.command() else {
+            panic!("original restored Freeze required");
+        };
+        let expected_stop = core::Command::StopVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        };
+        let stop_position = observed
+            .actions
+            .iter()
+            .position(|action| *action.command.command() == expected_stop)
+            .unwrap();
+        assert!(fence_position < stop_position);
+        assert!(!observed.actions.iter().any(|action| matches!(
+            action.command.command(),
+            core::Command::PrepareVm { .. }
+                | core::Command::ActivateVm { .. }
+                | core::Command::SealSnapshot { .. }
+        )));
+    }
+}
+
+#[test]
 fn ordinary_stop_waits_for_persisted_end_and_recovers_at_dispatch_and_receipt() {
     for receipt_before_restart in [false, true] {
         let dir = tempfile::tempdir().unwrap();
