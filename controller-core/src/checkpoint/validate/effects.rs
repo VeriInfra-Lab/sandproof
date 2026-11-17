@@ -385,7 +385,9 @@ pub(in crate::checkpoint) fn retired_stop(
     id: &EffectId,
     coverage: StopCoverage,
 ) -> Result<(), Reject> {
-    let command = terminal::activation_stop_covered(id, coverage).ok_or(Reject::InvalidEffect)?;
+    let command = terminal::activation_stop_covered(id, coverage)
+        .or_else(|| crate::capture::freeze_terminal::stop_covered(id, coverage))
+        .ok_or(Reject::InvalidEffect)?;
     let stop = EffectId {
         logical: LogicalEffectId {
             command: command.clone(),
@@ -421,7 +423,8 @@ pub(in crate::checkpoint) fn retired_stop(
         }
         && stop_logical.current_attempt == coverage.attempt
         && stop_logical.origin == EffectOrigin::Operation(coverage.operation)
-        && terminal::activation_coverage_origin(world, id, coverage)
+        && (terminal::activation_coverage_origin(world, id, coverage)
+            || crate::capture::freeze_terminal::coverage_origin(world, id, coverage))
         && activation.current_attempt == id.attempt
         && activation.result
             == Some(LogicalEffectResult::RetiredByStop {

@@ -397,6 +397,19 @@ fn retire_next(
             && !pending_prepare_observation
         {
             result = Some(WorkflowStep::Blocked);
+            if let Some(command) = crate::capture::freeze_terminal::current_stop(world, effect) {
+                let logical = crate::LogicalEffectId { command };
+                if let Some(row) = world.logical_effect(&logical) {
+                    let stop = crate::EffectId {
+                        logical,
+                        attempt: row.current_attempt,
+                    };
+                    result = Some(apply(ControllerInput::Effect(EffectInput::RetireFreeze {
+                        freeze: effect.clone(),
+                        stop,
+                    })));
+                }
+            }
             if let Some(command) = crate::terminal::activation_stop_current(world, effect) {
                 let logical = crate::LogicalEffectId { command };
                 if let Some(row) = world.logical_effect(&logical) {

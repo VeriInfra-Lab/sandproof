@@ -724,7 +724,38 @@ impl ControllerJournal {
                     }) => core::terminal::activation_in_current_abort(&world, activation),
                     _ => false,
                 };
+        let terminal_freeze = match &input {
+            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(
+                sandbox,
+                generation,
+                vm,
+            )) => {
+                let epoch = world
+                    .sandbox_record(*sandbox)
+                    .ok_or(JournalError::Conflict)?
+                    .epoch;
+                lifecycle_inbox::source_work::full::freeze_terminal::allows_command(
+                    &transaction,
+                    &world,
+                    &core::Command::StopVm {
+                        sandbox: *sandbox,
+                        epoch,
+                        generation: *generation,
+                        vm: *vm,
+                    },
+                )?
+            }
+            core::ControllerInput::Effect(core::EffectInput::RetireFreeze { freeze, .. }) => {
+                lifecycle_inbox::source_work::full::freeze_terminal::permits(
+                    &transaction,
+                    &world,
+                    freeze,
+                )?
+            }
+            _ => false,
+        };
         if storage::unresolved(&world, sandbox)
+            && !terminal_freeze
             && !terminal_prepare_abort
             && !terminal_activation_abort
             && !terminal_capture_stop_input(&world, &input)
@@ -854,6 +885,15 @@ impl ControllerJournal {
             {
                 continue;
             }
+            if core::capture::freeze_terminal::allowed(&world, action.command.command())
+                && !lifecycle_inbox::source_work::full::freeze_terminal::allows_command(
+                    &transaction,
+                    &world,
+                    action.command.command(),
+                )?
+            {
+                continue;
+            }
             let input =
                 core::ControllerInput::Effect(core::EffectInput::Dispatch(action.command.clone()));
             let Ok(dispatched) = core::handle_controller(&world, input.clone()) else {
@@ -888,6 +928,19 @@ impl ControllerJournal {
             return Ok(Some(action));
         }
         Ok(None)
+    }
+
+    /// The durable closed Full permit is required before deferring old API observation.
+    pub fn terminal_freeze_pending(&self, freeze: &core::EffectId) -> Result<bool, JournalError> {
+        let world = self.world()?;
+        Ok(
+            core::capture::freeze_terminal::current_stop(&world, freeze).is_some()
+                && lifecycle_inbox::source_work::full::freeze_terminal::permits(
+                    &self.journal.connection,
+                    &world,
+                    freeze,
+                )?,
+        )
     }
 
     /// Apply a trusted host observation and its resource update in one commit.
@@ -930,6 +983,14 @@ impl ControllerJournal {
             if !uncertain(&previous.outcome) || uncertain(&receipt.outcome) {
                 return Err(JournalError::ConflictingReceipt);
             }
+        }
+        if matches!(action.command.command(), core::Command::FreezeVm { .. })
+            && matches!(
+                transaction.world().effect_status(&action.command),
+                Some(core::EffectStatus::RetiredByStop(_))
+            )
+        {
+            return Err(JournalError::ObsoleteReceipt);
         }
         // An identical confirmed receipt was handled above. A new activation
         // observation cannot change an already terminal instance, even after

@@ -771,3 +771,113 @@ fn lost_freeze_observation_blocks_only_until_original_result_returns() {
     );
     drop(state);
 }
+
+#[test]
+fn terminal_unreleased_freeze_stops_without_api_reply_and_reopens_with_original_responsibility() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, state) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let full = full_request(&source);
+    journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let sandbox = source.source_sandbox();
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    success(&mut journal, &fence);
+    let freeze = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        freeze.command.command(),
+        core::Command::FreezeVm { .. }
+    ));
+
+    let request = destroy(&mut journal);
+    assert!(journal.uncertain_actions().unwrap().contains(&freeze));
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&request, &v3::context())
+            .unwrap()
+    );
+    journal
+        .record_lifecycle_capture_never_released(&source.work, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    drop(journal);
+    let mut journal = v3::open(&path);
+    let held = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence { terminal: true, .. }
+    ));
+    success(&mut journal, &fence);
+    let stop = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        stop.command.command(),
+        core::Command::StopVm { .. }
+    ));
+    assert!(journal.uncertain_actions().unwrap().contains(&freeze));
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        held
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&request, &v3::context())
+            .unwrap()
+    );
+    success(&mut journal, &stop);
+    finish_destroy(&mut journal, sandbox);
+    let finished = journal.world().unwrap();
+    assert_eq!(
+        finished.sandbox_record(sandbox).unwrap().phase,
+        core::Phase::Destroyed
+    );
+    assert!(matches!(
+        finished.effect_status(&freeze.command),
+        Some(core::EffectStatus::RetiredByStop(_))
+    ));
+    assert!(!core::effect::effect_succeeded_check(
+        &finished,
+        freeze.command.command()
+    ));
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        held
+    );
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&request, &v3::context())
+            .unwrap(),
+        "Stop never releases material on its own"
+    );
+    let late = WorkReceipt {
+        identity: freeze.identity.clone(),
+        outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+            resource: freeze.identity.resource.clone(),
+            command: freeze.command.command().clone(),
+        }),
+    };
+    assert!(journal.complete(&late, &mut NeverCrash).is_err());
+    assert_eq!(journal.world().unwrap(), finished);
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_eq!(journal.world().unwrap(), finished);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        held
+    );
+    drop(state);
+}

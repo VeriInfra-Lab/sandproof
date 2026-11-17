@@ -166,6 +166,13 @@ pub(super) fn check_input_profile(
     {
         return Err(JournalError::UnsupportedInput);
     }
+    if let core::ControllerInput::Effect(core::EffectInput::RetireFreeze { freeze, .. }) = input
+        && !super::lifecycle_inbox::source_work::full::freeze_terminal::permits(
+            connection, world, freeze,
+        )?
+    {
+        return Err(JournalError::UnsupportedInput);
+    }
     if let core::ControllerInput::Request(core::Request::Resume(request)) = input
         && !super::lifecycle_inbox::source_work::restore::permits_resume_input(
             connection, world, request,

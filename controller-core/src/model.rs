@@ -673,6 +673,7 @@ pub enum Event {
     StartNextAttempt(EffectId, EffectId),
     FinalizeEffectFailure(EffectId, FailureKind),
     RetireActivation(EffectId, EffectId),
+    RetireFreeze(EffectId, EffectId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
