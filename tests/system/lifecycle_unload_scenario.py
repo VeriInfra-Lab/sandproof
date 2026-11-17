@@ -774,7 +774,8 @@ def exercise(args):
     unresponsive_freeze = args.scenario in ('capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry')
     ordered_freeze = args.scenario == 'capture-freeze-receipt-destroy'
     responsive_freeze = args.scenario == 'capture-freeze-responsive-destroy'
-    freeze_destroy = args.scenario in ('capture-freeze-destroy','capture-freeze-unresponsive-destroy') or responsive_freeze or ordered_freeze
+    freeze_dispatch_destroy = args.scenario == 'capture-freeze-before-destroy'
+    freeze_destroy = args.scenario in ('capture-freeze-destroy','capture-freeze-unresponsive-destroy') or responsive_freeze or ordered_freeze or freeze_dispatch_destroy
     ordered_expiry = args.scenario == 'capture-freeze-receipt-expiry'
     freeze_expiry = args.scenario in ('capture-freeze-expiry','capture-freeze-unresponsive-expiry') or ordered_expiry
     freeze_terminal = freeze_destroy or freeze_expiry
@@ -1252,13 +1253,16 @@ def exercise(args):
                 prefix='freeze_expiry' if freeze_expiry else 'freeze_destroy'
                 if freeze_expiry:
                     probe_type=expiry_probe_for_scenario(args.scenario)
+                elif freeze_dispatch_destroy:
+                    from lifecycle_freeze_dispatch import FreezeDispatchDestroyProbe
+                    probe_type=FreezeDispatchDestroyProbe
                 else:
                     probe_type=UnresponsiveFreezeDestroyProbe if unresponsive_freeze else OrderedFreezeDestroyProbe if ordered_freeze else ResponsiveFreezeDestroyProbe if responsive_freeze else FreezeDestroyProbe
                 capture_probe=probe_type(runtime,client,physical_running)
                 report['phase']='arm-original-freeze-before-'+('expiry' if freeze_expiry else 'destroy')
                 report[prefix+'_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
                 accepted_unload=client.unload(resumed)
-                report['phase']='original-freeze-success-before-sql-receipt'
+                report['phase']='original-freeze-dispatched-before-pause' if freeze_dispatch_destroy else 'original-freeze-success-before-sql-receipt'
                 report[prefix+'_observation']=capture_probe.after_acceptance(accepted_unload,deadline)
                 pending=client.query();client.check_view(pending,accepted_unload)
                 assert pending['phase']=='unloading', 'frozen original Unload unexpectedly completed'
@@ -1285,7 +1289,7 @@ def exercise(args):
                     report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
                 report['phase']='original-stop-and-cleanup-pre-sql-receipt'
                 report[prefix+'_terminal']=capture_probe.assert_terminal_before_gc(deadline)
-                report['phase']='public-frozen-'+('expiry' if freeze_expiry else 'destroy')+'-cleaned-and-product-gc'
+                report['phase']='public-dispatched-freeze-destroy-cleaned-and-product-gc' if freeze_dispatch_destroy else 'public-frozen-'+('expiry' if freeze_expiry else 'destroy')+'-cleaned-and-product-gc'
                 if freeze_expiry:
                     wait_expired_cleaned(client,deadline)
                 else:
@@ -1295,14 +1299,14 @@ def exercise(args):
                     client.operation_evidence_completed()
                 report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
                 assert equal(control.query(),control_running)
-                suffix='frozen_expiry' if freeze_expiry else 'frozen_destroy'
+                suffix='frozen_expiry' if freeze_expiry else 'dispatched_destroy' if freeze_dispatch_destroy else 'frozen_destroy'
                 report['slot_reuse']['occupant_after_'+suffix]=runtime.confirm_running(control.session,control_physical,deadline)
                 report['phase']=prefix.replace('_','-')+'-peer-progress-after-cleaned'
                 report['slot_reuse']['peer_after_'+suffix]=control.assert_running_workload(control_running)
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
-                report['cycles'][-1]['frozen_unload_expired' if freeze_expiry else 'frozen_unload_destroyed']=True
+                report['cycles'][-1]['frozen_unload_expired' if freeze_expiry else 'dispatched_unload_destroyed' if freeze_dispatch_destroy else 'frozen_unload_destroyed']=True
                 terminal_destroy_done=True;break
             if cycle < restore_cycles:
                 if retirement_restart or retirement_late_receipt:
@@ -1573,7 +1577,7 @@ def exercise(args):
                 'adopted material/backing pin/positive charges checked before release; same original '
                 'Stop then exited before SQL receipt, recovered and settled; not all unknown Stop interleavings')
         if freeze_destroy:
-            report['freeze_response_mode']='unresponsive-vmm-no-continue' if unresponsive_freeze else 'response-restored-after-terminal-acceptance' if ordered_freeze else 'responsive-vmm' if responsive_freeze else 'os-stopped-vmm'
+            report['freeze_response_mode']='running-before-pause' if freeze_dispatch_destroy else 'unresponsive-vmm-no-continue' if unresponsive_freeze else 'response-restored-after-terminal-acceptance' if ordered_freeze else 'responsive-vmm' if responsive_freeze else 'os-stopped-vmm'
             report['acceptance_cases'] = {
                 'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
                 'E8':'actual Freeze success before SQL receipt, then public Destroy; exact current fence/Stop with same paused source and backing pin/charge, then original exit/Cleanup/GC',
@@ -1581,6 +1585,18 @@ def exercise(args):
                 'E14':'old execution tokens remained rejected; peer continued with its original authorization',
                 'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
             }
+            if freeze_dispatch_destroy:
+                report['acceptance_cases']['E3']=(
+                    'exact original dispatched Freeze exit87 before the original Pause call; '
+                    'current same-peer Running source observed, old Freeze remains unknown; '
+                    'not a NoRequest proof or ordinary failed-Unload continuation')
+                report['acceptance_cases']['E8']=(
+                    'public Destroy at the original pre-Pause dispatch cut; '
+                    'current terminal fence/unique Stop, original live source/backing/pin/charge and peer progress, '
+                    'then original Stop/kernel exit/Cleanup/GC; observer sends no VM signal')
+                report['acceptance_cases']['other_cases']=(
+                    'one pre-Pause terminal branch; no successful second Unload, normal three cycles, '
+                    'all unknown Pause recovery, API invocation trace or formal proof claim')
         if freeze_expiry:
             if unresponsive_freeze:
                 report['freeze_response_mode']='unresponsive-vmm-no-continue'
@@ -1765,7 +1781,7 @@ def main():
         help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
+        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-before-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
         'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
         'capture-stop-receipt','capture-stop-pending','capture-namespace-release','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
