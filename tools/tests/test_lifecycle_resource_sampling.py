@@ -239,6 +239,57 @@ class ResourceReportTests(SamplerFixture):
             self.probe.path.write_bytes(bad)
             with self.assertRaises((ValueError,KeyError)):render(report,self.probe.path)
 
+    def test_integer_summary_fields_reject_equal_float_and_bool_aliases(self):
+        from tools.lifecycle_measurement_report import render
+        report=self.report();render(report,self.probe.path)
+        paths=[(('schema',),'one completed run'),
+            (('resource_measurements','schema'),'one completed run'),
+            (('resource_measurements','epochs',0,'index'),'exact original process epoch'),
+            (('resource_measurements','unknown_observations'),'group, volume or missing-data summary')]
+        for edge in ('first','last'):
+            for field in ('cpu_usage_usec','memory_current_bytes','kernel_group_peak_memory_bytes'):
+                paths.append((('resource_measurements','service_group',edge,field),'group, volume or missing-data summary'))
+            for field in ('cpu_ticks','rss_bytes','kernel_process_peak_rss_bytes','at_monotonic_ns'):
+                paths.append((('resource_measurements','epochs',0,edge,field),'process summary differs'))
+        for field in ('samples','unknown_samples','baseline_used_bytes','sampled_peak_used_bytes','final_used_bytes'):
+            paths.append((('resource_measurements','volume',field),'group, volume or missing-data summary'))
+        for field in ('sampled_peak_rss_bytes','kernel_process_peak_rss_bytes','observed_cpu_ticks_delta'):
+            paths.append((('resource_measurements','epochs',0,field),'process summary differs'))
+        for path,message in paths:
+            original=report
+            for key in path:original=original[key]
+            aliases=[float(original)]+([bool(original)] if original in (0,1) else [])
+            for alias in aliases:
+                with self.subTest(path=path,alias_type=type(alias).__name__):
+                    bad=copy.deepcopy(report);parent=bad
+                    for key in path[:-1]:parent=parent[key]
+                    parent[path[-1]]=alias
+                    with self.assertRaisesRegex(ValueError,message):render(bad,self.probe.path)
+
+    def test_raw_identity_types_must_match_even_when_raw_digest_is_recomputed(self):
+        from tools.lifecycle_measurement_report import render
+        report=self.report();raw=self.probe.path.read_bytes()
+        paths=[(('services',0,'identity',field),'bounded observed CPU/RSS values')
+            for field in ('pid','start_time_ticks','uid','gid')]
+        paths += [(('services',0,'identity','executable',field),'bounded observed CPU/RSS values')
+            for field in ('device','inode')]
+        paths += [(('service_group_identity',field),'original group/volume identity')
+            for field in ('device','inode')]
+        paths += [(('volume_identity',index),'original group/volume identity') for index in (0,1)]
+        try:
+            for path,message in paths:
+                with self.subTest(path=path):
+                    rows=[json.loads(line) for line in raw.splitlines()];parent=rows[0]
+                    for key in path[:-1]:parent=parent[key]
+                    parent[path[-1]]=float(parent[path[-1]])
+                    changed=b''.join((json.dumps(row,sort_keys=True,separators=(',',':'))+'\n').encode() for row in rows)
+                    self.probe.path.write_bytes(changed)
+                    bad=copy.deepcopy(report)
+                    bad['resource_measurements']['raw'].update(bytes=len(changed),sha256=hashlib.sha256(changed).hexdigest())
+                    with self.assertRaisesRegex(ValueError,message):render(bad,self.probe.path)
+        finally:self.probe.path.write_bytes(raw)
+        render(report,self.probe.path)
+
 
 class ResourceSceneTests(unittest.TestCase):
     def run_scene(self,enabled,close_failure=False):
