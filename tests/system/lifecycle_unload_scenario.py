@@ -622,25 +622,43 @@ class PublicUnloadScenario:
         assert all(c in '0123456789abcdef' for c in value['activation_nonce'])
         return value
 
+    def _close_ram_start_subscription(self,process):
+        # The returned Start owns a subscription even if its PID is invalid.
+        # Close it on this owner thread; this never signals the guest process.
+        self.step('close-original-ram-start-subscription')
+        try:
+            pid=process.pid
+            assert uint(pid,positive=True), 'positive original RAM Start PID required'
+        except BaseException as identity_error:
+            try:
+                process.disconnect()
+            except BaseException as close_error:
+                raise BaseExceptionGroup('original RAM Start identity and subscription close failed',
+                    [identity_error,close_error]) from None
+            raise
+        process.disconnect()
+        return pid
+
     def run_public_workload(self,running):
         sandbox=self.sdk()
         self.step('start-original-ram-process')
         process=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_SERVER),
             background=True,timeout=0)
+        pid=self._close_ram_start_subscription(process)
         # SDK command completion is not a startup barrier. A separate real
         # command waits for the socket while checking the original guest PID.
         self.step('ram-process-ready')
-        ready=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_READY)+' '+str(process.pid),
+        ready=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_READY)+' '+str(pid),
             timeout=min(30,self.remaining()))
         assert ready.exit_code==0
         self.witness=self.witness_command(sandbox,'advance')
-        assert self.witness['pid']==process.pid and self.witness['counter']==1
+        assert self.witness['pid']==pid and self.witness['counter']==1
         disk=sandbox.files.read('/tmp/sandproof-unload-marker')
         assert disk=='disk-counter:1'
         assert equal(self.query(),running)
         return dict(sdk='2.51.0',entry='owner-detail/original-sdk-constructor/public-gateway',
             path='/tmp/sandproof-unload-marker',ram_nonce_sha256=hashlib.sha256(
-                self.witness['nonce'].encode()).hexdigest(),guest_pid=process.pid,
+                self.witness['nonce'].encode()).hexdigest(),guest_pid=pid,
             guest_start_time_ticks=self.witness['start_time_ticks'],counter=1)
 
     def assert_resumed_workload(self,running,gate_receipt=None,physical_running=None):
