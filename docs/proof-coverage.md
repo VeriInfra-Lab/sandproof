@@ -2,6 +2,21 @@
 
 [文档目录](README.md) · [验证设计](formal-verification-design.md) · [本地状态机](state-machine.md) · [证明流程](proof-workflow.md)
 
+## 已接受终止接管未放行 Full 的未知 Freeze（工程修改，尚未证明）
+
+Refs #641、#636、#637、#638。相对 integration `f26fc26a`，在 #844 诊断候选
+`1195bae4` 之上增加窄 Freeze 终止例外、`RetireFreeze` 输入和既有 `RetiredByStop`
+状态的原 Freeze 覆盖检查。仅当前 Kill、同一原 Pause/运行身份、没有 Seal/Commit、
+原 SQLite `NeverReleased` 已封住 Full 放行时可进入。新的核心、账本权限、检查点及
+元数据退休验证、迟到回执拒绝和真实驱动连接均为待证义务，旧激活退休和普通暂停的
+局部定理不直接覆盖。停止结果不代表 Freeze 成功，也不直接释放材料/位置/额度。
+
+运行时 Unix 连接在建立阶段使用非阻塞 socket，满队列保留错误/未知；实际 peer 检查
+及原读写超时保留。该真实调用连接和故障进展亦尚未证明。没有修改 Lean、LLBC、证明
+工具版本或冻结摘要；共享输入/状态变化后的 capture-caller、pause-publication、
+pause-stop、pause-dispatch、pause-receipt 等生成闭包需在后续证明批次重新核对，不能
+仅替换摘要沿用旧结论。新工程普通/实机的准确范围见 #641 与本批 PR。
+
 ## 恢复期限补偿关闭未来恢复资格（工程修复，尚未证明）
 
 Refs #14、#641。相对 integration `b60078c288a86a99219a4cd67bf2797dc36997ab`，

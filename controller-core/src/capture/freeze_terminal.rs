@@ -161,6 +161,9 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
         || row.current_vm != Some(vm)
         || !plan.close_slots.contains(&slot)
         || !old_plan.close_slots.contains(&slot)
+        || !old_plan
+            .capture
+            .is_some_and(super::CaptureHandoff::has_capture_work)
         || machine.owner != row.owner
         || machine.sandbox != sandbox
         || machine.generation != generation
@@ -248,6 +251,10 @@ pub fn allowed(world: &World, command: &Command) -> bool {
     false
 }
 
+/// End only the original unknown Freeze using an acknowledged same-source Stop.
+/// This never fabricates Pause success or releases a material responsibility.
+/// # Errors
+/// Rejects nonterminal, foreign, unfenced, unresolved or mismatched Stop evidence.
 pub fn retire(
     world: &World,
     freeze: EffectId,

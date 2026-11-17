@@ -401,3 +401,35 @@ fn unknown_freeze_terminal_stop_never_claims_freeze_success_or_releases_material
         roundtrip(&world);
     }
 }
+
+#[test]
+fn freeze_terminal_exception_never_adopts_an_issued_full_or_fabricated_stop() {
+    let (world, _, _) = continuation::pending_capture(true);
+    let world = kill(&world, Actor::Tenant(OWNER));
+    assert!(!crate::capture::freeze_terminal::allowed(
+        &world,
+        &fence(&world)
+    ));
+    assert!(terminal_capture_drain_allowed(&world, &fence(&world)));
+    let world = continuation::pause_source(false);
+    let freeze = effect(&world, SandboxId(10), |c| {
+        matches!(c, Command::FreezeVm { .. })
+    });
+    let world = step(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(freeze.clone())),
+    );
+    let world = kill(&world, Actor::Tenant(OWNER));
+    let mut wrong = fence(&world);
+    if let Command::InstallFence { epoch, .. } = &mut wrong {
+        *epoch += 1;
+    }
+    assert!(!crate::capture::freeze_terminal::allowed(&world, &wrong));
+    assert!(!crate::capture::freeze_terminal::allowed(
+        &world,
+        freeze.command()
+    ));
+    let mut wrong = freeze.clone();
+    wrong.attempt += 1;
+    assert!(crate::capture::freeze_terminal::current_stop(&world, &wrong).is_none());
+}

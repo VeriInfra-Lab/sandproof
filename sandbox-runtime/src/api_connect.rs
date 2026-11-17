@@ -40,7 +40,10 @@ mod tests {
         server.read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"original");
         let peer = rustix::net::sockopt::socket_peercred(&client).unwrap();
-        assert_eq!(peer.pid.as_raw_nonzero().get() as u32, std::process::id());
+        assert_eq!(
+            u32::try_from(peer.pid.as_raw_nonzero().get()).unwrap(),
+            std::process::id()
+        );
     }
 
     #[test]
