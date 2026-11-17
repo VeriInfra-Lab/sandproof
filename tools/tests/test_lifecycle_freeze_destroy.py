@@ -199,7 +199,7 @@ class FrozenFactsTests(unittest.TestCase):
                     if fault=='extra-full':s['sources'][1]['capture']={'action':f.freeze,'worker':None,'completed':None,'end':None}
                     stack.enter_context(patch.object(frozen,'pidfd_exited',return_value=fault!='no-exit'))
                     stack.enter_context(patch.object(frozen,'original_process',return_value=fault=='still-live'))
-                    sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal'))
+                    sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal',create=True))
                     queried=stack.enter_context(patch.object(frozen,'paused_source'))
                     if fault=='none':
                         value=p.assert_terminal_before_gc(p.deadline);self.assertTrue(value['original_source_exited'])
@@ -338,10 +338,15 @@ class OriginalUnixPauseTests(unittest.TestCase):
 
 class FreezeStopWiringTests(unittest.TestCase):
     def test_actual_stop_socket_is_released_only_after_checks_and_peer_progress(self):
-        for fault in ('none','peer-progress','global-stop','automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop','unresponsive-none','unresponsive-peer-progress','unresponsive-global-stop'):
+        for fault in ('none','peer-progress','global-stop','automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop',
+                      'unresponsive-none','unresponsive-peer-progress','unresponsive-global-stop',
+                      'ordered-automatic-none','ordered-automatic-peer-progress','ordered-automatic-global-stop',
+                      'unresponsive-automatic-none','unresponsive-automatic-peer-progress','unresponsive-automatic-global-stop'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 unresponsive=fault.startswith('unresponsive-')
                 fault=fault.removeprefix('unresponsive-')
+                ordered=fault.startswith('ordered-')
+                fault=fault.removeprefix('ordered-')
                 responsive=fault.startswith('responsive-')
                 fault=fault.removeprefix('responsive-')
                 automatic=fault.startswith('automatic-')
@@ -349,6 +354,8 @@ class FreezeStopWiringTests(unittest.TestCase):
                     import lifecycle_freeze_expiry as automatic_expiry
                     from tools.tests.test_lifecycle_freeze_expiry import fixture as automatic_fixture
                     f=automatic_fixture(Path(directory));p=f.probe
+                    if ordered:p.__class__=automatic_expiry.OrderedFreezeExpiryProbe
+                    if unresponsive:p.__class__=automatic_expiry.UnresponsiveFreezeExpiryProbe
                     with patch.object(automatic_expiry,'now_ms',side_effect=[999,1000,1000,1000]):
                         accepted=p.observe_expiry(p.deadline)['acceptance']
                     recovery=p.recover_after_expiry
@@ -356,7 +363,7 @@ class FreezeStopWiringTests(unittest.TestCase):
                 else:
                     f=fixture(Path(directory));p=f.probe;accepted=f.accepted(f.destroy)
                     recovery=p.recover_after_destroy
-                if unresponsive:p.__class__=frozen.UnresponsiveFreezeDestroyProbe
+                if unresponsive and not automatic:p.__class__=frozen.UnresponsiveFreezeDestroyProbe
                 p.hold_source_process=not responsive
                 events=[];received=[]
                 server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);server.bind(str(p.stop_path));server.listen(1);server.settimeout(2)
@@ -367,6 +374,13 @@ class FreezeStopWiringTests(unittest.TestCase):
                 host=Mock(pid=os.getpid());host.poll.return_value=None
                 p.runtime.services.processes.start=Mock(side_effect=lambda *_,**__:events.append('start') or host)
                 p.runtime.services.wait_ready=Mock();p._read_terminal=Mock(return_value=f.snapshot)
+                if ordered:
+                    accepted_snapshot=copy.deepcopy(f.snapshot)
+                    fence=accepted_snapshot['terminal_actions'][0][0]
+                    accepted_snapshot['terminal_actions']=[(fence,'ready',None)]
+                    accepted_snapshot['global_pending_stops']=[]
+                    p._read_terminal.side_effect=[accepted_snapshot,f.snapshot,f.snapshot,f.snapshot]
+                    p.runtime.services.wait_ready.side_effect=lambda **_:events.append('wait-ready')
                 if fault=='global-stop':f.snapshot['global_pending_stops']=[]
                 queried=stack.enter_context(patch.object(frozen,'paused_source',side_effect=lambda *_:events.append('paused') or {'original':'paused'}))
                 p._source_state=Mock(side_effect=lambda _: 'S' if responsive or p.continue_sent else 'T')
@@ -391,6 +405,14 @@ class FreezeStopWiringTests(unittest.TestCase):
                             self.assertEqual(result['paused']['source'],p.prior['source'])
                             self.assertFalse(result['original_pidfd_continued_after_fence'])
                             self.assertFalse(result['public_completion']);self.assertFalse(result['capacity_released'])
+                        elif ordered:
+                            self.assertLess(events.index('continue'),events.index('wait-ready'))
+                            self.assertLess(events.index('continue'),events.index('peer'))
+                            self.assertLess(events.index('peer'),events.index('paused'))
+                            self.assertFalse(result['original_pidfd_continued_after_fence'])
+                            self.assertTrue(result['source_continued_after_terminal_acceptance'])
+                            self.assertEqual(result['terminal_acceptance_before_response_restored'],accepted_snapshot)
+                            self.assertFalse(result['source_process_hold'])
                         elif responsive:
                             self.assertNotIn('continue',events);self.assertFalse(p.continue_sent)
                             self.assertFalse(result['source_process_hold'])
@@ -400,7 +422,11 @@ class FreezeStopWiringTests(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError):recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
-                        self.assertFalse(p.continue_sent);self.assertNotIn('continue',events)
+                        if ordered:
+                            self.assertTrue(p.continue_sent)
+                            self.assertLess(events.index('continue'),events.index('wait-ready'))
+                        else:
+                            self.assertFalse(p.continue_sent);self.assertNotIn('continue',events)
                         self.assertFalse(p.terminal_failure_state()['capacity_released'])
                     if unresponsive:
                         sent.assert_not_called();queried.assert_not_called()
@@ -427,7 +453,8 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False):
+    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False):
+        if ordered_expiry:self.assertTrue(expiry)
         if expiry:
             import lifecycle_freeze_expiry as automatic
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
@@ -505,9 +532,12 @@ class SceneAndReplayTests(unittest.TestCase):
             probe_name='UnresponsiveFreezeDestroyProbe' if unresponsive else 'OrderedFreezeDestroyProbe' if ordered else 'ResponsiveFreezeDestroyProbe' if responsive else 'FreezeDestroyProbe'
             selected_probe=stack.enter_context(patch.object(frozen,probe_name,return_value=p))
             if expiry:
-                stack.enter_context(patch.object(automatic,'FreezeExpiryProbe',return_value=p))
+                expiry_probe_name='OrderedFreezeExpiryProbe' if ordered_expiry else 'UnresponsiveFreezeExpiryProbe' if unresponsive else 'FreezeExpiryProbe'
+                selected_probe=stack.enter_context(patch.object(automatic,expiry_probe_name,return_value=p))
                 stack.enter_context(patch.object(automatic,'wait_expired_cleaned',side_effect=lambda *_:events.append('wait_cleaned-1')))
-            args=NS(scenario='capture-freeze-expiry' if expiry else 'capture-freeze-unresponsive-destroy' if unresponsive else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
+            expiry_scenario='capture-freeze-receipt-expiry' if ordered_expiry else 'capture-freeze-unresponsive-expiry' if unresponsive else 'capture-freeze-expiry'
+            destroy_scenario='capture-freeze-unresponsive-destroy' if unresponsive else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy'
+            args=NS(scenario=expiry_scenario if expiry else destroy_scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
             if peer_fault!='none':
                 with self.assertRaises(AssertionError):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -564,11 +594,16 @@ class SceneAndReplayTests(unittest.TestCase):
                     self.assertNotIn('final_destroy_send_to_settled_seconds',report['settlement_timing'])
                     self.assertGreaterEqual(report['settlement_timing']['expiry_observed_to_settled_seconds'],0)
                     self.assertLessEqual(report['automatic_expiry']['observed_monotonic'],time.monotonic())
+                    if unresponsive:
+                        self.assertEqual(report['freeze_response_mode'],'unresponsive-vmm-no-continue')
+                    elif ordered_expiry:
+                        self.assertEqual(report['freeze_response_mode'],'response-restored-after-terminal-acceptance')
+                    else:
+                        self.assertNotIn('freeze_response_mode',report)
             other.run_public_workload.assert_called_once_with(peer_running)
             self.assertEqual(clients['1'].unload.call_count,2);self.assertEqual(clients['1'].resume.call_count,1)
-            if not expiry:
-                selected_probe.assert_called_once()
-                self.assertEqual(selected_probe.call_args.args[:2],(runner,clients['1']))
+            selected_probe.assert_called_once()
+            self.assertEqual(selected_probe.call_args.args[:2],(runner,clients['1']))
             runner.finish.assert_called_once();p.close.assert_called_once()
             self.assertLess(events.index('finish'),events.index('close'))
 
@@ -590,7 +625,7 @@ class SceneAndReplayTests(unittest.TestCase):
 
 class ResponsiveFreezeTests(unittest.TestCase):
     def test_responsive_mode_never_signals_and_refuses_an_os_stopped_source(self):
-        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as signal_call:
+        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as signal_call:
             p=fixture(Path(directory)).probe
             p.hold_source_process=frozen.ResponsiveFreezeDestroyProbe.hold_source_process
             p.pause_requested=False;p.recovered=False;p._source_state=Mock(return_value='S')
@@ -603,9 +638,10 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    # Controlled signal provider; real pidfd/Unix cases keep their Linux group.
     def test_response_restored_only_after_exact_durable_kill_and_retained_backing(self):
         for fault in ('none','wrong-vm','not-terminal','pin'):
-            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as sent:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
                 f=fixture(Path(directory));p=f.probe
                 p.__class__=frozen.OrderedFreezeDestroyProbe
                 p._read_terminal=Mock(return_value=f.snapshot)
@@ -627,7 +663,7 @@ class OrderedFreezeTests(unittest.TestCase):
 
 class UnresponsiveFreezeTests(unittest.TestCase):
     def test_unresponsive_stop_preparation_never_sends_signal_or_queries_api(self):
-        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as sent,patch.object(frozen,'paused_source') as queried:
+        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent,patch.object(frozen,'paused_source') as queried:
             p=fixture(Path(directory)).probe;p.__class__=frozen.UnresponsiveFreezeDestroyProbe
             p._source_state=Mock(return_value='T')
             result=p._prepare_source_for_stop(p.deadline)

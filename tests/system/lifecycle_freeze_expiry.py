@@ -18,7 +18,7 @@ import json
 import time
 
 from _internal_fault_relay import _fields, _u64, accepted_request
-from lifecycle_freeze_destroy import FreezeDestroyProbe
+from lifecycle_freeze_destroy import FreezeDestroyProbe, OrderedFreezeDestroyProbe
 from lifecycle_unload_expiry import (_check_audited_history, expiry_resume_witness,
                                      read_expiry_history)
 from lifecycle_unload_runtime import remaining
@@ -236,3 +236,25 @@ class UnresponsiveFreezeExpiryProbe(FreezeExpiryProbe):
     def _prepare_source_for_stop(self,deadline):
         from lifecycle_freeze_destroy import UnresponsiveFreezeDestroyProbe
         return UnresponsiveFreezeDestroyProbe._prepare_source_for_stop(self,deadline)
+
+
+class OrderedFreezeExpiryProbe(FreezeExpiryProbe, OrderedFreezeDestroyProbe):
+    """Keep audited expiry authority; reuse the original ordered recovery hook.
+
+    FreezeExpiryProbe binds only the observed automatic acceptance and keeps
+    the first session free of public Destroy calls. Its recovery then enters
+    OrderedFreezeDestroyProbe: restore the same VMM's response after exact
+    durable Host Kill, before waiting for the original fence or Stop.
+    """
+
+
+def expiry_probe_for_scenario(scenario):
+    """Keep each response experiment on its own original expiry consumer."""
+    probes={
+        'capture-freeze-expiry':FreezeExpiryProbe,
+        'capture-freeze-receipt-expiry':OrderedFreezeExpiryProbe,
+        'capture-freeze-unresponsive-expiry':UnresponsiveFreezeExpiryProbe,
+    }
+    if scenario not in probes:
+        raise ValueError('one explicit frozen-Unload expiry scenario required')
+    return probes[scenario]
