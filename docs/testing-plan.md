@@ -391,6 +391,35 @@ E8/E15 场景有受控审计、真实 Unix Stop 门及编排自测；尚无本�
 实机验收交执行方，不能升级为全部 E8/E15 或新形式证明。与其它到期候选组合时保留其
 已有入口及完整 Resume 合同，本观察器只消费冻结 Unload 的原四条历史。
 
+`capture-freeze-receipt-expiry` 是冻结自动到期的有序恢复应答对照：复用同一
+`FreezeExpiryProbe` 的真实 TTL、原 Rust 审计和自动接受绑定，再复用
+`OrderedFreezeDestroyProbe` 的 Host 持久 Kill 核对及恢复应答钩子。中心审计观察到自动
+接受尚不足以 SIGCONT；必须先只读核对原 Host 的完整自动意图、本地映射、当前 Kill、
+同源 VM/网络及原 backing/pin/正额度，随后恢复同一 pidfd 的 VMM 应答，才等待原终止
+围栏和 Stop。恢复快照可为旧 Freeze dispatched/无回执、新围栏 ready/无回执，不能等
+Stop 才恢复应答形成测试等待环。其余原 Stop、Paused 复查、同伴、退出、Cleanup/GC、
+重放和结算检查全部沿用；第一会话不发 Destroy，不虚构自动接受时间或重置寿命。
+报告单列 `response-restored-after-terminal-acceptance` 和恢复前快照，失败后不自动
+放行 Stop 或销毁同伴。原 `capture-freeze-expiry` 入口、期限、断言及历史失败保持；
+新对照不替代其结果，也不代表持续无响应 VMM 的强制销毁能力。Unix Stop 门、受控
+审计和编排自测随普通入口运行，本选择值的 KVM 与最终组合验收仍待执行方独立完成。
+
+冻结到期的三个入口共用原审计、自动终止接受、材料/同伴和收尾合同；入口选择保留
+各自应答控制，不能用其中一种通过替代其它模式。报告中的应答标记与原恢复快照同时
+保留，未知或错全局 Stop 时不得放行原门。
+
+| 入口 | 原 VMM 应答控制 | 成功报告的 `freeze_response_mode` |
+| --- | --- | --- |
+| `capture-freeze-expiry` | 持续 OS 停止到原 Stop 门内检查结束，再恢复应答 | 保持原报告，无此字段 |
+| `capture-freeze-receipt-expiry` | Host 持久接受完整自动 Kill 后恢复应答，再等围栏/Stop | `response-restored-after-terminal-acceptance` |
+| `capture-freeze-unresponsive-expiry` | 全程不发送 SIGCONT，不再取得 Paused API 回复 | `unresponsive-vmm-no-continue` |
+
+持续无响应到期的受控编排自测包含正常结束、未知 Stop、Stop 前同伴停滞和 Cleaned 后
+同伴授权变化；其自动接受拒绝与有序恢复模式复用同一合同，真实 Unix 门另检查原全局
+Stop、材料/pin/正额度与无 SIGCONT/无新 Paused 查询。受控信号提供方在不具备 Linux
+pidfd 的解释器上显式提供，真实 pidfd/Unix 自测仍按原 Linux 分组登记；入口或自测存在
+不表示已经执行，精确候选的普通与 KVM 结果由验收方另行记录。
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
@@ -443,6 +472,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
 | `capture-freeze-destroy` | 原 Freeze 成功、回执未入库时接受 Destroy；先核实际 Paused、当前终止围栏、同源 Stop、backing pin/正额度及另一 owner 来宾进展，再确认原退出及产品 GC（E8；实机待验收） |
 | `capture-freeze-expiry` | 相同原冻结窗口跨越真实 TTL；原中心审计先确认自动终止，第一会话不发 Destroy，再沿原围栏/Stop/退出/Cleanup/GC 与同伴进展收尾（E8/E15；实机待验收） |
+| `capture-freeze-receipt-expiry` | 同一真实 TTL/原审计先确认自动终止，再核 Host 已持久接受准确 Kill，立即恢复原 VMM 应答后等待围栏/Stop；复用原材料、同伴、退出/GC 与重放检查，原到期入口保留（E8/E15；实机待验收） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
