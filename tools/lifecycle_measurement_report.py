@@ -14,6 +14,7 @@ import sys
 
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import json_file, private_path
+from tools.template_build_guest import equal
 
 MAX_RAW = 64 * 1024**2
 
@@ -26,7 +27,7 @@ def checked_resources(report, samples):
     measurement = report['resource_measurements']
     raw = measurement['raw']
     candidate=report['measurement_identity']['candidate']['candidate']
-    if (report.get('complete') is not True or report.get('schema') != 1 or measurement.get('schema') != 1
+    if (report.get('complete') is not True or not equal(report.get('schema'),1) or not equal(measurement.get('schema'),1)
             or measurement.get('sampler_exited') is not True or measurement.get('failure') is not None
             or type(measurement.get('samples')) is not int or not 1 <= measurement['samples'] <= 8192
             or type(raw.get('bytes')) is not int or not 0 < raw['bytes'] <= MAX_RAW
@@ -40,7 +41,7 @@ def checked_resources(report, samples):
         raise ValueError('finite original process epochs required')
     observed = [dict(first=None,last=None,count=0,peak=None,kernel_peak=None,unknown=0,inactive=0) for _ in epochs]
     for index, epoch in enumerate(epochs):
-        if (epoch['index'] != index or not uint(epoch['identity']['pid'])
+        if (not uint(epoch['index']) or epoch['index'] != index or not uint(epoch['identity']['pid'])
                 or not uint(epoch['identity']['start_time_ticks'])
                 or epoch['kind'] not in ('service','vm')
                 or (epoch['role'].startswith('vm-')) != (epoch['kind']=='vm')
@@ -79,7 +80,7 @@ def checked_resources(report, samples):
                 if state_name != 'observed':continue
                 if index is None or any(not uint(value[k]) for k in
                         ('cpu_ticks','rss_bytes','kernel_process_peak_rss_bytes','at_monotonic_ns')) \
-                        or value['identity'] != epochs[index]['identity'] or value['at_monotonic_ns'] != now:
+                        or not equal(value['identity'],epochs[index]['identity']) or value['at_monotonic_ns'] != now:
                     raise ValueError('bounded observed CPU/RSS values required')
                 facts={k:value[k] for k in ('cpu_ticks','rss_bytes','kernel_process_peak_rss_bytes','at_monotonic_ns')}
                 state=observed[index]
@@ -91,9 +92,9 @@ def checked_resources(report, samples):
                 state['kernel_peak']=(facts['kernel_process_peak_rss_bytes'] if state['kernel_peak'] is None
                     else max(state['kernel_peak'],facts['kernel_process_peak_rss_bytes']))
             group=row['service_group']
-            if (row['service_group_identity'] != measurement['service_group']['identity']
+            if (not equal(row['service_group_identity'],measurement['service_group']['identity'])
                     or any(not uint(group[k]) for k in ('cpu_usage_usec','memory_current_bytes','kernel_group_peak_memory_bytes'))
-                    or row['volume_identity'] != measurement['volume']['identity']):
+                    or not equal(row['volume_identity'],measurement['volume']['identity'])):
                 raise ValueError('original group/volume identity and counters required')
             if group_first is None:group_first=group
             group_last=group
@@ -108,9 +109,9 @@ def checked_resources(report, samples):
             count+=1
     if size != raw['bytes'] or digest.hexdigest() != raw['sha256'] or count != measurement['samples']:
         raise ValueError('raw resource stream differs from original sealed summary')
-    if (group_first != measurement['service_group']['first'] or group_last != measurement['service_group']['last']
-            or any(value != measurement['volume'][key] for key,value in volume.items())
-            or unknown != measurement['unknown_observations']):
+    if (not equal(group_first,measurement['service_group']['first']) or not equal(group_last,measurement['service_group']['last'])
+            or any(not equal(value,measurement['volume'][key]) for key,value in volume.items())
+            or not equal(unknown,measurement['unknown_observations'])):
         raise ValueError('group, volume or missing-data summary differs from original samples')
     expected_coverage='partial' if unknown or not any(e['kind']=='vm' for e in epochs) else 'sampled_windows'
     if measurement['coverage'] != expected_coverage:
@@ -119,12 +120,14 @@ def checked_resources(report, samples):
     if not uint(ticks) or ticks==0:raise ValueError('original CPU clock tick rate required')
     for state,epoch in zip(observed,epochs):
         delta=None if state['first'] is None else state['last']['cpu_ticks']-state['first']['cpu_ticks']
-        if (state['count'] != epoch['samples'] or state['first'] != epoch['first'] or state['last'] != epoch['last']
+        seconds=epoch['observed_cpu_seconds_delta']
+        if (state['count'] != epoch['samples'] or not equal(state['first'],epoch['first']) or not equal(state['last'],epoch['last'])
                 or state['unknown'] != epoch['unknown_samples'] or state['inactive'] != epoch['inactive_samples']
-                or state['peak'] != epoch['sampled_peak_rss_bytes']
-                or state['kernel_peak'] != epoch['kernel_process_peak_rss_bytes']
-                or delta != epoch['observed_cpu_ticks_delta']
-                or (None if delta is None else delta/ticks) != epoch['observed_cpu_seconds_delta']):
+                or not equal(state['peak'],epoch['sampled_peak_rss_bytes'])
+                or not equal(state['kernel_peak'],epoch['kernel_process_peak_rss_bytes'])
+                or not equal(delta,epoch['observed_cpu_ticks_delta'])
+                or (seconds is not None and type(seconds) not in (int,float))
+                or (None if delta is None else delta/ticks) != seconds):
             raise ValueError('process summary differs from its original resource samples')
     return measurement
 
