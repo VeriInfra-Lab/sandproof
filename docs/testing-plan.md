@@ -327,6 +327,15 @@ SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或�
 该入口与观察器有受控组件自测，KVM 实机验收另行执行；只覆盖一个恢复周期后的冻结
 卸载 Destroy 顺序，不认领正常三周期、所有 E8 交错或形式证明。
 
+`capture-freeze-responsive-destroy` 单独区分正常 Paused VM 与整个 VMM 进程被
+SIGSTOP 的情况：仍在 Freeze 成功/pre-SQL 退出86点接受 Destroy，但不发送 SIGSTOP/
+SIGCONT，允许原 VMM 回答状态查询。保留完整原身份、同源迟到 Freeze、终止围栏/Stop、
+backing pin/正额度、材料、同伴进展、内核退出、Cleanup/GC 和历史重放检查；期限不变。
+原 `capture-freeze-destroy` 的进程停止实验保留，结果分别记录，不能用新对照通过覆盖
+旧失败或声称具备对永久无响应 VMM 的强制收尾能力。条件最终完成的前提见
+[V9 第4节](formal/09-system-composition.md#4-条件最终完成性)：外部长期不可用可保持未知，
+环境恢复后必须推进；外部不可用与内部不启用工作需分别判断，不能混用。
+
 `capture-freeze-expiry` 复用上述原 Freeze/Stop/Cleanup 门和
 [冻结到期观察器](../tests/system/lifecycle_freeze_expiry.py)。仅首次 Create 显式使用
 75,000 ms 寿命；另一 owner 保留部署原寿命。原 Unload、双 manager 重开、位置实际复用、

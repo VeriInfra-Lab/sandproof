@@ -83,6 +83,8 @@ def paused_source(runtime, prior, deadline):
 
 
 class FreezeDestroyProbe(CaptureHandoffProbe):
+    hold_source_process = True
+
     def __init__(self,runtime,client,physical_running):
         super().__init__(runtime,client,physical_running,'freeze-receipt')
         self.running_acceptance=copy.deepcopy(client.current_acceptance)
@@ -153,7 +155,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             sources=copy.deepcopy(self.initial_sources),paused=copy.deepcopy(self.frozen),
             backing_material=copy.deepcopy(self.backing_material))
         return dict(result,original_frozen_unload=self.initial,freeze_sql_receipt_pending=True,
-                    current_pause_observed=True,original_pidfd_stopped=True,original_backing_pin_and_charge=True)
+                    current_pause_observed=True,original_pidfd_stopped=self.pause_requested,original_backing_pin_and_charge=True)
 
     def _source_state(self,deadline):
         remaining(deadline)
@@ -168,10 +170,18 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         # Physical FC Paused was independently read above. OS T only prevents
         # old Freeze re-observation winning before Host receives Destroy.
         if self.pause_requested or self.recovered:raise ValueError('one original source hold required')
+        if not self.hold_source_process:
+            if self._source_state(deadline)=='T':raise ValueError('responsive VMM must not be OS-stopped')
+            return
         self._source_state(deadline);self.pause_requested=True
         signal.pidfd_send_signal(self.pidfd,signal.SIGSTOP)
         while self._source_state(deadline)!='T':time.sleep(min(.01,remaining(deadline)))
         self.candidate_paused=True
+
+    def _check_source_hold(self,deadline):
+        state=self._source_state(deadline)
+        if (state=='T') != self.hold_source_process:
+            raise ValueError('original VMM response mode changed')
 
     def _bind_destroy(self,accepted):
         _fields(accepted,'session key accepted_version')
@@ -280,7 +290,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
 
     def recover_after_destroy(self,accepted,deadline,*,observe_peer):
         self._bind_destroy(accepted);deadline=min(deadline,self.deadline)
-        if self.host.poll()!=86 or self._source_state(deadline)!='T':raise ValueError('original cut manager and stopped frozen source required')
+        if self.host.poll()!=86:raise ValueError('original cut manager required')
+        self._check_source_hold(deadline)
         self._configuration()
         self.terminal_host=self.runtime.services.processes.start('host-0',env={
             'SANDPROOF_TEST_STOP_GATE':str(self.stop_path),'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION':'cleanup_vm'})
@@ -300,7 +311,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino):raise ValueError('Stop gate replaced during connection')
         snapshot=self._read_terminal(deadline);fence=self._stop_barrier(snapshot)
         if pidfd_exited(self.pidfd):raise ValueError('original source exited before Stop release')
-        if self._source_state(deadline)!='T':raise ValueError('original source was continued before terminal barrier')
+        self._check_source_hold(deadline)
         backing=self._backing(snapshot['sources'])
         material=self.runtime._materials(backing['capture']['full'],backing['capture'])
         if not equal(material,self.backing_material):raise ValueError('original backing files changed before Stop')
@@ -309,22 +320,23 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         self._configuration();again=self._read_terminal(deadline);self._stop_barrier(again)
         if not equal(self._responsibilities(again['sources']),self._responsibilities(self.initial_sources)) or pidfd_exited(self.pidfd):
             raise ValueError('original source or responsibilities changed during peer progress')
-        if self._source_state(deadline)!='T':raise ValueError('original source changed during peer progress')
+        self._check_source_hold(deadline)
         if not equal(self.runtime._materials(backing['capture']['full'],backing['capture']),self.backing_material):
             raise ValueError('peer progress changed original frozen backing files')
-        signal.pidfd_send_signal(self.pidfd,signal.SIGCONT);self.continue_sent=True
-        while self._source_state(deadline)=='T':time.sleep(min(.01,remaining(deadline)))
+        if self.hold_source_process:
+            signal.pidfd_send_signal(self.pidfd,signal.SIGCONT);self.continue_sent=True
+            while self._source_state(deadline)=='T':time.sleep(min(.01,remaining(deadline)))
         paused=paused_source(self.runtime,self.prior,deadline)
         final=self._read_terminal(deadline);self._stop_barrier(final)
         self.before_stop=copy.deepcopy(final);remaining(deadline)
         peer.settimeout(min(2,remaining(deadline)));peer.sendall(b'g');self.stop_released=True;peer.close();self.stop_peer=None;self.recovered=True
         return dict(public_destroy_reached_host=True,terminal_fence=fence,paused=paused,
             original_backing_material=material,original_pin_and_positive_charge_retained=True,
-            peer_progress=progress,original_pidfd_continued_after_fence=True,stop_gate_release_sent=True,snapshot=self.before_stop,
+            peer_progress=progress,original_pidfd_continued_after_fence=self.continue_sent,source_process_hold=self.hold_source_process,stop_gate_release_sent=True,snapshot=self.before_stop,
             public_completion=False,capacity_released=False)
 
     def assert_terminal_before_gc(self,deadline):
-        if not self.recovered or not self.stop_released or not self.continue_sent or self.terminal_cut is not None:
+        if not self.recovered or not self.stop_released or (self.hold_source_process and not self.continue_sent) or self.terminal_cut is not None:
             raise ValueError('one original Stop release required before cleanup cut')
         deadline=min(deadline,self.deadline)
         if self.terminal_host.wait(timeout=remaining(deadline))!=86:raise ValueError('original Cleanup-success/pre-SQL cut required')
@@ -364,3 +376,13 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
     def close(self):
         if self.stop_peer is not None:self.stop_peer.close();self.stop_peer=None
         super().close()
+
+
+class ResponsiveFreezeDestroyProbe(FreezeDestroyProbe):
+    """The VM is Paused, but its VMM still answers the original API.
+
+    The original failed SIGSTOP experiment remains separately selectable. This
+    consumer never sends SIGSTOP/SIGCONT and retains every Stop/identity/pin,
+    peer-progress, late Freeze, kernel exit and Cleanup check of the parent.
+    """
+    hold_source_process = False

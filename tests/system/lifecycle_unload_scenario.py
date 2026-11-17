@@ -752,7 +752,8 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    freeze_destroy = args.scenario == 'capture-freeze-destroy'
+    responsive_freeze = args.scenario == 'capture-freeze-responsive-destroy'
+    freeze_destroy = args.scenario == 'capture-freeze-destroy' or responsive_freeze
     freeze_expiry = args.scenario == 'capture-freeze-expiry'
     freeze_terminal = freeze_destroy or freeze_expiry
     expiry_prepare = args.scenario == 'restore-prepare-expiry'
@@ -1201,11 +1202,12 @@ def exercise(args):
                     report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                     control.operation_evidence_completed()
             if cycle == 1 and freeze_terminal:
-                from lifecycle_freeze_destroy import FreezeDestroyProbe
+                from lifecycle_freeze_destroy import FreezeDestroyProbe, ResponsiveFreezeDestroyProbe
                 if freeze_expiry:
                     from lifecycle_freeze_expiry import FreezeExpiryProbe, wait_expired_cleaned
                 prefix='freeze_expiry' if freeze_expiry else 'freeze_destroy'
-                capture_probe=(FreezeExpiryProbe if freeze_expiry else FreezeDestroyProbe)(runtime,client,physical_running)
+                probe_type=FreezeExpiryProbe if freeze_expiry else ResponsiveFreezeDestroyProbe if responsive_freeze else FreezeDestroyProbe
+                capture_probe=probe_type(runtime,client,physical_running)
                 report['phase']='arm-original-freeze-before-'+('expiry' if freeze_expiry else 'destroy')
                 report[prefix+'_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
                 accepted_unload=client.unload(resumed)
@@ -1400,6 +1402,7 @@ def exercise(args):
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
         if freeze_destroy:
+            report['freeze_response_mode']='responsive-vmm' if responsive_freeze else 'os-stopped-vmm'
             report['acceptance_cases'] = {
                 'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
                 'E8':'actual Freeze success before SQL receipt, then public Destroy; exact current fence/Stop with same paused source and backing pin/charge, then original exit/Cleanup/GC',
@@ -1559,7 +1562,7 @@ def main():
         help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-expiry','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-expiry','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
