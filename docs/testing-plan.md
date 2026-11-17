@@ -75,6 +75,24 @@ Memory 克隆、全文 SHA 读取之后，分别在 `sync_all` 之前或成功�
 这里注入的是同步**边界返回错误**，不是内核 `fsync` 返回 EIO/ENOSPC、断电、rename/delete
 故障或完整 E11。普通发布构建没有这些调试门，不新增协议权限或 Lean 结论。
 
+E11/E4 的显式 `--scenario capture-publish-conflict` 复用上述同步后调试门，
+状态为「入口存在但未执行实机」。它在核对原 Rust 存储键、实际 Full/worker/source
+及尚未发布后，仅独占创建对应 `capture-<key>` 的空目录；已有目录、文件或符号链接
+一律拒绝，不接管或覆盖合法保存包。随后发送原 `release`，让同步回调正常返回并继续
+原发布代码。必须取得原 Returned End 与同一 helper 的内核退出，核对原 staging
+目录的完整只读 manifest/三份文件及全文摘要、目标空 inode 未变、没有成功 completion
+或 Full 采用。该 End 可能记录更早的实际 Firecracker HTTP 返回，不能拿状态码推导
+材料发布成功或具体文件系统 errno。
+
+公开回到原 Running、RAM/文件/授权/寿命继续且物理 VMM 保持后，观察器另核原正材料
+预留、无 Stop，再只移除本测试创建且完整身份未变的空目录并同步父目录；未知、非空、
+换 inode、权限改变或工作进程未退出均保留现场。解除障碍后，使用新操作键完成原
+Unload/Resume 和最终 Destroy/GC/结算，原失败操作不重试、不改写历史。
+[原 Runtime 发布回归](../sandbox-runtime/src/snapshot_store_tests.rs)直接执行同一
+`publish` 的 no-replace rename 并核对实际 `EEXIST`；实机场景仅核上述完整冲突结果，
+不声称单独追踪了 syscall/errno，也不覆盖任意 rename/delete/I/O 故障或断电耐久性。
+本片不修改生产 Rust、存储算法、协议或证明。
+
 ### 从性质定位测试与缺口
 
 下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
@@ -96,7 +114,7 @@ Memory 克隆、全文 SHA 读取之后，分别在 `sync_all` 之前或成功�
 | E8 / G2、G4、G6 | `restore-prepare-destroy`、`restore-activation-destroy`、`capture-freeze-destroy`、`capture-freeze-expiry`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 激活前、实际激活后及冻结卸载的终止是不同窗口；有限代表分别验收，同源余责继续收尾，不完成全部 Destroy/到期竞争。 |
 | E9 / G2、G3、G4 | `normal` 的实际位置复用；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs) | 位置复用还需和迟到 stop/delete/回执组合；组件模拟的错身份拒绝不能冒充真实迟到动作实测。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
-| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`、`capture-sync-before/after`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
+| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`、`capture-sync-before/after`、`capture-publish-conflict`；[发布冲突观察](../tests/system/lifecycle_capture_publish_conflict.py)、[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync、发布目标冲突、删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。目标冲突不是任意 rename 故障覆盖。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
 | E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart`；[解码后终止组件](../sandbox-center-service/tests/business_authority/lifecycle_decoded_resume.rs) | 实际 mTLS/JSON 解码后到原 Redis CAS 的有限交错是组件边界；一次双重启不覆盖中心/宿主各自持久化、发送和接收确认窗口的独立中断及消息乱序。 |
 | E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`、`command-disconnect`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py)、[命令订阅观察](../tests/system/lifecycle_command_disconnect.py) | 在途上传只有已写前缀见证，不表示完整上传成功；命令切片检查同一原 PID 的静默 Start 订阅关闭、relay 内核退出与恢复后重新订阅，不覆盖任意输出中断点；不承诺旧 TCP/vsock 连续或命令重放。 |
