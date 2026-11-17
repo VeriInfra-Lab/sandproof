@@ -11,6 +11,8 @@ mod capture_cancel;
 pub(super) use capture_cancel::CaptureCancelGate;
 mod capture_copy;
 pub(crate) use capture_copy::CaptureCopyGate;
+#[cfg(debug_assertions)]
+pub(crate) use capture_copy::configured_path as capture_gate_path;
 mod material_retirement;
 pub(super) use material_retirement::after_material_delete;
 
