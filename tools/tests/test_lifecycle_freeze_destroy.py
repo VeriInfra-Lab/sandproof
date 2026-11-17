@@ -9,6 +9,7 @@ import socket
 import sqlite3
 import subprocess
 import signal
+import struct
 import sys
 import tempfile
 import threading
@@ -280,23 +281,44 @@ class OriginalUnixPauseTests(unittest.TestCase):
                 except BaseException as error:errors.append(type(error).__name__)
             thread=threading.Thread(target=serve);thread.start()
             # The protected root-owned claim is an explicit controlled
-            # provider here; Unix framing/peer credentials and procfs are real.
+            # provider here; Unix framing and procfs are real. Ordinary users
+            # may have different UID/GID numbers. Check their real kernel
+            # credentials before supplying the controlled VM role (UID=GID).
             # Ordinary tool tests must not require or simulate root ownership.
             def claim_provider(path,limit):
                 self.assertEqual(path,claim/'record.json');self.assertEqual(limit,16384)
                 return json.loads(path.read_bytes())
+            testcase=self
+            class RoleSocket(socket.socket):
+                def getsockopt(self,level,option,*args):
+                    actual=super().getsockopt(level,option,*args)
+                    if (level,option)==(socket.SOL_SOCKET,socket.SO_PEERCRED):
+                        testcase.assertEqual(struct.unpack('3i',actual),(os.getpid(),os.getuid(),os.getgid()))
+                        if fault!='native-credentials':
+                            return struct.pack('3i',os.getpid(),os.getuid(),os.getuid()+(fault=='gid'))
+                    return actual
             try:
-                with patch.object(frozen,'original_json',side_effect=claim_provider):yield runner,prior,seen
+                with patch.object(frozen,'original_json',side_effect=claim_provider),patch.object(frozen.socket,'socket',RoleSocket):yield runner,prior,seen
             finally:thread.join(3);server.close();self.assertFalse(thread.is_alive());self.assertEqual(errors,[])
 
-    def test_actual_unix_peer_and_single_get_bind_original_paused_source(self):
+    def test_actual_unix_transport_and_controlled_vm_role_bind_paused_source(self):
         with self.endpoint() as (runner,prior,seen):
             result=frozen.paused_source(runner,prior,time.monotonic()+2)
             self.assertEqual(result['peer_pid'],os.getpid());self.assertEqual(result['state'],'Paused')
             self.assertFalse(result['execution_authority']);self.assertEqual(len(seen),1);self.assertTrue(seen[0].startswith(b'GET / HTTP/1.1'))
 
+    def test_unmodified_kernel_credentials_require_both_vm_uid_and_gid(self):
+        with self.endpoint('native-credentials') as (runner,prior,seen):
+            if os.getuid()==os.getgid():
+                self.assertEqual(frozen.paused_source(runner,prior,time.monotonic()+2)['peer_pid'],os.getpid())
+                self.assertEqual(len(seen),1)
+            else:
+                with self.assertRaisesRegex(ValueError,'pause query peer differs'):
+                    frozen.paused_source(runner,prior,time.monotonic()+2)
+                self.assertEqual(seen,[])
+
     def test_running_wrong_peer_identity_version_and_framing_never_establish_frozen(self):
-        for fault in ('running','peer','version','resource','extra','length'):
+        for fault in ('running','peer','gid','version','resource','extra','length'):
             with self.subTest(fault=fault),self.endpoint(fault) as (runner,prior,seen),patch.object(frozen,'original_process',return_value=True):
                 with self.assertRaises(ValueError):frozen.paused_source(runner,prior,time.monotonic()+2)
 
