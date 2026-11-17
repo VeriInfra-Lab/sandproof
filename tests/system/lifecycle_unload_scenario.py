@@ -765,9 +765,11 @@ def exercise(args):
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
         'capture-stop-pending': 'stop-receipt',
+        'capture-namespace-release': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
-    stop_pending = args.scenario == 'capture-stop-pending'
+    namespace_release = args.scenario == 'capture-namespace-release'
+    stop_pending = args.scenario == 'capture-stop-pending' or namespace_release
     sync_destroy = args.scenario in ('capture-sync-before-destroy', 'capture-sync-after-destroy')
     unresponsive_freeze = args.scenario in ('capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry')
     ordered_freeze = args.scenario == 'capture-freeze-receipt-destroy'
@@ -943,7 +945,7 @@ def exercise(args):
             position=control_physical['context']['position'])
         if sync_destroy:
             report['control_workload'] = control.run_public_workload(control_running)
-        if activation_destroy or freeze_terminal:
+        if activation_destroy or freeze_terminal or namespace_release:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         if resume_receipt_restart:
@@ -1241,7 +1243,7 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                if not (freeze_terminal or sync_destroy or retirement_late_receipt):
+                if not (freeze_terminal or sync_destroy or retirement_late_receipt or namespace_release):
                     finish_slot_occupant(control, control_running, runtime, deadline, report)
             if cycle == 1 and freeze_terminal:
                 from lifecycle_freeze_destroy import FreezeDestroyProbe, ResponsiveFreezeDestroyProbe, OrderedFreezeDestroyProbe, UnresponsiveFreezeDestroyProbe
@@ -1320,7 +1322,15 @@ def exercise(args):
                                  else 'capture-sync-gate')
                     gate = (Path(runtime.quota['deployment_control']) / gate_name
                             if capture_stage in ('measurement-partial','sync-before','sync-after') else None)
-                    if stop_pending:
+                    if namespace_release:
+                        from lifecycle_namespace_release import NamespaceReleaseProbe
+                        def observe_namespace_peer():
+                            assert equal(control.query(), control_running)
+                            return dict(physical=runtime.confirm_running(control.session,control_physical,deadline),
+                                        workload=control.assert_running_workload(control_running))
+                        capture_probe = NamespaceReleaseProbe(runtime,client,physical_running,
+                            observe_peer=observe_namespace_peer)
+                    elif stop_pending:
                         from lifecycle_unload_stop_pending import PendingStopProbe
                         capture_probe = PendingStopProbe(runtime, client, physical_running)
                     elif sync_destroy:
@@ -1338,6 +1348,8 @@ def exercise(args):
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    if namespace_release:
+                        report['phase'] = 'original-namespace-held-release-and-reopen'
                     if sync_destroy:
                         report['phase'] = 'public-destroy-while-original-full-is-held'
                         pending = client.query(); client.check_view(pending, accepted_unload)
@@ -1407,6 +1419,13 @@ def exercise(args):
                 report['cycles'][-1]['unloaded']=copy.deepcopy(saved)
                 report['cycles'][-1]['physical_unloaded']=physical
                 client.assert_original_replay(saved)
+                if namespace_release:
+                    report['phase']='original-product-release-after-namespace-close'
+                    report['namespace_release']=copy.deepcopy(report['capture_handoff_recovery'])
+                    report['slot_reuse']['peer_after_namespace_close']=observe_namespace_peer()
+                    control.destroy(control_running);control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
                 if retirement_observation:
                     from lifecycle_unload_retirement import wait_settled, assert_replay_unchanged
                     report['phase'] = 'live-session-old-material-settlement-' + str(cycle)
@@ -1489,6 +1508,14 @@ def exercise(args):
                 'the original receipt was held through same guest RAM/process/credential and file '
                 'read/write checks, then released and the same SQL plan settled with occupant '
                 'identity and other reservations unchanged; not late stop/delete')
+        if namespace_release:
+            report['acceptance_cases']['G6'] = (
+                'original VMM kernel exit while the original network namespace descriptor remained held; '
+                'actual host release rejection, original Releasing journal across manager reopen and '
+                'two matching Node failures after reopen confirmed the prior serialized call returned; '
+                'no matching release witness; same peer progressed, '
+                'then explicit descriptor close followed by original product Unloaded/GC; '
+                'not all physical references, unknown replies or a formal proof')
         if args.scenario=='restore-activation-loss':
             report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
         if args.scenario=='restore-candidate-exit':
@@ -1740,7 +1767,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
         'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
-        'capture-stop-receipt','capture-stop-pending','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stop-pending','capture-namespace-release','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     parser.add_argument('--stale-probe',type=Path)
