@@ -618,6 +618,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `capture-sync-before-destroy` / `capture-sync-after-destroy` | 在原 Memory 同步门持有期间接受 Destroy；核完整终止收件、原 Returned End、同源 Stop/drain 与 Cleanup-success/pre-SQL，再由产品 Cleaned/GC 收尾（E8/E11；实机待验收） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
+| `capture-stopped-destroy` | 在同一原 Stop-success/pre-SQL 退出点确认原 pidfd 的内核退出、完整 Full 与 backing pin/正材料额度，再经公开接口接受 Destroy；观察原 Unload 或当前 Kill 的 Cleanup-success/pre-SQL 顺序，随后产品完成终止与 GC（E8；实机待验收） |
 | `capture-stop-pending` | 第二次 Unload 的原物理 Stop 门保持时，核对同一 SQL 快照的唯一全局 Stop/逻辑动作登记、原 VM 的实际 Paused、公开 unloading 及完整 Full/原 backing pin/正材料额度；随后放行同一 Stop，接原退出86/SQL 回执丢失重开及两轮恢复/产品 GC（E5；实机待验收） |
 | `capture-namespace-release` | 沿同一原 Stop 门/退出86持有原网络命名空间 FD；核对 VMM 内核退出、实际释放拒绝、Host 重开后原 SQL Releasing 和串行后继释放尝试，禁止出现同代释放见证；同伴进展后关闭 FD，由产品完成 Unloaded、两轮恢复及 Destroy/GC（有限释放代表；实机待验收） |
 | `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
@@ -704,6 +705,35 @@ advance_current_workflow，后继同源释放入口须等前一次应用调用�
 Destroy 来通过。组件自测的网络记录/命名路径及产品审计提供方受控，真实 procfs/FD/
 pidfd、日志解析和只读 SQLite 分别检查；未执行 KVM，不认领任意外部引用、完整第六类
 错误版、完整故障矩阵或形式证明。
+
+`capture-stopped-destroy` 保留首轮保存、双管理重开、另一 owner 实际占用原位置及首次
+恢复的 RAM/进程/文件见证；第二次 Unload 的原 Host 退出86且同一 Stop 尚无 SQL 回执时，
+必须有原 pidfd 的正面退出观察、同一 SQL 快照内唯一全局在途 Stop、完整原 Full/来源及
+两份材料责任；故障开关只按 Stop 类型选择，额外在途 Stop 不能混作当前退出点。PID 身份可能暂留为
+zombie，不能因此推断 PID/额度已释放，也不能用 PID 缺席代替内核退出。读回原材料，
+确认公开 unloading/pending 后接受 Destroy，保留历史 Create/Unload 接受与改参冲突；
+不重新加载来源、不发送信号或修改 SQL。
+
+中心 Terminating 可先于 Host 收到 Destroy。原 `cleanup_vm` 成功/SQL 未入库故障点可能
+先落在旧 Unload，也可能落在当前 Kill；报告分别记录 `old-unload-cleanup` 和
+`terminal-kill-cleanup`，不强求瞬间两库一致。两者都须核全局唯一在途 Cleanup 与同一
+SQL 事务内的原逻辑动作登记、同一原 VM/代数/完整动作、
+匹配原进程的停止回执、原 pidfd 退出和 Cleanup 无 SQL 回执；当前 Kill 分支还核实际
+完整终止意图、同源 Stop、成功围栏回执及受保护的真实围栏文件。旧 Unload 的本地提交
+不能恢复中心已终止的资格；有限公共快照不代表完整调用轨迹。确认切片后仅按原配置
+重开管理服务，产品完成当前 Cleaned、原材料路径/使用登记/资源额度与历史收尾。
+其它未知 Pause/Stop 交错和完整形式证明仍未覆盖。
+
+该分支保留另一 owner 至终止收尾后，原 Host 退出期间不承诺其管理/数据请求可用；
+故障前先建立其原 RAM/进程/文件见证，重开后按该同伴当前 Running 接受与原授权核对并推进
+同一见证，再显式 Destroy。普通 Running 同伴没有 failed-Unload 的接受或结果，不能调用
+`assert_continued_workload`；原失败卸载的接受、历史结果和寿命检查继续独立执行。
+同伴寿命与实际 VMM 身份仍由原物理观察器核对，来宾计数进展不替代这些事实。一个实际恢复周期不计为正常三轮
+或第二次 Resume。失败保留原接受、已知退出及未知资源责任，不重发业务请求、替换键、
+自动 Destroy 同伴或清理未知资源。
+
+终止 Kill 所属的 Cleanup 另核当前 native operation 的完整 id/kind/epoch 对应，
+不能仅凭终止位和同代接受一条历史动作；旧 Unload 先 Cleanup 的合法顺序保持。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、

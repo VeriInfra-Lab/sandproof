@@ -199,7 +199,10 @@ class CaptureHandoffProbe:
             if (digest, identity) != expected:
                 raise ValueError('original sealed measurement gate file changed')
 
-    def _read(self, deadline, *, extra=None):
+    def _read(self, deadline, *, current_version=None, extra=None):
+        expected_version = self.accepted['accepted_version'] if current_version is None else current_version
+        if type(expected_version) is not int or not 0 < expected_version < 2**64:
+            raise ValueError('one exact current version required')
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
         identity = (database.stat().st_dev, database.stat().st_ino)
@@ -216,7 +219,7 @@ class CaptureHandoffProbe:
                 raise ValueError('original inbox checksum differs')
             inbox = json.loads(raw, object_pairs_hook=unique_keys)
             sessions = [s for s in inbox['sessions'] if s['id'] == self.accepted['session']]
-            if len(sessions) != 1 or sessions[0]['current_version'] != self.accepted['accepted_version']:
+            if len(sessions) != 1 or not equal(sessions[0]['current_version'], expected_version):
                 raise ValueError('exact current accepted session required')
             entries = [e for e in sessions[0]['entries'] if
                 e['intent']['accepted_version'] == self.accepted['accepted_version']
@@ -592,14 +595,7 @@ class CaptureHandoffProbe:
             if hashlib.sha256(raw).digest() != checksum:
                 raise ValueError('original terminal inbox checksum differs')
             original, terminal, local = self._terminal_entries(json.loads(raw, object_pairs_hook=unique_keys))
-            sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-            size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
-                raise ValueError('original native terminal row missing or retired before evidence')
-            raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            state = json.loads(raw, object_pairs_hook=unique_keys)
-            if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
-                raise ValueError('original native terminal owner changed')
+            state = self._read_native(conn, local, capacity)
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
@@ -608,6 +604,18 @@ class CaptureHandoffProbe:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
                     sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **extra)
+
+    def _read_native(self, conn, local, capacity):
+        native = self.runtime.services.native_pools[0]
+        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+        size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
+            raise ValueError('original native terminal row missing or retired before evidence')
+        raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        state = json.loads(raw, object_pairs_hook=unique_keys)
+        if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
+            raise ValueError('original native terminal owner changed')
+        return state
 
     def _terminal_extra(self, conn, local, capacity):
         """Optional read-only facts in the SAME original SQL snapshot."""
