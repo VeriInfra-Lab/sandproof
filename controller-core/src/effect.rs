@@ -11,6 +11,10 @@ pub enum EffectInput {
     Timeout(EffectId),
     Retry(LogicalEffectId, FailureKind),
     FinalizeFailure(LogicalEffectId, FailureKind),
+    RetireFreeze {
+        freeze: EffectId,
+        stop: EffectId,
+    },
     RetireActivation {
         activation: EffectId,
         stop: EffectId,
@@ -740,6 +744,9 @@ pub fn handle_effect(world: &World, input: EffectInput) -> Result<EffectDecision
         EffectInput::Retry(logical, failure) => handle_effect_retry(world, logical, failure),
         EffectInput::FinalizeFailure(logical, failure) => {
             handle_effect_finalize_failure(world, logical, failure)
+        }
+        EffectInput::RetireFreeze { freeze, stop } => {
+            crate::capture::freeze_terminal::retire(world, freeze, stop)
         }
         EffectInput::RetireActivation { activation, stop } => {
             crate::terminal::handle_retire_activation(world, activation, stop)

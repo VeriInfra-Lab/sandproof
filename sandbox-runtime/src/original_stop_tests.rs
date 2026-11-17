@@ -241,3 +241,39 @@ fn readonly_configuration_refuses_wrong_or_missing_source_without_effects() {
     assert!(!runtime.root_path(ID).exists());
     assert!(child.0.try_wait().unwrap().is_none());
 }
+
+#[test]
+fn exact_stop_kills_os_stopped_source_without_sigcont_and_preserves_files() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
+    let (mut child, source) = process();
+    let (temp, runtime) = fixture(&source);
+    let claim = temp.path().join(".claims").join(ID).join("record.json");
+    let saved = fs::read(&claim).unwrap();
+    let material = temp.path().join("backing");
+    fs::write(&material, b"retained").unwrap();
+    let pidfd = verified_process(&record(&source)).unwrap().unwrap();
+    pidfd_send_signal(&pidfd, Signal::STOP).unwrap();
+    let deadline = std::time::Instant::now() + STOP_TIMEOUT;
+    loop {
+        let status = fs::read_to_string(format!("/proc/{}/stat", source.pid)).unwrap();
+        if status.rsplit(')').next().unwrap().split_whitespace().next() == Some("T") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(runtime.observe_original_stopped(ID, &source).is_err());
+    let stopped = runtime.stop_original_vm(ID, &source).unwrap();
+    assert_eq!(stopped.state, VmState::Stopped);
+    assert_eq!(
+        (stopped.pid, stopped.start_time_ticks),
+        (source.pid, source.start_time_ticks)
+    );
+    assert_eq!(
+        runtime.observe_original_stopped(ID, &source).unwrap(),
+        stopped
+    );
+    child.0.wait().unwrap();
+    assert_eq!(fs::read(claim).unwrap(), saved);
+    assert_eq!(fs::read(material).unwrap(), b"retained");
+}

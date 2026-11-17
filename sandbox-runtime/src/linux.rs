@@ -17,6 +17,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[path = "api_connect.rs"]
+mod api_connect;
 #[path = "api_response.rs"]
 mod api_response;
 #[path = "boot_plan.rs"]
@@ -1375,7 +1377,7 @@ impl Runtime {
             ));
         }
         self.require_launch_jail(id, 0)?;
-        let stream = UnixStream::connect(self.socket_path(id))?;
+        let stream = api_connect::connect(&self.socket_path(id))?;
         let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(errno_to_io)?;
         if u32::try_from(peer.pid.as_raw_nonzero().get()).ok() != Some(record.pid)
             || peer.uid.as_raw() != self.config.vm_uid

@@ -996,7 +996,9 @@ fn command_bound(
 }
 
 fn retired_stop_valid(world: &World, id: &EffectId, coverage: crate::StopCoverage) -> bool {
-    let Some(command) = crate::terminal::activation_stop_covered(id, coverage) else {
+    let Some(command) = crate::terminal::activation_stop_covered(id, coverage)
+        .or_else(|| crate::capture::freeze_terminal::stop_covered(id, coverage))
+    else {
         return false;
     };
     if command.epoch() != Some(coverage.epoch) || coverage.operation.sandbox != command.sandbox() {
@@ -1019,7 +1021,8 @@ fn retired_stop_valid(world: &World, id: &EffectId, coverage: crate::StopCoverag
             .logical_effects
             .get(&id.logical)
             .is_some_and(|logical| {
-                crate::terminal::activation_coverage_origin(world, id, coverage)
+                (crate::terminal::activation_coverage_origin(world, id, coverage)
+                    || crate::capture::freeze_terminal::coverage_origin(world, id, coverage))
                     && logical.current_attempt == id.attempt
                     && logical.result
                         == Some(LogicalEffectResult::RetiredByStop {

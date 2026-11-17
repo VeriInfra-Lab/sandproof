@@ -18,6 +18,9 @@ const RECORDS: u64 = 11 + LOGICAL + ATTEMPTS;
 const REFERENCES: u64 = 2 * ATTEMPTS + 4 + 2;
 const POLICY_COPIES: u64 = 3 + 1 + 1 + 1 + 3 * (core::DEFAULT_RETRY_LIMIT + 1);
 // Per attempt: dispatch, timeout, worker observation and acknowledgement.
+// RetireFreeze is terminal-only and replaces the absent Freeze worker/receipt
+// pair; one such input fits those two already-reserved input credits. It creates
+// no new command, attempt or material row. No extra cleanup-time capacity debt.
 // Per logical: retries and final failure. Four possible stopped activations;
 // six scheduler inputs; create/kill/compensate; three publications; Bind,
 // BeginRelease, ConfirmRelease, Retire and retirement's expiry input.

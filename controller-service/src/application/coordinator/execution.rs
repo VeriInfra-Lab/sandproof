@@ -269,6 +269,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
         };
         self.prepare_unload_drain(sandbox, host.as_ref())?;
         self.prepare_execution(sandbox, host.as_ref())?;
+        self.observe_capture_ends(sandbox, host.as_ref())?;
         self.reconcile_current_actions(sandbox, host.as_ref())?;
         self.prepare_original_continue_if_ended(sandbox, host.as_ref())?;
         for _ in 0..128 {
@@ -380,6 +381,18 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 .collect::<Vec<_>>()
         };
         for action in uncertain {
+            if self
+                .inner
+                .lock()
+                .map_err(|_| ApplicationError::Busy)?
+                .journal
+                .terminal_freeze_pending(&action.command)
+                .map_err(map_journal)?
+            {
+                // Retain the original unknown effect; only its current terminal
+                // fence/Stop may proceed. Do not query the unresponsive VMM.
+                continue;
+            }
             let receipt = match self.observe_capture_action(host, &action)? {
                 Some(receipt) => Some(receipt),
                 None => match self.continue_original_activation(host, &action)? {

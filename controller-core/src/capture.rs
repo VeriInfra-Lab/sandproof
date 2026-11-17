@@ -12,6 +12,7 @@ mod tests;
 
 pub mod continuation;
 pub mod drain;
+pub mod freeze_terminal;
 pub use continuation::{
     CaptureInput, CaptureSealEnd, CaptureWorkEnd, CaptureWorkEndReceipt, OriginalContinueIdentity,
 };

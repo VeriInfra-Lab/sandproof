@@ -343,6 +343,15 @@ SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程�
 可能在 Host 收到 Destroy 前已派发 Full；应按原输入日志区分在途旧工作与终止后新派发，
 不得删除原 pre-Full 场景的断言来覆盖不同顺序。
 
+`capture-freeze-unresponsive-destroy` 与 `capture-freeze-unresponsive-expiry` 分别复用
+原公开 Destroy 与真实75秒到期入口，但在初始真实 Paused 观察后保持原 VMM 进程
+SIGSTOP，后续不发送 SIGCONT，也不伪造新的 Paused 查询结果。仍核原 Freeze/pre-SQL
+退出86、完整终止意图、当前围栏及唯一同源 Stop、Full 未放行、backing pin/正额度与
+完整材料、同伴原 RAM/进程/授权进展、内核退出及 Cleanup/pre-SQL/重开/GC/重放。
+Stop 前明确记录“原进程仍被 OS 停止”，而非“此刻又取得 Paused API 回复”。成功必须由
+原产品停止完成，不用测试清理替代。原60秒门、900秒场景和所有授权/保留期/配额检查
+保持，精确版本和未运行项记在 issue；历史失败不改签。未知或错身份继续保留现场。
+
 `capture-freeze-expiry` 复用上述原 Freeze/Stop/Cleanup 门和
 [冻结到期观察器](../tests/system/lifecycle_freeze_expiry.py)。仅首次 Create 显式使用
 75,000 ms 寿命；另一 owner 保留部署原寿命。原 Unload、双 manager 重开、位置实际复用、

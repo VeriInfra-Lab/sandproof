@@ -6,6 +6,7 @@ mod complete;
 mod continuation;
 pub(super) mod drain;
 mod end;
+pub(in crate::controller) mod freeze_terminal;
 mod unloaded;
 mod validate;
 

@@ -588,3 +588,15 @@ class OrderedFreezeTests(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):p._terminal_manager_started(p.deadline)
                     sent.assert_not_called();self.assertFalse(p.continue_sent);self.assertFalse(p.stop_released)
+
+
+class UnresponsiveFreezeTests(unittest.TestCase):
+    def test_unresponsive_stop_preparation_never_sends_signal_or_queries_api(self):
+        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as sent,patch.object(frozen,'paused_source') as queried:
+            p=fixture(Path(directory)).probe;p.__class__=frozen.UnresponsiveFreezeDestroyProbe
+            p._source_state=Mock(return_value='T')
+            result=p._prepare_source_for_stop(p.deadline)
+            self.assertTrue(result['source_os_stopped']);self.assertFalse(result['current_pause_observed'])
+            sent.assert_not_called();queried.assert_not_called();self.assertFalse(p.continue_sent)
+            p.continue_sent=True
+            with self.assertRaises(ValueError):p._prepare_source_for_stop(p.deadline)

@@ -304,3 +304,132 @@ fn terminal_exception_never_allows_ordinary_pause_other_commands_or_unknown_free
     let world = kill(&world, Actor::Tenant(OWNER));
     assert!(!terminal_capture_drain_allowed(&world, &fence(&world)));
 }
+
+#[test]
+fn unknown_freeze_terminal_stop_never_claims_freeze_success_or_releases_material() {
+    for actor in [Actor::Tenant(OWNER), Actor::SystemController] {
+        let world = continuation::pause_source(false);
+        let freeze = effect(&world, SandboxId(10), |c| {
+            matches!(c, Command::FreezeVm { .. })
+        });
+        let world = step(
+            &world,
+            ControllerInput::Effect(EffectInput::Dispatch(freeze.clone())),
+        );
+        assert!(!crate::capture::freeze_terminal::allowed(
+            &world,
+            &fence(&world)
+        ));
+        let world = kill(&world, actor);
+        assert!(crate::capture::freeze_terminal::allowed(
+            &world,
+            &fence(&world)
+        ));
+        assert!(!crate::capture::freeze_terminal::allowed(
+            &world,
+            &stop(&world)
+        ));
+        let prior = world
+            .operation_plan(OperationKey {
+                sandbox: SandboxId(10),
+                operation: OperationId(2),
+            })
+            .unwrap()
+            .capture;
+        let fence_id = effect(&world, SandboxId(10), |c| *c == fence(&world));
+        let world = execute_id(&world, fence_id);
+        assert!(crate::capture::freeze_terminal::allowed(
+            &world,
+            &stop(&world)
+        ));
+        let vm = world
+            .sandbox_record(SandboxId(10))
+            .unwrap()
+            .current_vm
+            .unwrap();
+        let world = step(
+            &world,
+            ControllerInput::Scheduler(SchedulerInput::StopVm(SandboxId(10), 1, vm)),
+        );
+        let stop_id = effect(&world, SandboxId(10), |c| *c == stop(&world));
+        assert!(
+            crate::capture::freeze_terminal::retire(&world, freeze.clone(), stop_id.clone())
+                .is_err()
+        );
+        let world = execute_id(&world, stop_id.clone());
+        let world = step(
+            &world,
+            ControllerInput::Effect(EffectInput::RetireFreeze {
+                freeze: freeze.clone(),
+                stop: stop_id.clone(),
+            }),
+        );
+        assert!(matches!(
+            world.effect_status(&freeze),
+            Some(EffectStatus::RetiredByStop(_))
+        ));
+        assert!(!crate::effect::effect_succeeded_check(
+            &world,
+            freeze.command()
+        ));
+        assert_eq!(
+            world
+                .operation_plan(OperationKey {
+                    sandbox: SandboxId(10),
+                    operation: OperationId(2)
+                })
+                .unwrap()
+                .capture,
+            prior
+        );
+        assert!(handle_effect_dispatch(&world, freeze.clone()).is_err());
+        assert!(crate::worker::handle_worker(&world, &freeze).is_err());
+        assert!(
+            handle_effect_receipt(
+                &world,
+                freeze.clone(),
+                EffectOutcome::Succeeded(ResultDigest(9))
+            )
+            .is_err()
+        );
+        assert_eq!(
+            crate::capture::freeze_terminal::retire(&world, freeze, stop_id)
+                .unwrap()
+                .next,
+            world
+        );
+        roundtrip(&world);
+    }
+}
+
+#[test]
+fn freeze_terminal_exception_never_adopts_an_issued_full_or_fabricated_stop() {
+    let (world, _, _) = continuation::pending_capture(true);
+    let world = kill(&world, Actor::Tenant(OWNER));
+    assert!(!crate::capture::freeze_terminal::allowed(
+        &world,
+        &fence(&world)
+    ));
+    assert!(terminal_capture_drain_allowed(&world, &fence(&world)));
+    let world = continuation::pause_source(false);
+    let freeze = effect(&world, SandboxId(10), |c| {
+        matches!(c, Command::FreezeVm { .. })
+    });
+    let world = step(
+        &world,
+        ControllerInput::Effect(EffectInput::Dispatch(freeze.clone())),
+    );
+    let world = kill(&world, Actor::Tenant(OWNER));
+    let mut wrong = fence(&world);
+    if let Command::InstallFence { epoch, .. } = &mut wrong {
+        *epoch += 1;
+    }
+    assert!(!crate::capture::freeze_terminal::allowed(&world, &wrong));
+    assert!(!crate::capture::freeze_terminal::allowed(
+        &world,
+        freeze.command()
+    ));
+    let mut wrong = freeze.clone();
+    wrong.attempt += 1;
+    assert!(crate::capture::freeze_terminal::current_stop(&world, &wrong).is_none());
+}

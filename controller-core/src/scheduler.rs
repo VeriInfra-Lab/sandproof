@@ -225,7 +225,9 @@ fn terminal_restore_prepare_fence_allowed(world: &World, command: &Command) -> b
 #[must_use]
 pub fn dispatch_allowed_during_abort(world: &World, command: &Command) -> bool {
     let sandbox = command.sandbox();
-    if crate::capture::drain::terminal_capture_drain_allowed(world, command) {
+    if crate::capture::freeze_terminal::allowed(world, command)
+        || crate::capture::drain::terminal_capture_drain_allowed(world, command)
+    {
         return true;
     }
     if terminal_restore_prepare_fence_allowed(world, command) {
