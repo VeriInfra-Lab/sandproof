@@ -716,18 +716,20 @@ fn lost_freeze_observation_blocks_only_until_original_result_returns() {
     for _ in 0..3 {
         // next_step is only a scheduling hint. The real journal must still
         // refuse its suggested Stop while the original Freeze is unresolved.
-        let WorkflowStep::Apply(input) = workflow::next_step(&journal.world().unwrap(), sandbox)
-        else {
-            panic!("expected original terminal scheduling hint");
-        };
-        assert!(matches!(
-            *input,
-            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(..))
-        ));
-        assert!(matches!(
-            journal.apply(*input, &mut NeverCrash),
-            Err(JournalError::UnresolvedAction)
-        ));
+        match workflow::next_step(&journal.world().unwrap(), sandbox) {
+            WorkflowStep::Apply(input) => {
+                assert!(matches!(
+                    *input,
+                    core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(..))
+                ));
+                assert!(matches!(
+                    journal.apply(*input, &mut NeverCrash),
+                    Err(JournalError::UnresolvedAction)
+                ));
+            }
+            WorkflowStep::Claim => {} // the authoritative SQL gate still refuses below
+            other => panic!("unexpected terminal scheduling hint: {other:?}"),
+        }
         assert!(
             journal
                 .claim_next(Some(sandbox), &mut NeverCrash)

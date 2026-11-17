@@ -227,3 +227,12 @@ class FreezeExpiryProbe(FreezeDestroyProbe):
         result['observed_automatic_acceptance'] = copy.deepcopy(getattr(self, 'automatic_acceptance', None))
         result['explicit_destroy_sent'] = self.client.destroy_request is not None
         return result
+
+
+class UnresponsiveFreezeExpiryProbe(FreezeExpiryProbe):
+    """Same automatic terminal identity, with no test-side VMM continuation."""
+    continue_source_before_stop = False
+
+    def _prepare_source_for_stop(self,deadline):
+        from lifecycle_freeze_destroy import UnresponsiveFreezeDestroyProbe
+        return UnresponsiveFreezeDestroyProbe._prepare_source_for_stop(self,deadline)

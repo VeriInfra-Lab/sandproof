@@ -33,10 +33,13 @@ fn origin(world: &World, freeze: &EffectId) -> Option<OperationKey> {
         || ledger.input != (OperationInput::Pause { generation })
         || !matches!(ledger.operation.status, OperationStatus::Failed(_))
         || plan.key != key
-        || !plan.sealed
         || plan.epoch != epoch
         || plan.generation != generation
-        || plan.vm != Some(vm)
+        || if plan.sealed {
+            plan.vm != Some(vm) || plan.target_snapshot.is_none()
+        } else {
+            plan.vm.is_some() || plan.target_snapshot.is_some()
+        }
         || !plan.stop_vms.contains(&vm)
         || logical.current_attempt != freeze.attempt
         || capture.commit() != CaptureCommit::NotRegistered
@@ -131,6 +134,7 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
         operation: op.id,
     };
     let plan = world.operation_plan(key)?;
+    let old_plan = world.operation_plan(old)?;
     let machine = world.vm_record(vm)?;
     let slot = row.net_slot?;
     let network = world.slot_record(slot)?;
@@ -156,6 +160,7 @@ pub fn current_stop(world: &World, freeze: &EffectId) -> Option<Command> {
         || row.generation != generation
         || row.current_vm != Some(vm)
         || !plan.close_slots.contains(&slot)
+        || !old_plan.close_slots.contains(&slot)
         || machine.owner != row.owner
         || machine.sandbox != sandbox
         || machine.generation != generation
