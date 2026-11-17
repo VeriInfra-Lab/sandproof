@@ -33,6 +33,7 @@ pub(super) fn before_execute(action: &WorkAction<core::EffectId>) {
                 }
             ) | (Some("stop_vm"), core::Command::StopVm { .. })
                 | (Some("activate_vm"), core::Command::ActivateVm { .. })
+                | (Some("freeze_vm"), core::Command::FreezeVm { .. })
         ) {
             std::process::exit(87);
         }

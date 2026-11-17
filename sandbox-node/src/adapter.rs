@@ -1182,6 +1182,25 @@ impl sandproof_controller_service::capture::PreparedFullCapture<HostObservation>
     }
 }
 
+fn capture_effect_observation<T>(
+    action: &WorkAction<core::EffectId>,
+    observe_only: bool,
+    execute: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+    observe: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    #[cfg(not(debug_assertions))]
+    let _ = action;
+    if observe_only {
+        observe()
+    } else {
+        // The original durable dispatch reaches this specialized route. The
+        // generic WorkExecution::execute hook is not on these capture paths.
+        #[cfg(debug_assertions)]
+        faults::before_execute(action);
+        execute()
+    }
+}
+
 impl NodeHost {
     fn capture_action_observation(
         &self,
@@ -1193,13 +1212,12 @@ impl NodeHost {
         observe_only: bool,
     ) -> Result<HostObservation, Box<dyn std::error::Error>> {
         match action.command.command() {
-            core::Command::FreezeVm { .. } => {
-                if observe_only {
-                    self.observe_pause_original(action, &full.pause, source)
-                } else {
-                    self.pause_original(action, &full.pause, source)
-                }
-            }
+            core::Command::FreezeVm { .. } => capture_effect_observation(
+                action,
+                observe_only,
+                || self.pause_original(action, &full.pause, source),
+                || self.observe_pause_original(action, &full.pause, source),
+            ),
             core::Command::SealSnapshot { .. } if observe_only => {
                 self.worker.recover_completed_full(
                     self.host_epoch_source
@@ -1226,13 +1244,12 @@ impl NodeHost {
                 source,
                 committed.ok_or("missing durable original Seal expectation")?,
             ),
-            core::Command::StopVm { .. } => {
-                if observe_only {
-                    self.observe_unload_source_stopped(action, full, source)
-                } else {
-                    self.stop_unload_source(action, full, source)
-                }
-            }
+            core::Command::StopVm { .. } => capture_effect_observation(
+                action,
+                observe_only,
+                || self.stop_unload_source(action, full, source),
+                || self.observe_unload_source_stopped(action, full, source),
+            ),
             core::Command::CleanupVm { .. } | core::Command::CleanupSlot { .. } => {
                 let expected = committed.ok_or("missing original adopted capture expectation")?;
                 if expected.work() != full {
