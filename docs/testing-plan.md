@@ -53,6 +53,21 @@
 
 E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确认，才能排除“重载旧快照也能通过”的伪测试。E10 包含 load 返回后、VMM 仍运行的时段；E1 包含旧 slot 被另一个会话实际复用。观测 oracle 接受临时两库差异，检查最终事实、责任和禁止状态，不要求每瞬间强一致。RAM/文件见证使用明确屏障或描述允许捕获点；不能把应用的两个非原子写入强行要求为永远相等，从而误报协议错误。
 
+E8 的[恢复后 Freeze 回归](../controller-service/src/controller/lifecycle_inbox/source_work/tests/end_pipeline.rs)
+从原 Create→Unload→Resume→第二次 Unload 建立真实 journal/SQLite 状态，保留恢复
+backing/pin 与正材料额度，分别检查 dispatched 和 OutcomeUnknown。尚未保存原
+`NeverReleased` 时，缺失的 Freeze 观察不授权派发当前终止围栏；保存完整原成功观察后，
+才沿同一围栏和同源 Stop 推进。原应用恢复协调器另检查仅重查旧 Freeze、不重执行它，
+解除观察故障后派发终止动作，不增加 Prepare/Activate/Seal。
+
+互补分支先在原 SQLite 保存 `NeverReleased`，关闭尚未放行的 Full，再重开账本：
+当前 Kill 可派发同一围栏/Stop，原 Freeze 直到同源 Stop 成功才记为 RetiredByStop，
+不伪造 Freeze 成功，迟到成功不能倒退终止。原恢复 backing 与完整材料责任在 Stop、
+终止及再次重开后保持；这些阶段不代替材料使用结束、GC 或退额。两分支不能概括为
+“任何终止都必须先成功观察 Freeze”，也不能扩大到已放行 Full 或未知加载。
+Host 观察与效果由原受控提供方给出；新组合的编译、自测、完整普通和实机验收另行记录，
+不由源码或旧单片结果宣称 KVM、全部 E8/E15 或新形式证明通过。
+
 E11 的 Full 同步边界入口为 `--scenario capture-sync-before` 与
 `--scenario capture-sync-after`，沿用原生命周期入口的完整批准参数。二者先完成原
 Create/Unload/双管理重开/另一 owner 复用位置/首次 Resume，再在第二次 Unload 的
