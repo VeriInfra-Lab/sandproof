@@ -82,6 +82,42 @@ def paused_source(runtime, prior, deadline):
     finally:os.close(fd)
 
 
+def original_backing(runtime, acceptance, rows):
+    """The original complete Resume binding and its positive material-use duty."""
+    a=acceptance
+    matches=[r for r in rows if r['restore'] is not None and r['restore']['material_use'] is True
+        and equal(dict(session=r['restore']['intent']['request']['binding']['session'],
+                       key=r['restore']['intent']['request']['binding']['key'],
+                       accepted_version=r['restore']['intent']['accepted_version']),a)]
+    if len(matches)!=1 or material_source_charge(matches[0])<=0:
+        raise ValueError('one original restored backing pin and positive charge required')
+    capture=matches[0]['capture'];intent=matches[0]['restore']['intent']
+    accepted_request(intent,runtime.services.host_configs[0]['inbox']['node'])
+    if (intent['request']['operation']['kind']!='resume'
+            or not equal(capture['completed'],intent['request']['operation']['manifest_digest'])):
+        raise ValueError('original pin and complete Resume source differ')
+    return matches[0]
+
+
+def pending_stop_facts(runtime,conn,local,capacity):
+    """Read original global pending Stops and lifetime in the caller SQL snapshot."""
+    count,largest=conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched'").fetchone()
+    if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
+        raise ValueError('bounded global pending actions required')
+    stops=[]
+    for raw, in conn.execute("SELECT action_json FROM outbox WHERE dispatch_state='dispatched' ORDER BY id"):
+        action=json.loads(raw,object_pairs_hook=unique_keys)
+        if 'StopVm' in action['command']['logical']['command']:stops.append(action)
+    native=runtime.services.native_pools[0]
+    name='sb-'+native['namespace']+'-'+str(local['sandbox'])
+    row=conn.execute('SELECT owner_id,started_at_ms,deadline_ms,max_deadline_ms,startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?',(name,)).fetchone()
+    if row is None or row[0]!='tenant-'+str(local['owner']):raise ValueError('original lifetime owner required')
+    lifetime=dict(zip(('started_at_ms','end_at_ms','max_end_at_ms','startup_deadline_ms'),row[1:],strict=True))
+    for value in lifetime.values():_u64(value)
+    return dict(global_pending_stops=stops,lifetime=lifetime)
+
+
+
 class FreezeDestroyProbe(CaptureHandoffProbe):
     hold_source_process = True
     continue_source_before_stop = True
@@ -124,19 +160,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         return matches[0]
 
     def _backing(self,rows):
-        a=self.running_acceptance
-        matches=[r for r in rows if r['restore'] is not None and r['restore']['material_use'] is True
-            and equal(dict(session=r['restore']['intent']['request']['binding']['session'],
-                           key=r['restore']['intent']['request']['binding']['key'],
-                           accepted_version=r['restore']['intent']['accepted_version']),a)]
-        if len(matches)!=1 or material_source_charge(matches[0])<=0:
-            raise ValueError('one original restored backing pin and positive charge required')
-        capture=matches[0]['capture'];intent=matches[0]['restore']['intent']
-        accepted_request(intent,self.runtime.services.host_configs[0]['inbox']['node'])
-        if (intent['request']['operation']['kind']!='resume'
-                or not equal(capture['completed'],intent['request']['operation']['manifest_digest'])):
-            raise ValueError('original pin and complete Resume source differ')
-        return matches[0]
+        return original_backing(self.runtime,self.running_acceptance,rows)
 
     def after_acceptance(self,accepted,deadline):
         result=super().after_acceptance(accepted,deadline)
@@ -224,20 +248,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         return old[0],new[0],row['local']
 
     def _terminal_extra(self,conn,local,capacity):
-        count,largest=conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched'").fetchone()
-        if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
-            raise ValueError('bounded global pending actions required')
-        stops=[]
-        for raw, in conn.execute("SELECT action_json FROM outbox WHERE dispatch_state='dispatched' ORDER BY id"):
-            action=json.loads(raw,object_pairs_hook=unique_keys)
-            if 'StopVm' in action['command']['logical']['command']:stops.append(action)
-        native=self.runtime.services.native_pools[0]
-        name='sb-'+native['namespace']+'-'+str(local['sandbox'])
-        row=conn.execute('SELECT owner_id,started_at_ms,deadline_ms,max_deadline_ms,startup_deadline_ms FROM sandbox_lifetimes WHERE sandbox_id=?',(name,)).fetchone()
-        if row is None or row[0]!='tenant-'+str(local['owner']):raise ValueError('original lifetime owner required')
-        lifetime=dict(zip(('started_at_ms','end_at_ms','max_end_at_ms','startup_deadline_ms'),row[1:],strict=True))
-        for value in lifetime.values():_u64(value)
-        return dict(global_pending_stops=stops,lifetime=lifetime)
+        return pending_stop_facts(self.runtime,conn,local,capacity)
 
     def _read_terminal(self,deadline):
         snapshot=super()._read_terminal(deadline)

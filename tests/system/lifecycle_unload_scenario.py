@@ -764,8 +764,10 @@ def exercise(args):
         'capture-publish-conflict': 'sync-after',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
+        'capture-stop-pending': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    stop_pending = args.scenario == 'capture-stop-pending'
     sync_destroy = args.scenario in ('capture-sync-before-destroy', 'capture-sync-after-destroy')
     unresponsive_freeze = args.scenario in ('capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry')
     ordered_freeze = args.scenario == 'capture-freeze-receipt-destroy'
@@ -1318,7 +1320,10 @@ def exercise(args):
                                  else 'capture-sync-gate')
                     gate = (Path(runtime.quota['deployment_control']) / gate_name
                             if capture_stage in ('measurement-partial','sync-before','sync-after') else None)
-                    if sync_destroy:
+                    if stop_pending:
+                        from lifecycle_unload_stop_pending import PendingStopProbe
+                        capture_probe = PendingStopProbe(runtime, client, physical_running)
+                    elif sync_destroy:
                         from lifecycle_unload_sync_destroy import SyncDestroyProbe
                         capture_probe = SyncDestroyProbe(runtime, client, physical_running, capture_stage, gate)
                     elif args.scenario == 'capture-publish-conflict':
@@ -1535,6 +1540,11 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if stop_pending:
+            report['acceptance_cases']['E5'] = (
+                'original live Paused VMM and pending public Unload, one complete global Stop and '
+                'adopted material/backing pin/positive charges checked before release; same original '
+                'Stop then exited before SQL receipt, recovered and settled; not all unknown Stop interleavings')
         if freeze_destroy:
             report['freeze_response_mode']='unresponsive-vmm-no-continue' if unresponsive_freeze else 'response-restored-after-terminal-acceptance' if ordered_freeze else 'responsive-vmm' if responsive_freeze else 'os-stopped-vmm'
             report['acceptance_cases'] = {
@@ -1608,6 +1618,8 @@ def exercise(args):
         if (prepare_destroy or activation_destroy or freeze_terminal or sync_destroy) and capture_probe is not None:
             name='sync_destroy' if sync_destroy else 'activation_destroy' if activation_destroy else 'freeze_expiry' if freeze_expiry else 'freeze_destroy' if freeze_destroy else 'prepare_destroy'
             report[name+'_failure_state'] = capture_probe.terminal_failure_state()
+        if stop_pending and capture_probe is not None:
+            report['stop_pending_failure_state'] = capture_probe.failure_state()
         if args.scenario == 'capture-publish-conflict' and capture_probe is not None:
             obstacle = capture_probe.obstacle
             report['publication_obstacle_failure_state'] = (
@@ -1696,7 +1708,9 @@ def exercise(args):
                     raise
             finally:
                 if capture_probe is not None:
-                    capture_probe.close()
+                    closed = capture_probe.close()
+                if stop_pending:
+                    report['stop_pending_observer_close'] = closed
                 if expiry_probe is not None:
                     expiry_probe.close()
                 if data_probe is not None:
@@ -1726,7 +1740,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
         'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
-        'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stop-pending','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     parser.add_argument('--stale-probe',type=Path)
