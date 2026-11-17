@@ -336,6 +336,13 @@ backing pin/正额度、材料、同伴进展、内核退出、Cleanup/GC 和历
 [V9 第4节](formal/09-system-composition.md#4-条件最终完成性)：外部长期不可用可保持未知，
 环境恢复后必须推进；外部不可用与内部不启用工作需分别判断，不能混用。
 
+`capture-freeze-receipt-destroy` 将顺序控制仅保持到原 Host 已持久接受准确的 Kill：
+只读核对当前终止版本、本地映射、原来源及 backing 责任后恢复同一 VMM 进程应答，
+随后仍用原规则核对终止围栏、同源 Stop、材料、同伴进展与退出/GC。它不会等 Stop 才
+SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程无进程停止。自由应答对照
+可能在 Host 收到 Destroy 前已派发 Full；应按原输入日志区分在途旧工作与终止后新派发，
+不得删除原 pre-Full 场景的断言来覆盖不同顺序。
+
 `capture-freeze-expiry` 复用上述原 Freeze/Stop/Cleanup 门和
 [冻结到期观察器](../tests/system/lifecycle_freeze_expiry.py)。仅首次 Create 显式使用
 75,000 ms 寿命；另一 owner 保留部署原寿命。原 Unload、双 manager 重开、位置实际复用、

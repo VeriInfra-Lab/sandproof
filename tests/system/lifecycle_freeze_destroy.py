@@ -288,6 +288,9 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('actual terminal fence differs from exact SQL receipt')
         return actual
 
+    def _terminal_manager_started(self,deadline):
+        pass
+
     def recover_after_destroy(self,accepted,deadline,*,observe_peer):
         self._bind_destroy(accepted);deadline=min(deadline,self.deadline)
         if self.host.poll()!=86:raise ValueError('original cut manager required')
@@ -296,6 +299,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         self.terminal_host=self.runtime.services.processes.start('host-0',env={
             'SANDPROOF_TEST_STOP_GATE':str(self.stop_path),'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION':'cleanup_vm'})
         if self.terminal_host is self.host or self.terminal_host.pid==self.host.pid:raise ValueError('new original manager required')
+        self._terminal_manager_started(deadline)
         self.runtime.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
         while not self.stop_path.exists():
             remaining(deadline)
@@ -386,3 +390,41 @@ class ResponsiveFreezeDestroyProbe(FreezeDestroyProbe):
     peer-progress, late Freeze, kernel exit and Cleanup check of the parent.
     """
     hold_source_process = False
+
+
+class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
+    """Restore VMM response after durable Kill, before waiting for its effects.
+
+    The short test SIGSTOP orders acceptance only. It must not wait on a fence
+    or Stop whose scheduling itself needs the original Freeze observation.
+    """
+    def _terminal_manager_started(self,deadline):
+        while True:
+            try:
+                snapshot=self._read_terminal(deadline)
+                break
+            except _AwaitTerminal:
+                time.sleep(min(.01,remaining(deadline)))
+        native=snapshot['native'];binding=self.prior['context']['binding'];operation=native['current_operation']
+        if (native['terminal'] is not True or native['phase']!='Revoking' or operation is None
+                or operation['kind']!='Kill' or operation['id']!=snapshot['terminal']['local_operation']
+                or operation['epoch']!=native['epoch'] or native['generation']!=binding['generation']
+                or native['current_vm']!=binding['vm'] or native['net_slot']!=binding['network']):
+            raise ValueError('durable exact original Kill required before restoring VMM response')
+        self._no_full(snapshot['sources'],terminal=True)
+        backing=self._backing(snapshot['sources'])
+        if (not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources))
+                or not equal(self.runtime._materials(backing['capture']['full'],backing['capture']),self.backing_material)):
+            raise ValueError('original backing responsibility changed before VMM response restored')
+        self._check_source_hold(deadline)
+        self.response_restore_snapshot=copy.deepcopy(snapshot)
+        signal.pidfd_send_signal(self.pidfd,signal.SIGCONT);self.continue_sent=True
+        while self._source_state(deadline)=='T':time.sleep(min(.01,remaining(deadline)))
+        self.hold_source_process=False
+
+    def recover_after_destroy(self,accepted,deadline,*,observe_peer):
+        result=super().recover_after_destroy(accepted,deadline,observe_peer=observe_peer)
+        result['original_pidfd_continued_after_fence']=False
+        result['source_continued_after_terminal_acceptance']=True
+        result['terminal_acceptance_before_response_restored']=self.response_restore_snapshot
+        return result

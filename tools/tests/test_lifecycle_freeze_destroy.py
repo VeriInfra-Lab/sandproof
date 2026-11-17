@@ -401,7 +401,7 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False):
+    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False):
         if expiry:
             import lifecycle_freeze_expiry as automatic
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
@@ -476,11 +476,11 @@ class SceneAndReplayTests(unittest.TestCase):
             stack.enter_context(patch.object(runtime,'prepare',return_value=runner))
             stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
-            stack.enter_context(patch.object(frozen,'ResponsiveFreezeDestroyProbe' if responsive else 'FreezeDestroyProbe',return_value=p))
+            stack.enter_context(patch.object(frozen,'OrderedFreezeDestroyProbe' if ordered else 'ResponsiveFreezeDestroyProbe' if responsive else 'FreezeDestroyProbe',return_value=p))
             if expiry:
                 stack.enter_context(patch.object(automatic,'FreezeExpiryProbe',return_value=p))
                 stack.enter_context(patch.object(automatic,'wait_expired_cleaned',side_effect=lambda *_:events.append('wait_cleaned-1')))
-            args=NS(scenario='capture-freeze-expiry' if expiry else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
+            args=NS(scenario='capture-freeze-expiry' if expiry else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
             if peer_fault!='none':
                 with self.assertRaises(AssertionError):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -543,6 +543,7 @@ class SceneAndReplayTests(unittest.TestCase):
 
     def test_real_scene_keeps_peer_until_original_terminal_stop_exit_and_cleanup(self):self.exercise()
     def test_responsive_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(responsive=True)
+    def test_ordered_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(ordered=True)
     def test_unknown_stop_keeps_original_failure_without_reissuing_or_destroying_peer(self):self.exercise(fault=True)
 
     def test_stalled_peer_before_stop_does_not_release_original_stop_or_destroy_peer(self):
@@ -564,3 +565,26 @@ class ResponsiveFreezeTests(unittest.TestCase):
             with self.assertRaises(ValueError):p._hold_source(p.deadline)
             with self.assertRaises(ValueError):p._check_source_hold(p.deadline)
             signal_call.assert_not_called()
+
+
+class OrderedFreezeTests(unittest.TestCase):
+    def test_response_restored_only_after_exact_durable_kill_and_retained_backing(self):
+        for fault in ('none','wrong-vm','not-terminal','pin'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as sent:
+                f=fixture(Path(directory));p=f.probe
+                p.__class__=frozen.OrderedFreezeDestroyProbe
+                p._read_terminal=Mock(return_value=f.snapshot)
+                p._source_state=Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+                if fault=='wrong-vm':f.snapshot['native']['current_vm']+=1
+                if fault=='not-terminal':f.snapshot['native']['terminal']=False
+                if fault=='pin':
+                    for row in f.snapshot['sources']:
+                        if row['restore'] is not None:row['restore']['material_use']=False
+                if fault=='none':
+                    p._terminal_manager_started(p.deadline)
+                    sent.assert_called_once_with(p.pidfd,signal.SIGCONT)
+                    self.assertTrue(p.continue_sent);self.assertFalse(p.hold_source_process)
+                    self.assertFalse(p.stop_released)
+                else:
+                    with self.assertRaises(ValueError):p._terminal_manager_started(p.deadline)
+                    sent.assert_not_called();self.assertFalse(p.continue_sent);self.assertFalse(p.stop_released)
