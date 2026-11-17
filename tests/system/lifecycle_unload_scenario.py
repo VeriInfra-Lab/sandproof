@@ -764,12 +764,14 @@ def exercise(args):
         'capture-publish-conflict': 'sync-after',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
+        'capture-stopped-destroy': 'stop-receipt',
         'capture-stop-pending': 'stop-receipt',
         'capture-namespace-release': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
     namespace_release = args.scenario == 'capture-namespace-release'
     stop_pending = args.scenario == 'capture-stop-pending' or namespace_release
+    stopped_destroy = args.scenario == 'capture-stopped-destroy'
     sync_destroy = args.scenario in ('capture-sync-before-destroy', 'capture-sync-after-destroy')
     unresponsive_freeze = args.scenario in ('capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry')
     ordered_freeze = args.scenario == 'capture-freeze-receipt-destroy'
@@ -946,7 +948,7 @@ def exercise(args):
             position=control_physical['context']['position'])
         if sync_destroy:
             report['control_workload'] = control.run_public_workload(control_running)
-        if activation_destroy or freeze_terminal or namespace_release:
+        if activation_destroy or freeze_terminal or namespace_release or stopped_destroy:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         if resume_receipt_restart:
@@ -1244,7 +1246,7 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                if not (freeze_terminal or sync_destroy or retirement_late_receipt or namespace_release):
+                if not (freeze_terminal or sync_destroy or retirement_late_receipt or namespace_release or stopped_destroy):
                     finish_slot_occupant(control, control_running, runtime, deadline, report)
             if cycle == 1 and freeze_terminal:
                 from lifecycle_freeze_destroy import FreezeDestroyProbe, ResponsiveFreezeDestroyProbe, OrderedFreezeDestroyProbe, UnresponsiveFreezeDestroyProbe
@@ -1326,7 +1328,10 @@ def exercise(args):
                                  else 'capture-sync-gate')
                     gate = (Path(runtime.quota['deployment_control']) / gate_name
                             if capture_stage in ('measurement-partial','sync-before','sync-after') else None)
-                    if namespace_release:
+                    if stopped_destroy:
+                        from lifecycle_unload_stopped_destroy import StoppedUnloadDestroyProbe
+                        capture_probe = StoppedUnloadDestroyProbe(runtime, client, physical_running)
+                    elif namespace_release:
                         from lifecycle_namespace_release import NamespaceReleaseProbe
                         def observe_namespace_peer():
                             assert equal(control.query(), control_running)
@@ -1352,6 +1357,30 @@ def exercise(args):
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    if stopped_destroy:
+                        pending = client.query();client.check_view(pending, accepted_unload)
+                        assert pending['phase'] == 'unloading' and pending['unload_outcome'] == {'state':'pending'}
+                        client.assert_data_closed();client.assert_previous_tokens_closed()
+                        report['phase'] = 'public-destroy-after-original-source-exit-before-stop-sql'
+                        report['destroy'] = client.destroy(pending)
+                        report['terminal_unload_replays'] = [client.assert_terminal_unload_replay(phase='terminating')]
+                        report['phase'] = 'original-stopped-source-destroy-cleanup-cut'
+                        report['stopped_destroy_recovery'] = capture_probe.recover_after_destroy(report['destroy'], deadline)
+                        report['phase'] = 'public-stopped-source-cleaned-and-product-gc'
+                        client.wait_cleaned()
+                        report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
+                        client.operation_evidence_completed()
+                        report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                        report['phase'] = 'other-owner-progress-after-stopped-destroy'
+                        assert equal(control.query(), control_running)
+                        report['slot_reuse']['occupant_after_stopped_destroy'] = runtime.confirm_running(control.session, control_physical, deadline)
+                        report['slot_reuse']['peer_after_stopped_destroy'] = control.assert_running_workload(control_running)
+                        control.destroy(control_running);control.wait_cleaned()
+                        report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+                        control.operation_evidence_completed()
+                        report['cycles'][-1]['stopped_unload_destroyed'] = True
+                        terminal_destroy_done = True
+                        break
                     if namespace_release:
                         report['phase'] = 'original-namespace-held-release-and-reopen'
                     if sync_destroy:
@@ -1610,6 +1639,14 @@ def exercise(args):
                 'E14':'old execution tokens remain closed; peer retains its original authorization',
                 'other_cases':'one frozen Unload expiry order; no explicit Destroy, reset clock, full expiry matrix or new formal proof',
             }
+        if stopped_destroy:
+            report['acceptance_cases'] = {
+                'E2': 'original Create/Unload replay kept historical acceptance during Terminating/Cleaned; altered replay conflicted without reviving the terminal decision',
+                'E8': 'public Destroy accepted after the original source pidfd exited and before its Stop SQL receipt; original Unload or terminal Kill cleanup cut observed, then product GC',
+                'E12': 'other owner kept its original candidate; guest progress confirmed after manager recovery, not while the Host was exited',
+                'E14': 'original and previous data credentials stayed closed; no replacement Prepare/Activate in the selected Unload/Destroy actions',
+                'other_cases': 'one restored source and selected Stop/Destroy window; no second Resume, complete fault matrix or formal proof',
+            }
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
@@ -1661,6 +1698,8 @@ def exercise(args):
         if (prepare_destroy or activation_destroy or freeze_terminal or sync_destroy) and capture_probe is not None:
             name='sync_destroy' if sync_destroy else 'activation_destroy' if activation_destroy else 'freeze_expiry' if freeze_expiry else 'freeze_destroy' if freeze_destroy else 'prepare_destroy'
             report[name+'_failure_state'] = capture_probe.terminal_failure_state()
+        if stopped_destroy and capture_probe is not None:
+            report['stopped_destroy_failure_state'] = capture_probe.terminal_failure_state()
         if stop_pending and capture_probe is not None:
             report['stop_pending_failure_state'] = capture_probe.failure_state()
         if args.scenario == 'capture-publish-conflict' and capture_probe is not None:
@@ -1783,7 +1822,7 @@ def main():
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-before-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
         'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
-        'capture-stop-receipt','capture-stop-pending','capture-namespace-release','restore-prepare-receipt','restore-prepare-destroy',
+        'capture-stop-receipt','capture-stopped-destroy','capture-stop-pending','capture-namespace-release','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     parser.add_argument('--stale-probe',type=Path)
