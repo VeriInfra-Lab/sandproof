@@ -446,7 +446,7 @@ class SyncDestroyRecoveryTests(unittest.TestCase):
 
 
 class SyncDestroySceneTests(unittest.TestCase):
-    def exercise(self,stage,*,failure=False):
+    def exercise(self,stage,*,failure=False,query_version=None):
         events=[];clients={};lifetime=dict(started_at_ms=1,end_at_ms=2,max_end_at_ms=3,startup_deadline_ms=2)
         for owner in ('1','2'):
             c=Mock(spec=scene.PublicUnloadScenario);c.owner=owner;c.session='session-'+owner
@@ -490,7 +490,10 @@ class SyncDestroySceneTests(unittest.TestCase):
         for name in ('arm','after_acceptance','cleanup','close'):
             getattr(probe,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
         def recovery(*_,observe_peer):
-            events.append('recover');observe_peer()
+            events.append('recover')
+            if query_version is not None:
+                peer.query.return_value=dict(peer.wait_running.return_value,current_version=query_version)
+            observe_peer()
             if failure:raise ValueError('unknown original terminal End')
             events.append('original-cut-recovered');return {}
         probe.recover_after_destroy.side_effect=recovery
@@ -508,7 +511,17 @@ class SyncDestroySceneTests(unittest.TestCase):
             stack.enter_context(patch.object(scene,'check_center_configuration',return_value={'deployment':'original'}))
             factory=stack.enter_context(patch.object(sync,'SyncDestroyProbe',return_value=probe))
             args=NS(scenario='capture-'+stage+'-destroy',scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if failure:
+            if query_version is not None:
+                with self.assertRaises(AssertionError):scene.exercise(args)
+                report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(report['complete']);self.assertIn('sync_destroy_failure_state',report)
+                probe.recover_after_destroy.assert_called_once()
+                peer.sdk.assert_not_called();peer.witness_command.assert_not_called()
+                self.assertEqual(state['counter'],1)
+                peer.destroy.assert_not_called();runner.settlement_evidence.assert_not_called()
+                probe.cleanup.assert_not_called();clients['1'].wait_cleaned.assert_not_called()
+                self.assertNotIn('original-cut-recovered',events)
+            elif failure:
                 with self.assertRaisesRegex(ValueError,'unknown original terminal End'):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete']);self.assertIn('sync_destroy_failure_state',report)
@@ -533,6 +546,12 @@ class SyncDestroySceneTests(unittest.TestCase):
 
     def test_unknown_end_keeps_two_acceptances_without_reunload_second_resume_or_peer_destroy(self):
         for stage in capture.SYNC_PHASES:self.exercise(stage,failure=True)
+
+    def test_type_changed_peer_query_at_held_sync_cut_rejects_before_guest_io_or_cleanup(self):
+        for stage in capture.SYNC_PHASES:
+            for version in (True,1.0):
+                with self.subTest(stage=stage,version=version):
+                    self.exercise(stage,query_version=version)
 
 
 if __name__=='__main__':
