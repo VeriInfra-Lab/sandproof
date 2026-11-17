@@ -352,6 +352,13 @@ Stop 前明确记录“原进程仍被 OS 停止”，而非“此刻又取得 P
 原产品停止完成，不用测试清理替代。原60秒门、900秒场景和所有授权/保留期/配额检查
 保持，精确版本和未运行项记在 issue；历史失败不改签。未知或错身份继续保留现场。
 
+该 Destroy 模式的受控自测还经原场景编排检查正常结束、Stop 未知、Stop 前同伴停滞和
+Cleaned 后同伴授权变化；后两类失败不得自动放行 Stop 或销毁同伴。原 Unix Stop 门
+自测在持续无响应模式下保留全局唯一 Stop、材料和同伴检查，确认不发送 SIGCONT、
+不再查询 Paused，且门字节不表示完成或退额。Cleanup 自测对恢复应答与持续无响应使用
+同一组原 Stop 回执、PID/启动时间、内核退出及待入库 Cleanup 判据。物理退出和账本
+输入在这些自测中由受控提供方供应，不能代替 ning 的精确候选普通检查或 KVM 验收。
+
 `capture-freeze-expiry` 复用上述原 Freeze/Stop/Cleanup 门和
 [冻结到期观察器](../tests/system/lifecycle_freeze_expiry.py)。仅首次 Create 显式使用
 75,000 ms 寿命；另一 owner 保留部署原寿命。原 Unload、双 manager 重开、位置实际复用、
