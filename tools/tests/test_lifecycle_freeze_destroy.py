@@ -190,7 +190,9 @@ class FrozenFactsTests(unittest.TestCase):
                     p._read_terminal=Mock(return_value=s);p.runtime.services.processes.start=Mock();p.runtime.services.wait_ready=Mock()
                     if fault=='pid':s['terminal_actions'][1][2]['outcome']['details']['result']['Stopped']['pid']+=1
                     if fault=='start-ticks':s['terminal_actions'][1][2]['outcome']['details']['result']['Stopped']['start_ticks']+=1
-                    if fault=='stop-pending':s['terminal_actions'][1]=(s['terminal_actions'][1][0],'dispatched',None)
+                    if fault=='stop-pending':
+                        s['terminal_actions'][1]=(s['terminal_actions'][1][0],'dispatched',None)
+                        s['global_pending_stops']=[copy.deepcopy(f.stop)]
                     if fault=='cleanup-saved':s['terminal_actions'][2]=(s['terminal_actions'][2][0],'receipted',{})
                     if fault=='cleanup-epoch':s['terminal_actions'][2][0]['identity']['epoch']+=1
                     if fault=='freeze-missing':s['original_actions']=[]
