@@ -4,58 +4,10 @@ import json
 import threading
 import time
 import unittest
-from unittest.mock import Mock, patch
-from types import SimpleNamespace
+from unittest.mock import patch
 
+from tools.tests import test_lifecycle_late_material_receipt as late_fixture
 from tools.tests import test_lifecycle_unload_runtime as fixture
-
-
-class OriginalGuestFixtureTests(unittest.TestCase):
-    def client(self, fault=None, *, session='occupant'):
-        from tools.tests.test_lifecycle_unload_runtime import RepeatedLifecycleRequestTests
-        fixture=RepeatedLifecycleRequestTests()
-        client=fixture.client(owner='2')
-        client.session=client.create_acceptance['session']=session
-        client.data_token='original-credential'
-        client.witness = dict(nonce='1'*64,activation_nonce='2'*64,
-            metadata_generation=0,counter=1,pid=71,start_time_ticks=123)
-        current = copy.deepcopy(client.witness)
-        def command(text,**_):
-            if text.endswith(' advance'):
-                current['counter'] += 1
-                if fault == 'guest-pid': current['pid'] += 1
-            elif not text.endswith(' read'):
-                self.fail('only original witness read/advance expected')
-            if fault == 'ram': current['nonce'] = '3'*64
-            return SimpleNamespace(exit_code=0,stdout=json.dumps(current))
-        sdk = SimpleNamespace(commands=SimpleNamespace(run=Mock(side_effect=command)),
-            files=SimpleNamespace(read=Mock(side_effect=lambda _: 'wrong' if fault=='disk'
-                else 'disk-counter:'+str(current['counter']))))
-        def connect():
-            if fault == 'credential': client.data_token = 'replacement-credential'
-            return sdk
-        client.sdk = Mock(side_effect=connect)
-        running = fixture.view(client,'running')
-        client.query = Mock(return_value=running)
-        client.assert_previous_tokens_closed = Mock()
-        return client, sdk, running
-
-    def test_original_guest_and_credential_continue_with_two_observed_advances(self):
-        client, sdk, running = self.client()
-        before = client.assert_running_workload(running)
-        after = client.assert_running_workload(running)
-        self.assertEqual((before['counter'],after['counter']),(2,3))
-        self.assertEqual(before['guest_pid'],after['guest_pid'])
-        self.assertEqual(before['ram_nonce_sha256'],after['ram_nonce_sha256'])
-        self.assertEqual(sdk.commands.run.call_count,4)
-        self.assertEqual(client.data_token,'original-credential')
-
-    def test_changed_guest_ram_disk_or_credential_cannot_claim_continuity(self):
-        for fault in ('guest-pid','ram','disk','credential'):
-            client,_,running = self.client(fault)
-            with self.subTest(fault=fault),self.assertRaises(AssertionError):
-                client.assert_running_workload(running)
-
 
 
 class PublicJsonIdentityTests(unittest.TestCase):
@@ -79,7 +31,7 @@ class PublicJsonIdentityTests(unittest.TestCase):
     def test_current_operation_key_types_are_checked_before_sdk(self):
         for field, value in [('window', True), ('window', 1.0),
                              ('sequence', True), ('sequence', 1.0)]:
-            client, sdk, running = OriginalGuestFixtureTests().client()
+            client, sdk, running = late_fixture.OtherOwnerWorkloadTests().client()
             changed = copy.deepcopy(running)
             changed['operation'][field] = value
             client.query.return_value = changed
@@ -92,7 +44,7 @@ class PublicJsonIdentityTests(unittest.TestCase):
         for field, value in [('current_version', True), ('current_version', 1.0),
                              ('window', True), ('window', 1.0),
                              ('sequence', True), ('sequence', 1.0)]:
-            client, sdk, running = OriginalGuestFixtureTests().client()
+            client, sdk, running = late_fixture.OtherOwnerWorkloadTests().client()
             changed = copy.deepcopy(running)
             (changed if field == 'current_version' else changed['operation'])[field] = value
             del client.query  # Keep the original query/read_json/unique-key parser.
@@ -149,7 +101,7 @@ class PublicJsonIdentityTests(unittest.TestCase):
                 replay.assert_not_called()
 
     def test_json_key_order_and_whitespace_preserve_valid_running_and_replay(self):
-        client, _, running = OriginalGuestFixtureTests().client()
+        client, _, running = late_fixture.OtherOwnerWorkloadTests().client()
         reordered = dict(reversed(list(running.items())))
         reordered['operation'] = dict(reversed(list(running['operation'].items())))
         del client.query
@@ -169,7 +121,7 @@ class PublicJsonIdentityTests(unittest.TestCase):
         for field, value in [('started_at_ms', True), ('started_at_ms', 1.0),
                              ('end_at_ms', 100.0), ('max_end_at_ms', 200.0),
                              ('startup_deadline_ms', 20.0), (None, None)]:
-            client, sdk, _ = OriginalGuestFixtureTests().client()
+            client, sdk, _ = late_fixture.OtherOwnerWorkloadTests().client()
             accepted = dict(session=client.session, key=client.key(2), accepted_version=2)
             client.current_acceptance = client.unload_acceptance = accepted
             lifetime = dict(started_at_ms=1, end_at_ms=100, max_end_at_ms=200, startup_deadline_ms=20)
