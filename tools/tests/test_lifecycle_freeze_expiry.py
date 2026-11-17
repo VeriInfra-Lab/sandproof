@@ -455,3 +455,79 @@ class FrozenExpirySceneTests(unittest.TestCase):
 
     def test_changed_peer_authorization_after_expiry_does_not_destroy_peer(self):
         original.SceneAndReplayTests().exercise(expiry=True,peer_fault='after-cleaned-token')
+
+
+class OrderedFrozenExpiryTests(unittest.TestCase):
+    def test_only_audited_unchanged_automatic_acceptance_can_start_terminal_host(self):
+        for fault in ('unobserved','destroy','key','current'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+                f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
+                if fault!='unobserved':
+                    stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
+                    p.observe_expiry(p.deadline)
+                value=copy.deepcopy(f.accepted)
+                if fault=='destroy':p.client.destroy_request={}
+                if fault=='key':value['key']['sequence']+=1
+                if fault=='current':p.client.current_acceptance['accepted_version']+=1
+                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal'))
+                starts=list(f.processes.start.call_args_list)
+                progress=Mock()
+                with self.assertRaisesRegex(ValueError,'only the audited automatic terminal acceptance'):
+                    p.recover_after_expiry(value,p.deadline,observe_peer=progress)
+                self.assertEqual(f.processes.start.call_args_list,starts);p._configuration.assert_not_called()
+                progress.assert_not_called();sent.assert_not_called()
+                self.assertIsNone(p.terminal_accepted);self.assertFalse(p.stop_released)
+
+    def test_exact_host_kill_and_backing_required_before_response_without_waiting_for_stop(self):
+        for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','pin','material'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+                f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
+                stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
+                accepted=p.observe_expiry(p.deadline)['acceptance'];p._bind_destroy(accepted)
+                snapshot=copy.deepcopy(f.snapshot)
+                fence=snapshot['terminal_actions'][0][0]
+                snapshot['terminal_actions']=[(fence,'ready',None)]
+                snapshot['global_pending_stops']=[]
+                native=snapshot['native']
+                if fault=='vm':native['current_vm']+=1
+                if fault=='generation':native['generation']+=1
+                if fault=='network':native['net_slot']+=1
+                if fault=='phase':native['phase']='Pausing'
+                if fault=='terminal':native['terminal']=False
+                if fault=='operation':native['current_operation']['id']+=1
+                if fault=='epoch':native['current_operation']['epoch']+=1
+                if fault=='pin':snapshot['sources'][0]['restore']['material_use']=False
+                if fault=='material':p.runtime._materials.return_value={'changed':'backing'}
+                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal'))
+                sleep=stack.enter_context(patch.object(frozen.time,'sleep'))
+                def not_yet_host_accepted():
+                    sent.assert_not_called();self.assertFalse(p.continue_sent)
+                    raise frozen._AwaitTerminal('original Host Kill not yet admitted')
+                reads=iter((not_yet_host_accepted,lambda:snapshot))
+                p._read_terminal=Mock(side_effect=lambda _:next(reads)())
+                p._source_state=Mock(side_effect=lambda _:'S' if p.continue_sent else 'T')
+                if fault=='none':
+                    p._terminal_manager_started(p.deadline)
+                    sent.assert_called_once_with(p.pidfd,frozen.signal.SIGCONT)
+                    self.assertTrue(p.continue_sent);self.assertFalse(p.hold_source_process)
+                    self.assertEqual(p.response_restore_snapshot,snapshot)
+                    self.assertEqual(snapshot['original_actions'],f.snapshot['original_actions'])
+                    self.assertEqual(snapshot['global_pending_stops'],[])
+                else:
+                    with self.assertRaises(ValueError):p._terminal_manager_started(p.deadline)
+                    sent.assert_not_called();self.assertFalse(p.continue_sent)
+                    self.assertTrue(p.hold_source_process)
+                sleep.assert_called_once();self.assertFalse(p.stop_released)
+                p.client.destroy.assert_not_called()
+
+    def test_scene_keeps_audited_expiry_and_original_peer_cleanup_checks(self):
+        original.SceneAndReplayTests().exercise(expiry=True,ordered_expiry=True)
+
+    def test_unknown_stop_preserves_both_sessions_and_audited_acceptance(self):
+        original.SceneAndReplayTests().exercise(expiry=True,ordered_expiry=True,fault=True)
+
+    def test_stalled_peer_keeps_stop_held_after_response_restoration(self):
+        original.SceneAndReplayTests().exercise(expiry=True,ordered_expiry=True,peer_fault='held-counter')
+
+    def test_changed_peer_authorization_keeps_peer_after_automatic_cleanup(self):
+        original.SceneAndReplayTests().exercise(expiry=True,ordered_expiry=True,peer_fault='after-cleaned-token')
