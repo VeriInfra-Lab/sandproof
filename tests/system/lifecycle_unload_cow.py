@@ -21,6 +21,7 @@ from pathlib import Path
 import stat
 
 from lifecycle_unload_runtime import checked_file, remaining
+from _internal_fault_relay import same_json
 from tools.system_acceptance import private_path
 
 
@@ -118,8 +119,8 @@ class SealedSourceProbe:
                 if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o400
                         or before.st_uid != os.geteuid() or before.st_nlink != 1
                         or not _positive(measurement['bytes']) or not _digest(measurement['sha256'])
-                        or (before.st_dev, before.st_ino, before.st_size)
-                        != (measurement['device'], measurement['inode'], measurement['bytes'])):
+                        or not same_json([before.st_dev, before.st_ino, before.st_size],
+                            [measurement['device'], measurement['inode'], measurement['bytes']])):
                     raise ValueError('original sealed source file differs from unload evidence')
                 self._stamps.append(_file_stamp(before))
             self._check_anchor()
@@ -149,8 +150,9 @@ class SealedSourceProbe:
             if deadline > self._deadline:
                 raise ValueError('original source observation deadline cannot be extended')
             if (running['session'] != self.session or running.get('material_use_pin') is not True
-                    or {name: running['running_backing'][name] for name in BACKING_FIELDS}
-                    != self._backing):
+                    or not same_json(
+                        {name: running['running_backing'][name] for name in BACKING_FIELDS},
+                        self._backing)):
                 raise ValueError('original restored source and backing pin required')
             if (any(type(continuity.get(name)) is not type(expected)
                     or continuity.get(name) != expected for name, expected in self._guest.items())
@@ -162,8 +164,9 @@ class SealedSourceProbe:
             for path, expected in self._files:
                 remaining(deadline)
                 actual = checked_file(path, expected['bytes'], mode=0o400)
-                if any(actual[name] != expected[name] for name in (
-                        'bytes', 'sha256', 'device', 'inode')):
+                fields = ('bytes', 'sha256', 'device', 'inode')
+                if not same_json({name: actual[name] for name in fields},
+                        {name: expected[name] for name in fields}):
                     raise ValueError('source bytes differ from original adopted manifest evidence')
                 observed.append(dict(name=path.name, **actual))
                 remaining(deadline)

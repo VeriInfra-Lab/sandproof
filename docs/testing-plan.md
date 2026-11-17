@@ -404,6 +404,9 @@ G6 只扩展唯一 `normal`：产生 A→恢复 R1→B→恢复 R2→C→恢复 
 删除和当前来源完整。观察不能停止/重启 manager 以碰巧制造窗口，不持旧 FD 阻塞 GC，
 也不把路径缺席当作结算。正常收敛后的旧大文件数量不随完成轮数增长；当前来源须仍
 合法恢复并延续原见证，最后通过公开 Destroy 完成原产品回收和总账结算，环境收尾另记。
+原锚点、Running backing 与完整重读的长度、摘要字节、device/inode 保留 JSON 整数类型，
+等值浮点数不能替代整数；[C6 回归](../tools/tests/test_lifecycle_unload_cow.py)复用原受保护
+文件读取和共同 JSON 比较器，不代替实际 CoW、运行 VMM 或材料回收验收。
 
 G7 在同一入口选择 `material-retirement-restart` 回收中断/管理重启代表：B 的 Unload
 已接受后先等待明确同步点，不以 public Unloaded 作为到达原删除 gate 的前置条件。原计划已经 SQL

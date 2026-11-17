@@ -84,6 +84,17 @@ def probe(cell):
         witness_before=cell.witness, deadline=cell.deadline)
 
 
+def measurement(backing, selected):
+    return backing['materials'][selected] if type(selected) is int else backing[selected]
+
+
+def float_alias(record, field):
+    if field == 'sha256':
+        record[field][0] = float(record[field][0])
+    else:
+        record[field] = float(record[field])
+
+
 class SealedSourceProbeTests(unittest.TestCase):
     def test_actual_source_reread_after_separate_target_write_closes_original_descriptors(self):
         with fixture() as cell, probe(cell) as observation:
@@ -167,6 +178,44 @@ class SealedSourceProbeTests(unittest.TestCase):
                     cell.running['running_backing']['materials'][0]['inode'] += 1
                 with self.assertRaisesRegex(ValueError, 'original restored source and backing pin required'):
                     observation.verify_after_guest_write(cell.running, cell.continuity, cell.deadline)
+
+    def test_running_backing_preserves_json_integer_types_for_every_measurement(self):
+        for selected in ('manifest', 'completion', *range(len(cow.ARTIFACTS))):
+            for field in ('bytes', 'sha256', 'device', 'inode'):
+                with self.subTest(selected=selected, field=field), fixture() as cell, probe(cell) as observation:
+                    float_alias(measurement(cell.running['running_backing'], selected), field)
+                    cell.running = json.loads(json.dumps(cell.running))
+                    with self.assertRaisesRegex(ValueError, 'original restored source and backing pin required'):
+                        observation.verify_after_guest_write(cell.running, cell.continuity, cell.deadline)
+
+    def test_source_anchor_requires_integer_device_and_inode_for_every_file(self):
+        for selected in ('manifest', 'completion', *range(len(cow.ARTIFACTS))):
+            for field in ('device', 'inode'):
+                with self.subTest(selected=selected, field=field), fixture() as cell:
+                    float_alias(measurement(cell.physical, selected), field)
+                    cell.physical = json.loads(json.dumps(cell.physical))
+                    with self.assertRaisesRegex(ValueError, 'original sealed source file differs from unload evidence'):
+                        with probe(cell):
+                            pass
+
+    def test_full_source_reread_preserves_json_integer_types_for_every_measurement(self):
+        for selected in ('manifest', 'completion', *range(len(cow.ARTIFACTS))):
+            for field in ('bytes', 'sha256', 'device', 'inode'):
+                with self.subTest(selected=selected, field=field), fixture() as cell, probe(cell) as observation:
+                    name = ('manifest.json' if selected == 'manifest' else
+                        Path(cell.physical['material_paths'][1]).name if selected == 'completion'
+                        else cow.ARTIFACTS[selected])
+
+                    def changed_measurement(path, limit, *, mode):
+                        actual = read_controlled_file(path, limit, mode=mode)
+                        if path.name == name:
+                            float_alias(actual, field)
+                            actual = json.loads(json.dumps(actual))
+                        return actual
+
+                    with patch.object(cow, 'checked_file', side_effect=changed_measurement):
+                        with self.assertRaisesRegex(ValueError, 'source bytes differ from original adopted manifest evidence'):
+                            observation.verify_after_guest_write(cell.running, cell.continuity, cell.deadline)
 
     def test_ram_process_and_actual_advance_cannot_be_replaced_by_unchanged_or_other_witness(self):
         for name, wrong in (('counter', 1), ('counter', True), ('guest_pid', 32),
