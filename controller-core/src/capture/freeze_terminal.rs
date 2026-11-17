@@ -5,7 +5,7 @@ use crate::effect::{EffectDecision, EffectReject};
 use crate::{
     Authority, Command, EffectId, EffectOrigin, EffectOutcome, EffectStatus, Event,
     LogicalEffectResult, OperationInput, OperationKey, OperationKind, OperationStatus, Phase,
-    SandboxId, StopCoverage, VmStatus, WorkerFence, World,
+    StopCoverage, VmStatus, WorkerFence, World,
 };
 
 fn origin(world: &World, freeze: &EffectId) -> Option<OperationKey> {
@@ -315,7 +315,7 @@ pub fn retire(
     {
         return Err(EffectReject::InvalidRetirementEvidence);
     }
-    let old = *world
+    let old = world
         .logical_effect(&freeze.logical)
         .ok_or(EffectReject::LogicalEffectNotFound)?;
     let mut next = world.clone();

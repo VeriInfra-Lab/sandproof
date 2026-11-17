@@ -162,7 +162,7 @@ fn query(source: &OriginalVmSource, uid: u32, gid: u32) -> Result<State, Runtime
         source.root.as_raw_fd(),
         super::super::API_SOCKET
     );
-    let mut stream = UnixStream::connect(path)?;
+    let mut stream = super::super::api_connect::connect(Path::new(&path))?;
     let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(errno_to_io)?;
     if u32::try_from(peer.pid.as_raw_nonzero().get()).ok() != Some(source.identity.pid)
         || peer.uid.as_raw() != uid
