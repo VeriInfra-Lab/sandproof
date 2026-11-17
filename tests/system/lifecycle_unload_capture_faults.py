@@ -168,6 +168,12 @@ class CaptureHandoffProbe:
             return {variable: str(self.path)}
         return {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
 
+    def _cut_exit_code(self):
+        return 86
+
+    def _cut_stage_label(self):
+        return self.stage
+
     def _before_observation(self, deadline):
         """Default has no effects; selected consumers can inspect an earlier gate."""
 
@@ -343,8 +349,8 @@ class CaptureHandoffProbe:
             else:
                 validate_sync_question(question, self.config['run_identity'], self.stage)
             self.question, self.question_digest = question, digest
-        elif self.host.wait(timeout=remaining(deadline)) != 86:
-            raise ValueError('original selected manager did not exit86')
+        elif self.host.wait(timeout=remaining(deadline)) != self._cut_exit_code():
+            raise ValueError('original selected manager did not reach its exact exit cut')
         self._configuration()
         entry, records, actions = self._read(deadline)
         expected_kind = 'resume' if self.stage in RESTORE_STAGES else 'unload'
@@ -426,7 +432,7 @@ class CaptureHandoffProbe:
                     raise ValueError('original Stop did not close the exact source process')
             elif pidfd_exited(self.pidfd) or not original_process(self.prior['source']):
                 raise ValueError('original source changed before selected capture boundary')
-        result = dict(stage=self.stage, original_acceptance_matched=True,
+        result = dict(stage=self._cut_stage_label(), original_acceptance_matched=True,
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
         if self.stage in SYNC_PHASES:
@@ -842,7 +848,7 @@ class CaptureHandoffProbe:
         self.runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
         self._configuration()
         self.recovered = True
-        return dict(stage=self.stage, exit_code=86, fault_environment_removed=True,
+        return dict(stage=self._cut_stage_label(), exit_code=self._cut_exit_code(), fault_environment_removed=True,
                     same_product_configuration=True, public_completion=False)
 
     def assert_restored_candidate(self, physical_running):

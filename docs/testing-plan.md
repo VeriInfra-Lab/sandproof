@@ -540,6 +540,26 @@ Stop、材料/pin/正额度与无 SIGCONT/无新 Paused 查询。受控信号提
 pidfd 的解释器上显式提供，真实 pidfd/Unix 自测仍按原 Linux 分组登记；入口或自测存在
 不表示已经执行，精确候选的普通与 KVM 结果由验收方另行记录。
 
+`capture-freeze-before-destroy` 复用同一 Unload/Destroy/终止围栏/Stop/backing/GC
+合同和同伴编排，仅把首个切点移到原 Freeze 已持久派发、原 Pause 调用前的退出 87。
+原 Freeze 走专用捕获执行路径：调试出口接在实际执行闭包前，只读恢复选择原观察闭包，
+不经过退出门，也不重发 Pause；原通用 execute 中新增一个选择字符串不足以接通此场景。
+普通发布构建省略调试出口；实际测试构建继续保留原调试断言和优化设置。
+
+观察器先核同一完整在途 Freeze/原接受记录、尚无 Full producer、当前源/材料责任，
+再经原 Unix API 的同一 PID/UID peer、完整 claim 与 socket 身份读取当前 `Running`。
+此分支不发送 SIGSTOP/SIGCONT、不伪造 Frozen，不从退出 87、Running 或缺少记录推断
+NoRequest。原 Freeze 不补写成功回执；若恢复造成新的 Frozen 成功观察则失败。
+公开 Destroy 后仍须核当前终止围栏、全局唯一同源 Stop、正 backing 预留/pin 和同伴
+进展，才释放原 Stop 门；确认原 Stop 回执与 pidfd 内核退出后，由原 Cleanup/GC 收尾。
+相同工作摘要的合法 NeverReleased 终结仍按原合同处理，不能冒充实际 API NoRequest。
+
+报告用 `original_dispatched_unload`、`dispatched_unload_destroyed` 区分这个窗口，
+当前 pause/观察器 stop/continue 标志保持为假；完整接受历史、重放、终止否决及原物理
+收尾要求不换成另一份弱合同。本切片状态为「入口存在但未执行实机」，不声称普通失败
+卸载已能继续原 VM、没有任何 API 调用的完整轨迹、所有未知 Pause 收敛或新增形式证明。
+
+
 失败卸载后继续原 VM 再退出，由同一入口分别选择
 `continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
 测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
@@ -591,6 +611,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
 | `capture-freeze-destroy` | 原 Freeze 成功、回执未入库时接受 Destroy；先核实际 Paused、当前终止围栏、同源 Stop、backing pin/正额度及另一 owner 来宾进展，再确认原退出及产品 GC（E8；实机待验收） |
+| `capture-freeze-before-destroy` | 原 Freeze 持久派发、Pause 调用前退出 87；同源当前 Running，原 Freeze 保持未知，不从此推 NoRequest；接受 Destroy 后沿同一终止/Stop/backing/同伴/GC 合同收尾（E3/E8 终止分支；实机待验收） |
 | `capture-freeze-expiry` | 相同原冻结窗口跨越真实 TTL；原中心审计先确认自动终止，第一会话不发 Destroy，再沿原围栏/Stop/退出/Cleanup/GC 与同伴进展收尾（E8/E15；实机待验收） |
 | `capture-freeze-receipt-expiry` | 同一真实 TTL/原审计先确认自动终止，再核 Host 已持久接受准确 Kill，立即恢复原 VMM 应答后等待围栏/Stop；复用原材料、同伴、退出/GC 与重放检查，原到期入口保留（E8/E15；实机待验收） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
