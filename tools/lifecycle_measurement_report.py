@@ -120,12 +120,14 @@ def checked_resources(report, samples):
     if not uint(ticks) or ticks==0:raise ValueError('original CPU clock tick rate required')
     for state,epoch in zip(observed,epochs):
         delta=None if state['first'] is None else state['last']['cpu_ticks']-state['first']['cpu_ticks']
+        seconds=epoch['observed_cpu_seconds_delta']
         if (state['count'] != epoch['samples'] or not equal(state['first'],epoch['first']) or not equal(state['last'],epoch['last'])
                 or state['unknown'] != epoch['unknown_samples'] or state['inactive'] != epoch['inactive_samples']
                 or not equal(state['peak'],epoch['sampled_peak_rss_bytes'])
                 or not equal(state['kernel_peak'],epoch['kernel_process_peak_rss_bytes'])
                 or not equal(delta,epoch['observed_cpu_ticks_delta'])
-                or (None if delta is None else delta/ticks) != epoch['observed_cpu_seconds_delta']):
+                or (seconds is not None and type(seconds) not in (int,float))
+                or (None if delta is None else delta/ticks) != seconds):
             raise ValueError('process summary differs from its original resource samples')
     return measurement
 

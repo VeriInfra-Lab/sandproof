@@ -239,7 +239,7 @@ class ResourceReportTests(SamplerFixture):
             self.probe.path.write_bytes(bad)
             with self.assertRaises((ValueError,KeyError)):render(report,self.probe.path)
 
-    def test_integer_summary_fields_reject_equal_float_and_bool_aliases(self):
+    def test_numeric_summary_preserves_integer_types_and_real_seconds(self):
         from tools.lifecycle_measurement_report import render
         report=self.report();render(report,self.probe.path)
         paths=[(('schema',),'one completed run'),
@@ -265,6 +265,14 @@ class ResourceReportTests(SamplerFixture):
                     for key in path[:-1]:parent=parent[key]
                     parent[path[-1]]=alias
                     with self.assertRaisesRegex(ValueError,message):render(bad,self.probe.path)
+        self.assertEqual(report['resource_measurements']['epochs'][0]['observed_cpu_seconds_delta'],0.0)
+        for seconds in (0,0.0):
+            valid=copy.deepcopy(report)
+            valid['resource_measurements']['epochs'][0]['observed_cpu_seconds_delta']=seconds
+            render(valid,self.probe.path)
+        bad=copy.deepcopy(report)
+        bad['resource_measurements']['epochs'][0]['observed_cpu_seconds_delta']=False
+        with self.assertRaisesRegex(ValueError,'process summary differs'):render(bad,self.probe.path)
 
     def test_raw_identity_types_must_match_even_when_raw_digest_is_recomputed(self):
         from tools.lifecycle_measurement_report import render
