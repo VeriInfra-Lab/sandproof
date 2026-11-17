@@ -47,6 +47,7 @@ def fixture(root):
         if kind=='CleanupVm':fields.pop('epoch')
         if kind=='InstallFence':fields=dict(sandbox=4,epoch=epoch,terminal=True)
         return dict(identity=dict(protocol_version=1,owner='tenant-1',sandbox='sb-'+namespace+'-4',operation='op-'+namespace+'-4-'+str(operation),epoch=epoch,generation=2,attempt=0,
+                    logical_action='effect-'+str({'FreezeVm':1,'InstallFence':2,'StopVm':3,'CleanupVm':4}[kind]),
                     resource=dict(kind='sandbox' if kind=='InstallFence' else 'vm',id='sb-'+namespace+'-4' if kind=='InstallFence' else source['resource_id'])),
                     command=dict(attempt=0,logical=dict(command={kind:fields})))
     freeze=action('FreezeVm');fence=action('InstallFence',4,5);stop=action('StopVm',4,5);cleanup=action('CleanupVm',4,5)
@@ -84,6 +85,100 @@ def fixture(root):
 
 
 class FrozenFactsTests(unittest.TestCase):
+    def test_terminal_history_rejects_numeric_aliases_without_turning_them_into_pending(self):
+        for fault in ('none','version','sandbox','owner-float','owner-bool','pending','pending-float'):
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                f=fixture(Path(directory));p=f.probe;p._bind_destroy(f.accepted(f.destroy))
+                inbox=copy.deepcopy(f.inbox);row=inbox['sessions'][0]
+                if fault=='version':row['current_version']=5.0
+                if fault=='sandbox':row['local']['sandbox']=4.0
+                if fault=='owner-float':row['local']['owner']=1.0
+                if fault=='owner-bool':row['local']['owner']=True
+                if fault.startswith('pending'):
+                    row['current_version']=4.0 if fault=='pending-float' else 4
+                    row['terminal']=False
+                if fault=='none':self.assertEqual(p._terminal_entries(inbox)[1]['intent'],f.destroy)
+                elif fault=='pending':
+                    with self.assertRaises(capture._AwaitTerminal):p._terminal_entries(inbox)
+                else:
+                    with self.assertRaises(ValueError):p._terminal_entries(inbox)
+                self.assertFalse(p.recovered);self.assertFalse(p.stop_released);self.assertFalse(p.continue_sent)
+
+    def test_terminal_actions_from_original_sql_keep_protocol_generation_and_attempt_types(self):
+        cases=(None,('protocol_version',True),('protocol_version',1.0),
+               ('generation',2.0),('attempt',False),('attempt',0.0))
+        for case in cases:
+            with self.subTest(case=case),tempfile.TemporaryDirectory() as directory,sqlite3.connect(':memory:') as conn:
+                f=fixture(Path(directory));action=copy.deepcopy(f.stop)
+                if case is not None:action['identity'][case[0]]=case[1]
+                conn.execute('CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
+                conn.execute('INSERT INTO outbox VALUES(1,?,?,?,\'dispatched\',NULL)',
+                    (f.stop['identity']['sandbox'],f.stop['identity']['operation'],json.dumps(action).encode()))
+                capacity=f.runner.services.host_configs[0]['native']['maintenance']['capacity']
+                if case is None:
+                    self.assertEqual(f.probe._terminal_outbox(conn,f.probe.prior['local'],5,capacity),[(action,'dispatched',None)])
+                else:
+                    with self.assertRaises(ValueError):f.probe._terminal_outbox(conn,f.probe.prior['local'],5,capacity)
+
+    def test_freeze_receipts_keep_complete_identity_and_command_json_types(self):
+        identity_cases=(None,('protocol_version',True),('protocol_version',1.0),('epoch',3.0),
+                        ('generation',2.0),('attempt',False),('attempt',0.0))
+        for status in ('observed_success','unknown'):
+            for case in identity_cases:
+                with self.subTest(status=status,identity=case),tempfile.TemporaryDirectory() as directory:
+                    f=fixture(Path(directory));body=dict(pid=123,start_ticks=456,boot_id='boot')
+                    receipt=f.receipt(f.freeze,'Frozen',body);receipt['outcome']['status']=status
+                    if case is not None:receipt['identity'][case[0]]=case[1]
+                    row=(f.freeze,'receipted',receipt)
+                    if case is None:
+                        self.assertEqual(f.probe._success_observation(row,'Frozen'),body if status=='observed_success' else None)
+                    else:
+                        with self.assertRaises(ValueError):f.probe._success_observation(row,'Frozen')
+        for field,value in (('sandbox',4.0),('generation',2.0),('vm',9.0),('epoch',3.0)):
+            with self.subTest(command_field=field),tempfile.TemporaryDirectory() as directory:
+                f=fixture(Path(directory));receipt=f.receipt(f.freeze,'Frozen',dict(pid=123,start_ticks=456,boot_id='boot'))
+                receipt['outcome']['details']['command']['FreezeVm'][field]=value
+                with self.assertRaises(ValueError):f.probe._success_observation((f.freeze,'receipted',receipt),'Frozen')
+
+    def test_original_stop_barrier_rejects_numeric_aliases_before_releasing_any_effect(self):
+        paths=(None,('native','generation'),('native','current_vm'),('native','net_slot'),
+               ('native','epoch'),('native','current_operation','id'),('native','current_operation','epoch'),
+               ('terminal_actions',0,0,'identity','epoch'),('terminal_actions',1,0,'identity','epoch'))
+        for probe_type in (frozen.FreezeDestroyProbe,frozen.ResponsiveFreezeDestroyProbe,
+                           frozen.OrderedFreezeDestroyProbe,frozen.UnresponsiveFreezeDestroyProbe):
+            for path in paths:
+                with self.subTest(probe=probe_type.__name__,path=path),tempfile.TemporaryDirectory() as directory:
+                    f=fixture(Path(directory));p=f.probe;p.__class__=probe_type;s=copy.deepcopy(f.snapshot)
+                    if path is not None:
+                        value=s
+                        for key in path[:-1]:value=value[key]
+                        value[path[-1]]=float(value[path[-1]])
+                    with patch.object(frozen,'original_json',return_value=dict(epoch=4,terminal=True)), \
+                            patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
+                        if path is None:self.assertEqual(p._stop_barrier(s),dict(epoch=4,terminal=True))
+                        else:
+                            with self.assertRaises(ValueError):p._stop_barrier(s)
+                        sent.assert_not_called();self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
+
+    def test_cleanup_epoch_alias_cannot_certify_exit_or_reopen_the_host(self):
+        for probe_type in (frozen.FreezeDestroyProbe,frozen.UnresponsiveFreezeDestroyProbe):
+            for value in (4,4.0):
+                with self.subTest(probe=probe_type.__name__,epoch_type=type(value).__name__),tempfile.TemporaryDirectory() as directory:
+                    f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
+                    p.recovered=p.stop_released=True;p.continue_sent=p.continue_source_before_stop
+                    p.before_stop=copy.deepcopy(f.snapshot);snapshot=copy.deepcopy(f.cleanup)
+                    snapshot['terminal_actions'][2][0]['identity']['epoch']=value
+                    p.terminal_host=Mock();p.terminal_host.wait.return_value=86;p._read_terminal=Mock(return_value=snapshot)
+                    p.runtime.services.processes.start=Mock();p.runtime.services.wait_ready=Mock()
+                    with patch.object(frozen,'pidfd_exited',return_value=True), \
+                            patch.object(frozen,'original_process',return_value=False):
+                        if type(value) is int:
+                            self.assertTrue(p.assert_terminal_before_gc(p.deadline)['original_source_exited'])
+                            p.runtime.services.processes.start.assert_called_once_with('host-0')
+                        else:
+                            with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
+                            self.assertIsNone(p.terminal_cut);p.runtime.services.processes.start.assert_not_called()
+
     def test_original_freeze_cut_is_checked_before_holding_the_source(self):
         for fault in ('none','receipt','source','resource','pin','material'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
@@ -638,6 +733,31 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    def test_numeric_aliases_cannot_restore_vmm_response_before_exact_kill(self):
+        paths=(None,('generation',),('current_vm',),('net_slot',),('epoch',),
+               ('current_operation','id'),('current_operation','epoch'),('both-epochs',))
+        for path in paths:
+            with self.subTest(path=path),tempfile.TemporaryDirectory() as directory, \
+                    patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
+                f=fixture(Path(directory));p=f.probe;p.__class__=frozen.OrderedFreezeDestroyProbe
+                snapshot=copy.deepcopy(f.snapshot);native=snapshot['native']
+                if path==('both-epochs',):
+                    native['epoch']=4.0;native['current_operation']['epoch']=4.0
+                elif path is not None:
+                    value=native
+                    for key in path[:-1]:value=value[key]
+                    value[path[-1]]=float(value[path[-1]])
+                p._read_terminal=Mock(return_value=snapshot)
+                p._source_state=Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+                if path is None:
+                    p._terminal_manager_started(p.deadline);sent.assert_called_once_with(p.pidfd,signal.SIGCONT)
+                    self.assertTrue(p.continue_sent);self.assertFalse(p.hold_source_process)
+                else:
+                    with self.assertRaises(ValueError):p._terminal_manager_started(p.deadline)
+                    sent.assert_not_called();self.assertFalse(p.continue_sent)
+                    self.assertNotIn('response_restore_snapshot',p.__dict__)
+                self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
+
     # Controlled signal provider; real pidfd/Unix cases keep their Linux group.
     def test_response_restored_only_after_exact_durable_kill_and_retained_backing(self):
         for fault in ('none','wrong-vm','not-terminal','pin'):
