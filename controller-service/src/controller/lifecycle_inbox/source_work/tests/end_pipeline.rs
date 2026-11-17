@@ -774,11 +774,14 @@ fn lost_freeze_observation_blocks_only_until_original_result_returns() {
     drop(state);
 }
 
-#[test]
-fn terminal_unreleased_freeze_stops_without_api_reply_and_reopens_with_original_responsibility() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("db");
-    let (mut journal, state) = ready(&path);
+fn freeze_without_receipt(
+    path: &Path,
+) -> (
+    ControllerJournal,
+    SourceWorkRecord,
+    WorkAction<core::EffectId>,
+) {
+    let (mut journal, _state) = ready(path);
     let source = observed_for_full(&mut journal);
     let full = full_request(&source);
     journal
@@ -806,6 +809,15 @@ fn terminal_unreleased_freeze_stops_without_api_reply_and_reopens_with_original_
         core::Command::FreezeVm { .. }
     ));
 
+    (journal, source, freeze)
+}
+
+#[test]
+fn terminal_unreleased_freeze_stops_without_api_reply_and_reopens_with_original_responsibility() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source, freeze) = freeze_without_receipt(&path);
+    let sandbox = source.source_sandbox();
     let request = destroy(&mut journal);
     assert!(journal.uncertain_actions().unwrap().contains(&freeze));
     assert!(
@@ -881,5 +893,4 @@ fn terminal_unreleased_freeze_stops_without_api_reply_and_reopens_with_original_
         journal.lifecycle_source_work(&v3::config().node).unwrap(),
         held
     );
-    drop(state);
 }
