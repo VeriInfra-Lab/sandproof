@@ -583,7 +583,7 @@ class SceneAndReplayTests(unittest.TestCase):
 
 class ResponsiveFreezeTests(unittest.TestCase):
     def test_responsive_mode_never_signals_and_refuses_an_os_stopped_source(self):
-        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as signal_call:
+        with tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as signal_call:
             p=fixture(Path(directory)).probe
             p.hold_source_process=frozen.ResponsiveFreezeDestroyProbe.hold_source_process
             p.pause_requested=False;p.recovered=False;p._source_state=Mock(return_value='S')
@@ -596,9 +596,10 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    # Controlled signal provider; real pidfd/Unix cases keep their Linux group.
     def test_response_restored_only_after_exact_durable_kill_and_retained_backing(self):
         for fault in ('none','wrong-vm','not-terminal','pin'):
-            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal') as sent:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
                 f=fixture(Path(directory));p=f.probe
                 p.__class__=frozen.OrderedFreezeDestroyProbe
                 p._read_terminal=Mock(return_value=f.snapshot)

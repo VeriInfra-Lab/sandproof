@@ -458,6 +458,7 @@ class FrozenExpirySceneTests(unittest.TestCase):
 
 
 class OrderedFrozenExpiryTests(unittest.TestCase):
+    # Supply the controlled provider even where Python exposes no Linux pidfd.
     def test_only_audited_unchanged_automatic_acceptance_can_start_terminal_host(self):
         for fault in ('unobserved','destroy','key','current'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
@@ -469,7 +470,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                 if fault=='destroy':p.client.destroy_request={}
                 if fault=='key':value['key']['sequence']+=1
                 if fault=='current':p.client.current_acceptance['accepted_version']+=1
-                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal'))
+                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal',create=True))
                 starts=list(f.processes.start.call_args_list)
                 progress=Mock()
                 with self.assertRaisesRegex(ValueError,'only the audited automatic terminal acceptance'):
@@ -498,7 +499,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                 if fault=='epoch':native['current_operation']['epoch']+=1
                 if fault=='pin':snapshot['sources'][0]['restore']['material_use']=False
                 if fault=='material':p.runtime._materials.return_value={'changed':'backing'}
-                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal'))
+                sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal',create=True))
                 sleep=stack.enter_context(patch.object(frozen.time,'sleep'))
                 def not_yet_host_accepted():
                     sent.assert_not_called();self.assertFalse(p.continue_sent)
