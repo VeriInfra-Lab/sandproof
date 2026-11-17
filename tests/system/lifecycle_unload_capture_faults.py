@@ -126,16 +126,19 @@ class CaptureHandoffProbe:
             self.directory = os.fstat(self.fd)
             gate_publish(self.fd, 'config.json', self.config)
             self._save_file('config.json')
-            variable = ('SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE' if self.stage == 'measurement-partial'
-                        else 'SANDPROOF_TEST_CAPTURE_SYNC_GATE')
-            fault = {variable: str(self.path)}
-        else:
-            fault = {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
+        fault = self._fault_environment()
         runtime.services.processes.stop('host-0')
         self._configuration()
         self.host = runtime.services.processes.start('host-0', env=fault)
         runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
         return dict(stage=self.stage, armed=True, public_completion=False)
+
+    def _fault_environment(self):
+        if self.stage in GATED_CAPTURE_STAGES:
+            variable = ('SANDPROOF_TEST_CAPTURE_MEASUREMENT_GATE' if self.stage == 'measurement-partial'
+                        else 'SANDPROOF_TEST_CAPTURE_SYNC_GATE')
+            return {variable: str(self.path)}
+        return {'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': STAGES[self.stage][0]}
 
     def _save_file(self, name):
         value, digest, identity = gate_json(self.path / name,
@@ -476,6 +479,10 @@ class CaptureHandoffProbe:
         if (self.stage != 'restore-prepare-destroy' or self.accepted is None
                 or self.terminal_accepted is not None or not self.candidate_paused):
             raise ValueError('one paused original Prepare and one public Destroy required')
+        self._bind_next_destroy(accepted)
+
+    def _bind_next_destroy(self, accepted):
+        """Shared full public successor binding; callers supply their own cut facts."""
         if (type(accepted) is not dict or set(accepted) != {'session', 'key', 'accepted_version'}
                 or accepted != self.client.current_acceptance
                 or accepted['session'] != self.accepted['session']
@@ -491,6 +498,10 @@ class CaptureHandoffProbe:
     def _terminal_entries(self, inbox):
         if self.stage != 'restore-prepare-destroy' or self.terminal_accepted is None:
             raise ValueError('terminal-specific original acceptance required')
+        return self._terminal_entries_for(inbox, self.restore_entry)
+
+    def _terminal_entries_for(self, inbox, original_entry, *, require_admitted=True):
+        """The same immutable original entry and complete accepted Destroy relation."""
         accepted = self.terminal_accepted
         sessions = [row for row in inbox['sessions'] if row['id'] == self.accepted['session']]
         if len(sessions) != 1:
@@ -500,15 +511,15 @@ class CaptureHandoffProbe:
             raise _AwaitTerminal('public Destroy has not reached the original Host session')
         if session['current_version'] != accepted['accepted_version'] or session['terminal'] is not True:
             raise ValueError('another current Host version or nonterminal state')
-        original = [entry for entry in session['entries'] if entry['intent'] == self.restore_entry['intent']]
+        original = [entry for entry in session['entries'] if entry['intent'] == original_entry['intent']]
         terminal = [entry for entry in session['entries'] if
             entry['intent']['accepted_version'] == accepted['accepted_version']
             and entry['intent']['request']['binding']['key'] == accepted['key']]
-        if (len(original) != 1 or original[0] != self.restore_entry or len(terminal) != 1
+        if (len(original) != 1 or original[0] != original_entry or len(terminal) != 1
                 or any(session['local'][k] != self.prior['local'][k] for k in ('sandbox', 'owner'))):
             raise ValueError('original Resume, public Destroy or native mapping changed')
         entry = terminal[0]; intent = entry['intent']; binding = intent['request']['binding']
-        prior = self.restore_entry['intent']
+        prior = original_entry['intent']
         if (intent['request']['operation'] != {'kind': 'destroy'}
                 or binding['session'] != self.accepted['session']
                 or binding['node'] != prior['request']['binding']['node']
@@ -516,7 +527,7 @@ class CaptureHandoffProbe:
                 or binding['expected'] != {'state': 'version', 'version': self.accepted['accepted_version']}
                 or intent['center'] != prior['center'] or intent['retention'] != prior['retention']):
             raise ValueError('complete original Destroy intent differs from the accepted successor')
-        if entry['local_operation'] is None:
+        if require_admitted and entry['local_operation'] is None:
             raise _AwaitTerminal('Host received Destroy but native Kill is not yet admitted')
         return original[0], entry, session['local']
 

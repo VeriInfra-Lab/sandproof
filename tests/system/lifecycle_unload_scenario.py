@@ -750,11 +750,14 @@ def exercise(args):
         'capture-measurement-partial': 'measurement-partial',
         'capture-sync-before': 'sync-before',
         'capture-sync-after': 'sync-after',
+        'capture-sync-before-destroy': 'sync-before',
+        'capture-sync-after-destroy': 'sync-after',
         'capture-publish-conflict': 'sync-after',
         'capture-seal-receipt': 'seal-receipt',
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    sync_destroy = args.scenario in ('capture-sync-before-destroy', 'capture-sync-after-destroy')
     unresponsive_freeze = args.scenario in ('capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry')
     ordered_freeze = args.scenario == 'capture-freeze-receipt-destroy'
     responsive_freeze = args.scenario == 'capture-freeze-responsive-destroy'
@@ -915,6 +918,8 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
+        if sync_destroy:
+            report['control_workload'] = control.run_public_workload(control_running)
         if activation_destroy or freeze_terminal:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
@@ -1213,7 +1218,7 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                if not freeze_terminal:
+                if not (freeze_terminal or sync_destroy):
                     control.destroy(control_running)
                     control.wait_cleaned()
                     report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
@@ -1290,7 +1295,10 @@ def exercise(args):
                                  else 'capture-sync-gate')
                     gate = (Path(runtime.quota['deployment_control']) / gate_name
                             if capture_stage in ('measurement-partial','sync-before','sync-after') else None)
-                    if args.scenario == 'capture-publish-conflict':
+                    if sync_destroy:
+                        from lifecycle_unload_sync_destroy import SyncDestroyProbe
+                        capture_probe = SyncDestroyProbe(runtime, client, physical_running, capture_stage, gate)
+                    elif args.scenario == 'capture-publish-conflict':
                         from lifecycle_capture_publish_conflict import PublishConflictProbe
                         capture_probe = PublishConflictProbe(runtime, client, physical_running, gate)
                     else:
@@ -1302,6 +1310,35 @@ def exercise(args):
                 if capture_stage is not None:
                     report['phase'] = 'original-capture-handoff-observation'
                     report['capture_handoff_observation'] = capture_probe.after_acceptance(accepted_unload, deadline)
+                    if sync_destroy:
+                        report['phase'] = 'public-destroy-while-original-full-is-held'
+                        pending = client.query(); client.check_view(pending, accepted_unload)
+                        assert pending['phase'] == 'unloading', 'held sync cut unexpectedly completed Unload'
+                        client.assert_data_closed(); client.assert_previous_tokens_closed()
+                        report['destroy'] = client.destroy(pending)
+                        report['terminal_unload_replays'] = [client.assert_terminal_unload_replay(phase='terminating')]
+                        def observe_sync_peer():
+                            assert control.query() == control_running
+                            return dict(session=control.session,
+                                workload=control.assert_running_workload(control_running))
+                        report['phase'] = 'original-full-returned-end-and-terminal-cleanup-cut'
+                        report['sync_destroy_recovery'] = capture_probe.recover_after_destroy(
+                            report['destroy'], deadline, observe_peer=observe_sync_peer)
+                        client.assert_data_closed(); client.assert_previous_tokens_closed()
+                        client.wait_cleaned()
+                        report['final_resources'] = runtime.destroy_evidence(client.session, deadline)
+                        client.operation_evidence_completed()
+                        report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                        assert control.query() == control_running
+                        report['slot_reuse']['occupant_after_sync_destroy'] = runtime.confirm_running(
+                            control.session, control_physical, deadline)
+                        report['slot_reuse']['peer_progress_after_sync_destroy'] = observe_sync_peer()
+                        control.destroy(control_running); control.wait_cleaned()
+                        report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+                        control.operation_evidence_completed()
+                        report['cycles'][-1]['sync_held_unload_destroyed'] = True
+                        terminal_destroy_done = True
+                        break
                     report['capture_handoff_recovery'] = capture_probe.finish(deadline)
                     if capture_stage in ('measurement-partial','sync-before','sync-after'):
                         resumed = client.wait_phase(accepted_unload, waiting={'unloading'}, complete='running')
@@ -1428,7 +1465,14 @@ def exercise(args):
                 'qualification':stage,
                 'other_cases':'one selected continued death branch; no full fault matrix or formal proof claim',
             }
-        if capture_stage in ('sync-before','sync-after'):
+        if sync_destroy:
+            report['acceptance_cases'] = {
+                'E8': 'public Destroy reached the original Host while Full was held at one actual Memory sync boundary; actual Returned End, same-source Stop/drain and Cleanup cut, then product Cleaned/GC',
+                'E11': 'original boundary fail consumed once, incomplete Full never adopted; not a failing fsync syscall or power-loss test',
+                'E12': 'other owner retained the same original live candidate and made actual guest progress before and after recovery',
+                'other_cases': 'one restore and one selected terminal order; no normal two-cycle, complete E8/E11 or formal proof claim',
+            }
+        elif capture_stage in ('sync-before','sync-after'):
             report['acceptance_cases'] = {
                 'E11': 'one exact Memory sync boundary interrupted before Full sealing; original VM continued, then new-key Unload/Resume and product Destroy/GC',
                 'E12': 'two owners and actual slot reuse; no full fault matrix',
@@ -1525,8 +1569,8 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
-        if (prepare_destroy or activation_destroy or freeze_terminal) and capture_probe is not None:
-            name='activation_destroy' if activation_destroy else 'freeze_expiry' if freeze_expiry else 'freeze_destroy' if freeze_destroy else 'prepare_destroy'
+        if (prepare_destroy or activation_destroy or freeze_terminal or sync_destroy) and capture_probe is not None:
+            name='sync_destroy' if sync_destroy else 'activation_destroy' if activation_destroy else 'freeze_expiry' if freeze_expiry else 'freeze_destroy' if freeze_destroy else 'prepare_destroy'
             report[name+'_failure_state'] = capture_probe.terminal_failure_state()
         if args.scenario == 'capture-publish-conflict' and capture_probe is not None:
             obstacle = capture_probe.obstacle
@@ -1645,7 +1689,7 @@ def main():
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
-        'capture-publish-conflict',
+        'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
