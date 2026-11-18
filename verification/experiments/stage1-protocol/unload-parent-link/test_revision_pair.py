@@ -18,6 +18,16 @@ def declaration(name, identifier, **shape):
         name=[{'Ident': [part, 0]} for part in name.split('::')]), **shape)
 
 
+def query_arms(*statements):
+    return ''.join(
+        '  let result ←\n'
+        '    rusqlite.Connection.query_row\n'
+        f'      c (toStr\n      "{statement}") params callback\n'
+        '  let next ← consume result\n'
+        for statement in statements
+    )
+
+
 class RevisionPairTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -43,10 +53,11 @@ class RevisionPairTests(unittest.TestCase):
         generated = directory / 'generated' / cfg['subdir']
         generated.mkdir(parents=True)
         (generated / 'Types.lean').write_text('  native_revision : Option U64\n', encoding='utf-8')
-        (generated / 'Funs.lean').write_text(f'"{revision.REVISION_SQL}"\n', encoding='utf-8')
+        funs = query_arms(*([revision.REVISION_SQL] * 6)) if mode == 'base-revision' else ''
+        (generated / 'Funs.lean').write_text(funs, encoding='utf-8')
         (directory / 'source.tar').write_bytes(self.archive)
         ir = directory / 'actual.llbc'
-        original = declaration(revision.BASE_ROOT, 2, body={'Structured': {'body': {}}})
+        original = declaration(revision.BASE_ROOT, 2, body={'Structured': {'body': {'Str': revision.REVISION_SQL}}})
         call = {'Call': {'call': {'func': {'Regular': {'kind': {'Fun': 2}}}}}}
         parent = declaration(revision.PARENT_ROOT, 3, body={'Structured': {'body': call}})
         options = dict(skip_borrowck=False, no_typecheck=False, remove_unused_clauses=False,
@@ -93,6 +104,7 @@ class RevisionPairTests(unittest.TestCase):
         self.assertIs(pair['native_acceptance'], False)
         self.assertIs(pair['public_acceptance'], False)
         self.assertEqual(pair['source'], self.identity)
+        self.assertEqual(pair['views']['base-revision']['admission']['generated_revision_queries'], 6)
         self.assertNotEqual(pair['views']['base-revision']['admission']['ready_candidate_id'],
                             pair['views']['parent']['admission']['ready_candidate_id'])
         with self.assertRaisesRegex(ValueError, 'distinct original capture directories'):
@@ -122,12 +134,15 @@ class RevisionPairTests(unittest.TestCase):
 
     def test_rehashed_generated_files_still_need_original_sql_and_parent_call(self):
         funs = next((self.base / 'generated').rglob('Funs.lean'))
-        funs.write_text('"SELECT no_revision FROM sandboxes"\n', encoding='utf-8')
+        original = funs.read_text(encoding='utf-8')
+        # Five correct branches and a decoy literal cannot hide a wrong sixth one.
+        wrong = query_arms(*([revision.REVISION_SQL] * 5), 'SELECT no_revision FROM sandboxes')
+        funs.write_text(wrong + f'-- "{revision.REVISION_SQL}"\n', encoding='utf-8')
         self.edit_record(self.base, lambda result: result.update(
             generated=checker.generated_inventory(self.base / 'generated')))
         with self.assertRaisesRegex(ValueError, 'revision SQL differs'):
             self.check()
-        funs.write_text(f'"{revision.REVISION_SQL}"\n', encoding='utf-8')
+        funs.write_text(original, encoding='utf-8')
         self.edit_record(self.base, lambda result: result.update(
             generated=checker.generated_inventory(self.base / 'generated')))
         ir = self.parent / 'actual.llbc'
@@ -136,6 +151,25 @@ class RevisionPairTests(unittest.TestCase):
         self.write_json(ir, raw)
         self.edit_record(self.parent, lambda result: result.update(ir_sha256=checker.digest(ir)))
         with self.assertRaisesRegex(ValueError, 'no longer calls its original base_snapshot once'):
+            self.check()
+
+    def test_rehashed_base_still_requires_every_generated_query_and_the_original_literal(self):
+        funs = next((self.base / 'generated').rglob('Funs.lean'))
+        original = funs.read_text(encoding='utf-8')
+        funs.write_text(query_arms(*([revision.REVISION_SQL] * 5)), encoding='utf-8')
+        self.edit_record(self.base, lambda result: result.update(
+            generated=checker.generated_inventory(self.base / 'generated')))
+        with self.assertRaisesRegex(ValueError, 'revision query count differs'):
+            self.check()
+        funs.write_text(original, encoding='utf-8')
+        ir = self.base / 'actual.llbc'
+        raw = json.loads(ir.read_bytes())
+        raw['translated']['fun_decls'][0]['body']['Structured']['body']['Str'] = 'SELECT bad'
+        self.write_json(ir, raw)
+        self.edit_record(self.base, lambda result: result.update(
+            ir_sha256=checker.digest(ir),
+            generated=checker.generated_inventory(self.base / 'generated')))
+        with self.assertRaisesRegex(ValueError, 'original base_snapshot revision SQL differs'):
             self.check()
 
     def test_unlisted_output_is_not_part_of_the_record(self):

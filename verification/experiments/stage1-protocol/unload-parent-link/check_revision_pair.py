@@ -26,7 +26,7 @@ def git(*args):
     return subprocess.check_output(['git', *args], cwd=ROOT)
 
 
-def source_identity(head):
+def source_identity(head, driver=DRIVER):
     if re.fullmatch(r'[0-9a-f]{40}', head) is None:
         raise ValueError('one exact source commit required')
     if git('rev-parse', '--verify', head + '^{commit}').decode().strip() != head:
@@ -39,16 +39,27 @@ def source_identity(head):
         archive_digest = hashlib.file_digest(process.stdout, 'sha256').hexdigest()
         if process.wait() != 0:
             raise ValueError('independent Git archive could not be read')
-    return dict(driver_head=DRIVER, head=head,
+    return dict(driver_head=driver, head=head,
                 tree=git('rev-parse', head + '^{tree}').decode().strip(),
                 source_archive_sha256=archive_digest)
 
 
-def fixed_configuration():
+def fixed_configuration(driver):
+    if (re.fullmatch(r'[0-9a-f]{40}', driver) is None
+            or git('rev-parse', '--verify', driver + '^{commit}').decode().strip() != driver):
+        raise ValueError('one exact capture driver commit required')
     parent_path = HERE.parent.relative_to(ROOT) / 'unload-startup-source/capture-profile.json'
-    parent = json.loads(git('show', f'{DRIVER}:{parent_path}'))['parent']
+    fixed_path = Path('verification/foundations-environment.json')
+    driver_dir = HERE.relative_to(ROOT)
+    for path in (parent_path, fixed_path, driver_dir / 'capture.py'):
+        if git('show', f'{driver}:{path}') != git('show', f'{DRIVER}:{path}'):
+            raise ValueError(f'fixed capture control differs: {path.name}')
+    admission_path = driver_dir / 'revision_capture.py'
+    if git('show', f'{driver}:{admission_path}') != (ROOT / admission_path).read_bytes():
+        raise ValueError('capture driver admission differs from the checker')
+    parent = json.loads(git('show', f'{driver}:{parent_path}'))['parent']
     parent.update(namespace='SandproofUnloadFirstObservation', subdir='SandproofUnloadFirstObservation')
-    fixed = json.loads(git('show', f'{DRIVER}:verification/foundations-environment.json'))
+    fixed = json.loads(git('show', f'{driver}:{fixed_path}'))
     return parent, fixed['target']
 
 
@@ -132,11 +143,12 @@ def main():
     parser.add_argument('--base', type=Path, required=True)
     parser.add_argument('--parent', type=Path, required=True)
     parser.add_argument('--source-commit', required=True)
+    parser.add_argument('--driver-commit', required=True)
     args = parser.parse_args()
     try:
-        cfg, target = fixed_configuration()
+        cfg, target = fixed_configuration(args.driver_commit)
         result = check_pair(args.base.resolve(strict=True), args.parent.resolve(strict=True),
-                            source_identity(args.source_commit), cfg, target)
+                            source_identity(args.source_commit, args.driver_commit), cfg, target)
     except (KeyError, OSError, TypeError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'Unload revision capture pair rejected: {error}\n')
     print(json.dumps(result, indent=2, sort_keys=True))
