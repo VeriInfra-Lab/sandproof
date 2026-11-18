@@ -92,6 +92,28 @@ python3 "$package/diagnose.py" --project artifacts/unload-parent-project \
 拒绝 stale/partial、缺文件、错误和本包新页的警告。上游未改页的警告原样记录；
 返回成功只表示这份开发检查完整，不代表公共入口已接受这些警告。
 
+### 当前 revision 的两份原始抽取
+
+用 [#893](https://github.com/VeriInfra-Lab/sandproof/pull/893) 的原驱动分别执行
+`base-revision` 和 `parent`，为两次执行指定同一个完整 `--source-commit`。保留两个
+输出目录中的 `source.tar`、`actual.llbc`、两个原始日志、`generated/` 和 `result.json`。
+在核对结果的 checkout 中取得同一 Git 源提交及 #893 驱动提交，再运行配对检查。两个
+目录可以移动，记录中的命令仍须显示各自 Aeneas 消费本次 Charon 写出的同一 LLBC。
+
+```sh
+package=verification/experiments/stage1-protocol/unload-parent-link
+bash scripts/python-entry.sh "$package/test_revision_pair.py"
+bash scripts/python-entry.sh "$package/check_revision_pair.py" \
+  --source-commit f26fc26a3fb6987a18ad69015c56bb99c0748e12 \
+  --base "$base_evidence" --parent "$parent_evidence" > "$pair_report"
+```
+
+检查器从 Git 独立重算原归档摘要，再核对两个完整源身份、原工具命令和日志、实际
+LLBC、所有生成文件及原准入。base 重新核对真实 revision SQL，parent 重新核对对
+原 `base_snapshot` 的唯一调用；两个生成视图的 `ReadyCandidate` 字段清单须一致。
+它只接受有原始文件的开发证据。生成编号可不同，跨视图类型和同一实际 SQLite 事务的
+表示关系仍需 Lean 检查；配对报告也不签发原生或公共证明封口。
+
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
 ning 在确定的新提交上完成普通检查及相关上游原生原版/错误版/恢复检查；严格按原收据键、
