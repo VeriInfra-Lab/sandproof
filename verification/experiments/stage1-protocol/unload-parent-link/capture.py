@@ -144,7 +144,10 @@ def main():
 
         with LOCK.open('r+') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            selectors=[x for flag,key in [('--start-from','roots'),('--include','include'),('--opaque','opaque')] for value in cfg[key] for x in [flag,value]]
+            selectors = [item for flag, key in [
+                ('--start-from', 'roots'), ('--start-from-if-exists', 'retained_roots'),
+                ('--include', 'include'), ('--opaque', 'opaque'),
+            ] for value in cfg.get(key, ()) for item in (flag, value)]
             ir=OUT/'actual.llbc'
             run('charon',[charon,'cargo','--preset=aeneas','--error-on-warnings','--sysroot','default',*selectors,
                 '--dest-file',ir,'--','--manifest-path','controller-service/Cargo.toml','--lib','--locked','--offline',

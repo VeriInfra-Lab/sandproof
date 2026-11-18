@@ -30,6 +30,7 @@ class WorldBeginAdmissionTests(unittest.TestCase):
         self.raw = dict(has_errors=False, translated=dict(
             options=dict(skip_borrowck=False, no_typecheck=False, remove_unused_clauses=False,
                          monomorphize=False, exclude=[], start_from=cfg['roots'],
+                         start_from_if_exists=cfg['retained_roots'],
                          include=cfg['include'], opaque=cfg['opaque']),
             target_information=[{'key': 'x86_64-unknown-linux-gnu'}],
             fun_decls=functions,
