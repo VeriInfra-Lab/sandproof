@@ -210,15 +210,7 @@ fn reject_changed_intents(
 }
 
 pub(super) fn durable_block(engine: &Engine) -> (u64, Vec<u8>) {
-    // One original Redis read captures the revision and EXACT payload together.
-    // It does not perform an authority confirmation or replace its contract.
-    let (revision, bytes): (String, Vec<u8>) = redis::cmd("HMGET")
-        .arg(crate::engine::KEY)
-        .arg("revision")
-        .arg("payload")
-        .query(&mut crate::engine::connect(engine.address))
-        .unwrap();
-    (revision.parse().unwrap(), bytes)
+    engine.durable_block()
 }
 
 fn assert_reaffirm_only(engine: &Engine, before: &(u64, Vec<u8>)) {

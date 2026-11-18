@@ -3,12 +3,18 @@
 use super::*;
 use axum::{Router, http::StatusCode};
 use sandproof_api::admission::RequestAdmission;
-use sandproof_center_service::CenterPort;
+use sandproof_center_service::{
+    CenterApplication, CenterConfig, CenterPort, HostPort, TemplateProvider,
+};
 use sandproof_controller_service::application::{ApplicationError, Clock};
 use sandproof_protocol::lifecycle::{
-    PublicAcceptance, PublicDestroyRequest, PublicRequestWindow, PublicSessionView,
+    LifecycleWindowClose, PublicAcceptance, PublicDestroyRequest, PublicRequestWindow,
+    PublicSessionView,
 };
-use std::sync::{Arc, atomic::AtomicU64};
+use std::{
+    sync::{Arc, Mutex, atomic::AtomicU64},
+    time::Duration,
+};
 
 struct Time(AtomicU64);
 impl Clock for Time {
@@ -162,18 +168,17 @@ async fn replay_checks(
     assert_same_business_state(&business.snapshot().unwrap(), &before);
 }
 
-async fn retire_original(
+async fn accept_cleaned(
     business: &SharedBusinessAuthority,
     public: &Router,
     clock: &Arc<Time>,
     original: &PublicCreateRequest,
     accepted: &PublicAcceptance,
-    confirm_before_expiry: bool,
-) -> BusinessEnvelope<RegistryMetadata> {
+) -> TerminalLifecycleObservation {
     let destroy = PublicDestroyRequest {
         window: original.window,
         sequence: 3.try_into().unwrap(),
-        expected_version: 1,
+        expected_version: accepted.accepted_version,
     };
     let response = send_public(
         public,
@@ -198,7 +203,18 @@ async fn retire_original(
     clock.0.store(100, Ordering::SeqCst);
     let mut authority = business.clone();
     AuthorityPort::accept_lifecycle_terminal_observation(&mut authority, &terminal, 100).unwrap();
-    drop(authority);
+    terminal
+}
+
+async fn retire_original(
+    business: &SharedBusinessAuthority,
+    public: &Router,
+    clock: &Arc<Time>,
+    original: &PublicCreateRequest,
+    accepted: &PublicAcceptance,
+    confirm_before_expiry: bool,
+) -> BusinessEnvelope<RegistryMetadata> {
+    let terminal = accept_cleaned(business, public, clock, original, accepted).await;
     if confirm_before_expiry {
         business
             .confirm_terminal(&ConfirmedLifecycleResult {
@@ -374,4 +390,167 @@ async fn expired_window_keeps_a_retained_peer_and_refuses_retired_replay_after_r
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn expiry_needs_confirmation_and_preserves_the_other_authenticated_owner() {
     retired_window(OTHER_KEY, false).await;
+}
+
+struct CloseHost {
+    proxy: Arc<reply_loss::ReplyLoss>,
+    calls: Arc<Mutex<Vec<LifecycleWindowClose>>>,
+}
+
+impl HostPort for CloseHost {
+    fn close_lifecycle_window(
+        &self,
+        request: &LifecycleWindowClose,
+        _: Duration,
+    ) -> Result<ClosedLifecycleWindow, PortError> {
+        let mut calls = self.calls.lock().unwrap();
+        calls.push(request.clone());
+        let window = request.terminal.request.retention.window;
+        let retired_through = match calls.len() {
+            1 => (window.get() + 1).try_into().unwrap(),
+            2 => {
+                // Let the fresh view succeed, then lose the actual retirement CAS reply.
+                self.proxy.lose_after(1);
+                window
+            }
+            _ => panic!("retirement must not send a third close"),
+        };
+        Ok(ClosedLifecycleWindow {
+            terminal: request.terminal.clone(),
+            retired_through,
+        })
+    }
+}
+
+fn closing_app(
+    business: &SharedBusinessAuthority,
+    clock: Arc<Time>,
+    host: CloseHost,
+) -> CenterApplication<SharedBusinessAuthority, CloseHost, impl TemplateProvider> {
+    CenterApplication::new(
+        business.clone(),
+        host,
+        templates::template_provider(business),
+        CenterConfig {
+            domain: "sandbox.test".into(),
+            max_timeout_secs: 300,
+            max_lifetime_secs: 300,
+            startup_timeout_secs: 1,
+            reply_timeout: Duration::from_millis(200),
+            poll_interval: Duration::from_millis(1),
+            public_ipv4_enabled: false,
+        },
+        &[7; 32],
+    )
+    .unwrap()
+    .with_clock(clock)
+}
+
+async fn assert_fenced(
+    app: &CenterApplication<SharedBusinessAuthority, CloseHost, impl TemplateProvider>,
+    fixture: &Engine,
+    public: &Router,
+    saved: &(u64, Vec<u8>),
+) {
+    assert_eq!(app.snapshot(), Err(PortError::OutcomeUnknown));
+    assert_eq!(
+        app.retire_terminal_history_once(),
+        Err(PortError::OutcomeUnknown)
+    );
+    let response = send_public(
+        public,
+        "GET",
+        "/sandproof/lifecycle/request-window",
+        OWNER_KEY,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(&fixture.durable_block(), saved);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn public_replay_after_both_window_close_cas_replies_are_lost() {
+    let fixture = Engine::new();
+    let proxy = Arc::new(reply_loss::ReplyLoss::new(fixture.address));
+    let business = setup(&fixture, &proxy);
+    let clock = Arc::new(Time(AtomicU64::new(10)));
+    let public = router(&business, &clock);
+    let original = request();
+    let accepted = create(&public, OWNER_KEY, &original).await;
+    let mut peer_request = original.clone();
+    peer_request.sequence = 2.try_into().unwrap();
+    let peer = create(&public, OWNER_KEY, &peer_request).await;
+    let terminal = accept_cleaned(&business, &public, &clock, &original, &accepted).await;
+    business
+        .confirm_terminal(&ConfirmedLifecycleResult {
+            result: terminal.clone(),
+        })
+        .unwrap();
+
+    clock.0.store(200, Ordering::SeqCst);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let app = closing_app(
+        &business,
+        clock,
+        CloseHost {
+            proxy: Arc::clone(&proxy),
+            calls: Arc::clone(&calls),
+        },
+    );
+    let before = business.snapshot().unwrap();
+    let (pending_center, close) = before.center.begin_close(&terminal, 200).unwrap();
+    let pending = before.with_center(pending_center);
+    let revision = fixture.durable_block().0;
+    // Retirement scan and begin_close both reaffirm before the ClosePending CAS.
+    proxy.lose_after(2);
+    assert_eq!(
+        app.retire_terminal_history_once(),
+        Err(PortError::OutcomeUnknown)
+    );
+    let saved = fixture.durable_block();
+    assert_eq!(saved, (revision + 3, serde_json::to_vec(&pending).unwrap()));
+    assert_fenced(&app, &fixture, &public, &saved).await;
+    assert!(calls.lock().unwrap().is_empty());
+
+    app.recover_authority().unwrap();
+    assert_eq!(app.retire_terminal_history_once(), Ok(()));
+    assert_eq!(
+        calls.lock().unwrap().as_slice(),
+        std::slice::from_ref(&close)
+    );
+    assert_eq!(fixture.durable_block().1, saved.1);
+    assert_eq!(window(&public, OWNER_KEY).await, original.window.get());
+    assert_eq!(create(&public, OWNER_KEY, &original).await, accepted);
+
+    let ack = ClosedLifecycleWindow {
+        retired_through: terminal.request.retention.window,
+        terminal,
+    };
+    let retired = pending.with_center(pending.center.apply_close_ack(&ack, 200).unwrap());
+    let revision = fixture.durable_block().0;
+    assert_eq!(
+        app.retire_terminal_history_once(),
+        Err(PortError::OutcomeUnknown)
+    );
+    let saved = fixture.durable_block();
+    // Scan, close batch, fresh view in apply_close_ack, then retirement CAS.
+    assert_eq!(saved, (revision + 4, serde_json::to_vec(&retired).unwrap()));
+    assert_fenced(&app, &fixture, &public, &saved).await;
+    app.recover_authority().unwrap();
+    assert_eq!(app.retire_terminal_history_once(), Ok(()));
+    assert_eq!(calls.lock().unwrap().as_slice(), [close.clone(), close]);
+    assert_eq!(fixture.durable_block().1, saved.1);
+    assert_eq!(window(&public, OWNER_KEY).await, original.window.get() + 2);
+    assert_eq!(window(&public, OTHER_KEY).await, 1);
+    accept_successor(
+        &public,
+        &business,
+        &original,
+        &accepted,
+        &peer_request,
+        &peer,
+        OWNER_KEY,
+    )
+    .await;
 }

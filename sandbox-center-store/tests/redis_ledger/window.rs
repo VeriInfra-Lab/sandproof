@@ -111,6 +111,7 @@ fn lost_close_and_retirement_commits_recover_original_frontier() {
     let node = lifecycle_fixture::node("host-a");
     let cleaned = terminal(&mut center, 1);
     confirm(&mut center, &cleaned);
+    let before_close = fixture.durable_block();
     // Reaffirm precedes this pure decision. Lose the NEXT actual close CAS,
     // not the prerequisite read/confirmation, to exercise durable unknown.
     proxy.lose_after(1);
@@ -118,6 +119,9 @@ fn lost_close_and_retirement_commits_recover_original_frontier() {
         center.begin_close(&cleaned, 200),
         Err(AuthorityError::Store(StoreError::OutcomeUnknown))
     );
+    let close_saved = fixture.durable_block();
+    assert_eq!(close_saved.0, before_close.0 + 2);
+    assert_ne!(close_saved.1, before_close.1);
     assert!(matches!(
         center.close_batch(200),
         Err(AuthorityError::RecoveryRequired)
@@ -133,11 +137,16 @@ fn lost_close_and_retirement_commits_recover_original_frontier() {
         retired_through: pending[0].terminal.request.retention.window,
         terminal: pending[0].terminal.clone(),
     };
+    let before_retirement = fixture.durable_block();
+    assert_eq!(before_retirement.1, close_saved.1);
     proxy.lose_after(1);
     assert_eq!(
         center.apply_close_ack(&ack, 200),
         Err(AuthorityError::Store(StoreError::OutcomeUnknown))
     );
+    let retirement_saved = fixture.durable_block();
+    assert_eq!(retirement_saved.0, before_retirement.0 + 2);
+    assert_ne!(retirement_saved.1, before_retirement.1);
     assert!(center.state().is_err());
     center.recover().unwrap();
     assert!(center.close_batch(200).unwrap().is_empty());
