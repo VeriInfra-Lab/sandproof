@@ -20,12 +20,14 @@ from pathlib import Path
 import sqlite3
 import time
 
+from _internal_fault_relay import _fields, accepted_request
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
 from lifecycle_unload_runtime import (checked_source_records, material_source_charge,
     open_original_candidate_pidfd, original_json, original_process, pidfd_exited, remaining)
 from lifecycle_unload_retirement import read_records
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 
 def now_ms():
@@ -44,6 +46,121 @@ def wait_clock(lifetime, deadline):
         if delay <= 0:
             return
         time.sleep(min(.1,left,delay))
+
+
+def expiry_resume_witness(acceptance, original_intent, node):
+    """Correlate the original Host intent and independent configured node.
+
+    This is a test witness, not a new acceptance or authorization. The source
+    reader supplies the actual retained intent; the public response alone is
+    insufficient to identify its complete Resume parameters and context.
+    """
+    _fields(acceptance,'session key accepted_version')
+    operation=accepted_request(original_intent,node)
+    binding=original_intent['request']['binding']
+    if (operation['kind']!='resume' or not equal(binding['node'],node)
+            or not equal(acceptance,dict(session=binding['session'],key=binding['key'],
+                accepted_version=original_intent['accepted_version']))):
+        raise ValueError('one complete original Host Resume and public acceptance required')
+    return dict(copy.deepcopy(acceptance),original_intent=copy.deepcopy(original_intent),node=copy.deepcopy(node))
+
+
+def _checked_expiry_resume(resume):
+    _fields(resume,'session key accepted_version original_intent node original_create original_unload')
+    original=expiry_resume_witness({k:resume[k] for k in ('session','key','accepted_version')},
+        resume['original_intent'],resume['node'])
+    return expiry_history_witness(original,resume['original_create'],resume['original_unload'])
+
+
+def expiry_history_witness(resume, original_create, original_unload):
+    """Bind this finite Create/Unload/Resume prefix to original Host values.
+
+    Request numbers and incarnation numbers may have gaps. Retention windows
+    are independent of request-key windows, and each original context is kept.
+    """
+    create=accepted_request(original_create,resume['node'])
+    unload=accepted_request(original_unload,resume['node'])
+    operation=resume['original_intent']['request']['operation']
+    intents=(original_create,original_unload,resume['original_intent'])
+    bindings=[intent['request']['binding'] for intent in intents]
+    if (create['kind']!='create' or unload['kind']!='unload'
+            or [intent['accepted_version'] for intent in intents]!=[1,2,3]
+            or any(binding['session']!=resume['session'] for binding in bindings)
+            or any(not equal(binding['node'],resume['node']) for binding in bindings)
+            or any(any(not equal(binding['key'][k],resume['key'][k]) for k in ('owner','deployment'))
+                   for binding in bindings)
+            or any(equal(bindings[a]['key'],bindings[b]['key']) for a,b in ((0,1),(0,2),(1,2)))
+            or create['target_incarnation']!=unload['source_incarnation']
+            or any(unload[k]!=operation[k] for k in ('source_incarnation','capture'))):
+        raise ValueError('original finite Create/Unload/Resume source history required')
+    return dict(copy.deepcopy(resume),original_create=copy.deepcopy(original_create),
+                original_unload=copy.deepcopy(original_unload))
+
+
+def read_expiry_history(runtime,client,resume,original_unload,deadline,*,current_unload=None):
+    """One original read-only Host snapshot before waiting or manager actions."""
+    version=resume['accepted_version']
+    if current_unload is not None:
+        operation=accepted_request(current_unload,resume['node'])
+        binding=current_unload['request']['binding']
+        if (operation['kind']!='unload' or binding['session']!=resume['session']
+                or current_unload['accepted_version']!=version+1
+                or operation['source_incarnation']!=resume['original_intent']['request']['operation']['target_incarnation']
+                or any(not equal(binding['key'][k],resume['key'][k]) for k in ('owner','deployment'))):
+            raise ValueError('original current Unload after Resume required')
+        version=current_unload['accepted_version']
+    row=read_host(runtime,client.session,deadline)
+    entries=row.get('entries')
+    if (row.get('id')!=client.session or row.get('terminal') is not False
+            or not equal(row.get('current_version'),version)
+            or type(entries) is not list or len(entries)!=(3 if current_unload is None else 4)):
+        raise ValueError('one original current finite Host history required')
+    try:
+        intents=[entry['intent'] for entry in entries]
+        for intent in intents:accepted_request(intent,resume['node'])
+        intents.sort(key=lambda intent:intent['accepted_version'])
+        create,unload,original_resume=intents[:3]
+        public_create=dict(session=create['request']['binding']['session'],
+            key=create['request']['binding']['key'],accepted_version=create['accepted_version'])
+        _fields(client.create_acceptance,'session key accepted_version')
+        if (not equal(public_create,client.create_acceptance)
+                or not equal(unload,original_unload)
+                or not equal(original_resume,resume['original_intent'])
+                or (current_unload is not None and (not equal(intents[3],current_unload)
+                    or any(equal(binding['key'],intent['request']['binding']['key']) for intent in intents[:3])))):
+            raise ValueError('Host prefix differs from public Create or retained source work')
+    except (KeyError,TypeError) as error:
+        raise ValueError('complete original Host history required') from error
+    return expiry_history_witness(resume,create,unload)
+
+
+def _audited_intent(operation):
+    # Rust OperationAudit redacts the Create payload. Its independent public
+    # fields and raw-options digest are checked separately below.
+    _fields(operation,'center binding retention accepted_version acceptance_time operation running create_refusal terminal unloaded')
+    if operation['operation']['kind'] not in ('create','unload','resume','destroy'):
+        raise ValueError('original lifecycle audit projection required')
+    return dict(request=dict(binding=operation['binding'],operation=operation['operation']),
+        accepted_version=operation['accepted_version'],center=operation['center'],retention=operation['retention'])
+
+
+def _check_audited_history(row,resume):
+    original=resume['original_create'];expected=copy.deepcopy(original)
+    payload=expected['request']['operation'].pop('create')
+    if (not equal(_audited_intent(row['operations'][0]),expected)
+            or not equal(_audited_intent(row['operations'][1]),resume['original_unload'])):
+        raise ValueError('center replaced an original Create or Unload intent')
+    actual=_fields(row['create'],'binding template_revision template_digest resources options_sha256 startup_deadline_ms timeout_ms max_lifetime_ms metadata_sha256')
+    projection=dict(binding=copy.deepcopy(original['request']['binding']),
+        **{k:copy.deepcopy(v) for k,v in payload.items() if k!='options'},
+        options_sha256=hashlib.sha256(bytes(payload['options'])).hexdigest())
+    if not equal({k:v for k,v in actual.items() if k!='metadata_sha256'},projection):
+        raise ValueError('original Create audit projection or raw-options digest differs')
+    # This diagnostic digest does not authorize anything or establish a second
+    # Serde/metadata encoding model. Create options remain redacted in the audit.
+    metadata=actual['metadata_sha256']
+    if type(metadata) is not str or len(metadata)!=64 or any(c not in '0123456789abcdef' for c in metadata):
+        raise ValueError('original bounded metadata digest required')
 
 
 def expiry_acceptance(audit, session, resume, lifetime, sampled_now):

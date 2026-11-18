@@ -73,6 +73,26 @@ class PhysicalProfileTests(unittest.TestCase):
     def validate(self):
         return validate_configuration(self.runtime, self.builder, self.public, file_size=lambda _: 100)
 
+    def test_mount_info_checks_the_opened_mount_with_an_autofs_layer(self):
+        mounted = dict(id=52, target='/data1', source='/dev/sda1', fstype='xfs',
+                       options='rw,prjquota', uuid='xfs-uuid')
+        automount = dict(id=46, target='/data1', source='systemd-1', fstype='autofs',
+                         options='rw,direct', uuid=None)
+        expected = {key: value for key, value in mounted.items() if key != 'id'}
+        for entries in ([mounted], [automount, mounted], [mounted, automount]):
+            with (patch.object(single_host_storage, '_mount_id', return_value=52),
+                  patch.object(single_host_storage, 'run', return_value=json.dumps(dict(filesystems=entries)))):
+                self.assertEqual(single_host_storage.mount_info(self.root), expected)
+
+        for selected, entries in ((46, [automount, mounted]), (17, [automount, mounted]),
+                                  (52, [dict(automount, fstype='ext4'), mounted]),
+                                  (52, [dict(automount, target='/other'), mounted]),
+                                  (52, [mounted, mounted])):
+            with (patch.object(single_host_storage, '_mount_id', return_value=selected),
+                  patch.object(single_host_storage, 'run', return_value=json.dumps(dict(filesystems=entries))),
+                  self.assertRaisesRegex(ValueError, 'expected one filesystem')):
+                single_host_storage.mount_info(self.root)
+
     def test_file_volume_plan_counts_backing_reserve_before_volume_exists(self):
         profile = dict(self.profile, pools=self.profile['pools'][:1], public_build=None)
         required = activation_budget(profile)['required_bytes']

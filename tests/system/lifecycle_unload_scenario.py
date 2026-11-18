@@ -241,6 +241,7 @@ class PublicUnloadScenario:
         self.session = None
         self.create_request = self.create_acceptance = None
         self.unload_request = self.unload_acceptance = None
+        self.destroy_request = None
         self.failure_step = 'client-initialization'
         self.last_http_status = None
         self._http_expected = None
@@ -272,8 +273,9 @@ class PublicUnloadScenario:
         if sample['operation']=='unload':
             if (sample['accepted_monotonic'] is None or sample['completed_monotonic'] is not None
                     or view is None or acceptance is None
-                    or acceptance!=sample['acceptance'] or acceptance!=self.current_acceptance
-                    or acceptance!=self.unload_acceptance):
+                    or not equal(acceptance,sample['acceptance'])
+                    or not equal(acceptance,self.current_acceptance)
+                    or not equal(acceptance,self.unload_acceptance)):
                 return
             self.check_view(view,acceptance)
             outcome=view['unload_outcome']
@@ -341,7 +343,7 @@ class PublicUnloadScenario:
 
     def acceptance(self, value, *, sequence, version):
         assert set(value) == {'session', 'key', 'accepted_version'}
-        assert value['key'] == self.key(sequence), 'acceptance changed the full original operation key'
+        assert equal(value['key'], self.key(sequence)), 'acceptance changed the full original operation key'
         assert type(value['session']) is str and value['session']
         assert uint(value['accepted_version'], positive=True)
         assert value['accepted_version'] == version
@@ -454,7 +456,7 @@ class PublicUnloadScenario:
                 barrier.wait(timeout=min(40,self.remaining()))
                 replies=[future.result(timeout=self.remaining()) for future in pending]
             self.remaining()
-            assert replies[0]==replies[1], 'concurrent original unload replies differ'
+            assert equal(replies[0],replies[1]), 'concurrent original unload replies differ'
             result=replies[0]
             self.concurrent_unload_replies=copy.deepcopy(replies)
         else:
@@ -508,7 +510,7 @@ class PublicUnloadScenario:
         facts = view['unload_outcome']['facts']
         assert type(facts) is dict and set(facts) == FACT_FIELDS
         assert type(independent_facts) is dict and set(independent_facts) == FACT_FIELDS
-        assert facts == independent_facts, 'public result differs from original journal/material/lifetime evidence'
+        assert equal(facts, independent_facts), 'public result differs from original journal/material/lifetime evidence'
         assert all(uint(facts[name], positive=True) for name in (
             'source_incarnation', 'capture', 'material_bytes'))
         assert all(uint(facts[name]) for name in (
@@ -526,21 +528,21 @@ class PublicUnloadScenario:
         self.step('replay-unload', 202)
         unload = self.read_json('POST', self.path() + '/unload', key=self.owner_key,
                                body=self.unload_request, status=202)
-        assert create == self.create_acceptance and unload == self.unload_acceptance
+        assert equal(create, self.create_acceptance) and equal(unload, self.unload_acceptance)
         self.step('replay-query', 200)
-        assert self.query() == saved
+        assert equal(self.query(), saved)
         changed = dict(self.unload_request, expected_version=self.unload_acceptance['accepted_version'])
         self.step('altered-unload-replay', 409)
         assert self.call('POST', self.path() + '/unload', key=self.owner_key, body=changed)[0] == 409
         self.step('altered-replay-query', 200)
-        assert self.query() == saved, 'rejected altered replay changed the saved result'
+        assert equal(self.query(), saved), 'rejected altered replay changed the saved result'
 
     def assert_reopened(self, saved):
         self.step('reopened-query', 200)
-        assert self.query() == saved, 'manager reopen changed the original complete public result'
+        assert equal(self.query(), saved), 'manager reopen changed the original complete public result'
         self.step('request-window', 200)
         window = self.read_json('GET', PREFIX + '/request-window', key=self.owner_key)
-        assert window == {'window': self.window}
+        assert equal(window, {'window': self.window})
         self.assert_owner_isolation()
         self.assert_original_replay(saved)
         self.remaining()
@@ -550,9 +552,9 @@ class PublicUnloadScenario:
         self.step('original-resume-replay', 202)
         replay = self.read_json('POST', self.path() + '/resume', key=self.owner_key,
             body=copy.deepcopy(request), status=202)
-        assert replay == accepted, 'old Resume did not return its original acceptance'
+        assert equal(replay, accepted), 'old Resume did not return its original acceptance'
         self.step('original-resume-current-query', 200)
-        assert self.query() == current, 'old Resume replay changed current lifecycle state'
+        assert equal(self.query(), current), 'old Resume replay changed current lifecycle state'
 
     def assert_terminal_resume_replay(self, request, accepted, *, phase):
         """Historical acceptance must not become permission after Destroy."""
@@ -565,12 +567,22 @@ class PublicUnloadScenario:
         changed = dict(request, expected_version=current['current_version'])
         self.step('terminal-altered-resume-replay', 409)
         assert self.call('POST', self.path() + '/resume', key=self.owner_key, body=changed)[0] == 409
-        assert self.query() == current, 'altered old Resume changed the terminal decision'
+        assert equal(self.query(), current), 'altered old Resume changed the terminal decision'
         self.assert_data_closed()
         self.assert_previous_tokens_closed()
         return dict(phase=phase, original_acceptance_returned=True,
                     altered_request_rejected=True, terminal_view_unchanged=True,
                     data_access_closed=True)
+
+    def assert_terminal_unload_replay(self, *, phase):
+        """Keep the original Create/Unload acceptance and the later Destroy."""
+        assert phase in ('terminating','cleaned')
+        current=self.query();self.check_view(current,self.current_acceptance)
+        assert current['phase']==phase and current['current_version']>self.unload_acceptance['accepted_version']
+        self.assert_original_replay(current)
+        self.assert_data_closed();self.assert_previous_tokens_closed()
+        return dict(phase=phase,original_create_unload_acceptance_returned=True,
+                    altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
 
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
@@ -611,25 +623,43 @@ class PublicUnloadScenario:
         assert all(c in '0123456789abcdef' for c in value['activation_nonce'])
         return value
 
+    def _close_ram_start_subscription(self,process):
+        # The returned Start owns a subscription even if its PID is invalid.
+        # Close it on this owner thread; this never signals the guest process.
+        self.step('close-original-ram-start-subscription')
+        try:
+            pid=process.pid
+            assert uint(pid,positive=True), 'positive original RAM Start PID required'
+        except BaseException as identity_error:
+            try:
+                process.disconnect()
+            except BaseException as close_error:
+                raise BaseExceptionGroup('original RAM Start identity and subscription close failed',
+                    [identity_error,close_error]) from None
+            raise
+        process.disconnect()
+        return pid
+
     def run_public_workload(self,running):
         sandbox=self.sdk()
         self.step('start-original-ram-process')
         process=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_SERVER),
             background=True,timeout=0)
+        pid=self._close_ram_start_subscription(process)
         # SDK command completion is not a startup barrier. A separate real
         # command waits for the socket while checking the original guest PID.
         self.step('ram-process-ready')
-        ready=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_READY)+' '+str(process.pid),
+        ready=sandbox.commands.run('python3 -c '+shlex.quote(RAM_WITNESS_READY)+' '+str(pid),
             timeout=min(30,self.remaining()))
         assert ready.exit_code==0
         self.witness=self.witness_command(sandbox,'advance')
-        assert self.witness['pid']==process.pid and self.witness['counter']==1
+        assert self.witness['pid']==pid and self.witness['counter']==1
         disk=sandbox.files.read('/tmp/sandproof-unload-marker')
         assert disk=='disk-counter:1'
-        assert self.query()==running
+        assert equal(self.query(),running)
         return dict(sdk='2.51.0',entry='owner-detail/original-sdk-constructor/public-gateway',
             path='/tmp/sandproof-unload-marker',ram_nonce_sha256=hashlib.sha256(
-                self.witness['nonce'].encode()).hexdigest(),guest_pid=process.pid,
+                self.witness['nonce'].encode()).hexdigest(),guest_pid=pid,
             guest_start_time_ticks=self.witness['start_time_ticks'],counter=1)
 
     def assert_resumed_workload(self,running,gate_receipt=None,physical_running=None):
@@ -656,7 +686,7 @@ class PublicUnloadScenario:
         assert current['activation_nonce']==observed['activation_nonce']
         assert sandbox.files.read('/tmp/sandproof-unload-marker')=='disk-counter:'+str(current['counter'])
         self.witness=current
-        assert self.query()==running
+        assert equal(self.query(),running)
         return dict(ram_nonce_sha256=hashlib.sha256(current['nonce'].encode()).hexdigest(),
             guest_pid=current['pid'],guest_start_time_ticks=current['start_time_ticks'],
             counter=current['counter'],metadata_generation=current['metadata_generation'],
@@ -729,6 +759,14 @@ class PublicUnloadScenario:
         assert self.call('GET', '/sandboxes/' + self.session, key=self.owner_key)[0] == 404
 
 
+def finish_slot_occupant(control, running, runtime, deadline, report):
+    """One original public Destroy and its physical evidence for this owner."""
+    control.destroy(running)
+    control.wait_cleaned()
+    report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session, deadline)
+    control.operation_evidence_completed()
+
+
 def exercise(args):
     """Only the sibling helper can start/restart or inspect original resources."""
     from lifecycle_unload_runtime import prepare
@@ -742,6 +780,9 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    freeze_destroy = args.scenario == 'capture-freeze-receipt-destroy'
+    freeze_expiry = args.scenario == 'capture-freeze-receipt-expiry'
+    freeze_terminal = freeze_destroy or freeze_expiry
     expiry_prepare = args.scenario == 'restore-prepare-expiry'
     expiry_running = args.scenario == 'restored-running-expiry'
     expiry_case = expiry_prepare or expiry_running
@@ -757,7 +798,7 @@ def exercise(args):
     expired_window_replay = getattr(args, 'expired_window_replay', False)
     if expired_window_replay and args.scenario != 'normal':
         raise ValueError('expired-window replay extends only the original complete normal scenario')
-    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case):
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case or freeze_terminal):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -790,7 +831,7 @@ def exercise(args):
             runtime.foreign_key, report['registration']['deployment'], deadline)
         report['phase'] = 'public-create'
         parameters = runtime.create_parameters()
-        if expiry_case:
+        if expiry_case or freeze_expiry:
             parameters['timeout_ms'] = 75000
         report['create'] = client.create(parameters)
         running = client.wait_running()
@@ -884,7 +925,7 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
-        if activation_destroy:
+        if activation_destroy or freeze_terminal:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         if resume_receipt_restart:
@@ -1182,10 +1223,71 @@ def exercise(args):
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                control.destroy(control_running)
-                control.wait_cleaned()
+                if not freeze_terminal:
+                    finish_slot_occupant(control, control_running, runtime, deadline, report)
+            if cycle == 1 and freeze_terminal:
+                if freeze_expiry:
+                    from lifecycle_freeze_expiry import OrderedFreezeExpiryProbe, wait_expired_cleaned
+                    probe_type = OrderedFreezeExpiryProbe
+                else:
+                    from lifecycle_freeze_destroy import OrderedFreezeDestroyProbe
+                    probe_type = OrderedFreezeDestroyProbe
+                prefix = 'freeze_expiry' if freeze_expiry else 'freeze_destroy'
+                capture_probe=probe_type(runtime,client,physical_running)
+                report['phase']='arm-original-freeze-before-'+('expiry' if freeze_expiry else 'destroy')
+                report[prefix+'_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
+                accepted_unload=client.unload(resumed)
+                report['phase']='original-freeze-success-before-sql-receipt'
+                report[prefix+'_observation']=capture_probe.after_acceptance(accepted_unload,deadline)
+                pending=client.query();client.check_view(pending,accepted_unload)
+                assert pending['phase']=='unloading', 'frozen original Unload unexpectedly completed'
+                client.assert_data_closed();client.assert_previous_tokens_closed()
+                if freeze_expiry:
+                    report['phase']='real-expiry-with-original-freeze-receipt-pending'
+                    report['automatic_expiry']=capture_probe.observe_expiry(deadline)
+                    terminal_acceptance=report['automatic_expiry']['acceptance']
+                else:
+                    report['phase']='recheck-original-freeze-before-public-destroy'
+                    report['freeze_destroy_acceptance_window']={
+                        'before':capture_probe.observe_destroy_window(deadline)}
+                    report['phase']='public-destroy-with-original-freeze-receipt-pending'
+                    report['destroy']=client.destroy(pending)
+                    terminal_acceptance=report['destroy']
+                    report['phase']='recheck-original-freeze-after-public-destroy'
+                    report['freeze_destroy_acceptance_window']['after']=capture_probe.observe_destroy_window(deadline)
+                    report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                def observe_frozen_peer():
+                    report['phase']=prefix.replace('_','-')+'-peer-progress-before-stop'
+                    assert equal(control.query(),control_running)
+                    return control.assert_running_workload(control_running)
+                report['phase']='original-terminal-stop-held-with-backing-and-peer'
+                recovery=capture_probe.recover_after_expiry if freeze_expiry else capture_probe.recover_after_destroy
+                report[prefix+'_recovery']=recovery(terminal_acceptance,deadline,observe_peer=observe_frozen_peer)
+                if freeze_expiry:
+                    # Center and Host are ready after the inherited terminal
+                    # handoff. No public query could have created the expiry.
+                    report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                report['phase']='original-stop-and-cleanup-pre-sql-receipt'
+                report[prefix+'_terminal']=capture_probe.assert_terminal_before_gc(deadline)
+                report['phase']='public-frozen-'+('expiry' if freeze_expiry else 'destroy')+'-cleaned-and-product-gc'
+                if freeze_expiry:
+                    wait_expired_cleaned(client,deadline)
+                else:
+                    client.wait_cleaned()
+                report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+                if not freeze_expiry:
+                    client.operation_evidence_completed()
+                report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                assert equal(control.query(),control_running)
+                suffix='frozen_expiry' if freeze_expiry else 'frozen_destroy'
+                report['slot_reuse']['occupant_after_'+suffix]=runtime.confirm_running(control.session,control_physical,deadline)
+                report['phase']=prefix.replace('_','-')+'-peer-progress-after-cleaned'
+                report['slot_reuse']['peer_after_'+suffix]=control.assert_running_workload(control_running)
+                control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+                report['cycles'][-1]['frozen_unload_expired' if freeze_expiry else 'frozen_unload_destroyed']=True
+                terminal_destroy_done=True;break
             if cycle < restore_cycles:
                 if retirement_restart:
                     from lifecycle_unload_retirement import RetirementRestartProbe
@@ -1257,9 +1359,10 @@ def exercise(args):
         report['settlement_timing']=dict(check_seconds=settlement_completed-settlement_started,
             final_destroy_send_to_settled_seconds=settlement_completed-client.timings[-1]['sent_monotonic'],
             completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
-        if expiry_case:
+        if expiry_case or freeze_expiry:
             del report['settlement_timing']['final_destroy_send_to_settled_seconds']
-            report['settlement_timing']['expiry_observed_to_settled_seconds'] = settlement_completed-report['expiry']['observed_monotonic']
+            observed = report['automatic_expiry'] if freeze_expiry else report['expiry']
+            report['settlement_timing']['expiry_observed_to_settled_seconds'] = settlement_completed-observed['observed_monotonic']
         if expired_window_replay:
             from lifecycle_window_replay import exercise as exercise_expired_window
             report['phase'] = 'expired-window-replay'
@@ -1353,6 +1456,25 @@ def exercise(args):
                 'E14':'old execution credentials and terminal data access remain closed; other owner keeps original authorization',
                 'other_cases':'one activated terminal branch, no public resumed Running or normal three cycles; not all E7/E8 interleavings or formal proof',
             }
+        if freeze_destroy:
+            report['freeze_response_mode'] = 'response-restored-after-terminal-acceptance'
+            report['acceptance_cases'] = {
+                'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
+                'E8':'actual Freeze success before SQL receipt, then public Destroy; exact current fence/Stop with same paused source and backing pin/charge, then original exit/Cleanup/GC',
+                'E12':'original other owner actually reused the old position, made guest progress while terminal Stop was held, and retained its same candidate before explicit cleanup',
+                'E14':'old execution tokens remained rejected; peer continued with its original authorization',
+                'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
+            }
+        if freeze_expiry:
+            report['freeze_response_mode'] = 'response-restored-after-terminal-acceptance'
+            report['acceptance_cases'] = {
+                'E2':'original Create/Unload replay preserves automatic terminal acceptance during Terminating and after Cleaned',
+                'E8':'real TTL with original Freeze SQL receipt pending; original Center audit observes one automatic terminal request before any subsequent public query',
+                'E15':'actual frozen source and backing pin/positive charge retained until same-source Stop, kernel exit and product Cleanup/GC',
+                'E12':'other owner retains its original candidate and makes guest progress before Stop and after original Cleaned',
+                'E14':'old execution tokens remain closed; peer retains its original authorization',
+                'other_cases':'one frozen Unload expiry order; no explicit Destroy, reset clock, full expiry matrix or new formal proof',
+            }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
         if command_probe is not None:
@@ -1379,6 +1501,9 @@ def exercise(args):
         report.update(failure_details(error, client, report['phase']))
         if (prepare_destroy or activation_destroy) and capture_probe is not None:
             report['activation_destroy_failure_state' if activation_destroy else 'prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if freeze_terminal and capture_probe is not None:
+            key = 'freeze_expiry_failure_state' if freeze_expiry else 'freeze_destroy_failure_state'
+            report[key] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1471,7 +1596,8 @@ def main():
         help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-receipt-destroy',
+        'capture-freeze-receipt-expiry','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)

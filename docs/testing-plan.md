@@ -359,6 +359,8 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 |---|---|
 | `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
 | `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
+| `capture-freeze-receipt-destroy` | 原 Pause 已返回、SQL 尚未收到 Freeze 回执时，公开接受 Destroy；用同一 SQLite 读快照核对原 Kill、待回执 Freeze 和原材料责任。在持久接受原 Kill 后恢复同一 VMM 应答，并观察终止围栏、同源 Stop、原进程退出、旧请求重放、同伴继续及最终 GC（E8） |
+| `capture-freeze-receipt-expiry` | 保留原到期期限，由仍在运行的 Center 自动接受终止。审计重启后先确认原进程的监听端口，按原截止时间观察实际到期，再沿同一 Kill、围栏、Stop 和 GC 路径验收（E8/E15 的一个窗口） |
 | `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
 | `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
 | `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |

@@ -31,6 +31,7 @@ from lifecycle_unload_runtime import (
 )
 from tools.check_kvm_host import unique_keys
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 STAGES = {
     'freeze-receipt': ('freeze_vm', 'FreezeVm'),
@@ -56,6 +57,32 @@ def validate_measurement_question(question, run_identity):
             or not 0 < question['measured_bytes'] < question['total_bytes'] < 2**64):
         raise ValueError('actual incomplete SHA measurement of the original Memory clone required')
     return question
+
+
+def terminal_outbox(runtime, conn, local, operation, capacity, expected_identity):
+    native = runtime.services.native_pools[0]
+    sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+    op = 'op-' + native['namespace'] + '-' + str(local['sandbox']) + '-' + str(operation)
+    count, largest, receipt_size = conn.execute(
+        'SELECT count(*),max(length(action_json)),max(length(receipt_json)) FROM outbox '
+        'WHERE sandbox_id=? AND operation_id=?', (sandbox, op)).fetchone()
+    if (not 0 < count <= capacity['max_sql_rows'] or largest > capacity['max_sql_value_bytes']
+            or (receipt_size is not None and receipt_size > capacity['max_sql_value_bytes'])):
+        raise ValueError('original bounded actions missing or retired before terminal evidence')
+    result = []
+    for raw, state, receipt in conn.execute('SELECT action_json,dispatch_state,receipt_json '
+            'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
+        action = json.loads(raw, object_pairs_hook=unique_keys)
+        identity = action['identity']; command = action['command']
+        if (not equal(identity['sandbox'], sandbox) or not equal(identity['operation'], op)
+                or not equal(identity['owner'], expected_identity['owner'])
+                or not equal(identity['protocol_version'], expected_identity['protocol_version'])
+                or not equal(identity['generation'], expected_identity['generation'])
+                or not equal(identity['attempt'], command['attempt'])):
+            raise ValueError('terminal observation action has a foreign complete identity')
+        result.append((action, state, None if receipt is None else
+                       json.loads(receipt, object_pairs_hook=unique_keys)))
+    return result
 
 
 class _AwaitTerminal(Exception):
@@ -116,6 +143,11 @@ class CaptureHandoffProbe:
         runtime.services.wait_ready(timeout=min(remaining(deadline), 900), for_admission=False)
         return dict(stage=self.stage, armed=True, public_completion=False)
 
+
+    def _cut_exit_code(self):
+        return 86
+
+
     def _save_file(self, name):
         value, digest, identity = gate_json(self.path / name,
             16384 if name == 'observation.json' else 1024, directory_fd=self.fd)
@@ -138,7 +170,10 @@ class CaptureHandoffProbe:
             if (digest, identity) != expected:
                 raise ValueError('original sealed measurement gate file changed')
 
-    def _read(self, deadline):
+    def _read(self, deadline, *, current_version=None, extra=None, require_nonterminal=False):
+        expected_version = self.accepted['accepted_version'] if current_version is None else current_version
+        if type(expected_version) is not int or not 0 < expected_version < 2**64:
+            raise ValueError('one exact current version required')
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
         identity = (database.stat().st_dev, database.stat().st_ino)
@@ -155,9 +190,15 @@ class CaptureHandoffProbe:
                 raise ValueError('original inbox checksum differs')
             inbox = json.loads(raw, object_pairs_hook=unique_keys)
             sessions = [s for s in inbox['sessions'] if s['id'] == self.accepted['session']]
-            if len(sessions) != 1 or sessions[0]['current_version'] != self.accepted['accepted_version']:
+            if len(sessions) != 1 or not equal(sessions[0]['current_version'], expected_version):
                 raise ValueError('exact current accepted session required')
-            entries = [e for e in sessions[0]['entries'] if
+            session = sessions[0]
+            if require_nonterminal and (
+                    session['terminal'] is not False or any(
+                        type(version) is not int or not 0 < version <= expected_version
+                        for version in (entry['intent']['accepted_version'] for entry in session['entries']))):
+                raise ValueError('original Host inbox must remain nonterminal at the observed version')
+            entries = [e for e in session['entries'] if
                 e['intent']['accepted_version'] == self.accepted['accepted_version']
                 and e['intent']['request']['binding']['key'] == self.accepted['key']]
             if len(entries) != 1 or entries[0]['local_operation'] is None:
@@ -167,7 +208,7 @@ class CaptureHandoffProbe:
             if (binding['session'] != self.accepted['session']
                     or binding['node'] != self.runtime.services.host_configs[0]['inbox']['node']):
                 raise ValueError('accepted intent differs from original session/node')
-            local = sessions[0]['local']
+            local = session['local']
             if any(local[k] != self.prior['local'][k] for k in ('sandbox', 'owner')):
                 raise ValueError('original public/native mapping changed')
             ident = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
@@ -185,13 +226,18 @@ class CaptureHandoffProbe:
             cap = self.runtime.services.host_configs[0]['native']['maintenance']['capacity']['max_sql_value_bytes']
             if any(len(row[0]) > cap or (row[2] is not None and len(row[2]) > cap) for row in rows):
                 raise ValueError('original outbox exceeds configured value bound')
-            actions = [(json.loads(raw, object_pairs_hook=unique_keys), state,
-                        None if receipt is None else json.loads(receipt, object_pairs_hook=unique_keys))
-                       for raw, state, receipt in rows]
+            actions = []
+            for raw, state, stored_receipt in rows:
+                receipt = None if stored_receipt is None else json.loads(stored_receipt, object_pairs_hook=unique_keys)
+                if receipt is None and stored_receipt is not None:
+                    raise ValueError('stored outbox receipt cannot be JSON null')
+                actions.append((json.loads(raw, object_pairs_hook=unique_keys), state, receipt))
             records = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
+            additional = extra(conn, local, capacity) if extra is not None else None
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during boundary observation')
-        return entry, records, actions
+        result = entry, records, actions
+        return result if extra is None else (*result, additional)
 
     def _original_action(self, actions, entry):
         command = STAGES[self.stage][1]
@@ -362,6 +408,7 @@ class CaptureHandoffProbe:
                     action_sha256=hashlib.sha256(json.dumps(self.action, sort_keys=True,
                         separators=(',', ':')).encode()).hexdigest(), public_completion=False)
 
+
     def _prepare_candidate_state(self, deadline):
         remaining(deadline)
         if (self.stage != 'restore-prepare-destroy' or self.pidfd is None
@@ -398,6 +445,10 @@ class CaptureHandoffProbe:
         if (self.stage != 'restore-prepare-destroy' or self.accepted is None
                 or self.terminal_accepted is not None or not self.candidate_paused):
             raise ValueError('one paused original Prepare and one public Destroy required')
+        self._bind_next_destroy(accepted)
+
+    def _bind_next_destroy(self, accepted):
+        """Shared full public successor binding; callers supply their own cut facts."""
         if (type(accepted) is not dict or set(accepted) != {'session', 'key', 'accepted_version'}
                 or accepted != self.client.current_acceptance
                 or accepted['session'] != self.accepted['session']
@@ -413,6 +464,10 @@ class CaptureHandoffProbe:
     def _terminal_entries(self, inbox):
         if self.stage != 'restore-prepare-destroy' or self.terminal_accepted is None:
             raise ValueError('terminal-specific original acceptance required')
+        return self._terminal_entries_for(inbox, self.restore_entry)
+
+    def _terminal_entries_for(self, inbox, original_entry, *, require_admitted=True):
+        """The same immutable original entry and complete accepted Destroy relation."""
         accepted = self.terminal_accepted
         sessions = [row for row in inbox['sessions'] if row['id'] == self.accepted['session']]
         if len(sessions) != 1:
@@ -422,15 +477,15 @@ class CaptureHandoffProbe:
             raise _AwaitTerminal('public Destroy has not reached the original Host session')
         if session['current_version'] != accepted['accepted_version'] or session['terminal'] is not True:
             raise ValueError('another current Host version or nonterminal state')
-        original = [entry for entry in session['entries'] if entry['intent'] == self.restore_entry['intent']]
+        original = [entry for entry in session['entries'] if entry['intent'] == original_entry['intent']]
         terminal = [entry for entry in session['entries'] if
             entry['intent']['accepted_version'] == accepted['accepted_version']
             and entry['intent']['request']['binding']['key'] == accepted['key']]
-        if (len(original) != 1 or original[0] != self.restore_entry or len(terminal) != 1
+        if (len(original) != 1 or original[0] != original_entry or len(terminal) != 1
                 or any(session['local'][k] != self.prior['local'][k] for k in ('sandbox', 'owner'))):
             raise ValueError('original Resume, public Destroy or native mapping changed')
         entry = terminal[0]; intent = entry['intent']; binding = intent['request']['binding']
-        prior = self.restore_entry['intent']
+        prior = original_entry['intent']
         if (intent['request']['operation'] != {'kind': 'destroy'}
                 or binding['session'] != self.accepted['session']
                 or binding['node'] != prior['request']['binding']['node']
@@ -438,36 +493,15 @@ class CaptureHandoffProbe:
                 or binding['expected'] != {'state': 'version', 'version': self.accepted['accepted_version']}
                 or intent['center'] != prior['center'] or intent['retention'] != prior['retention']):
             raise ValueError('complete original Destroy intent differs from the accepted successor')
-        if entry['local_operation'] is None:
+        if require_admitted and entry['local_operation'] is None:
             raise _AwaitTerminal('Host received Destroy but native Kill is not yet admitted')
         return original[0], entry, session['local']
 
     def _terminal_outbox(self, conn, local, operation, capacity):
-        native = self.runtime.services.native_pools[0]
-        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-        op = 'op-' + native['namespace'] + '-' + str(local['sandbox']) + '-' + str(operation)
-        count, largest, receipt_size = conn.execute(
-            'SELECT count(*),max(length(action_json)),max(length(receipt_json)) FROM outbox '
-            'WHERE sandbox_id=? AND operation_id=?', (sandbox, op)).fetchone()
-        if (not 0 < count <= capacity['max_sql_rows'] or largest > capacity['max_sql_value_bytes']
-                or (receipt_size is not None and receipt_size > capacity['max_sql_value_bytes'])):
-            raise ValueError('original bounded actions missing or retired before terminal evidence')
-        result = []
-        for raw, state, receipt in conn.execute('SELECT action_json,dispatch_state,receipt_json '
-                'FROM outbox WHERE sandbox_id=? AND operation_id=? ORDER BY id', (sandbox, op)):
-            action = json.loads(raw, object_pairs_hook=unique_keys)
-            identity = action['identity']; command = action['command']
-            if (identity['sandbox'] != sandbox or identity['operation'] != op
-                    or identity['owner'] != self.action['identity']['owner']
-                    or identity['protocol_version'] != self.action['identity']['protocol_version']
-                    or identity['generation'] != self.action['identity']['generation']
-                    or identity['attempt'] != command['attempt']):
-                raise ValueError('terminal observation action has a foreign complete identity')
-            result.append((action, state, None if receipt is None else
-                           json.loads(receipt, object_pairs_hook=unique_keys)))
-        return result
+        return terminal_outbox(self.runtime, conn, local, operation, capacity,
+                               self.action['identity'])
 
-    def _read_terminal(self, deadline):
+    def _read_terminal(self, deadline, *, extra=None):
         """Separate terminal-only SQL snapshot; the five old stages stay strict."""
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
@@ -484,22 +518,29 @@ class CaptureHandoffProbe:
             if hashlib.sha256(raw).digest() != checksum:
                 raise ValueError('original terminal inbox checksum differs')
             original, terminal, local = self._terminal_entries(json.loads(raw, object_pairs_hook=unique_keys))
-            sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
-            size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
-                raise ValueError('original native terminal row missing or retired before evidence')
-            raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
-            state = json.loads(raw, object_pairs_hook=unique_keys)
-            if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
-                raise ValueError('original native terminal owner changed')
+            state = self._read_native(conn, local, capacity)
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
-            extra = self._terminal_extra(conn, local, capacity)
+            additional = self._terminal_extra(conn, local, capacity)
+            if extra is not None:
+                additional.update(extra(conn, local, terminal, capacity))
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
-                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **extra)
+                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **additional)
+
+    def _read_native(self, conn, local, capacity):
+        native = self.runtime.services.native_pools[0]
+        sandbox = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
+        size = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        if size is None or not 0 < size[0] <= capacity['max_sql_value_bytes']:
+            raise ValueError('original native terminal row missing or retired before evidence')
+        raw, owner = conn.execute('SELECT state_blob,owner_id FROM sandboxes WHERE sandbox_id=?', (sandbox,)).fetchone()
+        state = json.loads(raw, object_pairs_hook=unique_keys)
+        if owner != self.action['identity']['owner'] or state['owner'] != local['owner']:
+            raise ValueError('original native terminal owner changed')
+        return state
 
     def _terminal_extra(self, conn, local, capacity):
         """Optional read-only facts in the SAME original SQL snapshot."""
@@ -520,7 +561,7 @@ class CaptureHandoffProbe:
         if state in ('ready', 'dispatched') and receipt is None:
             return None
         if (state != 'receipted' or type(receipt) is not dict
-                or receipt['identity'] != action['identity']):
+                or not equal(receipt['identity'], action['identity'])):
             raise ValueError('complete original action receipt required')
         outcome = receipt['outcome']
         if outcome['status'] == 'unknown':
@@ -528,8 +569,8 @@ class CaptureHandoffProbe:
         if outcome['status'] != 'observed_success':
             raise ValueError('original action did not have an observed successful result')
         observation = outcome['details']
-        if (observation['resource'] != action['identity']['resource']
-                or observation['command'] != action['command']['logical']['command']
+        if (not equal(observation['resource'], action['identity']['resource'])
+                or not equal(observation['command'], action['command']['logical']['command'])
                 or set(observation['result']) != {result_kind}):
             raise ValueError('original command-specific receipt resource or kind differs')
         return observation['result'][result_kind]
@@ -687,6 +728,7 @@ class CaptureHandoffProbe:
                     cleanup_success_pre_sql_exit86=True, cleanup_sql_ack_pending_at_cut=True,
                     original_recovery_resumed=True, public_completion=False, capacity_released=False)
 
+
     def finish(self, deadline):
         if self.stage == 'restore-prepare-destroy':
             raise ValueError('terminal handoff requires recover_after_destroy with the exact Destroy acceptance')
@@ -747,6 +789,7 @@ class CaptureHandoffProbe:
                     self.action['command']['logical']['command']['PrepareVm']['vm']):
             raise ValueError('recovery replaced the original pre-marker loaded candidate')
         return dict(same_loaded_candidate=True, new_load_inferred=False)
+
 
     def cleanup(self):
         """Only after original product GC: retire our exact consumed gate files."""
