@@ -33,7 +33,7 @@ MODULE = 'SandproofUnloadWorldBegin'
 def configuration(parent):
     return dict(
         roots=[START_FROM],
-        include=[ROOT, HIGH_WATER, OWNER, TRANSACTION + '::CommittedWorld', BEHAVIOR],
+        include=[TRANSACTION + '::*::begin', HIGH_WATER, OWNER, TRANSACTION + '::CommittedWorld', BEHAVIOR],
         opaque=parent['opaque'],
         namespace=MODULE,
         subdir=MODULE,

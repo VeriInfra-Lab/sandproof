@@ -38,7 +38,7 @@ def configuration(parent):
     return dict(
         roots=[START_FROM],
         include=[
-            ROOT,
+            WORK + '::*::prepare_lifecycle_source_work',
             CONTROLLER + '::ControllerJournal',
             CRATE + '::journal::Journal',
             TRANSACTION + '::WorldTransaction',

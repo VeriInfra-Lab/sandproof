@@ -244,7 +244,8 @@ bash scripts/python-entry.sh "$package/prepare_started_transaction.py" \
 `Immediate` 参数。输入前沿必须从原 allocator 的 `input` 类型与空作用域读取。
 原 `from_started_transaction` 后续连接使用 #922 的已证结果。
 两个固有方法根的 `--start-from` 使用 Charon 按类型解析的 `Type::method` 路径。
-透明筛选与生成映射仍检查方法的实际 impl 路径及原源文件。
+`--include` 只在原模块中的 impl 段使用通配，并限定原方法名。生成映射须再核对
+完整 impl 路径和原源文件；缺失或 opaque 正文均拒绝。
 
 ```bash
 package=verification/experiments/stage1-protocol/unload-parent-link
