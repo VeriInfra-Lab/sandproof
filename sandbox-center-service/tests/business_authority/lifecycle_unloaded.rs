@@ -21,6 +21,9 @@ mod decoded_resume_terminal;
 #[path = "lifecycle_resume_races.rs"]
 mod resume_races;
 
+#[path = "lifecycle_resume_replay.rs"]
+mod resume_replay;
+
 #[path = "unload_setup.rs"]
 mod setup;
 

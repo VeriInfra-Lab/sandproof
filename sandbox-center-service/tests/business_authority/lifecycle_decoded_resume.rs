@@ -209,7 +209,7 @@ fn reject_changed_intents(
     }
 }
 
-fn durable_block(engine: &Engine) -> (u64, Vec<u8>) {
+pub(super) fn durable_block(engine: &Engine) -> (u64, Vec<u8>) {
     // One original Redis read captures the revision and EXACT payload together.
     // It does not perform an authority confirmation or replace its contract.
     let (revision, bytes): (String, Vec<u8>) = redis::cmd("HMGET")
