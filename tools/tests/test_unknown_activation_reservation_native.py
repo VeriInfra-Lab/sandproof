@@ -111,6 +111,7 @@ class UnknownActivationExecutionTests(unittest.TestCase):
                 (good.replace(b'assertion failed:',b'called Result::unwrap(): CorruptStore'),101),
                 (good.replace(native.ASSERTION,b'SchedulerInput::DispatchPrepare'),101),
                 (good.replace(b'.is_err()',b'.is_ok()'),101),
+                (good.replace(b'.is_err()',b'.is_ok()')+b'\n.is_err()\n',101),
                 (good.replace(native.PROPERTY.encode(),b'other_test'),101),(self.output(False),0)):
             with self.subTest(code=code,output=out),self.assertRaises(ValueError):
                 native.checked_execution(out,b'',code,native.PROPERTY,True,684)

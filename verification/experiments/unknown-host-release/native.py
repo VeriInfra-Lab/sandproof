@@ -63,21 +63,38 @@ def rejection_line(project):
 
 
 def checked_execution(stdout, stderr, code, name, rejected, line, *,
-                      fixture=FIXTURE, assertion=b'release_host_slot(moved,'):
-    text = stdout.decode(errors='replace')
-    status = 'FAILED' if rejected else 'ok'
+                      fixture=FIXTURE, assertion=b'release_host_slot(moved,',
+                      assertion_header=b'assertion failed:'):
+    status = b'FAILED' if rejected else b'ok'
+    name_bytes = name.encode()
+    counts = (b'0', b'1') if rejected else (b'1', b'0')
+    runs = list(re.finditer(rb'^running ([0-9]+) tests?$', stdout, re.M))
+    tests = list(re.finditer(rb'^test (\S+) \.\.\. (ok|FAILED|ignored)$', stdout, re.M))
+    summaries = list(re.finditer(
+        rb'^test result: (ok|FAILED)\. ([0-9]+) passed; ([0-9]+) failed; ([0-9]+) ignored;',
+        stdout, re.M))
     if (code != (101 if rejected else 0)
-            or re.findall(r'^test (\S+) \.\.\. (ok|FAILED|ignored)$', text, re.M) != [(name, status)]
-            or 'running 1 test\n' not in text
-            or f'{0 if rejected else 1} passed; {1 if rejected else 0} failed; 0 ignored;' not in text):
+            or [row.groups() for row in runs] != [(b'1',)]
+            or [row.groups() for row in tests] != [(name_bytes, status)]
+            or [row.groups() for row in summaries] != [(status, *counts, b'0')]
+            or not runs[0].start() < tests[0].start() < summaries[0].start()):
         raise ValueError('The exact original assertion did not produce the required result')
-    if rejected:
-        combined = stdout + stderr
-        location = (str(fixture) + ':' + str(line) + ':').encode()
-        if (b'panicked at ' not in combined or location not in combined
-                or b'assertion failed:' not in combined
-                or assertion not in combined):
-            raise ValueError('Wrong implementation failed outside the original rejection assertion')
+    if not rejected:
+        return None
+
+    panic_header = re.compile(
+        rb"^thread '([^'\r\n]+)'(?: \([0-9]+\))? panicked at ([^\r\n]+):([0-9]+):[1-9][0-9]*:$",
+        re.M)
+    panics = list(panic_header.finditer(stdout))
+    if (len(panics) != 1 or panic_header.search(stderr)
+            or panics[0].groups() != (name_bytes, str(fixture).encode(), str(line).encode())
+            or not tests[0].end() < panics[0].start() < summaries[0].start()):
+        raise ValueError('Wrong implementation failed outside the original rejection assertion')
+    captured = stdout[panics[0].end() + 1:summaries[0].start()]
+    message = re.split(rb'\n(?:\n|note: |failures:)', captured, maxsplit=1)[0]
+    if not message.startswith(assertion_header) or assertion not in message:
+        raise ValueError('Wrong implementation failed outside the original rejection assertion')
+    return message
 
 
 def checked_binary(data, project, target, *, package_dir=PACKAGE_DIR, crate=CRATE):

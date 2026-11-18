@@ -64,6 +64,30 @@ class UnknownReleaseExecutionTests(unittest.TestCase):
         native.checked_execution(self.output(False), b'', 0, native.PROPERTY, False, 170)
         native.checked_execution(self.output(True), b'', 101, native.PROPERTY, True, 170)
 
+    def test_rejection_binds_one_panic_thread_location_and_assertion(self):
+        original = self.output(True)
+        header, message = original.split(b'\nassertion failed: ', 1)
+        assertion, summary = message.split(b'\ntest result: ', 1)
+        expected_thread = ("thread '" + native.PROPERTY + "' panicked").encode()
+        tid_thread = ("thread '" + native.PROPERTY + "' (361) panicked").encode()
+        native.checked_execution(original.replace(expected_thread, tid_thread), b'', 101,
+                                 native.PROPERTY, True, 170)
+
+        summary = b'\ntest result: ' + summary
+        other_panic = b"thread 'other_test' (362) panicked at another.rs:10:5:\nnot the target assertion"
+        location = (str(native.FIXTURE) + ':170:5:').encode()
+        for stdout, stderr in (
+                (original.replace(expected_thread, b"thread 'other_test' panicked"), b''),
+                (header.replace(location, b'another.rs:10:5:') +
+                 b'\nassertion failed: ' + assertion + b'\n\nlocation: ' + location + summary, b''),
+                (header + b'\ncalled Result::unwrap()\n\nassertion failed: ' + assertion + summary, b''),
+                (header + summary, b'assertion failed: ' + assertion),
+                (header + b'\nassertion failed: ' + assertion + b'\n\n' + other_panic + summary, b''),
+                (original, other_panic),
+                (original + summary, b'')):
+            with self.subTest(stdout=stdout, stderr=stderr), self.assertRaises(ValueError):
+                native.checked_execution(stdout, stderr, 101, native.PROPERTY, True, 170)
+
     def test_compile_timeout_skip_zero_tests_and_wrong_panic_are_not_counterexamples(self):
         original = self.output(True)
         for stdout, stderr, code in (

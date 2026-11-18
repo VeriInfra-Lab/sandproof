@@ -88,6 +88,8 @@ class StopGateExecutionTests(unittest.TestCase):
             (bad.replace(b'event: StopVm',b'event: FreezeVm'),101),
             (bad.replace(b'left: Ok(WorkerDecision',b'left: Err(WorkerDecision'),101),
             (bad.replace(b'right: Err(SnapshotNotReady)',b'right: Err(WrongPhase)'),101),
+            (bad.replace(b'right: Err(SnapshotNotReady)',b'right: Err(WrongPhase)')
+             + b'\nright: Err(SnapshotNotReady)\n',101),
             (bad.replace(native.PROPERTY.encode(),b'other_test'),101),(self.output(False),0)):
             with self.subTest(output=out,code=code),self.assertRaises(ValueError):
                 native.checked_execution(out,b'',code,native.PROPERTY,True,405)

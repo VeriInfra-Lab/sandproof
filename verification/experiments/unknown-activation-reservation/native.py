@@ -123,9 +123,9 @@ def rejection_line(project):
 def checked_execution(stdout, stderr, code, name, rejected, line):
     if rejected and name != PROPERTY:
         raise ValueError('Only the original unknown-activation reservation assertion is the counterexample')
-    runner.checked_execution(stdout,stderr,code,name,rejected,line,
+    message = runner.checked_execution(stdout,stderr,code,name,rejected,line,
         fixture=FIXTURE,assertion=ASSERTION)
-    if rejected and b'.is_err()' not in stdout + stderr:
+    if rejected and b'.is_err()' not in message:
         raise ValueError('Require the complete original reservation rejection expression')
 
 

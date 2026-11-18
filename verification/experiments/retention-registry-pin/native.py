@@ -70,9 +70,9 @@ def rejection_line(project):
 def checked_execution(stdout, stderr, code, name, rejected, line):
     if rejected and name != PROPERTY:
         raise ValueError('Only the active-pin window refusal is the counterexample')
-    runner.checked_execution(stdout, stderr, code, name, rejected, line,
+    message = runner.checked_execution(stdout, stderr, code, name, rejected, line,
         fixture=FIXTURE, assertion=ASSERTION)
-    if rejected and b'Err(JournalError::UnresolvedAction)' not in stdout + stderr:
+    if rejected and b'Err(JournalError::UnresolvedAction)' not in message:
         raise ValueError('Require the same original UnresolvedAction contract')
 
 

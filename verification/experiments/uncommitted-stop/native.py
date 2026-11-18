@@ -89,18 +89,13 @@ def checked_execution(stdout, stderr, code, name, rejected, line):
         return runner.checked_execution(stdout, stderr, code, name, False, line)
     # This original Rust assertion is assert_eq!, unlike the older assert!
     # cases. Inspect its real output without rewriting it to the other shape.
-    text = stdout.decode(errors='replace')
-    if (name != PROPERTY or code != 101
-            or re.findall(r'^test (\S+) \.\.\. (ok|FAILED|ignored)$', text, re.M) != [(name, 'FAILED')]
-            or 'running 1 test\n' not in text
-            or '0 passed; 1 failed; 0 ignored;' not in text):
+    if name != PROPERTY:
         raise ValueError('The exact original worker test did not fail as required')
-    combined = stdout + stderr
-    location = (str(FIXTURE)+':'+str(line)+':').encode()
-    if (b'panicked at ' not in combined or location not in combined
-            or b'assertion `left == right` failed' not in combined
-            or not re.search(rb'^\s*left: Ok\(WorkerDecision \{ event: StopVm \{', combined, re.M)
-            or not re.search(rb'^\s*right: Err\(SnapshotNotReady\)\s*$', combined, re.M)):
+    message = runner.checked_execution(stdout, stderr, code, name, True, line,
+        fixture=FIXTURE, assertion=b'event: StopVm {',
+        assertion_header=b'assertion `left == right` failed')
+    if (not re.search(rb'^[ \t]*left: Ok\(WorkerDecision \{ event: StopVm \{', message, re.M)
+            or not re.search(rb'^[ \t]*right: Err\(SnapshotNotReady\)[ \t]*$', message, re.M)):
         raise ValueError('Require the original assertion rejecting an actual successful StopVm decision')
 
 

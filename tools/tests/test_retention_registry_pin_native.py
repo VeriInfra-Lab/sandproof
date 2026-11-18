@@ -108,6 +108,8 @@ class RegistryPinExecutionTests(unittest.TestCase):
             (good.replace(b'assertion failed:', b'called Result::unwrap(): CorruptStore'), 101),
             (good.replace(native.ASSERTION, b'inbox(&journal).sessions.is_empty()'), 101),
             (good.replace(b'Err(JournalError::UnresolvedAction)', b'Err(JournalError::CorruptStore)'), 101),
+            (good.replace(b'Err(JournalError::UnresolvedAction)', b'Err(JournalError::CorruptStore)')
+             + b'\nErr(JournalError::UnresolvedAction)\n', 101),
             (good.replace(native.PROPERTY.encode(), b'other_test'), 101),
             (self.output(False), 0),
         ):
