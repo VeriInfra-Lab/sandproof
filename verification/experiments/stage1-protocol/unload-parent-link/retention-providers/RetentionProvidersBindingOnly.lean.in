@@ -1,0 +1,68 @@
+import RetentionProviderCases
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.ScalarEquality
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetentionProviders
+open Cases
+
+private theorem slot_zero (record : SourceWorkRecord) :
+    Vec.index (core.slice.index.SliceIndexUsizeSlice SourceWorkRecord) (inventory record) 0#usize = .ok record := by
+  change Vec.index_usize (inventory record) 0#usize = .ok record
+  simp [Vec.index_usize, inventory]
+
+private theorem nonempty (record : SourceWorkRecord) : 0#usize < Vec.len (inventory record) := by
+  simp [UScalar.lt_equiv, inventory]
+
+private theorem inside_replacement :
+    retains_record_using (SavedRecordChecksCheckSourceWorkRecordKeys.Blanket keyPort) old (inventory changed) () =
+      .ok true := by
+  have binding : SavedRecordChecksCheckSourceWorkRecordKeys.Blanket.same_binding keyPort changed old = .ok true := by
+    change sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      changed.work.requirement.work_binding old.work.requirement.work_binding = _
+    rw [SourceWorkMatch.Scalars.wire_content_digest_eq]
+    have same : changed.work.requirement.work_binding = old.work.requirement.work_binding := rfl
+    simp [same]
+  have facts : SavedRecordChecksCheckSourceWorkRecordKeys.Blanket.preserves keyPort old changed = .ok true := by
+    change controller.lifecycle_inbox.source_work.retirement.preserves_saved_facts old changed = .ok true
+    rw [SourcePreservation.preserves_exact]
+    simp [SourcePreservation.Expected, SourcePreservation.Preserves,
+      SourcePreservation.Retains, SourcePreservation.RetainsState, old, changed]
+  have hasKey : SavedRecordChecksCheckSourceWorkRecordKeys.Blanket.has_key keyPort () old = .ok true := by
+    simp [SavedRecordChecksCheckSourceWorkRecordKeys.Blanket.has_key,
+      sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes, bind_tc_ok, keyPort]
+  unfold retains_record_using
+  simp only [SavedRecordChecksCheckSourceWorkRecordKeys.Blanket, hasKey, bind_tc_ok, ↓reduceIte]
+  unfold retains_record_using_loop
+  rw [loop]
+  simp only [retains_record_using_loop.body, nonempty, ↓reduceIte, slot_zero,
+    bind_tc_ok, binding, facts, Aeneas.Std.bind_ok]
+
+theorem binding_only_accepts_changed_work :
+    retains_with_saved_keys keyPort (inventory old) (inventory changed) () = .ok true := by
+  have advance : ((0#usize + 1#usize) : Result Usize) = .ok 1#usize := by
+    obtain ⟨actual, returned, post⟩ := WP.spec_imp_exists
+      (Usize.add_bv_spec (x := 0#usize) (y := 1#usize) (by scalar_tac))
+    have same : actual = 1#usize := by scalar_tac
+    simpa only [same] using returned
+  have finished : ¬ 1#usize < Vec.len (inventory old) := by simp [UScalar.lt_equiv, inventory]
+  unfold retains_with_saved_keys retains_inventory_using retains_inventory_using_loop
+  conv_lhs => rw [loop]
+  simp only [retains_inventory_using_loop.body, nonempty, ↓reduceIte, slot_zero,
+    bind_tc_ok, inside_replacement, advance]
+  rw [Aeneas.Std.bind_ok]
+  change loop _ 1#usize = _
+  conv_lhs => rw [loop]
+  simp only [finished, if_false, Aeneas.Std.bind_ok]
+
+theorem binding_only_violates_complete_match :
+    retains_with_saved_keys keyPort (inventory old) (inventory changed) () ≠ .ok (expected changed) := by
+  rw [binding_only_accepts_changed_work, changed_expected]
+  simp
+
+end SandboxModel.Stage1Protocol.SourceRetentionProviders
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.binding_only_accepts_changed_work
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.binding_only_violates_complete_match

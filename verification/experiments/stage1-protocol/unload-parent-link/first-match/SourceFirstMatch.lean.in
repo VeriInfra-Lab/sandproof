@@ -51,7 +51,7 @@ theorem indexed_first {R : Type} (values : Vec R) (select decideOn : R → Bool)
     · rw [atEnd index (by omega)]
       simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index.val)]
 
-theorem record_loop_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+theorem record_loop_refines {R K Check : Type} (checks : Checks R K Check) (known : K → R → Bool)
     (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
     (old : R) (sources : Vec R) (index : Usize) :
     retains_record_using_loop checks old sources index =
@@ -66,7 +66,7 @@ theorem record_loop_refines {R K : Type} (checks : Checks R K) (known : K → R 
       vector_lookup sources i inside, observed.same, observed.facts, add_one i bound next advanced]
     split <;> rfl
 
-theorem record_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+theorem record_refines {R K Check : Type} (checks : Checks R K Check) (known : K → R → Bool)
     (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
     (old : R) (sources : Vec R) (keys : K) :
     retains_record_using checks old sources keys = .ok (retained known sameWork keeps keys sources.val old) := by
@@ -79,7 +79,7 @@ private theorem all_as_first {R : Type} (p : R → Bool) (xs : List R) :
   | nil => rfl
   | cons record rest ih => cases h : p record <;> simp [h, ih]
 
-theorem inventory_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+theorem inventory_refines {R K Check : Type} (checks : Checks R K Check) (known : K → R → Bool)
     (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
     (current sources : Vec R) (keys : K) :
     retains_inventory_using checks current sources keys =
@@ -103,7 +103,7 @@ theorem inventory_refines {R K : Type} (checks : Checks R K) (known : K → R �
 
 /-- Providers keep their existing complete equality contract. The saved-facts
     result is indexed by that same original pair, including the chosen row. -/
-theorem inventory_using_complete_work {R K W : Type} (checks : Checks R K)
+theorem inventory_using_complete_work {R K W Check : Type} (checks : Checks R K Check)
     (work : R → W) (compare : W → W → Result Bool) (full : FullReplayContract compare)
     (known : K → R → Bool) (keeps : R → R → Bool)
     (hasKey : ∀ keys old, checks.has_key keys old = .ok (known keys old))

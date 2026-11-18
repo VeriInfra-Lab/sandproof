@@ -7,9 +7,10 @@ set_option autoImplicit false
 
 namespace SandboxModel.Stage1Protocol.SourceFirstMatch
 
-abbrev Checks (R K : Type) := controller.lifecycle_inbox.source_work.codec.SavedRecordChecks Unit R K
+abbrev Checks (R K : Type) (Check : Type := Unit) :=
+  controller.lifecycle_inbox.source_work.codec.SavedRecordChecks Check R K
 
-structure Observations {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+structure Observations {R K Check : Type} (checks : Checks R K Check) (known : K → R → Bool)
     (sameWork keeps : R → R → Bool) : Prop where
   key : ∀ keys old, checks.has_key keys old = .ok (known keys old)
   same : ∀ next old, checks.same_work next old = .ok (sameWork next old)

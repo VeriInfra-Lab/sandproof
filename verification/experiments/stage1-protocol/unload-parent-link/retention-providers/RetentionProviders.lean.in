@@ -1,0 +1,48 @@
+import SourceFirstMatch
+import RetentionProviderCases
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Core
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetentionProviders
+
+/-- Both business providers consume the same generated SourceWorkRecord. Only
+    the response of the caller's existing key lookup is still an input. -/
+theorem original_providers_refine_retention {Keys Check : Type} (check : SavedKeyCheck Check Keys)
+    (known : Keys → Cases.Binding → Bool)
+    (keyResponse : ∀ keys binding, check.contains keys binding = .ok (known keys binding))
+    (current sources : Vec SourceWorkRecord) (keys : Keys) :
+    retains_with_saved_keys check current sources keys = .ok (current.val.all
+      (SourceFirstMatch.retained (fun ks old => known ks old.work.requirement.work_binding)
+        (SourceFirstMatch.completeMatch SourceWorkRecord.work) SourcePreservation.Expected keys sources.val)) := by
+  unfold retains_with_saved_keys
+  apply SourceFirstMatch.inventory_using_complete_work
+    (SavedRecordChecksCheckSourceWorkRecordKeys.Blanket check) SourceWorkRecord.work
+    SourceWork.Insts.CoreCmpPartialEqSourceWork.eq SourceWorkMatch.full_derived_contract
+  · intro ks old
+    simpa [SavedRecordChecksCheckSourceWorkRecordKeys.Blanket,
+      SavedRecordChecksCheckSourceWorkRecordKeys.Blanket.has_key,
+      sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes, bind_tc_ok] using
+      keyResponse ks old.work.requirement.work_binding
+  · intro _ _
+    rfl
+  · intro old next
+    exact SourcePreservation.preserves_exact old next
+
+open Cases in
+theorem retains_unchanged : retains_with_saved_keys keyPort (inventory old) (inventory old) () = .ok true := by
+  rw [original_providers_refine_retention keyPort known (fun _ _ => rfl)]
+  exact congrArg Result.ok unchanged_expected
+
+open Cases in
+theorem rejects_changed_work : retains_with_saved_keys keyPort (inventory old) (inventory changed) () = .ok false := by
+  rw [original_providers_refine_retention keyPort known (fun _ _ => rfl)]
+  exact congrArg Result.ok changed_expected
+
+end SandboxModel.Stage1Protocol.SourceRetentionProviders
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.original_providers_refine_retention
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.retains_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.rejects_changed_work
