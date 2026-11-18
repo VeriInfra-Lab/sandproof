@@ -105,9 +105,9 @@ def original_backing(runtime, acceptance, rows):
     return matches[0]
 
 
-def stop_is_registered(conn, stop, capacity):
+def action_is_registered(conn, action, capacity):
     """Bind the action's canonical SQL identifier to its full logical command."""
-    logical = stop['identity']['logical_action']
+    logical = action['identity']['logical_action']
     match = re.fullmatch(r'effect-([1-9][0-9]{0,18})', logical) if type(logical) is str else None
     if match is None or int(match[1]) >= 2**63:
         raise ValueError('original canonical SQL logical action identifier required')
@@ -118,7 +118,7 @@ def stop_is_registered(conn, stop, capacity):
     ).fetchone()
     if row is None:
         raise ValueError('bounded original logical effect row required')
-    return equal(json.loads(row[0], object_pairs_hook=unique_keys), stop['command']['logical'])
+    return equal(json.loads(row[0], object_pairs_hook=unique_keys), action['command']['logical'])
 
 
 def pending_stop_facts(runtime,conn,local,capacity):
@@ -136,7 +136,7 @@ def pending_stop_facts(runtime,conn,local,capacity):
     if row is None or row[0]!='tenant-'+str(local['owner']):raise ValueError('original lifetime owner required')
     lifetime=dict(zip(('started_at_ms','end_at_ms','max_end_at_ms','startup_deadline_ms'),row[1:],strict=True))
     for value in lifetime.values():_u64(value)
-    registered = len(stops) == 1 and stop_is_registered(conn, stops[0], capacity)
+    registered = len(stops) == 1 and action_is_registered(conn, stops[0], capacity)
     return dict(global_pending_stops=stops,lifetime=lifetime,logical_action_registered=registered)
 
 
@@ -220,10 +220,13 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         """Re-read the original cut on either side of the public Destroy."""
         deadline = min(deadline, self.deadline)
         self._configuration()
-        entry, rows, actions = self._read(deadline)
+        entry, rows, actions, registered = self._read(
+            deadline, extra=lambda conn, _local, capacity: action_is_registered(conn, self.action, capacity))
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
             raise ValueError('original Unload or complete Freeze changed at public Destroy')
+        if not registered:
+            raise ValueError('original Freeze logical registration differs at public Destroy')
         if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
                for saved, _, _ in actions):
             raise ValueError('original Unload outbox contains a capture action at public Destroy')
@@ -236,6 +239,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
                     unload_accepted_version=entry['intent']['accepted_version'],
                     freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
+                    freeze_logical_action_registered=registered,
                     capture_outbox_actions_absent=True)
 
     def _source_state(self,deadline):
