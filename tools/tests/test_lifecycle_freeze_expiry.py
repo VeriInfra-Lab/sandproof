@@ -484,6 +484,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
         for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','ledger','pin','material','commit'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
+                endpoint=original.controlled_frozen_endpoint(p)
                 stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
                 accepted=p.observe_expiry(p.deadline)['acceptance'];p._bind_destroy(accepted)
                 snapshot=copy.deepcopy(f.snapshot)
@@ -519,11 +520,14 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     sent.assert_called_once_with(p.pidfd,frozen.signal.SIGCONT)
                     self.assertTrue(p.continue_sent);self.assertFalse(p.hold_source_process)
                     self.assertEqual(p.response_restore_snapshot,snapshot)
+                    self.assertEqual(p.response_restore_endpoint,endpoint.return_value)
+                    endpoint.assert_called_once_with(p.deadline)
                     self.assertEqual(snapshot['original_actions'],f.snapshot['original_actions'])
                     self.assertEqual(snapshot['global_pending_stops'],[])
                 else:
                     with self.assertRaises(ValueError):p._terminal_manager_started(p.deadline)
                     sent.assert_not_called();self.assertFalse(p.continue_sent)
+                    endpoint.assert_not_called()
                     self.assertTrue(p.hold_source_process)
                 sleep.assert_called_once();self.assertFalse(p.stop_released)
                 self.assertEqual([call.kwargs['extra'] for call in p._read_terminal.call_args_list],

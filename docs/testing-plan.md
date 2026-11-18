@@ -508,6 +508,10 @@ Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源�
 `native_kill_ledger` 核对沙箱、owner、完整当前操作和输入运行代。状态允许
 `Pending` 或 `OutcomeUnknown`，结果必须为空。账本缺失或不一致时保留首错和
 原 VMM 暂停现场。真实自动到期的有序分支也使用这个检查。
+取得原 Kill 快照后、发送 `SIGCONT` 前，再只读核对首次 Paused 回复的原 VMM 端点，
+随后确认同一 pidfd 仍处于暂停持有状态。两条有序场景把通过的设备号、inode 和 UID
+记为 `original_vmm_endpoint_before_response_restored`。端点不一致时仍保留已经取得的
+Kill 快照并停止编排。这里使用只读端点元数据和进程状态，恢复应答仍由后续 API 检查提供。
 核对通过后，若发送 `SIGCONT` 或后续等待 Stop 失败，两条有序场景的失败报告均保留
 `terminal_acceptance_before_response_restored`，包括原 Kill 账本。报告仍记录首错及
 信号是否成功发出、Stop 门是否放行。信号发出不表示 VMM 已应答或产品已释放容量。

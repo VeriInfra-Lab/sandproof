@@ -117,8 +117,9 @@ def pending_pause(f):
                 current_operation=dict(id=4, epoch=3, kind='Pause', status='Pending'))
 
 
-def ordered_kill_journal(f):
-    path = freeze_window_journal(f)
+def ordered_kill_journal(f, path=None):
+    if path is None:
+        path = freeze_window_journal(f)
     raw = json.dumps(f.inbox).encode()
     fence = f.snapshot['terminal_actions'][0][0]
     ledger = f.snapshot['native_kill_ledger']
@@ -138,6 +139,13 @@ def ordered_kill_journal(f):
         conn.execute('INSERT INTO sandbox_lifetimes VALUES(?,?,?,?,?,?)',
                      (f.probe.config['sandbox'], fence['identity']['owner'], 900, 1000, 1100, 1000))
     return path
+
+
+def controlled_frozen_endpoint(probe):
+    probe._observe_frozen_endpoint = Mock(return_value={
+        'jail_identity': [1, 20], 'socket_identity': [1, 30], 'uid': 400,
+    })
+    return probe._observe_frozen_endpoint
 
 
 class FrozenFactsTests(unittest.TestCase):
@@ -271,7 +279,7 @@ class FrozenFactsTests(unittest.TestCase):
             replacement['identity']['logical_action'] = 'effect-17'
             with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                     patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 first = p.observe_destroy_window(p.deadline)
                 self.assertEqual(first['freeze_identity'], f.freeze['identity'])
                 self.assertEqual(first['unload_accepted_version'], 4)
@@ -337,7 +345,7 @@ class FrozenFactsTests(unittest.TestCase):
             logical = f.freeze['command']['logical']
             capacity = f.runner.services.host_configs[0]['native']['maintenance']['capacity']
             with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
 
                 def replace_after_outbox_read(reader, _config, _deadline):
@@ -383,7 +391,7 @@ class FrozenFactsTests(unittest.TestCase):
             freeze_window_journal(f)
             with patch.object(capture, 'checked_source_records', return_value=f.rows) as records, \
                     patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 held.assert_called_once()
 
@@ -424,7 +432,7 @@ class FrozenFactsTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as writer, \
                     patch.object(capture, 'checked_source_records', return_value=f.rows), \
                     patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 for variant in (
                         dict(original, terminal=True),
@@ -449,7 +457,7 @@ class FrozenFactsTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as writer, \
                     patch.object(capture, 'checked_source_records', return_value=f.rows), \
                     patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 for field, value in (
                         ('terminal', True), ('phase', 'Paused'), ('owner', 1.0), ('epoch', 4),
@@ -472,7 +480,7 @@ class FrozenFactsTests(unittest.TestCase):
             p = f.probe
             path = freeze_window_journal(f)
             with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held, \
-                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
                 self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
 
                 def record_terminal_on_another_connection(reader, _config, _deadline):
@@ -749,52 +757,106 @@ class OriginalUnixPauseTests(unittest.TestCase):
             self.assertEqual(result['peer_pid'],os.getpid());self.assertEqual(result['state'],'Paused')
             self.assertFalse(result['execution_authority']);self.assertEqual(len(seen),1);self.assertTrue(seen[0].startswith(b'GET / HTTP/1.1'))
 
+    def frozen_probe(self, runner, prior):
+        native = runner.services.native_pools[0]
+        base = Path(native['chroot_base'])
+        jail = base / 'firecracker' / prior['source']['resource_id'] / 'root'
+        f = fixture(base)
+        p = f.probe
+        p.runtime.services.native_pools[0].update(native)
+        p.prior['source'] = prior['source']
+        p.prior['context']['position'] = prior['context']['position']
+        p.frozen = frozen.paused_source(p.runtime, p.prior, p.deadline)
+        return f, jail
+
+    @contextmanager
+    def replaced_endpoint(self, jail, change):
+        socket_path = jail / 'api.socket'
+        if change == 'jail':
+            old_jail = jail.with_name('original-root')
+            jail.rename(old_jail)
+            jail.mkdir()
+            (old_jail / socket_path.name).rename(socket_path)
+            yield
+        elif change == 'socket':
+            socket_path.rename(jail / 'original.socket')
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as replacement:
+                descriptor = os.open(jail, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    replacement.bind(f'/proc/self/fd/{descriptor}/api.socket')
+                finally:
+                    os.close(descriptor)
+                yield
+        else:
+            yield
+
     def test_destroy_window_rejects_an_endpoint_replaced_after_the_paused_reply(self):
         for change in ('socket', 'jail'):
             with self.subTest(change=change), self.endpoint() as (runner, prior, seen):
-                native = runner.services.native_pools[0]
-                base = Path(native['chroot_base'])
-                jail = base / 'firecracker' / prior['source']['resource_id'] / 'root'
-                f = fixture(base)
+                f, jail = self.frozen_probe(runner, prior)
                 p = f.probe
-                p.runtime.services.native_pools[0].update(native)
-                p.prior['source'] = prior['source']
-                p.prior['context']['position'] = prior['context']['position']
                 freeze_window_journal(f)
-                p.frozen = frozen.paused_source(p.runtime, p.prior, p.deadline)
-
                 with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                         patch.object(p, '_check_source_hold'), \
                         patch.object(frozen.socket, 'socket', side_effect=AssertionError('unexpected VMM connection')):
                     before = p.observe_destroy_window(p.deadline)
                     self.assertEqual(p.observe_destroy_window(p.deadline), before)
 
-                old_jail = jail.with_name('original-root')
-                socket_path = jail / 'api.socket'
-                if change == 'jail':
-                    jail.rename(old_jail)
-                    jail.mkdir()
-                    (old_jail / socket_path.name).rename(socket_path)
-                else:
-                    socket_path.rename(jail / 'original.socket')
-                with ExitStack() as stack:
-                    if change == 'socket':
-                        replacement = stack.enter_context(socket.socket(socket.AF_UNIX, socket.SOCK_STREAM))
-                        descriptor = os.open(jail, os.O_RDONLY | os.O_DIRECTORY)
-                        try:
-                            replacement.bind(f'/proc/self/fd/{descriptor}/api.socket')
-                        finally:
-                            os.close(descriptor)
-                    stack.enter_context(patch.object(capture, 'checked_source_records', return_value=f.rows))
-                    stack.enter_context(patch.object(p, '_check_source_hold'))
-                    stack.enter_context(patch.object(frozen.socket, 'socket',
-                        side_effect=AssertionError('unexpected VMM connection')))
+                with self.replaced_endpoint(jail, change), \
+                        patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                        patch.object(p, '_check_source_hold'), \
+                        patch.object(frozen.socket, 'socket', side_effect=AssertionError('unexpected VMM connection')):
                     with self.assertRaisesRegex(ValueError, 'endpoint differs from the original Paused reply'):
                         p.observe_destroy_window(p.deadline)
                 self.assertEqual(before['original_vmm_endpoint'], {
                     key: p.frozen[key] for key in ('jail_identity', 'socket_identity', 'uid')
                 })
                 self.assertEqual(len(seen), 1)
+
+    def exercise_endpoint_before_continuation(self, change):
+        with self.endpoint() as (runner, prior, seen):
+            f, jail = self.frozen_probe(runner, prior)
+            p = f.probe
+            p.__class__ = frozen.OrderedFreezeDestroyProbe
+            p._source_state = Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+            path = freeze_window_journal(f)
+            accepted = f.accepted(f.destroy)
+            with patch.object(capture, 'checked_source_records', return_value=f.rows):
+                p.client.current_acceptance = f.accepted(f.unload)
+                before = p.observe_destroy_window(p.deadline)
+                p.client.current_acceptance = copy.deepcopy(accepted)
+                self.assertEqual(p.observe_destroy_window(p.deadline), before)
+                p._bind_destroy(accepted)
+                ordered_kill_journal(f, path)
+
+                with self.replaced_endpoint(jail, change), \
+                        patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent, \
+                        patch.object(frozen.socket, 'socket', side_effect=AssertionError('unexpected VMM connection')):
+                    if change:
+                        with self.assertRaisesRegex(ValueError, 'endpoint differs from the original Paused reply'):
+                            p._terminal_manager_started(p.deadline)
+                        sent.assert_not_called()
+                        self.assertFalse(p.continue_sent)
+                        self.assertTrue(p.hold_source_process)
+                        failure = p.terminal_failure_state()
+                        self.assertEqual(failure['destroy'], accepted)
+                        self.assertEqual(failure['terminal_acceptance_before_response_restored']['native_kill_ledger'],
+                                         f.snapshot['native_kill_ledger'])
+                        self.assertNotIn('original_vmm_endpoint_before_response_restored', failure)
+                    else:
+                        p._terminal_manager_started(p.deadline)
+                        sent.assert_called_once_with(p.pidfd, signal.SIGCONT)
+                        self.assertEqual(p.response_restore_endpoint, before['original_vmm_endpoint'])
+            self.assertFalse(p.stop_released)
+            self.assertEqual(len(seen), 1)
+
+    def test_original_endpoint_is_rechecked_after_durable_kill_without_a_connection(self):
+        self.exercise_endpoint_before_continuation(None)
+
+    def test_replaced_endpoint_after_public_acceptance_prevents_continuing_the_source(self):
+        for change in ('socket', 'jail'):
+            with self.subTest(change=change):
+                self.exercise_endpoint_before_continuation(change)
 
     def test_unmodified_kernel_credentials_require_both_vm_uid_and_gid(self):
         with self.endpoint('native-credentials') as (runner,prior,seen):
@@ -858,6 +920,7 @@ class FreezeStopWiringTests(unittest.TestCase):
                 p.runtime.services.processes.start=Mock(side_effect=lambda *_,**__:events.append('start') or host)
                 p.runtime.services.wait_ready=Mock();p._read_terminal=Mock(return_value=f.snapshot)
                 if ordered:
+                    endpoint = controlled_frozen_endpoint(p)
                     accepted_snapshot=copy.deepcopy(f.snapshot)
                     fence=accepted_snapshot['terminal_actions'][0][0]
                     accepted_snapshot['terminal_actions']=[(fence,'ready',None)]
@@ -913,6 +976,8 @@ class FreezeStopWiringTests(unittest.TestCase):
                             self.assertFalse(result['original_pidfd_continued_after_fence'])
                             self.assertTrue(result['source_continued_after_terminal_acceptance'])
                             self.assertEqual(result['terminal_acceptance_before_response_restored'],accepted_snapshot)
+                            self.assertEqual(result['original_vmm_endpoint_before_response_restored'],
+                                             endpoint.return_value)
                             self.assertFalse(result['source_process_hold'])
                         elif responsive:
                             self.assertNotIn('continue',events);self.assertFalse(p.continue_sent)
@@ -941,6 +1006,8 @@ class FreezeStopWiringTests(unittest.TestCase):
                             failed = p.terminal_failure_state()
                             self.assertEqual(failed['terminal_acceptance_before_response_restored'],
                                              accepted_snapshot)
+                            self.assertEqual(failed['original_vmm_endpoint_before_response_restored'],
+                                             endpoint.return_value)
                             self.assertEqual(failed['automatic_terminal'], accepted)
                             self.assertIs(failed['source_os_continue_sent'], True)
                             self.assertIs(failed['stop_gate_release_sent'], False)
@@ -1214,6 +1281,7 @@ class OrderedFreezeTests(unittest.TestCase):
             f = fixture(Path(directory))
             p = f.probe
             p.__class__ = frozen.OrderedFreezeDestroyProbe
+            endpoint = controlled_frozen_endpoint(p)
             accepted = f.accepted(f.destroy)
             p._bind_destroy(accepted)
             self.assertNotIn('terminal_acceptance_before_response_restored', p.terminal_failure_state())
@@ -1233,12 +1301,29 @@ class OrderedFreezeTests(unittest.TestCase):
             failed = p.terminal_failure_state()
             self.assertIn('terminal_acceptance_before_response_restored', failed)
             self.assertEqual(failed['terminal_acceptance_before_response_restored'], expected)
+            self.assertEqual(failed['original_vmm_endpoint_before_response_restored'], endpoint.return_value)
             self.assertEqual(failed['destroy'], accepted)
             for field in ('source_os_continue_sent', 'stop_gate_release_sent',
                           'public_completion', 'capacity_released'):
                 self.assertIs(failed[field], False)
             failed['terminal_acceptance_before_response_restored']['native_kill_ledger']['result'] = 'Destroyed'
             self.assertEqual(p.terminal_failure_state()['terminal_acceptance_before_response_restored'], expected)
+            self.assertTrue(p.hold_source_process)
+
+    def test_source_is_still_held_after_endpoint_observation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            p.__class__ = frozen.OrderedFreezeDestroyProbe
+            endpoint = controlled_frozen_endpoint(p)
+            p._read_terminal = Mock(return_value=f.snapshot)
+            p._source_state = Mock(side_effect=['T', 'S'])
+            with patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
+                with self.assertRaisesRegex(ValueError, 'original VMM response mode changed'):
+                    p._terminal_manager_started(p.deadline)
+                sent.assert_not_called()
+            endpoint.assert_called_once_with(p.deadline)
+            self.assertFalse(p.continue_sent)
             self.assertTrue(p.hold_source_process)
 
     def test_ordered_recovery_rejects_missing_or_different_kill_ledger(self):
@@ -1248,6 +1333,7 @@ class OrderedFreezeTests(unittest.TestCase):
                 f = fixture(Path(directory))
                 p = f.probe
                 p.__class__ = frozen.OrderedFreezeDestroyProbe
+                endpoint = controlled_frozen_endpoint(p)
                 p._bind_destroy(f.accepted(f.destroy))
                 if fault == 'completed-operation':
                     f.snapshot['native']['current_operation']['status'] = 'Succeeded'
@@ -1276,6 +1362,7 @@ class OrderedFreezeTests(unittest.TestCase):
                         p._terminal_manager_started(p.deadline)
                 sent.assert_not_called()
                 p._source_state.assert_not_called()
+                endpoint.assert_not_called()
                 self.assertFalse(p.continue_sent)
                 self.assertFalse(p.stop_released)
 
@@ -1285,6 +1372,7 @@ class OrderedFreezeTests(unittest.TestCase):
             f = fixture(root)
             p = f.probe
             p.__class__ = frozen.OrderedFreezeDestroyProbe
+            controlled_frozen_endpoint(p)
             p._bind_destroy(f.accepted(f.destroy))
             f.snapshot['native']['current_operation']['status'] = 'OutcomeUnknown'
             original = f.snapshot['native_kill_ledger']
@@ -1332,6 +1420,7 @@ class OrderedFreezeTests(unittest.TestCase):
                 f = fixture(Path(directory))
                 p = f.probe
                 p.__class__ = frozen.OrderedFreezeDestroyProbe
+                endpoint = controlled_frozen_endpoint(p)
                 snapshot = copy.deepcopy(f.snapshot)
                 fence = snapshot['terminal_actions'][0][0]
                 snapshot['terminal_actions'] = [(fence, 'ready', None)]
@@ -1365,11 +1454,13 @@ class OrderedFreezeTests(unittest.TestCase):
                     self.assertTrue(p.continue_sent)
                     self.assertFalse(p.hold_source_process)
                     self.assertEqual(p.response_restore_snapshot, snapshot)
+                    endpoint.assert_called_once_with(p.deadline)
                 else:
                     with self.assertRaisesRegex(ValueError, errors[fault]):
                         p._terminal_manager_started(p.deadline)
                     sent.assert_not_called()
                     p._source_state.assert_not_called()
+                    endpoint.assert_not_called()
                     self.assertFalse(p.continue_sent)
                     self.assertTrue(p.hold_source_process)
                     self.assertNotIn('response_restore_snapshot', p.__dict__)
@@ -1383,6 +1474,7 @@ class OrderedFreezeTests(unittest.TestCase):
             with self.subTest(path=path),tempfile.TemporaryDirectory() as directory, \
                     patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
                 f=fixture(Path(directory));p=f.probe;p.__class__=frozen.OrderedFreezeDestroyProbe
+                controlled_frozen_endpoint(p)
                 snapshot=copy.deepcopy(f.snapshot);native=snapshot['native']
                 if path==('both-epochs',):
                     native['epoch']=4.0;native['current_operation']['epoch']=4.0
@@ -1407,6 +1499,7 @@ class OrderedFreezeTests(unittest.TestCase):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,patch.object(frozen.signal,'pidfd_send_signal',create=True) as sent:
                 f=fixture(Path(directory));p=f.probe
                 p.__class__=frozen.OrderedFreezeDestroyProbe
+                controlled_frozen_endpoint(p)
                 p._read_terminal=Mock(return_value=f.snapshot)
                 p._source_state=Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
                 if fault=='wrong-vm':f.snapshot['native']['current_vm']+=1
