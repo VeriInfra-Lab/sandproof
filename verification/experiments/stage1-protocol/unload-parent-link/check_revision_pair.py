@@ -34,7 +34,8 @@ def source_identity(head):
     reviewed = git('show', f'{head}:{revision_capture.REVISION_SOURCE}')
     if hashlib.sha256(reviewed).hexdigest() != revision_capture.REVISION_SOURCE_SHA256:
         raise ValueError('reviewed current readiness source changed')
-    with subprocess.Popen(['git', 'archive', head], cwd=ROOT, stdout=subprocess.PIPE) as process:
+    # The original capture uses umask 077, which also affects tar.umask=user.
+    with subprocess.Popen(['git', 'archive', head], cwd=ROOT, stdout=subprocess.PIPE, umask=0o077) as process:
         archive_digest = hashlib.file_digest(process.stdout, 'sha256').hexdigest()
         if process.wait() != 0:
             raise ValueError('independent Git archive could not be read')

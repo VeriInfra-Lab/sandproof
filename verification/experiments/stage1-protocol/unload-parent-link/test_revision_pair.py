@@ -1,8 +1,10 @@
 """Fixtures for the evidence consumer. These do not run either translator."""
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -146,6 +148,7 @@ class RevisionPairTests(unittest.TestCase):
         repository.mkdir()
         with patch.object(checker, 'ROOT', repository):
             checker.git('init', '-q')
+            checker.git('config', 'tar.umask', 'user')
             source = repository / revision.REVISION_SOURCE
             source.parent.mkdir(parents=True)
             source.write_bytes(b'reviewed source fixture')
@@ -155,7 +158,10 @@ class RevisionPairTests(unittest.TestCase):
             head = checker.git('rev-parse', 'HEAD').decode().strip()
             with patch.object(revision, 'REVISION_SOURCE_SHA256', checker.digest(source)):
                 observed = checker.source_identity(head)
-            self.assertEqual(observed['source_archive_sha256'], hashlib.sha256(checker.git('archive', head)).hexdigest())
+            raw = subprocess.check_output(['git', 'archive', head], cwd=repository, umask=0o077)
+            with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
+                self.assertEqual(archive.getmember(revision.REVISION_SOURCE.as_posix()).mode, 0o600)
+            self.assertEqual(observed['source_archive_sha256'], hashlib.sha256(raw).hexdigest())
             self.assertEqual(observed['tree'], checker.git('rev-parse', 'HEAD^{tree}').decode().strip())
 
 
