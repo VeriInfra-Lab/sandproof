@@ -122,6 +122,12 @@ CenterState 并断言与原 Running Create 状态相同，才允许用同一 ses
 真实 Redis 和受控 Host 检查一次成功、已知 Busy、实际跨期限的迟到 Ready 及未知结果
 停止；不把夹具调整称为旧 CI 超时根因修复或 KVM 验收。
 
+准备夹具另直接检查两个停止边界：首个 Busy 已由原公开方法确认无重放后，
+只丢失随后状态确认的真实 Redis 回执，原 helper 返回 OutcomeUnknown 并保持围栏，
+显式恢复后完整状态及原包络字节不变；受控观察连续两次因原时钟偏差规则返回 Busy，
+原 helper 保留第二次 Busy，最多两次原来源观察，不发第三次或新键。两例均保留原
+200ms 单次预算，不修改准备算法、生产重试策略或实际期限。
+
 E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario unload-receipt-restart`，默认 `normal` 不变；该选择器的精确实机结果按 issue/PR 记录，入口存在不代表验收通过。它装配[一次性回执门](../tests/system/_internal_fault_relay.py)和[恢复观察器](../tests/system/lifecycle_unload_receipt_loss.py)，在原配置封存及服务初始化前接入同证书、固定回环地址的双向 mTLS relay，不改变预算、原库、身份或生产协议。回执门只在原 `/internal/lifecycle/unload-observation` 返回真实完整 `Unloaded` 时，在发送任何回复头之前挂起；`Pending`、`OriginalContinued`、其他路径和错误状态均不算完成回执。并发完成回执必须全文相同，显式丢弃、关闭后端并全部排空才提供证据；超时、503、回复尝试或 relay worker 失败不能代替该证据。原 Create/DK02 行为保持独立。
 
 该选择为原 SDK 后台 RAM 见证启用 relay 的数据回复流式透传，真实回复头/首帧不等待整个命令流结束；控制回执仍走原有限完整解析。两端保留原 mTLS 和固定路径检查，请求及回复仍各限 2 MiB、原 worker 上限 8，每个数据 worker 至多一个取消监视器，流不得延长原场景绝对截止时间。客户端取消、产品原数据撤销或停止夹具时关闭该调用拥有的后端连接；数据中止只表示该数据流结束为未知，不补发第二个 HTTP 回复，也不能作为 Unloaded 证据。此有限测试 relay 不提供通用大文件/无限输出代理。原生 `secure_data` 的 `original_stream_crosses_python_relay_before_eof_and_cancels_backend` 复用原 Rust 流提供方和两段真实 TLS，检查 EOF 前首帧及取消后的真实后端流关闭；该组件不执行来宾命令或 VM。
