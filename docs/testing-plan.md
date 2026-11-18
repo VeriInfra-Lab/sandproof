@@ -647,6 +647,13 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 保留，并运行原正常恢复及再次暂停回归。受控物理提供方的组件结果与实际 LoadPaused
 回执丢失场景分别报告。
 
+`restore-prepare-receipt` 在原 Host 退出 86 后、重开之前，核对同一原 Prepare 的
+SQL 回执未入库、未登记激活动作及原 backing pin 和正材料额度。以原宿主审计中的
+占用位置、原候选 pidfd 和 Unix socket 的对端身份关联有界只读 Firecracker 状态查询，
+记录 `prepare_receipt_pause` 的当前 `Paused`。此时公开仍为 `resuming`，数据和旧凭据
+仍拒绝。重开后先核对原候选和完整位置绑定，再执行来宾连续性检查。该单点状态观察不授予
+执行资格，当前候选的实际运行与最终产品回收另按实机回执记录。
+
 上述有限代表使用同一实机入口的显式 `--scenario`，默认 `normal` 不变：
 
 | 选择值 | 实际到达点与接续要求 |
