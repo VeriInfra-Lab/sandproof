@@ -211,6 +211,32 @@ bash scripts/python-entry.sh "$package/test_prepare_transaction_capture.py"
 登记的原驱动提交。新入口不签发该配对或 [#920](https://github.com/VeriInfra-Lab/sandproof/pull/920)
 的原生验收。
 
+### 已开始事务的原身份核对与候选 World
+
+独立 Lean 根 `UnloadStartedTransaction` 复用 #770 保存的真实
+`WorldTransaction::from_started_transaction`、`CommittedWorld::check_identity` 和
+`WorldTransaction::world`。物化时按既有 [提供方清单](../../create-transaction-link/current/materialization.json)
+逐份校验生成源码和依赖，并将事务文件、原 World 源文件和 Cargo.lock 对回
+integration `f26fc26a3fb6987a18ad69015c56bb99c0748e12`。
+
+- 构造函数在传入事务解引用到的连接上核对版本。生成结果传播原检查的内外层结果。
+- 匹配版本后返回同一原事务、完整 committed 值、候选 World 与输入前沿。
+  通过已登记的 `ownerView` 和真实 `world` 函数可读回该候选，并保留同一原事务的表示。
+- 版本查询仍使用原 `PRAGMA data_version`、无绑定参数和原第一列 I64 回调。
+  已登记的无冲突借用条件下，版本不匹配返回 `CorruptStore`，读取错误保留
+  原 SQLite 错误载荷。失败分支没有返回已构造的事务所有者。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+bash scripts/python-entry.sh "$package/prepare_started_transaction.py" \
+  --output "$new_started_project" --lake-packages "$fixed_lake_packages"
+# 在原重锁和四核预算内构建。注册 Lean 服务检查 plan.json 的全部实际输入。
+(cd "$new_started_project" && lake build UnloadStartedTransaction)
+```
+
+结论从已开始的事务和已提供的候选 World 起步。实际 `BEGIN IMMEDIATE`、缓存来源、
+物理回滚和 #921 新生成视图的借用连接仍由 V5 和对应调用证明提供。
+
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
 ning 在确定的新提交上完成普通检查及相关上游原生原版/错误版/恢复检查；严格按原收据键、
