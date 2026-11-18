@@ -281,7 +281,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('late original Freeze observation names another process')
         return all_rows
 
-    def _stop_barrier(self,snapshot):
+    def _stop_barrier(self,snapshot,*,held_stop=None):
         self._inventory(snapshot);native=snapshot['native'];operation=native['current_operation']
         binding=self.prior['context']['binding']
         _u64(native['epoch'])
@@ -306,6 +306,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                 or not equal(fence['command']['logical']['command'],{'InstallFence':dict(sandbox=sandbox,epoch=epoch,terminal=True)})
                 or not equal(fence['identity']['epoch'],epoch) or epoch<=self.action['identity']['epoch']):
             raise ValueError('generic Stop gate does not name the one exact original terminal Stop')
+        if held_stop is not None and not equal(stop,held_stop):
+            raise ValueError('complete terminal Stop changed while its gate was held')
         observed=self._success_observation(fences[0],'Fence')
         if observed is None:raise _AwaitTerminal('terminal fence not yet successfully observed')
         path=Path(self.runtime.services.native_pools[0]['node_state_dir'])/'fences'/self.config['sandbox']
@@ -340,6 +342,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         after=self.stop_path.lstat()
         if (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino):raise ValueError('Stop gate replaced during connection')
         snapshot=self._read_terminal(deadline);fence=self._stop_barrier(snapshot)
+        held_stop=copy.deepcopy(snapshot['global_pending_stops'][0])
         if pidfd_exited(self.pidfd):raise ValueError('original source exited before Stop release')
         self._check_source_hold(deadline)
         backing=self._backing(snapshot['sources'])
@@ -347,14 +350,14 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if not equal(material,self.backing_material):raise ValueError('original backing files changed before Stop')
         if not callable(observe_peer):raise ValueError('original independent peer progress required')
         progress=observe_peer()
-        self._configuration();again=self._read_terminal(deadline);self._stop_barrier(again)
+        self._configuration();again=self._read_terminal(deadline);self._stop_barrier(again,held_stop=held_stop)
         if not equal(self._responsibilities(again['sources']),self._responsibilities(self.initial_sources)) or pidfd_exited(self.pidfd):
             raise ValueError('original source or responsibilities changed during peer progress')
         self._check_source_hold(deadline)
         if not equal(self.runtime._materials(backing['capture']['full'],backing['capture']),self.backing_material):
             raise ValueError('peer progress changed original frozen backing files')
         paused=self._prepare_source_for_stop(deadline)
-        final=self._read_terminal(deadline);self._stop_barrier(final)
+        final=self._read_terminal(deadline);self._stop_barrier(final,held_stop=held_stop)
         self.before_stop=copy.deepcopy(final);remaining(deadline)
         peer.settimeout(min(2,remaining(deadline)));peer.sendall(b'g');self.stop_released=True;peer.close();self.stop_peer=None;self.recovered=True
         result=dict(public_destroy_reached_host=True,terminal_fence=fence,paused=paused,
@@ -383,6 +386,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         stops=[r for r in snapshot['terminal_actions'] if 'StopVm' in r[0]['command']['logical']['command']]
         cleanups=[r for r in snapshot['terminal_actions'] if 'CleanupVm' in r[0]['command']['logical']['command']]
         if len(stops)!=1 or len(cleanups)!=1 or cleanups[0][1:]!=('dispatched',None):raise ValueError('original Stop and pending Cleanup receipt required')
+        if not equal(stops[0][0],self.before_stop['global_pending_stops'][0]):
+            raise ValueError('Cleanup does not retain the complete Stop released at the gate')
         for row,command in ((stops[0],{'StopVm':dict(expected,epoch=epoch)}),(cleanups[0],{'CleanupVm':expected})):
             if (not equal(row[0]['command']['logical']['command'],command) or not equal(row[0]['identity']['epoch'],epoch)
                     or not equal(row[0]['identity']['resource'],self.action['identity']['resource'])):

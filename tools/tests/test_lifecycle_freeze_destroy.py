@@ -276,7 +276,8 @@ class FrozenFactsTests(unittest.TestCase):
 
     def test_cleanup_needs_original_stop_receipt_kernel_exit_and_pending_cleanup(self):
         for probe_type in (frozen.FreezeDestroyProbe,frozen.UnresponsiveFreezeDestroyProbe):
-            for fault in ('none','pid','start-ticks','stop-pending','no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
+            for fault in ('none','pid','start-ticks','stop-pending','stop-attempt','stop-logical-action',
+                          'no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
                 with self.subTest(probe=probe_type.__name__,fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
                     p.recovered=p.stop_released=True;p.continue_sent=p.continue_source_before_stop
@@ -288,6 +289,13 @@ class FrozenFactsTests(unittest.TestCase):
                     if fault=='stop-pending':
                         s['terminal_actions'][1]=(s['terminal_actions'][1][0],'dispatched',None)
                         s['global_pending_stops']=[copy.deepcopy(f.stop)]
+                    if fault in ('stop-attempt','stop-logical-action'):
+                        action,_,receipt=s['terminal_actions'][1]
+                        if fault=='stop-attempt':
+                            action['identity']['attempt']=action['command']['attempt']=1
+                        else:
+                            action['identity']['logical_action']='effect-13'
+                        receipt['identity']=copy.deepcopy(action['identity'])
                     if fault=='cleanup-saved':s['terminal_actions'][2]=(s['terminal_actions'][2][0],'receipted',{})
                     if fault=='cleanup-epoch':s['terminal_actions'][2][0]['identity']['epoch']+=1
                     if fault=='freeze-missing':s['original_actions']=[]
@@ -300,6 +308,10 @@ class FrozenFactsTests(unittest.TestCase):
                         value=p.assert_terminal_before_gc(p.deadline);self.assertTrue(value['original_source_exited'])
                         self.assertFalse(value['public_completion']);self.assertFalse(value['capacity_released'])
                         p.runtime.services.processes.start.assert_called_once_with('host-0')
+                    elif fault in ('stop-attempt','stop-logical-action'):
+                        with self.assertRaisesRegex(ValueError,'Cleanup does not retain the complete Stop'):
+                            p.assert_terminal_before_gc(p.deadline)
+                        p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
                     else:
                         with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
                         p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
@@ -434,7 +446,9 @@ class OriginalUnixPauseTests(unittest.TestCase):
 class FreezeStopWiringTests(unittest.TestCase):
     def test_actual_stop_socket_is_released_only_after_checks_and_peer_progress(self):
         import lifecycle_freeze_dispatch as dispatched
-        for fault in ('dispatch-none','dispatch-peer-progress','dispatch-global-stop','none','peer-progress','global-stop','automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop',
+        for fault in ('dispatch-none','dispatch-peer-progress','dispatch-global-stop','none','peer-progress','global-stop',
+                      'peer-stop-replacement','final-stop-replacement',
+                      'automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop',
                       'unresponsive-none','unresponsive-peer-progress','unresponsive-global-stop',
                       'ordered-automatic-none','ordered-automatic-peer-progress','ordered-automatic-global-stop',
                       'unresponsive-automatic-none','unresponsive-automatic-peer-progress','unresponsive-automatic-global-stop'):
@@ -482,6 +496,16 @@ class FreezeStopWiringTests(unittest.TestCase):
                     p._read_terminal.side_effect=[accepted_snapshot,f.snapshot,f.snapshot,f.snapshot]
                     p.runtime.services.wait_ready.side_effect=lambda **_:events.append('wait-ready')
                 if fault=='global-stop':f.snapshot['global_pending_stops']=[]
+                if fault in ('peer-stop-replacement','final-stop-replacement'):
+                    replaced=copy.deepcopy(f.snapshot)
+                    stop=replaced['terminal_actions'][1][0]
+                    if fault=='peer-stop-replacement':
+                        stop['identity']['attempt']=stop['command']['attempt']=1
+                        p._read_terminal.side_effect=[f.snapshot,replaced]
+                    else:
+                        stop['identity']['logical_action']='effect-13'
+                        p._read_terminal.side_effect=[f.snapshot,f.snapshot,replaced]
+                    replaced['global_pending_stops']=[copy.deepcopy(stop)]
                 queried=stack.enter_context(patch.object(frozen,'paused_source',side_effect=lambda *_:events.append('paused') or {'original':'paused'}))
                 running=stack.enter_context(patch.object(dispatched,'paused_source',side_effect=lambda *_,**__:events.append('running') or {'state':'Running'}))
                 p._source_state=Mock(side_effect=lambda _: 'S' if responsive or dispatch or p.continue_sent else 'T')
@@ -525,6 +549,13 @@ class FreezeStopWiringTests(unittest.TestCase):
                             self.assertLess(events.index('peer'),events.index('paused'))
                         else:
                             self.assertLess(events.index('peer'),events.index('continue'));self.assertLess(events.index('continue'),events.index('paused'))
+                    elif fault in ('peer-stop-replacement','final-stop-replacement'):
+                        with self.assertRaisesRegex(ValueError,'complete terminal Stop changed'):
+                            recovery(accepted,p.deadline,observe_peer=progress)
+                        self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
+                        self.assertEqual(events.count('peer'),1)
+                        self.assertEqual(p.continue_sent,fault=='final-stop-replacement')
+                        self.assertFalse(p.terminal_failure_state()['capacity_released'])
                     else:
                         with self.assertRaises(ValueError):recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
