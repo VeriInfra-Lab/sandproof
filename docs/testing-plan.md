@@ -347,6 +347,13 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 来源、实际工作器/进程与持久记录，并完成各分支的公开结果和原产品回收。测试控制文件
 仅在原物理完成及产品 GC 后核对原身份退休；未知或失败保留原始证据。
 
+E4 的 [SQLite 登记回归](../controller-service/src/controller/lifecycle_inbox/source_work/tests/end_pipeline.rs)
+在原 Seal 与捕获结束记录已入库后，对同一 `CommitSnapshot` 回执注入实际 SQLite 回滚或
+实际提交后的结果未知。重开须保留原材料和额度。回滚分支没有登记或普通 Stop，未取得
+确切观察时继续保持未知；已提交分支不再次观察。接续时只保留一份原回执历史，普通 Stop
+绑定原 VM，且确认原物理位置释放后才可读到 Unloaded。VMM、文件及释放的输入由受控
+夹具给出，实际材料发布与实机回执仍按 `capture-seal-receipt` 单独核对。
+
 实机 Redis 等待预算通过公共参数 `--redis-operation-timeout-ms` 显式配置，默认 1000，范围 1–60000 毫秒。先定位同步落盘、调度或资源争抢；确认为部署负载与预算不匹配时，才根据证据选择该环境的值，不能因失败直接加大。参数在创建资源前校验，进入原中心配置及其摘要；生命周期报告的 `measurement_identity.redis_operation_timeout_ms` 核对并记录实际值。它不改变 `appendfsync always`、写前后健康检查、未知结果围栏、HTTP 状态断言、请求/场景期限或寿命，也不允许重试未知写入。该值是存储操作的等待配置，不是整个 HTTP 请求的硬墙钟上界；一次查询可包含多次顺序确认，验收须同时检查外层期限。某一环境通过不能说明任意存储负载都满足该预算。
 
 ### CoW 文件与恢复组合

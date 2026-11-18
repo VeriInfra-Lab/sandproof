@@ -2,24 +2,26 @@
 //! No real VMM, writer, descriptor or deletion is established by this suite.
 use super::*;
 use core::workflow::{self, WorkflowStep};
+use rusqlite::params;
 use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{
     LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
 };
 use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
 
+fn successful_receipt(action: &WorkAction<core::EffectId>) -> WorkReceipt<FullEvidence> {
+    WorkReceipt {
+        identity: action.identity.clone(),
+        outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+            resource: action.identity.resource.clone(),
+            command: action.command.command().clone(),
+        }),
+    }
+}
+
 fn success(journal: &mut ControllerJournal, action: &WorkAction<core::EffectId>) {
     journal
-        .complete(
-            &WorkReceipt {
-                identity: action.identity.clone(),
-                outcome: WorkOutcome::ObservedSuccess(FullEvidence {
-                    resource: action.identity.resource.clone(),
-                    command: action.command.command().clone(),
-                }),
-            },
-            &mut NeverCrash,
-        )
+        .complete(&successful_receipt(action), &mut NeverCrash)
         .unwrap();
 }
 fn next_claim(
@@ -142,6 +144,252 @@ fn ordinary_stop_waits_for_persisted_end_and_recovers_at_dispatch_and_receipt() 
             Some(end)
         );
     }
+}
+
+#[test]
+fn capture_registration_commit_unknown_after_actual_rollback() {
+    capture_registration_commit_unknown_recovers_the_same_receipt_before_stop(false);
+}
+
+#[test]
+fn capture_registration_commit_unknown_after_actual_commit() {
+    capture_registration_commit_unknown_recovers_the_same_receipt_before_stop(true);
+}
+
+fn capture_registration_commit_unknown_recovers_the_same_receipt_before_stop(durable: bool) {
+    use core::capture::CaptureCommit;
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let (mut journal, _host, source) = sealed_before_end(&path);
+    let sandbox = source.source_sandbox();
+    let capture = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+    journal
+        .record_lifecycle_capture_request_end(
+            &source.work,
+            &v3::context(),
+            actual_api_end(&capture),
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let commit = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        commit.command.command(),
+        core::Command::CommitSnapshot { .. }
+    ));
+    let receipt = successful_receipt(&commit);
+    let context = journal.host_slot_context(sandbox).unwrap().unwrap();
+    let before = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+    assert!(before.capture_work_end_receipt().unwrap().is_some());
+    assert!(super::super::retirement::material_charge(&before).unwrap() > 0);
+    let sealed = journal
+        .sealed_capture_expectation(&source.work)
+        .unwrap()
+        .unwrap();
+    let key = core::OperationKey {
+        sandbox,
+        operation: before.capture_operation().unwrap(),
+    };
+    let world = journal.world().unwrap();
+    assert_eq!(
+        world.operation_plan(key).unwrap().capture.unwrap().commit(),
+        CaptureCommit::Unknown
+    );
+    assert_capture_registration_receipt(&journal, &commit, None);
+
+    transaction::fail_next_commit(durable);
+    assert!(matches!(
+        journal.complete(&receipt, &mut NeverCrash),
+        Err(JournalError::CommitUncertain(_))
+    ));
+    drop(journal);
+
+    let mut journal = v3::open(&path);
+    assert_eq!(
+        journal.lifecycle_capture_record(sandbox).unwrap(),
+        Some(before.clone())
+    );
+    assert_eq!(journal.host_slot_context(sandbox).unwrap(), Some(context));
+    assert_eq!(
+        journal
+            .committed_capture_expectation(&source.work)
+            .unwrap()
+            .as_ref(),
+        durable.then_some(&sealed)
+    );
+    assert_capture_registration_receipt(&journal, &commit, durable.then_some(&receipt));
+    assert!(
+        journal
+            .lifecycle_unloaded(source.work.request(), &v3::context(), 10)
+            .unwrap()
+            .is_none()
+    );
+
+    recover_capture_registration(&mut journal, &commit, &receipt, &world, durable);
+    let registered = journal.world().unwrap();
+    assert_eq!(
+        registered
+            .operation_plan(key)
+            .unwrap()
+            .capture
+            .unwrap()
+            .commit(),
+        CaptureCommit::Registered
+    );
+    assert_eq!(
+        journal.committed_capture_expectation(&source.work).unwrap(),
+        Some(sealed)
+    );
+    assert_eq!(
+        journal.complete(&receipt, &mut NeverCrash).unwrap(),
+        registered
+    );
+    assert_capture_registration_receipt(&journal, &commit, Some(&receipt));
+
+    finish_registered_capture(
+        &mut journal,
+        &source,
+        &before,
+        context,
+        commit.identity.epoch,
+    );
+}
+
+fn recover_capture_registration(
+    journal: &mut ControllerJournal,
+    commit: &WorkAction<core::EffectId>,
+    receipt: &WorkReceipt<FullEvidence>,
+    before: &core::World,
+    durable: bool,
+) {
+    if !durable {
+        let sandbox = commit.command.command().sandbox();
+        assert_eq!(&journal.world().unwrap(), before);
+        assert_eq!(workflow::next_step(before, sandbox), WorkflowStep::Blocked);
+        assert!(
+            journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            journal.uncertain_actions().unwrap().as_slice(),
+            std::slice::from_ref(commit)
+        );
+        assert_eq!(
+            journal
+                .reconcile_uncertain::<FullEvidence, _>(&mut |_| None)
+                .unwrap(),
+            0
+        );
+        assert_eq!(&journal.world().unwrap(), before);
+        assert_capture_registration_receipt(journal, commit, None);
+    }
+    let mut observations = 0;
+    let resolved = journal
+        .reconcile_uncertain(&mut |action| {
+            assert_eq!(action, commit);
+            observations += 1;
+            Some(receipt.clone())
+        })
+        .unwrap();
+    assert_eq!(resolved, usize::from(!durable));
+    assert_eq!(observations, resolved);
+}
+
+fn finish_registered_capture(
+    journal: &mut ControllerJournal,
+    source: &SourceWorkRecord,
+    before: &SourceWorkRecord,
+    context: crate::HostSlotContext,
+    epoch: core::Epoch,
+) {
+    let sandbox = source.source_sandbox();
+    let stop = next_claim(journal, sandbox).unwrap();
+    assert_eq!(
+        stop.command.command(),
+        &core::Command::StopVm {
+            sandbox,
+            epoch,
+            generation: context.binding.generation,
+            vm: context.binding.vm,
+        }
+    );
+    success(journal, &stop);
+    finish_full_component(journal, source);
+    assert!(
+        journal
+            .lifecycle_unloaded(source.work.request(), &v3::context(), 10)
+            .unwrap()
+            .is_none()
+    );
+    journal
+        .release_host_slot(
+            context,
+            |actual| {
+                assert_eq!(*actual, context);
+                Ok(())
+            },
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let unloaded = journal
+        .lifecycle_unloaded(source.work.request(), &v3::context(), 10)
+        .unwrap()
+        .unwrap();
+    assert_eq!(Some(unloaded.manifest_digest), before.captured_manifest());
+    assert_eq!(
+        Some(unloaded.material_bytes),
+        before.captured_material_bytes()
+    );
+    let after = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+    assert_eq!(
+        after.capture_work_end_receipt().unwrap(),
+        before.capture_work_end_receipt().unwrap()
+    );
+    assert_eq!(
+        super::super::retirement::material_charge(&after).unwrap(),
+        super::super::retirement::material_charge(before).unwrap()
+    );
+}
+
+fn assert_capture_registration_receipt(
+    journal: &ControllerJournal,
+    action: &WorkAction<core::EffectId>,
+    receipt: Option<&WorkReceipt<FullEvidence>>,
+) {
+    let conn = &journal.journal.connection;
+    let (id, state, outbox): (i64, String, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT id, dispatch_state, receipt_json FROM outbox \
+         WHERE sandbox_id=?1 AND logical_action_id=?2 AND attempt=?3",
+            params![
+                action.identity.sandbox.as_str(),
+                action.identity.logical_action.as_str(),
+                i64::try_from(action.identity.attempt).unwrap()
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let mut receipts = conn
+        .prepare("SELECT receipt_json FROM controller_receipt_history WHERE outbox_id=?1 ORDER BY sequence")
+        .unwrap();
+    let history = receipts
+        .query_map([id], |row| row.get::<_, Vec<u8>>(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    let expected = receipt.map(|value| serde_json::to_vec(value).unwrap());
+    assert_eq!(
+        state,
+        if expected.is_some() {
+            "receipted"
+        } else {
+            "dispatched"
+        }
+    );
+    assert_eq!(outbox, expected);
+    assert_eq!(history, expected.into_iter().collect::<Vec<_>>());
 }
 
 #[test]
