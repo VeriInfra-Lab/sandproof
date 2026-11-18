@@ -17,10 +17,20 @@ from tools.system_acceptance import json_file, private_path
 from tools.template_build_guest import equal
 
 MAX_RAW = 64 * 1024**2
+COMPLETION_CONDITIONS = {
+    'create': ('running',),
+    'unload': ('unloaded', 'original_continued'),
+    'resume': ('running', 'state_lost'),
+    'destroy': ('cleaned',),
+}
 
 
 def uint(value):
     return type(value) is int and 0 <= value < 2**64
+
+
+def duration(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
 def checked_resources(report, samples):
@@ -141,22 +151,37 @@ def render(report, samples):
         raise ValueError('exact candidate and original scenario required')
     rows=report['operation_timings']
     if type(rows) is not list or not 1 <= len(rows) <= 128:raise ValueError('bounded original timings required')
-    timing={name:[] for name in ('create','unload','resume','destroy')};incomplete=0
+    timing = {(operation, condition): [] for operation, conditions in COMPLETION_CONDITIONS.items()
+              for condition in conditions}
+    incomplete = 0
     for row in rows:
-        if row['operation'] not in timing or type(row['complete']) is not bool:raise ValueError('original operation timing required')
-        if not row['complete']:incomplete+=1;continue
-        value=row['send_to_public_completion_seconds']
-        if type(value) not in (int,float) or not math.isfinite(value) or value<0:
-            raise ValueError('finite original completion duration required')
-        timing[row['operation']].append(value)
+        if type(row) is not dict or type(row.get('complete')) is not bool:
+            raise ValueError('original operation timing required')
+        key = (row.get('operation'), row.get('completion_condition'))
+        if any(type(value) is not str for value in key) or key not in timing:
+            raise ValueError('original operation and completion condition required')
+        before = row.get('send_to_accept_seconds')
+        after = row.get('accept_to_public_completion_seconds')
+        total = row.get('send_to_public_completion_seconds')
+        if not row['complete']:
+            if (before is not None and not duration(before)) or after is not None or total is not None:
+                raise ValueError('incomplete original operation cannot have a completion duration')
+            incomplete += 1
+            continue
+        if not all(duration(value) for value in (before, after, total)):
+            raise ValueError('finite original acceptance and completion durations required')
+        # The source calculates three float subtractions on monotonic readings.
+        if not math.isclose(before + after, total, rel_tol=0, abs_tol=2 * math.ulp(total)):
+            raise ValueError('original acceptance and completion durations do not add up')
+        timing[key].append(total)
     out=['# 生命周期工程测量','',f'候选：`{candidate}`；场景：`{scenario}`。',
         '',f"资源流：{measurements['samples']} 个样本；覆盖：`{measurements['coverage']}`；"
         f"未知观察：{measurements['unknown_observations']}。",'',
-        '| 操作 | 完成样本数 | p50 秒 | p95 秒 |','|---|---:|---:|---:|']
-    for name,values in timing.items():
+        '| 操作 | 公开终局 | 完成样本数 | p50 秒 | p95 秒 |','|---|---|---:|---:|---:|']
+    for (name, condition), values in timing.items():
         values.sort()
         p50,p95=((f'{values[math.ceil(q*len(values))-1]:.6f}' for q in (.5,.95)) if values else ('未知','未知'))
-        out.append(f'| {name} | {len(values)} | {p50} | {p95} |')
+        out.append(f'| {name} | {condition} | {len(values)} | {p50} | {p95} |')
     out += ['',f'最近秩统计；未完成操作 {incomplete} 项不进入分位数。样本数不支持总体延迟保证。','',
         '| 进程角色/序段 | PID/start | 已观察 CPU 秒差 | 采样 RSS 峰值 MiB | 内核报告 HWM MiB | 有效/未知样本 |',
         '|---|---|---:|---:|---:|---|']
