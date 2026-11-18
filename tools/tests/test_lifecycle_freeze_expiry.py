@@ -481,7 +481,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     self.assertIsNone(p.terminal_accepted);self.assertFalse(p.stop_released)
 
     def test_exact_host_kill_and_backing_required_before_response_without_waiting_for_stop(self):
-        for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','pin','material'):
+        for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','pin','material','commit'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
                 stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
@@ -500,6 +500,11 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                 if fault=='epoch':native['current_operation']['epoch']+=1
                 if fault=='pin':snapshot['sources'][0]['restore']['material_use']=False
                 if fault=='material':p.runtime._materials.return_value={'changed':'backing'}
+                if fault == 'commit':
+                    commit = copy.deepcopy(snapshot['original_actions'][0][0])
+                    commit['identity']['logical_action'] = 'effect-99'
+                    commit['command']['logical']['command'] = {'CommitSnapshot': {}}
+                    snapshot['original_actions'].append((commit, 'ready', None))
                 sent=stack.enter_context(patch.object(frozen.signal,'pidfd_send_signal',create=True))
                 sleep=stack.enter_context(patch.object(frozen.time,'sleep'))
                 def not_yet_host_accepted():

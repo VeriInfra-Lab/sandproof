@@ -1004,6 +1004,64 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    def test_response_stays_held_until_kill_and_original_freeze_outbox_agree(self):
+        errors = {
+            'stale-kill-epoch': 'durable exact original Kill',
+            'replaced-freeze': 'original Freeze missing or replaced',
+            'foreign-freeze-receipt': 'late original Freeze observation names another process',
+            'original-seal': 'scheduled new capture or execution',
+            'terminal-activate': 'scheduled new capture or execution',
+        }
+        for fault in (None, 'matching-freeze-receipt', *errors):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
+                f = fixture(Path(directory))
+                p = f.probe
+                p.__class__ = frozen.OrderedFreezeDestroyProbe
+                snapshot = copy.deepcopy(f.snapshot)
+                fence = snapshot['terminal_actions'][0][0]
+                snapshot['terminal_actions'] = [(fence, 'ready', None)]
+                snapshot['global_pending_stops'] = []
+                native = snapshot['native']
+                if fault == 'stale-kill-epoch':
+                    native['current_operation']['epoch'] = native['epoch'] = f.freeze['identity']['epoch']
+                if fault == 'replaced-freeze':
+                    snapshot['original_actions'][0][0]['identity']['logical_action'] = 'effect-99'
+                if fault in ('matching-freeze-receipt', 'foreign-freeze-receipt'):
+                    source = p.prior['source']
+                    receipt = f.receipt(f.freeze, 'Frozen', dict(
+                        pid=source['pid'] + (fault == 'foreign-freeze-receipt'),
+                        start_ticks=source['start_time_ticks'], boot_id=source['boot_id']))
+                    snapshot['original_actions'][0] = (f.freeze, 'receipted', receipt)
+                if fault == 'original-seal':
+                    seal = copy.deepcopy(f.freeze)
+                    seal['identity']['logical_action'] = 'effect-99'
+                    seal['command']['logical']['command'] = {'SealSnapshot': {}}
+                    snapshot['original_actions'].append((seal, 'ready', None))
+                if fault == 'terminal-activate':
+                    activate = copy.deepcopy(fence)
+                    activate['identity']['logical_action'] = 'effect-99'
+                    activate['command']['logical']['command'] = {'ActivateVm': {}}
+                    snapshot['terminal_actions'].append((activate, 'ready', None))
+                p._read_terminal = Mock(return_value=snapshot)
+                p._source_state = Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+                if fault not in errors:
+                    p._terminal_manager_started(p.deadline)
+                    sent.assert_called_once_with(p.pidfd, signal.SIGCONT)
+                    self.assertTrue(p.continue_sent)
+                    self.assertFalse(p.hold_source_process)
+                    self.assertEqual(p.response_restore_snapshot, snapshot)
+                else:
+                    with self.assertRaisesRegex(ValueError, errors[fault]):
+                        p._terminal_manager_started(p.deadline)
+                    sent.assert_not_called()
+                    p._source_state.assert_not_called()
+                    self.assertFalse(p.continue_sent)
+                    self.assertTrue(p.hold_source_process)
+                    self.assertNotIn('response_restore_snapshot', p.__dict__)
+                self.assertFalse(p.stop_released)
+                self.assertFalse(p.recovered)
+
     def test_numeric_aliases_cannot_restore_vmm_response_before_exact_kill(self):
         paths=(None,('generation',),('current_vm',),('net_slot',),('epoch',),
                ('current_operation','id'),('current_operation','epoch'),('both-epochs',))
