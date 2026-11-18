@@ -157,7 +157,10 @@ fn terminal_redis_reply_loss(boundary: Boundary) {
     );
     assert_ne!(original.center.reserved(None, None), Some(Resources::ZERO));
     assert_eq!(cleaned.center.reserved(None, None), Some(Resources::ZERO));
-    assert_eq!(cleaned.center.pending_lifecycle(), [result.request.clone()]);
+    assert_eq!(
+        cleaned.center.pending_lifecycle().as_slice(),
+        std::slice::from_ref(&result.request)
+    );
     assert!(confirmed.center.pending_lifecycle().is_empty());
 
     let recordings = Arc::clone(&host.recordings);
