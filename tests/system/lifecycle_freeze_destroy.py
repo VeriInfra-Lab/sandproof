@@ -538,6 +538,8 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
     The short test SIGSTOP orders acceptance only. It must not wait on a fence
     or Stop whose scheduling itself needs the original Freeze observation.
     """
+    response_restore_snapshot = None
+
     def _read_kill_ledger(self, conn, local, terminal, capacity):
         namespace = self.runtime.services.native_pools[0]['namespace']
         sandbox = _u64(local['sandbox'], positive=True)
@@ -590,6 +592,12 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         result['original_pidfd_continued_after_fence']=False
         result['source_continued_after_terminal_acceptance']=True
         result['terminal_acceptance_before_response_restored']=self.response_restore_snapshot
+        return result
+
+    def terminal_failure_state(self):
+        result = super().terminal_failure_state()
+        if self.response_restore_snapshot is not None:
+            result['terminal_acceptance_before_response_restored'] = copy.deepcopy(self.response_restore_snapshot)
         return result
 
 

@@ -938,6 +938,13 @@ class FreezeStopWiringTests(unittest.TestCase):
                         if ordered:
                             self.assertTrue(p.continue_sent)
                             self.assertLess(events.index('continue'),events.index('wait-ready'))
+                            failed = p.terminal_failure_state()
+                            self.assertEqual(failed['terminal_acceptance_before_response_restored'],
+                                             accepted_snapshot)
+                            self.assertEqual(failed['automatic_terminal'], accepted)
+                            self.assertIs(failed['source_os_continue_sent'], True)
+                            self.assertIs(failed['stop_gate_release_sent'], False)
+                            self.assertIs(failed['capacity_released'], False)
                         else:
                             self.assertFalse(p.continue_sent);self.assertNotIn('continue',events)
                         self.assertFalse(p.terminal_failure_state()['capacity_released'])
@@ -1202,6 +1209,38 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    def test_signal_failure_keeps_durable_kill_without_claiming_continuation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            p.__class__ = frozen.OrderedFreezeDestroyProbe
+            accepted = f.accepted(f.destroy)
+            p._bind_destroy(accepted)
+            self.assertNotIn('terminal_acceptance_before_response_restored', p.terminal_failure_state())
+            expected = copy.deepcopy(f.snapshot)
+            p._read_terminal = Mock(return_value=f.snapshot)
+            p._source_state = Mock(return_value='T')
+            first_error = OSError('could not continue the original VMM')
+            with patch.object(frozen.signal, 'pidfd_send_signal', create=True,
+                              side_effect=first_error) as sent:
+                with self.assertRaises(OSError) as failure:
+                    p._terminal_manager_started(p.deadline)
+                self.assertIs(failure.exception, first_error)
+                sent.assert_called_once_with(p.pidfd, signal.SIGCONT)
+
+            # A later read or report consumer must not rewrite the saved cut.
+            f.snapshot['native_kill_ledger']['result'] = 'Destroyed'
+            failed = p.terminal_failure_state()
+            self.assertIn('terminal_acceptance_before_response_restored', failed)
+            self.assertEqual(failed['terminal_acceptance_before_response_restored'], expected)
+            self.assertEqual(failed['destroy'], accepted)
+            for field in ('source_os_continue_sent', 'stop_gate_release_sent',
+                          'public_completion', 'capacity_released'):
+                self.assertIs(failed[field], False)
+            failed['terminal_acceptance_before_response_restored']['native_kill_ledger']['result'] = 'Destroyed'
+            self.assertEqual(p.terminal_failure_state()['terminal_acceptance_before_response_restored'], expected)
+            self.assertTrue(p.hold_source_process)
+
     def test_ordered_recovery_rejects_missing_or_different_kill_ledger(self):
         for fault in ('missing', 'foreign-owner', 'different-operation', 'different-generation',
                       'numeric-alias', 'result', 'completed-operation'):
