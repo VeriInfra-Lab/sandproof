@@ -1,0 +1,68 @@
+diff --git a/tools/lean_session.py b/tools/lean_session.py
+index dd5ce183746707d7de8f0a4663b5dc5d8c8b2fab..8eff06f46a424c091f59f1b5bd57a22be4bf6534 100644
+--- a/tools/lean_session.py
++++ b/tools/lean_session.py
+@@ -11,0 +12 @@
++import os
+@@ -25,0 +27,29 @@
++def plan_sources():
++    """Bind an explicitly selected materialized project's complete Lean view."""
++    setting = os.environ.get("SANDPROOF_LEAN_SOURCE_PLAN")
++    if setting is None:
++        return None
++    if setting != "plan.json":
++        raise ValueError("Use the materialized project's original plan.json.")
++    plan_path = ROOT / setting
++    if plan_path.resolve() != plan_path or not plan_path.is_file():
++        raise ValueError("Missing or linked Lean source plan.")
++    raw = plan_path.read_bytes()
++    plan = json.loads(raw)
++    modules = plan.get("modules")
++    if plan.get("schema") != 1 or type(modules) is not dict or not modules:
++        raise ValueError("Missing materialized Lean source inventory.")
++    fingerprints = []
++    for name in sorted(modules, key=Path):
++        relative = Path(name)
++        source = ROOT / relative
++        if (relative.is_absolute() or ".." in relative.parts or relative.as_posix() != name
++                or relative.suffix != ".lean" or source.resolve() != source or not source.is_file()):
++            raise ValueError("Invalid materialized Lean source: " + name)
++        actual = hashlib.sha256(source.read_bytes()).digest()
++        if actual.hex() != modules[name]["sha256"]:
++            raise ValueError("Changed materialized Lean source: " + name)
++        fingerprints.append((relative, actual))
++    return hashlib.sha256(raw).hexdigest(), fingerprints
++
++
+@@ -30,3 +60,12 @@
+-    sources = sorted((ROOT / "SandboxModel").rglob("*.lean"))
+-    # Include every extraction library, not just the historical controller.
+-    sources += sorted((ROOT / "verification/aeneas").rglob("*.lean"))
++    planned = plan_sources()
++    if planned is None:
++        sources = sorted((ROOT / "SandboxModel").rglob("*.lean"))
++        # Include every extraction library, not just the historical controller.
++        sources += sorted((ROOT / "verification/aeneas").rglob("*.lean"))
++        entries = ((source.relative_to(ROOT), hashlib.sha256(source.read_bytes()).digest())
++                   for source in sources)
++    else:
++        _, entries = planned
++        selected = dict(entries).get(path.relative_to(ROOT))
++        if selected is None:
++            raise ValueError("The requested file is outside the materialized Lean source plan.")
+@@ -34,2 +73,2 @@
+-    for source in sources:
+-        name = str(source.relative_to(ROOT)).encode()
++    for relative, content_sha256 in entries:
++        name = str(relative).encode()
+@@ -40,3 +79,3 @@
+-        fingerprint.update(hashlib.sha256(source.read_bytes()).digest())
+-    return {
+-        "file_sha256": digest(path),
++        fingerprint.update(content_sha256)
++    result = {
++        "file_sha256": digest(path) if planned is None else selected.hex(),
+@@ -50,0 +90,3 @@
++    if planned is not None:
++        result["source_plan_sha256"] = planned[0]
++    return result
