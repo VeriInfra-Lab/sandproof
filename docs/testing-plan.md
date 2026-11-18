@@ -505,6 +505,12 @@ Resume backing pin 与正材料额度，允许刷新来源观测样本。
 报告两侧的 `freeze_logical_action_registered` 和 `original_pin_and_positive_charge_retained`
 均须为 true。前置核对失败时不发送 Destroy，
 后置核对失败时保留原接受和首错。
+公开 Destroy 返回 202、第二次窗口核对通过后，向原公开 Resume 路由发送一次同窗口新键
+请求，`expected_version` 使用当前 Destroy 版本。该请求须返回 409，前后公开查询须保留
+同一完整 Terminating 视图，报告记录 `frozen_destroy_resume_veto`。Host 重开前再次核对
+同一 Freeze 回执窗口，结果记为 `freeze_destroy_acceptance_window.after_rejected_resume`。
+Resume 得到意外状态、当前视图改变或第三次窗口核对失败时，保留已取得的 Destroy 202
+和窗口证据，停止编排。
 该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。恢复同一 VMM 应答前，
 同一只读快照须确认当前 Kill 的 epoch 晚于原 Freeze、两条操作的 outbox 保留原
 Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源及 backing 责任。

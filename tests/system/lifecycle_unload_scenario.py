@@ -583,6 +583,25 @@ class PublicUnloadScenario:
         return dict(phase=phase,original_create_unload_acceptance_returned=True,
                     altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
 
+    def assert_terminal_rejects_new_resume(self):
+        """Try one fresh Resume against the publicly current Destroy version."""
+        self.step('terminal-state-before-new-resume', 200)
+        current = self.query()
+        self.check_view(current, self.current_acceptance)
+        assert current['phase'] == 'terminating', 'current Destroy must be terminating'
+        sequence = self.sequence + 1
+        assert uint(sequence, positive=True), 'one fresh Resume sequence required'
+        request = dict(window=self.window, sequence=sequence,
+                       expected_version=current['current_version'])
+        self.step('new-resume-after-destroy', 409)
+        status, _ = self.call('POST', self.path() + '/resume', key=self.owner_key, body=request)
+        if status != 409:
+            raise PublicStatusMismatch(status, 409)
+        self.step('terminal-state-after-rejected-resume', 200)
+        assert equal(self.query(), current), 'rejected new Resume changed the current Destroy'
+        return dict(http_status=status, sequence=sequence,
+                    expected_version=request['expected_version'], terminal_view_unchanged=True)
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -1302,6 +1321,12 @@ def exercise(args):
                     if not freeze_dispatch_destroy:
                         report['phase']='recheck-original-freeze-after-public-destroy'
                         report['freeze_destroy_acceptance_window']['after']=capture_probe.observe_destroy_window(deadline)
+                    if ordered_freeze:
+                        report['phase'] = 'new-resume-after-public-destroy-before-host-reopen'
+                        report['frozen_destroy_resume_veto'] = client.assert_terminal_rejects_new_resume()
+                        report['phase'] = 'recheck-original-freeze-after-resume-veto'
+                        report['freeze_destroy_acceptance_window']['after_rejected_resume'] = (
+                            capture_probe.observe_destroy_window(deadline))
                     report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
                 def observe_frozen_peer():
                     report['phase']=prefix.replace('_','-')+'-peer-progress-before-stop'
@@ -1639,6 +1664,10 @@ def exercise(args):
                 'E14':'old execution tokens remained rejected; peer continued with its original authorization',
                 'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
             }
+            if ordered_freeze:
+                report['acceptance_cases']['E8'] += (
+                    '; fresh Resume at the current Destroy version rejected before Host reopen, '
+                    'with the original Freeze receipt still absent')
             if freeze_dispatch_destroy:
                 report['acceptance_cases']['E3']=(
                     'exact original dispatched Freeze exit87 before the original Pause call; '

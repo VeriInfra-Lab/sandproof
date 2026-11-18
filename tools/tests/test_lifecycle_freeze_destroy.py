@@ -1156,6 +1156,44 @@ class FreezeStopWiringTests(unittest.TestCase):
 
 
 class SceneAndReplayTests(unittest.TestCase):
+    def test_new_resume_uses_current_destroy_version_and_requires_conflict(self):
+        for fault in (None, 'not-terminating', 'accepted', 'unavailable', 'replaced'):
+            with self.subTest(fault=fault):
+                c = scene.PublicUnloadScenario('http://127.0.0.1:1', 'original', 'peer',
+                                               'deployment', time.monotonic() + 30)
+                c.session, c.window, c.sequence = 'session-1', 3, 8
+                c.current_acceptance = dict(session=c.session, key=c.key(8), accepted_version=5)
+                c.destroy_request = dict(window=3, sequence=8, expected_version=4)
+                current = dict(session=c.session, operation=c.key(8), current_version=5,
+                               phase='terminating', unload_outcome=None, create_refusal=None)
+                first = dict(current, phase='cleaned') if fault == 'not-terminating' else current
+                after = dict(current, current_version=6) if fault == 'replaced' else current
+                status = {'accepted': 202, 'unavailable': 503}.get(fault, 409)
+                replies = [(200, json.dumps(first)), (status, b''), (200, json.dumps(after))]
+                with patch.object(scene, 'fetch', side_effect=replies) as fetch:
+                    if fault in ('accepted', 'unavailable'):
+                        with self.assertRaises(scene.PublicStatusMismatch) as error:
+                            c.assert_terminal_rejects_new_resume()
+                        self.assertEqual((error.exception.actual, error.exception.expected), (status, 409))
+                    elif fault:
+                        message = ('current Destroy must be terminating' if fault == 'not-terminating'
+                                   else 'rejected new Resume changed the current Destroy')
+                        with self.assertRaisesRegex(AssertionError, message):
+                            c.assert_terminal_rejects_new_resume()
+                    else:
+                        self.assertEqual(c.assert_terminal_rejects_new_resume(), dict(
+                            http_status=409, sequence=9, expected_version=5, terminal_view_unchanged=True))
+                calls = [call.args[2:] for call in fetch.call_args_list]
+                get = ('GET', c.path(), c.owner_key, None)
+                post = ('POST', c.path() + '/resume', c.owner_key,
+                        dict(window=3, sequence=9, expected_version=5))
+                expected = [get] if fault == 'not-terminating' else [get, post]
+                if fault in (None, 'replaced'):
+                    expected.append(get)
+                self.assertEqual(calls, expected)
+                self.assertEqual(c.current_acceptance, dict(session=c.session, key=c.key(8), accepted_version=5))
+                self.assertEqual(c.sequence, 8)
+
     def test_terminal_unload_replay_retains_the_actual_original_replay_checks(self):
         for phase in ('terminating','cleaned'):
             c=scene.PublicUnloadScenario.__new__(scene.PublicUnloadScenario);c.session='original'
@@ -1172,7 +1210,7 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False,window_fault=None):
+    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False,window_fault=None,resume_fault=None):
         import lifecycle_freeze_dispatch as dispatched
         if ordered_expiry:self.assertTrue(expiry)
         if expiry:
@@ -1194,6 +1232,13 @@ class SceneAndReplayTests(unittest.TestCase):
             clients['1'].current_acceptance = dict(session='session-1', accepted_version=5, key={'sequence':5})
             return copy.deepcopy(clients['1'].current_acceptance)
         clients['1'].destroy.side_effect = accept_destroy
+        veto_evidence = dict(http_status=409, sequence=6, expected_version=5, terminal_view_unchanged=True)
+        def reject_new_resume():
+            events.append('new-resume')
+            if resume_fault == 'unexpected-acceptance':
+                raise scene.PublicStatusMismatch(202, 409)
+            return veto_evidence
+        clients['1'].assert_terminal_rejects_new_resume = Mock(side_effect=reject_new_resume)
         from tools.tests.test_lifecycle_running_witness import RunningWitnessTests
         peer,peer_running=RunningWitnessTests().fixture()
         previous=copy.deepcopy(peer.witness);peer.witness=None;peer.data_token=None
@@ -1226,7 +1271,7 @@ class SceneAndReplayTests(unittest.TestCase):
         def observe_destroy_window(_):
             nonlocal window_reads
             window_reads += 1
-            edge = 'before' if window_reads == 1 else 'after'
+            edge = ('before', 'after', 'after_rejected_resume')[window_reads - 1]
             events.append('freeze-window-' + edge)
             if window_fault == edge:
                 raise ValueError('original Freeze receipt no longer pending')
@@ -1275,19 +1320,40 @@ class SceneAndReplayTests(unittest.TestCase):
             expiry_scenario='capture-freeze-receipt-expiry' if ordered_expiry else 'capture-freeze-unresponsive-expiry' if unresponsive else 'capture-freeze-expiry'
             destroy_scenario='capture-freeze-before-destroy' if dispatch else 'capture-freeze-unresponsive-destroy' if unresponsive else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy'
             args=NS(scenario=expiry_scenario if expiry else destroy_scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if window_fault is not None:
+            if resume_fault == 'unexpected-acceptance':
+                with self.assertRaises(scene.PublicStatusMismatch):
+                    scene.exercise(args)
+                report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(report['complete'])
+                self.assertEqual(report['phase'], 'new-resume-after-public-destroy-before-host-reopen')
+                self.assertEqual(report['last_http_status'], dict(actual=202, expected=409))
+                self.assertEqual(report['destroy'], clients['1'].current_acceptance)
+                self.assertEqual(report['freeze_destroy_acceptance_window'], dict(
+                    before=window_evidence, after=window_evidence))
+                self.assertNotIn('frozen_destroy_resume_veto', report)
+                p.recover_after_destroy.assert_not_called()
+                clients['1'].assert_terminal_unload_replay.assert_not_called()
+                other.destroy.assert_not_called()
+                runner.settlement_evidence.assert_not_called()
+            elif window_fault is not None:
                 with self.assertRaisesRegex(ValueError, 'original Freeze receipt no longer pending'):
                     scene.exercise(args)
                 report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete'])
-                self.assertEqual(report['phase'], 'recheck-original-freeze-' + window_fault + '-public-destroy')
+                self.assertEqual(report['phase'], 'recheck-original-freeze-after-resume-veto'
+                    if window_fault == 'after_rejected_resume'
+                    else 'recheck-original-freeze-' + window_fault + '-public-destroy')
                 if window_fault == 'before':
                     clients['1'].destroy.assert_not_called()
                     self.assertNotIn('destroy', report)
                 else:
                     clients['1'].destroy.assert_called_once()
                     self.assertEqual(report['destroy'], clients['1'].current_acceptance)
-                    self.assertEqual(report['freeze_destroy_acceptance_window'], {'before': window_evidence})
+                    expected = {'before': window_evidence}
+                    if window_fault == 'after_rejected_resume':
+                        expected['after'] = window_evidence
+                        self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
+                    self.assertEqual(report['freeze_destroy_acceptance_window'], expected)
                 other.destroy.assert_not_called()
                 p.recover_after_destroy.assert_not_called()
                 p.assert_terminal_before_gc.assert_not_called()
@@ -1330,9 +1396,14 @@ class SceneAndReplayTests(unittest.TestCase):
                     self.assertLess(events.index('freeze-window-before'),events.index(terminal_event))
                     self.assertLess(events.index(terminal_event),events.index('freeze-window-after'))
                     self.assertLess(events.index('freeze-window-after'),events.index('recover'))
-                    self.assertEqual(report['freeze_destroy_acceptance_window'], {
-                        'before': window_evidence, 'after': window_evidence,
-                    })
+                    expected = {'before': window_evidence, 'after': window_evidence}
+                    if ordered:
+                        self.assertLess(events.index('freeze-window-after'), events.index('new-resume'))
+                        self.assertLess(events.index('new-resume'), events.index('freeze-window-after_rejected_resume'))
+                        self.assertLess(events.index('freeze-window-after_rejected_resume'), events.index('recover'))
+                        self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
+                        expected['after_rejected_resume'] = window_evidence
+                    self.assertEqual(report['freeze_destroy_acceptance_window'], expected)
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('release-stop'),events.index('assert_terminal_before_gc'))
                 self.assertLess(events.index('assert_terminal_before_gc'),events.index('wait_cleaned-1'))
@@ -1340,7 +1411,12 @@ class SceneAndReplayTests(unittest.TestCase):
                 self.assertEqual(clients['1'].resume.call_count,1);self.assertIn('E8',report['acceptance_cases'])
             if expiry or dispatch:
                 p.observe_destroy_window.assert_not_called()
-            if fault or window_fault is not None:
+            veto = clients['1'].assert_terminal_rejects_new_resume
+            if ordered and window_fault not in ('before', 'after'):
+                veto.assert_called_once_with()
+            else:
+                veto.assert_not_called()
+            if fault or window_fault is not None or resume_fault is not None:
                 other.assert_running_workload.assert_not_called();witness.assert_not_called()
             elif peer_fault=='none':
                 self.assertEqual(other.assert_running_workload.call_count,2)
@@ -1378,6 +1454,10 @@ class SceneAndReplayTests(unittest.TestCase):
         for edge in ('before', 'after'):
             with self.subTest(edge=edge):
                 self.exercise(ordered=True, window_fault=edge)
+    def test_ordered_scene_stops_on_unexpected_new_resume_acceptance(self):
+        self.exercise(ordered=True, resume_fault='unexpected-acceptance')
+    def test_ordered_scene_preserves_veto_when_third_freeze_check_fails(self):
+        self.exercise(ordered=True, window_fault='after_rejected_resume')
     def test_unresponsive_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(unresponsive=True)
     def test_unresponsive_unknown_stop_preserves_original_and_peer(self):self.exercise(unresponsive=True,fault=True)
     def test_unresponsive_stalled_peer_never_releases_stop(self):self.exercise(unresponsive=True,peer_fault='held-counter')
