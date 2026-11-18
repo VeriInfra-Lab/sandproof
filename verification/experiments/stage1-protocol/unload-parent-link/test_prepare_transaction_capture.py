@@ -63,15 +63,17 @@ class PrepareAdmissionTests(unittest.TestCase):
                             lean_name=capture.MODULE + '.' + self.lean,
                             lean_file=capture.MODULE + '/Funs.lean')
         self.generated_definition = f'def {self.lean} (x : Unit) : Unit := x\n'
+        self.helpers = []
 
-    def admit(self):
+    def admit(self, *, expected_loops=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'actual.llbc').write_text(json.dumps(self.raw))
             (root / capture.MODULE).mkdir()
             (root / capture.MODULE / 'Funs.lean').write_text(self.generated_definition)
-            (root / 'translation.json').write_text(json.dumps(dict(functions=[self.mapping])))
-            return capture.admit(root / 'actual.llbc', root, self.cfg, 'x86_64-unknown-linux-gnu')
+            (root / 'translation.json').write_text(json.dumps(dict(functions=[self.mapping, *self.helpers])))
+            return capture.admit(root / 'actual.llbc', root, self.cfg, 'x86_64-unknown-linux-gnu',
+                                 expected_loops=expected_loops)
 
     def test_actual_root_and_distinct_call_ids_are_reported(self):
         report = self.admit()
@@ -109,6 +111,23 @@ class PrepareAdmissionTests(unittest.TestCase):
         self.mapping['rust_name'] = capture.ROOT.replace('ControllerJournal', 'OtherJournal')
         with self.assertRaisesRegex(ValueError, 'generated prepare identity'):
             self.admit()
+
+    def test_loop_helpers_require_explicit_expected_names_and_source(self):
+        self.mapping['source'].update(begin_line=1, end_line=9)
+        meta = self.translated['fun_decls'][0]['item_meta']
+        meta['span'] = {'Untagged': {'data': {'beg': {'line': 1}, 'end': {'line': 9}}}}
+        for suffix in ('_loop0', '_loop0.body'):
+            helper = deepcopy(self.mapping)
+            helper['lean_name'] += suffix
+            helper['source'].update(begin_line=2, end_line=4)
+            self.helpers.append(helper)
+            self.generated_definition += f'def {self.lean}{suffix} (x : Unit) : Unit := x\n'
+        with self.assertRaisesRegex(ValueError, 'generated prepare identity'):
+            self.admit()
+        self.assertEqual(self.admit(expected_loops=1)['lean_name'], capture.LEAN_ROOT)
+        self.helpers[0]['source']['end_line'] = 10
+        with self.assertRaisesRegex(ValueError, 'source span differs'):
+            self.admit(expected_loops=1)
 
     def test_mapping_without_a_generated_definition_is_rejected(self):
         self.generated_definition = f'axiom {self.lean} : Unit -> Unit\n'
