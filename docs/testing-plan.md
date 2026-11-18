@@ -205,6 +205,13 @@ Destroy 和原产品流程完成 Cleaned、物理释放及账本结算。故障�
 材料记录；退出本身不是释放位置或材料的凭据。该分支不认领正常两周期或任意故障后的
 状态可恢复性，不能关闭存活分支的原断言。
 
+E7 的 [迟到就绪回归](../sandbox-center-service/tests/business_authority/lifecycle_resume_races.rs)
+使用真实 Redis 与原中心后台或查询入口。先保持同一 Resume 的旧就绪答复，再通过原
+查询把 `StateLost` 保存到仍是同一键和版本的 Resume；在旧答复的原期限内放行，
+核对旧就绪被拒、业务块字节及原额度保持、全文重放只返回原接受。已发布过 Running 的
+查询分支还核对本次恢复的数据凭据已撤销。重开原 Redis 账本仍读回同一
+`StateLost`，无需再次询问 Host。Host 退出与就绪来自受控组件输入，实机分别验收。
+
 `restore-prepare-destroy` 先核原 LoadPaused 候选，再持同一 pidfd 暂停该 VMM 进程，
 使原只读 API 观察暂时不可用。只有真实 Destroy 已进入宿主、原终止围栏已安装且原
 Prepare 仍未完成时，才恢复这个进程供原取证/Stop 流程推进；SIGCONT 不等于激活 vCPU。
