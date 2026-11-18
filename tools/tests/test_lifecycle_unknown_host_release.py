@@ -218,6 +218,55 @@ class UnknownReleaseArchiveTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         native.unpack(archive, output, tree)
 
+    def test_extracted_tree_rejects_unregistered_entries_missing_files_and_links(self):
+        for fault, message in (
+                ('extra-file', 'Unexpected input'),
+                ('extra-directory', 'Unexpected directory'),
+                ('file-link', 'Source inputs changed'),
+                ('directory-link', 'Unexpected input'),
+                ('hard-link', 'Source inputs changed'),
+                ('missing-file', 'Missing input')):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                project = root / 'source'
+                unit = project / 'src' / 'lib.rs'
+                unit.parent.mkdir(parents=True)
+                unit.write_bytes(b'approved original source')
+                unit.chmod(0o644)
+                inputs = {'src/lib.rs': dict(sha256=native.sha(unit), mode=0o644)}
+                native.check_inputs(project, inputs)
+
+                if fault == 'extra-file':
+                    (unit.parent / 'unused.rs').write_bytes(unit.read_bytes())
+                elif fault == 'extra-directory':
+                    (unit.parent / 'extra').mkdir()
+                elif fault == 'directory-link':
+                    actual = unit.parent.rename(root / 'other-src')
+                    unit.parent.symlink_to(actual, target_is_directory=True)
+                elif fault == 'file-link':
+                    unit.symlink_to(unit.rename(root / 'other.rs'))
+                elif fault == 'hard-link':
+                    os.link(unit, root / 'linked.rs')
+                else:
+                    unit.unlink()
+                with self.assertRaisesRegex(ValueError, message):
+                    native.check_inputs(project, inputs)
+
+    def test_mutation_digest_must_be_different_and_registered(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            mutated = project / 'lib.rs'
+            mutated.write_bytes(b'original')
+            mutated.chmod(0o644)
+            original = native.sha(mutated)
+            inputs = {'lib.rs': dict(sha256=original, mode=0o644)}
+            with self.assertRaisesRegex(ValueError, 'registered mutation source'):
+                native.check_inputs(project, inputs, original, source=Path('lib.rs'))
+            with self.assertRaisesRegex(ValueError, 'registered mutation source'):
+                native.check_inputs(project, inputs, original, source=Path('unregistered.rs'))
+            mutated.write_bytes(b'isolated negative variant')
+            native.check_inputs(project, inputs, native.sha(mutated), source=Path('lib.rs'))
+
 
 if __name__ == '__main__':
     unittest.main()
