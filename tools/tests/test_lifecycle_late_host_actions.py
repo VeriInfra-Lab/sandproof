@@ -275,8 +275,13 @@ class LateActionsReplayTests(unittest.TestCase):
         occupant=dict(session='B',context=dict(position=0,expected_previous=2,
             binding=dict(owner=2,sandbox=2,generation=1,vm=3)))
         stamp=dict(path='/fixed/helper',sha256='a'*64,expected_sha256='a'*64)
-        valid=dict(version=1,context_rejected=True,release_rejected=True,all_actions_rejected=True,checked_actions=2)
-        for fault in ('none','helper-failed','incomplete','observed-success','metadata','kernel','sql','guest','reuse','helper-changed'):
+        valid = dict(version=2, context_rejected=True, release_rejected=True,
+            occupied_successor=occupant['context'], action_outcomes=[
+                dict(logical_action=action['identity']['logical_action'], attempt=action['identity']['attempt'],
+                     outcome=dict(status='unknown', reason='observation_unavailable'))
+                for action, _, _ in rows])
+        for fault in ('none','helper-failed','incomplete','observed-success','wrong-successor','wrong-action',
+                      'metadata','kernel','sql','guest','reuse','helper-changed'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 processes=Mock();runner=NS(root=Path(directory),services=NS(processes=processes,
                     wait_ready=Mock(),native_pools=[dict(node_state_dir='original-state',chroot_base='original-jail')],
@@ -295,15 +300,19 @@ class LateActionsReplayTests(unittest.TestCase):
                     {'original':2 if fault=='metadata' else 1}]))
                 stack.enter_context(patch.object(late,'live_identity',side_effect=[{'pid':42},{'pid':43 if fault=='kernel' else 42}]))
                 result=copy.deepcopy(valid)
-                if fault=='incomplete':result['checked_actions']=1
-                if fault=='observed-success':result['all_actions_rejected']=False
+                if fault=='incomplete':result['action_outcomes'].pop()
+                if fault=='observed-success':result['action_outcomes'][0]['outcome']={'status':'observed_success'}
+                if fault=='wrong-successor':result['occupied_successor']['binding']['vm']+=1
+                if fault=='wrong-action':result['action_outcomes'][1]['logical_action']='effect-99'
                 command=stack.enter_context(patch.object(late,'bounded_json_command',return_value=result,
                     side_effect=ValueError('helper initialization failed') if fault=='helper-failed' else None))
                 guest=Mock(return_value={'original':'guest'},side_effect=ValueError('guest changed') if fault=='guest' else None)
                 current=copy.deepcopy(occupant)
                 if fault=='reuse':current['context']['expected_previous']=1
                 if fault=='none':
-                    self.assertTrue(probe.replay(current,guest)['same_kernel_identity'])
+                    evidence = probe.replay(current,guest)
+                    self.assertTrue(evidence['same_kernel_identity'])
+                    self.assertEqual(evidence['probe']['action_outcomes'], valid['action_outcomes'])
                     guest.assert_called_once();self.assertEqual(observer.verify.call_count,2)
                     self.assertEqual(command.call_args.args[0][0],stamp['path'])
                     self.assertEqual(json.loads((Path(directory)/'late-stop-delete-actions.json').read_bytes())['actions'],probe.actions)

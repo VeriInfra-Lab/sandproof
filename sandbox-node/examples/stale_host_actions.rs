@@ -1,13 +1,16 @@
 //! Opt-in root-only acceptance driver for real, previously persisted actions.
 //! Stop the owning server first; a separate observer must verify the surviving
 //! VMM identities and state/claim contents before and after this process.
-//! This output proves rejection, not cleanup or absence of host mutations.
+//! Context and release errors are recorded separately from execution outcomes.
+//! Unknown execution still needs the independent resource and guest checks.
 
 #[cfg(any(target_os = "linux", test))]
 mod probe {
     use sandbox_controller_core as core;
     use sandproof_controller_service::HostSlotContext;
-    use sandproof_protocol::{WorkAction, WorkOutcome};
+    use sandproof_protocol::{
+        FailureCode, LogicalActionId, UnknownReason, WorkAction, WorkOutcome,
+    };
     use serde::{Deserialize, Serialize};
 
     const MAX_INPUT_BYTES: u64 = 1024 * 1024;
@@ -24,10 +27,24 @@ mod probe {
     #[derive(Default, Serialize)]
     pub(super) struct Report {
         version: u32,
+        occupied_successor: Option<HostSlotContext>,
         context_rejected: bool,
         release_rejected: bool,
-        all_actions_rejected: bool,
-        checked_actions: usize,
+        action_outcomes: Vec<ActionReport>,
+    }
+
+    #[derive(Serialize)]
+    struct ActionReport {
+        logical_action: LogicalActionId,
+        attempt: u64,
+        outcome: ActionOutcome,
+    }
+
+    #[derive(Debug, PartialEq, Eq, Serialize)]
+    #[serde(tag = "status", rename_all = "snake_case")]
+    enum ActionOutcome {
+        Unknown { reason: UnknownReason },
+        DefinitiveFailure { code: FailureCode, retryable: bool },
     }
 
     impl Input {
@@ -100,11 +117,22 @@ mod probe {
         }
     }
 
-    fn rejected<E>(outcome: &WorkOutcome<E>) -> bool {
-        matches!(
-            outcome,
-            WorkOutcome::Unknown { .. } | WorkOutcome::DefinitiveFailure { .. }
-        )
+    fn action_outcome<E>(outcome: &WorkOutcome<E>) -> Option<ActionOutcome> {
+        match outcome {
+            WorkOutcome::Unknown {
+                reason,
+                last_observation: None,
+            } => Some(ActionOutcome::Unknown { reason: *reason }),
+            WorkOutcome::DefinitiveFailure {
+                code,
+                retryable,
+                partial: None,
+            } => Some(ActionOutcome::DefinitiveFailure {
+                code: *code,
+                retryable: *retryable,
+            }),
+            _ => None,
+        }
     }
 
     fn bounded_json<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, &'static str> {
@@ -175,13 +203,15 @@ mod probe {
         let inventory = worker
             .host_slot_inventory()
             .map_err(|_| "host slot inventory unavailable")?;
-        if !inventory.iter().any(|(context, phase)| {
-            context.position == input.old_context.position
-                && context.binding.vm > input.old_context.binding.vm
-                && *phase == HostSlotPhase::Occupied
-        }) {
-            return Err("old position has no occupied successor");
-        }
+        let successor = inventory
+            .into_iter()
+            .find(|(context, phase)| {
+                context.position == input.old_context.position
+                    && context.binding.vm > input.old_context.binding.vm
+                    && *phase == HostSlotPhase::Occupied
+            })
+            .ok_or("old position has no occupied successor")?;
+        report.occupied_successor = Some(successor.0);
         report.context_rejected = worker.bind_host_slot(&input.old_context, false).is_err();
         if !report.context_rejected {
             return Err("old host context was accepted");
@@ -197,12 +227,17 @@ mod probe {
             let receipt = worker
                 .execute(action)
                 .map_err(|_| "worker transport failed")?;
-            if receipt.identity != action.identity || !rejected(&receipt.outcome) {
-                return Err("old host action was accepted");
+            if receipt.identity != action.identity {
+                return Err("old host action returned a different receipt identity");
             }
-            report.checked_actions += 1;
+            let outcome = action_outcome(&receipt.outcome)
+                .ok_or("old host action produced a successful or partial observation")?;
+            report.action_outcomes.push(ActionReport {
+                logical_action: receipt.identity.logical_action,
+                attempt: receipt.identity.attempt,
+                outcome,
+            });
         }
-        report.all_actions_rejected = report.checked_actions == input.actions.len();
         Ok(())
     }
 
@@ -210,7 +245,7 @@ mod probe {
     pub(super) fn main() -> std::process::ExitCode {
         use std::io::Write;
         let mut report = Report {
-            version: 1,
+            version: 2,
             ..Report::default()
         };
         let result = run(&mut report);
@@ -295,17 +330,60 @@ mod probe {
         }
 
         #[test]
-        fn observed_success_is_never_a_rejection() {
-            assert!(!rejected(&WorkOutcome::ObservedSuccess(())));
-            assert!(rejected(&WorkOutcome::<()>::Unknown {
-                reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+        fn action_report_preserves_unknown_and_failure_without_admitting_observations() {
+            let unknown = WorkOutcome::<()>::Unknown {
+                reason: UnknownReason::ObservationUnavailable,
                 last_observation: None,
-            }));
-            assert!(rejected(&WorkOutcome::<()>::DefinitiveFailure {
-                code: sandproof_protocol::FailureCode::PolicyRejected,
+            };
+            assert_eq!(
+                action_outcome(&unknown),
+                Some(ActionOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable
+                })
+            );
+            let failure = WorkOutcome::<()>::DefinitiveFailure {
+                code: FailureCode::PolicyRejected,
                 retryable: false,
                 partial: None,
-            }));
+            };
+            assert_eq!(
+                action_outcome(&failure),
+                Some(ActionOutcome::DefinitiveFailure {
+                    code: FailureCode::PolicyRejected,
+                    retryable: false
+                })
+            );
+            assert!(action_outcome(&WorkOutcome::ObservedSuccess(())).is_none());
+            assert!(
+                action_outcome(&WorkOutcome::Unknown {
+                    reason: UnknownReason::ObservationUnavailable,
+                    last_observation: Some(()),
+                })
+                .is_none()
+            );
+            assert!(
+                action_outcome(&WorkOutcome::DefinitiveFailure {
+                    code: FailureCode::PolicyRejected,
+                    retryable: true,
+                    partial: Some(()),
+                })
+                .is_none()
+            );
+
+            let identity = input().actions.into_iter().next().unwrap().identity;
+            let action = ActionReport {
+                logical_action: identity.logical_action,
+                attempt: identity.attempt,
+                outcome: action_outcome(&unknown).unwrap(),
+            };
+            assert_eq!(
+                serde_json::to_value(action).unwrap(),
+                serde_json::json!({
+                    "logical_action": "effect-1",
+                    "attempt": 0,
+                    "outcome": {"status": "unknown", "reason": "observation_unavailable"},
+                })
+            );
         }
 
         #[test]
@@ -334,12 +412,13 @@ mod probe {
                 serde_json::from_slice::<Input>(br#"{"version":1,"credential":"hidden"}"#).is_err()
             );
             let report = Report {
-                version: 1,
+                version: 2,
                 ..Report::default()
             };
             let json = serde_json::to_value(report).unwrap();
-            assert_eq!(json["all_actions_rejected"], false);
-            assert_eq!(json["checked_actions"], 0);
+            assert_eq!(json["context_rejected"], false);
+            assert_eq!(json["occupied_successor"], serde_json::Value::Null);
+            assert_eq!(json["action_outcomes"], serde_json::json!([]));
         }
     }
 }
@@ -352,7 +431,7 @@ fn main() -> std::process::ExitCode {
 #[cfg(not(target_os = "linux"))]
 fn main() -> std::process::ExitCode {
     println!(
-        "{{\"version\":1,\"context_rejected\":false,\"release_rejected\":false,\"all_actions_rejected\":false,\"checked_actions\":0}}"
+        "{{\"version\":2,\"occupied_successor\":null,\"context_rejected\":false,\"release_rejected\":false,\"action_outcomes\":[]}}"
     );
     eprintln!("Linux is required");
     std::process::ExitCode::FAILURE
