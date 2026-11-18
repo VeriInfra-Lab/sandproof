@@ -489,8 +489,10 @@ backing pin/正额度、材料、同伴进展、内核退出、Cleanup/GC 和历
 
 `capture-freeze-receipt-destroy` 在调用公开 Destroy 前及收到接受后分别从一个只读
 Host SQLite 事务核对原 Unload、完整 Freeze、对应的逻辑动作登记、SQL 回执仍为空
-及原 outbox 无 Seal/Commit。
-报告两侧的 `freeze_logical_action_registered` 均须为 true。前置核对失败时不发送 Destroy，
+及原 outbox 无 Seal/Commit。同一事务的来源账本还须保留首次冻结观测时的原工作、
+Resume backing pin 与正材料额度，允许刷新来源观测样本。
+报告两侧的 `freeze_logical_action_registered` 和 `original_pin_and_positive_charge_retained`
+均须为 true。前置核对失败时不发送 Destroy，
 后置核对失败时保留原接受和首错。
 该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。恢复同一 VMM 应答前，
 同一只读快照须确认当前 Kill 的 epoch 晚于原 Freeze、两条操作的 outbox 保留原

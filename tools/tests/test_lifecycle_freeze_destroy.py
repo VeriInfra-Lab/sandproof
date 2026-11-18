@@ -340,6 +340,42 @@ class FrozenFactsTests(unittest.TestCase):
                     self.assertIs(p.observe_destroy_window(p.deadline)['freeze_logical_action_registered'], True)
                     held.assert_called_once()
 
+    def test_destroy_window_keeps_original_backing_and_material_responsibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            freeze_window_journal(f)
+            with patch.object(capture, 'checked_source_records', return_value=f.rows) as records, \
+                    patch.object(p, '_check_source_hold') as held:
+                before = p.observe_destroy_window(p.deadline)
+                held.assert_called_once()
+
+                for change in ('missing backing', 'closed pin', 'changed charge', 'changed work'):
+                    with self.subTest(change=change):
+                        rows = copy.deepcopy(f.rows)
+                        if change == 'missing backing':
+                            rows.pop(0)
+                        elif change == 'closed pin':
+                            rows[0]['restore']['material_use'] = False
+                        elif change == 'changed charge':
+                            rows[0]['capture']['full']['disk_bytes'] += 1
+                            rows[0]['capture']['reserved_material_bytes'] += 2
+                        else:
+                            rows[0]['work']['anchor']['local']['operation'] += 1
+                        records.return_value = rows
+                        with self.assertRaisesRegex(ValueError, 'material responsibility changed at public Destroy'):
+                            p.observe_destroy_window(p.deadline)
+                held.assert_called_once()
+
+                rows = copy.deepcopy(f.rows)
+                rows[0]['observation'] = {'sample': 2}
+                unrelated = copy.deepcopy(rows[1])
+                unrelated['work']['anchor']['local']['sandbox'] += 1
+                records.return_value = [unrelated, *rows]
+                self.assertEqual(p.observe_destroy_window(p.deadline), before)
+                self.assertEqual(held.call_count, 2)
+                self.assertIs(before['original_pin_and_positive_charge_retained'], True)
+
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
             for fault in ('none','request','owner','retention','center','expected','old-entry','version','local','float'):
@@ -819,6 +855,7 @@ class SceneAndReplayTests(unittest.TestCase):
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
         window_reads = 0
+        window_evidence = dict(freeze_sql_receipt_pending=True, original_pin_and_positive_charge_retained=True)
         def observe_destroy_window(_):
             nonlocal window_reads
             window_reads += 1
@@ -826,7 +863,7 @@ class SceneAndReplayTests(unittest.TestCase):
             events.append('freeze-window-' + edge)
             if window_fault == edge:
                 raise ValueError('original Freeze receipt no longer pending')
-            return dict(freeze_sql_receipt_pending=True)
+            return dict(window_evidence)
         p.observe_destroy_window.side_effect = observe_destroy_window
         def recovery(*_,observe_peer,**__):
             events.append('recover')
@@ -883,8 +920,7 @@ class SceneAndReplayTests(unittest.TestCase):
                 else:
                     clients['1'].destroy.assert_called_once()
                     self.assertEqual(report['destroy'], clients['1'].current_acceptance)
-                    self.assertEqual(report['freeze_destroy_acceptance_window'],
-                                     {'before': {'freeze_sql_receipt_pending': True}})
+                    self.assertEqual(report['freeze_destroy_acceptance_window'], {'before': window_evidence})
                 other.destroy.assert_not_called()
                 p.recover_after_destroy.assert_not_called()
                 p.assert_terminal_before_gc.assert_not_called()
@@ -928,8 +964,7 @@ class SceneAndReplayTests(unittest.TestCase):
                     self.assertLess(events.index(terminal_event),events.index('freeze-window-after'))
                     self.assertLess(events.index('freeze-window-after'),events.index('recover'))
                     self.assertEqual(report['freeze_destroy_acceptance_window'], {
-                        'before': {'freeze_sql_receipt_pending': True},
-                        'after': {'freeze_sql_receipt_pending': True},
+                        'before': window_evidence, 'after': window_evidence,
                     })
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('release-stop'),events.index('assert_terminal_before_gc'))
