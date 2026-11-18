@@ -18,10 +18,34 @@ import time
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
+TEST_PREFIX = 'controller::lifecycle_inbox::source_work::snapshot::json_call_contract::'
+SOURCE = 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs'
+FAILURES = {
+    'origin-request': ('full_anchor_contract',
+                       'complete original anchor must roundtrip without replacing execution_origin'),
+    'options-empty': ('full_options_contract',
+                      'complete original create options must roundtrip without dropping metadata'),
+}
 
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_assertions(name, exit_code, text):
+    if name not in FAILURES:
+        if exit_code != 0 or not re.search(r'^test result: ok\. 2 passed; 0 failed; 0 ignored;', text, re.M):
+            raise ValueError('correct/restored assertions did not pass')
+        return
+
+    test, message = FAILURES[name]
+    failed = re.escape(TEST_PREFIX + test)
+    panic = (rf"^thread '{failed}' \([0-9]+\) panicked at {re.escape(SOURCE)}:[0-9]+:[0-9]+:\n"
+             rf'assertion `left == right` failed: {re.escape(message)}$')
+    if (exit_code != 101 or not re.search(rf'^test {failed} \.\.\. FAILED$', text, re.M)
+            or not re.search(panic, text, re.M)
+            or not re.search(r'^test result: FAILED\. 1 passed; 1 failed; 0 ignored;', text, re.M)):
+        raise ValueError('mutant did not reach the same complete-value assertion')
 
 
 def run(output, lock):
@@ -128,15 +152,7 @@ def run(output, lock):
                 case['artifact'] = artifact
                 case['binary_sha256'] = sha(binary)
                 test, log = command(case, 'assertions', [binary, 'json_call_contract'], 60, source, target)
-                text = log.read_text()
-                if name in profile['mutations']:
-                    failed = 'full_anchor_contract' if name == 'origin-request' else 'full_options_contract'
-                    if (test['exit_code'] == 0 or failed + ' ... FAILED' not in text
-                            or 'assertion `left == right` failed' not in text
-                            or not re.search(r'test result: FAILED\. 1 passed; 1 failed; 0 ignored;', text)):
-                        raise ValueError('mutant did not reach the same complete-value assertion')
-                elif test['exit_code'] != 0 or not re.search(r'test result: ok\. 2 passed; 0 failed; 0 ignored;', text):
-                    raise ValueError('correct/restored assertions did not pass')
+                check_assertions(name, test['exit_code'], log.read_text())
                 if (sha(rust) != case['tested_source_sha256'] or sha(binary) != case['binary_sha256']
                         or sha(support) != case['support_sha256']):
                     raise ValueError('native source/binary changed during the run')

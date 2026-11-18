@@ -23,6 +23,10 @@ ROOTS = {
     SNAPSHOT + 'encode_source_anchor': ANCHOR,
     SERVICE + 'host_contract::serialize_create_options': OPTIONS,
 }
+MUTATED_ROOTS = {
+    'origin-request': SNAPSHOT + 'encode_source_anchor',
+    'options-empty': SNAPSHOT + 'encode_source_options',
+}
 FIELDS = {
     OPTIONS: ['env_vars', 'metadata', 'networking', 'template'],
     ANCHOR: ['request', 'execution_origin', 'local', 'native', 'continued_from',
@@ -30,6 +34,7 @@ FIELDS = {
              'original_actions', 'original_receipts'],
 }
 RESULT = 'core::result::Result<alloc::vec::Vec<U8>,serde_json::error::Error>'
+ORIGINAL_ARGUMENT = {'borrow': 'Shared', 'origin': standard.SELF}
 
 
 def declarations(original):
@@ -47,7 +52,7 @@ def declarations(original):
     return result
 
 
-def wrapper(original, function, target):
+def wrapper_body(original, function, target):
     signature = function['signature']
     require(signature['is_unsafe'] is False and signature['abi'] == 'Rust' and
             signature['is_variadic'] is False and
@@ -55,7 +60,22 @@ def wrapper(original, function, target):
             original.type_name(signature['output']) == RESULT, 'wrong original wrapper signature')
     require(function['item_meta']['opacity'] == 'Transparent' and
             set(function['body']) == {'Structured'}, 'missing actual wrapper body')
-    body = function['body']['Structured']
+    return function['body']['Structured']
+
+
+def whole_value_call(call, target, argument):
+    require(call['callee'] == 'serde_json::ser::to_vec' and call['path'] == [] and
+            call['arguments'] == [argument] and
+            call['destination'] == {'Local': 0} and call['types'] == [target],
+            'not a single whole-value to_vec returning the original result')
+    dictionary, = call['dictionaries']
+    require(dictionary['trait'] == 'serde_core::ser::Serialize' and
+            dictionary['types'] == [target] and
+            dictionary['implementation']['self_type'] == target, 'substituted Serialize dictionary')
+
+
+def wrapper(original, function, target):
+    body = wrapper_body(original, function, target)
     require(body['locals']['arg_count'] == 1 and
             len(body['locals']['locals']) == 3, 'extra wrapper state')
     statements = body['body']['statements']
@@ -73,25 +93,56 @@ def wrapper(original, function, target):
             reference['place']['kind']['Projection'][0]['kind'] == {'Local': 1} and
             reference['place']['kind']['Projection'][1] == 'Deref', 'changed complete argument')
     call, = original.calls(body)
-    require(call['callee'] == 'serde_json::ser::to_vec' and call['path'] == [] and
-            call['arguments'] == [{'borrow': 'Shared', 'origin': {'deref': {'self': True}}}] and
-            call['destination'] == {'Local': 0} and call['types'] == [target],
-            'not a single whole-value to_vec returning the original result')
-    dictionary, = call['dictionaries']
-    require(dictionary['trait'] == 'serde_core::ser::Serialize' and
-            dictionary['types'] == [target] and
-            dictionary['implementation']['self_type'] == target, 'substituted Serialize dictionary')
+    whole_value_call(call, target, ORIGINAL_ARGUMENT)
     unwind = kinds[3]['Call']['on_unwind']
     require([statement['kind'] for statement in unwind['statements']] ==
             [{'StorageDead': 1}, 'UnwindResume'], 'changed unwind path')
     return dict(function_id=function['def_id'], function_sha256=digest(function), call=call)
 
 
-def inspect(raw):
+def mutated_wrapper(original, function, target, variant):
+    """Require the selected field edit on the clone actually passed to to_vec."""
+    body = wrapper_body(original, function, target)
+    require(body['locals']['arg_count'] == 1, 'wrong original mutant wrapper argument')
+    calls = original.calls(body)
+    require(len(calls) == 3 and all(call['path'] == [] for call in calls),
+            'missing original clone, field edit, or serialization in selected wrapper')
+    clone, edit, serialize = calls
+    require(clone['callee'].endswith('::<impl>::clone') and clone.get('target_self_type') == target and
+            clone['arguments'] == [ORIGINAL_ARGUMENT] and
+            clone['destination'] == {'Local': 2}, 'mutant clone is not the full original value')
+    cloned = {'call_result': clone['statement']}
+    assignments = [statement['kind']['Assign'] for statement in body['body']['statements']
+                   if isinstance(statement['kind'], dict) and 'Assign' in statement['kind']]
+    writes = [(place, expression) for place, expression in assignments if 'Projection' in place['kind']]
+    if variant == 'origin-request':
+        request = {'field': 'request', 'of': cloned}
+        require(edit['callee'] == 'sandproof_protocol::lifecycle::authority::<impl>::clone' and
+                edit['arguments'] == [{'borrow': 'Shared', 'origin': request}] and
+                edit['destination'] == {'Local': 4} and len(writes) == 1,
+                'mutant must copy the request from the original anchor clone')
+        place, expression = writes[0]
+        edit_result = {'call_result': edit['statement']}
+        aliases = {2: cloned, 4: edit_result}
+        require(original.place(place, aliases) == {'field': 'execution_origin', 'of': cloned} and
+                original.assigned(expression, aliases) == edit_result,
+                'mutant did not replace the cloned execution_origin with request')
+    else:
+        metadata = {'field': 'metadata', 'of': cloned}
+        require(edit['callee'] == 'alloc::collections::btree::map::<impl>::clear' and
+                edit['arguments'] == [{'borrow': 'TwoPhaseMut', 'origin': metadata}] and
+                edit['destination'] == {'Local': 4} and not writes,
+                'mutant did not clear the cloned options metadata')
+    whole_value_call(serialize, target, {'borrow': 'Shared', 'origin': cloned})
+    return dict(function_id=function['def_id'], function_sha256=digest(function), call=serialize)
+
+
+def inspect(raw, variant=None):
     original = Original(raw)
     require({row['key'] for row in original.data['target_information']} ==
             {'x86_64-unknown-linux-gnu'}, 'unreviewed extraction target')
     fields = declarations(original)
+    changed = MUTATED_ROOTS[variant] if variant is not None else None
     roots = {}
     for function in original.functions.values():
         name = function['item_meta']['name']
@@ -99,7 +150,10 @@ def inspect(raw):
             name = original.direct_name(name)
             if name in ROOTS:
                 require(name not in roots, 'duplicate wrapper')
-                roots[name] = wrapper(original, function, ROOTS[name])
+                if name == changed:
+                    roots[name] = mutated_wrapper(original, function, ROOTS[name], variant)
+                else:
+                    roots[name] = wrapper(original, function, ROOTS[name])
     require(set(roots) == set(ROOTS), 'missing actual wrapper')
     call_ids = {row['call']['target_declaration_sha256'] for row in roots.values()}
     require(len(call_ids) == 1, 'wrappers do not use the same to_vec declaration')
@@ -149,15 +203,26 @@ def inspect(raw):
                 library_refinement_proved=False, actual_wrapper_lean_proved=False)
 
 
-def check(raw, profile):
+def check_configuration(raw, profile):
     options = raw['translated']['options']
     require(options['preset'] == 'Aeneas' and options['sysroot'] == 'default' and
             options['monomorphize'] is False and options['exclude'] == [] and
             all(options[key] == profile['configuration'][name] for key, name in
                 [('start_from', 'roots'), ('include', 'include'), ('opaque', 'opaque')]),
             'extraction selectors/configuration changed')
+
+
+def check(raw, profile):
+    check_configuration(raw, profile)
     result = inspect(raw)
     require(result == profile['original_calls'], 'complete reviewed calls/derives changed')
+    return result
+
+
+def check_rejection(raw, profile, variant):
+    check_configuration(raw, profile)
+    result = inspect(raw, variant)
+    result['rejected_wrapper'] = MUTATED_ROOTS[variant]
     return result
 
 

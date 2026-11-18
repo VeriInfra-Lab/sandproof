@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import time
 
-from source_binding import HERE, ROOT, check, inspect
+from source_binding import HERE, ROOT, check, check_rejection
 
 
 def sha(path):
@@ -134,16 +134,13 @@ def run(output, lock, variant):
         record['llbc_sha256'] = sha(ir)
         if variant == 'correct':
             report = check(raw, profile)
-            (output / 'binding.json').write_text(json.dumps(report, indent=2)+'\n')
-            record['binding_sha256'] = sha(output / 'binding.json')
         else:
-            try:
-                inspect(raw)
-            except ValueError as error:
-                record.update(source_contract_rejected=True, rejection=str(error),
-                              lean_counterexample=False)
-            else:
-                raise ValueError('actual field substitution was admitted')
+            report = check_rejection(raw, profile, variant)
+            record.update(source_contract_rejected=True, rejected_wrapper=report['rejected_wrapper'],
+                          rejection='to_vec receives the edited clone instead of the original value',
+                          lean_counterexample=False)
+        (output / 'binding.json').write_text(json.dumps(report, indent=2)+'\n')
+        record['binding_sha256'] = sha(output / 'binding.json')
         if sha(source / profile['source']) != expected:
             raise ValueError('source changed during extraction')
         inputs(profile, record['head'])
