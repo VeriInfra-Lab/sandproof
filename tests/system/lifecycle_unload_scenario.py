@@ -1057,6 +1057,14 @@ def exercise(args):
                         automatic_expiry=expiry_prepare))
                     terminal_destroy_done = True
                     break
+                report['phase'] = 'original-load-paused-before-prepare-receipt-recovery'
+                report['prepare_receipt_pause'] = capture_probe.observe_prepare_receipt_pause(deadline)
+                pending = client.query()
+                client.check_view(pending, accepted)
+                assert pending['phase'] == 'resuming', 'pre-receipt Prepare unexpectedly became Running'
+                client.assert_data_closed()
+                client.assert_previous_tokens_closed()
+                report['prepare_receipt_pause']['public_resuming_and_data_closed'] = True
                 report['capture_handoff_recovery'] = capture_probe.finish(deadline)
             if cycle==1 and restore_fault:
                 report['phase']='original-restore-activation-gate-read'
@@ -1145,6 +1153,8 @@ def exercise(args):
                 resume_acceptance=accepted,gate_receipt=gate_receipt)
             if cycle == 1 and resume_receipt_restart:
                 report['resume_receipt_same_candidate']=receipt_probe.assert_candidate(physical_running)
+            if cycle == 1 and prepare_fault:
+                report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
             continuity=client.assert_resumed_workload(resumed,gate_receipt=gate_receipt,
                 physical_running=physical_running)
             cow_receipt = None
@@ -1152,8 +1162,6 @@ def exercise(args):
                 cow_receipt = cow_probe.verify_after_guest_write(
                     physical_running, continuity, deadline)
                 cow_probe = None  # Verification closes both original directory FDs.
-            if cycle == 1 and prepare_fault:
-                report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
             if cycle == 1 and data_probe is not None:
                 report['data_drain_resumed'] = data_probe.assert_resumed()
             if command_probe is not None:

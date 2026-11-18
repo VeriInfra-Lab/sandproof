@@ -116,6 +116,7 @@ class CaptureHandoffProbe:
         self.fd = self.pidfd = None
         self.files, self.accepted = {}, None
         self.terminal_accepted = None
+        self.prepare_context = None
         self.pause_requested = self.candidate_paused = False
         self.host = self.question = self.record = self.action = None
         self.command_sent = self.recovered = False
@@ -375,6 +376,10 @@ class CaptureHandoffProbe:
             if (len(candidates) != 1 or candidates[0]['restore']['activation'] is not None
                     or candidates[0]['restore']['material_use'] is not True):
                 raise ValueError('original LoadPaused pin before activation marker required')
+            if self.stage == 'restore-prepare-receipt' and (
+                    any('ActivateVm' in action['command']['logical']['command'] for action, _, _ in actions)
+                    or material_source_charge(candidates[0]) <= 0):
+                raise ValueError('LoadPaused receipt cut requires positive backing and no activation outbox')
             self.restore_entry = copy.deepcopy(entry)
             self.restore_record = copy.deepcopy(candidates[0])
             resource = self.action['identity']['resource']['id']
@@ -395,18 +400,7 @@ class CaptureHandoffProbe:
             if self.stage == 'restore-prepare-destroy':
                 self.prepare_files = {name: checked_file(claim / name, 16384) for name in
                     ('record.json', 'restore-intent.json', 'restore-loaded.json')}
-                # The manager has actually exited86, so this original audit
-                # interrupts no live Host or held observation.
-                audit = self.runtime.services.processes.audit('host-0')
-                local = local_binding(audit, accepted['session'],
-                    expected_node=self.runtime.services.host_configs[0]['inbox']['node'])
-                slots = [context for context, phase in audit['host_slots'] if phase == 'Occupied'
-                    and context['binding']['sandbox'] == local['sandbox']]
-                if (local != self.restore_record['restore']['local'] or len(slots) != 1
-                        or slots[0]['binding']['generation'] != self.action['identity']['generation']
-                        or slots[0]['binding']['vm'] != self.action['command']['logical']['command']['PrepareVm']['vm']):
-                    raise ValueError('exact original physically occupied LoadPaused slot required')
-                self.prepare_context = copy.deepcopy(slots[0])
+                self.prepare_context = self._original_prepared_slot()
 
         else:
             candidates = [r for r in records if r['work']['anchor']['request'] == entry['intent']]
@@ -451,6 +445,44 @@ class CaptureHandoffProbe:
             result.update(question=copy.deepcopy(self.question), observation_sha256=self.question_digest,
                           material_at_cut=self.sync_material, material_charge_at_cut=self.sync_reserved_bytes)
         return result
+
+    def _original_prepared_slot(self):
+        # The manager has exited, so the original audit interrupts no live Host.
+        audit = self.runtime.services.processes.audit('host-0')
+        local = local_binding(audit, self.accepted['session'],
+            expected_node=self.runtime.services.host_configs[0]['inbox']['node'])
+        slots = [context for context, phase in audit['host_slots'] if phase == 'Occupied'
+                 and equal(context['binding']['sandbox'], local['sandbox'])]
+        command = self.action['command']['logical']['command']['PrepareVm']
+        if (not equal(local, self.restore_record['restore']['local']) or len(slots) != 1
+                or not equal(slots[0]['binding']['owner'], local['owner'])
+                or not equal(slots[0]['binding']['generation'], self.action['identity']['generation'])
+                or not equal(slots[0]['binding']['vm'], command['vm'])
+                or not equal(slots[0]['binding']['network'], command['slot'])):
+            raise ValueError('exact original physically occupied LoadPaused slot required')
+        return copy.deepcopy(slots[0])
+
+    def observe_prepare_receipt_pause(self, deadline):
+        from lifecycle_freeze_destroy import paused_source
+
+        if self.stage != 'restore-prepare-receipt' or self.action is None or self.recovered:
+            raise ValueError('original unrecovered Prepare receipt cut required')
+        deadline = min(deadline, self.deadline)
+
+        def require_cut():
+            if (self.runtime.services.processes.children.get('host-0') is not self.host
+                    or self.host.poll() != self._cut_exit_code()
+                    or self.pidfd is None or pidfd_exited(self.pidfd)):
+                raise ValueError('original exited Host and held live Prepare candidate required')
+
+        require_cut()
+        self._configuration()
+        context = self._original_prepared_slot()
+        evidence = paused_source(self.runtime, dict(source=self.candidate, context=context), deadline)
+        require_cut()
+        self.prepare_context = context
+        return dict(context=context, physical=evidence, prepare_sql_receipt_pending=True,
+                    original_backing_pin_and_positive_charge_retained=True)
 
     def _sync_material(self, maximum):
         # The key is emitted by Rust's original selector, not recomputed JSON or authority.
@@ -872,10 +904,8 @@ class CaptureHandoffProbe:
         if self.stage != 'restore-prepare-receipt' or not self.recovered:
             raise ValueError('original recovered LoadPaused observation required')
         if (physical_running['session'] != self.accepted['session']
-                or physical_running['source'] != self.candidate
-                or physical_running['context']['binding']['generation'] != self.action['identity']['generation']
-                or physical_running['context']['binding']['vm'] !=
-                    self.action['command']['logical']['command']['PrepareVm']['vm']):
+                or not equal(physical_running['source'], self.candidate)
+                or not equal(physical_running['context'], self.prepare_context)):
             raise ValueError('recovery replaced the original pre-marker loaded candidate')
         return dict(same_loaded_candidate=True, new_load_inferred=False)
 
@@ -1026,11 +1056,100 @@ def self_test():
             with self.assertRaises(ValueError):p._original_action([(wrong,'dispatched',None)],entry)
             p.recovered=True;p.accepted=dict(session='global-session');p.action=action
             p.candidate=dict(resource_id='vm-0123456789abcdef-10',pid=123,start_time_ticks=456,boot_id='boot')
-            physical=dict(session='global-session',source=copy.deepcopy(p.candidate),context=dict(binding=dict(generation=3,vm=10)))
+            p.prepare_context = dict(position=1, binding=dict(generation=3, vm=10, network=11))
+            physical=dict(session='global-session',source=copy.deepcopy(p.candidate),
+                          context=copy.deepcopy(p.prepare_context))
             self.assertTrue(p.assert_restored_candidate(physical)['same_loaded_candidate'])
             for field,value in [('pid',124),('start_time_ticks',457),('resource_id','vm-0123456789abcdef-11')]:
                 wrong=copy.deepcopy(physical);wrong['source'][field]=value
                 with self.subTest(field=field),self.assertRaises(ValueError):p.assert_restored_candidate(wrong)
+            for field, value in (('generation', 3.0), ('vm', 11), ('network', 12)):
+                wrong = copy.deepcopy(physical)
+                wrong['context']['binding'][field] = value
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    p.assert_restored_candidate(wrong)
+            wrong = copy.deepcopy(physical)
+            wrong['context']['position'] += 1
+            with self.assertRaises(ValueError):
+                p.assert_restored_candidate(wrong)
+
+        def test_prepare_receipt_observes_only_original_exited_host_and_loaded_slot(self):
+            from _center_host_services import LIFECYCLE_PROTOCOL_VERSION
+
+            p, action, _ = self.fixture('restore-prepare-receipt')
+            p.action = action
+            p.action['command']['logical']['command']['PrepareVm']['slot'] = 11
+            p.accepted = dict(session='global-session')
+            p.candidate = dict(resource_id='vm-0123456789abcdef-10', pid=123,
+                               start_time_ticks=456, boot_id='boot')
+            local = dict(sandbox=4, owner=7)
+            p.restore_record = {'restore': {'local': local}}
+            node = {'node_id': 'test-node'}
+            context = dict(position=1, expected_previous=None,
+                           binding=dict(sandbox=4, owner=7, generation=3, vm=10, network=11))
+            audit = dict(schema_version=2, node=node, host_slots=[(context, 'Occupied')],
+                         operations=[dict(current=True, local=local, accepted_version=3,
+                             binding=dict(session=p.accepted['session'], node=node,
+                                          protocol_version=LIFECYCLE_PROTOCOL_VERSION))])
+            p.runtime.services.host_configs = [{'inbox': {'node': node}}]
+            p.host = Mock()
+            p.host.poll.return_value = 86
+            processes = NS(children={'host-0': p.host}, audit=Mock(return_value=audit))
+            p.runtime.services.processes = processes
+            p._configuration = Mock()
+            p.recovered = False
+            p.pidfd = 42
+            p.deadline = time.monotonic() + 5
+            physical = dict(state='Paused', read_only=True, execution_authority=False)
+            with patch(f'{__name__}.pidfd_exited', return_value=False) as exited, \
+                    patch('lifecycle_freeze_destroy.paused_source', return_value=physical) as observe:
+                saved = p.observe_prepare_receipt_pause(p.deadline)
+                observe.assert_called_once_with(p.runtime, dict(source=p.candidate, context=context), p.deadline)
+                processes.audit.assert_called_once_with('host-0')
+                self.assertEqual(saved['physical'], physical)
+                self.assertIs(saved['prepare_sql_receipt_pending'], True)
+                self.assertIs(saved['original_backing_pin_and_positive_charge_retained'], True)
+                observe.reset_mock()
+                for field, value in (('owner', 8), ('generation', 3.0), ('vm', 8), ('network', 12)):
+                    with self.subTest(field=field):
+                        wrong = copy.deepcopy(audit)
+                        wrong['host_slots'][0][0]['binding'][field] = value
+                        processes.audit.return_value = wrong
+                        with self.assertRaisesRegex(ValueError, 'original physically occupied LoadPaused slot'):
+                            p.observe_prepare_receipt_pause(p.deadline)
+                observe.assert_not_called()
+                processes.audit.return_value = audit
+                processes.children['host-0'] = Mock()
+                with self.assertRaisesRegex(ValueError, 'original exited Host'):
+                    p.observe_prepare_receipt_pause(p.deadline)
+                observe.assert_not_called()
+                processes.children['host-0'] = p.host
+                exited.side_effect = [False, True]
+                with self.assertRaisesRegex(ValueError, 'held live Prepare candidate'):
+                    p.observe_prepare_receipt_pause(p.deadline)
+                observe.assert_called_once()
+
+        def test_prepare_receipt_cut_rejects_early_activation_and_uncharged_backing(self):
+            for active, charge in ((True, 1), (False, 0)):
+                with self.subTest(active=active, charge=charge):
+                    p, prepare, entry = self.fixture('restore-prepare-receipt')
+                    entry['intent'] = {'request': {'operation': {'kind': 'resume'}}}
+                    row = {'restore': dict(intent=entry['intent'], activation=None, material_use=True)}
+                    actions = [(prepare, 'dispatched', None)]
+                    if active:
+                        actions.append(({'command': {'logical': {'command': {'ActivateVm': {}}}}},
+                                        'ready', None))
+                    p.client = NS(session='global-session')
+                    p.host = Mock()
+                    p.host.wait.return_value = 86
+                    p.accepted = None
+                    p.deadline = time.monotonic() + 5
+                    p._configuration = Mock()
+                    p._read = Mock(return_value=(entry, [row], actions))
+                    with patch.dict(globals(), material_source_charge=lambda _record: charge), \
+                            self.assertRaisesRegex(ValueError, 'positive backing and no activation outbox'):
+                        p.after_acceptance(dict(session=p.client.session), p.deadline)
+
         def test_partial_gate_configuration_never_adopts_generation_overflow(self):
             from lifecycle_unload_runtime import gate_configuration
             self.assertEqual(gate_configuration('a'*64,'sb-0123456789abcdef-4',3,1000)['generation'],3)
