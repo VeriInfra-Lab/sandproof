@@ -83,6 +83,9 @@ E11/E4 的显式 `--scenario capture-publish-conflict` 复用上述同步后调�
 目录的完整只读 manifest/三份文件及全文摘要、目标空 inode 未变、没有成功 completion
 或 Full 采用。该 End 可能记录更早的实际 Firecracker HTTP 返回，不能拿状态码推导
 材料发布成功或具体文件系统 errno。
+上述单磁盘场景核对原清单格式版本、完整绑定和兼容配置的 JSON 类型，并按原 State、
+Memory、Disk 顺序比较整个文件条目。Disk 的 drive ID 来自已接受 Full 的磁盘配置，
+条目的长度和摘要来自对应文件的实际读回。
 
 公开回到原 Running、RAM/文件/授权/寿命继续且物理 VMM 保持后，观察器另核原正材料
 预留、无 Stop，再只移除本测试创建且完整身份未变的空目录并同步父目录；未知、非空、

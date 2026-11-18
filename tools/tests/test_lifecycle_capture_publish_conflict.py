@@ -70,16 +70,25 @@ class EmptyTargetTests(unittest.TestCase):
 
 
 def fixture(root):
-    full=dict(pause=dict(binding={'original':'accepted capture'}),compatibility={'original':'profile'},
-              state_bytes=100,memory_bytes=100,disk_bytes=100)
+    operation = dict(protocol_version=4, session='session-1',
+        node=dict(deployment_id='deployment', node_id='host', node_generation=1),
+        key=dict(deployment='deployment', owner='owner', window=1, sequence=4),
+        expected=dict(state='version', version=3))
+    profile = dict(snapshot_format=1, tool=[1] * 32, cpu=[2] * 32, devices=[3] * 32,
+        image_configuration=[4] * 32,
+        writable_drives=[dict(drive_id='rootfs', jail_relative_path='rootfs.ext4')])
+    full = dict(pause=dict(binding=dict(operation=operation, source_incarnation=1, capture=2)),
+                compatibility=profile, state_bytes=100, memory_bytes=100, disk_bytes=100)
     store=root/'s';store.mkdir(mode=0o700)
     obstacle=publish.EmptyCaptureTarget(store,'a'*64);obstacle.create()
     stage=store/('staging-'+'a'*64);stage.mkdir(mode=0o700)
     entries=[]
-    for name in ('state.bin','memory.bin','disk-0.img'):
+    for name,kind in (('state.bin',dict(kind='state')),('memory.bin',dict(kind='memory')),
+                      ('disk-0.img',dict(kind='disk',drive_id='rootfs'))):
         raw=('original '+name).encode();path=stage/name;path.write_bytes(raw);path.chmod(0o400)
-        entries.append(dict(relative_path=name,length=len(raw),digest=list(hashlib.sha256(raw).digest())))
-    manifest=dict(binding=full['pause']['binding'],compatibility=full['compatibility'],files=entries)
+        entries.append(dict(kind=kind,relative_path=name,length=len(raw),digest=list(hashlib.sha256(raw).digest())))
+    manifest=dict(format_version=1,binding=copy.deepcopy(full['pause']['binding']),
+                  compatibility=copy.deepcopy(full['compatibility']),files=entries)
     (stage/'manifest.json').write_text(json.dumps(manifest));(stage/'manifest.json').chmod(0o400);stage.chmod(0o500)
     p=publish.PublishConflictProbe.__new__(publish.PublishConflictProbe)
     p.obstacle=obstacle;p.conflict=None;p.record={'capture':{'full':full}}
@@ -127,13 +136,33 @@ class PublishConflictTests(unittest.TestCase):
             finally:f.obstacle.close();f.stage.chmod(0o700)
 
     def test_complete_original_stage_is_checked_after_worker_end_without_claiming_errno_trace(self):
-        for fault in ('none','binding','digest','mode','memory-inode','stage-inode','extra','completion','obstacle'):
+        manifest_faults = {
+            'binding': lambda m: m.update(binding={}),
+            'binding-float': lambda m: m['binding'].update(source_incarnation=1.0),
+            'binding-key': lambda m: m['binding']['operation']['key'].update(sequence=5),
+            'profile-float': lambda m: m['compatibility'].update(snapshot_format=1.0),
+            'version-unknown': lambda m: m.update(format_version=2),
+            'version-float': lambda m: m.update(format_version=1.0),
+            'version-boolean': lambda m: m.update(format_version=True),
+            'unknown-header': lambda m: m.update(extra=0),
+            'empty-table': lambda m: m.update(files=[]),
+            'length-float': lambda m: m['files'][0].update(length=float(m['files'][0]['length'])),
+            'digest': lambda m: m['files'][0].update(digest=[0]*32),
+            'digest-float': lambda m: m['files'][0].update(
+                digest=[float(value) for value in m['files'][0]['digest']]),
+            'wrong-file-kind': lambda m: m['files'][0].update(kind=dict(kind='memory')),
+            'wrong-drive': lambda m: m['files'][2]['kind'].update(drive_id='different-disk'),
+            'unknown-entry-field': lambda m: m['files'][1].update(extra=0),
+        }
+        for fault in ('none',*manifest_faults,'mode','memory-inode','stage-inode','extra','completion','obstacle'):
             with tempfile.TemporaryDirectory() as temporary,ExitStack() as stack,self.subTest(fault=fault):
                 f=fixture(Path(temporary));p=f.probe;f.stage.chmod(0o700)
-                if fault=='binding':f.manifest['binding']={}
-                if fault=='digest':f.manifest['files'][0]['digest']=[0]*32
-                if fault in ('binding','digest'):
-                    (f.stage/'manifest.json').chmod(0o600);(f.stage/'manifest.json').write_text(json.dumps(f.manifest));(f.stage/'manifest.json').chmod(0o400)
+                if fault in manifest_faults:
+                    manifest_faults[fault](f.manifest)
+                    manifest_file = f.stage / 'manifest.json'
+                    manifest_file.chmod(0o600)
+                    manifest_file.write_text(json.dumps(f.manifest))
+                    manifest_file.chmod(0o400)
                 if fault=='mode':(f.stage/'memory.bin').chmod(0o600)
                 if fault=='memory-inode':
                     memory=f.stage/'memory.bin';raw=memory.read_bytes();memory.rename(f.stage/'old-memory')
