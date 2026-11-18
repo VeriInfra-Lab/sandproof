@@ -397,6 +397,13 @@ work/plan 继续。核对错误身份不能删除后继或复用位置，后继�
 逐项核对源包、private backing、在途克隆和收尾的原预算；Retiring 未结算仍全额占用，
 回收受阻时按原容量拒绝后续工作。逻辑退额与共享物理块释放分别报告。
 
+E11 的[实际 unlink 失败对照](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)
+用已批准 Linux 宿主的私有挂载命名空间，将原 Memory 文件绑定挂载到自身。原文件
+身份和已保存计划须继续匹配。真实退休先删除 State，在 Memory 的 unlink 返回
+`EBUSY` 后停止，保留原 Memory、Disk、原回执标记和另一键的材料。移除本用例的
+私有挂载后重开 store，用同一份序列化计划完成回收，重复执行仍成功。组件结果只
+约束文件和原计划，产品层的持久责任、配额和 VM 证据另行验收。
+
 G6 只扩展唯一 `normal`：产生 A→恢复 R1→B→恢复 R2→C→恢复 R3。在每次 Resume 前
 沿当前完整包锚定 C6 原目录/文件身份，真实 guest RAM/进程/磁盘推进后全读原五个文件，
 关闭观察 FD 才开始下一次 Unload。B/C 完整接管后，在会话仍未终止时用原 SQLite 的
