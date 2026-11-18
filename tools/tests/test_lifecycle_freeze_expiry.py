@@ -481,7 +481,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     self.assertIsNone(p.terminal_accepted);self.assertFalse(p.stop_released)
 
     def test_exact_host_kill_and_backing_required_before_response_without_waiting_for_stop(self):
-        for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','pin','material','commit'):
+        for fault in ('none','vm','generation','network','phase','terminal','operation','epoch','ledger','pin','material','commit'):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
                 stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
@@ -498,6 +498,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                 if fault=='terminal':native['terminal']=False
                 if fault=='operation':native['current_operation']['id']+=1
                 if fault=='epoch':native['current_operation']['epoch']+=1
+                if fault=='ledger':snapshot['native_kill_ledger']['result']='Destroyed'
                 if fault=='pin':snapshot['sources'][0]['restore']['material_use']=False
                 if fault=='material':p.runtime._materials.return_value={'changed':'backing'}
                 if fault == 'commit':
@@ -511,7 +512,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     sent.assert_not_called();self.assertFalse(p.continue_sent)
                     raise frozen._AwaitTerminal('original Host Kill not yet admitted')
                 reads=iter((not_yet_host_accepted,lambda:snapshot))
-                p._read_terminal=Mock(side_effect=lambda _:next(reads)())
+                p._read_terminal=Mock(side_effect=lambda _, *, extra:next(reads)())
                 p._source_state=Mock(side_effect=lambda _:'S' if p.continue_sent else 'T')
                 if fault=='none':
                     p._terminal_manager_started(p.deadline)
@@ -525,6 +526,8 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     sent.assert_not_called();self.assertFalse(p.continue_sent)
                     self.assertTrue(p.hold_source_process)
                 sleep.assert_called_once();self.assertFalse(p.stop_released)
+                self.assertEqual([call.kwargs['extra'] for call in p._read_terminal.call_args_list],
+                                 [p._read_kill_ledger, p._read_kill_ledger])
                 p.client.destroy.assert_not_called()
 
     def test_scene_keeps_audited_expiry_and_original_peer_cleanup_checks(self):

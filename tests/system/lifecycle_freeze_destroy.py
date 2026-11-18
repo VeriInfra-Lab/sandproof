@@ -362,8 +362,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
     def _terminal_extra(self,conn,local,capacity):
         return pending_stop_facts(self.runtime,conn,local,capacity)
 
-    def _read_terminal(self,deadline):
-        snapshot=super()._read_terminal(deadline)
+    def _read_terminal(self,deadline,*,extra=None):
+        snapshot=super()._read_terminal(deadline,extra=extra)
         snapshot['original_actions']=snapshot.pop('resume_actions')
         return snapshot
 
@@ -538,10 +538,25 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
     The short test SIGSTOP orders acceptance only. It must not wait on a fence
     or Stop whose scheduling itself needs the original Freeze observation.
     """
+    def _read_kill_ledger(self, conn, local, terminal, capacity):
+        namespace = self.runtime.services.native_pools[0]['namespace']
+        sandbox = _u64(local['sandbox'], positive=True)
+        operation = _u64(terminal['local_operation'], positive=True)
+        row = conn.execute(
+            'SELECT sandbox_id,owner_id,state_blob FROM operations '
+            'WHERE operation_id=? AND length(state_blob) BETWEEN 1 AND ?',
+            (f'op-{namespace}-{sandbox}-{operation}', capacity['max_sql_value_bytes']),
+        ).fetchone()
+        identity = self.action['identity']
+        if (row is None or row[:2] != (identity['sandbox'], identity['owner'])
+                or type(row[2]) is not bytes):
+            raise ValueError('bounded original native Kill ledger row required')
+        return dict(native_kill_ledger=json.loads(row[2], object_pairs_hook=unique_keys))
+
     def _terminal_manager_started(self,deadline):
         while True:
             try:
-                snapshot=self._read_terminal(deadline)
+                snapshot=self._read_terminal(deadline, extra=self._read_kill_ledger)
                 break
             except _AwaitTerminal:
                 time.sleep(min(.01,remaining(deadline)))
@@ -550,9 +565,15 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         if (native['terminal'] is not True or native['phase']!='Revoking' or operation is None
                 or operation['kind']!='Kill' or not equal(operation['id'],snapshot['terminal']['local_operation'])
                 or not equal(operation['epoch'],epoch) or epoch<=self.action['identity']['epoch']
+                or not equal(native['owner'],self.prior['local']['owner'])
                 or not equal(native['generation'],binding['generation'])
                 or not equal(native['current_vm'],binding['vm']) or not equal(native['net_slot'],binding['network'])):
             raise ValueError('durable exact original Kill required before restoring VMM response')
+        if (operation['status'] not in ('Pending', 'OutcomeUnknown')
+                or not equal(snapshot['native_kill_ledger'], dict(
+                    sandbox=self.prior['local']['sandbox'], operation=operation,
+                    input={'Kill': {'generation': binding['generation']}}, result=None))):
+            raise ValueError('original native Kill ledger must match the unresolved current Kill')
         self._inventory(snapshot)
         backing=self._backing(snapshot['sources'])
         if (not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources))

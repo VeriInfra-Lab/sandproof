@@ -58,10 +58,13 @@ def fixture(root):
     work=dict(work=dict(anchor=dict(local=dict(local),request=unload),requirement=dict(resource=dict(kind='vm',id=source['resource_id']),node=node,source={k:source[k] for k in ('pid','start_time_ticks','boot_id')})),
         observation={'sample':1},capture=None,restore=None,retirement=None,material_release=dict(producer=None,consumer=None))
     rows=[backing,work]
-    native=dict(terminal=True,phase='Revoking',generation=2,current_vm=9,net_slot=10,epoch=4,current_operation=dict(kind='Kill',id=5,epoch=4))
+    native=dict(owner=1,terminal=True,phase='Revoking',generation=2,current_vm=9,net_slot=10,epoch=4,
+        current_operation=dict(kind='Kill',id=5,epoch=4,status='Pending'))
+    kill_ledger=dict(sandbox=4,operation=copy.deepcopy(native['current_operation']),
+        input={'Kill': {'generation': 2}},result=None)
     snapshot=dict(original=old,terminal=terminal,local=local,native=native,sources=rows,original_actions=[(freeze,'dispatched',None)],
         terminal_actions=[(fence,'receipted',receipt(fence,'Fence',dict(epoch=4,terminal=True))),(stop,'dispatched',None)],
-        global_pending_stops=[stop],lifetime=lifetime,logical_action_registered=True)
+        global_pending_stops=[stop],lifetime=lifetime,logical_action_registered=True,native_kill_ledger=kill_ledger)
     cleanup_snapshot=copy.deepcopy(snapshot)
     cleanup_snapshot['terminal_actions'][1]=(stop,'receipted',receipt(stop,'Stopped',dict(pid=123,start_ticks=456)))
     cleanup_snapshot['terminal_actions'].append((cleanup,'dispatched',None));cleanup_snapshot['global_pending_stops']=[]
@@ -112,6 +115,29 @@ def freeze_window_journal(f):
 def pending_pause(f):
     return dict(f.snapshot['native'], owner=1, terminal=False, phase='Pausing', epoch=3,
                 current_operation=dict(id=4, epoch=3, kind='Pause', status='Pending'))
+
+
+def ordered_kill_journal(f):
+    path = freeze_window_journal(f)
+    raw = json.dumps(f.inbox).encode()
+    fence = f.snapshot['terminal_actions'][0][0]
+    ledger = f.snapshot['native_kill_ledger']
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute('CREATE TABLE operations(operation_id TEXT PRIMARY KEY,sandbox_id TEXT NOT NULL,'
+                     'owner_id TEXT NOT NULL,state_blob BLOB NOT NULL)')
+        conn.execute('CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT,'
+                     'started_at_ms INTEGER,deadline_ms INTEGER,max_deadline_ms INTEGER,startup_deadline_ms INTEGER)')
+        conn.execute('UPDATE controller_lifecycle_inbox SET state_json=?,sha256=?',
+                     (raw, hashlib.sha256(raw).digest()))
+        conn.execute('UPDATE sandboxes SET state_blob=?', (json.dumps(f.snapshot['native']).encode(),))
+        conn.execute('INSERT INTO outbox VALUES(2,?,?,?,?,NULL)',
+                     (f.probe.config['sandbox'], fence['identity']['operation'], json.dumps(fence).encode(), 'ready'))
+        conn.execute('INSERT INTO operations VALUES(?,?,?,?)',
+                     (fence['identity']['operation'], f.probe.config['sandbox'],
+                      fence['identity']['owner'], json.dumps(ledger).encode()))
+        conn.execute('INSERT INTO sandbox_lifetimes VALUES(?,?,?,?,?,?)',
+                     (f.probe.config['sandbox'], fence['identity']['owner'], 900, 1000, 1100, 1000))
+    return path
 
 
 class FrozenFactsTests(unittest.TestCase):
@@ -1176,6 +1202,83 @@ class ResponsiveFreezeTests(unittest.TestCase):
 
 
 class OrderedFreezeTests(unittest.TestCase):
+    def test_ordered_recovery_rejects_missing_or_different_kill_ledger(self):
+        for fault in ('missing', 'foreign-owner', 'different-operation', 'different-generation',
+                      'numeric-alias', 'result', 'completed-operation'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                f = fixture(Path(directory))
+                p = f.probe
+                p.__class__ = frozen.OrderedFreezeDestroyProbe
+                p._bind_destroy(f.accepted(f.destroy))
+                if fault == 'completed-operation':
+                    f.snapshot['native']['current_operation']['status'] = 'Succeeded'
+                    f.snapshot['native_kill_ledger']['operation']['status'] = 'Succeeded'
+                path = ordered_kill_journal(f)
+                ledger = copy.deepcopy(f.snapshot['native_kill_ledger'])
+                with closing(sqlite3.connect(path)) as writer, writer:
+                    if fault == 'missing':
+                        writer.execute('DELETE FROM operations')
+                    elif fault == 'foreign-owner':
+                        writer.execute('UPDATE operations SET owner_id=?', ('tenant-2',))
+                    else:
+                        if fault == 'different-operation':
+                            ledger['operation']['id'] += 1
+                        elif fault == 'different-generation':
+                            ledger['input']['Kill']['generation'] += 1
+                        elif fault == 'numeric-alias':
+                            ledger['input']['Kill']['generation'] = 2.0
+                        elif fault == 'result':
+                            ledger['result'] = 'Destroyed'
+                        writer.execute('UPDATE operations SET state_blob=?', (json.dumps(ledger).encode(),))
+                p._source_state = Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+                with patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                        patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
+                    with self.assertRaisesRegex(ValueError, 'original native Kill ledger'):
+                        p._terminal_manager_started(p.deadline)
+                sent.assert_not_called()
+                p._source_state.assert_not_called()
+                self.assertFalse(p.continue_sent)
+                self.assertFalse(p.stop_released)
+
+    def test_ordered_recovery_reads_kill_ledger_in_original_sql_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            f = fixture(root)
+            p = f.probe
+            p.__class__ = frozen.OrderedFreezeDestroyProbe
+            p._bind_destroy(f.accepted(f.destroy))
+            f.snapshot['native']['current_operation']['status'] = 'OutcomeUnknown'
+            original = f.snapshot['native_kill_ledger']
+            original['operation']['status'] = 'OutcomeUnknown'
+            path = ordered_kill_journal(f)
+            p._source_state = Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
+            with closing(sqlite3.connect(path)) as writer:
+                self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
+
+                def finish_after_native_read(reader, _config, _deadline):
+                    self.assertTrue(reader.in_transaction)
+                    with writer:
+                        writer.execute('UPDATE operations SET state_blob=?',
+                                       (json.dumps(dict(original, result='Destroyed')).encode(),))
+                    return f.rows
+
+                with patch.object(capture, 'checked_source_records', side_effect=finish_after_native_read), \
+                        patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
+                    p._terminal_manager_started(p.deadline)
+                    sent.assert_called_once_with(p.pidfd, signal.SIGCONT)
+                self.assertEqual(p.response_restore_snapshot['native_kill_ledger'], original)
+                self.assertTrue(p.continue_sent)
+                self.assertFalse(p.stop_released)
+
+            later = fixture(root).probe
+            later.__class__ = frozen.OrderedFreezeDestroyProbe
+            later._bind_destroy(f.accepted(f.destroy))
+            with patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                    patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
+                with self.assertRaisesRegex(ValueError, 'original native Kill ledger'):
+                    later._terminal_manager_started(later.deadline)
+                sent.assert_not_called()
+
     def test_response_stays_held_until_kill_and_original_freeze_outbox_agree(self):
         errors = {
             'stale-kill-epoch': 'durable exact original Kill',
