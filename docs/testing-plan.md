@@ -494,6 +494,10 @@ Resume backing pin 与正材料额度，允许刷新来源观测样本。
 同一快照还须确认 Host 收件仍停在非终止的原 Unload 版本，原生账本的 Pause 仍为
 `Pending`，且操作号、epoch、运行代、VM 和网络槽均为原 Freeze 对应的身份。
 公开 Destroy 返回 202 时，两侧的 `host_nonterminal_pause` 仍须记录同一个原 Pause。
+两侧的 `original_vmm_endpoint` 均须匹配最初实际 Paused 回复时的 jail 与 API socket
+设备号、inode 和预期 UID；受保护的进程记录与原 pidfd 身份也要保持。窗口内只读这些
+元数据，不重新连接 VMM 或发送信号。复用原目录路径的其它 socket，或搬入替换 jail
+的原 socket，均必须拒绝。这两次观察不代替实际 Paused 回复或后续内核退出检查。
 报告两侧的 `freeze_logical_action_registered` 和 `original_pin_and_positive_charge_retained`
 均须为 true。前置核对失败时不发送 Destroy，
 后置核对失败时保留原接受和首错。
