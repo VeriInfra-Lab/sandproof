@@ -487,8 +487,13 @@ backing pin/正额度、材料、同伴进展、内核退出、Cleanup/GC 和历
 [V9 第4节](formal/09-system-composition.md#4-条件最终完成性)：外部长期不可用可保持未知，
 环境恢复后必须推进；外部不可用与内部不启用工作需分别判断，不能混用。
 
-`capture-freeze-receipt-destroy` 将顺序控制仅保持到原 Host 已持久接受准确的 Kill：
-只读核对当前终止版本、本地映射、原来源及 backing 责任后恢复同一 VMM 进程应答，
+`capture-freeze-receipt-destroy` 在调用公开 Destroy 前及收到接受后分别从一个只读
+Host SQLite 事务核对原 Unload、完整 Freeze、对应的逻辑动作登记、SQL 回执仍为空
+及原 outbox 无 Seal/Commit。
+报告两侧的 `freeze_logical_action_registered` 均须为 true。前置核对失败时不发送 Destroy，
+后置核对失败时保留原接受和首错。
+该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。只读核对当前终止版本、
+本地映射、原来源及 backing 责任后恢复同一 VMM 进程应答，
 随后仍用原规则核对终止围栏、同源 Stop、材料、同伴进展与退出/GC。它不会等 Stop 才
 SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程无进程停止。自由应答对照
 可能在 Host 收到 Destroy 前已派发 Full；应按原输入日志区分在途旧工作与终止后新派发，

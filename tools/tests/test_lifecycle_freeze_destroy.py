@@ -86,6 +86,26 @@ def fixture(root):
         unload=unload,destroy=destroy,freeze=freeze,stop=stop,receipt=receipt,rows=rows)
 
 
+def freeze_window_journal(f):
+    p = f.probe
+    path = Path(f.runner.services.native_pools[0]['database'])
+    row = dict(f.inbox['sessions'][0], current_version=4, terminal=False, entries=[p.unload_entry])
+    raw = json.dumps({'sessions': [row]}).encode()
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
+        conn.execute('CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
+        conn.execute('CREATE TABLE controller_effect_keys(id INTEGER PRIMARY KEY,logical_json BLOB NOT NULL UNIQUE)')
+        conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
+                     (raw, hashlib.sha256(raw).digest(), 65536))
+        conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
+                     (p.config['sandbox'], f.freeze['identity']['operation'],
+                      json.dumps(f.freeze).encode(), 'dispatched'))
+        conn.execute('INSERT INTO controller_effect_keys VALUES(1,?)',
+                     (json.dumps(f.freeze['command']['logical']).encode(),))
+    path.chmod(0o600)
+    return path
+
+
 class FrozenFactsTests(unittest.TestCase):
     def test_terminal_history_rejects_numeric_aliases_without_turning_them_into_pending(self):
         for fault in ('none','version','sandbox','owner-float','owner-bool','pending','pending-float'):
@@ -210,21 +230,11 @@ class FrozenFactsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             f = fixture(Path(directory))
             p = f.probe
-            path = Path(f.runner.services.native_pools[0]['database'])
-            row = dict(f.inbox['sessions'][0], current_version=4, terminal=False, entries=[p.unload_entry])
-            raw = json.dumps({'sessions': [row]}).encode()
+            path = freeze_window_journal(f)
             original = json.dumps(f.freeze).encode()
             operation = f.freeze['identity']['operation']
             replacement = copy.deepcopy(f.freeze)
             replacement['identity']['logical_action'] = 'effect-17'
-            with closing(sqlite3.connect(path)) as conn, conn:
-                conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
-                conn.execute('CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
-                conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
-                             (raw, hashlib.sha256(raw).digest(), 65536))
-                conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
-                             (p.config['sandbox'], operation, original, 'dispatched'))
-            path.chmod(0o600)
             with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                     patch.object(p, '_check_source_hold') as held:
                 first = p.observe_destroy_window(p.deadline)
@@ -283,6 +293,52 @@ class FrozenFactsTests(unittest.TestCase):
                 f.runner.services.processes.children['host-0'] = Mock(pid=p.host.pid)
                 with self.assertRaisesRegex(ValueError, 'original Freeze cut Host'):
                     p.observe_destroy_window(p.deadline)
+
+    def test_destroy_window_reads_freeze_registration_in_the_same_sql_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            logical = f.freeze['command']['logical']
+            capacity = f.runner.services.host_configs[0]['native']['maintenance']['capacity']
+            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held:
+                self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
+
+                def replace_after_outbox_read(reader, _config, _deadline):
+                    self.assertTrue(reader.in_transaction)
+                    variant = copy.deepcopy(logical)
+                    variant['command']['FreezeVm']['vm'] += 1
+                    with writer:
+                        writer.execute('UPDATE controller_effect_keys SET logical_json=? WHERE id=1',
+                                       (json.dumps(variant).encode(),))
+                    return f.rows
+
+                with patch.object(capture, 'checked_source_records', side_effect=replace_after_outbox_read):
+                    before = p.observe_destroy_window(p.deadline)
+                held.reset_mock()
+                with patch.object(capture, 'checked_source_records', return_value=f.rows):
+                    with self.assertRaisesRegex(ValueError, 'Freeze logical registration differs'):
+                        p.observe_destroy_window(p.deadline)
+                    self.assertIs(before['freeze_logical_action_registered'], True)
+                    type_alias = copy.deepcopy(logical)
+                    type_alias['command']['FreezeVm']['vm'] = float(type_alias['command']['FreezeVm']['vm'])
+                    for case, registration in (
+                            ('different JSON type', json.dumps(type_alias).encode()),
+                            ('over bound', b'x' * (capacity['max_sql_value_bytes'] + 1)),
+                            ('missing', None)):
+                        with self.subTest(case=case):
+                            with writer:
+                                writer.execute('DELETE FROM controller_effect_keys WHERE id=1')
+                                if registration is not None:
+                                    writer.execute('INSERT INTO controller_effect_keys VALUES(1,?)', (registration,))
+                            with self.assertRaisesRegex(ValueError, 'logical'):
+                                p.observe_destroy_window(p.deadline)
+                    held.assert_not_called()
+                    with writer:
+                        writer.execute('INSERT INTO controller_effect_keys VALUES(1,?)',
+                                       (json.dumps(logical).encode(),))
+                    self.assertIs(p.observe_destroy_window(p.deadline)['freeze_logical_action_registered'], True)
+                    held.assert_called_once()
 
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
