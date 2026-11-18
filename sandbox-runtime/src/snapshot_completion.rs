@@ -261,6 +261,109 @@ mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
+    fn assert_directory_sync_bad_fd<T>(result: Result<T, RuntimeError>) {
+        let Err(RuntimeError::Io(error)) = result else {
+            panic!("record operation must reach the original directory fsync");
+        };
+        assert_eq!(
+            error.raw_os_error(),
+            Some(rustix::io::Errno::BADF.raw_os_error())
+        );
+    }
+
+    fn check_record_sync_recovery(
+        (canonical_prefix, stage_prefix): (&str, &str),
+        publish: impl Fn(&SnapshotStore, [u8; 32], &[u8]) -> Result<(), RuntimeError>,
+        read: impl Fn(&SnapshotStore, [u8; 32]) -> Result<Vec<u8>, RuntimeError>,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(root.path(), Permissions::from_mode(0o700)).unwrap();
+        let owner = rustix::process::geteuid().as_raw();
+        let mut store = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        let key = [30; 32];
+        let other_key = [31; 32];
+        let original = b"original returned bytes";
+        let control = b"already durable independent record";
+        publish(&store, other_key, control).unwrap();
+        let canonical = root.path().join(key_name(canonical_prefix, &key));
+        let stage = root.path().join(key_name(stage_prefix, &key));
+        let other = root.path().join(key_name(canonical_prefix, &other_key));
+        let other_stamp = FileStamp::from_metadata(&other.symlink_metadata().unwrap());
+
+        // The replacement descriptor names the same directory. It permits
+        // openat/renameat but the kernel rejects fsync on an O_PATH FD.
+        let directory = store.directory.metadata().unwrap();
+        let limited = File::from(
+            rustix::fs::open(
+                root.path(),
+                OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .unwrap(),
+        );
+        let same = limited.metadata().unwrap();
+        assert_eq!((same.dev(), same.ino()), (directory.dev(), directory.ino()));
+        store.directory = limited;
+        assert_directory_sync_bad_fd(publish(&store, key, original));
+
+        let metadata = canonical.symlink_metadata().unwrap();
+        assert!(metadata.is_file());
+        assert_eq!(
+            (metadata.uid(), metadata.mode() & 0o7777, metadata.nlink()),
+            (owner, 0o400, 1)
+        );
+        let stamp = FileStamp::from_metadata(&metadata);
+        assert_eq!(std::fs::read(&canonical).unwrap(), original);
+        assert_eq!(
+            stage.symlink_metadata().unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert_directory_sync_bad_fd(read(&store, key));
+        assert_eq!(
+            FileStamp::from_metadata(&canonical.symlink_metadata().unwrap()),
+            stamp
+        );
+        drop(store);
+
+        let reopened = SnapshotStore::open_for_owner(root.path(), owner).unwrap();
+        assert_eq!(read(&reopened, key).unwrap(), original);
+        assert_eq!(
+            FileStamp::from_metadata(&canonical.symlink_metadata().unwrap()),
+            stamp
+        );
+        assert_eq!(
+            stage.symlink_metadata().unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert_eq!(read(&reopened, other_key).unwrap(), control);
+        assert_eq!(
+            FileStamp::from_metadata(&other.symlink_metadata().unwrap()),
+            other_stamp
+        );
+    }
+
+    #[test]
+    fn record_sync_failure_preserves_snapshot_completion_for_reopen() {
+        check_record_sync_recovery(
+            ("completed-", "completion-stage-"),
+            SnapshotStore::publish_completion,
+            SnapshotStore::read_completion,
+        );
+    }
+
+    #[test]
+    fn record_sync_failure_preserves_returned_api_end_for_reopen() {
+        check_record_sync_recovery(
+            ("api-returned-", "api-return-stage-"),
+            |store, key, bytes| {
+                store.publish_retained_request_end(key, bytes, || {
+                    panic!("directory EBADF is not a retryable sync error")
+                })
+            },
+            SnapshotStore::read_request_end,
+        );
+    }
+
     #[test]
     fn used_or_partial_request_end_slot_cannot_admit_another_ready() {
         let root = tempfile::tempdir().unwrap();
