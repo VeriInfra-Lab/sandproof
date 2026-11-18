@@ -1080,3 +1080,105 @@ fn pre_request_freeze_failure_can_terminate_after_restart_without_unknown_retire
         "physical material retirement is still independently required"
     );
 }
+
+#[test]
+fn lost_freeze_observation_blocks_only_until_original_result_returns() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, state) = ready(&path);
+    let source = observed_for_full(&mut journal);
+    let full = full_request(&source);
+    journal
+        .admit_lifecycle_full_capture::<Evidence>(
+            &source.work,
+            &v3::context(),
+            &full,
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let sandbox = source.source_sandbox();
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    success(&mut journal, &fence);
+    let freeze = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        freeze.command.command(),
+        core::Command::FreezeVm { .. }
+    ));
+
+    // No receipt: the real original SQL keeps the dispatched Freeze uncertain.
+    // Reopening cannot turn absence of a reply into physical success or exit.
+    let request = destroy(&mut journal);
+    drop(journal);
+    let mut journal = v3::open(&path);
+    let before = journal.world().unwrap();
+    let sources = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    let row = before.sandbox_record(sandbox).unwrap();
+    assert!(row.terminal);
+    assert_eq!(row.phase, core::Phase::Revoking);
+    assert_eq!(row.effective, core::Authority::Closed);
+    for _ in 0..3 {
+        // next_step is only a scheduling hint. The real journal must still
+        // refuse its suggested Stop while the original Freeze is unresolved.
+        let WorkflowStep::Apply(input) = workflow::next_step(&journal.world().unwrap(), sandbox)
+        else {
+            panic!("expected original terminal scheduling hint");
+        };
+        assert!(matches!(
+            *input,
+            core::ControllerInput::Scheduler(core::SchedulerInput::StopVm(..))
+        ));
+        assert!(matches!(
+            journal.apply(*input, &mut NeverCrash),
+            Err(JournalError::UnresolvedAction)
+        ));
+        assert!(
+            journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(journal.world().unwrap(), before);
+        assert_eq!(
+            journal.lifecycle_source_work(&v3::config().node).unwrap(),
+            sources
+        );
+        assert!(journal.uncertain_actions().unwrap().contains(&freeze));
+        assert!(
+            !journal
+                .lifecycle_destroy_cleaned(&request, &v3::context())
+                .unwrap()
+        );
+    }
+    // Only the exact original external observation resolves the ambiguity.
+    // The provider is controlled here; the separate KVM case supplies it for real.
+    success(&mut journal, &freeze);
+    assert_eq!(journal.world().unwrap().sandbox_record(sandbox), Some(row));
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence { terminal: true, .. }
+    ));
+    success(&mut journal, &fence);
+    let stop = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        stop.command.command(),
+        core::Command::StopVm { .. }
+    ));
+    success(&mut journal, &stop);
+    assert!(!journal.uncertain_actions().unwrap().contains(&freeze));
+    assert!(
+        !journal
+            .lifecycle_destroy_cleaned(&request, &v3::context())
+            .unwrap(),
+        "Stop receipt alone must not replace material retirement and cleanup"
+    );
+    drop(state);
+}
