@@ -66,6 +66,7 @@ pub struct State {
     pub material_prepare_calls: usize,
     pub material_delete_plans: Vec<Vec<u8>>,
     pub block_material_delete: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+    pub material_delete_hook: Option<Box<dyn FnOnce() + Send>>,
     pub capture_request_end:
         Option<sandproof_controller_service::capture::CaptureRequestEndObservation>,
     pub capture_request_end_observations: usize,
@@ -138,12 +139,18 @@ impl WorkExecution for TestHost {
                 .recv_timeout(std::time::Duration::from_secs(15))
                 .unwrap();
         }
-        self.0
-            .lock()
-            .unwrap()
-            .material_observation
-            .clone()
-            .ok_or(ApplicationError::Busy)
+        let (observation, hook) = {
+            let mut state = self.0.lock().unwrap();
+            let observation = state
+                .material_observation
+                .clone()
+                .ok_or(ApplicationError::Busy)?;
+            (observation, state.material_delete_hook.take())
+        };
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(observation)
     }
     fn propose_lifecycle_full(
         &self,

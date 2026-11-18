@@ -4,6 +4,7 @@ use super::*;
 use crate::capture::{MaterialRetirementObservation, MaterialRetirementPermit};
 use sha2::{Digest, Sha256};
 mod application;
+mod commit_reply_loss;
 
 fn next_token() -> String {
     "a5".repeat(32)

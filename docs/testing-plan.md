@@ -386,6 +386,13 @@ E4 的 [SQLite 登记回归](../controller-service/src/controller/lifecycle_inbo
 拒绝→卸载该别名后恢复正常，原布局字节不被改写；mount ID 仅在当次 FD 上观察。
 探针或后续发布失败后保留原目录锚点/部分文件，不能自动清空后伪装为首次初始化。
 
+E11 的[回执目录同步对照](../sandbox-runtime/src/snapshot_completion.rs)分别覆盖材料完成
+和原 Full API End。测试使用同一目录的 `O_PATH` 描述符，让原文件完成重命名、最后的
+目录 `fsync` 返回内核 `EBADF`。此时最终路径已有原字节，使用该描述符读取仍须失败。
+以正常描述符重开后，由原读取入口同步目录并读回同一 inode、相同字节。整个过程
+保持独立键并核对暂存不存在。组件结果约束文件读取与同步，SQL 收件、停机和产品实机
+另行验收。
+
 真实文件检查覆盖 state/RAM/磁盘的原字节、完整长度/摘要、稀疏区间、不同 inode、单链接、
 原属主及只读/可写模式。分别改写源与目标、unlink 一方后核对另一方仍保持原内容；
 测试可由自身文件的可信属主显式改权限制造写入，不放宽生产封存模式。覆盖重复目标、
@@ -416,6 +423,13 @@ B 接管且全部原使用结束后可以退休，不能以全部拒绝满足安
 新引用的交错在同一 SQLite 事务只能有一方成功；原 loader、activation、Full worker、
 private backing、位置或其它 pin 未决时拒绝退休。真实结束必须完整匹配原材料/代次，
 并检查原释放事实在后继 Unloaded 事务固定，不能由位置最新记录或当前终止证书补造。
+
+E11 的[提交结果丢失对照](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/commit_reply_loss.rs)
+从原应用入口触发删除许可与结算的 `CommitUncertain`，分别重开已提交和已回滚的 SQLite。
+未收到确认删除许可时不调用删除端。重开后，有固定计划则继续同一计划，确认回滚且无
+计划后才重新询问。已结算不再次删除或退额，未结算时保留原占用并用同一计划重试。
+新运行代的 backing、凭据和原释放记录须保持。Host 回执由受控提供方给出，
+本对照验证 SQLite 与应用编排，真实删除和 VM 观察另行验收。
 
 Retiring 提交前后故障、部分删除、删除完成丢回执、管理重启及重复/迟到回执均沿原
 work/plan 继续。核对错误身份不能删除后继或复用位置，后继再演进/续期不使合法旧计划
