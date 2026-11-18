@@ -29,6 +29,7 @@ ROOT = WORK + '::{' + CONTROLLER + '::ControllerJournal}::prepare_lifecycle_sour
 START_FROM = CONTROLLER + '::ControllerJournal::prepare_lifecycle_source_work'
 RETAIN = WORK + '::*::prepare_lifecycle_source_work'
 MODULE = 'SandproofUnloadPrepareTransaction'
+LEAN_ROOT = MODULE + '.controller.lifecycle_inbox.source_work.ControllerJournal.prepare_lifecycle_source_work'
 SHAPES = {
     WORK + '::SourceWorkRecord': ['work', 'observation', 'capture', 'restore', 'retirement', 'material_release'],
     WORK + '::codec::Sources': ['config', 'node', 'max_sessions', 'records'],
@@ -99,7 +100,7 @@ def checked_translation(ir, cfg, target, root, retained_root):
     return translated
 
 
-def admit(ir, generated, cfg, target):
+def admit(ir, generated, cfg, target, *, expected_loops=0):
     translated = checked_translation(ir, cfg, target, START_FROM, RETAIN)
 
     functions = translated['fun_decls']
@@ -132,13 +133,26 @@ def admit(ir, generated, cfg, target):
 
     generated_functions = json.loads((generated / 'translation.json').read_bytes())['functions']
     mapped = [row for row in generated_functions if row['def_id'] == prepare['def_id']]
-    if (len(mapped) != 1 or mapped[0]['rust_name'] != ROOT or mapped[0]['is_opaque'] is not False
-            or mapped[0]['source']['file'] != SOURCE or mapped[0]['lean_file'] != MODULE + '/Funs.lean'
-            or not mapped[0]['lean_name'].startswith(MODULE + '.')):
+    names = {LEAN_ROOT}
+    for index in range(expected_loops):
+        loop = f'{LEAN_ROOT}_loop{index}'
+        names.update((loop, loop + '.body'))
+    if (len(mapped) != len(names) or {row['lean_name'] for row in mapped} != names
+            or any(row['rust_name'] != ROOT or row['is_opaque'] is not False
+                   or row['source']['file'] != SOURCE or row['lean_file'] != MODULE + '/Funs.lean'
+                   for row in mapped)):
         raise ValueError('generated prepare identity differs from original Rust root')
-    lean_name = mapped[0]['lean_name'].removeprefix(MODULE + '.')
-    if not re.search(r'^\s*def\s+' + re.escape(lean_name) + r'\s',
-                     (generated / MODULE / 'Funs.lean').read_text(), re.M):
+    if expected_loops:
+        raw_span = prepare['item_meta']['span']['Untagged']['data']
+        start, end = raw_span['beg']['line'], raw_span['end']['line']
+        for row in mapped:
+            span = row['source']
+            if (not start <= span['begin_line'] <= span['end_line'] <= end
+                    or (row['lean_name'] == LEAN_ROOT) != ((span['begin_line'], span['end_line']) == (start, end))):
+                raise ValueError('generated prepare or loop source span differs')
+    body = (generated / MODULE / 'Funs.lean').read_text()
+    if any(not re.search(r'^\s*def\s+' + re.escape(name.removeprefix(MODULE + '.')) + r'\s', body, re.M)
+           for name in names):
         raise ValueError('actual generated prepare definition is missing')
     return dict(actual_root=ROOT, root_id=prepare['def_id'], calls=calls,
-                lean_name=mapped[0]['lean_name'], source_inputs=SOURCE_INPUTS)
+                lean_name=LEAN_ROOT, source_inputs=SOURCE_INPUTS)

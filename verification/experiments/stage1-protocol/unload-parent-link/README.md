@@ -296,6 +296,79 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
 [覆盖候选](world-begin/public-registration.patch) 记录本切片。共享 Lake 接线和现有登记的
 合并由主控按实际生成文件和回执统一处理。
 
+### 外层首次登记的抽取候选
+
+`probe_prepare_iterators.py` 仅在原 integration `f26fc26a` 的隔离源码副本中应用候选。
+原 `prepare-transaction` 的高阶生命周期失败保留。试验中，循环内返回先触发提前返回
+限制，持有借用迭代器的循环随后触发嵌套借用限制。现有三组对照使用固定工具和各自的
+原始日志。
+
+| 源视图 | 触及的变化 | 实际工具边界 |
+|---|---|---|
+| `replay-only` | 全文重放使用有界索引，第一次命中后返回原记录 | Charon 通过，Aeneas 在 `codec::save(&tx, ...)` 的借用展开停止 |
+| `replay-and-capacity` | 容量按同一完整 session 计数，并公开 `LifecycleRequest`/`OperationBinding` 的实际字段 | Charon 通过，Aeneas 在 Serde 序列化 trait 递归组停止 |
+| `json-boundary` | 在上一行基础上使用同一 `SourceWork` 值的具体 JSON 调用边界 | Charon 与 Aeneas 通过，准入核对完整父方法、两个循环和原调用 |
+
+候选维持 Begin、读 Inbox、认证、读来源、全文重放、构造、序列化、容量、保存及提交的
+原顺序。重放只克隆首个全文相等记录。长度超限先拒绝，其后只数同一 session，索引和
+计数均受原记录长度约束。读取和保存继续通过外层持有的同一个 `tx` 借用连接。附加
+`--wrapper-ir` 会单独查具体编码函数的真实 Charon 正文。检查完整 `&SourceWork` 的
+原借用、唯一的 `serde_json::to_vec::<SourceWork>` 和直接返回的原结果。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+mkdir -m 700 "$new_probe_parent"
+for variant in replay-only replay-and-capacity json-boundary; do
+  if bash scripts/python-entry.sh "$package/probe_prepare_iterators.py" \
+    --variant "$variant" --output "$new_probe_parent/$variant" \
+    --tools "$fixed_aeneas" --lock "$SANDPROOF_LOCK_FILE"; then
+    test "$variant" = json-boundary
+  else
+    test "$variant" != json-boundary
+  fi
+done
+bash scripts/python-entry.sh "$package/probe_prepare_iterators.py" \
+  --variant json-boundary --wrapper-ir --output "$new_probe_parent/wrapper" \
+  --tools "$fixed_aeneas" --lock "$SANDPROOF_LOCK_FILE"
+```
+
+前两条对照预期退出非零，分别保留 `probe-result.json` 和原工具日志。第三条须记录
+`generated=true`。独立包装检查须有同一候选源码摘要和实际 `serde_to_vec_id`。
+源码归档和实际源码改动分别记账，候选只供主控评估及后续对应证明。公共登记须等待
+候选采用、完整 Lean 接线及正式回执。具体 JSON 边界的原调用证据后续须连接到
+V0 JSON 合同。事务和存储来源仍由 V5 具名提供。
+
+ning 可在干净的临时 `f26fc26a` 工作树中重放本次候选。`proof_checkout` 指向本 PR 的
+独立工作树，当前运行目录为临时原生工作树。下面的原生用例复用 #920 和 #929。
+
+```bash
+set -euo pipefail
+test "$(git rev-parse HEAD)" = f26fc26a3fb6987a18ad69015c56bb99c0748e12
+test -z "$(git status --porcelain)"
+package=verification/experiments/stage1-protocol/unload-parent-link
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$proof_checkout/$package" bash scripts/python-entry.sh - <<'PY'
+from pathlib import Path
+import probe_prepare_iterators as probe
+
+path = Path(probe.prepare.SOURCE)
+assert probe.digest(path) == probe.prepare.SOURCE_INPUTS[probe.prepare.SOURCE]
+path.write_text(probe.rewrite(path.read_text(), 'json-boundary'))
+assert probe.digest(path) == '4b433e2be3337db97e9fb7e8d9b868d159c3e2cb8c894a2a0ec78ea4867489fd'
+PY
+fixture_commit=87845bc241fe09c7803c2f9e0a1cdebf4c823b07
+fixture_dir=verification/experiments/stage1-protocol/unload-prepare-transaction
+target=controller-service/src/controller/lifecycle_inbox/source_work/tests.rs
+git fetch --no-tags --no-write-fetch-head origin refs/pull/929/head
+{
+  printf '\n'
+  git show "$fixture_commit:$fixture_dir/native-tests.rs.in"
+  git show "$fixture_commit:$fixture_dir/begin-contention.rs.in"
+} >> "$target"
+cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks \
+  --lib controller::lifecycle_inbox::source_work::tests::
+```
+
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
 ning 在确定的新提交上完成普通检查及相关上游原生原版/错误版/恢复检查；严格按原收据键、
