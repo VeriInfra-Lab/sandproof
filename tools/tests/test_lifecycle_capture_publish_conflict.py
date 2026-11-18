@@ -154,15 +154,16 @@ class PublishConflictTests(unittest.TestCase):
             'wrong-drive': lambda m: m['files'][2]['kind'].update(drive_id='different-disk'),
             'unknown-entry-field': lambda m: m['files'][1].update(extra=0),
         }
-        for fault in ('none',*manifest_faults,'mode','memory-inode','stage-inode','extra','completion','obstacle'):
+        for fault in ('none',*manifest_faults,'manifest-mode','mode','memory-inode','stage-inode','extra','completion','obstacle'):
             with tempfile.TemporaryDirectory() as temporary,ExitStack() as stack,self.subTest(fault=fault):
                 f=fixture(Path(temporary));p=f.probe;f.stage.chmod(0o700)
+                manifest_file = f.stage / 'manifest.json'
                 if fault in manifest_faults:
                     manifest_faults[fault](f.manifest)
-                    manifest_file = f.stage / 'manifest.json'
                     manifest_file.chmod(0o600)
                     manifest_file.write_text(json.dumps(f.manifest))
                     manifest_file.chmod(0o400)
+                if fault=='manifest-mode':manifest_file.chmod(0o600)
                 if fault=='mode':(f.stage/'memory.bin').chmod(0o600)
                 if fault=='memory-inode':
                     memory=f.stage/'memory.bin';raw=memory.read_bytes();memory.rename(f.stage/'old-memory')
@@ -174,7 +175,18 @@ class PublishConflictTests(unittest.TestCase):
                 f.stage.chmod(0o500)
                 # Actual files/digests, but root ownership is a controlled
                 # provider here. These are not protected product materials.
+                manifest_stat = manifest_file.stat()
+                manifest_raw = manifest_file.read_bytes()
                 original_lstat=Path.lstat
+                original_stat, original_fstat = os.stat, os.fstat
+
+                def manifest_metadata(value):
+                    if (value.st_dev, value.st_ino) != (manifest_stat.st_dev, manifest_stat.st_ino):
+                        return value
+                    return NS(st_dev=value.st_dev, st_ino=value.st_ino, st_size=value.st_size,
+                              st_mtime_ns=value.st_mtime_ns, st_ctime_ns=value.st_ctime_ns,
+                              st_mode=value.st_mode, st_uid=0, st_nlink=value.st_nlink)
+
                 def lstat(path):
                     value=original_lstat(path)
                     if path==f.stage:return NS(st_mode=value.st_mode,st_uid=0,st_dev=value.st_dev,st_ino=value.st_ino)
@@ -185,11 +197,19 @@ class PublishConflictTests(unittest.TestCase):
                     return dict(bytes=len(raw),sha256=list(hashlib.sha256(raw).digest()),device=metadata.st_dev,inode=metadata.st_ino)
                 ended=stack.enter_context(patch.object(capture.CaptureHandoffProbe,'finish',return_value={'actual_worker_end':True}))
                 stack.enter_context(patch.object(Path,'lstat',lstat))
-                stack.enter_context(patch.object(publish,'original_json',side_effect=lambda path,_:json.loads(path.read_bytes())))
-                stack.enter_context(patch.object(publish,'checked_file',side_effect=measured))
+                stack.enter_context(patch.object(os, 'stat', side_effect=lambda *a, **kw:
+                    manifest_metadata(original_stat(*a, **kw))))
+                stack.enter_context(patch.object(os, 'fstat', side_effect=lambda fd:
+                    manifest_metadata(original_fstat(fd))))
+                files_read = stack.enter_context(patch.object(publish,'checked_file',side_effect=measured))
                 try:
                     if fault=='none':
                         result=p.finish(time.monotonic()+5)
+                        self.assertEqual([call.args[0].name for call in files_read.call_args_list],
+                                         ['state.bin', 'memory.bin', 'disk-0.img'])
+                        self.assertEqual(result['manifest'], dict(bytes=len(manifest_raw),
+                            sha256=list(hashlib.sha256(manifest_raw).digest()),
+                            device=manifest_stat.st_dev, inode=manifest_stat.st_ino))
                         self.assertFalse(result['full_adopted']);self.assertFalse(result['capacity_released'])
                         self.assertEqual(len(result['complete_stage_files']),3)
                         self.assertTrue(result['callback_released_normally']);self.assertIn('not separately traced',result['syscall_errno'])
