@@ -417,6 +417,13 @@ B 接管且全部原使用结束后可以退休，不能以全部拒绝满足安
 private backing、位置或其它 pin 未决时拒绝退休。真实结束必须完整匹配原材料/代次，
 并检查原释放事实在后继 Unloaded 事务固定，不能由位置最新记录或当前终止证书补造。
 
+E11 的[提交结果丢失对照](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/commit_reply_loss.rs)
+从原应用入口触发删除许可与结算的 `CommitUncertain`，分别重开已提交和已回滚的 SQLite。
+未收到确认删除许可时不调用删除端。重开后，有固定计划则继续同一计划，确认回滚且无
+计划后才重新询问。已结算不再次删除或退额，未结算时保留原占用并用同一计划重试。
+新运行代的 backing、凭据和原释放记录须保持。Host 回执由受控提供方给出，
+本对照验证 SQLite 与应用编排，真实删除和 VM 观察另行验收。
+
 Retiring 提交前后故障、部分删除、删除完成丢回执、管理重启及重复/迟到回执均沿原
 work/plan 继续。核对错误身份不能删除后继或复用位置，后继再演进/续期不使合法旧计划
 损坏或不能结算，结果重放不双退额。旧 SourceWork/inbox 历史和消费标记仍可查询/
