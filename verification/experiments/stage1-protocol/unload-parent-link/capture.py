@@ -14,19 +14,24 @@ import time
 
 import prepare_transaction_capture
 import revision_capture
+import world_begin_capture
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
+CURRENT = {
+    'prepare-transaction': (prepare_transaction_capture, 'prepare_admission'),
+    'world-begin': (world_begin_capture, 'begin_admission'),
+}
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--mode", choices=("source", "parent", "base-revision", "prepare-transaction"), required=True)
+parser.add_argument("--mode", choices=("source", "parent", "base-revision", *CURRENT), required=True)
 parser.add_argument("--lock", type=Path, required=True)
 parser.add_argument("--source-commit", help="exact Git commit for a current source capture")
 args = parser.parse_args()
 if args.source_commit is not None and (
         args.mode == 'source' or re.fullmatch(r'[0-9a-f]{40}', args.source_commit) is None):
     parser.error('--source-commit requires a full commit and a current source capture')
-if args.mode in ('base-revision', 'prepare-transaction') and args.source_commit is None:
+if (args.mode == 'base-revision' or args.mode in CURRENT) and args.source_commit is None:
     parser.error(args.mode + ' requires --source-commit')
 OUT = args.output.resolve()
 MODE = args.mode
@@ -59,11 +64,10 @@ def main():
     try:
         result['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         subprocess.run(['git', 'diff', '--quiet', 'HEAD'], cwd=ROOT, check=True)
-        admission = revision_capture
-        inputs = {revision_capture.REVISION_SOURCE: revision_capture.REVISION_SOURCE_SHA256}
-        if MODE == 'prepare-transaction':
-            admission = prepare_transaction_capture
-            inputs = admission.SOURCE_INPUTS
+        admission, admission_key = CURRENT.get(MODE, (None, 'revision_admission'))
+        inputs = admission.SOURCE_INPUTS if admission else {
+            revision_capture.REVISION_SOURCE: revision_capture.REVISION_SOURCE_SHA256,
+        }
         if args.source_commit is not None:
             if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
                 raise ValueError('current source capture belongs to the existing proof role')
@@ -79,9 +83,9 @@ def main():
             result['tree'] = subprocess.check_output(
                 ['git', 'rev-parse', result['head'] + '^{tree}'], cwd=ROOT, text=True,
             ).strip()
-            if MODE == 'prepare-transaction' and (result['head'], result['tree']) != (
+            if admission and (result['head'], result['tree']) != (
                     admission.SOURCE_COMMIT, admission.SOURCE_TREE):
-                raise ValueError('prepare requires the reviewed integration commit and tree')
+                raise ValueError(f'{MODE} requires the reviewed integration commit and tree')
         result['workspace_free_bytes'] = shutil.disk_usage(ROOT).free
         if result['workspace_free_bytes'] < 80*GIB:
             raise ValueError('at least 80 GiB workspace free required')
@@ -112,8 +116,7 @@ def main():
         else:
             cfg = json.loads((ROOT/'verification/experiments/stage1-protocol/unload-startup-source/capture-profile.json').read_text())['parent']
             cfg.update(namespace='SandproofUnloadFirstObservation', subdir='SandproofUnloadFirstObservation')
-            cfg = (admission.configuration(cfg) if MODE == 'prepare-transaction'
-                   else admission.configuration(cfg, MODE))
+            cfg = admission.configuration(cfg) if admission else revision_capture.configuration(cfg, MODE)
 
         def run(label, argv, seconds):
             started = time.monotonic()
@@ -155,10 +158,10 @@ def main():
             if sha(ir) != captured_ir_sha256:
                 raise ValueError('actual Charon IR changed during generation')
         if args.source_commit is not None:
-            if MODE == 'prepare-transaction':
-                result['prepare_admission'] = admission.admit(ir, OUT / 'generated', cfg, fixed['target'])
+            if admission:
+                result[admission_key] = admission.admit(ir, OUT / 'generated', cfg, fixed['target'])
             else:
-                result['revision_admission'] = admission.admit(ir, OUT / 'generated', cfg, fixed['target'], MODE)
+                result[admission_key] = revision_capture.admit(ir, OUT / 'generated', cfg, fixed['target'], MODE)
             check_source_inputs(source, inputs)
             if sha(archive) != result['source_archive_sha256']:
                 raise ValueError('current source archive changed during capture')

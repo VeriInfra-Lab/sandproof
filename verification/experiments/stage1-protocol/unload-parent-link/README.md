@@ -237,6 +237,25 @@ bash scripts/python-entry.sh "$package/prepare_started_transaction.py" \
 结论从已开始的事务和已提供的候选 World 起步。实际 `BEGIN IMMEDIATE`、缓存来源、
 物理回滚和 #921 新生成视图的借用连接仍由 V5 和对应调用证明提供。
 
+### 原 `WorldTransaction::begin` 抽取
+
+`world-begin` 从同一份固定 integration 源归档直接选择原方法，并额外抽取
+`allocators::input_high_water`。准入检查五处原 Rust 调用及实际生成的 SQLite
+`Immediate` 参数。输入前沿必须从原 allocator 的 `input` 类型与空作用域读取。
+原 `from_started_transaction` 后续连接使用 #922 的已证结果。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+SANDPROOF_ACCEPTANCE_ROLE=formal bash scripts/python-entry.sh "$package/capture.py" \
+  --mode world-begin --source-commit f26fc26a3fb6987a18ad69015c56bb99c0748e12 \
+  --output "$new_begin_evidence" --lock "$SANDPROOF_LOCK_FILE"
+bash scripts/python-entry.sh "$package/test_world_begin_capture.py"
+```
+
+沿用原固定工具、重锁、80 GiB 起跑、64 GiB 停机、四核与 4 GiB target 预算。
+驱动自测使用合成生成体。仅实际 Charon 和 Aeneas 成功后才收录新原件。
+回调别名、首错顺序、物理 SQLite 行为与 World 缓存证明继续按原 V5 合同。
+
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
 ning 在确定的新提交上完成普通检查及相关上游原生原版/错误版/恢复检查；严格按原收据键、

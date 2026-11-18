@@ -77,7 +77,7 @@ def method(rows, module, member):
     return matches[0]
 
 
-def admit(ir, generated, cfg, target):
+def checked_translation(ir, cfg, target, root):
     raw = json.loads(ir.read_bytes())
     translated = raw['translated']
     options = translated['options']
@@ -89,9 +89,14 @@ def admit(ir, generated, cfg, target):
             or any(options[key] != cfg[selector] for key, selector in (
                 ('start_from', 'roots'), ('include', 'include'), ('opaque', 'opaque'),
             ))
-            or cfg['roots'] != [ROOT]
+            or cfg['roots'] != [root]
             or {row['key'] for row in translated['target_information']} != {target}):
-        raise ValueError('actual prepare capture options or target differ')
+        raise ValueError('actual capture options or target differ')
+    return translated
+
+
+def admit(ir, generated, cfg, target):
+    translated = checked_translation(ir, cfg, target, ROOT)
 
     functions = translated['fun_decls']
     prepare = method(functions, WORK, 'prepare_lifecycle_source_work')
