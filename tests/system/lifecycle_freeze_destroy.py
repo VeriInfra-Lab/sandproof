@@ -18,6 +18,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import signal
 import stat
@@ -101,8 +102,24 @@ def original_backing(runtime, acceptance, rows):
     return matches[0]
 
 
+def stop_is_registered(conn, stop, capacity):
+    """Bind the action's canonical SQL identifier to its full logical command."""
+    logical = stop['identity']['logical_action']
+    match = re.fullmatch(r'effect-([1-9][0-9]{0,18})', logical) if type(logical) is str else None
+    if match is None or int(match[1]) >= 2**63:
+        raise ValueError('original canonical SQL logical action identifier required')
+    row = conn.execute(
+        'SELECT CAST(logical_json AS BLOB) FROM controller_effect_keys '
+        'WHERE id=? AND length(CAST(logical_json AS BLOB)) BETWEEN 1 AND ?',
+        (int(match[1]), capacity['max_sql_value_bytes']),
+    ).fetchone()
+    if row is None:
+        raise ValueError('bounded original logical effect row required')
+    return equal(json.loads(row[0], object_pairs_hook=unique_keys), stop['command']['logical'])
+
+
 def pending_stop_facts(runtime,conn,local,capacity):
-    """Read original global pending Stops and lifetime in the caller SQL snapshot."""
+    """Read pending Stop, its registration, and lifetime in one caller SQL snapshot."""
     count,largest=conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched'").fetchone()
     if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
         raise ValueError('bounded global pending actions required')
@@ -116,7 +133,8 @@ def pending_stop_facts(runtime,conn,local,capacity):
     if row is None or row[0]!='tenant-'+str(local['owner']):raise ValueError('original lifetime owner required')
     lifetime=dict(zip(('started_at_ms','end_at_ms','max_end_at_ms','startup_deadline_ms'),row[1:],strict=True))
     for value in lifetime.values():_u64(value)
-    return dict(global_pending_stops=stops,lifetime=lifetime)
+    registered = len(stops) == 1 and stop_is_registered(conn, stops[0], capacity)
+    return dict(global_pending_stops=stops,lifetime=lifetime,logical_action_registered=registered)
 
 
 
@@ -298,6 +316,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         stops=[r for r in snapshot['terminal_actions'] if 'StopVm' in r[0]['command']['logical']['command']]
         if len(fences)!=1 or len(stops)!=1 or stops[0][1:]!=('dispatched',None):
             raise ValueError('one original terminal fence and unacknowledged Stop required')
+        if snapshot['logical_action_registered'] is not True:
+            raise ValueError('original terminal Stop lacks its complete logical effect registration')
         fence=fences[0][0];stop=stops[0][0];epoch=native['epoch'];sandbox=snapshot['local']['sandbox']
         expected=dict(sandbox=sandbox,generation=binding['generation'],vm=binding['vm'],epoch=epoch)
         if (not equal(stop['command']['logical']['command'],{'StopVm':expected})
