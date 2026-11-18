@@ -19,6 +19,7 @@ import stat
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
 from lifecycle_unload_runtime import checked_file, original_json, original_process, pidfd_exited, remaining
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 
 def _stamp(value):
@@ -135,14 +136,27 @@ class PublishConflictProbe(CaptureHandoffProbe):
             raise ValueError('complete original stage must remain after publication refusal')
         manifest_file = stage / 'manifest.json'
         manifest = original_json(manifest_file, 262144)
-        if manifest['binding'] != full['pause']['binding'] or manifest['compatibility'] != full['compatibility']:
+        if (type(manifest) is not dict or set(manifest) != {'format_version', 'binding', 'compatibility', 'files'}
+                or not equal(manifest['format_version'], 1)
+                or not equal(manifest['binding'], full['pause']['binding'])
+                or not equal(manifest['compatibility'], full['compatibility'])):
             raise ValueError('original staged manifest differs from accepted Full')
+        drives = full['compatibility']['writable_drives']
+        if type(drives) is not list or len(drives) != 1:
+            raise ValueError('original publication scene requires exactly one writable drive')
+        expected = (
+            ('state.bin', dict(kind='state'), full['state_bytes']),
+            ('memory.bin', dict(kind='memory'), full['memory_bytes']),
+            ('disk-0.img', dict(kind='disk', drive_id=drives[0]['drive_id']), full['disk_bytes']),
+        )
+        if type(manifest['files']) is not list or len(manifest['files']) != len(expected):
+            raise ValueError('original refused stage differs from its complete file table')
         files = []
-        for entry, name, limit in zip(manifest['files'], ('state.bin', 'memory.bin', 'disk-0.img'),
-                (full['state_bytes'], full['memory_bytes'], full['disk_bytes']), strict=True):
+        for entry, (name, kind, limit) in zip(manifest['files'], expected, strict=True):
             remaining(deadline)
             measured = checked_file(stage / name, limit, mode=0o400)
-            if entry['relative_path'] != name or entry['length'] != measured['bytes'] or entry['digest'] != measured['sha256']:
+            if not equal(entry, dict(kind=kind, relative_path=name, length=measured['bytes'],
+                                     digest=measured['sha256'])):
                 raise ValueError('original refused stage differs from its complete file table')
             if name == 'memory.bin' and (
                     [measured['device'], measured['inode']] != self.sync_material['memory_identity']
