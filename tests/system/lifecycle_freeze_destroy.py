@@ -213,6 +213,24 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             result['current_pause_observed']=False
         return result
 
+    def observe_destroy_window(self, deadline):
+        """Re-read the original cut on either side of the public Destroy."""
+        deadline = min(deadline, self.deadline)
+        self._configuration()
+        entry, rows, actions = self._read(deadline)
+        action = self._original_action(actions, entry)
+        if not equal(entry, self.unload_entry) or not equal(action, self.action):
+            raise ValueError('original Unload or complete Freeze changed at public Destroy')
+        self._no_full(rows)
+        self._check_source_hold(deadline)
+        host = self.runtime.services.processes.children.get('host-0')
+        if host is None or host is not self.host or host.poll() != self._cut_exit_code():
+            raise ValueError('original Freeze cut Host must remain exited at public Destroy')
+        remaining(deadline)
+        return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
+                    unload_accepted_version=entry['intent']['accepted_version'],
+                    freeze_identity=action['identity'], freeze_sql_receipt_pending=True)
+
     def _source_state(self,deadline):
         remaining(deadline)
         if self.pidfd is None or pidfd_exited(self.pidfd) or not original_process(self.prior['source']):

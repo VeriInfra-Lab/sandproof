@@ -1,6 +1,6 @@
 """E8 consumers with original SQL/framing and controlled providers, never KVM."""
 import copy
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 import hashlib
 import json
 import os
@@ -68,7 +68,7 @@ def fixture(root):
     cleanup_snapshot['logical_action_registered']=False
     settings=dict(namespace=namespace,database=str(root/'state.db'),node_state_dir=str(root/'state'),chroot_base=str(root/'jails'))
     config=dict(inbox=dict(node=node),native=dict(maintenance=dict(capacity=dict(max_sql_rows=64,max_sql_value_bytes=65536))))
-    runner=NS(services=NS(native_pools=[settings],host_configs=[config],processes=NS(bindings={'host-0':dict(uid=os.getuid(),gid=os.getgid())})),
+    runner=NS(services=NS(native_pools=[settings],host_configs=[config],processes=NS(bindings={'host-0':dict(uid=os.getuid(),gid=os.getgid())},children={})),
               quota=dict(deployment_control=str(root)),_materials=Mock(return_value={'original':'material'}),gc_complete=False)
     client=Mock(spec=scene.PublicUnloadScenario);client.session=accepted(unload)['session'];client.current_acceptance=accepted(destroy)
     client.destroy_request=dict(window=4,sequence=5,expected_version=4)
@@ -80,6 +80,7 @@ def fixture(root):
     p.config=dict(sandbox='sb-'+namespace+'-4');p.deadline=time.monotonic()+5
     p.pidfd=999999;p.fd=None;p.stop_peer=None;p.stop_path=root/'stop.sock';p.stop_released=False;p.recovered=False;p.terminal_cut=None;p.pause_requested=False;p.candidate_paused=False;p.continue_sent=False
     p.host=Mock(pid=777);p.host.poll.return_value=86;p._configuration=Mock()
+    runner.services.processes.children['host-0']=p.host
     inbox=dict(sessions=[dict(id=client.session,current_version=5,terminal=True,local=local,entries=[old,terminal])])
     return NS(probe=p,runner=runner,node=node,inbox=inbox,snapshot=snapshot,cleanup=cleanup_snapshot,accepted=accepted,
         unload=unload,destroy=destroy,freeze=freeze,stop=stop,receipt=receipt,rows=rows)
@@ -204,6 +205,51 @@ class FrozenFactsTests(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError):p.after_acceptance(f.accepted(f.unload),p.deadline)
                         pause.assert_not_called();p._hold_source.assert_not_called()
+
+    def test_destroy_window_rechecks_original_freeze_in_read_only_sql(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = Path(f.runner.services.native_pools[0]['database'])
+            row = dict(f.inbox['sessions'][0], current_version=4, terminal=False, entries=[p.unload_entry])
+            raw = json.dumps({'sessions': [row]}).encode()
+            original = json.dumps(f.freeze).encode()
+            replacement = copy.deepcopy(f.freeze)
+            replacement['identity']['logical_action'] = 'effect-17'
+            with closing(sqlite3.connect(path)) as conn, conn:
+                conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
+                conn.execute('CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
+                conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
+                             (raw, hashlib.sha256(raw).digest(), 65536))
+                conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
+                             (p.config['sandbox'], f.freeze['identity']['operation'], original, 'dispatched'))
+            path.chmod(0o600)
+            with patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                    patch.object(p, '_check_source_hold') as held:
+                first = p.observe_destroy_window(p.deadline)
+                self.assertEqual(first['freeze_identity'], f.freeze['identity'])
+                self.assertEqual(first['unload_accepted_version'], 4)
+                self.assertEqual(first['host_exit_code'], 86)
+                self.assertIs(first['freeze_sql_receipt_pending'], True)
+                self.assertEqual(p.observe_destroy_window(p.deadline), first)
+                for action, state, receipt, message in (
+                        (original, 'dispatched', b'{}', 'no SQL receipt'),
+                        (original, 'dispatched', b'null', 'stored outbox receipt cannot be JSON null'),
+                        (original, 'receipted', None, 'no SQL receipt'),
+                        (json.dumps(replacement).encode(), 'dispatched', None, 'complete Freeze changed')):
+                    with self.subTest(state=state, receipt=receipt, message=message):
+                        with closing(sqlite3.connect(path)) as conn, conn:
+                            conn.execute('UPDATE outbox SET action_json=?, dispatch_state=?, receipt_json=?',
+                                         (action, state, receipt))
+                        with self.assertRaisesRegex(ValueError, message):
+                            p.observe_destroy_window(p.deadline)
+                with closing(sqlite3.connect(path)) as conn, conn:
+                    conn.execute('UPDATE outbox SET action_json=?, dispatch_state=?, receipt_json=NULL',
+                                 (original, 'dispatched'))
+                self.assertEqual(held.call_count, 2)
+                f.runner.services.processes.children['host-0'] = Mock(pid=p.host.pid)
+                with self.assertRaisesRegex(ValueError, 'original Freeze cut Host'):
+                    p.observe_destroy_window(p.deadline)
 
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -635,7 +681,7 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False):
+    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False,window_fault=None):
         import lifecycle_freeze_dispatch as dispatched
         if ordered_expiry:self.assertTrue(expiry)
         if expiry:
@@ -652,6 +698,11 @@ class SceneAndReplayTests(unittest.TestCase):
             for name in ('create','unload','resume','destroy','wait_cleaned','run_public_workload','assert_resumed_workload','assert_continued_workload'):
                 getattr(c,name).side_effect=lambda *_,n=name,o=owner,**__:events.append(n+'-'+o) or {}
             clients[owner]=c
+        def accept_destroy(_):
+            events.append('destroy-1')
+            clients['1'].current_acceptance = dict(session='session-1', accepted_version=5, key={'sequence':5})
+            return copy.deepcopy(clients['1'].current_acceptance)
+        clients['1'].destroy.side_effect = accept_destroy
         from tools.tests.test_lifecycle_running_witness import RunningWitnessTests
         peer,peer_running=RunningWitnessTests().fixture()
         previous=copy.deepcopy(peer.witness);peer.witness=None;peer.data_token=None
@@ -678,6 +729,16 @@ class SceneAndReplayTests(unittest.TestCase):
         p=Mock(spec=automatic.FreezeExpiryProbe if expiry else dispatched.FreezeDispatchDestroyProbe if dispatch else frozen.FreezeDestroyProbe)
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
+        window_reads = 0
+        def observe_destroy_window(_):
+            nonlocal window_reads
+            window_reads += 1
+            edge = 'before' if window_reads == 1 else 'after'
+            events.append('freeze-window-' + edge)
+            if window_fault == edge:
+                raise ValueError('original Freeze receipt no longer pending')
+            return dict(freeze_sql_receipt_pending=True)
+        p.observe_destroy_window.side_effect = observe_destroy_window
         def recovery(*_,observe_peer,**__):
             events.append('recover')
             if fault:raise ValueError('unknown original Stop')
@@ -721,7 +782,25 @@ class SceneAndReplayTests(unittest.TestCase):
             expiry_scenario='capture-freeze-receipt-expiry' if ordered_expiry else 'capture-freeze-unresponsive-expiry' if unresponsive else 'capture-freeze-expiry'
             destroy_scenario='capture-freeze-before-destroy' if dispatch else 'capture-freeze-unresponsive-destroy' if unresponsive else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy'
             args=NS(scenario=expiry_scenario if expiry else destroy_scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if peer_fault!='none':
+            if window_fault is not None:
+                with self.assertRaisesRegex(ValueError, 'original Freeze receipt no longer pending'):
+                    scene.exercise(args)
+                report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(report['complete'])
+                self.assertEqual(report['phase'], 'recheck-original-freeze-' + window_fault + '-public-destroy')
+                if window_fault == 'before':
+                    clients['1'].destroy.assert_not_called()
+                    self.assertNotIn('destroy', report)
+                else:
+                    clients['1'].destroy.assert_called_once()
+                    self.assertEqual(report['destroy'], clients['1'].current_acceptance)
+                    self.assertEqual(report['freeze_destroy_acceptance_window'],
+                                     {'before': {'freeze_sql_receipt_pending': True}})
+                other.destroy.assert_not_called()
+                p.recover_after_destroy.assert_not_called()
+                p.assert_terminal_before_gc.assert_not_called()
+                runner.settlement_evidence.assert_not_called()
+            elif peer_fault!='none':
                 with self.assertRaises(AssertionError):scene.exercise(args)
                 report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete']);self.assertEqual(report['failure_type'],'AssertionError')
@@ -755,12 +834,22 @@ class SceneAndReplayTests(unittest.TestCase):
                 terminal_event='automatic-expiry' if expiry else 'destroy-1'
                 self.assertLess(events.index('after_acceptance'),events.index(terminal_event))
                 self.assertLess(events.index(terminal_event),events.index('recover'))
+                if not expiry and not dispatch:
+                    self.assertLess(events.index('freeze-window-before'),events.index(terminal_event))
+                    self.assertLess(events.index(terminal_event),events.index('freeze-window-after'))
+                    self.assertLess(events.index('freeze-window-after'),events.index('recover'))
+                    self.assertEqual(report['freeze_destroy_acceptance_window'], {
+                        'before': {'freeze_sql_receipt_pending': True},
+                        'after': {'freeze_sql_receipt_pending': True},
+                    })
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('release-stop'),events.index('assert_terminal_before_gc'))
                 self.assertLess(events.index('assert_terminal_before_gc'),events.index('wait_cleaned-1'))
                 self.assertLess(events.index('wait_cleaned-1'),events.index('destroy-2'))
                 self.assertEqual(clients['1'].resume.call_count,1);self.assertIn('E8',report['acceptance_cases'])
-            if fault:
+            if expiry or dispatch:
+                p.observe_destroy_window.assert_not_called()
+            if fault or window_fault is not None:
                 other.assert_running_workload.assert_not_called();witness.assert_not_called()
             elif peer_fault=='none':
                 self.assertEqual(other.assert_running_workload.call_count,2)
@@ -794,6 +883,10 @@ class SceneAndReplayTests(unittest.TestCase):
     def test_real_scene_keeps_peer_until_original_terminal_stop_exit_and_cleanup(self):self.exercise()
     def test_responsive_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(responsive=True)
     def test_ordered_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(ordered=True)
+    def test_ordered_scene_preserves_the_first_failure_at_either_destroy_window_edge(self):
+        for edge in ('before', 'after'):
+            with self.subTest(edge=edge):
+                self.exercise(ordered=True, window_fault=edge)
     def test_unresponsive_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(unresponsive=True)
     def test_unresponsive_unknown_stop_preserves_original_and_peer(self):self.exercise(unresponsive=True,fault=True)
     def test_unresponsive_stalled_peer_never_releases_stop(self):self.exercise(unresponsive=True,peer_fault='held-counter')
