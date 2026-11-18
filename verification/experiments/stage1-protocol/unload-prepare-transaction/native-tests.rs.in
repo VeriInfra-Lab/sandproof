@@ -1,0 +1,223 @@
+// Append to lifecycle_inbox/source_work/tests.rs in the disposable native checkout.
+fn proof_first_prepare_durable_rows(
+    connection: &rusqlite::Connection,
+) -> (Vec<u8>, Vec<SourceWorkRecord>) {
+    let tx = connection.unchecked_transaction().unwrap();
+    let inbox = tx
+        .query_row(
+            "SELECT state_json FROM controller_lifecycle_inbox WHERE id=1",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+    let records = codec::load(&tx).unwrap().unwrap().records;
+    tx.commit().unwrap();
+    (inbox, records)
+}
+
+struct FirstPrepareCommitObserver<'a> {
+    connection: &'a mut rusqlite::Connection,
+    original_inbox: &'a [u8],
+    abort_before_commit: bool,
+    points: Vec<crate::CrashPoint>,
+    committed: Option<SourceWorkRecord>,
+}
+
+impl crate::CrashInjector for FirstPrepareCommitObserver<'_> {
+    fn hit(&mut self, point: crate::CrashPoint) -> Result<(), JournalError> {
+        use crate::CrashPoint::{AfterCommit, BeforeCommit};
+        use rusqlite::{Error, ErrorCode, TransactionBehavior};
+
+        self.points.push(point);
+        match point {
+            BeforeCommit => {
+                assert!(matches!(
+                    self.connection
+                        .transaction_with_behavior(TransactionBehavior::Immediate),
+                    Err(Error::SqliteFailure(error, _)) if error.code == ErrorCode::DatabaseBusy
+                ));
+                let (inbox, records) = proof_first_prepare_durable_rows(self.connection);
+                assert_eq!(inbox.as_slice(), self.original_inbox);
+                assert!(records.is_empty());
+                if self.abort_before_commit {
+                    return Err(JournalError::InjectedCrash(BeforeCommit));
+                }
+            }
+            AfterCommit => {
+                self.connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)
+                    .unwrap()
+                    .rollback()
+                    .unwrap();
+                let (inbox, records) = proof_first_prepare_durable_rows(self.connection);
+                assert_eq!(inbox.as_slice(), self.original_inbox);
+                let [record]: [SourceWorkRecord; 1] = records.try_into().unwrap();
+                self.committed = Some(record);
+            }
+            _ => panic!("unexpected boundary for first Unload prepare: {point:?}"),
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn proof_first_unload_prepare_writer_and_visibility() {
+    use crate::CrashPoint::{AfterCommit, BeforeCommit};
+    use rusqlite::{Connection, OpenFlags};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare.db");
+    let (mut journal, _) = ready(&path);
+    let intent = unload();
+    let context = v3::context();
+    let mut observer =
+        Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+    observer.busy_timeout(std::time::Duration::ZERO).unwrap();
+    let (original_inbox, original_records) = proof_first_prepare_durable_rows(&observer);
+    assert!(original_records.is_empty());
+
+    let mut capture = FirstPrepareCommitObserver {
+        connection: &mut observer,
+        original_inbox: &original_inbox,
+        abort_before_commit: true,
+        points: Vec::new(),
+        committed: None,
+    };
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut capture),
+        Err(JournalError::InjectedCrash(BeforeCommit))
+    ));
+    assert_eq!(capture.points, [BeforeCommit]);
+    assert!(capture.committed.is_none());
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(
+        proof_first_prepare_durable_rows(capture.connection),
+        (original_inbox.clone(), Vec::new())
+    );
+
+    capture.abort_before_commit = false;
+    capture.points.clear();
+    let record = journal
+        .prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut capture)
+        .unwrap();
+    assert_eq!(capture.points, [BeforeCommit, AfterCommit]);
+    assert_eq!(capture.committed.as_ref(), Some(&record));
+    assert_eq!(record.work.request(), &intent);
+    assert_eq!(record.work.anchor.execution_origin, v3::request());
+    assert!(record.observation.is_none());
+    drop(journal);
+
+    let mut reopened = v3::open(&path);
+    bootstrap(&mut reopened);
+    assert_eq!(prepare(&mut reopened), record);
+    assert_eq!(proof_first_prepare_durable_rows(&observer).1, vec![record]);
+}
+
+fn proof_set_prepare_revision(
+    journal: &ControllerJournal,
+    sandbox: &str,
+    value: rusqlite::types::Value,
+) {
+    assert_eq!(
+        journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE sandboxes SET revision=?2 WHERE sandbox_id=?1",
+                (sandbox, value)
+            )
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn proof_first_unload_prepare_first_error_and_replay() {
+    use rusqlite::{
+        Error,
+        types::{Type, Value},
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare.db");
+    let (mut journal, _) = ready(&path);
+    let intent = unload();
+    let context = v3::context();
+    let local = journal
+        .lifecycle_work_state(&intent, &context)
+        .unwrap()
+        .local
+        .unwrap();
+    let sandbox = journal.sandbox_id(local.sandbox).unwrap();
+    let observer =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let before = proof_first_prepare_durable_rows(&observer);
+    assert!(before.1.is_empty());
+    let revision: i64 = observer
+        .query_row(
+            "SELECT revision FROM sandboxes WHERE sandbox_id=?1",
+            [sandbox.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(revision > 0);
+
+    // Alter only the disposable journal's own connection. A second writer's
+    // commit would instead be rejected by the earlier data_version check.
+    proof_set_prepare_revision(&journal, sandbox.as_str(), Value::Real(1.5));
+    let mut other_center = context.center().clone();
+    other_center.center = "other-center".try_into().unwrap();
+    let foreign = AuthenticatedCenterContext::from_verified_peer_registration(
+        other_center,
+        context.expected_node().clone(),
+    );
+    let high_water: String = observer
+        .query_row(
+            "SELECT high_water FROM controller_id_highwaters WHERE kind='input' AND scope=''",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+    let set_high_water = |journal: &ControllerJournal, value: &str| {
+        let changed = journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE controller_id_highwaters SET high_water=?1 WHERE kind='input' AND scope=''",
+                [value],
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
+    };
+    set_high_water(&journal, "invalid");
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &foreign, 10, &mut NeverCrash),
+        Err(JournalError::CorruptStore)
+    ));
+    set_high_water(&journal, &high_water);
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &foreign, 10, &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    let result =
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut NeverCrash);
+    assert!(
+        matches!(&result, Err(JournalError::Sqlite(Error::InvalidColumnType(0, column, Type::Real)))
+            if column == "revision"),
+        "the admitted first prepare must return the original revision read error: {result:?}"
+    );
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(proof_first_prepare_durable_rows(&observer), before);
+    proof_set_prepare_revision(&journal, sandbox.as_str(), Value::Integer(revision));
+
+    let work = prepare(&mut journal);
+    // The original persisted-work branch bypasses the first-work revision read.
+    proof_set_prepare_revision(&journal, sandbox.as_str(), Value::Real(1.5));
+    assert_eq!(prepare(&mut journal), work);
+    proof_set_prepare_revision(&journal, sandbox.as_str(), Value::Integer(revision));
+    assert_eq!(
+        proof_first_prepare_durable_rows(&observer),
+        (before.0, vec![work])
+    );
+}
