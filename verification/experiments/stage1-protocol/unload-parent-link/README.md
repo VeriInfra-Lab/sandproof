@@ -290,7 +290,7 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
 
 外层 `prepare-transaction` 仍按原 `prepare_lifecycle_source_work` 捕获。固定 Aeneas 在原
 切片迭代器 `find` 的高阶生命周期约束处停止。外层认证、同一事务中的观察请求构造、
-持久登记及失败时不构造观察请求仍待原生成体与组合证明。
+持久登记，以及构造前早错的无构造性质仍待实际生成体的组合证明。
 
 主控可使用新物化项目的 `plan.json` 登记该闭包的全部实际文件，并使用
 [覆盖候选](world-begin/public-registration.patch) 记录本切片。共享 Lake 接线和现有登记的
@@ -298,7 +298,7 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
 
 ### 外层首次登记的抽取候选
 
-`probe_prepare_iterators.py` 仅在原 integration `f26fc26a` 的隔离源码副本中应用候选。
+`probe_prepare_iterators.py` 默认在原 integration `f26fc26a` 的隔离源码副本中应用候选。
 原 `prepare-transaction` 的高阶生命周期失败保留。试验中，循环内返回先触发提前返回
 限制，持有借用迭代器的循环随后触发嵌套借用限制。现有三组对照使用固定工具和各自的
 原始日志。
@@ -367,6 +367,104 @@ git fetch --no-tags --no-write-fetch-head origin refs/pull/929/head
 } >> "$target"
 cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks \
   --lib controller::lifecycle_inbox::source_work::tests::
+```
+
+### 当前基线的重抽取与 SQLite 首错
+
+当前独立重抽取使用 integration `6fd0852025468e2583c436d37af18383bf2e71ea`，
+源码树 `1eb064834e310a2006b3df6c5981ab15a07afc12`。从原 `f26fc26a` 到 `a044095c`，
+变更限于控制器 SQLite 测试与验收说明。从 `a044095c` 到 `6fd08520`，变更限于中心
+Redis 测试及验收说明。两份后续归档均以提交、树和归档摘要准入；驱动还检查原源码输入
+和候选源码。下列命令在证明机用原固定工具重新产生两份真实视图。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+latest=6fd0852025468e2583c436d37af18383bf2e71ea
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+bash scripts/python-entry.sh "$package/probe_prepare_iterators.py" \
+  --variant json-boundary --source-commit "$latest" --output "$new_parent" \
+  --tools "$fixed_aeneas" --lock "$SANDPROOF_LOCK_FILE"
+bash scripts/python-entry.sh "$package/probe_prepare_iterators.py" \
+  --variant json-boundary --source-commit "$latest" --wrapper-ir --output "$new_wrapper" \
+  --tools "$fixed_aeneas" --lock "$SANDPROOF_LOCK_FILE"
+bash scripts/python-entry.sh "$package/check_current_prepare_capture.py" \
+  --source-commit "$latest" --old-parent "$old_f26_parent" --old-wrapper "$old_f26_wrapper" \
+  --current-parent "$new_parent" --current-wrapper "$new_wrapper"
+```
+
+比较器保留原始 LLBC 及其摘要。逐份核实目的路径确实指向本次文件，再按同一相对文件名
+比较该字段。短名表按唯一键排列后比较完整键值，其余 LLBC 字段严格比较，包括数字和
+布尔类型。生成映射和全部输出的摘要逐一相同，父方法调用与独立包装的 Serde 调用一致。
+这些是抽取证据。外部模板仍须按原合同接线并对实际 Lean 文件审计。
+
+新原生夹具从已有 `ready` 初始化真实 SQLite。测试按原顺序观察三个不同错误。
+原收件摘要损坏先返回 `CorruptStore`，收件修复后错 center 返回 `Conflict`，
+换回原认证上下文后才到达来源摘要列的 `InvalidColumnType`。每次检查事务回到
+autocommit、第三连接可见的工作槽仍空，且 Host 来源提供方未调用。修复来源摘要后，同一
+意图产生一份实际登记。负例调换原方法的认证与来源读取，构建后应在第二步实际返回
+`InvalidColumnType` 并命中新增断言。
+
+另一条测试在 `codec::save` 通过原 SQL 给首个空槽赋值时由临时触发器拒绝。这个错误
+发生于构造和编码之后。测试观察到原 SQLite 错误、事务回退、无持久登记和无 Host 来源
+调用。去掉触发器后，同一意图成功登记并全文重放。构造前的拒绝和构造后的失败需要
+不同结论。提交后确认丢失继续按既有的未知提交用例处理。
+
+ning 在原生机使用三个独立的干净临时 checkout，均固定为上述 integration，分别设置
+`variant=original`、`variant=candidate` 和 `variant=reordered`。
+`proof_checkout` 指向本批证明工作树。试验只改各自临时 checkout。
+
+```bash
+set -euo pipefail
+test "$(git rev-parse HEAD)" = 6fd0852025468e2583c436d37af18383bf2e71ea
+test -z "$(git status --porcelain)"
+package=verification/experiments/stage1-protocol/unload-parent-link
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$proof_checkout/$package" \
+  bash scripts/python-entry.sh - "$variant" <<'PY'
+from pathlib import Path
+import sys
+import probe_prepare_iterators as probe
+
+path = Path(probe.prepare.SOURCE)
+assert probe.digest(path) == probe.prepare.SOURCE_INPUTS[probe.prepare.SOURCE]
+variant = sys.argv[1]
+if variant == 'candidate':
+    path.write_text(probe.rewrite(path.read_text(), 'json-boundary'))
+    assert probe.digest(path) == '4b433e2be3337db97e9fb7e8d9b868d159c3e2cb8c894a2a0ec78ea4867489fd'
+elif variant == 'reordered':
+    opening = '    pub fn prepare_lifecycle_source_work'
+    following = '    /// Inspect the original finite responsibilities'
+    prefix, method = path.read_text().split(opening, 1)
+    body, suffix = method.split(following, 1)
+    authenticate = '        authenticated(&inbox, intent, context)?;\n'
+    read = '        let mut sources = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;\n'
+    assert body.count(authenticate + read) == 1
+    path.write_text(prefix + opening + body.replace(authenticate + read, read + authenticate)
+                    + following + suffix)
+else:
+    assert variant == 'original'
+PY
+fixture_commit=87845bc241fe09c7803c2f9e0a1cdebf4c823b07
+fixture_dir=verification/experiments/stage1-protocol/unload-prepare-transaction
+target=controller-service/src/controller/lifecycle_inbox/source_work/tests.rs
+git fetch --no-tags --no-write-fetch-head origin refs/pull/929/head
+{
+  printf '\n'
+  git show "$fixture_commit:$fixture_dir/native-tests.rs.in"
+  git show "$fixture_commit:$fixture_dir/begin-contention.rs.in"
+  cat "$proof_checkout/$package/current-inputs/native-first-errors.rs.in"
+} >> "$target"
+native=(cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks --lib)
+if test "$variant" = reordered; then
+  "${native[@]}" --no-run
+  rc=0
+  "${native[@]}" proof_first_unload_prepare_orders_inbox_authentication_and_source_decode \
+    -- --nocapture > "$native_negative_log" 2>&1 || rc=$?
+  test "$rc" = 101
+  rg -F 'authentication must precede source decode: Err(Sqlite(InvalidColumnType(1, "sha256", Text)))' "$native_negative_log"
+  rg -F 'test result: FAILED. 0 passed; 1 failed;' "$native_negative_log"
+else
+  "${native[@]}" controller::lifecycle_inbox::source_work::tests::
+fi
 ```
 
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
