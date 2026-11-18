@@ -231,6 +231,9 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                for saved, _, _ in actions):
             raise ValueError('original Unload outbox contains a capture action at public Destroy')
         self._no_full(rows)
+        if not equal(self._responsibilities(rows), self._responsibilities(self.initial_sources)):
+            raise ValueError('original work, backing pin or material responsibility changed at public Destroy')
+        self._backing(rows)
         self._check_source_hold(deadline)
         host = self.runtime.services.processes.children.get('host-0')
         if host is None or host is not self.host or host.poll() != self._cut_exit_code():
@@ -240,6 +243,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                     unload_accepted_version=entry['intent']['accepted_version'],
                     freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
                     freeze_logical_action_registered=registered,
+                    original_pin_and_positive_charge_retained=True,
                     capture_outbox_actions_absent=True)
 
     def _source_state(self,deadline):
