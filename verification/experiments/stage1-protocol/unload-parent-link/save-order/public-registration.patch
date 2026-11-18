@@ -1,0 +1,17 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2520,3 +2520,14 @@
+ 历史、重启、物理资源及 V4/V5/V6/V7 条件没有因此证明；JSON/SHA/SQLite 的既有依赖
+ 合同不升级为第三方内部证明。公共登记、独立实现对应和本有限封口不表示整个 V3、
+ 旧 `full`/全项目或部署系统已完成。
++
++## V3 来源记录保存的首错顺序候选
++
++固定 integration `7b27876458a7212feb98a2aaf36560fe6443fb73`。原保存调用经五个具名
++方法绑定到原 SQLite 连接和原参数，保留完整请求返回值及错误载荷。独立生成体的
++局部定理覆盖读取、配置与节点、两处会话上限、可用行数、编码、旧责任核对和写入结果。
++实际调序版把写入错误提前，独立 Lean 反例与同一原生 SQLite 夹具对照均到达该错误。
++
++[输入、形式和原生复验](../verification/experiments/stage1-protocol/unload-parent-link/save-order/README.md)
++列明实际输入闭包和回执。读取、JSON/SHA、完整首次匹配、逐行 SQL 和事务持久性仍按
++具名接口分别连接。公共登记及完整普通和原生收据待主控和 ning 按最终候选核对。
