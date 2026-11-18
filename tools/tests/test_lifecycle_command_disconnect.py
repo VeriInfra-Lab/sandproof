@@ -175,6 +175,94 @@ class CommandDisconnectTests(unittest.TestCase):
         f.sdk.commands.connect.assert_called_once();f.sdk.commands.run.assert_not_called();f.handle.kill.assert_not_called()
 
 
+class CommandDrainTests(unittest.TestCase):
+    def probe(self, f):
+        probe = object.__new__(command.InflightCommandDrain)
+        probe.client, probe.running = f.client, f.physical
+        probe.command = command.CommandDisconnectProbe(f.runner, f.client)
+        probe.report = dict(completed=False)
+        probe._hold_original_route = Mock()
+        probe._release_relay = Mock()
+        return probe
+
+    def test_unload_relay_exit_precedes_local_subscription_close(self):
+        for observed_exit in (False, True):
+            with self.subTest(observed_exit=observed_exit):
+                f = fixture()
+                probe = self.probe(f)
+                with providers(f):
+                    opened = probe.begin()
+                self.assertIs(opened['sdk_start_received'], True)
+                self.assertIs(opened['client_disconnected_before_unload'], False)
+                self.assertEqual((probe.marker, probe.route), ('marker', f.route))
+                probe._hold_original_route.assert_called_once_with()
+                f.handle.disconnect.assert_not_called()
+
+                def close_after_exit():
+                    self.assertIs(probe.report['original_relay_exit_observed'], True)
+                f.handle.disconnect.side_effect = close_after_exit
+                if observed_exit:
+                    probe._release_relay.side_effect = lambda: probe.report.update(original_relay_exit_observed=True)
+                    self.assertIs(probe.release()['client_disconnected_after_relay_exit'], True)
+                    f.handle.disconnect.assert_called_once_with()
+                else:
+                    probe._release_relay.side_effect = TimeoutError('no kernel exit')
+                    with self.assertRaisesRegex(TimeoutError, 'no kernel exit'):
+                        probe.release()
+                    f.handle.disconnect.assert_not_called()
+                    self.assertNotIn('client_disconnected_after_relay_exit', probe.report)
+                f.handle.kill.assert_not_called()
+                f.sdk.commands.run.assert_not_called()
+
+    def test_resume_reconnect_requires_original_pid_next_execution_and_new_token(self):
+        for fault in (None, 'undrained', 'other_session', 'pid', 'counter', 'generation', 'token'):
+            with self.subTest(fault=fault):
+                f = fixture()
+                probe = self.probe(f)
+                probe.report['client_disconnected_after_relay_exit'] = fault != 'undrained'
+                probe.original_token = f.client.data_token
+                f.client.witness.update(counter=2, metadata_generation=1, activation_nonce='3'*64)
+                f.client.data_token = 'TESTONLYNEW'
+                if fault == 'other_session':
+                    f.physical['session'] = 'other'
+                elif fault in ('pid', 'counter'):
+                    f.client.witness[fault] += 1
+                elif fault == 'generation':
+                    f.client.witness['metadata_generation'] += 1
+                elif fault == 'token':
+                    f.client.data_token = probe.original_token
+                with providers(f):
+                    if fault is None:
+                        result = probe.assert_resumed(f.physical)
+                        self.assertIs(result['completed'], True)
+                        self.assertIs(result['resumed_command_subscription']['original_relay_kernel_exit'], True)
+                        self.assertNotIn(probe.original_token, json.dumps(result))
+                        f.client.assert_previous_tokens_closed.assert_called_once_with()
+                        self.assertEqual(f.sdk.commands.connect.call_args.args, (71,))
+                        f.handle.disconnect.assert_called_once_with()
+                    else:
+                        with self.assertRaises(ValueError):
+                            probe.assert_resumed(f.physical)
+                        f.sdk.commands.connect.assert_not_called()
+                    probe.command.close()
+                f.handle.kill.assert_not_called()
+
+    def test_unknown_local_close_is_recorded_and_never_retried(self):
+        f = fixture()
+        probe = self.probe(f)
+        with providers(f):
+            probe.begin()
+        f.handle.disconnect.side_effect = OSError('unknown original disconnect')
+        with self.assertRaises(OSError):
+            probe.release()
+        with patch.object(command.InflightDataDrain, 'close', return_value={'cleanup_unknown': False}):
+            report = probe.close()
+            self.assertIs(report['cleanup_unknown'], True)
+            self.assertEqual(report['command_subscription']['failure_types'], ['OSError'])
+        f.handle.disconnect.assert_called_once_with()
+        f.handle.kill.assert_not_called()
+
+
 class LinuxRelayTests(unittest.TestCase):
     def test_real_relay_kernel_exit_does_not_end_a_separate_ram_process(self):
         # The route/SDK providers are controlled. Actual child identities,
@@ -215,6 +303,62 @@ class LinuxRelayTests(unittest.TestCase):
 
 
 class OriginalScenarioTests(unittest.TestCase):
+    def test_command_drain_waits_for_original_unload_before_releasing(self):
+        import tempfile
+        import lifecycle_unload_runtime as runtime
+        import lifecycle_unload_scenario as scene
+
+        for gate_ready in (False, True):
+            with self.subTest(gate_ready=gate_ready), tempfile.TemporaryDirectory() as directory:
+                events = Mock()
+                root = Path(directory)
+                client = Mock(spec=scene.PublicUnloadScenario)
+                client.owner = '1'; client.session = 'original'; client.current_acceptance = {}
+                client.unload_acceptance = {'key': {}}
+                client.concurrent_unload_replies = [{}, {}]
+                client.last_http_status = None; client.failure_step = 'controlled'
+                client.timing_report.return_value = []
+                client.create.return_value = client.run_public_workload.return_value = {}
+                client.wait_running.return_value = {'phase': 'running'}
+                client.unload.return_value = client.unload_acceptance
+                client.wait_unloaded.side_effect = RuntimeError('next lifecycle stage')
+                native = {'session': client.session, 'lifetime': dict(
+                    started_at_ms=1, end_at_ms=2, max_end_at_ms=3, startup_deadline_ms=2)}
+                runner = NS(root=root, owner_key='original', foreign_key='peer',
+                            services=NS(sdk_url='http://127.0.0.1:1'),
+                            measurement_identity=lambda: {}, start=Mock(), create_parameters=lambda: {},
+                            record_running=Mock(return_value=native), arm_data_drain=Mock(return_value=root/'gate'),
+                            finish=Mock(), fail_resume_gate=Mock(return_value='original responsibility preserved'),
+                            close_restore_gate=Mock(), close_capture_cancel_gate=Mock())
+                probe = Mock(spec=command.InflightCommandDrain)
+                probe.begin.return_value = {'sdk_start_received': True}
+                probe.wait_held.return_value = {'exact_driver_busy_return_observed': True}
+                probe.release.return_value = {'client_disconnected_after_relay_exit': True}
+                probe.close.return_value = {'cleanup_unknown': False}
+                if not gate_ready:
+                    probe.wait_held.side_effect = RuntimeError('original Busy missing')
+                events.attach_mock(probe.begin, 'begin')
+                events.attach_mock(client.unload, 'unload')
+                events.attach_mock(probe.wait_held, 'wait_held')
+                events.attach_mock(probe.release, 'release')
+                args = NS(scenario='command-drain', scenario_timeout=60, activation_gate_timeout_ms=60000)
+                with patch.object(runtime, 'prepare', return_value=runner), \
+                        patch.object(scene, 'PublicUnloadScenario', return_value=client), \
+                        patch.object(scene, 'check_center_configuration', return_value={'deployment': 'original'}), \
+                        patch.object(command, 'InflightCommandDrain', return_value=probe) as construct:
+                    first_error = 'next lifecycle stage' if gate_ready else 'original Busy missing'
+                    with self.assertRaisesRegex(RuntimeError, first_error):
+                        scene.exercise(args)
+                construct.assert_called_once_with(runner, client, native, root/'gate')
+                phases = [call[0] for call in events.mock_calls]
+                self.assertEqual(phases, ['begin', 'unload', 'wait_held'] + (['release'] if gate_ready else []))
+                probe.wait_held.assert_called_once_with(client.unload_acceptance)
+                report = json.loads((root/'lifecycle-unload-report.json').read_bytes())
+                self.assertEqual('data_drain_released' in report, gate_ready)
+                self.assertFalse(report['complete'])
+                client.destroy.assert_not_called()
+                runner.finish.assert_called_once()
+
     def test_three_original_cycles_and_cleanup_remain_and_failure_preserves_sessions(self):
         import tempfile
         import lifecycle_unload_scenario as scene

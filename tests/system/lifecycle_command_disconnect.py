@@ -17,7 +17,7 @@ import hashlib
 import os
 import time
 
-from lifecycle_unload_data_drain import _live_routes
+from lifecycle_unload_data_drain import InflightDataDrain, _live_routes
 from lifecycle_unload_runtime import (
     open_original_candidate_pidfd, original_json, pidfd_exited, remaining,
 )
@@ -63,7 +63,7 @@ class CommandDisconnectProbe:
                 self.failures.append(type(error).__name__)
                 raise
 
-    def _subscription(self, running, sdk):
+    def _connect(self, running, sdk):
         baseline = _live_routes(self.native, running)
         # SDK 2.51.0 returns after the original Start event. Its event generator
         # is suspended here; no cross-thread close of an executing generator.
@@ -82,8 +82,11 @@ class CommandDisconnectProbe:
                 raise ValueError('ambiguous newly admitted command relay')
             if routes:
                 marker, route = next(iter(routes.values()))
-                break
+                return owned, marker, route, deadline
             time.sleep(min(.005, remaining(deadline)))
+
+    def _subscription(self, running, sdk):
+        owned, marker, route, deadline = self._connect(running, sdk)
         source = copy.deepcopy(route['process'])
         descriptor = open_original_candidate_pidfd(source)
         self.pidfds.append(descriptor)
@@ -162,3 +165,58 @@ class CommandDisconnectProbe:
         return dict(subscription_close_attempts=sum(row['attempted'] for row in self.handles),
             cleanup_unknown=bool(self.failures), failure_types=list(self.failures),
             guest_signal_sent=False, replacement_start_sent=False)
+
+
+class InflightCommandDrain(InflightDataDrain):
+    """Keep one SDK subscription open until original Unload revokes its relay."""
+    def __init__(self, runtime, client, running, gate_directory):
+        super().__init__(client, running, runtime.services.native_pools[0],
+                         runtime.services.host_configs[0], gate_directory, runtime.lease.identity)
+        self.command = CommandDisconnectProbe(runtime, client)
+        self.subscription = None
+        self.original_token = None
+        self.report = dict(completed=False, relay_control=self._relay_control)
+
+    def begin(self):
+        sdk = self.client.sdk()
+        self.original_token = self.client.data_token
+        self.subscription, self.marker, self.route, _ = self.command._connect(self.running, sdk)
+        if original_json(self.marker, 16384) != self.route:
+            raise ValueError('original command relay changed before Unload')
+        self._hold_original_route()
+        self.report.update(guest_pid=self.command.guest['pid'], sdk_start_received=True,
+                           client_disconnected_before_unload=False)
+        return self.report.copy()
+
+    def release(self):
+        self._release_relay()
+        self.command._disconnect(self.subscription)
+        self.report['client_disconnected_after_relay_exit'] = True
+        return self.report.copy()
+
+    def assert_resumed(self, physical_running):
+        if (self.report.get('client_disconnected_after_relay_exit') is not True
+                or physical_running['session'] != self.client.session):
+            raise ValueError('original command relay must have drained before reconnect')
+        witness = copy.deepcopy(self.client.witness)
+        self.command._guest_identity(witness)
+        if (witness['metadata_generation'] != self.command.guest['metadata_generation'] + 1
+                or witness['counter'] != self.command.guest['counter'] + 1
+                or witness['activation_nonce'] == self.command.guest['activation_nonce']):
+            raise ValueError('original command reconnect requires the resumed execution')
+        sdk = self.client.sdk()
+        if self.client.data_token == self.original_token:
+            raise ValueError('original command reconnect requires new data authorization')
+        self.client.assert_previous_tokens_closed()
+        receipt = self.command._subscription(physical_running, sdk)
+        if self.client.witness_command(sdk, 'read') != witness:
+            raise ValueError('resumed command subscription changed the original RAM process')
+        self.report.update(resumed_command_subscription=receipt, completed=True)
+        return self.report.copy()
+
+    def close(self):
+        relay = super().close()
+        subscription = self.command.close()
+        relay.update(command_subscription=subscription,
+                     cleanup_unknown=relay['cleanup_unknown'] or subscription['cleanup_unknown'])
+        return relay
