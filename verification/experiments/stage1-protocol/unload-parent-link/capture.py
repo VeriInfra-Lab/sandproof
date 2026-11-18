@@ -5,19 +5,28 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
 import tarfile
 import time
 
+import revision_capture
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--mode", choices=("source", "parent"), required=True)
+parser.add_argument("--mode", choices=("source", "parent", "base-revision"), required=True)
 parser.add_argument("--lock", type=Path, required=True)
+parser.add_argument("--source-commit", help="exact current Git commit for the revision captures")
 args = parser.parse_args()
+if args.source_commit is not None and (
+        args.mode == 'source' or re.fullmatch(r'[0-9a-f]{40}', args.source_commit) is None):
+    parser.error('--source-commit requires a full commit and a parent or base-revision capture')
+if args.mode == 'base-revision' and args.source_commit is None:
+    parser.error('base-revision requires --source-commit')
 OUT = args.output.resolve()
 MODE = args.mode
 TOOLS = (ROOT / '.tools/aeneas').resolve(strict=True)
@@ -42,6 +51,21 @@ def main():
     try:
         result['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         subprocess.run(['git', 'diff', '--quiet', 'HEAD'], cwd=ROOT, check=True)
+        if args.source_commit is not None:
+            if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
+                raise ValueError('current revision capture belongs to the existing proof role')
+            if subprocess.check_output(['git', 'status', '--porcelain', '-z'], cwd=ROOT):
+                raise ValueError('current revision capture driver must be clean')
+            result['driver_head'] = result['head']
+            result['head'] = subprocess.check_output(
+                ['git', 'rev-parse', '--verify', args.source_commit + '^{commit}'],
+                cwd=ROOT, text=True,
+            ).strip()
+            if result['head'] != args.source_commit:
+                raise ValueError('current revision source is not the exact requested commit')
+            result['tree'] = subprocess.check_output(
+                ['git', 'rev-parse', result['head'] + '^{tree}'], cwd=ROOT, text=True,
+            ).strip()
         assert shutil.disk_usage(ROOT).free >= 80*GIB
         cpus = sorted(os.sched_getaffinity(0))[:4]
         os.sched_setaffinity(0, cpus)
@@ -52,9 +76,14 @@ def main():
         assert sha(aeneas) == fixed['aeneas']['binary_sha256']
         archive = OUT/'source.tar'
         with archive.open('xb') as output:
-            subprocess.run(['git','archive','HEAD'], cwd=ROOT, stdout=output, check=True)
+            subprocess.run(['git','archive',result['head']], cwd=ROOT, stdout=output, check=True)
         with tarfile.open(archive) as tar:
             tar.extractall(source, filter='data')
+        if args.source_commit is not None:
+            result['source_archive_sha256'] = sha(archive)
+            path = source / revision_capture.REVISION_SOURCE
+            if path.is_symlink() or sha(path) != revision_capture.REVISION_SOURCE_SHA256:
+                raise ValueError('reviewed current readiness revision source changed')
         history = ROOT/'verification/experiments/stage1-protocol/original-source-rows/original-capture'
         if MODE == 'source':
             cfg = json.loads((history/'precheck-config.json').read_text())
@@ -67,6 +96,7 @@ def main():
         else:
             cfg = json.loads((ROOT/'verification/experiments/stage1-protocol/unload-startup-source/capture-profile.json').read_text())['parent']
             cfg.update(namespace='SandproofUnloadFirstObservation', subdir='SandproofUnloadFirstObservation')
+            cfg = revision_capture.configuration(cfg, MODE)
 
         def run(label, argv, seconds):
             started = time.monotonic()
@@ -102,8 +132,17 @@ def main():
             if MODE=='source':
                 assert lib.read_bytes()==(history/'metadata-view-lib.rs').read_bytes()
                 lib.write_bytes(original)
+            captured_ir_sha256 = sha(ir)
             run('aeneas',[aeneas,'-backend','lean','-abort-on-error','-warnings-as-errors','-split-files','-emit-json',
                 '-namespace',cfg['namespace'],'-subdir',cfg['subdir'],'-dest',OUT/'generated',ir],120)
+            if sha(ir) != captured_ir_sha256:
+                raise ValueError('actual Charon IR changed during generation')
+        if args.source_commit is not None:
+            result['revision_admission'] = revision_capture.admit(
+                ir, OUT / 'generated', cfg, fixed['target'], MODE,
+            )
+            if sha(path) != revision_capture.REVISION_SOURCE_SHA256 or sha(archive) != result['source_archive_sha256']:
+                raise ValueError('current revision source or archive changed during capture')
         result.update(complete=True,ir_sha256=sha(ir),generated={str(p.relative_to(OUT/'generated')):sha(p)
             for p in (OUT/'generated').rglob('*') if p.is_file()})
     except BaseException as error:
