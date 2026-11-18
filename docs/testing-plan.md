@@ -138,6 +138,12 @@ E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario u
 分块编码仅补 HTTP framing，不能把丢失或截断的数据变成成功。SDK 错误类型必须结合原始
 RPC/传输错误判断，不能把所有 TimeoutException 都解释为真实等待超时。
 
+E13 的 [Destroy 终局提交回归](../sandbox-center-service/tests/business_authority/lifecycle_terminal_reply_loss.rs)
+分别丢弃实际保存 `Cleaned` 和实际保存 Host 确认的 Redis 提交回包。两侧都要观察到
+中心状态未知且禁止继续派发，并用独立 Redis 读取核对原业务块。前者不能向 Host 发确认，
+显式对账后只补原 Destroy 的确认。后者对账后直接读回已确认终局，不能再发原动作。
+仍保留原结果、额度结算和全文重放。Host 的终局和确认由组件夹具提供，实机收尾单独记录。
+
 E13 首次 Resume 的中心回执窗口使用同一入口的 `--scenario resume-receipt-restart`，精确实机结果同样按 issue/PR 记录。该选择复用上述双 mTLS、有限流、固定配置/预算/绝对截止时间和中心独立重启流程，保留原 normal 的两 owner、实际位置复用及 A/B/C 三代。它在首次 Unload 已完成、原来源物理证据取得之后计划读取中心审计，随后只武装 Resume 门；不会同时丢弃 Unload 回执。`/internal/lifecycle/resume-observation` 只有 HTTP 200、完整当前请求相同的 `Observed` 才在回复头前被保持；Pending、NotCurrent、NotRunning、Expired、StateLost 均不触发。全部 binding、操作参数、center、retention、接受版本与独立原 Unload 来源关联，目标代允许大于来源代的空洞，不要求加一，也不要求 key window 等于 retention window。
 
 并发只读 Resume 观察的 `observed_at_ms` 可以变化；每次实际合法时间单独保留，完整意图和另外四个寿命字段必须相同。门终身最多保持八份完成回执，显式丢弃、后端关闭并排空后，才允许 `held == dropped > 0` 且 `response_attempts == 0` 的丢失证据。超时、503、回复尝试、工作者失败和未知收尾不能代替它。中心停止后的原账本必须仍为同一 Resuming、当前操作尚无 Running 结果，原 Create/Unload 历史不变；接受 Resume 时相对 Unloaded 精确重新占用原实例/CPU/内存额度，磁盘额度不变，中心故障及恢复不能重复占用或提前释放。重开后只允许同一 Resume 增加原寿命的 Running 结果和更新 `last_running`，新的合法只读观察时间不冻结。
