@@ -12,21 +12,22 @@ import subprocess
 import tarfile
 import time
 
+import prepare_transaction_capture
 import revision_capture
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--mode", choices=("source", "parent", "base-revision"), required=True)
+parser.add_argument("--mode", choices=("source", "parent", "base-revision", "prepare-transaction"), required=True)
 parser.add_argument("--lock", type=Path, required=True)
-parser.add_argument("--source-commit", help="exact current Git commit for the revision captures")
+parser.add_argument("--source-commit", help="exact Git commit for a current source capture")
 args = parser.parse_args()
 if args.source_commit is not None and (
         args.mode == 'source' or re.fullmatch(r'[0-9a-f]{40}', args.source_commit) is None):
-    parser.error('--source-commit requires a full commit and a parent or base-revision capture')
-if args.mode == 'base-revision' and args.source_commit is None:
-    parser.error('base-revision requires --source-commit')
+    parser.error('--source-commit requires a full commit and a current source capture')
+if args.mode in ('base-revision', 'prepare-transaction') and args.source_commit is None:
+    parser.error(args.mode + ' requires --source-commit')
 OUT = args.output.resolve()
 MODE = args.mode
 TOOLS = (ROOT / '.tools/aeneas').resolve(strict=True)
@@ -38,12 +39,19 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def check_source_inputs(root, inputs):
+    for name, expected in inputs.items():
+        path = root / name
+        if path.is_symlink() or sha(path) != expected:
+            raise ValueError(f'reviewed current source differs: {name}')
+
+
 def main():
     os.umask(0o077)
     OUT.mkdir()
     source = OUT / 'source'
     source.mkdir()
-    result = dict(development_only=True, native_acceptance=False, commands=[], complete=False)
+    result = dict(development_only=True, native_acceptance=False, mode=MODE, commands=[], complete=False)
     env = dict(os.environ, CARGO_NET_OFFLINE='true', CARGO_BUILD_JOBS='4', CARGO_INCREMENTAL='0',
                CARGO_TARGET_DIR=str(OUT / 'target'))
     for key in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'):
@@ -51,11 +59,16 @@ def main():
     try:
         result['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         subprocess.run(['git', 'diff', '--quiet', 'HEAD'], cwd=ROOT, check=True)
+        admission = revision_capture
+        inputs = {revision_capture.REVISION_SOURCE: revision_capture.REVISION_SOURCE_SHA256}
+        if MODE == 'prepare-transaction':
+            admission = prepare_transaction_capture
+            inputs = admission.SOURCE_INPUTS
         if args.source_commit is not None:
             if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
-                raise ValueError('current revision capture belongs to the existing proof role')
+                raise ValueError('current source capture belongs to the existing proof role')
             if subprocess.check_output(['git', 'status', '--porcelain', '-z'], cwd=ROOT):
-                raise ValueError('current revision capture driver must be clean')
+                raise ValueError('current source capture driver must be clean')
             result['driver_head'] = result['head']
             result['head'] = subprocess.check_output(
                 ['git', 'rev-parse', '--verify', args.source_commit + '^{commit}'],
@@ -66,14 +79,19 @@ def main():
             result['tree'] = subprocess.check_output(
                 ['git', 'rev-parse', result['head'] + '^{tree}'], cwd=ROOT, text=True,
             ).strip()
-        assert shutil.disk_usage(ROOT).free >= 80*GIB
+            if MODE == 'prepare-transaction' and (result['head'], result['tree']) != (
+                    admission.SOURCE_COMMIT, admission.SOURCE_TREE):
+                raise ValueError('prepare requires the reviewed integration commit and tree')
+        result['workspace_free_bytes'] = shutil.disk_usage(ROOT).free
+        if result['workspace_free_bytes'] < 80*GIB:
+            raise ValueError('at least 80 GiB workspace free required')
         cpus = sorted(os.sched_getaffinity(0))[:4]
         os.sched_setaffinity(0, cpus)
         result['cpus'] = cpus
         fixed = json.loads((ROOT/'verification/foundations-environment.json').read_text())
         charon, aeneas = TOOLS/'charon/bin/charon', TOOLS/'bin/aeneas'
-        assert sha(charon) == fixed['charon']['binary_sha256']
-        assert sha(aeneas) == fixed['aeneas']['binary_sha256']
+        if sha(charon) != fixed['charon']['binary_sha256'] or sha(aeneas) != fixed['aeneas']['binary_sha256']:
+            raise ValueError('fixed Charon or Aeneas binary differs')
         archive = OUT/'source.tar'
         with archive.open('xb') as output:
             subprocess.run(['git','archive',result['head']], cwd=ROOT, stdout=output, check=True)
@@ -81,9 +99,7 @@ def main():
             tar.extractall(source, filter='data')
         if args.source_commit is not None:
             result['source_archive_sha256'] = sha(archive)
-            path = source / revision_capture.REVISION_SOURCE
-            if path.is_symlink() or sha(path) != revision_capture.REVISION_SOURCE_SHA256:
-                raise ValueError('reviewed current readiness revision source changed')
+            check_source_inputs(source, inputs)
         history = ROOT/'verification/experiments/stage1-protocol/original-source-rows/original-capture'
         if MODE == 'source':
             cfg = json.loads((history/'precheck-config.json').read_text())
@@ -96,7 +112,8 @@ def main():
         else:
             cfg = json.loads((ROOT/'verification/experiments/stage1-protocol/unload-startup-source/capture-profile.json').read_text())['parent']
             cfg.update(namespace='SandproofUnloadFirstObservation', subdir='SandproofUnloadFirstObservation')
-            cfg = revision_capture.configuration(cfg, MODE)
+            cfg = (admission.configuration(cfg) if MODE == 'prepare-transaction'
+                   else admission.configuration(cfg, MODE))
 
         def run(label, argv, seconds):
             started = time.monotonic()
@@ -138,11 +155,13 @@ def main():
             if sha(ir) != captured_ir_sha256:
                 raise ValueError('actual Charon IR changed during generation')
         if args.source_commit is not None:
-            result['revision_admission'] = revision_capture.admit(
-                ir, OUT / 'generated', cfg, fixed['target'], MODE,
-            )
-            if sha(path) != revision_capture.REVISION_SOURCE_SHA256 or sha(archive) != result['source_archive_sha256']:
-                raise ValueError('current revision source or archive changed during capture')
+            if MODE == 'prepare-transaction':
+                result['prepare_admission'] = admission.admit(ir, OUT / 'generated', cfg, fixed['target'])
+            else:
+                result['revision_admission'] = admission.admit(ir, OUT / 'generated', cfg, fixed['target'], MODE)
+            check_source_inputs(source, inputs)
+            if sha(archive) != result['source_archive_sha256']:
+                raise ValueError('current source archive changed during capture')
         result.update(complete=True,ir_sha256=sha(ir),generated={str(p.relative_to(OUT/'generated')):sha(p)
             for p in (OUT/'generated').rglob('*') if p.is_file()})
     except BaseException as error:

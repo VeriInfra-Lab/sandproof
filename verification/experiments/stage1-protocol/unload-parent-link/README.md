@@ -186,6 +186,31 @@ bash scripts/python-entry.sh "$package/prepare_revision_call.py" \
 固定后端的 `__bind_in` 名称保留原 rusqlite 拼写及命名警告。整套封口还需修正驱动的
 独立重抽配对、ning 原生回执及完整登记审计。
 
+### 首次登记的外层抽取入口
+
+`prepare-transaction` 在精确 integration `f26fc26a3fb6987a18ad69015c56bb99c0748e12`
+的未编辑 Git 归档上选择原 `ControllerJournal::prepare_lifecycle_source_work` 方法。
+沿用现有重锁、固定工具以及 80 GiB 起跑、64 GiB 停止、四核和 4 GiB target 预算。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+SANDPROOF_ACCEPTANCE_ROLE=formal bash scripts/python-entry.sh "$package/capture.py" \
+  --mode prepare-transaction --source-commit f26fc26a3fb6987a18ad69015c56bb99c0748e12 \
+  --output "$new_prepare_evidence" --lock "$SANDPROOF_LOCK_FILE"
+bash scripts/python-entry.sh "$package/test_prepare_transaction_capture.py"
+```
+
+新的准入检查核对原方法的透明 LLBC、`SourceWorkRecord` 和 `Sources` 字段、
+实际原 begin/World/Inbox/认证/来源负载/内层 current/容量/保存/commit 的调用身份
+以及 Aeneas 的原方法映射和生成定义。调用清单记录出现次数。首错、重放分支跳过
+后段、实际借用和物理事务帧仍需独立证明。`current` 保留为单独连接点，后续使用
+原父视图及 #917 的类型关系。其余自有操作继续由具名提供方提供。没有新增可信模板。
+
+入口自测使用合成声明和反例。只有实际 Charon、Aeneas 均通过并保存完整原件才有
+新抽取证据。既有 base/parent 配对继续使用 [#914](https://github.com/VeriInfra-Lab/sandproof/pull/914)
+登记的原驱动提交。新入口不签发该配对或 [#920](https://github.com/VeriInfra-Lab/sandproof/pull/920)
+的原生验收。
+
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
 ning 在确定的新提交上完成普通检查及相关上游原生原版/错误版/恢复检查；严格按原收据键、
