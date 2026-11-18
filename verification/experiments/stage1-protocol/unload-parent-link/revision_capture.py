@@ -9,6 +9,8 @@ BASE_ROOT = READINESS + '::snapshot::base_snapshot'
 PARENT_ROOT = SERVICE + '::source_work::snapshot::current'
 CANDIDATE = READINESS + '::snapshot::ReadyCandidate'
 REVISION_SQL = 'SELECT revision FROM sandboxes WHERE sandbox_id=?1'
+# The fixed Aeneas view distributes the original continuation across six arms.
+REVISION_GENERATED_CALLS = 6
 REVISION_SOURCE = Path('controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs')
 REVISION_SOURCE_SHA256 = '75a9b0c4564df9716b051c020a5aa5f34b64b0f532e90e2e1186d7596a5cd1a6'
 
@@ -49,18 +51,39 @@ def declaration(rows, name):
     return matches[0]
 
 
-def regular_calls(value):
+def ir_values(value, field):
     if isinstance(value, dict):
-        if 'Call' in value:
-            function = value['Call']['call']['func']
-            identifier = function.get('Regular', {}).get('kind', {}).get('Fun')
-            if identifier is not None:
-                yield identifier
+        if field in value:
+            yield value[field]
         for child in value.values():
-            yield from regular_calls(child)
+            yield from ir_values(child, field)
     elif isinstance(value, list):
         for child in value:
-            yield from regular_calls(child)
+            yield from ir_values(child, field)
+
+
+def regular_calls(value):
+    for call in ir_values(value, 'Call'):
+        function = call['call']['func']
+        identifier = function.get('Regular', {}).get('kind', {}).get('Fun')
+        if identifier is not None:
+            yield identifier
+
+
+def revision_query(structured, functions):
+    if list(ir_values(structured, 'Str')) != [REVISION_SQL]:
+        raise ValueError('original base_snapshot revision SQL differs')
+    queries = list(re.finditer(r'^[ \t]+rusqlite\.Connection\.query_row[ \t]*$', functions, re.M))
+    if len(queries) != REVISION_GENERATED_CALLS:
+        raise ValueError('generated base_snapshot revision query count differs')
+    next_step = re.compile(r'^[ \t]+(?:let|match)\b', re.M)
+    for query in queries:
+        end = next_step.search(functions, query.end())
+        if end is None:
+            raise ValueError('generated base_snapshot revision query arguments are missing')
+        arguments = functions[query.end():end.start()]
+        if re.findall(r'\(toStr\s+"([^"\n]*)"\)', arguments) != [REVISION_SQL]:
+            raise ValueError('generated base_snapshot revision SQL differs')
 
 
 def admit(ir, generated, cfg, target, mode):
@@ -94,14 +117,14 @@ def admit(ir, generated, cfg, target, mode):
     field_type = r'^[ \t]+native_revision[ \t]*:[ \t]*\(?Option[ \t]+(?:Std\.)?U64\)?[ \t]*$'
     if len(re.findall(field_type, types, re.M)) != 1:
         raise ValueError('generated ReadyCandidate revision type differs')
+    report = dict(actual_root=root, root_id=function['def_id'],
+                  ready_candidate_id=candidate['def_id'], ready_candidate_fields=fields,
+                  native_revision_type='Option<u64>')
     if mode == 'base-revision':
-        functions = (module / 'Funs.lean').read_text()
-        if functions.count('"' + REVISION_SQL + '"') != 1:
-            raise ValueError('generated base_snapshot revision SQL differs')
+        revision_query(structured, (module / 'Funs.lean').read_text())
+        report.update(original_revision_sql=REVISION_SQL, generated_revision_queries=REVISION_GENERATED_CALLS)
     else:
         base = declaration(translated['fun_decls'], BASE_ROOT)
         if list(regular_calls(structured)).count(base['def_id']) != 1:
             raise ValueError('actual Unload parent no longer calls its original base_snapshot once')
-    return dict(actual_root=root, root_id=function['def_id'],
-                ready_candidate_id=candidate['def_id'], ready_candidate_fields=fields,
-                native_revision_type='Option<u64>')
+    return report
